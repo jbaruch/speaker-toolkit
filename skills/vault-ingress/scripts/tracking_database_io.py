@@ -49,6 +49,52 @@ STAGED_CANDIDATE_SUFFIX = ".tracking-db.tmp"
 STAGED_CANDIDATE_LABEL = "tracking-database candidate"
 
 
+# Closed, path-neutral prose for each typed reason code. A read failure must
+# never echo the exception text: decoder messages carry the host database path
+# and the rejected key or value verbatim (`no-secrets` -> Logging). Every
+# consumer that surfaces a read failure routes through this map, so the wording
+# and the redaction hold in one place.
+DATABASE_READ_DIAGNOSTICS = {
+    "encoding_invalid": (
+        "database_encoding_invalid",
+        "tracking database is not valid UTF-8",
+    ),
+    "json_invalid": (
+        "database_json_invalid",
+        "tracking database is not valid JSON",
+    ),
+    "json_duplicate_key": (
+        "database_json_invalid",
+        "tracking database contains a duplicate object key",
+    ),
+    "json_non_standard_number": (
+        "database_json_invalid",
+        "tracking database contains a non-standard JSON number",
+    ),
+    "json_non_roundtrippable_number": (
+        "database_json_invalid",
+        "tracking database contains a JSON number that cannot round-trip "
+        "losslessly through this toolkit",
+    ),
+    "json_root_not_object": (
+        "database_json_invalid",
+        "tracking database root must be a JSON object",
+    ),
+    "json_nesting_too_deep": (
+        "database_json_invalid",
+        "tracking database exceeds the maximum supported JSON nesting depth",
+    ),
+    "json_unpaired_surrogate": (
+        "database_json_invalid",
+        "tracking database contains an unpaired UTF-16 surrogate in a JSON string",
+    ),
+}
+DATABASE_READ_FALLBACK = (
+    "database_unreadable",
+    "tracking database could not be read",
+)
+
+
 class TrackingDatabaseIOError(ValueError):
     """The tracking database could not be read or installed safely.
 

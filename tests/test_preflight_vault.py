@@ -1,6 +1,7 @@
 """Regression tests for the offline vault identity/source preflight."""
 
 from copy import deepcopy
+import hashlib
 import importlib
 import json
 import os
@@ -3691,3 +3692,209 @@ def test_every_emitted_decoder_reason_is_mapped(preflight_vault):
     emitted = set(re.findall(r'reason_code="([a-z_]+)"', io_source))
     mapped = set(preflight_vault._DATABASE_READ_DIAGNOSTICS)
     assert emitted <= mapped, sorted(emitted - mapped)
+
+
+# PPTX catalog visual-evidence selection (#229). A stored receipt is a hint;
+# preflight fingerprints the deck on disk before letting one claim currency.
+
+
+def _write_deck(fixture, name: str = "Talk.pptx", body: bytes = b"deck-bytes") -> Path:
+    path = fixture["pptx_source"] / name
+    path.write_bytes(body)
+    return path
+
+
+def _fingerprint(path: Path) -> dict[str, Any]:
+    data = path.read_bytes()
+    return {
+        "algorithm": "sha256",
+        "digest": hashlib.sha256(data).hexdigest(),
+        "size_bytes": len(data),
+    }
+
+
+def _write_artifact(fixture, body: bytes = b'{"slides": []}') -> Path:
+    """The extraction artifact a receipt points at, vault-root-relative."""
+    path = fixture["root"] / "evidence" / "talk.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(body)
+    return path
+
+
+def _catalog_record(
+    preflight_vault, deck: Path, artifact: Path, **overrides: Any
+) -> dict[str, Any]:
+    """One schema-v2 catalog record whose receipt matches deck and artifact."""
+    record = {
+        "schema_version": 2,
+        "pptx_path": deck.name,
+        "talk_filename": None,
+        "matched": False,
+        "slide_count": 42,
+        "visual_extracted": True,
+        "visual_evidence": {
+            "outcome": "succeeded",
+            "extractor_schema_version": preflight_vault.PPTX_EXTRACTION_SCHEMA_VERSION,
+            "pipeline_version": preflight_vault.PPTX_EXTRACTION_PIPELINE_VERSION,
+            "source_fingerprint": _fingerprint(deck),
+            "artifact": {
+                "path": "evidence/talk.json",
+                "sha256": _fingerprint(artifact)["digest"],
+            },
+        },
+    }
+    record.update(overrides)
+    return record
+
+
+def _write_catalog(fixture, records: list[dict[str, Any]]) -> Path:
+    database = write_database(fixture, [], current=True)
+    payload = json.loads(database.read_text(encoding="utf-8"))
+    payload["pptx_catalog"] = records
+    database.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return database
+
+
+def _catalog_findings(report: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        finding
+        for finding in report["findings"]
+        if finding["code"].startswith("pptx_visual_evidence")
+    ]
+
+
+def test_preflight_is_quiet_when_the_receipt_matches_the_deck_on_disk(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    deck = _write_deck(vault_fixture)
+    artifact = _write_artifact(vault_fixture)
+    _write_catalog(vault_fixture, [_catalog_record(preflight_vault, deck, artifact)])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert _catalog_findings(report) == []
+
+
+def test_preflight_warns_when_the_deck_changed_after_extraction(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    """The receipt still names the current extractor; the bytes moved on."""
+    deck = _write_deck(vault_fixture)
+    artifact = _write_artifact(vault_fixture)
+    record = _catalog_record(preflight_vault, deck, artifact)
+    _write_catalog(vault_fixture, [record])
+    deck.write_bytes(b"deck-bytes-edited-since-extraction")
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    findings = _catalog_findings(report)
+    assert [finding["code"] for finding in findings] == [
+        "pptx_visual_evidence_not_current"
+    ]
+    assert findings[0]["actual"]["classification"] == "stale"
+
+
+def test_preflight_warns_when_the_deck_cannot_be_fingerprinted(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    """Stored metadata alone never proves currency."""
+    deck = _write_deck(vault_fixture)
+    artifact = _write_artifact(vault_fixture)
+    record = _catalog_record(preflight_vault, deck, artifact)
+    _write_catalog(vault_fixture, [record])
+    deck.unlink()
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    findings = _catalog_findings(report)
+    assert findings[0]["actual"]["classification"] == "unverified"
+
+
+def test_preflight_warns_about_a_legacy_record(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    """A v1 bare claim cannot name the extractor generation it came from."""
+    deck = _write_deck(vault_fixture)
+    _write_catalog(
+        vault_fixture,
+        [
+            {
+                "schema_version": 1,
+                "pptx_path": deck.name,
+                "talk_filename": None,
+                "matched": False,
+                "slide_count": 42,
+                "visual_extracted": True,
+            }
+        ],
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    findings = _catalog_findings(report)
+    assert findings[0]["code"] == "pptx_visual_evidence_not_current"
+    assert findings[0]["severity"] == "warning"
+    assert findings[0]["actual"]["classification"] == "unknown_legacy"
+
+
+def test_preflight_reports_an_unreadable_receipt_instead_of_crashing(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    deck = _write_deck(vault_fixture)
+    artifact = _write_artifact(vault_fixture)
+    broken = _catalog_record(preflight_vault, deck, artifact)
+    broken["visual_evidence"]["artifact"] = None
+    _write_catalog(vault_fixture, [broken])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    findings = _catalog_findings(report)
+    assert [finding["code"] for finding in findings] == [
+        "pptx_visual_evidence_unreadable"
+    ]
+    # The closed code and its neutral prose, never the rejected persisted
+    # value the exception message names (`no-secrets` -> Logging).
+    assert findings[0]["message"] == (
+        "visual evidence records a success but names no artifact"
+    )
+    # A bad receipt is per-record evidence trouble, so the vault is still
+    # usable: it must not surface as unusable owner state.
+    assert report["blocking_count"] == 0
+
+
+def test_preflight_warns_when_the_extraction_artifact_is_gone(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    """A deleted artifact must not stay authoritative."""
+    deck = _write_deck(vault_fixture)
+    artifact = _write_artifact(vault_fixture)
+    _write_catalog(vault_fixture, [_catalog_record(preflight_vault, deck, artifact)])
+    artifact.unlink()
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    findings = _catalog_findings(report)
+    assert findings[0]["actual"]["classification"] == "unverified"
+    assert findings[0]["actual"]["artifact_observed"] is False
+    assert findings[0]["actual"]["source_observed"] is True
+
+
+def test_preflight_warns_when_the_extraction_artifact_was_replaced(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    deck = _write_deck(vault_fixture)
+    artifact = _write_artifact(vault_fixture)
+    _write_catalog(vault_fixture, [_catalog_record(preflight_vault, deck, artifact)])
+    artifact.write_bytes(b'{"slides": ["replaced"]}')
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    findings = _catalog_findings(report)
+    assert findings[0]["actual"]["classification"] == "stale"

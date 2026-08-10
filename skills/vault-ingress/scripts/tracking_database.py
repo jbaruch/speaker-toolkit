@@ -8,6 +8,7 @@ present.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import copy
 from dataclasses import dataclass
 import datetime as dt
@@ -32,7 +33,8 @@ LEGACY_TALK_RECORD_SCHEMA_VERSION = 1
 TALK_RECORD_SCHEMA_VERSION = 5
 LEGACY_CONFIG_RECORD_SCHEMA_VERSION = 1
 CONFIG_RECORD_SCHEMA_VERSION = 2
-PPTX_CATALOG_RECORD_SCHEMA_VERSION = 1
+LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION = 1
+PPTX_CATALOG_RECORD_SCHEMA_VERSION = 2
 LEGACY_QR_CODE_RECORD_SCHEMA_VERSION = 1
 QR_CODE_RECORD_SCHEMA_VERSION = 2
 RESOURCE_RECORD_SCHEMA_VERSION = 1
@@ -74,6 +76,38 @@ _RECORD_COUNT_KEYS = (
 PPTX_CATALOG_REQUIRED_FIELDS = frozenset(
     {"pptx_path", "talk_filename", "matched", "slide_count", "visual_extracted"}
 )
+# v2 binds every visual-evidence claim to the exact extractor generation and
+# source bytes that produced it. A v1 record carries no such binding, so its
+# bare `visual_extracted: true` cannot say which extractor schema it refers to.
+PPTX_CATALOG_V2_REQUIRED_FIELDS = PPTX_CATALOG_REQUIRED_FIELDS | {"visual_evidence"}
+PPTX_VISUAL_EVIDENCE_REQUIRED_FIELDS = frozenset(
+    {
+        "outcome",
+        "extractor_schema_version",
+        "pipeline_version",
+        "source_fingerprint",
+        "artifact",
+    }
+)
+PPTX_SOURCE_FINGERPRINT_REQUIRED_FIELDS = frozenset(
+    {"algorithm", "digest", "size_bytes"}
+)
+PPTX_VISUAL_ARTIFACT_REQUIRED_FIELDS = frozenset({"path", "sha256"})
+PPTX_VISUAL_EVIDENCE_OUTCOMES = frozenset({"succeeded", "failed"})
+PPTX_SOURCE_FINGERPRINT_ALGORITHMS = frozenset({"sha256"})
+
+# Derived selection classes. Only CURRENT skips regeneration; every other
+# class means the persisted evidence cannot be proven to describe the current
+# extractor generation of the current source bytes.
+PPTX_EVIDENCE_CURRENT = "current"
+PPTX_EVIDENCE_STALE = "stale"
+PPTX_EVIDENCE_PENDING = "pending"
+PPTX_EVIDENCE_FAILED = "failed"
+PPTX_EVIDENCE_UNKNOWN_LEGACY = "unknown_legacy"
+# A live observation the caller could not make — the deck's bytes or the
+# extraction artifact's digest — so the receipt cannot be proven to describe
+# what is on disk now.
+PPTX_EVIDENCE_UNVERIFIED = "unverified"
 QR_CODE_REQUIRED_FIELDS = frozenset(
     {
         "talk_slug",
@@ -155,6 +189,41 @@ class TrackingDatabaseError(ValueError):
 
 class TrackingDatabaseConfigExclusionsError(TrackingDatabaseError):
     """The config-owned PPTX directory-exclusion field is invalid."""
+
+
+class PptxVisualEvidenceError(TrackingDatabaseError):
+    """A persisted extraction receipt is malformed.
+
+    ``reason_code`` is the stable classification. The message names the exact
+    field and the rejected value, which is what an operator fixing a rejected
+    WRITE needs — but a reader surfacing a rejected persisted record must
+    report the code and its neutral prose instead, because the rejected value
+    came out of the database (`no-secrets` -> Logging).
+    """
+
+    def __init__(self, message: str, *, reason_code: str) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+
+
+# Closed, value-neutral prose per receipt reason code.
+PPTX_VISUAL_EVIDENCE_DIAGNOSTICS = {
+    "receipt_not_object": "visual evidence must be an object or null",
+    "receipt_shape_invalid": "visual evidence has an invalid field set",
+    "outcome_invalid": "visual evidence outcome is not a supported value",
+    "extractor_schema_version_invalid": (
+        "visual evidence extractor schema version is not a positive integer"
+    ),
+    "pipeline_version_invalid": "visual evidence pipeline version is not a string",
+    "source_fingerprint_invalid": "visual evidence source fingerprint is malformed",
+    "artifact_required": "visual evidence records a success but names no artifact",
+    "artifact_forbidden": "visual evidence records a failure but names an artifact",
+    "artifact_invalid": "visual evidence artifact identity is malformed",
+    "mirror_mismatch": (
+        "visual_extracted disagrees with the outcome its receipt records"
+    ),
+}
+PPTX_VISUAL_EVIDENCE_FALLBACK = "visual evidence receipt is malformed"
 
 
 @dataclass(frozen=True)
@@ -317,6 +386,220 @@ def _validate_qr_artifacts(value: object, label: str) -> list[str]:
                     f"{item_label}.bg_hex must be 6 lowercase hex characters or null"
                 )
     return paths
+
+
+def _require_sha256_digest(value: object, label: str) -> str:
+    digest = _require_nonempty_string(value, label)
+    if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+        raise TrackingDatabaseError(f"{label} must be 64 lowercase hex characters")
+    return digest
+
+
+def _validate_pptx_source_fingerprint(value: object, label: str) -> None:
+    """Validate the exact-source-bytes binding written by the PPTX extractor."""
+    if not isinstance(value, Mapping):
+        raise TrackingDatabaseError(f"{label} must be an object")
+    _require_closed_shape(
+        value, required=PPTX_SOURCE_FINGERPRINT_REQUIRED_FIELDS, label=label
+    )
+    algorithm = _require_nonempty_string(value["algorithm"], f"{label}.algorithm")
+    if algorithm not in PPTX_SOURCE_FINGERPRINT_ALGORITHMS:
+        raise TrackingDatabaseError(
+            f"{label}.algorithm must be one of "
+            f"{sorted(PPTX_SOURCE_FINGERPRINT_ALGORITHMS)}, got {algorithm!r}"
+        )
+    _require_sha256_digest(value["digest"], f"{label}.digest")
+    _require_exact_integer(value["size_bytes"], f"{label}.size_bytes", minimum=1)
+
+
+@contextmanager
+def _receipt_reason(reason_code: str):
+    """Retype the shared field validators' errors with a receipt reason code."""
+    try:
+        yield
+    except PptxVisualEvidenceError:
+        raise
+    except TrackingDatabaseError as exc:
+        raise PptxVisualEvidenceError(str(exc), reason_code=reason_code) from exc
+
+
+def validate_pptx_visual_evidence(value: object, label: str) -> bool:
+    """Validate a v2 extraction receipt; return whether it recorded a success.
+
+    ``None`` means no extraction has been attempted for this deck — distinct
+    from a recorded failure, which carries the generation it failed under.
+    """
+    if value is None:
+        return False
+    if not isinstance(value, Mapping):
+        raise PptxVisualEvidenceError(
+            f"{label} must be an object or null", reason_code="receipt_not_object"
+        )
+    with _receipt_reason("receipt_shape_invalid"):
+        _require_closed_shape(
+            value, required=PPTX_VISUAL_EVIDENCE_REQUIRED_FIELDS, label=label
+        )
+    with _receipt_reason("outcome_invalid"):
+        outcome = _require_nonempty_string(value["outcome"], f"{label}.outcome")
+    if outcome not in PPTX_VISUAL_EVIDENCE_OUTCOMES:
+        raise PptxVisualEvidenceError(
+            f"{label}.outcome must be one of "
+            f"{sorted(PPTX_VISUAL_EVIDENCE_OUTCOMES)}, got {outcome!r}",
+            reason_code="outcome_invalid",
+        )
+    with _receipt_reason("extractor_schema_version_invalid"):
+        _require_exact_integer(
+            value["extractor_schema_version"],
+            f"{label}.extractor_schema_version",
+            minimum=1,
+        )
+    with _receipt_reason("pipeline_version_invalid"):
+        _require_nonempty_string(value["pipeline_version"], f"{label}.pipeline_version")
+    with _receipt_reason("source_fingerprint_invalid"):
+        _validate_pptx_source_fingerprint(
+            value["source_fingerprint"], f"{label}.source_fingerprint"
+        )
+    artifact = value["artifact"]
+    succeeded = outcome == "succeeded"
+    if artifact is None:
+        # A succeeded extraction that names no artifact cannot be proven to
+        # still exist, which is the ambiguity this schema removes.
+        if succeeded:
+            raise PptxVisualEvidenceError(
+                f"{label}.artifact is required when outcome is 'succeeded'",
+                reason_code="artifact_required",
+            )
+        return succeeded
+    if not isinstance(artifact, Mapping):
+        raise PptxVisualEvidenceError(
+            f"{label}.artifact must be an object or null",
+            reason_code="artifact_invalid",
+        )
+    if not succeeded:
+        raise PptxVisualEvidenceError(
+            f"{label}.artifact must be null when outcome is 'failed'",
+            reason_code="artifact_forbidden",
+        )
+    with _receipt_reason("artifact_invalid"):
+        _require_closed_shape(
+            artifact,
+            required=PPTX_VISUAL_ARTIFACT_REQUIRED_FIELDS,
+            label=f"{label}.artifact",
+        )
+        _require_nonempty_string(artifact["path"], f"{label}.artifact.path")
+        _require_sha256_digest(artifact["sha256"], f"{label}.artifact.sha256")
+    return succeeded
+
+
+def classify_pptx_visual_evidence(
+    record: Mapping[str, object],
+    *,
+    extractor_schema_version: int,
+    pipeline_version: str,
+    observed_source_fingerprint: Mapping[str, object] | None,
+    observed_artifact_digest: str | None,
+) -> str:
+    """Return the selection class for one catalog record's visual evidence.
+
+    The one authority every consumer shares — owner writes, migration,
+    preflight, queue selection, and profile reads all classify through this
+    function so they cannot disagree about which decks need regeneration.
+
+    Both live observations are required rather than defaulted: a stored receipt
+    is a hint, not authority (`stateful-artifacts` -> Hints, Not Authority), so
+    a caller must say what it saw on disk. ``observed_source_fingerprint`` is
+    the PPTX as it exists now; ``observed_artifact_digest`` is the SHA-256 of
+    the extraction artifact the receipt names. Passing ``None`` for either
+    states that the observation could not be made, which yields
+    ``PPTX_EVIDENCE_UNVERIFIED`` rather than letting stored metadata alone
+    claim currency — a deleted or replaced artifact must not stay
+    authoritative. Only ``PPTX_EVIDENCE_CURRENT`` may skip regeneration.
+    """
+    version = _record_version(
+        record,
+        "pptx_catalog record",
+        missing_version=LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION,
+    )
+    if version == LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION:
+        # A v1 record persisted no generation at all. Its bare
+        # visual_extracted may refer to any extractor schema, so a true value
+        # is unknown-generation evidence, never current evidence.
+        if record.get("visual_extracted") is True:
+            return PPTX_EVIDENCE_UNKNOWN_LEGACY
+        return PPTX_EVIDENCE_PENDING
+    if version != PPTX_CATALOG_RECORD_SCHEMA_VERSION:
+        # A record newer than this reader accepts means the reader is lagging,
+        # not that the record is legacy. Classifying it as pending would send
+        # a deck back through extraction on the strength of a shape this
+        # function cannot read; the caller must update instead.
+        raise TrackingDatabaseError(
+            f"pptx_catalog record schema_version {version} is newer than this "
+            f"reader accepts (v{LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION} and "
+            f"v{PPTX_CATALOG_RECORD_SCHEMA_VERSION}); update speaker-toolkit"
+        )
+    # Validate before trusting. A receipt is the licence to SKIP extraction, so
+    # a malformed one must never classify as current: `succeeded` with a null
+    # artifact, a bogus fingerprint, or a mirror flag that disagrees with the
+    # outcome would otherwise skip a deck on evidence that cannot be proven.
+    succeeded = validate_pptx_visual_evidence(
+        record.get("visual_evidence"), "pptx_catalog record.visual_evidence"
+    )
+    if record.get("visual_extracted") != succeeded:
+        raise PptxVisualEvidenceError(
+            "pptx_catalog record.visual_extracted must mirror whether "
+            "visual_evidence records a succeeded extraction",
+            reason_code="mirror_mismatch",
+        )
+    evidence = record.get("visual_evidence")
+    if evidence is None:
+        return PPTX_EVIDENCE_PENDING
+    if not isinstance(evidence, Mapping):
+        raise TrackingDatabaseError("pptx_catalog.visual_evidence must be an object")
+    if not succeeded:
+        return PPTX_EVIDENCE_FAILED
+    if (
+        evidence.get("extractor_schema_version") != extractor_schema_version
+        or evidence.get("pipeline_version") != pipeline_version
+    ):
+        return PPTX_EVIDENCE_STALE
+    if observed_source_fingerprint is None:
+        return PPTX_EVIDENCE_UNVERIFIED
+    persisted = evidence.get("source_fingerprint")
+    if not isinstance(persisted, Mapping):
+        raise TrackingDatabaseError(
+            "pptx_catalog.visual_evidence.source_fingerprint must be an object"
+        )
+    if any(
+        persisted.get(field) != observed_source_fingerprint.get(field)
+        for field in PPTX_SOURCE_FINGERPRINT_REQUIRED_FIELDS
+    ):
+        return PPTX_EVIDENCE_STALE
+    if observed_artifact_digest is None:
+        return PPTX_EVIDENCE_UNVERIFIED
+    artifact = evidence.get("artifact")
+    if not isinstance(artifact, Mapping):
+        raise TrackingDatabaseError(
+            "pptx_catalog.visual_evidence.artifact must be an object"
+        )
+    if artifact.get("sha256") != observed_artifact_digest:
+        return PPTX_EVIDENCE_STALE
+    return PPTX_EVIDENCE_CURRENT
+
+
+def pptx_visual_evidence_needs_extraction(classification: str) -> bool:
+    """Whether a classification requires (re)running the visual extractor."""
+    if classification not in {
+        PPTX_EVIDENCE_CURRENT,
+        PPTX_EVIDENCE_STALE,
+        PPTX_EVIDENCE_PENDING,
+        PPTX_EVIDENCE_FAILED,
+        PPTX_EVIDENCE_UNKNOWN_LEGACY,
+        PPTX_EVIDENCE_UNVERIFIED,
+    }:
+        raise TrackingDatabaseError(
+            f"unknown pptx visual-evidence classification {classification!r}"
+        )
+    return classification != PPTX_EVIDENCE_CURRENT
 
 
 def _require_nonempty_string(value: object, label: str) -> str:
@@ -517,9 +800,17 @@ def _validate_collection_record(
     label: str,
 ) -> None:
     if collection == "pptx_catalog":
+        version = record.get(
+            "schema_version", LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION
+        )
+        is_v2 = version == PPTX_CATALOG_RECORD_SCHEMA_VERSION
         _require_closed_shape(
             record,
-            required=PPTX_CATALOG_REQUIRED_FIELDS,
+            required=(
+                PPTX_CATALOG_V2_REQUIRED_FIELDS
+                if is_v2
+                else PPTX_CATALOG_REQUIRED_FIELDS
+            ),
             label=label,
         )
         _require_nonempty_string(record["pptx_path"], f"{label}.pptx_path")
@@ -535,6 +826,16 @@ def _validate_collection_record(
         _require_exact_integer(record["slide_count"], f"{label}.slide_count")
         if type(record["visual_extracted"]) is not bool:
             raise TrackingDatabaseError(f"{label}.visual_extracted must be a boolean")
+        if is_v2 and not isinstance(record["visual_evidence"], (Mapping, type(None))):
+            raise TrackingDatabaseError(
+                f"{label}.visual_evidence must be an object or null"
+            )
+        # The receipt's own shape is NOT validated here. A malformed receipt is
+        # per-record evidence trouble, not unusable owner state: failing the
+        # whole assessment would make preflight refuse the vault over one bad
+        # extraction record, contradicting the non-blocking contract. The
+        # writer (`record_pptx`) and the classifier each validate it where it
+        # matters — see validate_pptx_visual_evidence.
         return
     if collection == "qr_codes":
         version = record.get("schema_version", LEGACY_QR_CODE_RECORD_SCHEMA_VERSION)
@@ -801,7 +1102,12 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
                 TALK_RECORD_SCHEMA_VERSION + 1,
             )
         ),
-        "pptx_catalog": frozenset({PPTX_CATALOG_RECORD_SCHEMA_VERSION}),
+        "pptx_catalog": frozenset(
+            {
+                LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION,
+                PPTX_CATALOG_RECORD_SCHEMA_VERSION,
+            }
+        ),
         "qr_codes": frozenset(
             {
                 LEGACY_QR_CODE_RECORD_SCHEMA_VERSION,
@@ -920,27 +1226,26 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
         "confirmed_intents",
         "improvement_goals",
     ):
+        # Validate every version this reader accepts. Naming versions
+        # individually here meant a collection lost its shape validation the
+        # moment it bumped past the named version, silently — the accepted-set
+        # lookup cannot drift from the gate above that produced it.
+        accepted = accepted_versions_by_collection[key]
         for index, record in enumerate(collections[key]):
             version = _record_version(
                 record,
                 f"{key}[{index}]",
                 missing_version=1,
             )
-            if key == "improvement_goals" and version in {
-                LEGACY_IMPROVEMENT_GOAL_RECORD_SCHEMA_VERSION,
-                IMPROVEMENT_GOAL_RECORD_SCHEMA_VERSION,
-            }:
+            if version not in accepted:
+                continue
+            if key == "improvement_goals":
                 _validate_improvement_goal(
                     record,
                     version=version,
                     label=f"{key}[{index}]",
                 )
-            elif key == "qr_codes" and version in {
-                LEGACY_QR_CODE_RECORD_SCHEMA_VERSION,
-                QR_CODE_RECORD_SCHEMA_VERSION,
-            }:
-                _validate_collection_record(key, record, label=f"{key}[{index}]")
-            elif version == 1:
+            else:
                 _validate_collection_record(key, record, label=f"{key}[{index}]")
 
     for talk_index, talk in enumerate(collections["talks"]):
@@ -1124,7 +1429,12 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
             counts["talks"] += 1
 
     simple_collections = {
-        "pptx_catalog": PPTX_CATALOG_RECORD_SCHEMA_VERSION,
+        # An unversioned pptx_catalog record persisted no extractor generation,
+        # so it cannot satisfy the v2 shape and is stamped at the legacy
+        # version. classify_pptx_visual_evidence reads any such record's
+        # visual_extracted as unknown-generation evidence, never as current —
+        # migration preserves the record rather than inventing a binding for it.
+        "pptx_catalog": LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION,
         # An unversioned qr_codes record predates the v2 artifact receipts and
         # cannot satisfy the v2 shape, so it is stamped at the legacy version.
         # Only the QR writer produces v2 records, and it writes them complete.

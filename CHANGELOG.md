@@ -1,5 +1,135 @@
 # Changelog
 
+### feat(vault-ingress) — bind PPTX catalog visual evidence to its extractor generation (#229)
+
+Closes #229.
+
+`pptx_catalog` schema v1 persisted `visual_extracted` as a bare boolean and
+nothing about which extractor produced it, so a stored `true` could refer to
+extractor schema v0, v1, v2, v3, or current v4. Selection was undecidable from
+owner state: trusting the flag silently skips stale evidence, distrusting it
+forces repeated full extraction because the catalog still cannot remember that
+regeneration produced current output. Preflight and profile consumers could not
+bind a visual claim to the deck generation that was actually inspected.
+
+Catalog record v2 adds `visual_evidence` — `null` for a deck no extraction has
+been attempted on, otherwise a receipt carrying `outcome`,
+`extractor_schema_version`, `pipeline_version`, the exact `source_fingerprint`
+of the PPTX bytes, and the produced `artifact` identity and digest. `artifact`
+is required on success and forbidden on failure: a success naming no artifact
+cannot be proven to still exist, which is the ambiguity being removed.
+`visual_extracted` stays as the schema-v1 reader's mirror of the outcome, the
+same arrangement `qr_codes` v2 uses for `qr_png_rel_path`.
+
+Selection is derived, never stored. `classify_pptx_visual_evidence` returns
+`current`, `stale`, `pending`, `failed`, or `unknown_legacy`, and
+`pptx_visual_evidence_needs_extraction` says which of those regenerate — every
+consumer classifies through the same function, so owner writes, migration,
+preflight, queue selection, and profile reads cannot disagree. A legacy record's
+bare claim classifies as `unknown_legacy`, so migration preserves it without
+inventing a binding it never had.
+
+The `record_pptx` writer now requires v2 and is validated per kind, since
+`pptx_catalog` left the shared `OWNER_RECORD_SCHEMA_VERSION` behind. Readers
+dual-accept v1 and v2 and nothing else: a record newer than the classifier
+accepts raises rather than falling through to a legacy reading, because a
+lagging reader must not send a deck back through extraction on the strength of
+a shape it cannot read (`stateful-artifacts` → Migration Policy).
+
+What is on disk is the authority, so the classifier takes two live observations
+as required arguments with no defaults: the deck's fingerprint and the
+extraction artifact's SHA-256. A caller must state what it saw; one that cannot
+make an observation passes `None` and gets `unverified`, never `current`.
+Stored metadata alone can no longer claim currency, and a deleted or replaced
+artifact cannot stay authoritative (`stateful-artifacts` → Hints, Not
+Authority). `artifact.path` is vault-root-relative.
+
+`preflight-vault.py` is the wired consumer: it hashes each catalog deck under
+`config.pptx_source_dir` and each artifact under the vault root, then raises a
+`warning` for every record that is not current — stale bytes, a replaced
+artifact, an older extractor, a legacy claim, a file it could not read — plus a
+distinct one for a receipt it cannot parse. The finding names which observation
+was missing. Neither blocks, because stale evidence is work to schedule rather
+than a reason to refuse the vault.
+`read-tracking-database.py` deliberately does not classify: it is a pure
+strict-snapshot reader with no filesystem authority, and a classification it
+could not verify against the live deck would be exactly the unverified claim
+this change removes.
+
+Containment is enforced by the open itself, not by a check before it. A
+resolved-path check followed by `open(path)` is two lookups, and a symlink
+swapped in between them redirects the read outside the root. Each component
+below the root is now opened relative to the previous descriptor with
+`O_NOFOLLOW`, and the descriptor that passed the walk is the one that gets
+hashed. The root itself is opened by name and may be a symlink — it is trusted
+configuration, as the artifact-metadata contract already documents. A
+non-regular file, a symlinked component, and a platform missing any of the
+primitives all read as not-observed. The primitives are required explicitly
+rather than through `getattr(os, "O_NOFOLLOW", 0)`: the usual
+degrade-gracefully idiom would have silently dropped the no-follow guarantee on
+a platform that has `dir_fd` but not the flag.
+
+Catalog locators are enforced as root-relative before anything is opened. The
+locator layer accepts a native absolute path even when a trusted root is
+supplied, so a persisted record naming `/etc/passwd` would have had preflight
+hash it: persisted state is a hint, never a licence to read an arbitrary host
+file. An absolute locator, one that resolves outside the declared root through
+a symlink, or one that cannot be resolved now reads as not-observed — for the
+deck and the artifact alike.
+
+The governing skill follows. `SKILL.md` Step 6 and `pptx-followup.md` told the
+agent to "skip already extracted entries" from the boolean — the exact read this
+change exists to stop, and a directive that contradicted the new one on a
+second loaded surface.
+
+Both now name what the classifier actually gates. The bounded directory
+extraction walks every eligible deck and takes no include list, so the
+classifier cannot filter the walk and never claimed to: it decides which
+results become receipts. A `current` record keeps the receipt it has, because
+rewriting it would replace a proven binding with an identical one.
+
+Rejected receipts report a closed code too. A receipt-validation message names
+the rejected value — an `algorithm`, an `outcome` — and that value came out of
+the database, so a reader surfacing it discloses persisted content.
+`PptxVisualEvidenceError` carries a reason code, the reader and preflight
+report its neutral prose, and the writer keeps the detailed message because
+there the rejected value is operator input being refused, not stored data being
+echoed.
+
+Read failures report a closed code, never the exception text. A decoder message
+carries the host database path and the rejected key or value verbatim, so
+echoing `str(exc)` leaks both (`no-secrets` → Logging). The reason-code
+vocabulary preflight already used moves to `tracking_database_io`, beside the
+error type that raises those codes, and both consumers import it — the wording
+and the redaction now hold in one place instead of two.
+
+The ingress workflow gets an executable rather than a function to reproduce:
+`classify-pptx-evidence.py` takes a vault root, makes both observations,
+and prints one JSON object naming every record's class and whether it needs
+extraction. Observation and classification live in `pptx_catalog_selection.py`,
+shared with preflight, so the two surfaces cannot drift.
+
+The classifier validates a v2 receipt before trusting it. A receipt is the
+licence to SKIP extraction, so a malformed one — `succeeded` with a null
+artifact, a bogus fingerprint, a mirror flag disagreeing with the outcome —
+raises instead of classifying as current.
+
+That validation is fatal at the writer and the classifier, never at the
+database assessment. Validating it during `assess_tracking_database` made one
+bad extraction record read as unusable owner state, so preflight refused the
+whole vault with a blocking finding — the opposite of the non-blocking contract
+this feature is built on. `record_pptx` refuses to persist a malformed receipt
+and the classifier refuses to trust one; the database stays usable and
+preflight reports a single warning.
+
+Found while wiring this up: the assessor validated collection-record shapes
+under an `elif version == 1` cascade, so a collection lost its shape validation
+the moment it bumped past the version named there — `qr_codes` v2 had already
+needed a hand-written special case for exactly this. The cascade is now a lookup
+against the same accepted-version sets the version gate above it uses, so a v2
+record cannot slip through unvalidated and the next bump cannot reintroduce the
+hole.
+
 ## 0.20.45 — 2026-08-10
 
 ### ci — gate every pull request on `tessl plugin lint` (#265)
