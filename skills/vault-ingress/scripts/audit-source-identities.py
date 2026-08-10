@@ -554,14 +554,18 @@ def candidate_bindings(
                     )
                 )
                 continue
-            bindings.append(
-                {
-                    "talk_index": index,
-                    "filename": filename,
-                    "lane": lane,
-                    "candidate_url": url,
-                }
-            )
+            binding = {
+                "talk_index": index,
+                "filename": filename,
+                "lane": lane,
+                "candidate_url": url,
+            }
+            # A report may repeat the same conflict code for one entry; the
+            # fetch is deduped either way, but a duplicated binding would
+            # duplicate the reported row and make the output non-deterministic
+            # for consumers.
+            if binding not in bindings:
+                bindings.append(binding)
     return bindings, findings
 
 
@@ -726,6 +730,7 @@ def audit_database(
         groups[video_id].append((index, talk))
 
     candidate_audits: list[dict[str, Any]] = []
+    candidate_members: defaultdict[str, list[tuple[int, str]]] = defaultdict(list)
     if candidate_report is not None:
         bindings, binding_findings = candidate_bindings(candidate_report, talks)
         findings.extend(binding_findings)
@@ -765,20 +770,31 @@ def audit_database(
                     )
                 )
                 continue
-            # One dedupe for both lanes: a candidate repeated across conflicts,
-            # or one that equals another talk's active source, is fetched once.
-            if not any(index == member for member, _ in groups[video_id]):
-                groups[video_id].append((index, talks[index]))
+            # Fetch dedupe only. A candidate must never enter `groups`: that
+            # map is the ACTIVE-source assignment the cross-talk collision
+            # analysis reads, so a candidate repeated across talks would
+            # fabricate a collision between active identities that share
+            # nothing.
+            candidate_members[video_id].append((index, filename))
 
     evidence_by_id: dict[str, dict[str, Any]] = {}
-    for video_id in sorted(groups):
-        members = groups[video_id]
-        indexes = [index for index, _ in members]
-        filenames = [_filename(talk, index) for index, talk in members]
+    for video_id in sorted(set(groups) | set(candidate_members)):
+        members = groups.get(video_id, [])
+        candidates_for_id = candidate_members.get(video_id, [])
+        indexes = [index for index, _ in members] + [
+            index for index, _ in candidates_for_id
+        ]
+        filenames = [_filename(talk, index) for index, talk in members] + [
+            filename for _, filename in candidates_for_id
+        ]
         source = {
             "video_id": video_id,
-            "talk_indexes": sorted(indexes),
-            "filenames": sorted(filenames),
+            "lanes": sorted(
+                ({"active"} if members else set())
+                | ({"candidate"} if candidates_for_id else set())
+            ),
+            "talk_indexes": sorted(set(indexes)),
+            "filenames": sorted(set(filenames)),
             "fetch_status": "ok",
             "provider_evidence": None,
             "error": None,
@@ -1065,7 +1081,7 @@ def audit_database(
         "review_required": bool(findings),
         "active_talk_count": active_count,
         "unique_youtube_id_count": len(groups),
-        "metadata_fetch_count": len(groups),
+        "metadata_fetch_count": len(set(groups) | set(candidate_members)),
         "metadata_fetch_error_count": fetch_errors,
         "summary": {
             "finding_count": len(findings),
@@ -1160,8 +1176,11 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             # Refuse before any provider request: an unreadable report cannot
             # bind a candidate, and a network fetch would be spent on nothing.
+            # The path and reason are the operator's own CLI input, so naming
+            # them is actionable rather than a disclosure.
             parser.error(
-                f"--candidates-from could not be read as JSON: {type(exc).__name__}"
+                f"--candidates-from {args.candidates_from} could not be read "
+                f"as JSON: {exc}"
             )
     try:
         report = audit_path(

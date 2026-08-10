@@ -754,3 +754,76 @@ def test_a_candidate_equal_to_the_active_source_is_reported_as_the_same_source(
 
     assert calls == [VIDEO_ID]
     assert report["candidates"][0]["same_source_as_active"] is True
+
+
+def test_a_repeated_candidate_does_not_fabricate_an_active_collision(
+    audit_source_identities,
+):
+    """The outcome the fetch-count assertion missed.
+
+    `groups` is the ACTIVE-source assignment the cross-talk collision analysis
+    reads. A candidate shared by two talks must not enter it, or the audit
+    would claim one active identity is attached to both records.
+    """
+    database = {
+        "talks": [
+            talk("first.md", video_url=f"https://www.youtube.com/watch?v={VIDEO_ID}"),
+            talk(
+                "second.md",
+                date="2025-04-10",
+                video_url=f"https://www.youtube.com/watch?v={OTHER_VIDEO_ID}",
+                youtube_id=OTHER_VIDEO_ID,
+            ),
+        ]
+    }
+
+    report, _calls = _audit(
+        audit_source_identities,
+        database,
+        scan_report(conflict_entry("first.md"), conflict_entry("second.md")),
+    )
+
+    assert "same_id_cross_talk_collision" not in finding_codes(report)
+    assert report["unique_youtube_id_count"] == 2
+    assert report["metadata_fetch_count"] == 3
+    shared = [item for item in report["sources"] if item["video_id"] == CANDIDATE_ID]
+    assert shared[0]["lanes"] == ["candidate"]
+    assert shared[0]["filenames"] == ["first.md", "second.md"]
+
+
+def test_a_repeated_conflict_code_does_not_duplicate_a_candidate_row(
+    audit_source_identities,
+):
+    database = {"talks": [talk()]}
+    entry = conflict_entry()
+    entry["issues"] = entry["issues"] * 2
+
+    report, _calls = _audit(audit_source_identities, database, scan_report(entry))
+
+    assert len(report["candidates"]) == 1
+
+
+def test_a_candidate_matching_another_talks_active_source_names_both_lanes(
+    audit_source_identities,
+):
+    database = {
+        "talks": [
+            talk("first.md"),
+            talk(
+                "second.md",
+                date="2025-04-10",
+                video_url=f"https://www.youtube.com/watch?v={OTHER_VIDEO_ID}",
+                youtube_id=OTHER_VIDEO_ID,
+            ),
+        ]
+    }
+
+    report, calls = _audit(
+        audit_source_identities,
+        database,
+        scan_report(conflict_entry("second.md", candidate_id=VIDEO_ID)),
+    )
+
+    assert calls.count(VIDEO_ID) == 1
+    shared = [item for item in report["sources"] if item["video_id"] == VIDEO_ID]
+    assert shared[0]["lanes"] == ["active", "candidate"]

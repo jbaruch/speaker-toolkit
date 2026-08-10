@@ -640,3 +640,19 @@ def section15_pattern_history():
         os.path.join(SCRIPTS_VP, "section15_pattern_history.py"),
         "section15_pattern_history",
     )
+
+
+@pytest.fixture(scope="session")
+def classify_pptx_evidence():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "classify-pptx-evidence.py"),
+        "classify_pptx_evidence",
+    )
+
+
+@pytest.fixture(scope="session")
+def pptx_catalog_selection():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "pptx_catalog_selection.py"),
+        "pptx_catalog_selection",
+    )

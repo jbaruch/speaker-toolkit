@@ -82,6 +82,11 @@ instead of an ad hoc provider lookup outside the ingress workflow:
   "{vault_root}" --candidates-from "{scan_report_path}"
 ```
 
+Candidate identities never enter the active-source assignment: the cross-talk
+collision analysis reads that map, so a candidate shared by two talks would
+otherwise fabricate a collision between active identities that share nothing.
+`sources[].lanes` names which lane claimed each fetched identity.
+
 Every binding resolves before any provider request — a report naming an unknown
 or ambiguous talk is refused without spending a fetch. Candidate identities
 share the active lane's dedupe, so a candidate repeated across conflicts, or one

@@ -63,9 +63,15 @@ from source_identity_matching import (
     known_event_aliases,
     titles_agree,
 )
+from pptx_catalog_selection import classify_catalog
+from pptx_evidence import (
+    PPTX_EXTRACTION_PIPELINE_VERSION,
+    PPTX_EXTRACTION_SCHEMA_VERSION,
+)
 from tracking_database import (
     CONFIG_RECORD_SCHEMA_VERSION,
     LEGACY_CONFIG_RECORD_SCHEMA_VERSION,
+    PPTX_EVIDENCE_CURRENT,
     TrackingDatabaseConfigExclusionsError,
     TrackingDatabaseError,
     assess_tracking_database,
@@ -75,6 +81,8 @@ from pptx_discovery_contract import (
     validate_pptx_directory_exclusions,
 )
 from tracking_database_io import (
+    DATABASE_READ_DIAGNOSTICS,
+    DATABASE_READ_FALLBACK,
     TrackingDatabaseIOError,
     decode_json_object,
     snapshot_tracking_database,
@@ -94,45 +102,8 @@ REPORT_SCHEMA_VERSION = 1
 # Public finding code and closed message per typed decoder reason. Both are
 # derived from the reason, never from the exception text: decoder messages embed
 # the database path, the offending duplicate key, and rejected numeric values.
-_DATABASE_READ_DIAGNOSTICS = {
-    "encoding_invalid": (
-        "database_encoding_invalid",
-        "tracking database is not valid UTF-8",
-    ),
-    "json_invalid": (
-        "database_json_invalid",
-        "tracking database is not valid JSON",
-    ),
-    "json_duplicate_key": (
-        "database_json_invalid",
-        "tracking database contains a duplicate object key",
-    ),
-    "json_non_standard_number": (
-        "database_json_invalid",
-        "tracking database contains a non-standard JSON number",
-    ),
-    "json_non_roundtrippable_number": (
-        "database_json_invalid",
-        "tracking database contains a JSON number that cannot round-trip "
-        "losslessly through this toolkit",
-    ),
-    "json_root_not_object": (
-        "database_json_invalid",
-        "tracking database root must be a JSON object",
-    ),
-    "json_nesting_too_deep": (
-        "database_json_invalid",
-        "tracking database exceeds the maximum supported JSON nesting depth",
-    ),
-    "json_unpaired_surrogate": (
-        "database_json_invalid",
-        "tracking database contains an unpaired UTF-16 surrogate in a JSON string",
-    ),
-}
-_DATABASE_READ_FALLBACK = (
-    "database_unreadable",
-    "tracking database could not be read",
-)
+_DATABASE_READ_DIAGNOSTICS = DATABASE_READ_DIAGNOSTICS
+_DATABASE_READ_FALLBACK = DATABASE_READ_FALLBACK
 
 
 SOURCE_IDENTITY_SCHEMA_VERSION = 1
@@ -306,6 +277,52 @@ class VaultPreflight:
             self._artifact_root = admitted_root or self.vault_root
         return self._artifact_root
 
+    def _check_pptx_visual_evidence(self) -> None:
+        """Report catalog decks whose visual evidence is not current (#229).
+
+        The observation and classification live in
+        `pptx_catalog_selection.classify_catalog`, shared with
+        `classify-pptx-evidence.py`, so preflight and the ingress workflow
+        cannot disagree about which decks need regeneration. Findings are
+        warnings — a stale or unverifiable extraction is work to schedule, not
+        a reason to refuse the vault.
+        """
+        for row in classify_catalog(
+            self.database,
+            vault_root=self.vault_root,
+            pptx_source_dir=self.config.get("pptx_source_dir"),
+        ):
+            if not row["needs_extraction"]:
+                continue
+            index = row["index"]
+            if row["classification"] is None:
+                self.add(
+                    "warning",
+                    "pptx_visual_evidence_unreadable",
+                    str(row["error"]),
+                    field=f"pptx_catalog[{index}].visual_evidence",
+                    expected=PPTX_EVIDENCE_CURRENT,
+                    actual=None,
+                )
+                continue
+            self.add(
+                "warning",
+                "pptx_visual_evidence_not_current",
+                "PPTX visual evidence is not bound to the current extractor "
+                "generation and the deck's exact bytes; regenerate before "
+                "relying on it",
+                field=f"pptx_catalog[{index}].visual_evidence",
+                expected=PPTX_EVIDENCE_CURRENT,
+                actual={
+                    "classification": row["classification"],
+                    "pptx_path": row["pptx_path"],
+                    "source_observed": row["source_observed"],
+                    "artifact_observed": row["artifact_observed"],
+                    "extractor_schema_version": PPTX_EXTRACTION_SCHEMA_VERSION,
+                    "pipeline_version": PPTX_EXTRACTION_PIPELINE_VERSION,
+                },
+            )
+
     def add(
         self,
         severity: str,
@@ -452,6 +469,8 @@ class VaultPreflight:
                 expected="object",
                 actual=type(config).__name__,
             )
+
+        self._check_pptx_visual_evidence()
 
         talks = self.database.get("talks")
         if not isinstance(talks, list):
