@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.50 — 2026-08-10
+
 ### fix(vault-ingress) — stop echoing tracking-database decoder text (#275)
 
 Closes #275.
