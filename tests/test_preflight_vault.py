@@ -3713,8 +3713,18 @@ def _fingerprint(path: Path) -> dict[str, Any]:
     }
 
 
-def _catalog_record(preflight_vault, deck: Path, **overrides: Any) -> dict[str, Any]:
-    """One schema-v2 catalog record whose receipt matches ``deck`` exactly."""
+def _write_artifact(fixture, body: bytes = b'{"slides": []}') -> Path:
+    """The extraction artifact a receipt points at, vault-root-relative."""
+    path = fixture["root"] / "evidence" / "talk.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(body)
+    return path
+
+
+def _catalog_record(
+    preflight_vault, deck: Path, artifact: Path, **overrides: Any
+) -> dict[str, Any]:
+    """One schema-v2 catalog record whose receipt matches deck and artifact."""
     record = {
         "schema_version": 2,
         "pptx_path": deck.name,
@@ -3727,7 +3737,10 @@ def _catalog_record(preflight_vault, deck: Path, **overrides: Any) -> dict[str, 
             "extractor_schema_version": preflight_vault.PPTX_EXTRACTION_SCHEMA_VERSION,
             "pipeline_version": preflight_vault.PPTX_EXTRACTION_PIPELINE_VERSION,
             "source_fingerprint": _fingerprint(deck),
-            "artifact": {"path": "evidence/talk.json", "sha256": "c" * 64},
+            "artifact": {
+                "path": "evidence/talk.json",
+                "sha256": _fingerprint(artifact)["digest"],
+            },
         },
     }
     record.update(overrides)
@@ -3755,7 +3768,8 @@ def test_preflight_is_quiet_when_the_receipt_matches_the_deck_on_disk(
     vault_fixture,
 ) -> None:
     deck = _write_deck(vault_fixture)
-    _write_catalog(vault_fixture, [_catalog_record(preflight_vault, deck)])
+    artifact = _write_artifact(vault_fixture)
+    _write_catalog(vault_fixture, [_catalog_record(preflight_vault, deck, artifact)])
 
     report = preflight_vault.run_preflight(vault_fixture["root"])
 
@@ -3768,7 +3782,8 @@ def test_preflight_warns_when_the_deck_changed_after_extraction(
 ) -> None:
     """The receipt still names the current extractor; the bytes moved on."""
     deck = _write_deck(vault_fixture)
-    record = _catalog_record(preflight_vault, deck)
+    artifact = _write_artifact(vault_fixture)
+    record = _catalog_record(preflight_vault, deck, artifact)
     _write_catalog(vault_fixture, [record])
     deck.write_bytes(b"deck-bytes-edited-since-extraction")
 
@@ -3787,14 +3802,15 @@ def test_preflight_warns_when_the_deck_cannot_be_fingerprinted(
 ) -> None:
     """Stored metadata alone never proves currency."""
     deck = _write_deck(vault_fixture)
-    record = _catalog_record(preflight_vault, deck)
+    artifact = _write_artifact(vault_fixture)
+    record = _catalog_record(preflight_vault, deck, artifact)
     _write_catalog(vault_fixture, [record])
     deck.unlink()
 
     report = preflight_vault.run_preflight(vault_fixture["root"])
 
     findings = _catalog_findings(report)
-    assert findings[0]["actual"]["classification"] == "unverified_source"
+    assert findings[0]["actual"]["classification"] == "unverified"
 
 
 def test_preflight_warns_about_a_legacy_record(
@@ -3830,7 +3846,8 @@ def test_preflight_reports_an_unreadable_receipt_instead_of_crashing(
     vault_fixture,
 ) -> None:
     deck = _write_deck(vault_fixture)
-    broken = _catalog_record(preflight_vault, deck)
+    artifact = _write_artifact(vault_fixture)
+    broken = _catalog_record(preflight_vault, deck, artifact)
     broken["visual_evidence"]["artifact"] = None
     _write_catalog(vault_fixture, [broken])
 
@@ -3841,3 +3858,36 @@ def test_preflight_reports_an_unreadable_receipt_instead_of_crashing(
         "pptx_visual_evidence_unreadable"
     ]
     assert "artifact is required" in findings[0]["message"]
+
+
+def test_preflight_warns_when_the_extraction_artifact_is_gone(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    """A deleted artifact must not stay authoritative."""
+    deck = _write_deck(vault_fixture)
+    artifact = _write_artifact(vault_fixture)
+    _write_catalog(vault_fixture, [_catalog_record(preflight_vault, deck, artifact)])
+    artifact.unlink()
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    findings = _catalog_findings(report)
+    assert findings[0]["actual"]["classification"] == "unverified"
+    assert findings[0]["actual"]["artifact_observed"] is False
+    assert findings[0]["actual"]["source_observed"] is True
+
+
+def test_preflight_warns_when_the_extraction_artifact_was_replaced(
+    preflight_vault,
+    vault_fixture,
+) -> None:
+    deck = _write_deck(vault_fixture)
+    artifact = _write_artifact(vault_fixture)
+    _write_catalog(vault_fixture, [_catalog_record(preflight_vault, deck, artifact)])
+    artifact.write_bytes(b'{"slides": ["replaced"]}')
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    findings = _catalog_findings(report)
+    assert findings[0]["actual"]["classification"] == "stale"

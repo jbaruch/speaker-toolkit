@@ -36,17 +36,21 @@ accepts raises rather than falling through to a legacy reading, because a
 lagging reader must not send a deck back through extraction on the strength of
 a shape it cannot read (`stateful-artifacts` → Migration Policy).
 
-The live bytes are the authority, so `observed_source_fingerprint` is a
-required argument with no default. A caller must state what it saw on disk; one
-that cannot fingerprint the deck passes `None` and gets `unverified_source`,
-never `current`. Stored metadata alone can no longer claim currency
-(`stateful-artifacts` → Hints, Not Authority).
+What is on disk is the authority, so the classifier takes two live observations
+as required arguments with no defaults: the deck's fingerprint and the
+extraction artifact's SHA-256. A caller must state what it saw; one that cannot
+make an observation passes `None` and gets `unverified`, never `current`.
+Stored metadata alone can no longer claim currency, and a deleted or replaced
+artifact cannot stay authoritative (`stateful-artifacts` → Hints, Not
+Authority). `artifact.path` is vault-root-relative.
 
 `preflight-vault.py` is the wired consumer: it hashes each catalog deck under
-`config.pptx_source_dir` and raises a `warning` for every record that is not
-current — stale bytes, an older extractor, a legacy claim, a deck it could not
-read — plus a distinct one for a receipt it cannot parse. Neither blocks, because
-stale evidence is work to schedule rather than a reason to refuse the vault.
+`config.pptx_source_dir` and each artifact under the vault root, then raises a
+`warning` for every record that is not current — stale bytes, a replaced
+artifact, an older extractor, a legacy claim, a file it could not read — plus a
+distinct one for a receipt it cannot parse. The finding names which observation
+was missing. Neither blocks, because stale evidence is work to schedule rather
+than a reason to refuse the vault.
 `read-tracking-database.py` deliberately does not classify: it is a pure
 strict-snapshot reader with no filesystem authority, and a classification it
 could not verify against the live deck would be exactly the unverified claim

@@ -71,12 +71,14 @@ v1 and v2.
   profile reads classify through it so they cannot disagree. Classes and the
   regeneration predicate are named at the top of that file; only `current`
   skips regeneration.
-- The classifier takes the live deck's fingerprint as a required argument: a
-  persisted receipt is a hint, and the bytes on disk are the authority. A
-  caller that cannot fingerprint the deck passes `None` and gets
-  `unverified_source`, never `current`. `preflight-vault.py` hashes each
-  catalog deck under `config.pptx_source_dir` and reports every non-current
-  record as a warning.
+- The classifier takes two live observations as required arguments — the deck's
+  fingerprint and the extraction artifact's SHA-256. A persisted receipt is a
+  hint; what is on disk is the authority. A caller that cannot make an
+  observation passes `None` and gets `unverified`, never `current`, so a
+  deleted or replaced artifact cannot stay authoritative.
+- `artifact.path` is vault-root-relative. `preflight-vault.py` hashes each
+  catalog deck under `config.pptx_source_dir` and each artifact under the vault
+  root, and reports every non-current record as a warning.
 
 ### `qr_codes` v1 -> v2
 
@@ -318,7 +320,7 @@ customization, not the owner default. See the
         "size_bytes": 123456
       },
       "artifact": {
-        "path": "extraction artifact identity",
+        "path": "vault-root-relative extraction artifact path",
         "sha256": "64 lowercase hex characters"
       }
     }

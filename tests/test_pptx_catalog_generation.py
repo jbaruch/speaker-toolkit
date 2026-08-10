@@ -30,6 +30,8 @@ SOURCE_FINGERPRINT = {
     "digest": "a" * 64,
     "size_bytes": 4096,
 }
+ARTIFACT_DIGEST = "c" * 64
+OTHER_ARTIFACT_DIGEST = "d" * 64
 OTHER_FINGERPRINT = {
     "algorithm": "sha256",
     "digest": "b" * 64,
@@ -55,7 +57,7 @@ def _evidence(**overrides) -> dict:
         "extractor_schema_version": CURRENT_EXTRACTOR_SCHEMA,
         "pipeline_version": CURRENT_PIPELINE,
         "source_fingerprint": copy.deepcopy(SOURCE_FINGERPRINT),
-        "artifact": {"path": "evidence/talk.json", "sha256": "c" * 64},
+        "artifact": {"path": "evidence/talk.json", "sha256": ARTIFACT_DIGEST},
     }
     evidence.update(overrides)
     return evidence
@@ -79,21 +81,28 @@ _MATCHING_LIVE_BYTES = object()
 
 
 def _classify(
-    tracking_database, record, *, observed: Any = _MATCHING_LIVE_BYTES
+    tracking_database,
+    record,
+    *,
+    observed: Any = _MATCHING_LIVE_BYTES,
+    artifact_digest: Any = _MATCHING_LIVE_BYTES,
 ) -> str:
-    """Classify one record; ``observed`` defaults to the matching live bytes.
+    """Classify one record; both observations default to matching live state.
 
-    The production signature has no default — a caller must say what it saw on
-    disk — so tests that care about the source pass it explicitly and the rest
-    get the deck they described.
+    The production signature has no defaults — a caller must say what it saw on
+    disk — so tests that care about an observation pass it explicitly and the
+    rest get the deck and artifact they described.
     """
     if observed is _MATCHING_LIVE_BYTES:
         observed = copy.deepcopy(SOURCE_FINGERPRINT)
+    if artifact_digest is _MATCHING_LIVE_BYTES:
+        artifact_digest = ARTIFACT_DIGEST
     return tracking_database.classify_pptx_visual_evidence(
         record,
         extractor_schema_version=CURRENT_EXTRACTOR_SCHEMA,
         pipeline_version=CURRENT_PIPELINE,
         observed_source_fingerprint=observed,
+        observed_artifact_digest=artifact_digest,
     )
 
 
@@ -152,18 +161,44 @@ def test_an_unfingerprintable_deck_is_never_current(tracking_database) -> None:
     """A stored receipt is a hint; without the live bytes it proves nothing."""
     classification = _classify(tracking_database, _current_record(), observed=None)
 
-    assert classification == tracking_database.PPTX_EVIDENCE_UNVERIFIED_SOURCE
+    assert classification == tracking_database.PPTX_EVIDENCE_UNVERIFIED
     assert tracking_database.pptx_visual_evidence_needs_extraction(classification)
 
 
-def test_the_observed_fingerprint_has_no_default(tracking_database) -> None:
+def test_a_missing_extraction_artifact_is_never_current(tracking_database) -> None:
+    """A deleted artifact must not stay authoritative."""
+    classification = _classify(
+        tracking_database, _current_record(), artifact_digest=None
+    )
+
+    assert classification == tracking_database.PPTX_EVIDENCE_UNVERIFIED
+    assert tracking_database.pptx_visual_evidence_needs_extraction(classification)
+
+
+def test_a_replaced_extraction_artifact_is_stale(tracking_database) -> None:
+    classification = _classify(
+        tracking_database, _current_record(), artifact_digest=OTHER_ARTIFACT_DIGEST
+    )
+
+    assert classification == tracking_database.PPTX_EVIDENCE_STALE
+
+
+@pytest.mark.parametrize(
+    "omitted",
+    ["observed_source_fingerprint", "observed_artifact_digest"],
+)
+def test_the_live_observations_have_no_defaults(tracking_database, omitted) -> None:
     """A caller cannot skip saying what it observed on disk."""
-    with pytest.raises(TypeError, match="observed_source_fingerprint"):
-        tracking_database.classify_pptx_visual_evidence(
-            _current_record(),
-            extractor_schema_version=CURRENT_EXTRACTOR_SCHEMA,
-            pipeline_version=CURRENT_PIPELINE,
-        )
+    arguments = {
+        "extractor_schema_version": CURRENT_EXTRACTOR_SCHEMA,
+        "pipeline_version": CURRENT_PIPELINE,
+        "observed_source_fingerprint": copy.deepcopy(SOURCE_FINGERPRINT),
+        "observed_artifact_digest": ARTIFACT_DIGEST,
+    }
+    del arguments[omitted]
+
+    with pytest.raises(TypeError, match=omitted):
+        tracking_database.classify_pptx_visual_evidence(_current_record(), **arguments)
 
 
 # Acceptance 3: a changed source generation makes the record stale again.
