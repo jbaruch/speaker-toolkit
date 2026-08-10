@@ -3593,3 +3593,169 @@ def test_unknown_root_kind_falls_back_without_claiming_the_vault(
         )
 
     assert "resolves outside the trusted root" in str(excinfo.value)
+
+
+# --- #159: a return must not validate its own citations ----------------------
+#
+# The enforcement lives in build_evidence_context: `metadata` is copied from the
+# persisted talk record alone, and slide bounds come from probing real artifacts
+# rather than from any count the return supplies. Neither property is obvious
+# from reading the call sites, and nothing pinned them, so these lock the
+# boundary at the outcome level.
+
+
+def _slide_detection(channel: str, **citation: Any) -> dict[str, Any]:
+    return {
+        "pattern_id": "synthetic-pattern",
+        "confidence": "moderate",
+        "evidence_source": "static_slides",
+        "evidence": "The exact source contains the synthetic opening.",
+        "evidence_citations": [
+            {"source": "static_slides", "channel": channel, **citation}
+        ],
+    }
+
+
+def test_return_supplied_slide_count_stays_out_of_evidence_metadata(
+    tmp_path: Path,
+) -> None:
+    """A count the return invented is not owner state, so it cannot be cited."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+
+    context = pattern_evidence.build_evidence_context(
+        vault,
+        {"filename": "talk.md", "title": "Synthetic Talk"},
+        {"slide_source": "pdf", "structured_data": {"slide_count": 42}},
+    )
+
+    assert "slide_count" not in context["metadata"]
+    assert "slide_source" not in context["metadata"]
+
+    with pytest.raises(
+        pattern_evidence.PatternEvidenceError,
+        match="talk_metadata cites absent pre-return field 'slide_count'",
+    ):
+        pattern_evidence.canonicalize_detection_citations(
+            _slide_detection("talk_metadata", field="slide_count"),
+            evidence_channels=frozenset({"talk_metadata"}),
+            evidence_metadata_fields=frozenset({"slide_count"}),
+            context=context,
+        )
+
+
+@pytest.mark.parametrize("channel", ["slides", "slide_sequence"])
+def test_return_supplied_slide_source_cannot_validate_slide_evidence(
+    tmp_path: Path, channel: str
+) -> None:
+    """`slide_source: pdf` in a return is a claim, not a readable artifact."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+
+    context = pattern_evidence.build_evidence_context(
+        vault,
+        {"filename": "talk.md", "title": "Synthetic Talk"},
+        {"slide_source": "pdf", "structured_data": {"slide_count": 42}},
+    )
+
+    assert context["slide_counts"] == {}
+    assert "static_slides" not in context["verified_evidence_sources"]
+
+    with pytest.raises(
+        pattern_evidence.PatternEvidenceError,
+        match="slide evidence cannot be verified from a predeclared local artifact",
+    ):
+        pattern_evidence.canonicalize_detection_citations(
+            _slide_detection(channel, slide_numbers=[1, 2]),
+            evidence_channels=frozenset({channel}),
+            evidence_metadata_fields=frozenset(),
+            context=context,
+        )
+
+
+def test_persisted_slide_count_still_validates_talk_metadata(tmp_path: Path) -> None:
+    """The other half of the boundary: owner state must keep working.
+
+    `talk_metadata` supplements a located citation rather than locating one, so
+    the detection carries a real slides citation alongside it.
+    """
+    vault = tmp_path / "vault"
+    rendered = vault / "slides" / "rendered.pdf"
+    _write_pdf(rendered, page_count=2)
+
+    context = pattern_evidence.build_evidence_context(
+        vault,
+        {
+            "filename": "talk.md",
+            "slides_local_path": rendered.relative_to(vault).as_posix(),
+            "slide_source": "pdf",
+            "slide_count": 7,
+        },
+        {"structured_data": {"slide_count": 42}},
+    )
+
+    assert context["metadata"]["slide_count"] == 7
+
+    detection = {
+        "pattern_id": "synthetic-pattern",
+        "confidence": "moderate",
+        "evidence_source": "static_slides",
+        "evidence": "The exact source contains the synthetic opening.",
+        "evidence_citations": [
+            {"source": "static_slides", "channel": "slides", "slide_numbers": [1]},
+            {
+                "source": "static_slides",
+                "channel": "talk_metadata",
+                "field": "slide_count",
+            },
+        ],
+    }
+    canonical = pattern_evidence.canonicalize_detection_citations(
+        detection,
+        evidence_channels=frozenset({"slides", "talk_metadata"}),
+        evidence_metadata_fields=frozenset({"slide_count"}),
+        context=context,
+    )
+    # Stamped from the persisted record, not from the return's 42.
+    assert canonical["evidence_citations"][1]["value"] == 7
+
+
+def test_verified_local_artifact_still_validates_slide_evidence(
+    tmp_path: Path,
+) -> None:
+    """A real PDF on disk bounds citations; the return's count is ignored."""
+    vault = tmp_path / "vault"
+    rendered = vault / "slides" / "rendered.pdf"
+    _write_pdf(rendered, page_count=2)
+
+    context = pattern_evidence.build_evidence_context(
+        vault,
+        {
+            "filename": "talk.md",
+            "slides_local_path": rendered.relative_to(vault).as_posix(),
+            "slide_source": "pdf",
+        },
+        {"structured_data": {"slide_count": 999}},
+    )
+
+    assert context["slide_counts"]["static_slides"] == 2
+
+    canonical = pattern_evidence.canonicalize_detection_citations(
+        _slide_detection("slides", slide_numbers=[1, 2]),
+        evidence_channels=frozenset({"slides"}),
+        evidence_metadata_fields=frozenset(),
+        context=context,
+    )
+    assert canonical["evidence_citations"][0]["artifact_sha256"]
+
+    # The return's inflated count buys nothing past the real page count.
+    with pytest.raises(
+        pattern_evidence.PatternEvidenceError,
+        match="the claimed talk has 2 slides",
+    ):
+        pattern_evidence.canonicalize_detection_citations(
+            _slide_detection("slides", slide_numbers=[3]),
+            evidence_channels=frozenset({"slides"}),
+            evidence_metadata_fields=frozenset(),
+            context=context,
+        )

@@ -1,5 +1,37 @@
 # Changelog
 
+### test(vault-ingress) — pin the return-self-validation boundary (#159)
+
+Closes #159. The enforcement it asked for is already in the tree: it landed
+with the video and PDF supervision work that reworked `build_evidence_context`.
+`context["metadata"]` is copied from the persisted talk record alone, and slide
+bounds come from probing real artifacts, so `structured_data.slide_count` and a
+return's `slide_source` reach neither. What was missing is the issue's last
+acceptance criterion — the regression tests, without which nothing stops a
+future refactor from quietly reconnecting the return to its own validation.
+
+Four outcome-level tests in `tests/test_pattern_evidence.py` lock both
+directions:
+
+- a return-supplied `slide_count` stays out of the evidence metadata, so a
+  `talk_metadata` citation on it fails as an absent pre-return field;
+- a return-supplied `slide_source: pdf` produces no slide count, so `slides` and
+  `slide_sequence` citations fail for want of a readable local artifact;
+- a persisted `slide_count` still validates and stamps from owner state, not
+  from the return's competing value;
+- a real PDF on disk still bounds citations at its actual page count, and an
+  inflated returned count buys nothing past it.
+
+The remaining criterion — partial timing and video citations rendering without
+internal `None` — was already covered by
+`test_partial_citation_bounds_render_without_internal_none` across all seven
+single-sided cases.
+
+One path still reads the return: `delivery_language` falls back to
+`structured_data.delivery_language` when the persisted record has none. That is
+not a self-validation hole, because the value can only add the English-
+translation requirement to transcript citations, never remove one.
+
 ## 0.20.39 — 2026-08-10
 
 ### chore(ci) — hold skill entrypoints inside Tessl's token budget (#163)
