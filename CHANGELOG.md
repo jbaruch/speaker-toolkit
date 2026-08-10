@@ -75,6 +75,14 @@ licence to SKIP extraction, so a malformed one — `succeeded` with a null
 artifact, a bogus fingerprint, a mirror flag disagreeing with the outcome —
 raises instead of classifying as current.
 
+That validation is fatal at the writer and the classifier, never at the
+database assessment. Validating it during `assess_tracking_database` made one
+bad extraction record read as unusable owner state, so preflight refused the
+whole vault with a blocking finding — the opposite of the non-blocking contract
+this feature is built on. `record_pptx` refuses to persist a malformed receipt
+and the classifier refuses to trust one; the database stays usable and
+preflight reports a single warning.
+
 Found while wiring this up: the assessor validated collection-record shapes
 under an `elif version == 1` cascade, so a collection lost its shape validation
 the moment it bumped past the version named there — `qr_codes` v2 had already

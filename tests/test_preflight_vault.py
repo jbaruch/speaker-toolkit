@@ -3858,6 +3858,9 @@ def test_preflight_reports_an_unreadable_receipt_instead_of_crashing(
         "pptx_visual_evidence_unreadable"
     ]
     assert "artifact is required" in findings[0]["message"]
+    # A bad receipt is per-record evidence trouble, so the vault is still
+    # usable: it must not surface as unusable owner state.
+    assert report["blocking_count"] == 0
 
 
 def test_preflight_warns_when_the_extraction_artifact_is_gone(

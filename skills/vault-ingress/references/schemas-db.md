@@ -60,6 +60,11 @@ v1 and v2.
 - `artifact` is required when `outcome` is `succeeded` and must be null when it
   is `failed`. A success naming no artifact cannot be proven to still exist,
   which is the ambiguity this schema removes.
+- The receipt's shape is fatal at the writer and at the classifier, never at
+  the database assessment. A malformed receipt is per-record evidence trouble:
+  `record_pptx` refuses to persist it and the classifier refuses to trust it,
+  but the database stays usable, so preflight reports one warning instead of
+  refusing the whole vault.
 - `visual_extracted` mirrors whether `visual_evidence` records a success, so
   schema-v1 readers keep resolving one boolean.
 - Migration stamps an unversioned record at **v1**, not the current constant: a

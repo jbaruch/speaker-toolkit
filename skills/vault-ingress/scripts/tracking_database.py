@@ -376,7 +376,7 @@ def _validate_pptx_source_fingerprint(value: object, label: str) -> None:
     _require_exact_integer(value["size_bytes"], f"{label}.size_bytes", minimum=1)
 
 
-def _validate_pptx_visual_evidence(value: object, label: str) -> bool:
+def validate_pptx_visual_evidence(value: object, label: str) -> bool:
     """Validate a v2 extraction receipt; return whether it recorded a success.
 
     ``None`` means no extraction has been attempted for this deck — distinct
@@ -480,7 +480,7 @@ def classify_pptx_visual_evidence(
     # a malformed one must never classify as current: `succeeded` with a null
     # artifact, a bogus fingerprint, or a mirror flag that disagrees with the
     # outcome would otherwise skip a deck on evidence that cannot be proven.
-    succeeded = _validate_pptx_visual_evidence(
+    succeeded = validate_pptx_visual_evidence(
         record.get("visual_evidence"), "pptx_catalog record.visual_evidence"
     )
     if record.get("visual_extracted") != succeeded:
@@ -764,18 +764,16 @@ def _validate_collection_record(
         _require_exact_integer(record["slide_count"], f"{label}.slide_count")
         if type(record["visual_extracted"]) is not bool:
             raise TrackingDatabaseError(f"{label}.visual_extracted must be a boolean")
-        if is_v2:
-            succeeded = _validate_pptx_visual_evidence(
-                record["visual_evidence"], f"{label}.visual_evidence"
+        if is_v2 and not isinstance(record["visual_evidence"], (Mapping, type(None))):
+            raise TrackingDatabaseError(
+                f"{label}.visual_evidence must be an object or null"
             )
-            # The documented v2 contract: visual_extracted is the schema-v1
-            # reader's view of the receipt, so the two must agree.
-            if record["visual_extracted"] != succeeded:
-                raise TrackingDatabaseError(
-                    f"{label}.visual_extracted must mirror whether "
-                    f"visual_evidence records a succeeded extraction "
-                    f"({succeeded!r}), got {record['visual_extracted']!r}"
-                )
+        # The receipt's own shape is NOT validated here. A malformed receipt is
+        # per-record evidence trouble, not unusable owner state: failing the
+        # whole assessment would make preflight refuse the vault over one bad
+        # extraction record, contradicting the non-blocking contract. The
+        # writer (`record_pptx`) and the classifier each validate it where it
+        # matters — see validate_pptx_visual_evidence.
         return
     if collection == "qr_codes":
         version = record.get("schema_version", LEGACY_QR_CODE_RECORD_SCHEMA_VERSION)

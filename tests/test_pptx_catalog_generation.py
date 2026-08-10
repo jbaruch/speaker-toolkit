@@ -430,31 +430,63 @@ def test_owner_writer_accepts_a_bound_receipt_the_reader_calls_current(
 # v2 shape invariants.
 
 
-def test_visual_extracted_must_mirror_the_receipt_outcome(tracking_database) -> None:
+def _write(mutate_tracking_database, record: dict):
+    """Persist one catalog record through the owner writer."""
+    mutation = {
+        "kind": "record_pptx",
+        "expect": {"$missing": True},
+        "record": record | {"talk_filename": None, "matched": False},
+    }
+    return mutate_tracking_database.build_candidate(_database([]), [mutation])
+
+
+# The receipt's shape is fatal at the writer, never at the database
+# assessment: a malformed receipt is per-record evidence trouble, so making it
+# unusable owner state would have preflight refuse the whole vault over one bad
+# extraction record.
+
+
+def test_a_malformed_receipt_does_not_make_the_database_unusable(
+    tracking_database,
+) -> None:
+    record = _current_record(visual_evidence=_evidence(artifact=None))
+
+    assessment = tracking_database.assess_tracking_database(_database([record]))
+
+    assert assessment.usable is True
+
+
+def test_visual_extracted_must_mirror_the_receipt_outcome(
+    mutate_tracking_database,
+) -> None:
     record = _current_record(visual_extracted=False)
 
-    with pytest.raises(tracking_database.TrackingDatabaseError, match="must mirror"):
-        tracking_database.require_current_tracking_database(_database([record]))
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError, match="must mirror"
+    ):
+        _write(mutate_tracking_database, record)
 
 
-def test_a_succeeded_receipt_must_name_its_artifact(tracking_database) -> None:
+def test_a_succeeded_receipt_must_name_its_artifact(mutate_tracking_database) -> None:
     record = _current_record(visual_evidence=_evidence(artifact=None))
 
     with pytest.raises(
-        tracking_database.TrackingDatabaseError, match="artifact is required"
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="artifact is required",
     ):
-        tracking_database.require_current_tracking_database(_database([record]))
+        _write(mutate_tracking_database, record)
 
 
-def test_a_failed_receipt_must_not_name_an_artifact(tracking_database) -> None:
+def test_a_failed_receipt_must_not_name_an_artifact(mutate_tracking_database) -> None:
     record = _current_record(
         visual_extracted=False, visual_evidence=_evidence(outcome="failed")
     )
 
     with pytest.raises(
-        tracking_database.TrackingDatabaseError, match="artifact must be null"
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="artifact must be null",
     ):
-        tracking_database.require_current_tracking_database(_database([record]))
+        _write(mutate_tracking_database, record)
 
 
 @pytest.mark.parametrize(
@@ -466,12 +498,14 @@ def test_a_failed_receipt_must_not_name_an_artifact(tracking_database) -> None:
     ],
 )
 def test_source_fingerprint_shape_is_enforced(
-    tracking_database, fingerprint, match
+    mutate_tracking_database, fingerprint, match
 ) -> None:
     record = _current_record(visual_evidence=_evidence(source_fingerprint=fingerprint))
 
-    with pytest.raises(tracking_database.TrackingDatabaseError, match=match):
-        tracking_database.require_current_tracking_database(_database([record]))
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError, match=match
+    ):
+        _write(mutate_tracking_database, record)
 
 
 def test_v1_records_may_not_carry_a_binding_field(tracking_database) -> None:

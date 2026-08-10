@@ -29,6 +29,7 @@ from tracking_database import (
     IMPROVEMENT_GOAL_REQUIRED_FIELDS as OWNER_IMPROVEMENT_GOAL_REQUIRED_FIELDS,
     PPTX_CATALOG_RECORD_SCHEMA_VERSION,
     PPTX_CATALOG_V2_REQUIRED_FIELDS,
+    validate_pptx_visual_evidence,
     RESOURCE_RECORD_SCHEMA_VERSION,
     RESOURCE_REQUIRED_FIELDS as OWNER_RESOURCE_REQUIRED_FIELDS,
     THUMBNAIL_RECORD_SCHEMA_VERSION,
@@ -999,6 +1000,22 @@ def _apply_record_pptx(
     if type(record["visual_extracted"]) is not bool:
         raise TrackingDatabaseMutationError(
             f"{record_label}.visual_extracted must be boolean"
+        )
+    # The database assessment deliberately does not validate a receipt's shape
+    # — a malformed one is a per-record evidence warning for readers, never
+    # unusable owner state. The writer is where it must be fatal: a record
+    # that cannot be proven is a record that must not be persisted.
+    try:
+        succeeded = validate_pptx_visual_evidence(
+            record["visual_evidence"], f"{record_label}.visual_evidence"
+        )
+    except TrackingDatabaseError as exc:
+        raise TrackingDatabaseMutationError(str(exc)) from exc
+    if record["visual_extracted"] != succeeded:
+        raise TrackingDatabaseMutationError(
+            f"{record_label}.visual_extracted must mirror whether "
+            f"visual_evidence records a succeeded extraction ({succeeded!r}), "
+            f"got {record['visual_extracted']!r}"
         )
     talk_filename = record.get("talk_filename")
     if talk_filename is not None:
