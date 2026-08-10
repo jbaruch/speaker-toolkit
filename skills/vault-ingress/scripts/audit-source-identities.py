@@ -60,6 +60,19 @@ CANDIDATE_DISPOSITIONS = frozenset({"add", "update", "unchanged", "review_requir
 # is None. JSON null decodes to None, so sharing one sentinel would let a
 # malformed report silently disable candidate validation.
 NO_CANDIDATE_REPORT = object()
+
+# A fault on an identity only a candidate claims is lane-local: the active
+# sources are unaffected, so it must not set `complete: false` and fail the
+# run. The same fault on an identity the active lane also claims keeps its
+# blocking code. Codes here are deliberately absent from ERROR_CODES.
+CANDIDATE_LANE_LOCAL_CODES = {
+    "metadata_fetch_failed": "candidate_metadata_fetch_failed",
+    "provider_metadata_incomplete": "candidate_provider_metadata_incomplete",
+    "provider_video_id_mismatch": "candidate_provider_video_id_mismatch",
+    "provider_webpage_identity_mismatch": (
+        "candidate_provider_webpage_identity_mismatch"
+    ),
+}
 CANDIDATE_CONFLICT_CODES = {
     "existing_video_url_conflict": "video_url",
     "existing_slides_url_conflict": "slides_url",
@@ -871,6 +884,14 @@ def audit_database(
         filenames = [_filename(talk, index) for index, talk in members] + [
             filename for _, filename in candidates_for_id
         ]
+        active_claim = bool(members)
+
+        def lane_code(code: str, active: bool = active_claim) -> str:
+            """Blocking for an active identity, lane-local for a candidate-only one."""
+            if active:
+                return code
+            return CANDIDATE_LANE_LOCAL_CODES.get(code, code)
+
         source = {
             "video_id": video_id,
             "lanes": sorted(
@@ -890,15 +911,16 @@ def audit_database(
         except (MetadataFetchError, OSError, RuntimeError) as exc:
             source["fetch_status"] = "error"
             source["error"] = str(exc)
+            failure_code = lane_code("metadata_fetch_failed")
             findings.append(
                 _finding(
-                    "metadata_fetch_failed",
+                    failure_code,
                     video_id,
                     indexes,
                     filenames,
                     "yt-dlp metadata capture failed",
                     {"error": str(exc)},
-                    "high",
+                    "high" if failure_code in ERROR_CODES else "medium",
                 )
             )
             sources.append(source)
@@ -910,7 +932,8 @@ def audit_database(
             "provider_video_id_mismatch",
             "provider_webpage_identity_mismatch",
         }.intersection(faults)
-        for code in sorted(set(faults)):
+        for raw_code in sorted(set(faults)):
+            code = lane_code(raw_code)
             missing = [
                 field
                 for field in (

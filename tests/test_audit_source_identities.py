@@ -683,11 +683,14 @@ def test_an_unavailable_candidate_stays_a_structured_finding(audit_source_identi
         audit_source_identities, database, scan_report(conflict_entry()), fetcher
     )
 
-    assert "metadata_fetch_failed" in finding_codes(report)
+    assert "candidate_metadata_fetch_failed" in finding_codes(report)
     failed = [item for item in report["sources"] if item["video_id"] == CANDIDATE_ID]
     assert failed[0]["fetch_status"] == "error"
     assert report["candidates"][0]["provider_evidence"] is None
     assert report["candidates"][0]["active_provider_evidence"]["video_id"] == VIDEO_ID
+    # The outcome, not just the finding: a lane-local failure must not sink the
+    # active audit, which is what `complete` and the CLI exit status carry.
+    assert report["complete"] is True
 
 
 @pytest.mark.parametrize(
@@ -974,3 +977,74 @@ def test_a_json_null_report_is_refused_not_read_as_absent(
 
     # None is a supplied-but-invalid report, never "no report given".
     assert "candidate_report_invalid" in finding_codes(result)
+
+
+def test_the_same_failure_on_an_active_identity_still_blocks(audit_source_identities):
+    """Lane-local is about the candidate lane, not about forgiving failures."""
+    database = {"talks": [talk()]}
+
+    def fetcher(video_id):
+        raise audit_source_identities.MetadataFetchError("HTTP 429 rate limited")
+
+    report, _calls = _audit(
+        audit_source_identities, database, scan_report(conflict_entry()), fetcher
+    )
+
+    assert "metadata_fetch_failed" in finding_codes(report)
+    assert report["complete"] is False
+
+
+def test_a_candidate_only_provider_mismatch_stays_lane_local(audit_source_identities):
+    """Every provider fault on a candidate-only identity, not just the fetch."""
+    database = {"talks": [talk()]}
+
+    def fetcher(video_id):
+        if video_id == CANDIDATE_ID:
+            # Provider answers with a different identity than the one requested.
+            return metadata(OTHER_VIDEO_ID)
+        return metadata(video_id)
+
+    report, _calls = _audit(
+        audit_source_identities, database, scan_report(conflict_entry()), fetcher
+    )
+
+    codes = finding_codes(report)
+    assert "candidate_provider_video_id_mismatch" in codes
+    assert "provider_video_id_mismatch" not in codes
+    assert report["complete"] is True
+
+
+def test_a_candidate_failure_leaves_the_cli_exit_status_clean(
+    audit_source_identities, tmp_path, capsys
+):
+    """`complete` drives the CLI exit code; a lane-local failure must not fail it."""
+    database = {
+        "schema_version": 1,
+        "config": {"schema_version": 2, "pptx_directory_exclusions": []},
+        "talks": [dict(talk(), schema_version=5)],
+        "pptx_catalog": [],
+        "qr_codes": [],
+        "resources": [],
+        "thumbnails": [],
+        "confirmed_intents": [],
+        "improvement_goals": [],
+    }
+    database_path = tmp_path / "tracking-database.json"
+    database_path.write_text(json.dumps(database))
+    report_path = tmp_path / "scan.json"
+    report_path.write_text(json.dumps(scan_report(conflict_entry())))
+
+    def fetcher(video_id):
+        if video_id == CANDIDATE_ID:
+            raise audit_source_identities.MetadataFetchError("HTTP 429")
+        return metadata(video_id)
+
+    result = audit_source_identities.audit_path(
+        database_path,
+        metadata_fetcher=fetcher,
+        captured_at=CAPTURED_AT,
+        candidate_report=json.loads(report_path.read_text()),
+    )
+
+    assert "candidate_metadata_fetch_failed" in finding_codes(result)
+    assert result["complete"] is True

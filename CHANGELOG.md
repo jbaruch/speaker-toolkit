@@ -39,10 +39,14 @@ bind to talks and audit beside the active source:
 - **Both sides carry the same evidence shape.** `candidates[]` holds
   `provider_evidence` and `active_provider_evidence` with identical keys, so the
   comparison is field-for-field, plus `same_source_as_active`.
-- **Failures stay lane-local.** A `slides_url` candidate has no auditable
-  provider identity, a malformed YouTube URL cannot be fetched, and an
-  unavailable or rate-limited candidate is a structured finding — none sinks the
-  audit or the active lane's result.
+- **Failures stay lane-local, and that is measured by `complete`.** A
+  `slides_url` candidate has no auditable provider identity, a malformed
+  YouTube URL cannot be fetched, and an unavailable or rate-limited candidate
+  is a structured finding. Each carries a `candidate_`-prefixed code outside
+  `ERROR_CODES`, so the audit stays `complete` and the CLI exit stays clean — a
+  candidate the provider would not serve says nothing about the sources already
+  stored. The same fault on an identity the active lane also claims keeps its
+  blocking code.
 
 The audit still writes nothing, candidates included: a candidate is never
 promoted or persisted here. Report schema goes to v2 for `candidates[]` and

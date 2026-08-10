@@ -114,6 +114,13 @@ field-for-field comparison, plus `same_source_as_active`. A candidate lane with
 no auditable provider identity (`slides_url`), a malformed YouTube URL, and an
 unavailable or rate-limited fetch each stay lane-local structured findings.
 
+Lane-local means the audit stays `complete` and the CLI exit stays clean: a
+candidate the provider would not serve says nothing about the sources already
+in the database. Those faults carry `candidate_`-prefixed codes outside
+`ERROR_CODES`. The same fault on an identity the ACTIVE lane also claims keeps
+its blocking code — lane-local is about which lane failed, not about forgiving
+failures.
+
 The audit still writes nothing. A candidate is never promoted or persisted here
 — reviewing this evidence and applying a decision are separate steps.
 
