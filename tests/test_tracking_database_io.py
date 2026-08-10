@@ -272,6 +272,7 @@ def test_renderer_normalizes_unicode_encode_error_backstop(
 
 
 def test_commit_refuses_an_invalid_candidate_before_locking(
+    cooperative_lock,
     tracking_database_io,
     tmp_path: Path,
 ) -> None:
@@ -289,10 +290,11 @@ def test_commit_refuses_an_invalid_candidate_before_locking(
         )
 
     assert path.read_bytes() == original
-    assert not tracking_database_io.lock_path_for(path).exists()
+    assert not cooperative_lock.lock_path_for(path).exists()
 
 
 def test_commit_rejects_symlinked_cooperative_lock(
+    cooperative_lock,
     tracking_database_io,
     tmp_path: Path,
 ) -> None:
@@ -301,7 +303,7 @@ def test_commit_rejects_symlinked_cooperative_lock(
     expected = tracking_database_io.snapshot_tracking_database(path)
     lock_target = tmp_path / "outside.lock"
     lock_target.write_bytes(b"")
-    tracking_database_io.lock_path_for(path).symlink_to(lock_target)
+    cooperative_lock.lock_path_for(path).symlink_to(lock_target)
 
     with pytest.raises(
         tracking_database_io.TrackingDatabaseIOError,
@@ -448,6 +450,7 @@ def test_backup_collision_never_overwrites_database_or_backup(
 
 
 def test_replace_interrupt_cleans_stage_but_keeps_persistent_lock(
+    cooperative_lock,
     tracking_database_io,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -468,10 +471,11 @@ def test_replace_interrupt_cleans_stage_but_keeps_persistent_lock(
 
     assert path.read_bytes() == original
     assert not list(tmp_path.glob(".*.tracking-db.tmp"))
-    assert tracking_database_io.lock_path_for(path).is_file()
+    assert cooperative_lock.lock_path_for(path).is_file()
 
 
 def test_lock_acquisition_interrupt_closes_descriptor(
+    cooperative_lock,
     tracking_database_io,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -479,8 +483,8 @@ def test_lock_acquisition_interrupt_closes_descriptor(
     path = tmp_path / "tracking-database.json"
     original = _write(path, {"talks": []})
     expected = tracking_database_io.snapshot_tracking_database(path)
-    lock_path = tracking_database_io.lock_path_for(path)
-    real_flock = tracking_database_io.fcntl.flock
+    lock_path = cooperative_lock.lock_path_for(path)
+    real_flock = cooperative_lock.fcntl.flock
 
     def interrupt_after_acquire(descriptor: int, operation: int) -> object:
         result = real_flock(descriptor, operation)
@@ -488,7 +492,7 @@ def test_lock_acquisition_interrupt_closes_descriptor(
             raise KeyboardInterrupt
         return result
 
-    monkeypatch.setattr(tracking_database_io.fcntl, "flock", interrupt_after_acquire)
+    monkeypatch.setattr(cooperative_lock.fcntl, "flock", interrupt_after_acquire)
     with pytest.raises(KeyboardInterrupt):
         tracking_database_io.commit_tracking_database(
             expected,
@@ -505,6 +509,7 @@ def test_lock_acquisition_interrupt_closes_descriptor(
 
 
 def test_staging_interrupt_cleans_candidate_and_preserves_database(
+    cooperative_lock,
     retained_stage,
     tracking_database_io,
     tmp_path: Path,
@@ -528,7 +533,7 @@ def test_staging_interrupt_cleans_candidate_and_preserves_database(
 
     assert path.read_bytes() == original
     assert not list(tmp_path.glob(".*.tracking-db.tmp"))
-    assert tracking_database_io.lock_path_for(path).is_file()
+    assert cooperative_lock.lock_path_for(path).is_file()
 
 
 def test_staged_timestamp_churn_retries_same_candidate_then_installs_once(
@@ -1172,6 +1177,7 @@ def test_directory_close_failure_is_an_installed_warning(
 
 @pytest.mark.parametrize("initialize", [False, True], ids=["commit", "initialize"])
 def test_lock_cleanup_failure_is_an_installed_warning(
+    cooperative_lock,
     tracking_database_io,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1183,7 +1189,7 @@ def test_lock_cleanup_failure_is_an_installed_warning(
     if not initialize:
         _write(path, {"talks": []})
         expected = tracking_database_io.snapshot_tracking_database(path)
-    real_flock = tracking_database_io.fcntl.flock
+    real_flock = cooperative_lock.fcntl.flock
 
     def fail_unlock(descriptor: int, operation: int) -> object:
         outcome = real_flock(descriptor, operation)
@@ -1191,7 +1197,7 @@ def test_lock_cleanup_failure_is_an_installed_warning(
             raise OSError("simulated unlock failure")
         return outcome
 
-    monkeypatch.setattr(tracking_database_io.fcntl, "flock", fail_unlock)
+    monkeypatch.setattr(cooperative_lock.fcntl, "flock", fail_unlock)
     if initialize:
         result = tracking_database_io.initialize_tracking_database(path, payload)
     else:
@@ -1208,6 +1214,7 @@ def test_lock_cleanup_failure_is_an_installed_warning(
 
 @pytest.mark.parametrize("initialize", [False, True], ids=["commit", "initialize"])
 def test_lock_close_failure_is_an_installed_warning(
+    cooperative_lock,
     tracking_database_io,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1219,7 +1226,7 @@ def test_lock_close_failure_is_an_installed_warning(
     if not initialize:
         _write(path, {"talks": []})
         expected = tracking_database_io.snapshot_tracking_database(path)
-    lock_path = tracking_database_io.lock_path_for(path)
+    lock_path = cooperative_lock.lock_path_for(path)
     real_close = tracking_database_io.os.close
     injected = False
 
@@ -1326,12 +1333,13 @@ def test_initialization_postinstall_verification_failure_reports_installed_state
 
 
 def test_persistent_lock_excludes_another_process(
+    cooperative_lock,
     tracking_database_io,
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "tracking-database.json"
     _write(path, {"talks": []})
-    lock_path = tracking_database_io.lock_path_for(path)
+    lock_path = cooperative_lock.lock_path_for(path)
     descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
     fcntl.flock(descriptor, fcntl.LOCK_EX)
     probe = (
@@ -1361,6 +1369,7 @@ def test_persistent_lock_excludes_another_process(
 
 
 def test_cross_writer_waits_then_rejects_its_stale_generation(
+    cooperative_lock,
     tracking_database_io,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1376,7 +1385,7 @@ def test_cross_writer_waits_then_rejects_its_stale_generation(
         {"talks": [], "writer": "second"}
     )
     original_stage = tracking_database_io._stage_candidate
-    real_flock = tracking_database_io.fcntl.flock
+    real_flock = cooperative_lock.fcntl.flock
     second_attempted = threading.Event()
     second_errors: list[Exception] = []
     second_thread: threading.Thread | None = None
@@ -1410,7 +1419,7 @@ def test_cross_writer_waits_then_rejects_its_stale_generation(
         assert second_errors == []
         return temporary
 
-    monkeypatch.setattr(tracking_database_io.fcntl, "flock", observed_flock)
+    monkeypatch.setattr(cooperative_lock.fcntl, "flock", observed_flock)
     monkeypatch.setattr(tracking_database_io, "_stage_candidate", stage_and_contend)
 
     first_result = tracking_database_io.commit_tracking_database(
