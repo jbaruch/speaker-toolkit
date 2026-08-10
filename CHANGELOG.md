@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.40 — 2026-08-10
+
 ### test(vault-ingress) — pin the return-self-validation boundary (#159)
 
 Closes #159. The enforcement it asked for is already in the tree: it landed
