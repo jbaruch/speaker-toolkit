@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.42 — 2026-08-10
+
 ### fix(vault-ingress) — share one retained named-stage across owner writers (#243)
 
 Closes #243, and folds in #240.
