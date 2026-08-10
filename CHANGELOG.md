@@ -1,5 +1,36 @@
 # Changelog
 
+### feat(vault-ingress) — carry the matched rejection into scan reports (#177)
+
+Closes #177. `scan-shownotes.py` blocked a reappearing known-bad source but
+reported only that it had; recovering the reason, evidence, timestamp, and
+stored identity meant a second trip into the tracking database before anyone
+could judge whether the candidate was still wrong.
+
+A `rejected_source_reappeared` issue now carries the ledger record that matched
+— `source_type`, stored `url`, parsed `provider_id`, `reason`, `evidence`,
+`verified_at` — plus a `match` object naming how the match was established
+(`exact_url` or `provider_id`) and the candidate identity compared against.
+Only the matched record travels; unrelated `source_rejections` entries stay
+private to the talk, asserted by a test that greps the serialized report for
+the other two URLs.
+
+Report schema goes to v3, documented in `references/schemas-db.md`. Two tests
+that hardcoded `2` now read `REPORT_SCHEMA_VERSION`, so the next bump does not
+touch them.
+
+The acceptance criterion about validating the record before reporting it turned
+out to be satisfied more strictly upstream: `_load_database` refuses the whole
+scan when any `source_rejections` entry fails
+`tracking_database._validate_source_rejection`, so a partially trusted record
+cannot reach a report at all. A re-check inside the matcher would have been
+unreachable, so the matcher points at that owner instead of restating it, and
+the test asserts the loader-level refusal across a blank reason, a missing
+evidence field, a naive timestamp, and an unparseable one.
+
+Mutation behavior is unchanged: a reappeared source stays `review_required` and
+is never reactivated.
+
 ### test(vault-ingress) — pin the return-self-validation boundary (#159)
 
 Closes #159. The enforcement it asked for is already in the tree: it landed

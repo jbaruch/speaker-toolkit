@@ -61,7 +61,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10 only
         tomllib = None
 
 
-REPORT_SCHEMA_VERSION = 2
+REPORT_SCHEMA_VERSION = 3
 LOCAL_SOURCE_TYPES = frozenset(
     {"local_jekyll", "local_hugo", "local_eleventy", "local_astro"}
 )
@@ -337,7 +337,7 @@ def resolve_shownotes_location(config: dict[str, Any]) -> ShownotesLocation:
     )
 
 
-def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str, list[dict[str, str]]]:
+def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str, list[dict[str, Any]]]:
     lines = text.splitlines()
     if not lines:
         return {}, "", []
@@ -492,7 +492,7 @@ def _choose_value(
     filename: str,
     field: str,
     values: list[object],
-    issues: list[dict[str, str]],
+    issues: list[dict[str, Any]],
 ) -> object | None:
     normalized: list[object] = []
     for value in values:
@@ -587,9 +587,9 @@ def _read_markdown_text(path: Path) -> str:
         ) from exc
 
 
-def parse_shownotes_file(path: Path) -> tuple[dict[str, Any], list[dict[str, str]]]:
+def parse_shownotes_file(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Return a normalized talk proposal and review issues for one Markdown file."""
-    issues: list[dict[str, str]] = []
+    issues: list[dict[str, Any]] = []
     try:
         text = _read_markdown_text(path)
     except ShownotesScanError as exc:
@@ -719,17 +719,27 @@ def parse_shownotes_file(path: Path) -> tuple[dict[str, Any], list[dict[str, str
     return proposal, issues
 
 
+def _source_id(field: str, url: str) -> str | None:
+    parser = parse_youtube_id if field == "video_url" else parse_google_drive_id
+    return parser(url)
+
+
 def _same_source(field: str, left: str, right: str) -> bool:
     if left == right:
         return True
-    parser = parse_youtube_id if field == "video_url" else parse_google_drive_id
-    left_id = parser(left)
-    return left_id is not None and parser(right) == left_id
+    left_id = _source_id(field, left)
+    return left_id is not None and _source_id(field, right) == left_id
 
 
 def _rejected_source_issue(
     talk: dict[str, Any], field: str, candidate: str
-) -> dict[str, str] | None:
+) -> dict[str, Any] | None:
+    """The blocking review item for a candidate that a ledger entry rejects.
+
+    A match carries the exact ledger record that produced it, so the reviewer
+    decides from the report instead of reopening the database. Only the matched
+    record is included — unrelated rejections stay private to the talk.
+    """
     if "source_rejections" not in talk:
         return None
     rejections = talk.get("source_rejections")
@@ -752,23 +762,44 @@ def _rejected_source_issue(
         rejected_url = _nonempty(rejection.get("url"))
         if rejection.get("source_type") != expected_type or rejected_url is None:
             continue
-        if _same_source(field, candidate, rejected_url):
-            return {
-                "code": "rejected_source_reappeared",
-                "field": field,
-                "message": (
-                    f"shownotes proposes a known-bad {field}; keep it inactive until "
-                    "human review supplies replacement evidence"
-                ),
-            }
+        if not _same_source(field, candidate, rejected_url):
+            continue
+        # reason / evidence / verified_at are reported verbatim as review
+        # evidence. They are safe to read unchecked because _load_database
+        # rejects the whole scan on a malformed ledger record before reaching
+        # here — see tracking_database._validate_source_rejection for the exact
+        # required shape. Re-checking here would be unreachable.
+        candidate_id = _source_id(field, candidate)
+        rejected_id = _source_id(field, rejected_url)
+        return {
+            "code": "rejected_source_reappeared",
+            "field": field,
+            "message": (
+                f"shownotes proposes a known-bad {field}; keep it inactive until "
+                "human review supplies replacement evidence"
+            ),
+            "matched_rejection": {
+                "source_type": expected_type,
+                "url": rejected_url,
+                "provider_id": rejected_id,
+                "reason": rejection["reason"],
+                "evidence": rejection["evidence"],
+                "verified_at": rejection["verified_at"],
+            },
+            "match": {
+                "method": "exact_url" if candidate == rejected_url else "provider_id",
+                "candidate_url": candidate,
+                "candidate_provider_id": candidate_id,
+            },
+        }
     return None
 
 
 def _existing_entry(
     talk: dict[str, Any],
     proposal: dict[str, Any],
-    parse_issues: list[dict[str, str]],
-) -> tuple[str, dict[str, Any], list[dict[str, str]]]:
+    parse_issues: list[dict[str, Any]],
+) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
     issues = list(parse_issues)
     patch: dict[str, Any] = {}
     stored_conference = talk.get("conference")
