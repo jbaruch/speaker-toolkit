@@ -21,10 +21,11 @@ Advisory policy, explicit because the CLI's exit code does not express it:
   double-gate that one and would turn any advisory a future CLI adds into an
   instant build break with no owner decision behind it.
 
-The CLI version is deliberately unpinned: this gate exists to predict what the
-publish run's own `tessl plugin lint` will say, and that step installs the
-latest CLI. A pinned gate could pass against an older ruleset and still break
-the release.
+The CLI version is pinned in .github/workflows/tests.yml, with the renewal
+cadence recorded beside the pin. This gate exists to predict what the publish
+run's own `tessl plugin lint` will say, and that step installs the latest CLI,
+so a pin left to rot can pass against an older ruleset and still break the
+release: renew quarterly, or as soon as the two disagree.
 
 Usage: check_plugin_lint.py [<repo-root>]   (default: this repo)
 Stdout: one JSON object naming every error and advisory lint reported.
