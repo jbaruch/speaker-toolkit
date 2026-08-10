@@ -1,5 +1,36 @@
 # Changelog
 
+### fix(vault-ingress) — choose the supervisor exit-vs-monitor ordering instead of racing it (#268)
+
+Closes #268.
+
+`test_fast_exit_race_is_confirmed_by_popen_and_cleanup_does_not_mask` failed
+intermittently on the macOS artifact-contracts job, asserting `worker_exit` but
+getting `worker_monitor_identity_changed`. The test injected a monitor that
+always raises and then relied on the real worker exiting inside the
+supervisor's settle window (`sample_interval_seconds`, 0.5 s there) for the
+confirmed exit to win. On a loaded runner the interpreter took longer than that
+to start and die, so the monitor's complaint surfaced first — a wall-clock
+dependency `testing-standards` → Determinism forbids.
+
+The precedence itself was already correct and stays in `artifact_supervisor`: a
+Popen-confirmed exit outranks a monitor identity complaint, either at the
+re-poll after `sample()` raises or through the bounded settle wait, and a
+worker still live when that window closes keeps the monitor's error. No
+production change — the tests now choose the observation order rather than race
+it.
+
+The end-to-end test's monitor waits for the real worker's exit event before
+complaining, so the assertion no longer depends on how fast an interpreter can
+start. Three stub-process tests assert the full ordering matrix explicitly:
+exit confirmed at the re-poll, exit confirmed inside the settle window, and a
+settle window that confirms nothing. Each fails under a mutation that removes
+the matching `break`.
+
+`_run` now defaults to a frozen clock, so no assertion in the file can be
+preempted by the 5-second wall deadline when a runner stalls; the four tests
+that exercise the deadline still pass advancing clocks of their own.
+
 ## 0.20.42 — 2026-08-10
 
 ### fix(vault-ingress) — share one retained named-stage across owner writers (#243)
