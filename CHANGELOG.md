@@ -21,6 +21,8 @@ recorded. The inode assertion was the only one in the file whose outcome came
 from the filesystem rather than the code under test; the remaining assertions in
 `tests/test_pdf_evidence.py` compare against pinned synthetic generations.
 
+## 0.20.50 — 2026-08-10
+
 ### fix(vault-ingress) — stop echoing tracking-database decoder text (#275)
 
 Closes #275.
