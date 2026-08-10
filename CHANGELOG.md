@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.51 — 2026-08-10
+
 ### docs(vault-ingress) — point the candidate-mode reference at its script (#278)
 
 Closes #278.
