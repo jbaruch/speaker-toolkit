@@ -17,7 +17,7 @@ disagree about which decks need regeneration.
 from __future__ import annotations
 
 import copy
-import json
+from typing import Any
 
 import pytest
 
@@ -75,7 +75,20 @@ def _current_record(**overrides) -> dict:
     return record
 
 
-def _classify(tracking_database, record, *, observed=None) -> str:
+_MATCHING_LIVE_BYTES = object()
+
+
+def _classify(
+    tracking_database, record, *, observed: Any = _MATCHING_LIVE_BYTES
+) -> str:
+    """Classify one record; ``observed`` defaults to the matching live bytes.
+
+    The production signature has no default — a caller must say what it saw on
+    disk — so tests that care about the source pass it explicitly and the rest
+    get the deck they described.
+    """
+    if observed is _MATCHING_LIVE_BYTES:
+        observed = copy.deepcopy(SOURCE_FINGERPRINT)
     return tracking_database.classify_pptx_visual_evidence(
         record,
         extractor_schema_version=CURRENT_EXTRACTOR_SCHEMA,
@@ -135,12 +148,22 @@ def test_current_receipt_for_the_same_generation_is_skipped(tracking_database) -
     assert not tracking_database.pptx_visual_evidence_needs_extraction(classification)
 
 
-def test_currency_can_be_judged_without_re_reading_the_deck(tracking_database) -> None:
-    """Omitting the observed fingerprint asks only about the extractor generation."""
-    assert (
-        _classify(tracking_database, _current_record())
-        == tracking_database.PPTX_EVIDENCE_CURRENT
-    )
+def test_an_unfingerprintable_deck_is_never_current(tracking_database) -> None:
+    """A stored receipt is a hint; without the live bytes it proves nothing."""
+    classification = _classify(tracking_database, _current_record(), observed=None)
+
+    assert classification == tracking_database.PPTX_EVIDENCE_UNVERIFIED_SOURCE
+    assert tracking_database.pptx_visual_evidence_needs_extraction(classification)
+
+
+def test_the_observed_fingerprint_has_no_default(tracking_database) -> None:
+    """A caller cannot skip saying what it observed on disk."""
+    with pytest.raises(TypeError, match="observed_source_fingerprint"):
+        tracking_database.classify_pptx_visual_evidence(
+            _current_record(),
+            extractor_schema_version=CURRENT_EXTRACTOR_SCHEMA,
+            pipeline_version=CURRENT_PIPELINE,
+        )
 
 
 # Acceptance 3: a changed source generation makes the record stale again.
@@ -419,61 +442,3 @@ def test_v1_records_may_not_carry_a_binding_field(tracking_database) -> None:
 
     with pytest.raises(tracking_database.TrackingDatabaseError, match="unknown fields"):
         tracking_database.require_current_tracking_database(_database([record]))
-
-
-# The wired production consumers: the owner reader and preflight both classify
-# through the same function, so a deck cannot be "current" to one and stale to
-# the other.
-
-
-def test_owner_reader_reports_the_selection_for_every_catalog_record(
-    read_tracking_database, tmp_path
-) -> None:
-    database = _database(
-        [
-            _legacy_record(),
-            _current_record(pptx_path="Conference/2025/Second.pptx"),
-        ]
-    )
-    path = tmp_path / "tracking-database.json"
-    path.write_text(json.dumps(database))
-
-    report = read_tracking_database.execute(path)
-
-    selection = report["pptx_visual_evidence"]
-    assert selection["extractor_schema_version"] == CURRENT_EXTRACTOR_SCHEMA
-    assert selection["pipeline_version"] == CURRENT_PIPELINE
-    assert [
-        (item["pptx_path"], item["classification"], item["needs_extraction"])
-        for item in selection["records"]
-    ] == [
-        ("Conference/2024/Talk.pptx", "unknown_legacy", True),
-        ("Conference/2025/Second.pptx", "current", False),
-    ]
-
-
-def test_owner_reader_refuses_a_database_carrying_a_malformed_receipt(
-    read_tracking_database, tmp_path
-) -> None:
-    """Owner state that fails validation is not readable at all, not classified."""
-    broken = _current_record(visual_evidence=_evidence(artifact=None))
-    path = tmp_path / "tracking-database.json"
-    path.write_text(json.dumps(_database([broken])))
-
-    with pytest.raises(Exception, match="artifact is required"):
-        read_tracking_database.execute(path)
-
-
-def test_selection_reports_an_unreadable_receipt_as_needing_extraction(
-    read_tracking_database,
-) -> None:
-    """A dropped row would read as "nothing to regenerate"."""
-    broken = _current_record(visual_evidence=_evidence(artifact=None))
-
-    selection = read_tracking_database.pptx_visual_evidence_selection(
-        _database([broken])
-    )
-
-    assert selection[0]["classification"] is None
-    assert selection[0]["needs_extraction"] is True
-    assert "artifact is required" in selection[0]["error"]

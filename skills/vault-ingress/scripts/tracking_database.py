@@ -103,6 +103,9 @@ PPTX_EVIDENCE_STALE = "stale"
 PPTX_EVIDENCE_PENDING = "pending"
 PPTX_EVIDENCE_FAILED = "failed"
 PPTX_EVIDENCE_UNKNOWN_LEGACY = "unknown_legacy"
+# The caller could not fingerprint the live deck, so a receipt that matches the
+# current extractor still cannot be proven to describe the bytes on disk.
+PPTX_EVIDENCE_UNVERIFIED_SOURCE = "unverified_source"
 QR_CODE_REQUIRED_FIELDS = frozenset(
     {
         "talk_slug",
@@ -431,7 +434,7 @@ def classify_pptx_visual_evidence(
     *,
     extractor_schema_version: int,
     pipeline_version: str,
-    observed_source_fingerprint: Mapping[str, object] | None = None,
+    observed_source_fingerprint: Mapping[str, object] | None,
 ) -> str:
     """Return the selection class for one catalog record's visual evidence.
 
@@ -440,9 +443,12 @@ def classify_pptx_visual_evidence(
     function so they cannot disagree about which decks need regeneration.
 
     ``observed_source_fingerprint`` is the fingerprint of the PPTX as it exists
-    now. Omitting it answers "is this receipt from the current extractor?"
-    without re-reading the deck; passing it also answers "and from these exact
-    bytes?". Only ``PPTX_EVIDENCE_CURRENT`` may skip regeneration.
+    now, and is required rather than defaulted: a stored receipt is a hint, not
+    authority (`stateful-artifacts` -> Hints, Not Authority), so a caller must
+    say what it observed on disk. Passing ``None`` states that the live deck
+    could not be fingerprinted, which yields
+    ``PPTX_EVIDENCE_UNVERIFIED_SOURCE`` rather than letting stored metadata
+    alone claim currency. Only ``PPTX_EVIDENCE_CURRENT`` may skip regeneration.
     """
     version = _record_version(
         record,
@@ -490,17 +496,18 @@ def classify_pptx_visual_evidence(
         or evidence.get("pipeline_version") != pipeline_version
     ):
         return PPTX_EVIDENCE_STALE
-    if observed_source_fingerprint is not None:
-        persisted = evidence.get("source_fingerprint")
-        if not isinstance(persisted, Mapping):
-            raise TrackingDatabaseError(
-                "pptx_catalog.visual_evidence.source_fingerprint must be an object"
-            )
-        if any(
-            persisted.get(field) != observed_source_fingerprint.get(field)
-            for field in PPTX_SOURCE_FINGERPRINT_REQUIRED_FIELDS
-        ):
-            return PPTX_EVIDENCE_STALE
+    if observed_source_fingerprint is None:
+        return PPTX_EVIDENCE_UNVERIFIED_SOURCE
+    persisted = evidence.get("source_fingerprint")
+    if not isinstance(persisted, Mapping):
+        raise TrackingDatabaseError(
+            "pptx_catalog.visual_evidence.source_fingerprint must be an object"
+        )
+    if any(
+        persisted.get(field) != observed_source_fingerprint.get(field)
+        for field in PPTX_SOURCE_FINGERPRINT_REQUIRED_FIELDS
+    ):
+        return PPTX_EVIDENCE_STALE
     return PPTX_EVIDENCE_CURRENT
 
 
@@ -512,6 +519,7 @@ def pptx_visual_evidence_needs_extraction(classification: str) -> bool:
         PPTX_EVIDENCE_PENDING,
         PPTX_EVIDENCE_FAILED,
         PPTX_EVIDENCE_UNKNOWN_LEGACY,
+        PPTX_EVIDENCE_UNVERIFIED_SOURCE,
     }:
         raise TrackingDatabaseError(
             f"unknown pptx visual-evidence classification {classification!r}"

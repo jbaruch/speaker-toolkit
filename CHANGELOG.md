@@ -36,14 +36,21 @@ accepts raises rather than falling through to a legacy reading, because a
 lagging reader must not send a deck back through extraction on the strength of
 a shape it cannot read (`stateful-artifacts` → Migration Policy).
 
-Both production readers of the catalog now classify through it.
-`read-tracking-database.py` reports a derived `pptx_visual_evidence` block —
-report schema v2 — so every consumer reading through the owner reader gets one
-authoritative per-record classification instead of interpreting
-`visual_extracted` itself. `preflight-vault.py` raises a `warning` finding for
-each deck whose evidence is not current, and a distinct one for a receipt it
-cannot read; neither blocks, because stale evidence is work to schedule rather
-than a reason to refuse the vault.
+The live bytes are the authority, so `observed_source_fingerprint` is a
+required argument with no default. A caller must state what it saw on disk; one
+that cannot fingerprint the deck passes `None` and gets `unverified_source`,
+never `current`. Stored metadata alone can no longer claim currency
+(`stateful-artifacts` → Hints, Not Authority).
+
+`preflight-vault.py` is the wired consumer: it hashes each catalog deck under
+`config.pptx_source_dir` and raises a `warning` for every record that is not
+current — stale bytes, an older extractor, a legacy claim, a deck it could not
+read — plus a distinct one for a receipt it cannot parse. Neither blocks, because
+stale evidence is work to schedule rather than a reason to refuse the vault.
+`read-tracking-database.py` deliberately does not classify: it is a pure
+strict-snapshot reader with no filesystem authority, and a classification it
+could not verify against the live deck would be exactly the unverified claim
+this change removes.
 
 The classifier validates a v2 receipt before trusting it. A receipt is the
 licence to SKIP extraction, so a malformed one — `succeeded` with a null

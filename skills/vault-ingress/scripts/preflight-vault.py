@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter, defaultdict
 from datetime import date, datetime
+import hashlib
 import json
 import math
 import os
@@ -313,14 +314,45 @@ class VaultPreflight:
             self._artifact_root = admitted_root or self.vault_root
         return self._artifact_root
 
+    def _observed_pptx_fingerprint(self, pptx_path: object) -> dict[str, object] | None:
+        """Fingerprint the deck as it exists now, or None when it cannot be read.
+
+        A persisted receipt is a hint; the live bytes are the authority
+        (`stateful-artifacts` -> Hints, Not Authority). Returning None states
+        that the source could not be observed, which the classifier reports as
+        unverified rather than letting stored metadata claim currency.
+        """
+        source_dir = self.config.get("pptx_source_dir")
+        if not isinstance(pptx_path, str) or not pptx_path.strip():
+            return None
+        try:
+            resolved = materialize_artifact_locator(pptx_path, source_dir)
+        except ArtifactLocatorError:
+            return None
+        digest = hashlib.sha256()
+        size = 0
+        try:
+            with open(resolved, "rb") as source:
+                for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                    digest.update(chunk)
+                    size += len(chunk)
+        except OSError:
+            return None
+        return {
+            "algorithm": "sha256",
+            "digest": digest.hexdigest(),
+            "size_bytes": size,
+        }
+
     def _check_pptx_visual_evidence(self) -> None:
         """Report catalog decks whose visual evidence is not current (#229).
 
         Selection is classified through the one shared authority, never from
         `visual_extracted` alone: a legacy record's bare claim cannot say which
-        extractor schema it refers to. Findings are warnings — a stale or
-        missing extraction is work to schedule, not a reason to refuse the
-        vault.
+        extractor schema it refers to, and a receipt matching the current
+        extractor still has to match the bytes on disk. Findings are warnings —
+        a stale or unverifiable extraction is work to schedule, not a reason to
+        refuse the vault.
         """
         catalog = self.database.get("pptx_catalog")
         if not isinstance(catalog, list):
@@ -328,11 +360,13 @@ class VaultPreflight:
         for index, record in enumerate(catalog):
             if not isinstance(record, dict):
                 continue
+            observed = self._observed_pptx_fingerprint(record.get("pptx_path"))
             try:
                 classification = classify_pptx_visual_evidence(
                     record,
                     extractor_schema_version=PPTX_EXTRACTION_SCHEMA_VERSION,
                     pipeline_version=PPTX_EXTRACTION_PIPELINE_VERSION,
+                    observed_source_fingerprint=observed,
                 )
             except TrackingDatabaseError as exc:
                 self.add(
@@ -350,7 +384,8 @@ class VaultPreflight:
                 "warning",
                 "pptx_visual_evidence_not_current",
                 "PPTX visual evidence is not bound to the current extractor "
-                "generation; regenerate before relying on it",
+                "generation and the deck's exact bytes; regenerate before "
+                "relying on it",
                 field=f"pptx_catalog[{index}].visual_evidence",
                 expected=PPTX_EVIDENCE_CURRENT,
                 actual={

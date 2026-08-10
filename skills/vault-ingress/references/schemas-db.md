@@ -71,6 +71,12 @@ v1 and v2.
   profile reads classify through it so they cannot disagree. Classes and the
   regeneration predicate are named at the top of that file; only `current`
   skips regeneration.
+- The classifier takes the live deck's fingerprint as a required argument: a
+  persisted receipt is a hint, and the bytes on disk are the authority. A
+  caller that cannot fingerprint the deck passes `None` and gets
+  `unverified_source`, never `current`. `preflight-vault.py` hashes each
+  catalog deck under `config.pptx_source_dir` and reports every non-current
+  record as a warning.
 
 ### `qr_codes` v1 -> v2
 
@@ -475,8 +481,10 @@ exact-type rule. The supported mutation kinds are:
 | `update_talk_clarification` | Set complete object/array `blind_spot_observations` or `humor_postmortem` values on one exact talk, with matching field expectations |
 
 The command owns each operation's closed fields and record validation; do not
-reimplement those allowlists in skill prose. PPTX, resource, thumbnail, and
-confirmed-intent records require exact integer `schema_version: 1`; a boolean or future version is
+reimplement those allowlists in skill prose. PPTX catalog records require exact
+integer `schema_version: 2`, since only v2 carries the visual-evidence
+generation binding; resource, thumbnail, and confirmed-intent records require
+exact integer `schema_version: 1`. A boolean or future version is
 not equivalent. Complete resource category counts must sum to `item_count`, and
 publishing scalar/identifier types are checked before patching. Run the plan without `--apply`,
 review its `changes`, then bind apply to that report's exact input hash:

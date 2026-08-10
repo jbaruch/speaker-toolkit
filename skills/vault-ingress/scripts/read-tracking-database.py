@@ -8,15 +8,9 @@ import json
 from pathlib import Path
 import sys
 
-from pptx_evidence import (
-    PPTX_EXTRACTION_PIPELINE_VERSION,
-    PPTX_EXTRACTION_SCHEMA_VERSION,
-)
 from tracking_database import (
     TrackingDatabaseError,
     assess_tracking_database,
-    classify_pptx_visual_evidence,
-    pptx_visual_evidence_needs_extraction,
 )
 from tracking_database_io import (
     TrackingDatabaseIOError,
@@ -25,48 +19,7 @@ from tracking_database_io import (
 )
 
 
-REPORT_SCHEMA_VERSION = 2
-
-
-def pptx_visual_evidence_selection(
-    database: dict[str, object],
-) -> list[dict[str, object]]:
-    """Classify every catalog record's visual evidence for downstream readers.
-
-    Derived, never stored: consumers get one authoritative classification from
-    the owner reader instead of each interpreting `visual_extracted`, which a
-    v1 record cannot attribute to any extractor generation (#229). A record
-    whose receipt cannot be read is reported as unreadable rather than dropped
-    — a silently missing row would read as "nothing to regenerate".
-    """
-    catalog = database.get("pptx_catalog")
-    if not isinstance(catalog, list):
-        return []
-    selection: list[dict[str, object]] = []
-    for index, record in enumerate(catalog):
-        if not isinstance(record, dict):
-            continue
-        entry: dict[str, object] = {
-            "index": index,
-            "pptx_path": record.get("pptx_path"),
-        }
-        try:
-            classification = classify_pptx_visual_evidence(
-                record,
-                extractor_schema_version=PPTX_EXTRACTION_SCHEMA_VERSION,
-                pipeline_version=PPTX_EXTRACTION_PIPELINE_VERSION,
-            )
-        except TrackingDatabaseError as exc:
-            entry["classification"] = None
-            entry["needs_extraction"] = True
-            entry["error"] = str(exc)
-        else:
-            entry["classification"] = classification
-            entry["needs_extraction"] = pptx_visual_evidence_needs_extraction(
-                classification
-            )
-        selection.append(entry)
-    return selection
+REPORT_SCHEMA_VERSION = 1
 
 
 def execute(path: Path) -> dict[str, object]:
@@ -89,11 +42,6 @@ def execute(path: Path) -> dict[str, object]:
         "database_path": str(snapshot.path),
         "sha256": snapshot.sha256,
         "database": database,
-        "pptx_visual_evidence": {
-            "extractor_schema_version": PPTX_EXTRACTION_SCHEMA_VERSION,
-            "pipeline_version": PPTX_EXTRACTION_PIPELINE_VERSION,
-            "records": pptx_visual_evidence_selection(database),
-        },
     }
 
 
