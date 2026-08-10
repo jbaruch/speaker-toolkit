@@ -70,11 +70,35 @@ Every successful talk audit carries this subset under
 `proposed_evidence.source_identity`. It is evidence for review, not an apply
 plan. Missing fields remain absent/null; the helper does not synthesize them.
 
-## Report contract (v1)
+## Candidate mode (#230)
+
+A `scan-shownotes.py` conflict names a competing source for a talk that already
+has one. Pass that report back to compare both sides through this auditor's
+bounded fetching, stable evidence shape, redaction, and no-write guarantee,
+instead of an ad hoc provider lookup outside the ingress workflow:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/audit-source-identities.py" \
+  "{vault_root}" --candidates-from "{scan_report_path}"
+```
+
+Every binding resolves before any provider request — a report naming an unknown
+or ambiguous talk is refused without spending a fetch. Candidate identities
+share the active lane's dedupe, so a candidate repeated across conflicts, or one
+equal to an active source, is fetched once. `candidates[]` carries
+`provider_evidence` and `active_provider_evidence` in the same shape for
+field-for-field comparison, plus `same_source_as_active`. A candidate lane with
+no auditable provider identity (`slides_url`), a malformed YouTube URL, and an
+unavailable or rate-limited fetch each stay lane-local structured findings.
+
+The audit still writes nothing. A candidate is never promoted or persisted here
+— reviewing this evidence and applying a decision are separate steps.
+
+## Report contract (v2)
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "captured_at": "2026-07-31T19:00:00Z",
   "database": "/vault/tracking-database.json",
   "complete": true,
@@ -83,6 +107,7 @@ plan. Missing fields remain absent/null; the helper does not synthesize them.
   "unique_youtube_id_count": 1,
   "metadata_fetch_count": 1,
   "metadata_fetch_error_count": 0,
+  "candidate_count": 1,
   "summary": {
     "finding_count": 1,
     "by_code": {"same_id_cross_talk_collision": 1}

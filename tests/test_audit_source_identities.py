@@ -543,3 +543,214 @@ def test_cli_failure_emits_json_and_actionable_stderr(
     assert json.loads(captured.out) == report
     assert "review report findings" in captured.err
     assert "rerun" in captured.err
+
+
+# Candidate mode (#230). A shownotes conflict names a competing source; the
+# auditor compares it against the active one through the same bounded fetching,
+# evidence shape, and no-write guarantee, and never promotes it.
+
+CANDIDATE_ID = "QqWwEeRrT_3"
+
+
+def scan_report(*entries):
+    return {"schema_version": 1, "ok": True, "entries": list(entries)}
+
+
+def conflict_entry(filename="talk.md", candidate_id=CANDIDATE_ID, lane="video_url"):
+    url = (
+        f"https://www.youtube.com/watch?v={candidate_id}"
+        if lane == "video_url"
+        else "https://drive.google.com/file/d/abc/view"
+    )
+    return {
+        "filename": filename,
+        "disposition": "review_required",
+        "proposal": {lane: url},
+        "changes": {},
+        "issues": [
+            {
+                "code": f"existing_{lane}_conflict",
+                "field": lane,
+                "message": "tracking DB conflicts with shownotes",
+            }
+        ],
+        "applied": False,
+    }
+
+
+def _audit(audit_source_identities, database, report, fetcher=None):
+    calls = []
+
+    def default_fetcher(video_id):
+        calls.append(video_id)
+        return metadata(video_id)
+
+    result = audit_source_identities.audit_database(
+        database,
+        database_path="/vault/tracking-database.json",
+        metadata_fetcher=fetcher or default_fetcher,
+        captured_at=CAPTURED_AT,
+        candidate_report=report,
+    )
+    return result, calls
+
+
+def test_active_and_candidate_both_get_comparable_provider_evidence(
+    audit_source_identities,
+):
+    """Acceptance 1: both sides of the conflict carry the same evidence shape."""
+    database = {"talks": [talk()]}
+
+    report, calls = _audit(
+        audit_source_identities, database, scan_report(conflict_entry())
+    )
+
+    assert sorted(calls) == sorted([VIDEO_ID, CANDIDATE_ID])
+    entry = report["candidates"][0]
+    assert entry["filename"] == "talk.md"
+    assert entry["candidate_youtube_id"] == CANDIDATE_ID
+    assert entry["same_source_as_active"] is False
+    assert entry["provider_evidence"]["video_id"] == CANDIDATE_ID
+    assert entry["active_provider_evidence"]["video_id"] == VIDEO_ID
+    # Same keys on both sides: comparison is field-for-field, not shape-guessing.
+    assert set(entry["provider_evidence"]) == set(entry["active_provider_evidence"])
+
+
+def test_a_candidate_repeated_across_conflicts_is_fetched_once(
+    audit_source_identities,
+):
+    """Acceptance 2: dedupe spans talks and both lanes."""
+    database = {"talks": [talk("first.md"), talk("second.md", date="2025-04-10")]}
+
+    report, calls = _audit(
+        audit_source_identities,
+        database,
+        scan_report(conflict_entry("first.md"), conflict_entry("second.md")),
+    )
+
+    assert calls.count(CANDIDATE_ID) == 1
+    assert [item["filename"] for item in report["candidates"]] == [
+        "first.md",
+        "second.md",
+    ]
+    assert {item["provider_evidence"]["video_id"] for item in report["candidates"]} == {
+        CANDIDATE_ID
+    }
+
+
+def test_an_unsupported_candidate_lane_is_a_lane_local_finding(
+    audit_source_identities,
+):
+    """Acceptance 3: a slides candidate has no provider identity to audit."""
+    database = {"talks": [talk()]}
+
+    report, calls = _audit(
+        audit_source_identities,
+        database,
+        scan_report(conflict_entry(lane="slides_url")),
+    )
+
+    assert calls == [VIDEO_ID]
+    assert "candidate_provider_unsupported" in finding_codes(report)
+    assert report["candidates"] == []
+
+
+def test_a_malformed_candidate_url_is_a_lane_local_finding(audit_source_identities):
+    database = {"talks": [talk()]}
+    entry = conflict_entry()
+    entry["proposal"]["video_url"] = "https://www.youtube.com/watch?v=nope"
+
+    report, calls = _audit(audit_source_identities, database, scan_report(entry))
+
+    assert calls == [VIDEO_ID]
+    assert "candidate_youtube_url_invalid" in finding_codes(report)
+    assert report["candidates"][0]["provider_evidence"] is None
+
+
+def test_an_unavailable_candidate_stays_a_structured_finding(audit_source_identities):
+    """A provider failure on the candidate must not sink the whole audit."""
+    database = {"talks": [talk()]}
+
+    def fetcher(video_id):
+        if video_id == CANDIDATE_ID:
+            raise audit_source_identities.MetadataFetchError("HTTP 429 rate limited")
+        return metadata(video_id)
+
+    report, _calls = _audit(
+        audit_source_identities, database, scan_report(conflict_entry()), fetcher
+    )
+
+    assert "metadata_fetch_failed" in finding_codes(report)
+    failed = [item for item in report["sources"] if item["video_id"] == CANDIDATE_ID]
+    assert failed[0]["fetch_status"] == "error"
+    assert report["candidates"][0]["provider_evidence"] is None
+    assert report["candidates"][0]["active_provider_evidence"]["video_id"] == VIDEO_ID
+
+
+@pytest.mark.parametrize(
+    ("report_value", "code"),
+    [
+        ("not an object", "candidate_report_invalid"),
+        ({"schema_version": 1}, "candidate_report_invalid"),
+        ({"entries": [{"disposition": "review_required"}]}, "candidate_report_invalid"),
+    ],
+)
+def test_an_invalid_report_fails_before_any_provider_request(
+    audit_source_identities, report_value, code
+):
+    """Acceptance 4: a bad binding must not cost a fetch."""
+    database = {"talks": [talk()]}
+    calls = []
+
+    def fetcher(video_id):
+        calls.append(video_id)
+        return metadata(video_id)
+
+    report = audit_source_identities.audit_database(
+        database,
+        database_path="/vault/tracking-database.json",
+        metadata_fetcher=fetcher,
+        captured_at=CAPTURED_AT,
+        candidate_report=report_value,
+    )
+
+    assert code in finding_codes(report)
+    # The active lane still audits; only the candidate binding was refused.
+    assert calls == [VIDEO_ID]
+    assert report["candidates"] == []
+
+
+def test_a_candidate_naming_no_unique_talk_is_refused(audit_source_identities):
+    database = {"talks": [talk("first.md"), talk("first.md", date="2025-04-10")]}
+
+    report, _calls = _audit(
+        audit_source_identities, database, scan_report(conflict_entry("first.md"))
+    )
+
+    assert "candidate_binding_invalid" in finding_codes(report)
+    assert report["candidates"] == []
+
+
+def test_candidate_mode_never_mutates_the_database(audit_source_identities):
+    """Acceptance 5: read-only, candidates included."""
+    database = {"talks": [talk()]}
+    original = deepcopy(database)
+
+    _audit(audit_source_identities, database, scan_report(conflict_entry()))
+
+    assert database == original
+
+
+def test_a_candidate_equal_to_the_active_source_is_reported_as_the_same_source(
+    audit_source_identities,
+):
+    database = {"talks": [talk()]}
+
+    report, calls = _audit(
+        audit_source_identities,
+        database,
+        scan_report(conflict_entry(candidate_id=VIDEO_ID)),
+    )
+
+    assert calls == [VIDEO_ID]
+    assert report["candidates"][0]["same_source_as_active"] is True

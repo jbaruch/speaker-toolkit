@@ -1,5 +1,37 @@
 # Changelog
 
+### feat(vault-ingress) — audit shownotes conflict candidates alongside the active source (#230)
+
+Closes #230.
+
+`scan-shownotes.py` can report a competing source URL as `review_required`, but
+`audit-source-identities.py` could only inspect the source already active in the
+tracking database. Choosing between them meant an ad hoc provider lookup —
+outside the identity auditor's bounded fetching, stable evidence shape,
+deduplication, redaction, and no-write guarantee, and outside the documented
+ingress workflow entirely.
+
+`--candidates-from <scan-report.json>` closes that. Review-required conflicts
+bind to talks and audit beside the active source:
+
+- **Bindings resolve before any provider request.** A report that is not an
+  object, carries no `entries`, or names an unknown or ambiguous talk is refused
+  without spending a fetch. The active lane still audits.
+- **Candidate identities share the active lane's dedupe.** A candidate repeated
+  across conflicts, or one equal to some talk's active source, is fetched once
+  and referenced deterministically.
+- **Both sides carry the same evidence shape.** `candidates[]` holds
+  `provider_evidence` and `active_provider_evidence` with identical keys, so the
+  comparison is field-for-field, plus `same_source_as_active`.
+- **Failures stay lane-local.** A `slides_url` candidate has no auditable
+  provider identity, a malformed YouTube URL cannot be fetched, and an
+  unavailable or rate-limited candidate is a structured finding — none sinks the
+  audit or the active lane's result.
+
+The audit still writes nothing, candidates included: a candidate is never
+promoted or persisted here. Report schema goes to v2 for `candidates[]` and
+`candidate_count`.
+
 ## 0.20.45 — 2026-08-10
 
 ### ci — gate every pull request on `tessl plugin lint` (#265)

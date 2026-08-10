@@ -39,8 +39,18 @@ from tracking_database_io import (
 )
 
 
-REPORT_SCHEMA_VERSION = 1
+REPORT_SCHEMA_VERSION = 2
 SOURCE_IDENTITY_SCHEMA_VERSION = 1
+
+# Candidate mode reads scan-shownotes.py conflict entries. Only the video lane
+# carries a provider identity this auditor can fetch; a slides candidate is a
+# Drive URL with no such identity, so it is reported unsupported rather than
+# silently dropped.
+CANDIDATE_LANES = frozenset({"video_url"})
+CANDIDATE_CONFLICT_CODES = {
+    "existing_video_url_conflict": "video_url",
+    "existing_slides_url_conflict": "slides_url",
+}
 YT_DLP_TIMEOUT_SECONDS = 60
 YOUTUBE_ID_RE = re.compile(r"[A-Za-z0-9_-]{11}")
 CLIP_MARKERS = frozenset(
@@ -65,6 +75,9 @@ ERROR_CODES = frozenset(
         "provider_metadata_incomplete",
         "provider_video_id_mismatch",
         "provider_webpage_identity_mismatch",
+        "candidate_binding_invalid",
+        "candidate_report_invalid",
+        "candidate_youtube_url_invalid",
         "talk_shape_invalid",
         "talks_shape_invalid",
         "tracking_database_schema_invalid",
@@ -397,14 +410,177 @@ def _talks_collide(talks: list[dict[str, Any]]) -> bool:
     return False
 
 
+def _talk_indexes_by_filename(talks: list[Any]) -> dict[str, int]:
+    """Map each unique filename to its talk index; ambiguous names are dropped.
+
+    A filename claimed by two talks cannot bind a candidate to one lane, so it
+    is left unmapped and the binding is rejected rather than guessed.
+    """
+    seen: dict[str, int] = {}
+    ambiguous: set[str] = set()
+    for index, talk in enumerate(talks):
+        if not isinstance(talk, dict):
+            continue
+        filename = _nonempty(talk.get("filename"))
+        if filename is None:
+            continue
+        if filename in seen:
+            ambiguous.add(filename)
+            continue
+        seen[filename] = index
+    for filename in ambiguous:
+        seen.pop(filename, None)
+    return seen
+
+
+def candidate_bindings(
+    report: Any,
+    talks: list[Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Bind each shownotes conflict candidate to an existing talk and lane.
+
+    Returns the accepted bindings and the findings for everything refused.
+    Every binding is resolved here, before any provider request: a report that
+    names an unknown talk must not cost a network fetch first.
+    """
+    findings: list[dict[str, Any]] = []
+    if not isinstance(report, dict):
+        return [], [
+            _finding(
+                "candidate_report_invalid",
+                None,
+                [],
+                [],
+                "shownotes scan report must be a JSON object",
+                {"actual": type(report).__name__},
+                "high",
+            )
+        ]
+    entries = report.get("entries")
+    if not isinstance(entries, list):
+        return [], [
+            _finding(
+                "candidate_report_invalid",
+                None,
+                [],
+                [],
+                "shownotes scan report must carry an entries array",
+                {"actual": type(entries).__name__},
+                "high",
+            )
+        ]
+
+    by_filename = _talk_indexes_by_filename(talks)
+    bindings: list[dict[str, Any]] = []
+    for position, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            findings.append(
+                _finding(
+                    "candidate_report_invalid",
+                    None,
+                    [],
+                    [],
+                    "shownotes scan entry must be an object",
+                    {"entry_index": position, "actual": type(entry).__name__},
+                    "high",
+                )
+            )
+            continue
+        if entry.get("disposition") != "review_required":
+            continue
+        filename = _nonempty(entry.get("filename"))
+        issues = entry.get("issues")
+        proposal = entry.get("proposal")
+        if filename is None or not isinstance(issues, list):
+            findings.append(
+                _finding(
+                    "candidate_report_invalid",
+                    None,
+                    [],
+                    [],
+                    "review-required entry must name a filename and its issues",
+                    {"entry_index": position},
+                    "high",
+                )
+            )
+            continue
+        index = by_filename.get(filename)
+        if index is None:
+            findings.append(
+                _finding(
+                    "candidate_binding_invalid",
+                    None,
+                    [],
+                    [filename],
+                    "candidate names no unique talk in the tracking database",
+                    {"entry_index": position},
+                    "high",
+                )
+            )
+            continue
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+            code = issue.get("code")
+            if not isinstance(code, str):
+                continue
+            lane = CANDIDATE_CONFLICT_CODES.get(code)
+            if lane is None:
+                continue
+            url = _nonempty(proposal.get(lane)) if isinstance(proposal, dict) else None
+            if url is None:
+                findings.append(
+                    _finding(
+                        "candidate_binding_invalid",
+                        None,
+                        [index],
+                        [filename],
+                        "conflict names a lane its proposal does not carry",
+                        {"lane": lane},
+                        "high",
+                    )
+                )
+                continue
+            if lane not in CANDIDATE_LANES:
+                findings.append(
+                    _finding(
+                        "candidate_provider_unsupported",
+                        None,
+                        [index],
+                        [filename],
+                        "candidate lane carries no auditable provider identity",
+                        {"lane": lane, "candidate_url": url},
+                        "medium",
+                    )
+                )
+                continue
+            bindings.append(
+                {
+                    "talk_index": index,
+                    "filename": filename,
+                    "lane": lane,
+                    "candidate_url": url,
+                }
+            )
+    return bindings, findings
+
+
 def audit_database(
     database: Any,
     *,
     database_path: str | Path,
     metadata_fetcher: Callable[[str], dict[str, Any]],
     captured_at: str | datetime | None = None,
+    candidate_report: Any = None,
 ) -> dict[str, Any]:
-    """Audit one loaded database. The input object is never mutated."""
+    """Audit one loaded database. The input object is never mutated.
+
+    ``candidate_report`` is a `scan-shownotes.py` report. Its review-required
+    conflicts are bound to talks and audited alongside the active source, so
+    choosing between them uses this auditor's bounded fetching, stable evidence
+    shape, and no-write guarantee instead of an ad hoc lookup. A candidate is
+    never promoted or persisted here.
+    """
     captured = normalize_captured_at(captured_at)
     database_name = str(Path(database_path).expanduser().resolve(strict=False))
     findings: list[dict[str, Any]] = []
@@ -548,6 +724,51 @@ def audit_database(
                 )
             )
         groups[video_id].append((index, talk))
+
+    candidate_audits: list[dict[str, Any]] = []
+    if candidate_report is not None:
+        bindings, binding_findings = candidate_bindings(candidate_report, talks)
+        findings.extend(binding_findings)
+        for binding in bindings:
+            index = binding["talk_index"]
+            filename = binding["filename"]
+            url = binding["candidate_url"]
+            video_id = parse_youtube_id(url)
+            entry = {
+                "talk_index": index,
+                "filename": filename,
+                "lane": binding["lane"],
+                "candidate_url": url,
+                "candidate_youtube_id": video_id,
+                "active_video_url": (
+                    _nonempty(talks[index].get("video_url"))
+                    if isinstance(talks[index], dict)
+                    else None
+                ),
+            }
+            candidate_audits.append(entry)
+            if video_id is None:
+                code = (
+                    "candidate_youtube_url_invalid"
+                    if is_youtube_url(url)
+                    else "candidate_provider_unsupported"
+                )
+                findings.append(
+                    _finding(
+                        code,
+                        None,
+                        [index],
+                        [filename],
+                        "candidate source cannot be audited as a YouTube identity",
+                        {"candidate_url": url},
+                        "high" if code in ERROR_CODES else "medium",
+                    )
+                )
+                continue
+            # One dedupe for both lanes: a candidate repeated across conflicts,
+            # or one that equals another talk's active source, is fetched once.
+            if not any(index == member for member, _ in groups[video_id]):
+                groups[video_id].append((index, talks[index]))
 
     evidence_by_id: dict[str, dict[str, Any]] = {}
     for video_id in sorted(groups):
@@ -815,6 +1036,22 @@ def audit_database(
             item["filenames"],
         )
     )
+    # Attach the fetched identity to each candidate. The same evidence object
+    # the active lane got, so the two are compared field-for-field rather than
+    # by two differently-shaped lookups.
+    for entry in candidate_audits:
+        video_id = entry["candidate_youtube_id"]
+        entry["provider_evidence"] = (
+            evidence_by_id.get(video_id) if video_id is not None else None
+        )
+        active_id = parse_youtube_id(entry["active_video_url"] or "")
+        entry["active_provider_evidence"] = (
+            evidence_by_id.get(active_id) if active_id is not None else None
+        )
+        entry["same_source_as_active"] = video_id is not None and video_id == active_id
+    candidate_audits.sort(
+        key=lambda item: (item["talk_index"], item["lane"], item["candidate_url"])
+    )
     talk_audits.sort(key=lambda item: (item["talk_index"], item["filename"]))
     sources.sort(key=lambda item: item["video_id"])
     by_code = Counter(item["code"] for item in findings)
@@ -834,8 +1071,10 @@ def audit_database(
             "finding_count": len(findings),
             "by_code": {key: by_code[key] for key in sorted(by_code)},
         },
+        "candidate_count": len(candidate_audits),
         "sources": sources,
         "talks": talk_audits,
+        "candidates": candidate_audits,
         "findings": findings,
     }
 
@@ -852,6 +1091,7 @@ def audit_path(
     *,
     metadata_fetcher: Callable[[str], dict[str, Any]] = fetch_youtube_metadata,
     captured_at: str | datetime | None = None,
+    candidate_report: Any = None,
 ) -> dict[str, Any]:
     """Read and audit a vault/database path without writing any file."""
     database_path = resolve_input(value).absolute()
@@ -888,6 +1128,7 @@ def audit_path(
         database_path=database_path,
         metadata_fetcher=metadata_fetcher,
         captured_at=captured_at,
+        candidate_report=candidate_report,
     )
 
 
@@ -901,11 +1142,32 @@ def main(argv: list[str] | None = None) -> int:
         "--captured-at",
         help="timezone-aware ISO timestamp for reproducible capture output",
     )
+    parser.add_argument(
+        "--candidates-from",
+        type=Path,
+        help=(
+            "scan-shownotes.py report JSON; audits its review-required "
+            "conflict candidates alongside each talk's active source"
+        ),
+    )
     args = parser.parse_args(argv)
+    candidate_report = None
+    if args.candidates_from is not None:
+        try:
+            candidate_report = json.loads(
+                args.candidates_from.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            # Refuse before any provider request: an unreadable report cannot
+            # bind a candidate, and a network fetch would be spent on nothing.
+            parser.error(
+                f"--candidates-from could not be read as JSON: {type(exc).__name__}"
+            )
     try:
         report = audit_path(
             args.vault_or_database,
             captured_at=args.captured_at,
+            candidate_report=candidate_report,
         )
     except ValueError as exc:
         parser.error(str(exc))
