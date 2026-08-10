@@ -82,42 +82,29 @@ instead of an ad hoc provider lookup outside the ingress workflow:
   "{vault_root}" --candidates-from "{scan_report_path}"
 ```
 
-**Input.** `--candidates-from` takes one `scan-shownotes.py` report path. Which
-report generation is accepted, which dispositions are valid, and which lanes
-carry an auditable provider identity are the script's to decide — see
-`skills/vault-ingress/scripts/audit-source-identities.py`, top-of-file constants
-`CANDIDATE_REPORT_SCHEMA_VERSION`, `CANDIDATE_DISPOSITIONS`, and
-`CANDIDATE_LANES`, each with the reasoning beside it.
+**Input.** `--candidates-from` takes one `scan-shownotes.py` report path. See
+`skills/vault-ingress/scripts/audit-source-identities.py`:
 
-The report is validated whole before anything is bound, and the verdict is
-all-or-nothing: one refused entry discards **every** candidate binding, because
-a partly malformed report is not a complete conflict set and auditing its
-well-formed remainder would report an unknown subset as "these are the
-conflicts". Every binding resolves before any provider request, so a report
-naming an unknown talk is refused without spending a fetch. What counts as
-refused, and the finding each refusal emits, live in `candidate_bindings()` —
-its docstring carries the contract.
+| What | Anchor |
+|---|---|
+| Accepted report generation | `CANDIDATE_REPORT_SCHEMA_VERSION` |
+| Valid dispositions | `CANDIDATE_DISPOSITIONS` |
+| Lanes with an auditable provider identity | `CANDIDATE_LANES` |
+| Which reports and entries bind, and the finding each refusal emits | `candidate_bindings()` docstring |
+| Faults eligible to stay lane-local, and the code each takes | `CANDIDATE_LANE_LOCAL_CODES` |
 
 **Output.** `candidates[]` carries `provider_evidence` and
 `active_provider_evidence` in the same shape for field-for-field comparison,
 plus `same_source_as_active`. `sources[].lanes` names which lane claimed each
-fetched identity. Candidate identities share the active lane's dedupe, so a
-candidate repeated across conflicts, or one equal to an active source, is
-fetched once.
+fetched identity.
 
-Candidate identities never enter the active-source assignment: the cross-talk
-collision analysis reads that map, so a candidate shared by two talks would
-otherwise fabricate a collision between active identities that share nothing.
+Candidate identities never enter the active-source assignment, so a candidate
+shared by two talks cannot appear as a collision between active identities.
 
-**Exit conditions.** A fault on an identity only a candidate claims is
-lane-local: the audit stays `complete` and the CLI exit stays clean, because a
-candidate the provider would not serve says nothing about the sources already in
-the database. The same fault on an identity the ACTIVE lane also claims keeps
-its blocking code — lane-local is about which lane failed, not about forgiving
-failures. Which faults are eligible, and the `candidate_`-prefixed code each
-takes, is `CANDIDATE_LANE_LOCAL_CODES`. A refused report costs coverage of the
-conflicts, never of the sources already in the database: the active lane still
-audits.
+**Exit conditions.** A refused report leaves `candidates[]` empty and the active
+lane audited; the report's own findings name the refusal. A lane-local candidate
+fault leaves the audit `complete` and the CLI exit clean. Every other fault
+keeps its blocking code and fails the run.
 
 **Side effects.** None. The audit writes nothing, and a candidate is never
 promoted or persisted here — reviewing this evidence and applying a decision are

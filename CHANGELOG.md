@@ -11,11 +11,12 @@ per-fault classification. Two copies of a predicate drift, and the reference is
 the copy nobody runs.
 
 It now carries the contract only — input, output shape, exit conditions, side
-effects — and names each internal once by pointer:
-`CANDIDATE_REPORT_SCHEMA_VERSION`, `CANDIDATE_DISPOSITIONS`, `CANDIDATE_LANES`,
-`CANDIDATE_LANE_LOCAL_CODES`, and `candidate_bindings()`, whose docstring
-carries the binding contract. The reasoning stays where the constants are, which
-is where it can be checked against the code that reads them.
+effects — and each internal is a table row pointing at the constant or function
+that owns it: `CANDIDATE_REPORT_SCHEMA_VERSION`, `CANDIDATE_DISPOSITIONS`,
+`CANDIDATE_LANES`, `CANDIDATE_LANE_LOCAL_CODES`, and `candidate_bindings()`. The
+reasoning stays where the constants are, which is where it can be checked
+against the code that reads them. Naming a predicate and then restating it is
+still two copies; the reference states what a caller observes and stops there.
 
 Raised as an advisory on PR #276 and deferred rather than folded in: the PR was
 otherwise green, and `review-severity` spends a re-review round on a
