@@ -47,6 +47,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 LINT_COMMAND = ("tessl", "plugin", "lint")
 
@@ -99,7 +100,9 @@ def classify(output: str) -> tuple[list[str], list[str]]:
     return errors, advisories
 
 
-def run(repo_root: Path, *, command: tuple[str, ...] = LINT_COMMAND):
+def run(
+    repo_root: Path, *, command: tuple[str, ...] = LINT_COMMAND
+) -> tuple[dict[str, Any], list[str]]:
     """Lint one plugin repo, returning its JSON report and stderr diagnostics."""
     completed = run_lint(repo_root, command=command)
     output = f"{completed.stdout}\n{completed.stderr}"
@@ -144,7 +147,7 @@ def run(repo_root: Path, *, command: tuple[str, ...] = LINT_COMMAND):
             " or not this gate could classify it."
         )
 
-    report: dict[str, object] = {
+    report: dict[str, Any] = {
         "ok": not failed,
         "lint_exit_code": completed.returncode,
         "errors": errors,
@@ -201,7 +204,7 @@ def main(argv: list[str]) -> int:
         # Inside the guarded region and before stdout: a failure writing the
         # step summary must produce the structured failure object, not a
         # traceback trailing a success report that already printed.
-        _emit_workflow_annotations([str(item) for item in report["advisories"]])
+        _emit_workflow_annotations(report["advisories"])
     except GateError as error:
         # Every run emits one JSON object, including the ones that fail before
         # the CLI produced a verdict — a consumer reading stdout must never
