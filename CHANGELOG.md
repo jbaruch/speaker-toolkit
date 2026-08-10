@@ -50,7 +50,7 @@ every declared path holds tracked files. A malformed manifest or a stale
 declaration reached publish unexamined whenever the repo had no ignore file.
 The manifest and declared-path checks now run on every invocation; only the
 exclusion matching depends on the ignore file.
-||||||| d103118
+
 ## 0.20.43 — 2026-08-10
 
 ### fix(tests) — choose the supervisor exit-vs-monitor ordering instead of racing it (#268)
