@@ -1,5 +1,26 @@
 # Changelog
 
+### docs(vault-ingress) — point the candidate-mode reference at its script (#278)
+
+Closes #278.
+
+The candidate-mode section of `source-identity-audit.md` restated what
+`audit-source-identities.py` implements: the accepted report generation, the
+closed disposition set, the lane allowlist, the dedupe behaviour, and the
+per-fault classification. Two copies of a predicate drift, and the reference is
+the copy nobody runs.
+
+It now carries the contract only — input, output shape, exit conditions, side
+effects — and names each internal once by pointer:
+`CANDIDATE_REPORT_SCHEMA_VERSION`, `CANDIDATE_DISPOSITIONS`, `CANDIDATE_LANES`,
+`CANDIDATE_LANE_LOCAL_CODES`, and `candidate_bindings()`, whose docstring
+carries the binding contract. The reasoning stays where the constants are, which
+is where it can be checked against the code that reads them.
+
+Raised as an advisory on PR #276 and deferred rather than folded in: the PR was
+otherwise green, and `review-severity` spends a re-review round on a
+presentation-only change only when a blocking round is already happening.
+
 ## 0.20.48 — 2026-08-10
 
 ### feat(vault-ingress) — an owner writer for reviewed shownotes catalog conflicts (#236)
