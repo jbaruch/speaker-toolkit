@@ -31,6 +31,14 @@ the matching `break`.
 preempted by the 5-second wall deadline when a runner stalls; the four tests
 that exercise the deadline still pass advancing clocks of their own.
 
+Every remaining real-time bound in the file is gone with it — the FIFO
+handshake `select`, the descendant-handshake `wait`, the cleanup-thread
+`Event.wait`/`join`, and the two import-probe `subprocess.run` timeouts all
+block on their event instead. A bound there decides the outcome by runner
+speed: a stalled runner misses the deadline and reports a failure that never
+happened. A step that truly never completes is now a hang the job's own
+timeout catches, which is a louder signal than a false assertion failure.
+
 ## 0.20.42 — 2026-08-10
 
 ### fix(vault-ingress) — share one retained named-stage across owner writers (#243)

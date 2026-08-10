@@ -433,11 +433,12 @@ def _frozen_clock() -> float:
 
 
 def _read_fifo_signal(fd: int) -> None:
-    # The byte is the success condition; this timeout only prevents a broken
-    # fixture from hanging the whole CI job before the injected clock can run.
-    readable, _, _ = select.select([fd], [], [], 5.0)
-    if not readable:
-        pytest.fail("worker did not complete the FIFO handshake")
+    # Block on the event, never on a duration. A real-time bound here decides
+    # the test's outcome by runner speed: a stalled runner misses the deadline
+    # and reports a handshake failure that never happened. A worker that truly
+    # never signals is a hang the job's own timeout catches, which is a louder
+    # and more honest signal than a false assertion failure.
+    select.select([fd], [], [])
     assert os.read(fd, 1) == b"1"
 
 
@@ -964,7 +965,7 @@ def test_clean_exit_reports_and_kills_known_descendant_with_handshake(tmp_path):
                 observed = super().sample()
                 assert os.write(release_fd, b"1") == 1
                 _read_fifo_signal(done_fd)
-                assert processes[0].wait(timeout=5.0) == 0
+                assert processes[0].wait() == 0
                 self.handshake_complete = True
                 return observed
             return super().sample()
@@ -1092,10 +1093,10 @@ def test_exited_worker_is_confirmed_by_popen_and_cleanup_does_not_mask(tmp_path)
 
     class ExitedBeforeSampleMonitor(PermissiveMonitor):
         def sample(self):
-            # Wait for the exit event, never for a duration: this asserts the
-            # precedence of a confirmed exit, not how fast a worker can die.
-            # The bound only stops a broken fixture from hanging the CI job.
-            processes[-1].wait(timeout=60.0)
+            # Block on the exit event, never on a duration (see
+            # _read_fifo_signal): this asserts the precedence of a confirmed
+            # exit, not how fast an interpreter can start and die.
+            processes[-1].wait()
             raise artifact_supervisor.SupervisorError("worker_monitor_identity_changed")
 
     def record_process(*args, **kwargs):
@@ -1329,10 +1330,8 @@ def test_cleanup_deadline_reports_a_still_running_cleanup_thread(monkeypatch):
             self.main_calls += 1
             if self.main_calls == 1:
                 return 0.0
-            if not entered.wait(5.0):
-                raise AssertionError(
-                    "cleanup thread did not enter containment teardown"
-                )
+            # Block on the event, never on a duration (see _read_fifo_signal).
+            entered.wait()
             return 1.0
 
     class Process:
@@ -1375,8 +1374,8 @@ def test_cleanup_deadline_reports_a_still_running_cleanup_thread(monkeypatch):
     finally:
         release.set()
         for worker in created_threads:
-            worker.join(timeout=5.0)
-            assert worker.is_alive() is False
+            # Released above, so this joins on the event (see _read_fifo_signal).
+            worker.join()
 
     assert isinstance(failure, TimeoutError)
     assert entered.is_set()
@@ -1880,12 +1879,13 @@ for module_name in (
     __import__(module_name)
 print("shared-pptx-imports-ok")
 """
+    # No timeout: block on the probe's exit event, never on a duration (see
+    # _read_fifo_signal).
     completed = subprocess.run(
         [sys.executable, "-I", "-c", code],
         check=False,
         capture_output=True,
         text=True,
-        timeout=30,
     )
 
     assert completed.returncode == 0, completed.stderr
@@ -1923,12 +1923,13 @@ for module_name, filename in (
     spec.loader.exec_module(module)
 print("posix-ingress-entrypoint-imports-ok")
 """
+    # No timeout: block on the probe's exit event, never on a duration (see
+    # _read_fifo_signal).
     completed = subprocess.run(
         [sys.executable, "-I", "-c", code],
         check=False,
         capture_output=True,
         text=True,
-        timeout=30,
     )
 
     assert completed.returncode == 0, completed.stderr
