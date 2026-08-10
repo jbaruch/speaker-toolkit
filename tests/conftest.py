@@ -188,6 +188,15 @@ def tracking_database_io():
 
 
 @pytest.fixture(scope="session")
+def cooperative_lock():
+    """The persistent sibling lock every writer of one owner file shares (#168)."""
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "cooperative_lock.py"),
+        "cooperative_lock",
+    )
+
+
+@pytest.fixture(scope="session")
 def retained_stage():
     """The staged-file lifecycle both owner writers share (#243).
 
@@ -655,4 +664,12 @@ def pptx_catalog_selection():
     return _import_script(
         os.path.join(SCRIPTS_VI, "pptx_catalog_selection.py"),
         "pptx_catalog_selection",
+    )
+
+
+@pytest.fixture(scope="session")
+def render_vault_status():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "render-vault-status.py"),
+        "render_vault_status",
     )

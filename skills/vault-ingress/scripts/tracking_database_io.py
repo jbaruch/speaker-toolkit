@@ -13,10 +13,9 @@ processes to lock different inodes and is outside the cooperative contract.
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 from dataclasses import dataclass
 from decimal import Decimal, DecimalException
-import fcntl
 import hashlib
 import json
 import math
@@ -26,6 +25,11 @@ import stat
 import sys
 from typing import Any, Iterator, NoReturn
 
+from cooperative_lock import (
+    CooperativeLock,
+    CooperativeLockError,
+    exclusive_file_lock,
+)
 from retained_stage import (
     FileGeneration,
     RetainedStage as StagedCandidate,
@@ -47,6 +51,9 @@ STAGED_METADATA_STABILIZATION_ATTEMPTS = 4
 
 STAGED_CANDIDATE_SUFFIX = ".tracking-db.tmp"
 STAGED_CANDIDATE_LABEL = "tracking-database candidate"
+
+# Names this owner's artifact in every cooperative-lock diagnostic.
+DATABASE_LOCK_LABEL = "tracking-database"
 
 
 # Closed, path-neutral prose for each typed reason code. A read failure must
@@ -228,15 +235,6 @@ class TrackingDatabaseWriteResult:
         }
 
 
-@dataclass
-class _DatabaseLock:
-    """One acquired lock plus cleanup warnings collected after the body."""
-
-    descriptor: int
-    path: Path
-    warnings: list[str]
-
-
 def unchanged_write_result(
     snapshot: TrackingDatabaseSnapshot,
 ) -> TrackingDatabaseWriteResult:
@@ -276,12 +274,6 @@ def json_values_equal(left: object, right: object) -> bool:
             for left_item, right_item in zip(left, right)
         )
     return left == right
-
-
-def lock_path_for(path: str | os.PathLike[str]) -> Path:
-    """Return the persistent cooperative lock shared by every toolkit writer."""
-    database_path = _absolute_path(path)
-    return database_path.parent / f".{database_path.name}.lock"
 
 
 def _path_metadata(path: Path, *, subject: str) -> os.stat_result:
@@ -552,91 +544,22 @@ def render_json_object(payload: dict[str, Any]) -> bytes:
         ) from exc
 
 
-def _lock_identity(metadata: os.stat_result) -> tuple[int, int]:
-    return metadata.st_dev, metadata.st_ino
-
-
-def _append_close_warning(
-    descriptor: int,
-    *,
-    label: str,
-    warnings: list[str],
-) -> None:
-    """Close a post-operation descriptor without masking the operation outcome."""
-    try:
-        os.close(descriptor)
-    except OSError as exc:
-        warnings.append(f"could not close {label}: {exc}")
-
-
 @contextmanager
-def _exclusive_database_lock(path: Path) -> Iterator[_DatabaseLock]:
-    lock_path = lock_path_for(path)
-    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
-    flags |= getattr(os, "O_NOFOLLOW", 0)
-    try:
-        descriptor = os.open(lock_path, flags, 0o600)
-    except OSError as exc:
-        raise TrackingDatabaseIOError(
-            f"cannot open cooperative tracking-database lock {lock_path}: {exc}"
-        ) from exc
-    acquired = False
-    initialized = False
-    try:
-        try:
-            opened = os.fstat(descriptor)
-            if not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1:
-                raise TrackingDatabaseIOError(
-                    f"cooperative tracking-database lock {lock_path} must be one regular file"
-                )
-            fcntl.flock(descriptor, fcntl.LOCK_EX)
-            acquired = True
-            try:
-                visible = lock_path.lstat()
-            except OSError as exc:
-                raise TrackingDatabaseIOError(
-                    f"cannot verify cooperative tracking-database lock {lock_path}: {exc}"
-                ) from exc
-            locked = os.fstat(descriptor)
-            if (
-                stat.S_ISLNK(visible.st_mode)
-                or not stat.S_ISREG(visible.st_mode)
-                or _lock_identity(visible) != _lock_identity(locked)
-                or locked.st_nlink != 1
-            ):
-                raise TrackingDatabaseIOError(
-                    f"cooperative tracking-database lock {lock_path} changed while locking; "
-                    "restore the persistent regular lock file and retry"
-                )
-        except OSError as exc:
-            raise TrackingDatabaseIOError(
-                f"cannot acquire tracking-database lock through {lock_path}: {exc}"
-            ) from exc
-        initialized = True
-    finally:
-        if not initialized:
-            try:
-                os.close(descriptor)
-            except OSError:
-                pass
+def _exclusive_database_lock(path: Path) -> Iterator[CooperativeLock]:
+    """Hold the shared writer lock, in this owner's error terms.
 
-    lock = _DatabaseLock(descriptor=descriptor, path=lock_path, warnings=[])
+    The lock mechanism is the shared primitive; only the classification is this
+    owner's, so callers keep routing on TrackingDatabaseIOError. Acquisition is
+    wrapped alone — a lock error raised by the guarded body is that body's, not
+    this acquisition's, and must not be relabelled here.
+    """
+    stack = ExitStack()
     try:
+        lock = stack.enter_context(exclusive_file_lock(path, label=DATABASE_LOCK_LABEL))
+    except CooperativeLockError as exc:
+        raise TrackingDatabaseIOError(str(exc)) from exc
+    with stack:
         yield lock
-    finally:
-        if acquired:
-            try:
-                fcntl.flock(descriptor, fcntl.LOCK_UN)
-            except OSError as exc:
-                lock.warnings.append(
-                    f"could not unlock cooperative tracking-database lock "
-                    f"{lock_path}: {exc}"
-                )
-        _append_close_warning(
-            descriptor,
-            label=f"cooperative tracking-database lock {lock_path}",
-            warnings=lock.warnings,
-        )
 
 
 def _require_expected_generation(
