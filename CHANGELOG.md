@@ -1,5 +1,58 @@
 # Changelog
 
+### chore(ci) — hold skill entrypoints inside Tessl's token budget (#163)
+
+Closes #163. `tessl plugin lint` flagged `presentation-creator/SKILL.md` at
+~8,749 tokens against Tessl's 5,000 recommendation; the entrypoint loads in full
+the moment the skill triggers, so every consumer paid that context before a
+single task-specific reference was selected. It is now ~4,700.
+
+The issue also named `vault-ingress/SKILL.md` at ~10,939 tokens. That one had
+already come in under budget through unrelated work, so only the creator
+entrypoint needed the split — the issue text was stale by the time it was picked
+up.
+
+Most of the removed bulk was duplication rather than unique content: the `talk:`
+block, the outline schema, the guardrail-report contract, and the deck-build
+passes were each already documented in `references/phase{1,3,4,5}-*.md`. Two
+genuinely new reference files carry what was only in SKILL.md:
+
+- `references/pattern-history-authorization.md` — the `pattern_history_status.py`
+  payload shape, the six domain contracts, source selection, profile schema
+  tiers, Section 15 eligibility, summary-only mode, and the cross-generation
+  comparison rules. SKILL.md keeps the invocation and routes here.
+- `references/alternate-entry-flows.md` — late entry, adapting an existing talk,
+  CFP abstracts, and the sessions catalog. These are alternate entry points, not
+  phases of the linear flow, and each names its own trigger condition.
+
+Three fixes fell out of the split. `phase3-content.md`'s `talk:` table was
+missing `engine`, `deck_theme`, and `engine_source`, so those rows moved rather
+than evaporated. `phase5-slides.md` pointed at "the presenterm branch in SKILL.md
+Step 5" for content SKILL.md pointed back at it for — the circular reference is
+now a real Step 5.1c. The poster-theatrical `TITLE`/`FOOTER` omit rule and the
+load-bearing `expand-builds` → `inject-notes` → `apply-backgrounds` ordering also
+landed in `phase5-slides.md`, where the rest of the build detail lives.
+
+`scripts/check-skill-entrypoints.sh` makes both properties deterministic instead
+of remembered, per `language-diagnostics` Gate It Deterministically. It fails on
+an over-budget entrypoint and on a relative link resolving to nothing — the
+second failure mode being the one the split itself introduces, since a dangling
+pointer is silent at runtime: the agent follows it, finds nothing, and proceeds
+without the routing contract. Links inside code fences and inline code spans are
+sample output the skill emits, not pointers, so they are excluded. The token
+estimate is chars/4, which rounds against us (8,790 estimated vs Tessl's 8,749
+reported on the same file), so a pass here implies a pass in lint.
+
+The gate joins `scripts/pre-publish-checks.sh` and is covered by
+`tests/test_skill_entrypoints.py`, including both budget boundaries and a guard
+that the composer actually invokes it.
+
+Seven doc-contract assertions in `test_presentation_pattern_history.py` and
+`test_section15_pattern_history.py` read the authorization contract out of
+SKILL.md. They now read it from the reference file that owns it, plus a new
+assertion that SKILL.md routes there — so content vanishing from both still
+fails rather than passing on a union.
+
 ## 0.20.38 — 2026-08-09
 
 ### chore(ci) — enforce the Ruff, format, and Pyright gates (#162)
