@@ -88,6 +88,8 @@ from tracking_database import (  # noqa: E402  # pyright: ignore[reportMissingIm
 
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from tracking_database_io import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+    DATABASE_READ_DIAGNOSTICS,
+    DATABASE_READ_FALLBACK,
     TrackingDatabaseIOError,
     decode_json_object,
     snapshot_tracking_database,
@@ -203,7 +205,13 @@ def main(argv: list[str]) -> int:
         database_snapshot = snapshot_tracking_database(db_path)
         db = decode_json_object(database_snapshot)
     except TrackingDatabaseIOError as exc:
-        print(f"ERROR: tracking-database.json is malformed: {exc}", file=sys.stderr)
+        # Never echo the exception: decoder messages carry the host database
+        # path and the rejected key or value verbatim. Route the typed reason
+        # code through the shared closed vocabulary instead.
+        _code, message = DATABASE_READ_DIAGNOSTICS.get(
+            exc.reason_code, DATABASE_READ_FALLBACK
+        )
+        print(f"ERROR: {message}", file=sys.stderr)
         return 1
     try:
         database_assessment = assess_tracking_database(db)
