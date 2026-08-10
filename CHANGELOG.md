@@ -1,5 +1,25 @@
 # Changelog
 
+### ci — fail the build on a committed conflict marker (#272)
+
+Closes #272.
+
+A diff3 base marker (`||||||| <sha>`) survived a merge resolution and was
+committed to `CHANGELOG.md`, which ships in the plugin package. Nothing caught
+it: `ruff` does not read Markdown, and `git diff --check` only inspects the
+working diff, so a marker that is already committed passes silently. The
+resolution had stripped `<<<<<<<`, `=======`, and `>>>>>>>`;
+`merge.conflictStyle = diff3` adds a fourth, and the leftover line does not
+start with `#`, so a heading-level review of the diff never saw it.
+
+`scripts/check_conflict_markers.py` scans every tracked text file for all four
+forms and fails the `lint` job and the publish run. Binary files are counted and
+skipped — a marker is a line of text, and the repo's binaries are eval fixtures.
+The pattern requires the marker to be bare or followed by a space and a label,
+so a setext heading rule and a here-doc delimiter stay legal. No exclusion list:
+the tests build markers from repeated characters rather than writing them out,
+so the suite is not its own violation.
+
 ## 0.20.49 — 2026-08-10
 
 ### feat(vault-ingress) — derive the rhetoric-summary status block from the database (#168)
