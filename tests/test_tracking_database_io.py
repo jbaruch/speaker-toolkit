@@ -505,6 +505,7 @@ def test_lock_acquisition_interrupt_closes_descriptor(
 
 
 def test_staging_interrupt_cleans_candidate_and_preserves_database(
+    retained_stage,
     tracking_database_io,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -512,15 +513,13 @@ def test_staging_interrupt_cleans_candidate_and_preserves_database(
     path = tmp_path / "tracking-database.json"
     original = _write(path, {"talks": []})
     expected = tracking_database_io.snapshot_tracking_database(path)
-    real_write = tracking_database_io._write_descriptor
+    real_write = retained_stage._write_descriptor
 
     def interrupt_after_write(descriptor: int, raw: bytes) -> None:
         real_write(descriptor, raw)
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(
-        tracking_database_io, "_write_descriptor", interrupt_after_write
-    )
+    monkeypatch.setattr(retained_stage, "_write_descriptor", interrupt_after_write)
     with pytest.raises(KeyboardInterrupt):
         tracking_database_io.commit_tracking_database(
             expected,
@@ -533,6 +532,7 @@ def test_staging_interrupt_cleans_candidate_and_preserves_database(
 
 
 def test_staged_timestamp_churn_retries_same_candidate_then_installs_once(
+    retained_stage,
     tracking_database_io,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -541,11 +541,11 @@ def test_staged_timestamp_churn_retries_same_candidate_then_installs_once(
     _write(path, {"talks": []})
     expected = tracking_database_io.snapshot_tracking_database(path)
     candidate = tracking_database_io.render_json_object({"talks": [], "config": {}})
-    original_observe = tracking_database_io._observe_staged_candidate
+    original_observe = retained_stage._observe
     original_verify = tracking_database_io._verify_staged_candidate
     original_replace = tracking_database_io._replace_staged_candidate
-    real_fstat = tracking_database_io.os.fstat
-    real_stat = tracking_database_io.os.stat
+    real_fstat = retained_stage.os.fstat
+    real_stat = retained_stage.os.stat
     staged_descriptor: int | None = None
     staged_name: str | None = None
     staged_directory_descriptor: int | None = None
@@ -609,8 +609,8 @@ def test_staged_timestamp_churn_retries_same_candidate_then_installs_once(
             staged_descriptor = stage.descriptor
             staged_name = stage.name
             staged_directory_descriptor = stage.directory_descriptor
-            monkeypatch.setattr(tracking_database_io.os, "fstat", churning_fstat)
-            monkeypatch.setattr(tracking_database_io.os, "stat", churning_stat)
+            monkeypatch.setattr(retained_stage.os, "fstat", churning_fstat)
+            monkeypatch.setattr(retained_stage.os, "stat", churning_stat)
         original_verify(stage, raw)
 
     def counted_replace(stage, target: Path) -> None:
@@ -618,20 +618,12 @@ def test_staged_timestamp_churn_retries_same_candidate_then_installs_once(
         replacements += 1
         original_replace(stage, target)
 
+    monkeypatch.setattr(retained_stage, "_observe", counted_observe)
     monkeypatch.setattr(
-        tracking_database_io,
-        "_observe_staged_candidate",
-        counted_observe,
+        tracking_database_io, "_verify_staged_candidate", verify_with_initial_churn
     )
     monkeypatch.setattr(
-        tracking_database_io,
-        "_verify_staged_candidate",
-        verify_with_initial_churn,
-    )
-    monkeypatch.setattr(
-        tracking_database_io,
-        "_replace_staged_candidate",
-        counted_replace,
+        tracking_database_io, "_replace_staged_candidate", counted_replace
     )
 
     result = tracking_database_io.commit_tracking_database(expected, candidate)
@@ -645,6 +637,7 @@ def test_staged_timestamp_churn_retries_same_candidate_then_installs_once(
 
 
 def test_never_stable_staged_timestamps_fail_with_bounded_typed_diagnostic(
+    retained_stage,
     tracking_database_io,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -653,10 +646,10 @@ def test_never_stable_staged_timestamps_fail_with_bounded_typed_diagnostic(
     original = _write(path, {"talks": []})
     expected = tracking_database_io.snapshot_tracking_database(path)
     candidate = tracking_database_io.render_json_object({"talks": [], "config": {}})
-    original_observe = tracking_database_io._observe_staged_candidate
+    original_observe = retained_stage._observe
     original_verify = tracking_database_io._verify_staged_candidate
-    real_fstat = tracking_database_io.os.fstat
-    real_stat = tracking_database_io.os.stat
+    real_fstat = retained_stage.os.fstat
+    real_stat = retained_stage.os.stat
     staged_descriptor: int | None = None
     staged_name: str | None = None
     staged_directory_descriptor: int | None = None
@@ -706,15 +699,11 @@ def test_never_stable_staged_timestamps_fail_with_bounded_typed_diagnostic(
         staged_descriptor = stage.descriptor
         staged_name = stage.name
         staged_directory_descriptor = stage.directory_descriptor
-        monkeypatch.setattr(tracking_database_io.os, "fstat", churning_fstat)
-        monkeypatch.setattr(tracking_database_io.os, "stat", churning_stat)
+        monkeypatch.setattr(retained_stage.os, "fstat", churning_fstat)
+        monkeypatch.setattr(retained_stage.os, "stat", churning_stat)
         original_verify(stage, raw)
 
-    monkeypatch.setattr(
-        tracking_database_io,
-        "_observe_staged_candidate",
-        counted_observe,
-    )
+    monkeypatch.setattr(retained_stage, "_observe", counted_observe)
     monkeypatch.setattr(
         tracking_database_io,
         "_verify_staged_candidate",
@@ -739,6 +728,7 @@ def test_never_stable_staged_timestamps_fail_with_bounded_typed_diagnostic(
 
 
 def test_staged_name_identity_change_fails_typed_and_cleans_owned_candidate(
+    retained_stage,
     tracking_database_io,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -748,7 +738,7 @@ def test_staged_name_identity_change_fails_typed_and_cleans_owned_candidate(
     expected = tracking_database_io.snapshot_tracking_database(path)
     candidate = tracking_database_io.render_json_object({"talks": [], "config": {}})
     original_stage = tracking_database_io._stage_candidate
-    real_stat = tracking_database_io.os.stat
+    real_stat = retained_stage.os.stat
     staged_name: str | None = None
     staged_directory_descriptor: int | None = None
     substituted = False
@@ -1132,6 +1122,7 @@ def test_directory_fsync_failure_reports_installed_generation(
 
 @pytest.mark.parametrize("initialize", [False, True], ids=["commit", "initialize"])
 def test_directory_close_failure_is_an_installed_warning(
+    retained_stage,
     tracking_database_io,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1162,7 +1153,7 @@ def test_directory_close_failure_is_an_installed_warning(
         real_close(descriptor)
 
     monkeypatch.setattr(tracking_database_io, "_stage_candidate", capture_stage)
-    monkeypatch.setattr(tracking_database_io.os, "close", fail_directory_close)
+    monkeypatch.setattr(retained_stage.os, "close", fail_directory_close)
     if initialize:
         result = tracking_database_io.initialize_tracking_database(path, payload)
     else:
@@ -1265,6 +1256,7 @@ def test_lock_close_failure_is_an_installed_warning(
 
 
 def test_postinstall_verification_failure_reports_installed_unknown_state(
+    retained_stage,
     tracking_database_io,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

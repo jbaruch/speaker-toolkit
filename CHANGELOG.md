@@ -1,5 +1,50 @@
 # Changelog
 
+### fix(vault-ingress) — share one retained named-stage across owner writers (#243)
+
+Closes #243, and folds in #240.
+
+`write-analysis.py` had a live defect, not a duplicated invariant.
+`_stage_text` created its stage with `tempfile.mkstemp`, wrote the body,
+**closed the descriptor**, and returned a pathname; `atomic_write_batch` then
+installed it with `os.replace(name, target)`. Between those two steps the staged
+name was just a name in a directory, so anything able to write there could
+substitute it and have the writer install those bytes. Reproduced before the
+fix: the batch returned normally while the target held attacker-supplied
+content. The writer had no byte verification of its stage at all — every
+`sha256` in that file was citation rendering.
+
+`retained_stage.py` now owns the staged-file lifecycle for both writers: unique
+no-follow creation with a retained file and directory descriptor, regular-file
+and single-link validation, exact descriptor/name device and inode identity at
+every preinstall observation, exact size/bytes/SHA-256 binding, and bounded
+same-view `mtime_ns`/`ctime_ns` stabilization. Each owner keeps its own
+compare-and-swap and backup behavior, which is what differs between them;
+`tracking_database_io` maps the shared `StagedInvariantError` into its existing
+`StagedCandidateConflictError` so its public error contract is unchanged.
+
+The analysis writer re-verifies immediately before each replace rather than only
+at stage time, so the staging-plus-preflight window is covered too, and runs a
+post-install check whose failure is reported as installed-but-unverified — never
+as a pre-install failure, because the replace already happened.
+
+Cleanup is truthful (#240). `close_retained_stage` returns a report carrying a
+disposition and stable reason codes — `staged_cleanup_unlink_failed`,
+`staged_cleanup_descriptor_close_failed`,
+`staged_cleanup_directory_close_failed`, `staged_cleanup_name_not_owned` — so a
+pre-install failure can no longer discard them on the way out. A name that now
+resolves to a different inode or file type is left untouched rather than
+unlinked: it is someone else's data, and removing it to tidy up after ourselves
+would be the second bug. `KeyboardInterrupt` and `SystemExit` still propagate.
+
+Test seams followed the implementation. Five injection points that patched
+`tracking_database_io` internals now patch `retained_stage` where the
+observation loop actually lives; the two that wrap the owner's typed-error
+mapping keep patching the owner, because that mapping is the owner's. All 342
+existing writer race, interrupt, backup, durability, analysis-body-preservation,
+and CloudStorage migration tests stay green unchanged.
+
+
 ### feat(vault-ingress) — carry the matched rejection into scan reports (#177)
 
 Closes #177. `scan-shownotes.py` blocked a reappearing known-bad source but

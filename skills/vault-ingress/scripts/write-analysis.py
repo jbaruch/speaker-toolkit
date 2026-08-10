@@ -65,6 +65,7 @@ import stat
 import sys
 import tempfile
 import unicodedata
+from pathlib import Path
 
 from failure_diagnostics import emit_unexpected_failure
 from tracking_database import (
@@ -93,6 +94,14 @@ from return_validation import (
     validate_batch,
     validate_persisted_v2_analysis_state,
     validate_persisted_catalog_generation,
+)
+from retained_stage import (
+    RetainedStageError,
+    close_retained_stage,
+    install_retained_stage,
+    installed_target_warning,
+    open_retained_stage,
+    verify_retained_stage,
 )
 from tracking_database_io import (
     TrackingDatabaseIOError,
@@ -138,6 +147,11 @@ PERSISTED_RENDER_FIELDS = (
     "pattern_scoring_schema_version",
     "pattern_catalog_fingerprint",
 )
+
+
+# tempfile.mkstemp created the previous staged file at 0o600 and os.replace
+# carried that mode onto the installed analysis, so the retained stage keeps it.
+ANALYSIS_FILE_MODE = 0o600
 
 
 class AnalysisBatchWriteError(OSError):
@@ -853,26 +867,22 @@ def preflight_output_targets(out_dir, rendered):
 
 
 def _stage_text(path, body):
-    """Flush one complete body beside its target without changing the target."""
-    directory = os.path.dirname(os.path.abspath(path)) or "."
-    basename = os.path.basename(path)
-    fd, temp_path = tempfile.mkstemp(
-        prefix=f".{basename}.", suffix=".stage", dir=directory
+    """Retain one complete body beside its target as an open staged inode.
+
+    Returns a `RetainedStage`, not a pathname. Staging by path and installing
+    with `os.replace(name, target)` installs whatever the name resolves to at
+    replace time, so anything able to write to the output directory could swap
+    the staged name and have this writer install its bytes and report success.
+    The retained descriptor is what makes the later verification meaningful.
+    """
+    target = Path(os.path.abspath(path))
+    return open_retained_stage(
+        target,
+        body.encode("utf-8"),
+        mode=ANALYSIS_FILE_MODE,
+        suffix=".stage",
+        label="analysis",
     )
-    staged = False
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(body)
-            handle.flush()
-            os.fsync(handle.fileno())
-        staged = True
-        return temp_path
-    finally:
-        if not staged:
-            try:
-                os.unlink(temp_path)
-            except FileNotFoundError:
-                pass
 
 
 def _safe_unlink(path):
@@ -882,6 +892,28 @@ def _safe_unlink(path):
         os.unlink(path)
     except FileNotFoundError:
         pass
+
+
+def _release_stages(items, warnings):
+    """Close every still-open stage once, collecting truthful cleanup detail.
+
+    Idempotent: the batch releases on the staging path, the failure path, and
+    the success path, and only the first call for a given item does the work.
+    """
+    for item in items:
+        stage = item.get("stage")
+        if stage is None:
+            continue
+        item["stage"] = None
+        report = close_retained_stage(stage)
+        warnings.extend(report.warnings)
+
+
+def _cleanup_suffix(warnings):
+    """Append staged-cleanup detail to a failure without hiding the cause."""
+    if not warnings:
+        return ""
+    return "; staged cleanup: " + "; ".join(warnings)
 
 
 def _rollback_analysis_batch(items):
@@ -917,6 +949,7 @@ def atomic_write_batch(rendered):
     preflight_output_targets(out_dir, rendered)
 
     items = []
+    cleanup_warnings: list[str] = []
     staging_complete = False
     try:
         for name, path, body in rendered:
@@ -924,20 +957,20 @@ def atomic_write_batch(rendered):
                 {
                     "name": name,
                     "path": path,
+                    "body": body.encode("utf-8"),
                     "stage": _stage_text(path, body),
                     "backup": None,
                     "installed": False,
                 }
             )
         staging_complete = True
-    except OSError as exc:
+    except (RetainedStageError, OSError) as exc:
         raise AnalysisBatchWriteError(
             f"cannot stage complete analysis batch: {exc}"
         ) from exc
     finally:
         if not staging_complete:
-            for item in items:
-                _safe_unlink(item["stage"])
+            _release_stages(items, cleanup_warnings)
 
     committed = False
     rollback_done = False
@@ -947,6 +980,10 @@ def atomic_write_batch(rendered):
         preflight_output_targets(out_dir, rendered)
         for item in items:
             target = item["path"]
+            # Prove the staged inode still holds these exact bytes immediately
+            # before its replace. Verifying at stage time alone would leave the
+            # whole staging-plus-preflight window unguarded.
+            verify_retained_stage(item["stage"], item["body"])
             if os.path.lexists(target):
                 mode = os.lstat(target).st_mode
                 if stat.S_ISDIR(mode):
@@ -967,28 +1004,37 @@ def atomic_write_batch(rendered):
                     if not backup_installed:
                         _safe_unlink(backup)
                 item["backup"] = backup
-            os.replace(item["stage"], target)
+            install_retained_stage(item["stage"], Path(os.path.abspath(target)))
             item["installed"] = True
+            warning = installed_target_warning(
+                item["stage"],
+                Path(os.path.abspath(target)),
+                item["body"],
+            )
+            if warning is not None:
+                # The replace already happened, so this is an installed-but-
+                # unverified outcome, never a pre-install failure.
+                cleanup_warnings.append(warning)
         committed = True
-    except (AnalysisBatchWriteError, OSError) as exc:
+    except (AnalysisBatchWriteError, RetainedStageError, OSError) as exc:
         rollback_errors = _rollback_analysis_batch(items)
         rollback_done = True
-        for item in items:
-            _safe_unlink(item["stage"])
+        _release_stages(items, cleanup_warnings)
         if rollback_errors:
             backups = [item["backup"] for item in items if item["backup"]]
             raise AnalysisBatchWriteError(
                 f"analysis batch commit failed ({exc}); rollback also failed: "
                 f"{'; '.join(rollback_errors)}; recovery backups retained: {backups}"
+                + _cleanup_suffix(cleanup_warnings)
             ) from exc
         raise AnalysisBatchWriteError(
             f"analysis batch commit failed ({exc}); every prior target was restored"
+            + _cleanup_suffix(cleanup_warnings)
         ) from exc
     finally:
         if not committed and not rollback_done:
             rollback_errors = _rollback_analysis_batch(items)
-            for item in items:
-                _safe_unlink(item["stage"])
+            _release_stages(items, cleanup_warnings)
             if rollback_errors:
                 print(
                     "WARNING: interrupted analysis batch rollback retained recovery "
@@ -1004,8 +1050,9 @@ def atomic_write_batch(rendered):
             # recoverable cleanup artifact, not grounds to roll back a complete
             # batch after other backups may already have been discarded.
             pass
-    for item in items:
-        _safe_unlink(item["stage"])
+    _release_stages(items, cleanup_warnings)
+    for warning in cleanup_warnings:
+        print(f"WARNING: {warning}", file=sys.stderr)
 
 
 def load_json(path, label):
