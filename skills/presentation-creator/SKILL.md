@@ -317,7 +317,7 @@ Then run the post-build passes in the order phase5-slides.md prescribes —
 Never reorder them. See `rules/deck-editing-rules.md`.
 
 **For presenterm talks**, hand-author `{slug}.md` from the `slides.md`
-build-sheet per phase5-slides.md Step 5.1c.
+build-sheet per phase5-slides.md — Presenterm Talks.
 
 Every layout, background, footer, and slide-number decision reads from
 `speaker-profile.json` (`design_rules.*`, `infrastructure.template_layouts[]`) at

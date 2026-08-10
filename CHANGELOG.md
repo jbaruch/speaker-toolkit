@@ -108,6 +108,18 @@ The gate joins `scripts/pre-publish-checks.sh` and is covered by
 grammar, the unreadable-file path, and a guard that the composer actually
 invokes it.
 
+`phase5-slides.md` drops its `Step 5.0` / `5.1b` / `5.1c` / `5.2`… headings for
+descriptive ones. `skill-authoring` Step Structure bans decimal and lettered
+sub-steps, and its `applyTo` covers `skills/**/*.md`, not only `SKILL.md`;
+phase5 was the last reference file still numbering that way, so it now reads
+like `phase3-content.md` and `phase6-publishing.md` do. Descriptive headings
+also avoid a `Step 1` in the reference colliding with a different `Step 1` in
+the entrypoint.
+
+That surfaced a pre-existing dangling internal pointer: the file's directory
+map credited `builds/` to "Phase 5 Step 5.1c", a heading that did not exist,
+and progressive-reveal builds come from the illustrations pass regardless.
+
 Every step gate in the creator SKILL.md now states its continuation explicitly,
 per `skill-authoring` Step Continuity. Steps 2 through 6 ended at a bare
 `Gate:` line, which reads as an implicit pause; Step 6 now says it finishes
