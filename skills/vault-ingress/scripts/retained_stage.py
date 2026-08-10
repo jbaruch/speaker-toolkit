@@ -132,8 +132,9 @@ class StageCleanupReport:
     """What cleanup actually did, in stable terms a caller can report.
 
     ``disposition`` is one of ``removed``, ``already_absent``,
-    ``staged_cleanup_name_not_owned``, or ``staged_cleanup_inspect_failed`` —
-    the last meaning absence was never established, so an orphan may remain. A cleanup that could not finish carries
+    ``staged_cleanup_name_not_owned``, ``staged_cleanup_inspect_failed``, or
+    ``staged_cleanup_unlink_failed``. Only ``removed`` and ``already_absent``
+    assert the name is gone; the rest mean an orphan may remain. A cleanup that could not finish carries
     ``reason_codes`` alongside human ``warnings``; neither ever converts an
     installed outcome into a failure.
     """
@@ -626,11 +627,13 @@ def _unlink_staged_name(stage: RetainedStage, collector: _CleanupCollector) -> s
     try:
         os.unlink(stage.name, dir_fd=stage.directory_descriptor)
     except OSError as exc:
+        # The name is still there. Reporting "already_absent" would let a
+        # consumer record a clean cleanup over a confirmed orphan.
         collector.add(
             STAGED_CLEANUP_UNLINK_FAILED,
             f"could not remove staged {stage.label} {stage.path}: {exc}",
         )
-        return "already_absent"
+        return STAGED_CLEANUP_UNLINK_FAILED
     return "removed"
 
 

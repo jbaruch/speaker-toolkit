@@ -71,6 +71,14 @@ of trusting it. The staging-failure path also released its stages inside a
 `finally` that ran after the error was constructed, so those cleanup warnings
 went nowhere; cleanup now happens first and the detail rides out on the error.
 
+Two more cleanup dispositions stopped lying. A failed `os.unlink` reported
+`already_absent` — the same untruth already fixed for a failed inspection, but
+missed one branch over — so a consumer could record a clean cleanup over a
+confirmed orphan. It gets `staged_cleanup_unlink_failed`, and only `removed`
+and `already_absent` now assert the name is gone. The tracking-DB helper's
+interrupt path also discarded its report; those warnings go to stderr rather
+than nowhere.
+
 Two Copilot findings folded in. `_stage_candidate` ran cleanup on a
 verification failure and dropped the report, reintroducing the vanished-warning
 problem one level up; the cleanup detail now rides out inside the typed

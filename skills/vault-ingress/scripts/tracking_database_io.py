@@ -23,6 +23,7 @@ import math
 import os
 from pathlib import Path
 import stat
+import sys
 from typing import Any, Iterator, NoReturn
 
 from retained_stage import (
@@ -736,9 +737,13 @@ def _stage_candidate(path: Path, candidate: bytes, mode: int) -> StagedCandidate
             f"{exc.detail}; staged cleanup: {'; '.join(report.warnings)}",
         ) from exc
     finally:
-        # Every other failure, interrupts included, propagates unchanged.
+        # Every other failure, interrupts included, propagates unchanged — but
+        # its cleanup detail still has to reach someone, so it goes to stderr
+        # rather than being discarded with the report.
         if not verified and not released:
-            close_retained_stage(stage)
+            report = close_retained_stage(stage)
+            for warning in report.warnings:
+                print(f"WARNING: {warning}", file=sys.stderr)
     return stage
 
 

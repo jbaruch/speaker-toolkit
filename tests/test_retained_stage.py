@@ -426,3 +426,41 @@ def test_a_verified_install_removes_its_backup_and_succeeds(
     assert target.read_text(encoding="utf-8") == "the new body\n"
     assert not list(tmp_path.glob(".*.backup"))
     assert not list(tmp_path.glob(".*.stage"))
+
+
+def test_unlink_failure_disposition_never_claims_absence(
+    retained_stage, staged, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed unlink leaves the name behind, so the report must say so."""
+    stage, _payload, _target = staged
+
+    def failing_unlink(*_args, **_kwargs):
+        raise OSError("simulated unlink failure")
+
+    monkeypatch.setattr(retained_stage.os, "unlink", failing_unlink)
+    report = retained_stage.close_retained_stage(stage)
+
+    assert report.disposition == retained_stage.STAGED_CLEANUP_UNLINK_FAILED
+    assert report.disposition != "already_absent"
+    assert report.clean is False
+    assert stage.path.exists()
+    stage.descriptor = None
+
+
+def test_inspect_failure_disposition_never_claims_absence(
+    retained_stage, staged, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stage, _payload, _target = staged
+    real_stat = os.stat
+
+    def failing_stat(name, *args, **kwargs):
+        if name == stage.name:
+            raise OSError("simulated stat failure")
+        return real_stat(name, *args, **kwargs)
+
+    monkeypatch.setattr(retained_stage.os, "stat", failing_stat)
+    report = retained_stage.close_retained_stage(stage)
+
+    assert report.disposition == retained_stage.STAGED_CLEANUP_INSPECT_FAILED
+    assert report.disposition != "already_absent"
+    stage.descriptor = None
