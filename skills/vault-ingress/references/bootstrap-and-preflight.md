@@ -219,8 +219,15 @@ do not omit `--directory` or
 pre-probe the root with `find`, a recursive glob, or a per-file loop. The bounded
 authenticated discovery worker owns root validation and enumeration. Report counts,
 then persist each reviewed result with a `record_pptx`
-mutation and `schema_version: 1`, including the exact prior catalog record and, for
-a match, the talk's exact prior `pptx_path` expectation. See
+mutation and `schema_version: 2`, including the exact prior catalog record and, for
+a match, the talk's exact prior `pptx_path` expectation. A record whose deck has
+had no extraction attempt carries `visual_evidence: null`; a record claiming
+visual evidence carries the receipt binding extractor schema, pipeline version,
+exact source fingerprint, and artifact identity. Never decide from
+`visual_extracted` alone whether a deck needs extraction — classify through
+`classify_pptx_visual_evidence` (see [schemas-db.md](schemas-db.md) —
+`pptx_catalog` v1 -> v2), which reads a legacy record's bare claim as
+unknown-generation evidence rather than current. See
 [schemas-db.md](schemas-db.md) for the PPTX extraction output
 schema (per-slide visual data, shape types, global design stats).
 Consume current schema v4. A v0/v1 record has unknown timing, not zero timing;

@@ -43,6 +43,35 @@ attempts. Exhaustion and every hard staged mismatch raise
 `StagedCandidateConflictError` carrying the failed invariant. The class is
 defined in `skills/vault-ingress/scripts/tracking_database_io.py`.
 
+### `pptx_catalog` v1 -> v2
+
+Writer: the `record_pptx` mutation in
+`skills/vault-ingress/scripts/mutate-tracking-database.py`. Readers dual-accept
+v1 and v2.
+
+- v1 records a bare `visual_extracted` boolean and nothing about which extractor
+  produced it, so a stored `true` may refer to extractor schema v0, v1, v2, v3,
+  or current v4. A v1 record with a `visual_evidence` key is rejected as an
+  unknown field.
+- v2 requires `visual_evidence`: either `null` for a deck no extraction has been
+  attempted on, or a receipt binding `outcome`, `extractor_schema_version`,
+  `pipeline_version`, the exact `source_fingerprint` of the PPTX bytes, and the
+  `artifact` identity/digest the run produced.
+- `artifact` is required when `outcome` is `succeeded` and must be null when it
+  is `failed`. A success naming no artifact cannot be proven to still exist,
+  which is the ambiguity this schema removes.
+- `visual_extracted` mirrors whether `visual_evidence` records a success, so
+  schema-v1 readers keep resolving one boolean.
+- Migration stamps an unversioned record at **v1**, not the current constant: a
+  legacy record has no binding and cannot satisfy the v2 shape. Migration never
+  invents a generation for it.
+- Selection is derived, never stored. `classify_pptx_visual_evidence` in
+  `skills/vault-ingress/scripts/tracking_database.py` is the one authority every
+  consumer shares — owner writes, migration, preflight, queue selection, and
+  profile reads classify through it so they cannot disagree. Classes and the
+  regeneration predicate are named at the top of that file; only `current`
+  skips regeneration.
+
 ### `qr_codes` v1 -> v2
 
 Writer: `skills/presentation-creator/scripts/generate-qr.py`. Readers dual-accept
@@ -267,12 +296,26 @@ customization, not the owner default. See the
   "_comment_schema_version": "Database schema v1 is owner-migrated by vault-ingress. A missing talk record version is the historical implicit-v1 lineage. v2 makes transcript_source optional. Two incompatible v3 lineages were emitted; v4 is their source-located union and remains archival with evidence ledger v1. V5 adds applicability assessments, exhaustive outcomes, opportunity-coverage identity, evidence ledger v2, and current scoring schema v5. Root migration preserves all historical evidence and never synthesizes v5 outcomes.",
   "_comment_absent_transcript_source": "Absent transcript_source: the key may be MISSING on a talk, and missing is meaningful — it means provenance is unknown, not that no transcript exists (that is the explicit value `none`). It arises on one path: fetch-transcript.py returning method `existing`, where a valid transcript was already on disk and no fetch ran, so nothing was learned about where it came from. Writers MUST NOT backfill a guess; `manual` in particular asserts a human produced it. Readers gauging transcript reliability MUST treat absent as unknown and MUST NOT default it to any value.",
   "pptx_catalog": [{
-    "schema_version": 1,
+    "schema_version": 2,
     "pptx_path": "Conference/Year/Talk Name.pptx",
     "talk_filename": "2024-04-10-talk-slug.md or null",
     "matched": true,
     "slide_count": 60,
-    "visual_extracted": false
+    "visual_extracted": true,
+    "visual_evidence": {
+      "outcome": "succeeded|failed",
+      "extractor_schema_version": 4,
+      "pipeline_version": "1.5.0",
+      "source_fingerprint": {
+        "algorithm": "sha256",
+        "digest": "64 lowercase hex characters",
+        "size_bytes": 123456
+      },
+      "artifact": {
+        "path": "extraction artifact identity",
+        "sha256": "64 lowercase hex characters"
+      }
+    }
   }],
   "qr_codes": [{
     "schema_version": 2,
@@ -402,7 +445,7 @@ exact-type rule. The supported mutation kinds are:
 |---|---|
 | `initialize_database` | Sole mutation for a missing database; carries initial `config` |
 | `set_config` | Set or delete one nested config path against its exact prior value |
-| `record_pptx` | Replace/add one complete schema-v1 PPTX catalog record and, when matched, bind the talk's expected `pptx_path` |
+| `record_pptx` | Replace/add one complete schema-v2 PPTX catalog record, generation binding included, and, when matched, bind the talk's expected `pptx_path` |
 | `upsert_confirmed_intent` | Replace/add one complete schema-v1 record identified by `pattern` |
 | `upsert_improvement_goal` | Replace/add one complete record identified by `id` |
 | `patch_improvement_goal_verification` | Set only verification fields, with `expect` covering exactly the same fields |

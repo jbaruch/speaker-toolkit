@@ -28,7 +28,7 @@ from tracking_database import (
     IMPROVEMENT_GOAL_RECORD_SCHEMA_VERSION,
     IMPROVEMENT_GOAL_REQUIRED_FIELDS as OWNER_IMPROVEMENT_GOAL_REQUIRED_FIELDS,
     PPTX_CATALOG_RECORD_SCHEMA_VERSION,
-    PPTX_CATALOG_REQUIRED_FIELDS,
+    PPTX_CATALOG_V2_REQUIRED_FIELDS,
     RESOURCE_RECORD_SCHEMA_VERSION,
     RESOURCE_REQUIRED_FIELDS as OWNER_RESOURCE_REQUIRED_FIELDS,
     THUMBNAIL_RECORD_SCHEMA_VERSION,
@@ -57,11 +57,13 @@ from pptx_discovery_contract import (
 
 PLAN_SCHEMA_VERSION = 1
 OWNER_RECORD_SCHEMA_VERSION = CONFIRMED_INTENT_RECORD_SCHEMA_VERSION
+# pptx_catalog left this shared version behind at v2, where each record binds
+# its visual evidence to an extractor generation, and is validated per kind by
+# _apply_record_pptx against PPTX_CATALOG_RECORD_SCHEMA_VERSION.
 if (
     len(
         {
             OWNER_RECORD_SCHEMA_VERSION,
-            PPTX_CATALOG_RECORD_SCHEMA_VERSION,
             RESOURCE_RECORD_SCHEMA_VERSION,
             THUMBNAIL_RECORD_SCHEMA_VERSION,
         }
@@ -105,7 +107,7 @@ CONFIRMED_INTENT_REQUIRED_FIELDS = OWNER_CONFIRMED_INTENT_REQUIRED_FIELDS | {
     "schema_version"
 }
 RESOURCE_REQUIRED_FIELDS = OWNER_RESOURCE_REQUIRED_FIELDS | {"schema_version"}
-PPTX_REQUIRED_FIELDS = PPTX_CATALOG_REQUIRED_FIELDS | {"schema_version"}
+PPTX_REQUIRED_FIELDS = PPTX_CATALOG_V2_REQUIRED_FIELDS | {"schema_version"}
 THUMBNAIL_REQUIRED_FIELDS = OWNER_THUMBNAIL_REQUIRED_FIELDS | {"schema_version"}
 
 
@@ -977,7 +979,17 @@ def _apply_record_pptx(
         required=PPTX_REQUIRED_FIELDS,
         label=record_label,
     )
-    _validate_record_schema(record, record_label)
+    # Per-kind: pptx_catalog is at v2 while the other typed owner collections
+    # remain on OWNER_RECORD_SCHEMA_VERSION. Only a v2 write can carry the
+    # extractor-generation binding, so the owner writer accepts nothing older —
+    # a new record must never reintroduce an unattributable visual claim.
+    if not json_values_equal(
+        record["schema_version"], PPTX_CATALOG_RECORD_SCHEMA_VERSION
+    ):
+        raise TrackingDatabaseMutationError(
+            f"{record_label}.schema_version must be exact integer "
+            f"{PPTX_CATALOG_RECORD_SCHEMA_VERSION}"
+        )
     pptx_path = _nonempty(record["pptx_path"], f"{record_label}.pptx_path")
     if type(record["matched"]) is not bool:
         raise TrackingDatabaseMutationError(

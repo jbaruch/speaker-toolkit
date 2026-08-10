@@ -296,7 +296,7 @@ def test_explicit_root_zero_is_not_implicit_legacy_state(tracking_database):
         ),
         (
             "pptx_catalog",
-            {"schema_version": 2, "path": "future/deck.pptx"},
+            {"schema_version": 3, "path": "future/deck.pptx"},
         ),
     ],
 )

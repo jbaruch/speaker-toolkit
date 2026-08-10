@@ -1,5 +1,46 @@
 # Changelog
 
+### feat(vault-ingress) — bind PPTX catalog visual evidence to its extractor generation (#229)
+
+Closes #229.
+
+`pptx_catalog` schema v1 persisted `visual_extracted` as a bare boolean and
+nothing about which extractor produced it, so a stored `true` could refer to
+extractor schema v0, v1, v2, v3, or current v4. Selection was undecidable from
+owner state: trusting the flag silently skips stale evidence, distrusting it
+forces repeated full extraction because the catalog still cannot remember that
+regeneration produced current output. Preflight and profile consumers could not
+bind a visual claim to the deck generation that was actually inspected.
+
+Catalog record v2 adds `visual_evidence` — `null` for a deck no extraction has
+been attempted on, otherwise a receipt carrying `outcome`,
+`extractor_schema_version`, `pipeline_version`, the exact `source_fingerprint`
+of the PPTX bytes, and the produced `artifact` identity and digest. `artifact`
+is required on success and forbidden on failure: a success naming no artifact
+cannot be proven to still exist, which is the ambiguity being removed.
+`visual_extracted` stays as the schema-v1 reader's mirror of the outcome, the
+same arrangement `qr_codes` v2 uses for `qr_png_rel_path`.
+
+Selection is derived, never stored. `classify_pptx_visual_evidence` returns
+`current`, `stale`, `pending`, `failed`, or `unknown_legacy`, and
+`pptx_visual_evidence_needs_extraction` says which of those regenerate — every
+consumer classifies through the same function, so owner writes, migration,
+preflight, queue selection, and profile reads cannot disagree. A legacy record's
+bare claim classifies as `unknown_legacy`, so migration preserves it without
+inventing a binding it never had.
+
+The `record_pptx` writer now requires v2 and is validated per kind, since
+`pptx_catalog` left the shared `OWNER_RECORD_SCHEMA_VERSION` behind. Readers
+dual-accept v1 and v2.
+
+Found while wiring this up: the assessor validated collection-record shapes
+under an `elif version == 1` cascade, so a collection lost its shape validation
+the moment it bumped past the version named there — `qr_codes` v2 had already
+needed a hand-written special case for exactly this. The cascade is now a lookup
+against the same accepted-version sets the version gate above it uses, so a v2
+record cannot slip through unvalidated and the next bump cannot reintroduce the
+hole.
+
 ## 0.20.44 — 2026-08-10
 
 ### chore(scripts) — bring the two sibling pre-publish gates up to policy (#264)
