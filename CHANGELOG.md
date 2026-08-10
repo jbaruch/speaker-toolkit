@@ -55,6 +55,7 @@ mapping keep patching the owner, because that mapping is the owner's. All 342
 existing writer race, interrupt, backup, durability, analysis-body-preservation,
 and CloudStorage migration tests stay green unchanged.
 
+## 0.20.41 — 2026-08-10
 
 ### feat(vault-ingress) — carry the matched rejection into scan reports (#177)
 
