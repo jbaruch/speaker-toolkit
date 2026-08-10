@@ -21,6 +21,12 @@ bind to talks and audit beside the active source:
   would report an unknown subset as "these are the conflicts". The active lane
   still audits. An unsupported lane is not a malformed report and stays
   lane-local.
+- **An unknown `disposition` is malformed, not skippable.** The scan report's
+  set is closed (`add`, `update`, `unchanged`, `review_required`); passing over
+  an unrecognized value would let a typo hide a conflict behind an apparently
+  clean audit. A report file containing JSON `null` is a supplied-but-invalid
+  report rather than "no report given" — the two shared a sentinel, so a
+  malformed file could disable candidate validation and still report success.
 - **Bindings resolve before any provider request.** A report that is not an
   object, carries no `entries`, or names an unknown or ambiguous talk is refused
   without spending a fetch. The active lane still audits.

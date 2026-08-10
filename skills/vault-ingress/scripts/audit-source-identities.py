@@ -51,6 +51,15 @@ CANDIDATE_LANES = frozenset({"video_url"})
 # report may move a field this parser reads, and an older one may not carry it
 # at all, so an unexpected version is refused rather than parsed hopefully.
 CANDIDATE_REPORT_SCHEMA_VERSION = 3
+# The closed disposition set scan-shownotes.py emits. An entry outside it is a
+# malformed report, not a row to pass over: skipping an unrecognized value
+# would let a typo hide a conflict behind an apparently clean audit.
+CANDIDATE_DISPOSITIONS = frozenset({"add", "update", "unchanged", "review_required"})
+
+# Distinguishes "no report supplied" from a supplied report whose decoded value
+# is None. JSON null decodes to None, so sharing one sentinel would let a
+# malformed report silently disable candidate validation.
+NO_CANDIDATE_REPORT = object()
 CANDIDATE_CONFLICT_CODES = {
     "existing_video_url_conflict": "video_url",
     "existing_slides_url_conflict": "slides_url",
@@ -528,7 +537,22 @@ def candidate_bindings(
             )
             fatal += 1
             continue
-        if entry.get("disposition") != "review_required":
+        disposition = entry.get("disposition")
+        if disposition not in CANDIDATE_DISPOSITIONS:
+            findings.append(
+                _finding(
+                    "candidate_report_invalid",
+                    None,
+                    [],
+                    [],
+                    "shownotes scan entry carries an unknown disposition",
+                    {"entry_index": position},
+                    "high",
+                )
+            )
+            fatal += 1
+            continue
+        if disposition != "review_required":
             continue
         filename = _nonempty(entry.get("filename"))
         issues = entry.get("issues")
@@ -635,7 +659,7 @@ def audit_database(
     database_path: str | Path,
     metadata_fetcher: Callable[[str], dict[str, Any]],
     captured_at: str | datetime | None = None,
-    candidate_report: Any = None,
+    candidate_report: Any = NO_CANDIDATE_REPORT,
 ) -> dict[str, Any]:
     """Audit one loaded database. The input object is never mutated.
 
@@ -791,7 +815,7 @@ def audit_database(
 
     candidate_audits: list[dict[str, Any]] = []
     candidate_members: defaultdict[str, list[tuple[int, str]]] = defaultdict(list)
-    if candidate_report is not None:
+    if candidate_report is not NO_CANDIDATE_REPORT:
         bindings, binding_findings = candidate_bindings(candidate_report, talks)
         findings.extend(binding_findings)
         for binding in bindings:
@@ -1167,7 +1191,7 @@ def audit_path(
     *,
     metadata_fetcher: Callable[[str], dict[str, Any]] = fetch_youtube_metadata,
     captured_at: str | datetime | None = None,
-    candidate_report: Any = None,
+    candidate_report: Any = NO_CANDIDATE_REPORT,
 ) -> dict[str, Any]:
     """Read and audit a vault/database path without writing any file."""
     database_path = resolve_input(value).absolute()
@@ -1227,7 +1251,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     args = parser.parse_args(argv)
-    candidate_report = None
+    candidate_report: Any = NO_CANDIDATE_REPORT
     if args.candidates_from is not None:
         try:
             candidate_report = json.loads(

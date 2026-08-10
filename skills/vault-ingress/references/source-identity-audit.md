@@ -95,6 +95,12 @@ auditing its well-formed remainder would report an unknown subset as "these are
 the conflicts". The active lane still audits, so the cost is coverage of the
 conflicts, never of the sources already in the database.
 
+An entry whose `disposition` falls outside the scan report's closed set
+(`add`, `update`, `unchanged`, `review_required`) is malformed, not a row to
+pass over — skipping an unrecognized value would let a typo hide a conflict
+behind an apparently clean audit. A report file containing JSON `null` is a
+supplied-but-invalid report, never "no report given".
+
 An unsupported lane is not a malformed report: a `slides_url` candidate leaves
 the report intact and simply names a source with no auditable provider
 identity, so it stays a lane-local finding and the other candidates proceed.

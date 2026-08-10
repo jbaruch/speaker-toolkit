@@ -916,3 +916,61 @@ def test_an_unsupported_lane_does_not_discard_the_other_candidates(
     assert "candidate_provider_unsupported" in finding_codes(report)
     assert [item["filename"] for item in report["candidates"]] == ["second.md"]
     assert CANDIDATE_ID in calls
+
+
+@pytest.mark.parametrize("disposition", ["reviewrequired", "", None, 3])
+def test_an_unknown_disposition_discards_every_candidate(
+    audit_source_identities, disposition
+):
+    """A typo must not hide a conflict behind an apparently clean audit."""
+    database = {"talks": [talk("first.md"), talk("second.md", date="2025-04-10")]}
+    typo = conflict_entry("first.md")
+    typo["disposition"] = disposition
+
+    report, calls = _audit(
+        audit_source_identities,
+        database,
+        scan_report(typo, conflict_entry("second.md")),
+    )
+
+    assert "candidate_report_invalid" in finding_codes(report)
+    assert report["candidates"] == []
+    assert calls == [VIDEO_ID]
+
+
+@pytest.mark.parametrize("disposition", ["add", "update", "unchanged"])
+def test_a_known_non_conflict_disposition_is_passed_over(
+    audit_source_identities, disposition
+):
+    """The deterministic dispositions carry no conflict to audit."""
+    database = {"talks": [talk()]}
+    entry = conflict_entry()
+    entry["disposition"] = disposition
+
+    report, calls = _audit(audit_source_identities, database, scan_report(entry))
+
+    assert "candidate_report_invalid" not in finding_codes(report)
+    assert report["candidates"] == []
+    assert calls == [VIDEO_ID]
+
+
+def test_a_json_null_report_is_refused_not_read_as_absent(
+    audit_source_identities, tmp_path, capsys
+):
+    """JSON null decodes to None — the same value as "no option supplied"."""
+    database = {"talks": [talk()]}
+    database_path = tmp_path / "tracking-database.json"
+    database_path.write_text(json.dumps(database))
+    report_path = tmp_path / "scan.json"
+    report_path.write_text("null")
+
+    result = audit_source_identities.audit_database(
+        database,
+        database_path=database_path,
+        metadata_fetcher=lambda video_id: metadata(video_id),
+        captured_at=CAPTURED_AT,
+        candidate_report=None,
+    )
+
+    # None is a supplied-but-invalid report, never "no report given".
+    assert "candidate_report_invalid" in finding_codes(result)
