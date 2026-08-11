@@ -14,6 +14,8 @@ what they assert.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 
@@ -59,7 +61,7 @@ def _collection_name(entry) -> str:
     )
 
 
-def _talk(entry, *detections):
+def _talk(entry, *detections) -> dict[str, Any]:
     return {"pattern_observations": {_collection_name(entry): list(detections)}}
 
 
@@ -194,8 +196,8 @@ def test_applying_the_repair_restores_both_values(
     assert collection[0]["dimensions"] == list(observable_entry.vault_dimensions)
     # The input is untouched: a repair returns a new talk rather than mutating
     # the generation it was assessed against.
-    original = talk["pattern_observations"][_collection_name(observable_entry)][0]
-    assert original["dimensions"] == prose
+    stored: Any = talk["pattern_observations"][_collection_name(observable_entry)]
+    assert stored[0]["dimensions"] == prose
     after = persisted_pattern_observations.assess_persisted_pattern_observations(
         repaired, catalog
     )
