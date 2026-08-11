@@ -84,9 +84,7 @@ class TestVerdicts:
     def test_no_candidates_is_unmatched(self) -> None:
         result = _assess(_deck(), [])
         assert result.verdict == pptx_talk_identity.VERDICT_UNMATCHED
-        assert result.reason_codes == (
-            pptx_talk_identity.REASON_NO_CANDIDATE_TALKS,
-        )
+        assert result.reason_codes == (pptx_talk_identity.REASON_NO_CANDIDATE_TALKS,)
 
     def test_unrelated_deck_in_a_nearby_directory_is_not_matched(self) -> None:
         result = _assess(
@@ -112,9 +110,7 @@ class TestFilenameSimilarityIsNeverSufficient:
         )
         assert candidate.agreeing == ()
         assert result.verdict == pptx_talk_identity.VERDICT_REVIEW_REQUIRED
-        assert (
-            pptx_talk_identity.REASON_FILENAME_SIMILARITY_ONLY in result.reason_codes
-        )
+        assert pptx_talk_identity.REASON_FILENAME_SIMILARITY_ONLY in result.reason_codes
 
     def test_filename_similarity_is_excluded_from_selecting_signals(self) -> None:
         assert (
@@ -164,7 +160,10 @@ class TestVenueVocabulary:
 
     def test_a_generic_directory_is_not_an_unrecognized_venue(self) -> None:
         result = _assess(
-            {"pptx_path": "Decks/Downloads/deck.pptx", "rendered_title": "DevOps for Developers"},
+            {
+                "pptx_path": "Decks/Downloads/deck.pptx",
+                "rendered_title": "DevOps for Developers",
+            },
             [VOXXED_TALK],
         )
         candidate = result.candidates[0]
@@ -279,9 +278,7 @@ class TestArtifactRoles:
         )
         assert result.artifact_role == pptx_talk_identity.ROLE_MASTER
         assert result.verdict == pptx_talk_identity.VERDICT_REVIEW_REQUIRED
-        assert (
-            pptx_talk_identity.REASON_NON_DELIVERY_ARTIFACT in result.reason_codes
-        )
+        assert pptx_talk_identity.REASON_NON_DELIVERY_ARTIFACT in result.reason_codes
         assert result.selected_talk_filename is None
 
 
@@ -350,9 +347,7 @@ class TestSignalSemantics:
     def test_deck_filename_is_not_read_as_a_venue(self) -> None:
         """Reading a venue from the filename would manufacture agreement from
         the one signal the module refuses to trust alone."""
-        result = _assess(
-            {"pptx_path": "Decks/Voxxed Days Ticino.pptx"}, [VOXXED_TALK]
-        )
+        result = _assess({"pptx_path": "Decks/Voxxed Days Ticino.pptx"}, [VOXXED_TALK])
         candidate = result.candidates[0]
         assert (
             candidate.signals[pptx_talk_identity.SIGNAL_VENUE]

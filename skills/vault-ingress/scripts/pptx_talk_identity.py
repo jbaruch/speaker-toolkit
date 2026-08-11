@@ -131,14 +131,19 @@ ARTIFACT_ROLES = frozenset(
 # Matched against whole path tokens, never substrings: `masterclass` is a talk
 # topic, `master` is an artifact role.
 _ROLE_TOKENS: tuple[tuple[str, frozenset[str]], ...] = (
-    (ROLE_BACKUP, frozenset({"backup", "backups", "bak", "archive", "archived", "old"})),
+    (
+        ROLE_BACKUP,
+        frozenset({"backup", "backups", "bak", "archive", "archived", "old"}),
+    ),
     (ROLE_MASTER, frozenset({"master", "masters", "template", "templates", "source"})),
     (ROLE_STATIC_EXPORT, frozenset({"static", "export", "exports", "exported"})),
 )
 
 _TOKEN_RE = re.compile(r"[^\W_]+", re.UNICODE)
 _HASHTAG_RE = re.compile(r"#(\w+)", re.UNICODE)
-_TALK_FILENAME_DATE_RE = re.compile(r"\A(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})-")
+_TALK_FILENAME_DATE_RE = re.compile(
+    r"\A(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})-"
+)
 
 # A deck whose filename shares this many significant words with a talk's slug is
 # similar enough to report — and never, on its own, similar enough to select.
@@ -276,9 +281,7 @@ def deck_identity_facts(value: object) -> DeckIdentityFacts:
         "published_pdf_talk_filename",
     }
     if unknown:
-        raise PptxTalkIdentityError(
-            f"deck facts carry unknown keys: {sorted(unknown)}"
-        )
+        raise PptxTalkIdentityError(f"deck facts carry unknown keys: {sorted(unknown)}")
     created_year = _optional_text(
         value.get("document_created_year"), "deck facts document_created_year"
     )
@@ -366,9 +369,7 @@ def _deck_venue_aliases(
         if len(alias) == 1 and alias[0] in AMBIGUOUS_EVENT_ALIASES:
             # `devops/` names a topic folder at least as often as an event.
             continue
-        if not any(
-            event_aliases_compatible(alias, known) for known in known_aliases
-        ):
+        if not any(event_aliases_compatible(alias, known) for known in known_aliases):
             continue
         aliases.append(alias)
     return aliases
@@ -384,7 +385,11 @@ def _title_signal(
         return SIGNAL_UNKNOWN
     observed = [
         text
-        for text in (facts.document_title, facts.rendered_title, *facts.rendered_footers)
+        for text in (
+            facts.document_title,
+            facts.rendered_title,
+            *facts.rendered_footers,
+        )
         if text
     ]
     if not observed:
@@ -557,9 +562,7 @@ def assess_pptx_talk_identity(
     # The candidate set is the vault's event vocabulary. A directory naming an
     # event no talk uses is a folder, not a contradicting venue.
     known_aliases = frozenset(known_event_aliases(talks))
-    assessments = tuple(
-        assess_candidate(facts, talk, known_aliases) for talk in talks
-    )
+    assessments = tuple(assess_candidate(facts, talk, known_aliases) for talk in talks)
 
     seen: set[str] = set()
     for assessment in assessments:
@@ -597,13 +600,9 @@ def assess_pptx_talk_identity(
     if len(selectable) == 1:
         return result(VERDICT_MATCHED, selectable[0].talk_filename, REASON_MATCHED)
     if len(selectable) > 1:
-        return result(
-            VERDICT_REVIEW_REQUIRED, None, REASON_AMBIGUOUS_CANDIDATES
-        )
+        return result(VERDICT_REVIEW_REQUIRED, None, REASON_AMBIGUOUS_CANDIDATES)
 
-    contradicted = [
-        item for item in assessments if item.agreeing and item.conflicting
-    ]
+    contradicted = [item for item in assessments if item.agreeing and item.conflicting]
     if contradicted:
         return result(VERDICT_REVIEW_REQUIRED, None, REASON_CONFLICTING_SIGNALS)
 
@@ -614,8 +613,6 @@ def assess_pptx_talk_identity(
         and not item.conflicting
     ]
     if filename_only:
-        return result(
-            VERDICT_REVIEW_REQUIRED, None, REASON_FILENAME_SIMILARITY_ONLY
-        )
+        return result(VERDICT_REVIEW_REQUIRED, None, REASON_FILENAME_SIMILARITY_ONLY)
 
     return result(VERDICT_UNMATCHED, None, REASON_NO_AGREEING_SIGNAL)
