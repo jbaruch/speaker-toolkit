@@ -2921,6 +2921,283 @@ def test_unverified_video_crop_cannot_support_completed_deck_analysis(
     assert "video_extraction_untrusted" in finding_codes(report, "blocking")
 
 
+def _observation_block(**lanes):
+    """A current persisted block, as the canonical writer emits it."""
+    block = {
+        "patterns_detected": [],
+        "antipatterns_detected": [],
+        "not_evaluable": [],
+    }
+    block.update(lanes)
+    return block
+
+
+def _catalog_entry(preflight_vault, entry_type="pattern"):
+    catalog = preflight_vault.load_catalog()
+    return next(
+        entry
+        for entry in sorted(catalog.entries.values(), key=lambda item: item.pattern_id)
+        if entry.observable and entry.entry_type == entry_type
+    )
+
+
+def test_a_corrupt_persisted_block_blocks_before_any_claim(
+    preflight_vault,
+    vault_fixture,
+):
+    """The swapped-field signature from the live vault (#167).
+
+    The record-schema check reads the talk's own fields; nothing read the
+    nested block, so this reached rendered analyses.
+    """
+    entry = _catalog_entry(preflight_vault)
+    materialize_transcript(vault_fixture)
+    write_database(
+        vault_fixture,
+        [
+            base_talk(
+                pattern_observations=_observation_block(
+                    patterns_detected=[
+                        {
+                            "pattern_id": entry.pattern_id,
+                            "confidence": "strong",
+                            "evidence": list(entry.vault_dimensions),
+                            "dimensions": "The speaker opened with the map.",
+                        }
+                    ]
+                )
+            )
+        ],
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    findings = [
+        item
+        for item in report["findings"]
+        if item["code"].startswith("persisted_observations_")
+    ]
+    assert [item["code"] for item in findings] == [
+        "persisted_observations_detection_fields_swapped"
+    ]
+    assert findings[0]["severity"] == "blocking"
+    assert report["ok"] is False
+
+
+@pytest.mark.parametrize(
+    ("observations", "expected_field"),
+    [
+        ([{"pattern_id": "x"}], "pattern_observations"),
+        ("not a block", "pattern_observations"),
+        (
+            {"patterns_detected": [], "antipatterns_detected": []},
+            "pattern_observations.not_evaluable",
+        ),
+    ],
+)
+def test_the_finding_names_the_field_a_repair_would_edit(
+    preflight_vault,
+    vault_fixture,
+    observations,
+    expected_field,
+):
+    """A root finding already names the block; a lane finding is relative to it.
+
+    Prefixing both yields `pattern_observations.pattern_observations`, which
+    points a repair at a field that does not exist.
+    """
+    materialize_transcript(vault_fixture)
+    write_database(vault_fixture, [base_talk(pattern_observations=observations)])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    fields = [
+        item["field"]
+        for item in report["findings"]
+        if item["code"].startswith("persisted_observations_")
+    ]
+    assert fields == [expected_field]
+
+
+def test_an_unreadable_catalog_says_how_to_recover(
+    preflight_vault,
+    vault_fixture,
+    monkeypatch,
+):
+    """`error-handling` Actionable Messages: name the fix, not just the fault."""
+    materialize_transcript(vault_fixture)
+    write_database(
+        vault_fixture,
+        [
+            base_talk(
+                pattern_observations={
+                    "patterns_detected": [],
+                    "antipatterns_detected": [],
+                    "not_evaluable": [],
+                }
+            )
+        ],
+    )
+
+    attempts = []
+
+    def unreadable():
+        attempts.append(1)
+        raise preflight_vault.ReturnValidationError("no pattern entries found")
+
+    monkeypatch.setattr(preflight_vault, "load_catalog", unreadable)
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    findings = [
+        item
+        for item in report["findings"]
+        if item["code"] == "pattern_catalog_unreadable"
+    ]
+    assert len(findings) == 1
+    assert "rerun preflight" in findings[0]["message"]
+    assert "Restore it" in findings[0]["message"]
+    assert attempts == [1]
+
+
+def test_an_unreadable_catalog_is_one_finding_for_the_whole_run(
+    preflight_vault,
+    vault_fixture,
+    monkeypatch,
+):
+    """One condition, one finding.
+
+    Repeating it per analyzed talk inflates the blocking count and buries
+    every other finding in the report.
+    """
+    block = {
+        "patterns_detected": [],
+        "antipatterns_detected": [],
+        "not_evaluable": [],
+    }
+    materialize_transcript(vault_fixture)
+    write_database(
+        vault_fixture,
+        [
+            base_talk(pattern_observations=block),
+            base_talk(
+                filename="2026-07-31-second-talk.md",
+                video_url="https://www.youtube.com/watch?v=SECONDVIDEO",
+                youtube_id="SECONDVIDEO",
+                pattern_observations=block,
+            ),
+        ],
+    )
+    monkeypatch.setattr(
+        preflight_vault,
+        "load_catalog",
+        lambda: (_ for _ in ()).throw(
+            preflight_vault.ReturnValidationError("no pattern entries found")
+        ),
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert [
+        item["code"]
+        for item in report["findings"]
+        if item["code"] == "pattern_catalog_unreadable"
+    ] == ["pattern_catalog_unreadable"]
+
+
+def test_an_unobservable_entry_warns_without_blocking(
+    preflight_vault,
+    vault_fixture,
+):
+    """The catalog moved; the record did not. 641 live detections are these."""
+    catalog = preflight_vault.load_catalog()
+    archival = next(
+        entry
+        for entry in sorted(catalog.entries.values(), key=lambda item: item.pattern_id)
+        if not entry.observable
+    )
+    lane = (
+        "antipatterns_detected"
+        if archival.entry_type == "antipattern"
+        else "patterns_detected"
+    )
+    materialize_transcript(vault_fixture)
+    write_database(
+        vault_fixture,
+        [
+            base_talk(
+                pattern_observations=_observation_block(
+                    **{
+                        lane: [
+                            {
+                                "pattern_id": archival.pattern_id,
+                                "confidence": "strong",
+                                "evidence": "The speaker did the thing, at 12:03.",
+                                "dimensions": list(archival.vault_dimensions),
+                            }
+                        ]
+                    }
+                )
+            )
+        ],
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    findings = [
+        item
+        for item in report["findings"]
+        if item["code"].startswith("persisted_observations_")
+    ]
+    assert [item["severity"] for item in findings] == ["warning"]
+    assert report["blocking_count"] == 0
+
+
+@pytest.mark.parametrize("talk_updates", [{}, {"pattern_observations": None}])
+def test_an_unscored_talk_is_not_reported_as_corrupt(
+    preflight_vault,
+    vault_fixture,
+    talk_updates,
+):
+    """Absence is incompleteness, not corruption.
+
+    A legacy record preserves the field as an explicit null rather than
+    dropping it, and that is the same "never scored" state. Blocking — or even
+    warning on — every talk that predates pattern scoring would flood a queue
+    that is working.
+    """
+    materialize_transcript(vault_fixture)
+    write_database(vault_fixture, [base_talk(**talk_updates)])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert [
+        item
+        for item in report["findings"]
+        if item["code"].startswith("persisted_observations_")
+    ] == []
+
+
+def test_a_pending_talk_is_never_held_to_the_current_block_contract(
+    preflight_vault,
+    vault_fixture,
+):
+    """A talk not claiming analysis carries whatever the queue left it."""
+    materialize_transcript(vault_fixture)
+    write_database(
+        vault_fixture,
+        [base_talk(status="pending", pattern_observations={"patterns_detected": "x"})],
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert [
+        item
+        for item in report["findings"]
+        if item["code"].startswith("persisted_observations_")
+    ] == []
+
+
 def test_absent_legacy_identity_metadata_is_not_a_finding(
     preflight_vault,
     vault_fixture,

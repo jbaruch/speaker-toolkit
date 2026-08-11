@@ -1,5 +1,27 @@
 # Changelog
 
+### feat(vault-ingress) — block a corrupt persisted block before anything claims the talk (#167)
+
+Part of #167.
+
+The classifier landed with no caller. Preflight now runs it on every talk whose
+status claims analysis, so the swapped-field signature, an unknown pattern ID, a
+polarity-inverted lane, or a missing one is a blocking finding before a claim
+rather than a surprise in a rendered analysis.
+
+Two cases are deliberately not blocking. A detection of an entry the catalog no
+longer observes warns: the catalog moved, the record did not, and a cohort can
+exclude it without the talk being wrong. And a talk carrying no block at all is
+skipped entirely — absence is incompleteness, not corruption, and whether an
+unscored talk belongs in a cohort is the scoring-generation fields' question,
+not this gate's. Blocking, or even warning on, every talk that predates pattern
+scoring would flood a queue that is working.
+
+Each finding names the field a repair would edit. A root-level finding already
+names the block and a lane finding is relative to it, so prefixing both produced
+`pattern_observations.pattern_observations` — a path pointing at a field that
+does not exist.
+
 ## 0.20.54 — 2026-08-11
 
 ### feat(vault-ingress) — classify what is already stored, not just what arrives (#167)

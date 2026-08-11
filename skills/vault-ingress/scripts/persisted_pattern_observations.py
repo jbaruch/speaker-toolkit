@@ -33,6 +33,11 @@ from return_validation import CONFIDENCE_LEVELS, PatternCatalog
 
 ASSESSMENT_SCHEMA_VERSION = 1
 
+# The block's own field name. Root-level findings locate themselves here; every
+# other location is relative to it, so a caller composing a diagnostic path
+# prefixes the relative ones and leaves this one alone.
+OBSERVATIONS_FIELD = "pattern_observations"
+
 # The detection collections a persisted block carries, each bound to the catalog
 # polarity its members must have: a `pattern` entry filed under
 # `antipatterns_detected` inverts what the record claims the speaker did.
@@ -524,7 +529,7 @@ def assess_persisted_pattern_observations(
     has to land before the record is current, and reporting it as usable would
     let the corruption through the gate that found it.
     """
-    observations = talk.get("pattern_observations") if isinstance(talk, dict) else None
+    observations = talk.get(OBSERVATIONS_FIELD) if isinstance(talk, dict) else None
     if observations is None:
         return PersistedObservationAssessment(
             schema_version=ASSESSMENT_SCHEMA_VERSION,
@@ -532,7 +537,7 @@ def assess_persisted_pattern_observations(
             findings=(
                 ObservationFinding(
                     CONTAINER_ABSENT,
-                    "pattern_observations",
+                    OBSERVATIONS_FIELD,
                     None,
                     "talk carries no persisted pattern observations",
                 ),
@@ -550,7 +555,7 @@ def assess_persisted_pattern_observations(
             findings=(
                 ObservationFinding(
                     CONTAINER_LEGACY_LIST,
-                    "pattern_observations",
+                    OBSERVATIONS_FIELD,
                     None,
                     "pattern_observations is the legacy list shape",
                 ),
@@ -566,7 +571,7 @@ def assess_persisted_pattern_observations(
             findings=(
                 ObservationFinding(
                     CONTAINER_INVALID,
-                    "pattern_observations",
+                    OBSERVATIONS_FIELD,
                     None,
                     "pattern_observations must be an object",
                 ),
