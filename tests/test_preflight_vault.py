@@ -2984,6 +2984,41 @@ def test_a_corrupt_persisted_block_blocks_before_any_claim(
     assert report["ok"] is False
 
 
+@pytest.mark.parametrize(
+    ("observations", "expected_field"),
+    [
+        ([{"pattern_id": "x"}], "pattern_observations"),
+        ("not a block", "pattern_observations"),
+        (
+            {"patterns_detected": [], "antipatterns_detected": []},
+            "pattern_observations.not_evaluable",
+        ),
+    ],
+)
+def test_the_finding_names_the_field_a_repair_would_edit(
+    preflight_vault,
+    vault_fixture,
+    observations,
+    expected_field,
+):
+    """A root finding already names the block; a lane finding is relative to it.
+
+    Prefixing both yields `pattern_observations.pattern_observations`, which
+    points a repair at a field that does not exist.
+    """
+    materialize_transcript(vault_fixture)
+    write_database(vault_fixture, [base_talk(pattern_observations=observations)])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    fields = [
+        item["field"]
+        for item in report["findings"]
+        if item["code"].startswith("persisted_observations_")
+    ]
+    assert fields == [expected_field]
+
+
 def test_an_unobservable_entry_warns_without_blocking(
     preflight_vault,
     vault_fixture,

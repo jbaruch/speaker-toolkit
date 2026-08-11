@@ -43,6 +43,7 @@ from ingress_contract import (
 
 from persisted_pattern_observations import (
     ENTRY_NOT_OBSERVABLE,
+    OBSERVATIONS_FIELD,
     assess_persisted_pattern_observations,
 )
 from return_validation import (
@@ -1668,7 +1669,15 @@ class VaultPreflight:
                 severity,
                 f"persisted_observations_{finding.reason_code}",
                 finding.detail,
-                field=f"pattern_observations.{finding.location}",
+                # Root-level findings already name the block; the lane ones are
+                # relative to it. Prefixing both yields
+                # `pattern_observations.pattern_observations`, which points a
+                # repair at a field that does not exist.
+                field=(
+                    OBSERVATIONS_FIELD
+                    if finding.location == OBSERVATIONS_FIELD
+                    else f"{OBSERVATIONS_FIELD}.{finding.location}"
+                ),
                 expected="a current persisted pattern block",
                 actual={
                     "reason_code": finding.reason_code,
