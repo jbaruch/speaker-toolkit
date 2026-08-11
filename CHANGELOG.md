@@ -17,6 +17,8 @@ unscored talk belongs in a cohort is the scoring-generation fields' question,
 not this gate's. Blocking, or even warning on, every talk that predates pattern
 scoring would flood a queue that is working.
 
+## 0.20.54 — 2026-08-11
+
 ### feat(vault-ingress) — classify what is already stored, not just what arrives (#167)
 
 Part of #167.
