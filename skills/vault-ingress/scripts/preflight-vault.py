@@ -41,10 +41,17 @@ from ingress_contract import (
     source_capabilities,
 )
 
+from persisted_pattern_observations import (
+    ENTRY_NOT_OBSERVABLE,
+    assess_persisted_pattern_observations,
+)
 from return_validation import (
+    ANALYSIS_STATUSES,
     PATTERN_SCORING_SCHEMA_VERSION,
+    PatternCatalog,
     ReturnValidationError,
     VIDEO_EXTRACTION_SCHEMA_VERSION,
+    load_catalog,
     validate_video_extraction_manifest,
 )
 from pattern_evidence import (
@@ -266,6 +273,7 @@ class VaultPreflight:
         self.video_evidence_assessment = VideoEvidenceAssessment()
         self.reported_source_video_failures: set[int] = set()
         self.reported_config_exclusions_invalid = False
+        self._catalog: PatternCatalog | None = None
 
     def artifact_root(self) -> Path:
         """Map the trusted configured root lazily, without probing CLI input."""
@@ -509,6 +517,7 @@ class VaultPreflight:
             self._validate_source_rejections(index)
             self._validate_artifacts(index)
             self._validate_source_identity(index)
+            self._validate_persisted_observations(index)
         self._validate_relations()
         self._validate_duplicate_youtube_ids()
         return self.report(len(talks))
@@ -1614,6 +1623,64 @@ class VaultPreflight:
                 actual=extraction.get("review_required"),
                 artifact_path=promoted_pdf,
             )
+
+    def _validate_persisted_observations(self, index: int) -> None:
+        """Block on corrupt persisted detections before anything claims the talk.
+
+        The record-schema check above reads the talk's own fields; nothing read
+        the nested pattern block, so a swapped field pair or an unknown pattern
+        ID passed every gate and reached rendered analyses (#167).
+
+        Only a talk whose status claims analysis is held to the current-block
+        contract. A pending talk legitimately carries no observations, and
+        reporting that as corruption would block a queue that is working.
+        """
+        talk = self.talks[index]
+        if talk.get("status") not in ANALYSIS_STATUSES:
+            return
+        if "pattern_observations" not in talk:
+            # Absence is incompleteness, not corruption: the talk was never
+            # scored, and whether an unscored talk belongs in a cohort is the
+            # scoring-generation fields' question, not this gate's. This gate
+            # owns blocks that exist and are wrong.
+            return
+        try:
+            catalog = self._pattern_catalog()
+        except ReturnValidationError as exc:
+            self.add(
+                "blocking",
+                "pattern_catalog_unreadable",
+                "persisted pattern observations cannot be validated without the "
+                f"catalog: {exc}",
+                field="pattern_observations",
+            )
+            return
+        assessment = assess_persisted_pattern_observations(talk, catalog)
+        for finding in assessment.findings:
+            # An entry the catalog no longer observes is archival evidence,
+            # not a defect in the record: it warns so a cohort can exclude it,
+            # and never blocks a talk whose stored analysis is otherwise sound.
+            severity = (
+                "warning" if finding.reason_code == ENTRY_NOT_OBSERVABLE else "blocking"
+            )
+            self.talk_add(
+                index,
+                severity,
+                f"persisted_observations_{finding.reason_code}",
+                finding.detail,
+                field=f"pattern_observations.{finding.location}",
+                expected="a current persisted pattern block",
+                actual={
+                    "reason_code": finding.reason_code,
+                    "pattern_id": finding.pattern_id,
+                },
+            )
+
+    def _pattern_catalog(self) -> PatternCatalog:
+        """Load the catalog once per preflight run."""
+        if self._catalog is None:
+            self._catalog = load_catalog()
+        return self._catalog
 
     def _validate_source_identity(self, index: int) -> None:
         talk = self.talks[index]
