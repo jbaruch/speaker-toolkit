@@ -82,47 +82,33 @@ instead of an ad hoc provider lookup outside the ingress workflow:
   "{vault_root}" --candidates-from "{scan_report_path}"
 ```
 
-Candidate identities never enter the active-source assignment: the cross-talk
-collision analysis reads that map, so a candidate shared by two talks would
-otherwise fabricate a collision between active identities that share nothing.
-`sources[].lanes` names which lane claimed each fetched identity.
+**Input.** `--candidates-from` takes one `scan-shownotes.py` report path. See
+`skills/vault-ingress/scripts/audit-source-identities.py`:
 
-The report is validated whole before anything is bound, and the verdict is
-all-or-nothing: only `schema_version: 3` with `ok: true` is accepted, and one
-malformed entry, malformed issue, or unbindable candidate discards **every**
-candidate binding. A partly malformed report is not a complete conflict set, so
-auditing its well-formed remainder would report an unknown subset as "these are
-the conflicts". The active lane still audits, so the cost is coverage of the
-conflicts, never of the sources already in the database.
+| What | Anchor |
+|---|---|
+| Accepted report generation | `CANDIDATE_REPORT_SCHEMA_VERSION` |
+| Valid dispositions | `CANDIDATE_DISPOSITIONS` |
+| Lanes with an auditable provider identity | `CANDIDATE_LANES` |
+| Which reports and entries bind, and the finding each refusal emits | `candidate_bindings()` |
+| Faults eligible to stay lane-local, and the code each takes | `CANDIDATE_LANE_LOCAL_CODES` |
 
-An entry whose `disposition` falls outside the scan report's closed set
-(`add`, `update`, `unchanged`, `review_required`) is malformed, not a row to
-pass over — skipping an unrecognized value would let a typo hide a conflict
-behind an apparently clean audit. A report file containing JSON `null` is a
-supplied-but-invalid report, never "no report given".
+**Output.** `candidates[]` carries `provider_evidence` and
+`active_provider_evidence` in the same shape for field-for-field comparison,
+plus `same_source_as_active`. `sources[].lanes` names which lane claimed each
+fetched identity.
 
-An unsupported lane is not a malformed report: a `slides_url` candidate leaves
-the report intact and simply names a source with no auditable provider
-identity, so it stays a lane-local finding and the other candidates proceed.
+Candidate identities never enter the active-source assignment, so a candidate
+shared by two talks cannot appear as a collision between active identities.
 
-Every binding resolves before any provider request — a report naming an unknown
-or ambiguous talk is refused without spending a fetch. Candidate identities
-share the active lane's dedupe, so a candidate repeated across conflicts, or one
-equal to an active source, is fetched once. `candidates[]` carries
-`provider_evidence` and `active_provider_evidence` in the same shape for
-field-for-field comparison, plus `same_source_as_active`. A candidate lane with
-no auditable provider identity (`slides_url`), a malformed YouTube URL, and an
-unavailable or rate-limited fetch each stay lane-local structured findings.
+**Exit conditions.** A refused report leaves `candidates[]` empty and the active
+lane audited; the report's own findings name the refusal. A lane-local candidate
+fault leaves the audit `complete` and the CLI exit clean. Every other fault
+keeps its blocking code and fails the run.
 
-Lane-local means the audit stays `complete` and the CLI exit stays clean: a
-candidate the provider would not serve says nothing about the sources already
-in the database. Those faults carry `candidate_`-prefixed codes outside
-`ERROR_CODES`. The same fault on an identity the ACTIVE lane also claims keeps
-its blocking code — lane-local is about which lane failed, not about forgiving
-failures.
-
-The audit still writes nothing. A candidate is never promoted or persisted here
-— reviewing this evidence and applying a decision are separate steps.
+**Side effects.** None. The audit writes nothing, and a candidate is never
+promoted or persisted here — reviewing this evidence and applying a decision are
+separate steps.
 
 ## Report contract (v2)
 
