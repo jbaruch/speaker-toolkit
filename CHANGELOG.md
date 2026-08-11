@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.54 — 2026-08-11
+
 ### feat(vault-ingress) — classify what is already stored, not just what arrives (#167)
 
 Part of #167.
