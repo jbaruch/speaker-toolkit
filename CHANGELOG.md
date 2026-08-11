@@ -24,6 +24,7 @@ that must not be persisted.
 Existing v2 records keep reading and classifying. They carry no identity proof,
 which is what the catalog-wide preflight sweep is for; this change stops new
 unproven bindings from being written while that lands.
+## 0.20.56 — 2026-08-11
 
 ### feat(vault-ingress) — prove which talk a deck belongs to before it becomes evidence (#176)
 
