@@ -1,5 +1,41 @@
 # Changelog
 
+### ci — fail the build on a committed conflict marker (#272)
+
+Closes #272.
+
+A diff3 base marker (`||||||| <sha>`) survived a merge resolution and was
+committed to `CHANGELOG.md`, which ships in the plugin package. Nothing caught
+it: `ruff` does not read Markdown, and `git diff --check` only inspects the
+working diff, so a marker that is already committed passes silently. The
+resolution had stripped `<<<<<<<`, `=======`, and `>>>>>>>`;
+`merge.conflictStyle = diff3` adds a fourth, and the leftover line does not
+start with `#`, so a heading-level review of the diff never saw it.
+
+`scripts/check_conflict_markers.py` scans every tracked text file for all four
+forms and fails the `lint` job and the publish run. Binary files are counted and
+skipped — a marker is a line of text, and the repo's binaries are eval fixtures.
+
+Marker length comes from each path's own `conflict-marker-size` attribute rather
+than a hardcoded seven: git writes markers at the configured length, so a repo
+that raises it for a file full of `=======` lines still gets real markers, just
+longer ones. Matching the exact configured length — never "seven or more" —
+keeps a here-doc delimiter and a long rule legal, since those run to arbitrary
+lengths and a marker does not.
+
+The separator is the one marker ordinary prose also writes: a Markdown setext
+heading rule of exactly the marker length is byte-identical to it. Flagging it
+outright would fail the build on legitimate content, so it counts only between a
+start marker and its end marker, where a heading rule cannot be. The start, base,
+and end markers are unambiguous and always count.
+
+A tracked file missing from the working tree is read from the index instead of
+skipped: an unstaged deletion must not buy a clean scan of a file the gate never
+read, and the staged blob is what a commit would ship.
+
+No exclusion list: the tests build markers from repeated characters rather than
+writing them out, so the suite is not its own violation.
+
 ## 0.20.52 — 2026-08-11
 
 ### test(vault-ingress) — assert the probe's promise, not the allocator's (#277)
