@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.55 — 2026-08-11
+
 ### feat(vault-ingress) — block a corrupt persisted block before anything claims the talk (#167)
 
 Part of #167.
