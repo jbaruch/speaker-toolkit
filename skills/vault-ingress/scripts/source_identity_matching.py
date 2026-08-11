@@ -336,10 +336,21 @@ def provider_event_aliases(
     return sorted(found)
 
 
-def _aliases_compatible(left: EventAlias, right: EventAlias) -> bool:
+def event_aliases_compatible(left: EventAlias, right: EventAlias) -> bool:
+    """Report whether two event aliases can name the same event.
+
+    One alias containing every word of the other is compatibility, not equality:
+    a catalog conference is often the fuller form of what an artifact records.
+    Public because PPTX talk-identity assessment compares a deck-path venue with
+    a catalog conference and must not maintain a second, weaker rule.
+    """
     left_words = set(left)
     right_words = set(right)
     return left_words <= right_words or right_words <= left_words
+
+
+def _aliases_compatible(left: EventAlias, right: EventAlias) -> bool:
+    return event_aliases_compatible(left, right)
 
 
 def event_agreement(
