@@ -103,6 +103,7 @@ def _complete_plan() -> dict[str, Any]:
                     "visual_evidence": None,
                     "identity_assessment": {
                         "schema_version": 1,
+                        "pptx_path": "Conference/Talk.pptx",
                         "verdict": "matched",
                         "artifact_role": "delivery",
                         "selected_talk_filename": "talk.md",

@@ -143,7 +143,7 @@ no-op.
 | database root | 1 |
 | config | 2 (schema 1 remains readable owner-migration input) |
 | talk | 5 |
-| PPTX catalog | 1 |
+| PPTX catalog | 3 (schemas 1 and 2 remain readable legacy state) |
 | QR code | 2 (schema 1 remains readable legacy state) |
 | resource summary | 1 |
 | thumbnail | 1 |
@@ -497,7 +497,7 @@ exact-type rule. The supported mutation kinds are:
 |---|---|
 | `initialize_database` | Sole mutation for a missing database; carries initial `config` |
 | `set_config` | Set or delete one nested config path against its exact prior value |
-| `record_pptx` | Replace/add one complete schema-v2 PPTX catalog record, generation binding included, and, when matched, bind the talk's expected `pptx_path` |
+| `record_pptx` | Replace/add one complete schema-v3 PPTX catalog record — generation binding included, plus the identity assessment proving the deck belongs to the talk it names — and, when matched, bind the talk's expected `pptx_path` |
 | `upsert_confirmed_intent` | Replace/add one complete schema-v1 record identified by `pattern` |
 | `upsert_improvement_goal` | Replace/add one complete record identified by `id` |
 | `patch_improvement_goal_verification` | Set only verification fields, with `expect` covering exactly the same fields |

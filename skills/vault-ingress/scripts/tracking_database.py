@@ -91,6 +91,7 @@ PPTX_CATALOG_V3_REQUIRED_FIELDS = PPTX_CATALOG_V2_REQUIRED_FIELDS | {
 PPTX_IDENTITY_ASSESSMENT_REQUIRED_FIELDS = frozenset(
     {
         "schema_version",
+        "pptx_path",
         "verdict",
         "artifact_role",
         "selected_talk_filename",

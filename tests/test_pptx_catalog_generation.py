@@ -857,6 +857,43 @@ def test_an_unproven_verdict_cannot_bind_a_talk(
         )
 
 
+def test_an_assessment_without_a_deck_identity_is_refused(
+    mutate_tracking_database,
+) -> None:
+    """An assessment binds a pair; the deck endpoint is not optional."""
+    assessment = _identity_assessment()
+    del assessment["pptx_path"]
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match=r"missing \['pptx_path'\]",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]),
+            [_identity_mutation(_current_record(identity_assessment=assessment))],
+        )
+
+
+def test_an_assessment_for_another_deck_is_refused(
+    mutate_tracking_database,
+) -> None:
+    """The same defect in the other direction: a correct assessment for deck A
+    pasted onto deck B would bind B's contents to A's talk."""
+    record = _current_record(
+        identity_assessment=_identity_assessment(
+            pptx_path="Conference/2024/Some Other Deck.pptx"
+        )
+    )
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="does not match the record's pptx_path",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
 def test_an_assessment_naming_another_talk_is_refused(
     mutate_tracking_database,
 ) -> None:

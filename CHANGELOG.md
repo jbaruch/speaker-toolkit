@@ -8,12 +8,16 @@ The assessment landed with no caller. `pptx_catalog` records advance to v3,
 where a matched record carries the assessment that proves its deck belongs to
 the talk it names, and `record_pptx` refuses to persist one that does not.
 
-Three things must hold together, and checking fewer is checking none: the
-verdict is `matched`, the `selected_talk_filename` equals the record's own
-`talk_filename`, and the artifact is a delivery deck. The middle check is the
-one that catches the live defect — a perfectly valid assessment pasted onto the
-wrong record. A `review_required` verdict naming the right talk is still an
-owner decision nobody has made yet, so it cannot bind either.
+Four things must hold together, and checking fewer is checking none: the
+verdict is `matched`, the assessment is about this record's deck, it names this
+record's talk, and the artifact is a delivery deck. A `review_required` verdict
+naming the right talk is still an owner decision nobody has made yet, so it
+cannot bind either.
+
+Both endpoints are checked because an assessment binds a pair. Verifying the
+talk alone leaves the deck free: a real, correctly-decided assessment for deck A
+pasted onto deck B's record would pass every other check and bind B's contents
+to A's talk — the same defect running the other way.
 
 Readers accept v1, v2, and v3, and check v3 shape only — the field is null
 exactly when `talk_filename` is null. The binding's semantics stay the writer's

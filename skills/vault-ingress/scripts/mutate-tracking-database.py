@@ -1080,6 +1080,7 @@ def _apply_retire_improvement_goal(
 def _require_bound_identity_assessment(
     assessment: object,
     *,
+    pptx_path: str,
     talk_filename: str | None,
     label: str,
 ) -> None:
@@ -1090,10 +1091,14 @@ def _require_bound_identity_assessment(
     nothing downstream can tell that a talk's slide counts, OCR, and pattern
     observations came from someone else's deck.
 
-    Three things must hold together, and checking fewer is checking none: the
-    assessment must be a `matched` verdict, it must name THIS record's talk, and
-    it must be for a delivery artifact. A `review_required` verdict that names
-    the right talk is still an owner decision nobody made yet.
+    Four things must hold together, and checking fewer is checking none: the
+    assessment must be a `matched` verdict, it must be ABOUT this record's deck,
+    it must name THIS record's talk, and it must be for a delivery artifact.
+
+    Both endpoints are checked because an assessment binds a pair. Verifying the
+    talk alone leaves the deck free: a real, correctly-decided assessment for
+    deck A pasted onto deck B's record would pass every other check and bind B's
+    contents to A's talk — the same defect in the other direction.
     """
     if talk_filename is None:
         if assessment is not None:
@@ -1109,9 +1114,15 @@ def _require_bound_identity_assessment(
     _require_keys(
         assessment,
         required=PPTX_IDENTITY_ASSESSMENT_REQUIRED_FIELDS,
-        optional={"pptx_path", "candidates"},
+        optional={"candidates"},
         label=label,
     )
+    assessed_path = assessment["pptx_path"]
+    if assessed_path != pptx_path:
+        raise TrackingDatabaseMutationError(
+            f"{label}.pptx_path {assessed_path!r} does not match the record's "
+            f"pptx_path {pptx_path!r}"
+        )
     if not json_values_equal(
         assessment["schema_version"], PPTX_TALK_IDENTITY_SCHEMA_VERSION
     ):
@@ -1223,6 +1234,7 @@ def _apply_record_pptx(
         )
     _require_bound_identity_assessment(
         record.get("identity_assessment"),
+        pptx_path=pptx_path,
         talk_filename=talk_filename,
         label=f"{record_label}.identity_assessment",
     )
