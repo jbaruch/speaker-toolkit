@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.56 — 2026-08-11
+
 ### feat(vault-ingress) — prove which talk a deck belongs to before it becomes evidence (#176)
 
 Part of #176.
