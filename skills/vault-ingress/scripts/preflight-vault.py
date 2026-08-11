@@ -1639,7 +1639,8 @@ class VaultPreflight:
         talk = self.talks[index]
         if talk.get("status") not in ANALYSIS_STATUSES:
             return
-        if "pattern_observations" not in talk:
+        if talk.get(OBSERVATIONS_FIELD) is None:
+            # Absent, or explicitly null as legacy records preserve it.
             # Absence is incompleteness, not corruption: the talk was never
             # scored, and whether an unscored talk belongs in a cohort is the
             # scoring-generation fields' question, not this gate's. This gate

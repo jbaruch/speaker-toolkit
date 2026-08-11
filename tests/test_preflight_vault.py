@@ -3104,17 +3104,21 @@ def test_an_unobservable_entry_warns_without_blocking(
     assert report["blocking_count"] == 0
 
 
+@pytest.mark.parametrize("talk_updates", [{}, {"pattern_observations": None}])
 def test_an_unscored_talk_is_not_reported_as_corrupt(
     preflight_vault,
     vault_fixture,
+    talk_updates,
 ):
     """Absence is incompleteness, not corruption.
 
-    Blocking — or even warning on — every talk that predates pattern scoring
-    would flood a queue that is working.
+    A legacy record preserves the field as an explicit null rather than
+    dropping it, and that is the same "never scored" state. Blocking — or even
+    warning on — every talk that predates pattern scoring would flood a queue
+    that is working.
     """
     materialize_transcript(vault_fixture)
-    write_database(vault_fixture, [base_talk()])
+    write_database(vault_fixture, [base_talk(**talk_updates)])
 
     report = preflight_vault.run_preflight(vault_fixture["root"])
 
