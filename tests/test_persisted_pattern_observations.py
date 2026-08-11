@@ -374,6 +374,40 @@ def test_a_repair_against_a_changed_talk_is_refused(
         )
 
 
+def test_a_repair_whose_target_became_another_pattern_is_refused(
+    persisted_pattern_observations, catalog, observable_entry
+) -> None:
+    """Same swapped fields, different pattern: still a different record.
+
+    The identity is checked against the record rather than supplied to it, so
+    a location that now holds another pattern is refused instead of rewritten.
+    """
+    prose = "The speaker opened with the map, at 00:41."
+    swapped = dict(
+        _detection(
+            observable_entry,
+            evidence=list(observable_entry.vault_dimensions),
+            dimensions=prose,
+        )
+    )
+    talk = _talk(observable_entry, swapped)
+    assessment = persisted_pattern_observations.assess_persisted_pattern_observations(
+        talk, catalog
+    )
+    other = next(
+        entry
+        for entry in sorted(catalog.entries.values(), key=lambda item: item.pattern_id)
+        if entry.pattern_id != observable_entry.pattern_id
+        and entry.entry_type == observable_entry.entry_type
+    )
+    moved = _talk(observable_entry, {**swapped, "pattern_id": other.pattern_id})
+
+    with pytest.raises(ValueError, match="reassess the talk"):
+        persisted_pattern_observations.apply_swapped_field_repairs(
+            moved, assessment.repairs
+        )
+
+
 def test_a_half_swap_is_two_defects_not_a_repair(
     persisted_pattern_observations, catalog, observable_entry
 ) -> None:

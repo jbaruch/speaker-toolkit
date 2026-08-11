@@ -630,7 +630,15 @@ def apply_swapped_field_repairs(
                 "and apply the repairs it reports"
             )
         detection = collection[index]
-        if _swapped_repair(detection, repair.location, repair.pattern_id) != repair:
+        # The identity is checked against the record, never supplied to it:
+        # passing the repair's own pattern_id into the shape check would let a
+        # detection that became a different pattern — same swapped fields, new
+        # id — compare equal and be rewritten.
+        if (
+            not isinstance(detection, dict)
+            or detection.get("pattern_id") != repair.pattern_id
+            or _swapped_repair(detection, repair.location, repair.pattern_id) != repair
+        ):
             raise ValueError(
                 f"repair target {repair.location} no longer holds the swapped "
                 "shape it was assessed with; reassess the talk and apply the "
