@@ -1,5 +1,26 @@
 # Changelog
 
+### test(vault-ingress) — assert the probe's promise, not the allocator's (#277)
+
+Closes #277.
+
+`test_same_size_replacement_invalidates_cached_probe` failed once in a local
+full-suite run and passed every time it was run alone. Its first assertion
+required the replacement's inode to differ from the original's — an allocation
+outcome the test does not control, and a claim about the filesystem rather than
+about the probe.
+
+The test now asserts what the probe promises: after a same-size replacement, the
+second probe reports the replacement's SHA-256 and the same byte count. A cache
+that served the stale entry fails that digest assertion, so the defect worth
+catching is still caught — without a pass/fail that depends on which inode the
+allocator handed back.
+
+The original failure was never reproduced, so which assertion broke is not
+recorded. The inode assertion was the only one in the file whose outcome came
+from the filesystem rather than the code under test; the remaining assertions in
+`tests/test_pdf_evidence.py` compare against pinned synthetic generations.
+
 ## 0.20.51 — 2026-08-10
 
 ### docs(vault-ingress) — point the candidate-mode reference at its script (#278)

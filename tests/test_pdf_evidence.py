@@ -223,21 +223,31 @@ def test_real_worker_probes_synthetic_pdf_and_reuses_exact_cache(
 
 
 def test_same_size_replacement_invalidates_cached_probe(tmp_path: Path) -> None:
+    """A same-size replacement is probed again, never served from the cache.
+
+    The promise is the content binding, so that is what is asserted (#277). An
+    earlier version also required the replacement's inode to differ from the
+    original's — an allocation outcome this test does not control, and a claim
+    about the filesystem rather than about the probe. A cache that did serve
+    the stale entry still fails the digest assertion below, which is the defect
+    worth catching either way.
+    """
     artifact = tmp_path / "talk.pdf"
     original = _synthetic_pdf(marker="a")
     replacement_bytes = _synthetic_pdf(marker="b")
     assert len(replacement_bytes) == len(original)
+    assert replacement_bytes != original
     artifact.write_bytes(original)
     first = pdf_evidence.probe_pdf_artifact(artifact, trusted_root=tmp_path)
+    assert first.source_sha256 == hashlib.sha256(original).hexdigest()
 
     replacement = tmp_path / "replacement.pdf"
     replacement.write_bytes(replacement_bytes)
     os.replace(replacement, artifact)
     second = pdf_evidence.probe_pdf_artifact(artifact, trusted_root=tmp_path)
 
-    assert second.generation.inode != first.generation.inode
+    assert second.source_sha256 == hashlib.sha256(replacement_bytes).hexdigest()
     assert second.source_size_bytes == first.source_size_bytes
-    assert second.source_sha256 != first.source_sha256
 
 
 @pytest.mark.parametrize(
