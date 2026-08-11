@@ -40,6 +40,8 @@ The classifier is a pure function of (talk, catalog) with no filesystem, clock,
 or network. Wiring it into migration, preflight, the writers, and queue
 normalization is the rest of #167.
 
+## 0.20.53 — 2026-08-11
+
 ### ci — fail the build on a committed conflict marker (#272)
 
 Closes #272.
