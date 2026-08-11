@@ -1,5 +1,53 @@
 # Changelog
 
+### feat(vault-ingress) — classify what is already stored, not just what arrives (#167)
+
+Part of #167.
+
+Return validation guards what a subagent hands in. Nothing guarded what was
+already persisted, and the live vault shows why that matters: across 209 talks
+and 5,222 detection objects, `pattern_observations` is a dict on 119 talks, a
+legacy list on 81, and absent on 9; 28 detections in one talk have `evidence`
+and `dimensions` swapped; 1,129 carry legacy or missing dimension arrays; 3 name
+IDs no catalog entry claims; and 641 reference entries since marked
+`observable: false`. A record-schema migration stamps any of those as current
+without ever looking inside the nested block, so the corruption survives into
+rendered analyses and derived profile state.
+
+`persisted_pattern_observations.py` is the read-only classifier the migration,
+preflight, rendering, profile, and queue paths will share. It reports stable
+reason codes for the container shape, the detection object, and the dimensions
+array, and it separates the cases by what an owner can actually do about them:
+
+- order-only drift is mechanical but still reported — the catalog owns the order
+- membership drift is a semantic claim, routed to the #156 catalog review and
+  never auto-mapped
+- an unknown ID is an owner decision about what the observation meant, never a
+  spelling correction to a near neighbour
+- a detection of an entry the catalog no longer observes is archival, not
+  malformed: reported so a caller can exclude it from the current cohort,
+  without making the talk unusable
+
+Two things the record cannot leave unsaid. A current block carries every lane
+the canonical writer emits, so an absent `patterns_detected`,
+`antipatterns_detected`, or `not_evaluable` is a writer that never finished
+rather than a leaner block — reading an absent lane as an empty one reported
+`{}` as clean current evidence. And the lane is itself the claim: a catalog
+`pattern` filed under `antipatterns_detected` inverts what the record says the
+speaker did, and no field inside the detection says otherwise.
+
+One defect is losslessly repairable: the exact inverse field swap, where
+`evidence` holds a valid dimensions array and `dimensions` holds the evidence
+text. The repair carries both original values, so applying it is a swap rather
+than a reconstruction, and it refuses a target that moved since it was assessed.
+Every other case stays a review or reparse finding. A half-swap — a malformed
+list on one side — is two defects, not a repair: guessing at one side would
+destroy the other.
+
+The classifier is a pure function of (talk, catalog) with no filesystem, clock,
+or network. Wiring it into migration, preflight, the writers, and queue
+normalization is the rest of #167.
+
 ## 0.20.53 — 2026-08-11
 
 ### ci — fail the build on a committed conflict marker (#272)

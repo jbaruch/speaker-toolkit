@@ -197,6 +197,15 @@ def cooperative_lock():
 
 
 @pytest.fixture(scope="session")
+def persisted_pattern_observations():
+    """The persisted-observation structural classifier every reader shares (#167)."""
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "persisted_pattern_observations.py"),
+        "persisted_pattern_observations",
+    )
+
+
+@pytest.fixture(scope="session")
 def retained_stage():
     """The staged-file lifecycle both owner writers share (#243).
 
