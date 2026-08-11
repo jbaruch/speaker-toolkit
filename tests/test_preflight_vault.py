@@ -3019,6 +3019,43 @@ def test_the_finding_names_the_field_a_repair_would_edit(
     assert fields == [expected_field]
 
 
+def test_an_unreadable_catalog_says_how_to_recover(
+    preflight_vault,
+    vault_fixture,
+    monkeypatch,
+):
+    """`error-handling` Actionable Messages: name the fix, not just the fault."""
+    materialize_transcript(vault_fixture)
+    write_database(
+        vault_fixture,
+        [
+            base_talk(
+                pattern_observations={
+                    "patterns_detected": [],
+                    "antipatterns_detected": [],
+                    "not_evaluable": [],
+                }
+            )
+        ],
+    )
+
+    def unreadable():
+        raise preflight_vault.ReturnValidationError("no pattern entries found")
+
+    monkeypatch.setattr(preflight_vault, "load_catalog", unreadable)
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    findings = [
+        item
+        for item in report["findings"]
+        if item["code"] == "pattern_catalog_unreadable"
+    ]
+    assert len(findings) == 1
+    assert "rerun preflight" in findings[0]["message"]
+    assert "Restore it" in findings[0]["message"]
+
+
 def test_an_unobservable_entry_warns_without_blocking(
     preflight_vault,
     vault_fixture,

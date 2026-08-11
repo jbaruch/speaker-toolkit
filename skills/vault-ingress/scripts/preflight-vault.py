@@ -1652,7 +1652,9 @@ class VaultPreflight:
                 "blocking",
                 "pattern_catalog_unreadable",
                 "persisted pattern observations cannot be validated without the "
-                f"catalog: {exc}",
+                f"bundled pattern catalog: {exc}. Restore it — reinstall the "
+                "plugin, or check out the catalog directory the message names — "
+                "then rerun preflight.",
                 field="pattern_observations",
             )
             return
