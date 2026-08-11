@@ -36,6 +36,8 @@ read, and the staged blob is what a commit would ship.
 No exclusion list: the tests build markers from repeated characters rather than
 writing them out, so the suite is not its own violation.
 
+## 0.20.52 — 2026-08-11
+
 ### test(vault-ingress) — assert the probe's promise, not the allocator's (#277)
 
 Closes #277.
