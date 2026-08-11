@@ -1,5 +1,45 @@
 # Changelog
 
+### feat(vault-ingress) — prove which talk a deck belongs to before it becomes evidence (#176)
+
+Part of #176.
+
+`pptx_catalog` would bind a talk to any syntactically valid deck. Everything
+that guards deck evidence runs after that binding, so a deck attached to the
+wrong talk fed it slide counts, design evidence, OCR, and pattern observations
+with nothing downstream able to notice. The read-only audit found 25 stored
+catalog/talk path disagreements across 15 talks and nine unrelated decks
+assigned to a single talk.
+
+`pptx_talk_identity.py` assesses the binding instead of assuming it, from facts
+both sides already carry: the catalog's title, conference, and delivery date
+against the deck's path, document properties, and rendered title, footer, and
+hashtag text. Title and event comparison delegate to `source_identity_matching`
+— the same authority the video source-identity audit uses — so a deck cannot be
+matched by a weaker rule than a recording.
+
+Two signals report but never elect. Filename similarity is excluded because
+reused talk families produce near-identical filenames, which is what mis-assigned
+these decks in the first place. Delivery year is excluded because every talk
+delivered that year satisfies it equally — it narrows a candidate set without
+identifying anything in it. A year MISmatch still contradicts: vetoing and
+electing are separate powers, and a wrong year proves the wrong delivery while a
+right year proves nothing.
+
+A directory counts as a venue claim only when it names an event some talk in the
+vault actually uses. Without that vocabulary gate every generic folder —
+`Decks/`, `Downloads/` — parses as an unrecognized venue and contradicts every
+candidate, turning the discriminator into a blanket refusal.
+
+Ambiguity is a review finding, never a silent choice. Two corroborated
+candidates, a contradicted one, and a filename-only hit all route to
+`review_required`, and a master, backup, or static export never carries a bare
+`matched` verdict into persistence.
+
+This is the assessment only; wiring it into the apply path and preflight
+follows. Sequenced before the reparse — repairing observations derived from a
+mis-assigned deck is careful work on the wrong deck.
+
 ## 0.20.55 — 2026-08-11
 
 ### feat(vault-ingress) — block a corrupt persisted block before anything claims the talk (#167)

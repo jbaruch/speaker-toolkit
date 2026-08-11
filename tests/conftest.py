@@ -206,6 +206,15 @@ def persisted_pattern_observations():
 
 
 @pytest.fixture(scope="session")
+def pptx_talk_identity():
+    """The talk-identity assessment run before catalog persistence (#176)."""
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "pptx_talk_identity.py"),
+        "pptx_talk_identity",
+    )
+
+
+@pytest.fixture(scope="session")
 def retained_stage():
     """The staged-file lifecycle both owner writers share (#243).
 
