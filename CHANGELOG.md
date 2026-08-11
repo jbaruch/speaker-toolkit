@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.53 — 2026-08-11
+
 ### ci — fail the build on a committed conflict marker (#272)
 
 Closes #272.
