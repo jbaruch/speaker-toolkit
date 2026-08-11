@@ -66,7 +66,22 @@ def _evidence(**overrides) -> dict:
     return evidence
 
 
-def _current_record(**overrides) -> dict:
+def _identity_assessment(**overrides) -> dict:
+    """A v3 record's proof that this deck belongs to the talk it names (#176)."""
+    assessment = {
+        "schema_version": 1,
+        "pptx_path": "Conference/2024/Talk.pptx",
+        "verdict": "matched",
+        "artifact_role": "delivery",
+        "selected_talk_filename": "2024-04-10-talk.md",
+        "reason_codes": ["identity_matched"],
+    }
+    assessment.update(overrides)
+    return assessment
+
+
+def _evidence_bound_record(**overrides) -> dict:
+    """A schema-v2 record: evidence bound to a generation, talk binding assumed."""
     record = {
         "schema_version": 2,
         "pptx_path": "Conference/2024/Talk.pptx",
@@ -76,6 +91,14 @@ def _current_record(**overrides) -> dict:
         "visual_extracted": True,
         "visual_evidence": _evidence(),
     }
+    record.update(overrides)
+    return record
+
+
+def _current_record(**overrides) -> dict:
+    record = _evidence_bound_record()
+    record["schema_version"] = 3
+    record["identity_assessment"] = _identity_assessment()
     record.update(overrides)
     return record
 
@@ -269,7 +292,7 @@ def test_unknown_classification_is_rejected_rather_than_treated_as_current(
 
 def test_a_future_record_says_the_reader_is_lagging(tracking_database) -> None:
     """stateful-artifacts: newer than accepted is no usable prior state."""
-    record = _current_record(schema_version=3)
+    record = _current_record(schema_version=4)
 
     with pytest.raises(
         tracking_database.TrackingDatabaseError, match="newer than this reader accepts"
@@ -382,12 +405,12 @@ def test_owner_writer_refuses_a_record_without_the_generation_binding(
 
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
-        match=r"missing \['visual_evidence'\]",
+        match=r"missing \['identity_assessment', 'visual_evidence'\]",
     ):
         mutate_tracking_database.build_candidate(_database([]), [mutation])
 
 
-def test_owner_writer_refuses_a_v2_shape_declared_as_v1(
+def test_owner_writer_refuses_a_current_shape_declared_as_v1(
     mutate_tracking_database,
 ) -> None:
     """The version is validated per kind: pptx_catalog left v1 behind."""
@@ -395,12 +418,17 @@ def test_owner_writer_refuses_a_v2_shape_declared_as_v1(
         "kind": "record_pptx",
         "expect": {"$missing": True},
         "record": _current_record()
-        | {"talk_filename": None, "matched": False, "schema_version": 1},
+        | {
+            "talk_filename": None,
+            "matched": False,
+            "identity_assessment": None,
+            "schema_version": 1,
+        },
     }
 
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
-        match="schema_version must be exact integer 2",
+        match="schema_version must be exact integer 3",
     ):
         mutate_tracking_database.build_candidate(_database([]), [mutation])
 
@@ -408,7 +436,11 @@ def test_owner_writer_refuses_a_v2_shape_declared_as_v1(
 def test_owner_writer_accepts_a_bound_receipt_the_reader_calls_current(
     mutate_tracking_database, tracking_database
 ) -> None:
-    record = _current_record() | {"talk_filename": None, "matched": False}
+    record = _current_record() | {
+        "talk_filename": None,
+        "matched": False,
+        "identity_assessment": None,
+    }
     mutation = {
         "kind": "record_pptx",
         "expect": {"$missing": True},
@@ -771,3 +803,202 @@ def test_a_rejected_receipt_reports_a_code_not_the_persisted_value(
     assert rows[0]["needs_extraction"] is True
     assert rows[0]["reason_code"] == "source_fingerprint_invalid"
     assert "sekrit-algorithm-name" not in json.dumps(rows)
+
+
+# The identity gate: a talk binding must be proven before the deck's contents
+# become that talk's evidence (#176).
+
+
+def _identity_mutation(record: dict) -> dict:
+    return {"kind": "record_pptx", "expect": {"$missing": True}, "record": record}
+
+
+def test_a_matched_record_without_an_assessment_is_refused(
+    mutate_tracking_database,
+) -> None:
+    record = _current_record()
+    del record["identity_assessment"]
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match=r"missing \['identity_assessment'\]",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def test_a_matched_record_with_a_null_assessment_is_refused(
+    mutate_tracking_database,
+) -> None:
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="required on a matched record",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]),
+            [_identity_mutation(_current_record(identity_assessment=None))],
+        )
+
+
+@pytest.mark.parametrize("verdict", ["review_required", "unmatched"])
+def test_an_unproven_verdict_cannot_bind_a_talk(
+    mutate_tracking_database, verdict
+) -> None:
+    """A `review_required` deck is an owner decision nobody has made yet."""
+    record = _current_record(identity_assessment=_identity_assessment(verdict=verdict))
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="must be 'matched' to bind a talk",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def test_an_assessment_naming_another_talk_is_refused(
+    mutate_tracking_database,
+) -> None:
+    """The exact defect: a proven assessment pasted onto the wrong record."""
+    record = _current_record(
+        identity_assessment=_identity_assessment(
+            selected_talk_filename="2023-01-01-someone-elses-talk.md"
+        )
+    )
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="does not match the record's talk_filename",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+@pytest.mark.parametrize("role", ["master", "static_export", "backup"])
+def test_a_non_delivery_artifact_cannot_bind_a_talk(
+    mutate_tracking_database, role
+) -> None:
+    record = _current_record(
+        identity_assessment=_identity_assessment(artifact_role=role)
+    )
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="is not a delivery artifact",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def test_an_assessment_from_a_future_schema_is_refused(
+    mutate_tracking_database,
+) -> None:
+    record = _current_record(identity_assessment=_identity_assessment(schema_version=2))
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="schema_version must be exact integer 1",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def test_a_reason_code_outside_the_taxonomy_is_refused(
+    mutate_tracking_database,
+) -> None:
+    record = _current_record(
+        identity_assessment=_identity_assessment(reason_codes=["looked_about_right"])
+    )
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="outside the closed taxonomy",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def test_an_unmatched_record_must_not_carry_an_assessment(
+    mutate_tracking_database,
+) -> None:
+    record = _current_record(talk_filename=None, matched=False)
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="must be null on an unmatched record",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def _database_with_talk(filename: str) -> dict:
+    database = _database([])
+    database["talks"] = [
+        {"schema_version": 5, "filename": filename, "status": "pending"}
+    ]
+    return database
+
+
+def test_a_proven_binding_is_persisted(mutate_tracking_database) -> None:
+    record = _current_record()
+    mutation = _identity_mutation(copy.deepcopy(record))
+    mutation["expect_talk_pptx_path"] = {"$missing": True}
+
+    candidate, changes = mutate_tracking_database.build_candidate(
+        _database_with_talk(record["talk_filename"]), [mutation]
+    )
+
+    assert candidate["pptx_catalog"][0] == record
+    assert any(change["kind"] == "match_pptx_talk" for change in changes)
+
+
+def test_the_assessment_binds_to_the_module_that_produces_it(
+    mutate_tracking_database, pptx_talk_identity
+) -> None:
+    """The writer's constants are the assessor's, not a second copy of them."""
+    assert (
+        mutate_tracking_database.PPTX_TALK_IDENTITY_SCHEMA_VERSION
+        == pptx_talk_identity.PPTX_TALK_IDENTITY_SCHEMA_VERSION
+    )
+    assert mutate_tracking_database.VERDICT_MATCHED == (
+        pptx_talk_identity.VERDICT_MATCHED
+    )
+    assert mutate_tracking_database.ROLE_DELIVERY == pptx_talk_identity.ROLE_DELIVERY
+
+
+def test_an_assessment_the_assessor_produced_satisfies_the_writer(
+    mutate_tracking_database, pptx_talk_identity
+) -> None:
+    """End to end: the assessor's own output is what the gate accepts."""
+    talk = {
+        "filename": "2024-04-10-talk.md",
+        "title": "A Talk About Things",
+        "conference": "Voxxed Days Ticino",
+        "date": "2024-04-10",
+    }
+    assessment = pptx_talk_identity.assess_pptx_talk_identity(
+        {"pptx_path": "Voxxed Days Ticino/2024/A Talk About Things.pptx"},
+        [talk],
+    )
+    assert assessment.verdict == pptx_talk_identity.VERDICT_MATCHED
+
+    record = _current_record(
+        pptx_path=assessment.pptx_path,
+        talk_filename=talk["filename"],
+        identity_assessment=assessment.as_json(),
+    )
+
+    mutation = _identity_mutation(copy.deepcopy(record))
+    mutation["expect_talk_pptx_path"] = {"$missing": True}
+
+    candidate, _ = mutate_tracking_database.build_candidate(
+        _database_with_talk(talk["filename"]), [mutation]
+    )
+
+    assert candidate["pptx_catalog"][0]["identity_assessment"] == assessment.as_json()

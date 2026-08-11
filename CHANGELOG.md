@@ -1,5 +1,30 @@
 # Changelog
 
+### feat(vault-ingress) — refuse a talk binding nothing proved (#176)
+
+Part of #176.
+
+The assessment landed with no caller. `pptx_catalog` records advance to v3,
+where a matched record carries the assessment that proves its deck belongs to
+the talk it names, and `record_pptx` refuses to persist one that does not.
+
+Three things must hold together, and checking fewer is checking none: the
+verdict is `matched`, the `selected_talk_filename` equals the record's own
+`talk_filename`, and the artifact is a delivery deck. The middle check is the
+one that catches the live defect — a perfectly valid assessment pasted onto the
+wrong record. A `review_required` verdict naming the right talk is still an
+owner decision nobody has made yet, so it cannot bind either.
+
+Readers accept v1, v2, and v3, and check v3 shape only — the field is null
+exactly when `talk_filename` is null. The binding's semantics stay the writer's
+gate, matching how `visual_evidence` is already handled: a malformed receipt is
+per-record trouble for a reader, but a record that cannot be proven is a record
+that must not be persisted.
+
+Existing v2 records keep reading and classifying. They carry no identity proof,
+which is what the catalog-wide preflight sweep is for; this change stops new
+unproven bindings from being written while that lands.
+
 ### feat(vault-ingress) — prove which talk a deck belongs to before it becomes evidence (#176)
 
 Part of #176.

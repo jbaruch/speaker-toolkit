@@ -94,13 +94,20 @@ def _complete_plan() -> dict[str, Any]:
                 "expect": MISSING,
                 "expect_talk_pptx_path": MISSING,
                 "record": {
-                    "schema_version": 2,
+                    "schema_version": 3,
                     "pptx_path": "Conference/Talk.pptx",
                     "talk_filename": "talk.md",
                     "matched": True,
                     "slide_count": 10,
                     "visual_extracted": False,
                     "visual_evidence": None,
+                    "identity_assessment": {
+                        "schema_version": 1,
+                        "verdict": "matched",
+                        "artifact_role": "delivery",
+                        "selected_talk_filename": "talk.md",
+                        "reason_codes": ["identity_matched"],
+                    },
                 },
             },
             {

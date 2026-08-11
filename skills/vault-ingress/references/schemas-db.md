@@ -43,11 +43,11 @@ attempts. Exhaustion and every hard staged mismatch raise
 `StagedCandidateConflictError` carrying the failed invariant. The class is
 defined in `skills/vault-ingress/scripts/tracking_database_io.py`.
 
-### `pptx_catalog` v1 -> v2
+### `pptx_catalog` v1 -> v2 -> v3
 
 Writer: the `record_pptx` mutation in
-`skills/vault-ingress/scripts/mutate-tracking-database.py`. Readers dual-accept
-v1 and v2.
+`skills/vault-ingress/scripts/mutate-tracking-database.py`. Readers accept v1,
+v2, and v3.
 
 - v1 records a bare `visual_extracted` boolean and nothing about which extractor
   produced it, so a stored `true` may refer to extractor schema v0, v1, v2, v3,
@@ -60,6 +60,21 @@ v1 and v2.
 - `artifact` is required when `outcome` is `succeeded` and must be null when it
   is `failed`. A success naming no artifact cannot be proven to still exist,
   which is the ambiguity this schema removes.
+- v3 requires `identity_assessment`: `null` on an unmatched record, and on a
+  matched one the assessment from
+  `skills/vault-ingress/scripts/pptx_talk_identity.py` that proves the deck
+  belongs to the talk the record names. v2 bound a visual claim to the bytes it
+  came from but said nothing about whose deck those bytes were, so a deck could
+  carry a perfectly-attested extraction receipt for the wrong talk.
+- The writer accepts an assessment only when its `verdict` is `matched`, its
+  `selected_talk_filename` equals the record's `talk_filename`, and its
+  `artifact_role` is `delivery` — see `_require_bound_identity_assessment`. A
+  `review_required` verdict naming the right talk is an owner decision nobody
+  has made yet. Verdicts, roles, and reason codes are the assessor's closed
+  taxonomies, not restated here.
+- Readers validate v3 shape only — that the field is null exactly when
+  `talk_filename` is null, and an object otherwise. The binding's semantics are
+  the writer's gate, matching how `visual_evidence` is handled.
 - The receipt's shape is fatal at the writer and at the classifier, never at
   the database assessment. A malformed receipt is per-record evidence trouble:
   `record_pptx` refuses to persist it and the classifier refuses to trust it,
@@ -304,7 +319,7 @@ customization, not the owner default. See the
   "_comment_schema_version": "Database schema v1 is owner-migrated by vault-ingress. A missing talk record version is the historical implicit-v1 lineage. v2 makes transcript_source optional. Two incompatible v3 lineages were emitted; v4 is their source-located union and remains archival with evidence ledger v1. V5 adds applicability assessments, exhaustive outcomes, opportunity-coverage identity, evidence ledger v2, and current scoring schema v5. Root migration preserves all historical evidence and never synthesizes v5 outcomes.",
   "_comment_absent_transcript_source": "Absent transcript_source: the key may be MISSING on a talk, and missing is meaningful — it means provenance is unknown, not that no transcript exists (that is the explicit value `none`). It arises on one path: fetch-transcript.py returning method `existing`, where a valid transcript was already on disk and no fetch ran, so nothing was learned about where it came from. Writers MUST NOT backfill a guess; `manual` in particular asserts a human produced it. Readers gauging transcript reliability MUST treat absent as unknown and MUST NOT default it to any value.",
   "pptx_catalog": [{
-    "schema_version": 2,
+    "schema_version": 3,
     "pptx_path": "Conference/Year/Talk Name.pptx",
     "talk_filename": "2024-04-10-talk-slug.md or null",
     "matched": true,
@@ -323,10 +338,20 @@ customization, not the owner default. See the
         "path": "vault-root-relative extraction artifact path",
         "sha256": "64 lowercase hex characters"
       }
+    },
+    "identity_assessment": {
+      "schema_version": 1,
+      "pptx_path": "Conference/Year/Talk Name.pptx",
+      "verdict": "matched",
+      "artifact_role": "delivery",
+      "selected_talk_filename": "2024-04-10-talk-slug.md",
+      "reason_codes": ["identity_matched"],
+      "candidates": []
     }
   }],
   "_comment_pptx_catalog_failed": {
-    "schema_version": 2,
+    "schema_version": 3,
+    "identity_assessment": null,
     "pptx_path": "Conference/Year/Broken.pptx",
     "talk_filename": null,
     "matched": false,

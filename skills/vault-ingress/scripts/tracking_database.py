@@ -34,7 +34,8 @@ TALK_RECORD_SCHEMA_VERSION = 5
 LEGACY_CONFIG_RECORD_SCHEMA_VERSION = 1
 CONFIG_RECORD_SCHEMA_VERSION = 2
 LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION = 1
-PPTX_CATALOG_RECORD_SCHEMA_VERSION = 2
+PPTX_CATALOG_EVIDENCE_BOUND_RECORD_SCHEMA_VERSION = 2
+PPTX_CATALOG_RECORD_SCHEMA_VERSION = 3
 LEGACY_QR_CODE_RECORD_SCHEMA_VERSION = 1
 QR_CODE_RECORD_SCHEMA_VERSION = 2
 RESOURCE_RECORD_SCHEMA_VERSION = 1
@@ -80,6 +81,31 @@ PPTX_CATALOG_REQUIRED_FIELDS = frozenset(
 # source bytes that produced it. A v1 record carries no such binding, so its
 # bare `visual_extracted: true` cannot say which extractor schema it refers to.
 PPTX_CATALOG_V2_REQUIRED_FIELDS = PPTX_CATALOG_REQUIRED_FIELDS | {"visual_evidence"}
+# v3 adds the identity assessment that proves the deck belongs to the talk it
+# names. v2 bound a visual claim to the bytes it came from but said nothing
+# about WHOSE deck those bytes were, so a deck could carry a perfectly-attested
+# extraction receipt for the wrong talk.
+PPTX_CATALOG_V3_REQUIRED_FIELDS = PPTX_CATALOG_V2_REQUIRED_FIELDS | {
+    "identity_assessment"
+}
+PPTX_IDENTITY_ASSESSMENT_REQUIRED_FIELDS = frozenset(
+    {
+        "schema_version",
+        "verdict",
+        "artifact_role",
+        "selected_talk_filename",
+        "reason_codes",
+    }
+)
+# Both versions bind a visual claim to the extractor generation that produced
+# it, so both classify. They differ only in whether the talk binding is proven,
+# which is an identity question, not a currency one.
+_EVIDENCE_BOUND_PPTX_CATALOG_SCHEMA_VERSIONS = frozenset(
+    {
+        PPTX_CATALOG_EVIDENCE_BOUND_RECORD_SCHEMA_VERSION,
+        PPTX_CATALOG_RECORD_SCHEMA_VERSION,
+    }
+)
 PPTX_VISUAL_EVIDENCE_REQUIRED_FIELDS = frozenset(
     {
         "outcome",
@@ -527,14 +553,15 @@ def classify_pptx_visual_evidence(
         if record.get("visual_extracted") is True:
             return PPTX_EVIDENCE_UNKNOWN_LEGACY
         return PPTX_EVIDENCE_PENDING
-    if version != PPTX_CATALOG_RECORD_SCHEMA_VERSION:
+    if version not in _EVIDENCE_BOUND_PPTX_CATALOG_SCHEMA_VERSIONS:
         # A record newer than this reader accepts means the reader is lagging,
         # not that the record is legacy. Classifying it as pending would send
         # a deck back through extraction on the strength of a shape this
         # function cannot read; the caller must update instead.
         raise TrackingDatabaseError(
             f"pptx_catalog record schema_version {version} is newer than this "
-            f"reader accepts (v{LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION} and "
+            f"reader accepts (v{LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION}, "
+            f"v{PPTX_CATALOG_EVIDENCE_BOUND_RECORD_SCHEMA_VERSION}, and "
             f"v{PPTX_CATALOG_RECORD_SCHEMA_VERSION}); update speaker-toolkit"
         )
     # Validate before trusting. A receipt is the licence to SKIP extraction, so
@@ -803,16 +830,15 @@ def _validate_collection_record(
         version = record.get(
             "schema_version", LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION
         )
-        is_v2 = version == PPTX_CATALOG_RECORD_SCHEMA_VERSION
-        _require_closed_shape(
-            record,
-            required=(
-                PPTX_CATALOG_V2_REQUIRED_FIELDS
-                if is_v2
-                else PPTX_CATALOG_REQUIRED_FIELDS
-            ),
-            label=label,
-        )
+        is_v3 = version == PPTX_CATALOG_RECORD_SCHEMA_VERSION
+        is_v2 = version == PPTX_CATALOG_EVIDENCE_BOUND_RECORD_SCHEMA_VERSION
+        if is_v3:
+            required = PPTX_CATALOG_V3_REQUIRED_FIELDS
+        elif is_v2:
+            required = PPTX_CATALOG_V2_REQUIRED_FIELDS
+        else:
+            required = PPTX_CATALOG_REQUIRED_FIELDS
+        _require_closed_shape(record, required=required, label=label)
         _require_nonempty_string(record["pptx_path"], f"{label}.pptx_path")
         talk_filename = record["talk_filename"]
         if talk_filename is not None:
@@ -826,10 +852,27 @@ def _validate_collection_record(
         _require_exact_integer(record["slide_count"], f"{label}.slide_count")
         if type(record["visual_extracted"]) is not bool:
             raise TrackingDatabaseError(f"{label}.visual_extracted must be a boolean")
-        if is_v2 and not isinstance(record["visual_evidence"], (Mapping, type(None))):
+        if (is_v2 or is_v3) and not isinstance(
+            record["visual_evidence"], (Mapping, type(None))
+        ):
             raise TrackingDatabaseError(
                 f"{label}.visual_evidence must be an object or null"
             )
+        if is_v3:
+            # Shape only, and only enough to keep a reader from mistaking an
+            # unproven binding for a proven one. The binding's own semantics are
+            # the writer's gate — see `_apply_record_pptx`.
+            assessment = record["identity_assessment"]
+            if talk_filename is None:
+                if assessment is not None:
+                    raise TrackingDatabaseError(
+                        f"{label}.identity_assessment must be null when "
+                        "talk_filename is null"
+                    )
+            elif not isinstance(assessment, Mapping):
+                raise TrackingDatabaseError(
+                    f"{label}.identity_assessment must be an object on a matched record"
+                )
         # The receipt's own shape is NOT validated here. A malformed receipt is
         # per-record evidence trouble, not unusable owner state: failing the
         # whole assessment would make preflight refuse the vault over one bad
@@ -1105,7 +1148,7 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
         "pptx_catalog": frozenset(
             {
                 LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION,
-                PPTX_CATALOG_RECORD_SCHEMA_VERSION,
+                *_EVIDENCE_BOUND_PPTX_CATALOG_SCHEMA_VERSIONS,
             }
         ),
         "qr_codes": frozenset(

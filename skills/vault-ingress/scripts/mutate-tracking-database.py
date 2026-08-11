@@ -28,7 +28,8 @@ from tracking_database import (
     IMPROVEMENT_GOAL_RECORD_SCHEMA_VERSION,
     IMPROVEMENT_GOAL_REQUIRED_FIELDS as OWNER_IMPROVEMENT_GOAL_REQUIRED_FIELDS,
     PPTX_CATALOG_RECORD_SCHEMA_VERSION,
-    PPTX_CATALOG_V2_REQUIRED_FIELDS,
+    PPTX_CATALOG_V3_REQUIRED_FIELDS,
+    PPTX_IDENTITY_ASSESSMENT_REQUIRED_FIELDS,
     validate_pptx_visual_evidence,
     RESOURCE_RECORD_SCHEMA_VERSION,
     RESOURCE_REQUIRED_FIELDS as OWNER_RESOURCE_REQUIRED_FIELDS,
@@ -54,13 +55,20 @@ from pptx_discovery_contract import (
     PptxDiscoveryContractError,
     validate_pptx_directory_exclusions,
 )
+from pptx_talk_identity import (
+    PPTX_TALK_IDENTITY_SCHEMA_VERSION,
+    REASON_CODES,
+    ROLE_DELIVERY,
+    VERDICT_MATCHED,
+)
 
 
 PLAN_SCHEMA_VERSION = 1
 OWNER_RECORD_SCHEMA_VERSION = CONFIRMED_INTENT_RECORD_SCHEMA_VERSION
-# pptx_catalog left this shared version behind at v2, where each record binds
-# its visual evidence to an extractor generation, and is validated per kind by
-# _apply_record_pptx against PPTX_CATALOG_RECORD_SCHEMA_VERSION.
+# pptx_catalog left this shared version behind at v3, where each record binds
+# its visual evidence to an extractor generation AND its talk binding to a
+# proven identity assessment. Validated per kind by _apply_record_pptx against
+# PPTX_CATALOG_RECORD_SCHEMA_VERSION.
 if (
     len(
         {
@@ -130,7 +138,7 @@ CONFIRMED_INTENT_REQUIRED_FIELDS = OWNER_CONFIRMED_INTENT_REQUIRED_FIELDS | {
     "schema_version"
 }
 RESOURCE_REQUIRED_FIELDS = OWNER_RESOURCE_REQUIRED_FIELDS | {"schema_version"}
-PPTX_REQUIRED_FIELDS = PPTX_CATALOG_V2_REQUIRED_FIELDS | {"schema_version"}
+PPTX_REQUIRED_FIELDS = PPTX_CATALOG_V3_REQUIRED_FIELDS | {"schema_version"}
 THUMBNAIL_REQUIRED_FIELDS = OWNER_THUMBNAIL_REQUIRED_FIELDS | {"schema_version"}
 
 
@@ -1069,6 +1077,80 @@ def _apply_retire_improvement_goal(
     )
 
 
+def _require_bound_identity_assessment(
+    assessment: object,
+    *,
+    talk_filename: str | None,
+    label: str,
+) -> None:
+    """Refuse a talk binding the assessment does not actually prove.
+
+    This is the gate the whole of #176 exists for. Everything guarding deck
+    evidence runs after persistence, so if an unproven binding gets written here
+    nothing downstream can tell that a talk's slide counts, OCR, and pattern
+    observations came from someone else's deck.
+
+    Three things must hold together, and checking fewer is checking none: the
+    assessment must be a `matched` verdict, it must name THIS record's talk, and
+    it must be for a delivery artifact. A `review_required` verdict that names
+    the right talk is still an owner decision nobody made yet.
+    """
+    if talk_filename is None:
+        if assessment is not None:
+            raise TrackingDatabaseMutationError(
+                f"{label} must be null on an unmatched record"
+            )
+        return
+    if not isinstance(assessment, dict):
+        raise TrackingDatabaseMutationError(
+            f"{label} is required on a matched record: a talk binding must be "
+            "proven before the deck's contents become that talk's evidence"
+        )
+    _require_keys(
+        assessment,
+        required=PPTX_IDENTITY_ASSESSMENT_REQUIRED_FIELDS,
+        optional={"pptx_path", "candidates"},
+        label=label,
+    )
+    if not json_values_equal(
+        assessment["schema_version"], PPTX_TALK_IDENTITY_SCHEMA_VERSION
+    ):
+        raise TrackingDatabaseMutationError(
+            f"{label}.schema_version must be exact integer "
+            f"{PPTX_TALK_IDENTITY_SCHEMA_VERSION}"
+        )
+    verdict = assessment["verdict"]
+    if verdict != VERDICT_MATCHED:
+        raise TrackingDatabaseMutationError(
+            f"{label}.verdict must be {VERDICT_MATCHED!r} to bind a talk, got "
+            f"{verdict!r}; route a {verdict!r} deck to owner review instead"
+        )
+    selected = assessment["selected_talk_filename"]
+    if selected != talk_filename:
+        raise TrackingDatabaseMutationError(
+            f"{label}.selected_talk_filename {selected!r} does not match the "
+            f"record's talk_filename {talk_filename!r}"
+        )
+    role = assessment["artifact_role"]
+    if role != ROLE_DELIVERY:
+        raise TrackingDatabaseMutationError(
+            f"{label}.artifact_role {role!r} is not a delivery artifact; record "
+            "which artifact is the published source before binding it"
+        )
+    reason_codes = assessment["reason_codes"]
+    if not isinstance(reason_codes, list) or not all(
+        isinstance(code, str) for code in reason_codes
+    ):
+        raise TrackingDatabaseMutationError(
+            f"{label}.reason_codes must be an array of strings"
+        )
+    unknown = sorted(set(reason_codes) - REASON_CODES)
+    if unknown:
+        raise TrackingDatabaseMutationError(
+            f"{label}.reason_codes carries codes outside the closed taxonomy: {unknown}"
+        )
+
+
 def _apply_record_pptx(
     database: dict[str, Any],
     mutation: dict[str, Any],
@@ -1139,6 +1221,11 @@ def _apply_record_pptx(
         raise TrackingDatabaseMutationError(
             f"mutations[{index}] matched must be true exactly when talk_filename is set"
         )
+    _require_bound_identity_assessment(
+        record.get("identity_assessment"),
+        talk_filename=talk_filename,
+        label=f"{record_label}.identity_assessment",
+    )
     records = _collection(database, "pptx_catalog")
     record_index, current = _find_unique_record(
         records,
