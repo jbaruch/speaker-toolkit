@@ -275,6 +275,8 @@ class VaultPreflight:
         self.reported_source_video_failures: set[int] = set()
         self.reported_config_exclusions_invalid = False
         self._catalog: PatternCatalog | None = None
+        self._catalog_error: ReturnValidationError | None = None
+        self._reported_catalog_failure = False
 
     def artifact_root(self) -> Path:
         """Map the trusted configured root lazily, without probing CLI input."""
@@ -1649,6 +1651,11 @@ class VaultPreflight:
         try:
             catalog = self._pattern_catalog()
         except ReturnValidationError as exc:
+            if self._reported_catalog_failure:
+                # One condition, one finding: repeating it per talk inflates
+                # the blocking count and buries every other finding.
+                return
+            self._reported_catalog_failure = True
             self.add(
                 "blocking",
                 "pattern_catalog_unreadable",
@@ -1689,9 +1696,20 @@ class VaultPreflight:
             )
 
     def _pattern_catalog(self) -> PatternCatalog:
-        """Load the catalog once per preflight run."""
-        if self._catalog is None:
-            self._catalog = load_catalog()
+        """Load the catalog once per preflight run, failure included.
+
+        The failure is cached alongside the success: an unreadable catalog is
+        one condition of the run, not one per talk, and retrying the load for
+        every analyzed talk would re-read a directory that is still missing.
+        """
+        if self._catalog is None and self._catalog_error is None:
+            try:
+                self._catalog = load_catalog()
+            except ReturnValidationError as exc:
+                self._catalog_error = exc
+        if self._catalog_error is not None:
+            raise self._catalog_error
+        assert self._catalog is not None  # set together with _catalog_error
         return self._catalog
 
     def _validate_source_identity(self, index: int) -> None:

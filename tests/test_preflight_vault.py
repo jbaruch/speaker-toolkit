@@ -3039,7 +3039,10 @@ def test_an_unreadable_catalog_says_how_to_recover(
         ],
     )
 
+    attempts = []
+
     def unreadable():
+        attempts.append(1)
         raise preflight_vault.ReturnValidationError("no pattern entries found")
 
     monkeypatch.setattr(preflight_vault, "load_catalog", unreadable)
@@ -3054,6 +3057,52 @@ def test_an_unreadable_catalog_says_how_to_recover(
     assert len(findings) == 1
     assert "rerun preflight" in findings[0]["message"]
     assert "Restore it" in findings[0]["message"]
+    assert attempts == [1]
+
+
+def test_an_unreadable_catalog_is_one_finding_for_the_whole_run(
+    preflight_vault,
+    vault_fixture,
+    monkeypatch,
+):
+    """One condition, one finding.
+
+    Repeating it per analyzed talk inflates the blocking count and buries
+    every other finding in the report.
+    """
+    block = {
+        "patterns_detected": [],
+        "antipatterns_detected": [],
+        "not_evaluable": [],
+    }
+    materialize_transcript(vault_fixture)
+    write_database(
+        vault_fixture,
+        [
+            base_talk(pattern_observations=block),
+            base_talk(
+                filename="2026-07-31-second-talk.md",
+                video_url="https://www.youtube.com/watch?v=SECONDVIDEO",
+                youtube_id="SECONDVIDEO",
+                pattern_observations=block,
+            ),
+        ],
+    )
+    monkeypatch.setattr(
+        preflight_vault,
+        "load_catalog",
+        lambda: (_ for _ in ()).throw(
+            preflight_vault.ReturnValidationError("no pattern entries found")
+        ),
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert [
+        item["code"]
+        for item in report["findings"]
+        if item["code"] == "pattern_catalog_unreadable"
+    ] == ["pattern_catalog_unreadable"]
 
 
 def test_an_unobservable_entry_warns_without_blocking(
