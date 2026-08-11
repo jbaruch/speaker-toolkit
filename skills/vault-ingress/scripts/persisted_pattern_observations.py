@@ -33,9 +33,22 @@ from return_validation import CONFIDENCE_LEVELS, PatternCatalog
 
 ASSESSMENT_SCHEMA_VERSION = 1
 
-# The detection collections a persisted block carries. `not_evaluable` holds
-# outcome records rather than detections, so it is audited for shape alone.
-DETECTION_COLLECTIONS = ("patterns_detected", "antipatterns_detected")
+# The detection collections a persisted block carries, each bound to the catalog
+# polarity its members must have: a `pattern` entry filed under
+# `antipatterns_detected` inverts what the record claims the speaker did.
+DETECTION_COLLECTIONS = {
+    "patterns_detected": "pattern",
+    "antipatterns_detected": "antipattern",
+}
+
+# `not_evaluable` holds outcome records rather than detections, so it is audited
+# for container shape and catalog identity alone.
+OUTCOME_COLLECTION = "not_evaluable"
+
+# Every lane the canonical writer emits. A current block missing one is not a
+# leaner current block: it is a block whose writer never finished, and treating
+# an absent lane as an empty one reports invented completeness.
+REQUIRED_COLLECTIONS = (*DETECTION_COLLECTIONS, OUTCOME_COLLECTION)
 
 # Catalog dimensions are integers 1-14 (`vault_dimensions` in every entry's
 # frontmatter). The bound is the catalog's, restated here only as the swap
@@ -50,6 +63,7 @@ MAXIMUM_DIMENSION = 14
 CONTAINER_ABSENT = "observations_absent"
 CONTAINER_LEGACY_LIST = "observations_legacy_list"
 CONTAINER_INVALID = "observations_invalid"
+COLLECTION_ABSENT = "detection_collection_absent"
 COLLECTION_INVALID = "detection_collection_invalid"
 
 # One detection object's own shape.
@@ -58,6 +72,7 @@ DETECTION_ID_MISSING = "detection_pattern_id_missing"
 DETECTION_ID_UNKNOWN = "detection_pattern_id_unknown"
 DETECTION_CONFIDENCE_INVALID = "detection_confidence_invalid"
 DETECTION_EVIDENCE_INVALID = "detection_evidence_invalid"
+DETECTION_POLARITY_MISMATCH = "detection_polarity_mismatch"
 
 # The dimensions array, in increasing order of ambiguity.
 DIMENSIONS_ABSENT = "dimensions_absent"
@@ -81,12 +96,14 @@ BLOCKING_REASONS = frozenset(
         CONTAINER_ABSENT,
         CONTAINER_LEGACY_LIST,
         CONTAINER_INVALID,
+        COLLECTION_ABSENT,
         COLLECTION_INVALID,
         DETECTION_NOT_OBJECT,
         DETECTION_ID_MISSING,
         DETECTION_ID_UNKNOWN,
         DETECTION_CONFIDENCE_INVALID,
         DETECTION_EVIDENCE_INVALID,
+        DETECTION_POLARITY_MISMATCH,
         DIMENSIONS_ABSENT,
         DIMENSIONS_INVALID,
         DIMENSIONS_ORDER_DRIFT,
@@ -254,6 +271,7 @@ def _audit_detection(
     detection: Any,
     location: str,
     catalog: PatternCatalog,
+    expected_type: str,
 ) -> tuple[list[ObservationFinding], SwappedFieldRepair | None, bool]:
     """Audit one detection object. Returns (findings, repair, archival)."""
     if not isinstance(detection, dict):
@@ -301,6 +319,18 @@ def _audit_detection(
         )
 
     findings: list[ObservationFinding] = []
+    if entry.entry_type != expected_type:
+        # The lane is the claim: a pattern filed as an antipattern inverts what
+        # the record says the speaker did, and no field inside the detection
+        # says otherwise.
+        findings.append(
+            ObservationFinding(
+                DETECTION_POLARITY_MISMATCH,
+                location,
+                pattern_id,
+                f"catalog entry is a {entry.entry_type} and cannot be filed here",
+            )
+        )
     archival = not entry.observable
     if archival:
         findings.append(
@@ -361,11 +391,25 @@ def _audit_collection(
     observations: dict[str, Any],
     name: str,
     catalog: PatternCatalog,
+    expected_type: str,
 ) -> tuple[list[ObservationFinding], list[SwappedFieldRepair], int, int]:
     """Audit one detection collection. Returns (findings, repairs, count, archival)."""
+    if name not in observations:
+        return (
+            [
+                ObservationFinding(
+                    COLLECTION_ABSENT,
+                    name,
+                    None,
+                    f"a current block carries {name}; an absent lane is not an "
+                    "empty one",
+                )
+            ],
+            [],
+            0,
+            0,
+        )
     raw = observations.get(name)
-    if raw is None:
-        return [], [], 0, 0
     if not isinstance(raw, list):
         return (
             [
@@ -388,6 +432,7 @@ def _audit_collection(
             detection,
             f"{name}[{index}]",
             catalog,
+            expected_type,
         )
         findings.extend(found)
         if repair is not None:
@@ -395,6 +440,73 @@ def _audit_collection(
         if is_archival:
             archival += 1
     return findings, repairs, len(raw), archival
+
+
+def _audit_outcomes(
+    observations: dict[str, Any],
+    catalog: PatternCatalog,
+) -> list[ObservationFinding]:
+    """Audit the `not_evaluable` lane's shape and catalog identity.
+
+    These are outcome records, not detections: they carry no evidence or
+    dimensions to check. What they must be is present, listed, and named by an
+    ID the catalog claims — an unreadable lane leaves the block's coverage
+    unknown, which is not the same as complete.
+    """
+    if OUTCOME_COLLECTION not in observations:
+        return [
+            ObservationFinding(
+                COLLECTION_ABSENT,
+                OUTCOME_COLLECTION,
+                None,
+                f"a current block carries {OUTCOME_COLLECTION}; an absent lane "
+                "is not an empty one",
+            )
+        ]
+    raw = observations.get(OUTCOME_COLLECTION)
+    if not isinstance(raw, list):
+        return [
+            ObservationFinding(
+                COLLECTION_INVALID,
+                OUTCOME_COLLECTION,
+                None,
+                f"{OUTCOME_COLLECTION} must be an array of outcome records",
+            )
+        ]
+    findings: list[ObservationFinding] = []
+    for index, record in enumerate(raw):
+        location = f"{OUTCOME_COLLECTION}[{index}]"
+        if not isinstance(record, dict):
+            findings.append(
+                ObservationFinding(
+                    DETECTION_NOT_OBJECT,
+                    location,
+                    None,
+                    "outcome record must be an object",
+                )
+            )
+            continue
+        pattern_id = record.get("pattern_id")
+        if not isinstance(pattern_id, str) or not pattern_id:
+            findings.append(
+                ObservationFinding(
+                    DETECTION_ID_MISSING,
+                    location,
+                    None,
+                    "outcome record carries no pattern_id",
+                )
+            )
+            continue
+        if pattern_id not in catalog.entries:
+            findings.append(
+                ObservationFinding(
+                    DETECTION_ID_UNKNOWN,
+                    location,
+                    pattern_id,
+                    "no catalog entry claims this pattern_id",
+                )
+            )
+    return findings
 
 
 def _blocking(findings: Iterable[ObservationFinding]) -> bool:
@@ -468,16 +580,18 @@ def assess_persisted_pattern_observations(
     repairs: list[SwappedFieldRepair] = []
     detections = 0
     archival = 0
-    for name in DETECTION_COLLECTIONS:
+    for name, expected_type in DETECTION_COLLECTIONS.items():
         found, repaired, count, archived = _audit_collection(
             observations,
             name,
             catalog,
+            expected_type,
         )
         findings.extend(found)
         repairs.extend(repaired)
         detections += count
         archival += archived
+    findings.extend(_audit_outcomes(observations, catalog))
     return PersistedObservationAssessment(
         schema_version=ASSESSMENT_SCHEMA_VERSION,
         usable=not _blocking(findings),

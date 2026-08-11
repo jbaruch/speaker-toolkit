@@ -28,6 +28,14 @@ array, and it separates the cases by what an owner can actually do about them:
   malformed: reported so a caller can exclude it from the current cohort,
   without making the talk unusable
 
+Two things the record cannot leave unsaid. A current block carries every lane
+the canonical writer emits, so an absent `patterns_detected`,
+`antipatterns_detected`, or `not_evaluable` is a writer that never finished
+rather than a leaner block — reading an absent lane as an empty one reported
+`{}` as clean current evidence. And the lane is itself the claim: a catalog
+`pattern` filed under `antipatterns_detected` inverts what the record says the
+speaker did, and no field inside the detection says otherwise.
+
 One defect is losslessly repairable: the exact inverse field swap, where
 `evidence` holds a valid dimensions array and `dimensions` holds the evidence
 text. The repair carries both original values, so applying it is a swap rather

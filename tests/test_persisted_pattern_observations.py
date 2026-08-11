@@ -61,8 +61,21 @@ def _collection_name(entry) -> str:
     )
 
 
+def _block(**lanes) -> dict[str, Any]:
+    """A current block carries every lane the canonical writer emits."""
+    block: dict[str, Any] = {
+        "patterns_detected": [],
+        "antipatterns_detected": [],
+        "not_evaluable": [],
+    }
+    block.update(lanes)
+    return block
+
+
 def _talk(entry, *detections) -> dict[str, Any]:
-    return {"pattern_observations": {_collection_name(entry): list(detections)}}
+    return {
+        "pattern_observations": _block(**{_collection_name(entry): list(detections)})
+    }
 
 
 def test_a_clean_block_is_usable(
@@ -130,7 +143,7 @@ def test_a_non_container_is_refused(
 def test_a_non_list_collection_is_refused(
     persisted_pattern_observations, catalog
 ) -> None:
-    talk = {"pattern_observations": {"patterns_detected": {"pattern_id": "x"}}}
+    talk = {"pattern_observations": _block(patterns_detected={"pattern_id": "x"})}
 
     assessment = persisted_pattern_observations.assess_persisted_pattern_observations(
         talk, catalog
@@ -139,6 +152,140 @@ def test_a_non_list_collection_is_refused(
     assert assessment.usable is False
     assert assessment.reason_codes == (
         persisted_pattern_observations.COLLECTION_INVALID,
+    )
+
+
+@pytest.mark.parametrize(
+    "lane", ["patterns_detected", "antipatterns_detected", "not_evaluable"]
+)
+def test_an_absent_lane_is_not_an_empty_lane(
+    persisted_pattern_observations, catalog, lane
+) -> None:
+    """A block missing a lane is one whose writer never finished.
+
+    Reading it as empty reports coverage the record never claimed — `{}` would
+    pass as a clean current block.
+    """
+    block = _block()
+    del block[lane]
+    talk = {"pattern_observations": block}
+
+    assessment = persisted_pattern_observations.assess_persisted_pattern_observations(
+        talk, catalog
+    )
+
+    assert assessment.usable is False
+    assert assessment.reason_codes == (
+        persisted_pattern_observations.COLLECTION_ABSENT,
+    )
+    assert assessment.findings[0].location == lane
+
+
+def test_an_empty_block_is_refused(persisted_pattern_observations, catalog) -> None:
+    assessment = persisted_pattern_observations.assess_persisted_pattern_observations(
+        {"pattern_observations": {}}, catalog
+    )
+
+    assert assessment.usable is False
+    assert [finding.location for finding in assessment.findings] == [
+        "patterns_detected",
+        "antipatterns_detected",
+        "not_evaluable",
+    ]
+
+
+def test_a_malformed_outcome_lane_is_refused(
+    persisted_pattern_observations, catalog
+) -> None:
+    talk = {"pattern_observations": _block(not_evaluable={"pattern_id": "x"})}
+
+    assessment = persisted_pattern_observations.assess_persisted_pattern_observations(
+        talk, catalog
+    )
+
+    assert assessment.usable is False
+    assert assessment.reason_codes == (
+        persisted_pattern_observations.COLLECTION_INVALID,
+    )
+
+
+@pytest.mark.parametrize(
+    ("record", "code"),
+    [
+        ("a string", "DETECTION_NOT_OBJECT"),
+        ({}, "DETECTION_ID_MISSING"),
+        ({"pattern_id": "cultural_map_disclaimer"}, "DETECTION_ID_UNKNOWN"),
+    ],
+)
+def test_outcome_records_are_audited_for_identity(
+    persisted_pattern_observations, catalog, record, code
+) -> None:
+    """Outcome records carry no evidence to check, but they do name a pattern."""
+    talk = {"pattern_observations": _block(not_evaluable=[record])}
+
+    assessment = persisted_pattern_observations.assess_persisted_pattern_observations(
+        talk, catalog
+    )
+
+    assert assessment.usable is False
+    assert assessment.reason_codes == (getattr(persisted_pattern_observations, code),)
+
+
+def test_a_polarity_mismatch_is_refused(
+    persisted_pattern_observations, catalog, observable_entry
+) -> None:
+    """The lane is the claim: a pattern filed as an antipattern inverts it."""
+    wrong_lane = (
+        "patterns_detected"
+        if observable_entry.entry_type == "antipattern"
+        else "antipatterns_detected"
+    )
+    talk = {
+        "pattern_observations": _block(**{wrong_lane: [_detection(observable_entry)]})
+    }
+
+    assessment = persisted_pattern_observations.assess_persisted_pattern_observations(
+        talk, catalog
+    )
+
+    assert assessment.usable is False
+    assert assessment.reason_codes == (
+        persisted_pattern_observations.DETECTION_POLARITY_MISMATCH,
+    )
+    assert assessment.findings[0].pattern_id == observable_entry.pattern_id
+
+
+def test_both_lanes_reject_the_other_polarity(
+    persisted_pattern_observations, catalog
+) -> None:
+    """Neither lane is the lenient one."""
+    pattern = next(
+        entry
+        for entry in sorted(catalog.entries.values(), key=lambda item: item.pattern_id)
+        if entry.observable and entry.entry_type == "pattern"
+    )
+    antipattern = next(
+        entry
+        for entry in sorted(catalog.entries.values(), key=lambda item: item.pattern_id)
+        if entry.observable and entry.entry_type == "antipattern"
+    )
+    talk = {
+        "pattern_observations": _block(
+            patterns_detected=[_detection(antipattern)],
+            antipatterns_detected=[_detection(pattern)],
+        )
+    }
+
+    assessment = persisted_pattern_observations.assess_persisted_pattern_observations(
+        talk, catalog
+    )
+
+    assert [finding.location for finding in assessment.findings] == [
+        "patterns_detected[0]",
+        "antipatterns_detected[0]",
+    ]
+    assert assessment.reason_codes == (
+        persisted_pattern_observations.DETECTION_POLARITY_MISMATCH,
     )
 
 
@@ -373,7 +520,7 @@ def test_malformed_detection_fields_are_typed(
 def test_a_non_object_detection_is_refused(
     persisted_pattern_observations, catalog, detection
 ) -> None:
-    talk = {"pattern_observations": {"patterns_detected": [detection]}}
+    talk = {"pattern_observations": _block(patterns_detected=[detection])}
 
     assessment = persisted_pattern_observations.assess_persisted_pattern_observations(
         talk, catalog
