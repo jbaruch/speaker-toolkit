@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.52 — 2026-08-11
+
 ### test(vault-ingress) — assert the probe's promise, not the allocator's (#277)
 
 Closes #277.
