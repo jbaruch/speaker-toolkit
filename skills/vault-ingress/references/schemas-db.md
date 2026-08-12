@@ -66,12 +66,12 @@ v2, and v3.
   belongs to the talk the record names. v2 bound a visual claim to the bytes it
   came from but said nothing about whose deck those bytes were, so a deck could
   carry a perfectly-attested extraction receipt for the wrong talk.
-- The writer accepts an assessment only when its `verdict` is `matched`, its
-  `selected_talk_filename` equals the record's `talk_filename`, and its
-  `artifact_role` is `delivery` — see `_require_bound_identity_assessment`. A
-  `review_required` verdict naming the right talk is an owner decision nobody
-  has made yet. Verdicts, roles, and reason codes are the assessor's closed
-  taxonomies, not restated here.
+- The writer refuses an assessment that does not authorize the binding; the
+  acceptance predicate lives in
+  `skills/vault-ingress/scripts/mutate-tracking-database.py`
+  `_require_bound_identity_assessment`. Verdicts, artifact roles, and reason
+  codes are the assessor's closed taxonomies, in
+  `skills/vault-ingress/scripts/pptx_talk_identity.py` top-of-file constants.
 - Readers validate v3 shape only — that the field is null exactly when
   `talk_filename` is null, and an object otherwise. The binding's semantics are
   the writer's gate, matching how `visual_evidence` is handled.

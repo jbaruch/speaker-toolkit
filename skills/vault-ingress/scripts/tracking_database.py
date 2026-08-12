@@ -1446,27 +1446,14 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
             "tracking database cannot be migrated by this owner version: "
             + ", ".join(assessment.reason_codes)
         )
-    if assessment.state == "current":
-        # A current ROOT does not mean current RECORDS. Returning here on the
-        # root version alone is how a record-level shape bump gets skipped for
-        # every live database, since they all reached root v1 long ago — so the
-        # record migrations run first and only a genuinely unchanged database
-        # takes the no-op path.
-        current = copy.deepcopy(require_current_tracking_database(database))
-        counts = _empty_record_counts()
-        counts["pptx_catalog"] = _migrate_pptx_catalog_records(current)
-        return TrackingDatabaseMigration(
-            database=current,
-            changed=any(counts.values()),
-            from_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
-            to_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
-            record_counts=counts,
-        )
     if not isinstance(database, dict):
         raise TrackingDatabaseError("tracking database root must be a JSON object")
 
     candidate: dict[str, Any] = copy.deepcopy(database)
-    root_version = tracking_database_schema_version(candidate)
+    # Ahead of both migration branches. A shape change is a shape change whether
+    # the root version moves or only a record's does, so an active writer must
+    # block it either way — gating only the root-migration path would let a
+    # record-level bump rewrite the database out from under a live claim.
     talks = _object_collection(candidate, "talks", required=True)
     active = _active_claim_filenames(talks)
     if active:
@@ -1474,6 +1461,25 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
             "tracking database has active queue writers; recover or complete these "
             f"claims before migration: {active}"
         )
+
+    if assessment.state == "current":
+        # A current ROOT does not mean current RECORDS. Returning on the root
+        # version alone is how a record-level shape bump gets skipped for every
+        # live database, since they all reached root v1 long ago — so the record
+        # migrations run first and only a genuinely unchanged database takes the
+        # no-op path.
+        require_current_tracking_database(candidate)
+        counts = _empty_record_counts()
+        counts["pptx_catalog"] = _migrate_pptx_catalog_records(candidate)
+        return TrackingDatabaseMigration(
+            database=candidate,
+            changed=any(counts.values()),
+            from_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
+            to_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
+            record_counts=counts,
+        )
+
+    root_version = tracking_database_schema_version(candidate)
 
     config = candidate.setdefault("config", {})
     if not isinstance(config, dict):

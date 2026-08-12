@@ -1126,3 +1126,31 @@ def test_migration_is_idempotent(tracking_database) -> None:
     twice = tracking_database.migrate_tracking_database(copy.deepcopy(once.database))
 
     assert twice.database["pptx_catalog"] == once.database["pptx_catalog"]
+
+
+def test_an_active_claim_blocks_a_record_level_migration(tracking_database) -> None:
+    """A shape change is a shape change whether the root moves or a record does;
+    an active writer must block it either way."""
+    database = _database([_evidence_bound_record()])
+    database["talks"] = [
+        {
+            "schema_version": 5,
+            "filename": "2024-04-10-talk.md",
+            "status": "reprocessing-inflight",
+            "reprocess_generation": 1,
+            "_queue_claim": {
+                "schema_version": 2,
+                "run_id": "reparse-2026-08",
+                "batch_id": "1",
+                "claimed_at": "2026-08-01T00:00:00+00:00",
+                "previous_status": "needs-reprocessing",
+                "reprocess_generation": 1,
+                "state": "claimed",
+            },
+        }
+    ]
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="active queue writers"
+    ):
+        tracking_database.migrate_tracking_database(database)
