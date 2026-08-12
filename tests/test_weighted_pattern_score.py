@@ -184,3 +184,38 @@ class TestBasisIsRequiredByTheScoreNotItsShape:
                 not_evaluable,
                 rv.RETURN_SCHEMA_VERSION,
             )
+
+
+class TestV6IsReachable:
+    """The contract has to be reachable through the public validator, or it is
+    code nothing can invoke."""
+
+    def test_v6_is_a_supported_return_schema(self, rv) -> None:
+        assert (
+            rv.WEIGHTED_SCORE_RETURN_SCHEMA_VERSION
+            in rv.SUPPORTED_RETURN_SCHEMA_VERSIONS
+        )
+
+    @pytest.mark.parametrize(
+        "field_set",
+        [
+            "SNAPSHOT_RETURN_SCHEMA_VERSIONS",
+            "OUTCOME_GATE_RETURN_SCHEMA_VERSIONS",
+            "SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS",
+            "EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS",
+        ],
+    )
+    def test_v6_inherits_every_v5_semantic(self, rv, field_set) -> None:
+        """v6 adds weighting to v5; it does not drop anything, so every set v5
+        belongs to must contain it."""
+        versions = getattr(rv, field_set)
+        assert rv.RETURN_SCHEMA_VERSION in versions
+        assert rv.WEIGHTED_SCORE_RETURN_SCHEMA_VERSION in versions
+
+    def test_a_v6_return_resolves_through_the_public_entry_point(self, rv) -> None:
+        ret = {"return_schema_version": rv.WEIGHTED_SCORE_RETURN_SCHEMA_VERSION}
+
+        assert (
+            rv.resolve_return_schema_version(ret)
+            == rv.WEIGHTED_SCORE_RETURN_SCHEMA_VERSION
+        )

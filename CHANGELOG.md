@@ -26,6 +26,10 @@ is the reinterpretation `stateful-artifacts` forbids. Each schema is checked
 against the arithmetic in force when it was written, and a v5 return carrying a
 `pattern_score_basis` is rejected outright.
 
+v6 is a supported return schema, in every semantic set v5 belongs to — it adds
+weighting to v5 and drops nothing. Shipping the arithmetic behind a version no
+input could resolve would have been code nothing can invoke.
+
 `PATTERN_SCORING_SCHEMA_VERSION` deliberately stays at 5. Bumping it now would
 strand every persisted talk on a scoring generation nothing has produced yet,
 forcing a reparse to adopt arithmetic no worker is using. It moves in the change

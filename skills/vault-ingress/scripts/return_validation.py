@@ -246,7 +246,8 @@ BASELINE_RETURN_SCHEMA_VERSION = 3
 SOURCE_LOCATED_RETURN_SCHEMA_VERSION = 4
 RETURN_SCHEMA_VERSION = 5
 # The first return schema whose aggregate is weighted. Below it the flat +1/-1
-# contract stands, because that is the arithmetic its worker used.
+# contract stands, because that is the arithmetic its worker used. v6 keeps
+# every v5 semantic and adds weighting, so it joins each set v5 belongs to.
 WEIGHTED_SCORE_RETURN_SCHEMA_VERSION = 6
 SUPPORTED_RETURN_SCHEMA_VERSIONS = frozenset(
     {
@@ -255,6 +256,7 @@ SUPPORTED_RETURN_SCHEMA_VERSIONS = frozenset(
         BASELINE_RETURN_SCHEMA_VERSION,
         SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
         RETURN_SCHEMA_VERSION,
+        WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
     }
 )
 SNAPSHOT_RETURN_SCHEMA_VERSIONS = frozenset(
@@ -263,6 +265,7 @@ SNAPSHOT_RETURN_SCHEMA_VERSIONS = frozenset(
         BASELINE_RETURN_SCHEMA_VERSION,
         SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
         RETURN_SCHEMA_VERSION,
+        WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
     }
 )
 OUTCOME_GATE_RETURN_SCHEMA_VERSIONS = frozenset(
@@ -270,15 +273,19 @@ OUTCOME_GATE_RETURN_SCHEMA_VERSIONS = frozenset(
         BASELINE_RETURN_SCHEMA_VERSION,
         SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
         RETURN_SCHEMA_VERSION,
+        WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
     }
 )
 SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS = frozenset(
     {
         SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
         RETURN_SCHEMA_VERSION,
+        WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
     }
 )
-EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS = frozenset({RETURN_SCHEMA_VERSION})
+EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS = frozenset(
+    {RETURN_SCHEMA_VERSION, WEIGHTED_SCORE_RETURN_SCHEMA_VERSION}
+)
 # Stays at 5 until a return actually emits a weighted score. The weight table
 # below is part of the NEXT scoring generation; bumping this constant now would
 # strand every persisted talk on a generation nothing has produced yet, forcing
