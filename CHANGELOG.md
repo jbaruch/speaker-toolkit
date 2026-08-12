@@ -14,8 +14,9 @@ Per the 2026-08-09 owner decision the prose is the intent of record, so
 `_dimensions.yaml` makes the labels resolvable and the numbers follow them. 42
 prose claims and 38 entries' frontmatter were remapped; the index's per-entry
 column and reverse map are regenerated from the approved frontmatter rather than
-maintained by hand. The catalog auditor reports 0 errors and 0 semantic debts,
-down from 37. Both worked examples in the issue land exactly as specified:
+maintained by hand. The catalog auditor reports 0 errors, down from 37 semantic
+debts of the drift kind; the 11 debts it now reports are the unresolved-label
+findings the newly-wired registry check surfaces, listed below. Both worked examples in the issue land exactly as specified:
 `progressive-reveal` becomes `[3, 13]` and `three-part-close` becomes `[2, 6]`.
 
 No pattern's meaning changes. This is a renumbering, not a re-classification.

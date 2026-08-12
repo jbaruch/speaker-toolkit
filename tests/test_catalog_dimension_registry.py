@@ -246,3 +246,26 @@ class TestAuditorEnforcesTheRegistry:
 
         codes = [issue["code"] for issue in report["errors"]]
         assert "dimension_registry_invalid" in codes
+
+
+def test_malformed_yaml_is_a_registry_error_not_a_crash(tmp_path: Path) -> None:
+    """The auditor promises a finding for a registry it cannot use; a raw
+    YAMLError would crash it instead of reporting."""
+    (tmp_path / "_dimensions.yaml").write_text(
+        "schema_version: 1\ndimensions:\n  - [unclosed\n", encoding="utf-8"
+    )
+
+    with pytest.raises(
+        registry_module.CatalogDimensionRegistryError, match="cannot parse"
+    ):
+        registry_module.load_dimension_registry(tmp_path)
+
+
+def test_the_auditor_reports_unparseable_yaml(audit_pattern_catalog, tmp_path) -> None:
+    (tmp_path / "_dimensions.yaml").write_text(
+        "schema_version: 1\ndimensions:\n  - [unclosed\n", encoding="utf-8"
+    )
+
+    report = audit_pattern_catalog.audit_catalog(catalog_dir=tmp_path)
+
+    assert "dimension_registry_invalid" in [i["code"] for i in report["errors"]]

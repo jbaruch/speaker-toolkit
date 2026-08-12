@@ -92,7 +92,16 @@ def load_dimension_registry(catalog_dir: Path | str) -> DimensionRegistry:
         raise CatalogDimensionRegistryError(
             f"cannot read dimension registry {path}: {exc}"
         ) from exc
-    document = _require_mapping(yaml.safe_load(raw), str(path))
+    try:
+        parsed = yaml.safe_load(raw)
+    except yaml.YAMLError as exc:
+        # The auditor promises a `dimension_registry_invalid` finding for a
+        # registry it cannot use. A YAMLError escaping this call would crash it
+        # instead, turning the one reportable failure into no report at all.
+        raise CatalogDimensionRegistryError(
+            f"cannot parse dimension registry {path}: {exc}"
+        ) from exc
+    document = _require_mapping(parsed, str(path))
     version = document.get("schema_version")
     if version != DIMENSION_REGISTRY_SCHEMA_VERSION:
         raise CatalogDimensionRegistryError(
