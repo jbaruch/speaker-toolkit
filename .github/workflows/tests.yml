@@ -183,12 +183,21 @@ jobs:
       - name: Install Windows media evidence dependencies
         if: runner.os == 'Windows'
         shell: pwsh
-        # Chocolatey package pin. No Dependabot ecosystem for Chocolatey;
-        # renew quarterly or when the approved package advances. Put the real
-        # binaries ahead of Chocolatey's process-spawning shims: the supervised
-        # worker intentionally permits only itself plus one ffprobe child.
+        # Unpinned on purpose (dependency-management -> OS-Package Runtime
+        # Carve-Out). The Chocolatey feed serves only the current version of a
+        # package, so a literal pin stops resolving the moment the package
+        # advances — which is exactly how 8.1.2 took `main` red without a single
+        # source change. The consumed surface is an ffprobe command line, not a
+        # semver API, so tracking current costs nothing a pin was buying.
+        #
+        # The macOS lane keeps its pin: evermeet.cx serves immutable archives
+        # and each is checksum-verified above, so that pin still resolves.
+        #
+        # Put the real binaries ahead of Chocolatey's process-spawning shims:
+        # the supervised worker intentionally permits only itself plus one
+        # ffprobe child.
         run: |
-          choco install ffmpeg --version=8.1.2 --no-progress -y
+          choco install ffmpeg --no-progress -y
           $ffmpegBin = 'C:\ProgramData\chocolatey\lib\ffmpeg\tools\ffmpeg\bin'
           if (-not (Test-Path "$ffmpegBin\ffprobe.exe" -PathType Leaf)) {
             throw "Chocolatey ffprobe binary was not installed at the pinned path"

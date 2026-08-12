@@ -1,5 +1,19 @@
 # Changelog
 
+### ci — unpin the Chocolatey ffmpeg install
+
+`main` went red with no source change: `choco install ffmpeg --version=8.1.2`
+stopped resolving because the Chocolatey feed withdrew that version. A re-run
+cannot fix a pin that no longer exists.
+
+This is the failure `dependency-management`'s OS-Package Runtime Carve-Out
+describes — the feed serves only the current version, so a literal pin breaks at
+the next advance. The consumed surface is an ffprobe command line, not a
+semver-governed API, so tracking current costs nothing the pin was buying.
+
+The macOS lane keeps its pin: evermeet.cx serves immutable archives and each is
+checksum-verified, so that pin still resolves and still proves what it fetched.
+
 ### fix(catalog) — resolve the last three dimension labels (#156)
 
 Closes #156.
