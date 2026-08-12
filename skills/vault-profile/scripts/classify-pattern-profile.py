@@ -59,6 +59,7 @@ from pattern_opportunities import (  # noqa: E402
 from return_validation import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     load_catalog,
 )
+from profile_pattern_provenance import absence_provability  # noqa: E402
 
 
 POLICY_SCHEMA_VERSION = 1
@@ -1497,6 +1498,10 @@ def classify_pattern_profile(
         "strengths": strength_ids,
         "strengths_note": "Deterministic projection of regular and signature positive-pattern classifications.",
         "never_used_patterns": never_tried_ids,
+        # The denominator has to travel with the list. Absence is provable for a
+        # minority of the observable catalog, so a short never-used list is
+        # mostly a statement about coverage rather than about the speaker.
+        "absence_provability": absence_provability(resolved_catalog),
         "signature_combinations": combinations,
         "mastery_levels": mastery_levels,
     }

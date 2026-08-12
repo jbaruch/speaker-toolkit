@@ -101,6 +101,10 @@ _V5_PATTERN_PROFILE_FIELDS = _COMMON_PATTERN_PROFILE_FIELDS | frozenset(
         "trend_analysis",
     }
 )
+# Allowed, never required. The writer emits it, but a profile written before it
+# existed is not thereby invalid — making it required would refuse to read every
+# profile already on disk, which is a bigger break than the gap it closes.
+_OPTIONAL_PATTERN_PROFILE_FIELDS = frozenset({"absence_provability"})
 _REQUIRED_PATTERN_BREADTH_FIELDS = frozenset(
     {"avg_distinct_patterns_per_talk", "trend", "note"}
 )
@@ -1424,7 +1428,10 @@ def assess_pattern_profile(
         else _V4_PATTERN_PROFILE_FIELDS
     )
     missing_fields = sorted(required_fields - set(pattern_profile))
-    unknown_fields = sorted(set(pattern_profile) - required_fields, key=str)
+    unknown_fields = sorted(
+        set(pattern_profile) - required_fields - _OPTIONAL_PATTERN_PROFILE_FIELDS,
+        key=str,
+    )
     if missing_fields:
         errors.append(
             f"pattern_profile is missing required schema-v{contract_version} fields: "

@@ -15,6 +15,12 @@ statement about the speaker. It is mostly a statement about coverage.
 from the catalog rather than hardcoded, so populating a gate moves the numbers
 instead of dating a constant.
 
+`classify-pattern-profile.py` emits it beside `never_used_patterns`, so the list
+and its denominator always travel together. The field is allowed but never
+required: a profile written before it existed is not thereby invalid, and
+demanding it would refuse to read every profile already on disk — a bigger break
+than the gap it closes.
+
 An unobservable entry lands in neither count: it is not scored at all, so it
 belongs to no denominator.
 

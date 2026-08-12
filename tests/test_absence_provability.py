@@ -89,3 +89,33 @@ class TestPartition:
 
         assert result["observable_count"] == 0
         assert result["absence_provable_count"] == 0
+
+
+class TestTheWriterEmitsIt:
+    """An unused helper is not a contract — the reason this was rejected once."""
+
+    def test_the_profile_writer_emits_the_denominator(
+        self, classify_pattern_profile
+    ) -> None:
+        import inspect
+
+        source = inspect.getsource(classify_pattern_profile)
+        assert '"absence_provability": absence_provability(' in source
+
+    def test_the_validator_accepts_a_profile_carrying_it(
+        self, profile_pattern_provenance
+    ) -> None:
+        assert (
+            "absence_provability"
+            in profile_pattern_provenance._OPTIONAL_PATTERN_PROFILE_FIELDS
+        )
+
+    def test_it_is_not_required_of_profiles_written_before_it(
+        self, profile_pattern_provenance
+    ) -> None:
+        """Requiring it would refuse to read every profile already on disk — a
+        bigger break than the gap it closes."""
+        assert (
+            "absence_provability"
+            not in profile_pattern_provenance._V5_PATTERN_PROFILE_FIELDS
+        )
