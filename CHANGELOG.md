@@ -1,5 +1,33 @@
 # Changelog
 
+### feat(vault-ingress) — migration repairs or requeues, never stamps (#167)
+
+Closes the migration-integration half of #167.
+
+`#147` migration stamped a talk as current record schema without ever reading
+its nested detection objects, so a block with `evidence` and `dimensions`
+swapped, an unknown pattern id, or a missing dimensions array became "current"
+on the strength of its container's shape. The classifier that finds those
+landed in #285 and preflight consumed it in #286; migration still did not.
+
+`migrate-tracking-database.py` now gates every talk claiming completed analysis,
+between the stamp and the write. Two outcomes, and no third:
+
+- an exact inverse-schema swap is undone in place, because both original values
+  live in the repair record and putting them back is reversible;
+- everything else keeps its original bytes and goes back on the queue with
+  `reprocess_reason: persisted_observation_invalid`.
+
+A repair counts only when re-assessment says the block it produced would have
+passed on its own — a talk can carry a repairable swap AND an unrelated defect,
+and the repair fixes only the swap. The report gains a `persisted_observations`
+object with both counts, since a silent repair is indistinguishable from no
+corruption at all.
+
+A talk with no observation block is skipped. Absence is incompleteness, not
+corruption — the boundary preflight already draws, and requeueing every talk
+that predates pattern scoring would flood a queue that is working.
+
 ### fix(catalog) — resolve the last three dimension labels (#156)
 
 Closes #156.

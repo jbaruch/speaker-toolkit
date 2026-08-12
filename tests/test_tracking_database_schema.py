@@ -1136,7 +1136,13 @@ def test_apply_current_database_is_exact_noop_without_backup(
     tmp_path,
 ):
     path = tmp_path / "tracking-database.json"
-    current = tracking_database.migrate_tracking_database(_legacy_database()).database
+    database = _legacy_database()
+    # The shared legacy talk carries a corrupt observation block, which the
+    # #167 gate correctly requeues — a real change, and not what this test is
+    # about. Drop the completed-analysis claim so the gate has nothing to act
+    # on and the no-op contract is the only thing under test.
+    database["talks"][0]["status"] = "pending"
+    current = tracking_database.migrate_tracking_database(database).database
     raw = _write_database(path, current)
     inode = path.stat().st_ino
 
