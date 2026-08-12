@@ -373,11 +373,15 @@ class VaultPreflight:
                 # A v1 or v2 row that migration has not reached yet. Its binding
                 # is no more proven than a migrated one, and saying so is the
                 # point of the sweep.
+                # v1 rows stay at v1 by design, so migration will not reach
+                # this one. That makes it MORE unproven than a migrated row,
+                # not less, and a warning would let Step 1 proceed on it.
                 self.add(
-                    "warning",
+                    "blocking",
                     "pptx_talk_binding_unassessed",
                     "catalog row binds a talk with no identity assessment; "
-                    "migrate the database so the binding is classified",
+                    "assess the deck before its contents become that talk's "
+                    "evidence",
                     field=f"pptx_catalog[{index}].identity_assessment",
                     expected=VERDICT_MATCHED,
                     actual=None,

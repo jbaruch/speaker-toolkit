@@ -1303,14 +1303,14 @@ def test_preflight_ignores_an_unmatched_row(preflight_vault, tmp_path) -> None:
     assert not any(code.startswith("pptx_talk_binding") for code, _ in codes)
 
 
-def test_preflight_flags_a_row_migration_has_not_reached(
+def test_preflight_blocks_a_row_migration_will_never_reach(
     preflight_vault, tmp_path
 ) -> None:
     codes = _preflight_codes(
         preflight_vault, _database([_evidence_bound_record()]), tmp_path
     )
 
-    assert ("pptx_talk_binding_unassessed", "warning") in codes
+    assert ("pptx_talk_binding_unassessed", "blocking") in codes
 
 
 def test_preflight_refuses_an_assessment_that_proves_another_pair(
