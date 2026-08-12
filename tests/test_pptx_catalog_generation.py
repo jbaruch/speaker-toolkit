@@ -1039,3 +1039,90 @@ def test_an_assessment_the_assessor_produced_satisfies_the_writer(
     )
 
     assert candidate["pptx_catalog"][0]["identity_assessment"] == assessment.as_json()
+
+
+# Owner migration: v2 records upgrade to v3 without inventing proof (#176).
+
+
+def test_migration_upgrades_a_matched_v2_record_to_review_required(
+    tracking_database,
+) -> None:
+    database = _database([_evidence_bound_record()])
+
+    migration = tracking_database.migrate_tracking_database(database)
+    record = migration.database["pptx_catalog"][0]
+
+    assert record["schema_version"] == 3
+    assessment = record["identity_assessment"]
+    assert assessment["verdict"] == "review_required"
+    assert assessment["selected_talk_filename"] is None
+    assert assessment["reason_codes"] == ["identity_unassessed_legacy_binding"]
+    assert assessment["pptx_path"] == record["pptx_path"]
+
+
+def test_migration_preserves_the_legacy_binding_it_cannot_prove(
+    tracking_database,
+) -> None:
+    """The binding survives; only its provenance is marked unproven."""
+    database = _database([_evidence_bound_record()])
+
+    migration = tracking_database.migrate_tracking_database(database)
+    record = migration.database["pptx_catalog"][0]
+
+    assert record["talk_filename"] == "2024-04-10-talk.md"
+    assert record["matched"] is True
+    assert record["visual_evidence"] == _evidence()
+
+
+def test_migration_never_invents_a_matched_verdict(tracking_database) -> None:
+    """Forging `matched` would manufacture the evidence v3 exists to require."""
+    database = _database([_evidence_bound_record()])
+
+    migration = tracking_database.migrate_tracking_database(database)
+
+    assessment = migration.database["pptx_catalog"][0]["identity_assessment"]
+    assert assessment["verdict"] != "matched"
+
+
+def test_migration_gives_an_unmatched_v2_record_a_null_assessment(
+    tracking_database,
+) -> None:
+    database = _database([_evidence_bound_record(talk_filename=None, matched=False)])
+
+    migration = tracking_database.migrate_tracking_database(database)
+    record = migration.database["pptx_catalog"][0]
+
+    assert record["schema_version"] == 3
+    assert record["identity_assessment"] is None
+
+
+def test_migration_leaves_v1_records_at_v1(tracking_database) -> None:
+    """A v1 record has no visual_evidence either; the established position is
+    to preserve it rather than invent one."""
+    database = _database([_legacy_record()])
+
+    migration = tracking_database.migrate_tracking_database(database)
+    record = migration.database["pptx_catalog"][0]
+
+    assert record["schema_version"] == 1
+    assert "identity_assessment" not in record
+
+
+def test_a_migrated_record_reads_as_a_current_database_shape(
+    tracking_database,
+) -> None:
+    database = _database([_evidence_bound_record()])
+
+    migration = tracking_database.migrate_tracking_database(database)
+    assessment = tracking_database.assess_tracking_database(migration.database)
+
+    assert assessment.usable is True
+
+
+def test_migration_is_idempotent(tracking_database) -> None:
+    database = _database([_evidence_bound_record()])
+
+    once = tracking_database.migrate_tracking_database(database)
+    twice = tracking_database.migrate_tracking_database(copy.deepcopy(once.database))
+
+    assert twice.database["pptx_catalog"] == once.database["pptx_catalog"]

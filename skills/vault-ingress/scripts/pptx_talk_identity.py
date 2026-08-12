@@ -103,6 +103,10 @@ REASON_AMBIGUOUS_CANDIDATES = "identity_ambiguous_candidates"
 REASON_CONFLICTING_SIGNALS = "identity_conflicting_signals"
 REASON_MATCHED = "identity_matched"
 REASON_NON_DELIVERY_ARTIFACT = "identity_non_delivery_artifact"
+# Stamped by migration onto a record that bound its talk before any assessment
+# existed. The binding is not declared wrong — it is declared unproven, which is
+# the honest reading and the one that routes it to review instead of trusting it.
+REASON_UNASSESSED_LEGACY_BINDING = "identity_unassessed_legacy_binding"
 
 REASON_CODES = frozenset(
     {
@@ -113,6 +117,7 @@ REASON_CODES = frozenset(
         REASON_CONFLICTING_SIGNALS,
         REASON_MATCHED,
         REASON_NON_DELIVERY_ARTIFACT,
+        REASON_UNASSESSED_LEGACY_BINDING,
     }
 )
 
@@ -616,3 +621,23 @@ def assess_pptx_talk_identity(
         return result(VERDICT_REVIEW_REQUIRED, None, REASON_FILENAME_SIMILARITY_ONLY)
 
     return result(VERDICT_UNMATCHED, None, REASON_NO_AGREEING_SIGNAL)
+
+
+def unassessed_legacy_binding(pptx_path: str) -> dict[str, Any]:
+    """The assessment for a talk binding made before assessments existed.
+
+    Migration cannot prove a binding it did not witness, and inventing a
+    `matched` verdict for one would forge exactly the evidence this module was
+    written to require. It cannot call the binding wrong either — most legacy
+    bindings are right. `review_required` is the only honest verdict: the record
+    upgrades, the binding survives, and nothing downstream may treat it as
+    proven until someone looks.
+    """
+    return {
+        "schema_version": PPTX_TALK_IDENTITY_SCHEMA_VERSION,
+        "pptx_path": pptx_path,
+        "verdict": VERDICT_REVIEW_REQUIRED,
+        "artifact_role": ROLE_DELIVERY,
+        "selected_talk_filename": None,
+        "reason_codes": [REASON_UNASSESSED_LEGACY_BINDING],
+    }

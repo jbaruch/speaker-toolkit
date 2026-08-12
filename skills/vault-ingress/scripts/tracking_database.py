@@ -25,6 +25,7 @@ from pptx_discovery_contract import (
     PptxDiscoveryContractError,
     validate_pptx_directory_exclusions,
 )
+from pptx_talk_identity import unassessed_legacy_binding
 
 
 LEGACY_TRACKING_DATABASE_SCHEMA_VERSION = 0
@@ -1398,6 +1399,45 @@ def _migrate_talk_record(talk: dict[str, Any]) -> bool:
     return talk_version_added
 
 
+def _migrate_pptx_catalog_records(candidate: dict[str, Any]) -> int:
+    """Upgrade evidence-bound catalog records to the identity-bound shape.
+
+    A v2 record's talk binding was made before any assessment existed, so
+    migration cannot prove it. It must not invent a `matched` verdict — that
+    would forge the evidence the v3 shape exists to require — and it must not
+    call the binding wrong, because most legacy bindings are right. Stamping
+    `review_required` upgrades the record, preserves the binding, and stops
+    anything downstream from treating it as proven until someone looks.
+
+    v1 records stay at v1: they carry no `visual_evidence` either, and the
+    established position is that migration preserves such a record rather than
+    inventing a binding for it.
+    """
+    records = candidate.get("pptx_catalog")
+    if not isinstance(records, list):
+        return 0
+    migrated = 0
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        if (
+            record.get("schema_version")
+            != PPTX_CATALOG_EVIDENCE_BOUND_RECORD_SCHEMA_VERSION
+        ):
+            continue
+        pptx_path = record.get("pptx_path")
+        if not isinstance(pptx_path, str) or not pptx_path.strip():
+            continue
+        record["schema_version"] = PPTX_CATALOG_RECORD_SCHEMA_VERSION
+        record["identity_assessment"] = (
+            unassessed_legacy_binding(pptx_path)
+            if record.get("talk_filename") is not None
+            else None
+        )
+        migrated += 1
+    return migrated
+
+
 def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
     """Build the deterministic owner migration to root v1/config v2."""
     assessment = assess_tracking_database(database)
@@ -1407,13 +1447,20 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
             + ", ".join(assessment.reason_codes)
         )
     if assessment.state == "current":
-        current = require_current_tracking_database(database)
+        # A current ROOT does not mean current RECORDS. Returning here on the
+        # root version alone is how a record-level shape bump gets skipped for
+        # every live database, since they all reached root v1 long ago — so the
+        # record migrations run first and only a genuinely unchanged database
+        # takes the no-op path.
+        current = copy.deepcopy(require_current_tracking_database(database))
+        counts = _empty_record_counts()
+        counts["pptx_catalog"] = _migrate_pptx_catalog_records(current)
         return TrackingDatabaseMigration(
-            database=copy.deepcopy(current),
-            changed=False,
+            database=current,
+            changed=any(counts.values()),
             from_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
             to_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
-            record_counts=_empty_record_counts(),
+            record_counts=counts,
         )
     if not isinstance(database, dict):
         raise TrackingDatabaseError("tracking database root must be a JSON object")
@@ -1471,6 +1518,8 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
             )
         if _migrate_talk_record(talk):
             counts["talks"] += 1
+
+    counts["pptx_catalog"] += _migrate_pptx_catalog_records(candidate)
 
     simple_collections = {
         # An unversioned pptx_catalog record persisted no extractor generation,

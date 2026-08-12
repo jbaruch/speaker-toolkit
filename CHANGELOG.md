@@ -25,9 +25,20 @@ gate, matching how `visual_evidence` is already handled: a malformed receipt is
 per-record trouble for a reader, but a record that cannot be proven is a record
 that must not be persisted.
 
-Existing v2 records keep reading and classifying. They carry no identity proof,
-which is what the catalog-wide preflight sweep is for; this change stops new
-unproven bindings from being written while that lands.
+Existing v2 records migrate rather than linger. Migration cannot prove a binding
+it did not witness, and forging a `matched` verdict would manufacture exactly the
+evidence v3 exists to require — so a v2 record upgrades carrying a
+`review_required` assessment with reason `identity_unassessed_legacy_binding`.
+The binding survives; only its provenance is marked unproven, and nothing
+downstream may treat it as current until someone looks. v1 records stay at v1,
+matching the established position that migration preserves such a record rather
+than inventing a binding for it.
+
+Fixing that also closed a bypass: `migrate_tracking_database` returned early
+whenever the database ROOT was current, which is true of every live database. A
+record-level shape bump would have been skipped for all of them. Record
+migrations now run before that check, and only a genuinely unchanged database
+takes the no-op path.
 ## 0.20.56 — 2026-08-11
 
 ### feat(vault-ingress) — prove which talk a deck belongs to before it becomes evidence (#176)
