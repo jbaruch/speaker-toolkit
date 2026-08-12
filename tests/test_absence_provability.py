@@ -144,3 +144,92 @@ class TestSchemaVersioning:
         readable = profile_pattern_provenance.READABLE_CLASSIFICATION_SCHEMA_VERSIONS
         assert 1 in readable
         assert profile_pattern_provenance.CLASSIFICATION_SCHEMA_VERSION in readable
+
+
+class TestValidation:
+    """Allowlisting a field without checking it is how a malformed object
+    reaches a reader that believes the shape was verified."""
+
+    def _validate(self, ppp, value, *, version=2):
+        return ppp._validate_absence_provability(
+            value, contract_version=version, present=True
+        )
+
+    def test_a_well_formed_object_passes(self, profile_pattern_provenance) -> None:
+        good = profile_pattern_provenance.absence_provability(
+            type("C", (), {"entries": {}})()
+        )
+        assert self._validate(profile_pattern_provenance, good) == []
+
+    def test_absence_is_not_an_error(self, profile_pattern_provenance) -> None:
+        assert (
+            profile_pattern_provenance._validate_absence_provability(
+                None, contract_version=2, present=False
+            )
+            == []
+        )
+
+    def test_a_non_object_is_rejected(self, profile_pattern_provenance) -> None:
+        assert self._validate(profile_pattern_provenance, [1, 2]) != []
+
+    def test_a_missing_field_is_rejected(self, profile_pattern_provenance) -> None:
+        assert (
+            self._validate(
+                profile_pattern_provenance,
+                {"schema_version": 1, "observable_count": 0},
+            )
+            != []
+        )
+
+    def test_a_negative_count_is_rejected(self, profile_pattern_provenance) -> None:
+        assert (
+            self._validate(
+                profile_pattern_provenance,
+                {
+                    "schema_version": 1,
+                    "absence_provable_count": -1,
+                    "absence_unknowable_count": 1,
+                    "observable_count": 0,
+                },
+            )
+            != []
+        )
+
+    def test_a_boolean_count_is_rejected(self, profile_pattern_provenance) -> None:
+        """`True` is an int in Python; a count is not a flag."""
+        assert (
+            self._validate(
+                profile_pattern_provenance,
+                {
+                    "schema_version": 1,
+                    "absence_provable_count": True,
+                    "absence_unknowable_count": 0,
+                    "observable_count": 1,
+                },
+            )
+            != []
+        )
+
+    def test_counts_that_do_not_sum_are_rejected(
+        self, profile_pattern_provenance
+    ) -> None:
+        """The two halves ARE the observable catalog; a mismatch describes a
+        catalog that does not exist."""
+        assert (
+            self._validate(
+                profile_pattern_provenance,
+                {
+                    "schema_version": 1,
+                    "absence_provable_count": 16,
+                    "absence_unknowable_count": 65,
+                    "observable_count": 99,
+                },
+            )
+            != []
+        )
+
+    def test_a_v1_profile_cannot_carry_it(self, profile_pattern_provenance) -> None:
+        good = profile_pattern_provenance.absence_provability(
+            type("C", (), {"entries": {}})()
+        )
+        assert self._validate(profile_pattern_provenance, good, version=1) != []

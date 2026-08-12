@@ -1442,6 +1442,13 @@ def assess_pattern_profile(
         set(pattern_profile) - required_fields - _OPTIONAL_PATTERN_PROFILE_FIELDS,
         key=str,
     )
+    errors.extend(
+        _validate_absence_provability(
+            pattern_profile.get("absence_provability"),
+            contract_version=contract_version,
+            present="absence_provability" in pattern_profile,
+        )
+    )
     if missing_fields:
         errors.append(
             f"pattern_profile is missing required schema-v{contract_version} fields: "
@@ -1617,6 +1624,62 @@ def assess_pattern_profile(
 
 
 ABSENCE_PROVABILITY_SCHEMA_VERSION = 1
+
+
+def _validate_absence_provability(
+    value: object, *, contract_version: int, present: bool
+) -> list[str]:
+    """Validate the denominator instead of merely permitting it.
+
+    Allowlisting a field without checking it is how a malformed object reaches a
+    reader that believes the shape was verified. These counts qualify every
+    never-used claim, so a wrong one misreports coverage as speaker behavior —
+    the exact confusion the field exists to prevent.
+    """
+    path = "pattern_profile.absence_provability"
+    if not present:
+        return []
+    if contract_version < CLASSIFICATION_SCHEMA_VERSION:
+        return [
+            f"{path} requires classification_schema_version "
+            f"{CLASSIFICATION_SCHEMA_VERSION}, not {contract_version}"
+        ]
+    if not isinstance(value, Mapping):
+        return [f"{path} must be an object"]
+    expected = {
+        "schema_version",
+        "absence_provable_count",
+        "absence_unknowable_count",
+        "observable_count",
+    }
+    if set(value) != expected:
+        return [f"{path} must contain exactly {sorted(expected)}"]
+    if value["schema_version"] != ABSENCE_PROVABILITY_SCHEMA_VERSION:
+        return [f"{path}.schema_version must be {ABSENCE_PROVABILITY_SCHEMA_VERSION}"]
+    errors: list[str] = []
+    counts: dict[str, int] = {}
+    for field in (
+        "absence_provable_count",
+        "absence_unknowable_count",
+        "observable_count",
+    ):
+        raw = value[field]
+        if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
+            errors.append(f"{path}.{field} must be a nonnegative integer")
+        else:
+            counts[field] = raw
+    if len(counts) == 3:
+        total = counts["absence_provable_count"] + counts["absence_unknowable_count"]
+        if total != counts["observable_count"]:
+            # The two halves ARE the observable catalog; a mismatch means the
+            # object describes a catalog that does not exist.
+            errors.append(
+                f"{path} counts must sum to observable_count: "
+                f"{counts['absence_provable_count']} + "
+                f"{counts['absence_unknowable_count']} != "
+                f"{counts['observable_count']}"
+            )
+    return errors
 
 
 def absence_provability(catalog: object) -> dict[str, int]:

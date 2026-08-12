@@ -15,6 +15,13 @@ statement about the speaker. It is mostly a statement about coverage.
 from the catalog rather than hardcoded, so populating a gate moves the numbers
 instead of dating a constant.
 
+The reader validates it rather than merely permitting it: exact field set,
+nonnegative integer counts with booleans excluded, the sum invariant, and the
+version floor. Allowlisting a field without checking it is how a malformed
+object reaches a reader that believes the shape was verified — and a wrong count
+here misreports coverage as speaker behavior, the exact confusion the field
+exists to prevent.
+
 The classification contract bumps to **v2** to carry it, since this is a shape
 change to a persisted artifact. A v1 block stays readable: the counts are a fact
 about the catalog, not a claim the older block got something wrong, so refusing
