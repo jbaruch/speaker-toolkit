@@ -1,5 +1,23 @@
 # Changelog
 
+### feat(vault-profile) — the denominator behind a never-used claim (#160)
+
+Part of #160 section 3, implementing the #153 null-absence-gate decision.
+
+`absence_evaluable_from: null` means absence is not provable for that pattern
+and never falls back to the presence gate, so never-used and underused are
+computed over the populated-gate entries only. Against the live catalog that is
+**16 of 81 observable entries** — 65 are unknowable.
+
+Without that denominator beside them, a short never-used list reads as a
+statement about the speaker. It is mostly a statement about coverage.
+`absence_provability` reports both counts plus the observable total, computed
+from the catalog rather than hardcoded, so populating a gate moves the numbers
+instead of dating a constant.
+
+An unobservable entry lands in neither count: it is not scored at all, so it
+belongs to no denominator.
+
 ### fix(catalog) — resolve the last three dimension labels (#156)
 
 Closes #156.

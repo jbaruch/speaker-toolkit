@@ -1,0 +1,91 @@
+"""The provable-set denominator behind never-used claims (#160, #153).
+
+`absence_evaluable_from: null` means absence is not provable for that pattern
+and never falls back to the presence gate. Never-used and underused are computed
+over the populated-gate entries only, so the denominator has to travel with them
+— otherwise a short never-used list reads as a statement about the speaker when
+it is mostly a statement about coverage.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+
+@pytest.fixture(scope="module")
+def provability(profile_pattern_provenance, return_validation):
+    return profile_pattern_provenance.absence_provability(
+        return_validation.load_catalog()
+    )
+
+
+class _Entry:
+    def __init__(self, observable: bool, gate: object) -> None:
+        self.observable = observable
+        self.absence_evaluable_from = gate
+
+
+class _Catalog:
+    def __init__(self, entries: dict) -> None:
+        self.entries = entries
+
+
+class TestLiveCatalog:
+    def test_the_counts_partition_the_observable_catalog(self, provability) -> None:
+        assert (
+            provability["absence_provable_count"]
+            + provability["absence_unknowable_count"]
+            == provability["observable_count"]
+        )
+
+    def test_absence_is_unprovable_for_most_of_the_catalog(self, provability) -> None:
+        """The fact that makes the denominator load-bearing rather than trivia."""
+        assert (
+            provability["absence_unknowable_count"]
+            > provability["absence_provable_count"]
+        )
+
+    def test_it_is_computed_not_hardcoded(
+        self, profile_pattern_provenance, return_validation
+    ) -> None:
+        """A catalog edit that populates a gate must move these counts."""
+        catalog = return_validation.load_catalog()
+        observable = [entry for entry in catalog.entries.values() if entry.observable]
+        computed = profile_pattern_provenance.absence_provability(catalog)
+        assert computed["observable_count"] == len(observable)
+
+
+class TestPartition:
+    def test_a_null_gate_is_unknowable(self, profile_pattern_provenance) -> None:
+        catalog = _Catalog({"a": _Entry(True, None)})
+
+        result = profile_pattern_provenance.absence_provability(catalog)
+
+        assert result["absence_unknowable_count"] == 1
+        assert result["absence_provable_count"] == 0
+
+    def test_a_populated_gate_is_provable(self, profile_pattern_provenance) -> None:
+        catalog = _Catalog({"a": _Entry(True, ("static_slides",))})
+
+        result = profile_pattern_provenance.absence_provability(catalog)
+
+        assert result["absence_provable_count"] == 1
+        assert result["absence_unknowable_count"] == 0
+
+    def test_an_unobservable_entry_is_in_neither_count(
+        self, profile_pattern_provenance
+    ) -> None:
+        """It is not scored at all, so it belongs to no denominator."""
+        catalog = _Catalog(
+            {"a": _Entry(False, None), "b": _Entry(False, ("transcript",))}
+        )
+
+        result = profile_pattern_provenance.absence_provability(catalog)
+
+        assert result["observable_count"] == 0
+
+    def test_an_empty_catalog_reports_zeroes(self, profile_pattern_provenance) -> None:
+        result = profile_pattern_provenance.absence_provability(_Catalog({}))
+
+        assert result["observable_count"] == 0
+        assert result["absence_provable_count"] == 0

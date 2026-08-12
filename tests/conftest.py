@@ -206,6 +206,15 @@ def persisted_pattern_observations():
 
 
 @pytest.fixture(scope="session")
+def profile_pattern_provenance():
+    """The profile's pattern-provenance contract (#160)."""
+    return _import_script(
+        os.path.join(SCRIPTS_VP, "profile_pattern_provenance.py"),
+        "profile_pattern_provenance",
+    )
+
+
+@pytest.fixture(scope="session")
 def pptx_talk_identity():
     """The talk-identity assessment run before catalog persistence (#176)."""
     return _import_script(

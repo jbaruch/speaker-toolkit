@@ -1597,3 +1597,35 @@ def assess_pattern_profile(
         contract_version=contract_version,
         policy_semantic_sha256=policy_digest,
     )
+
+
+ABSENCE_PROVABILITY_SCHEMA_VERSION = 1
+
+
+def absence_provability(catalog: object) -> dict[str, int]:
+    """Split the observable catalog into what absence can and cannot be proven for.
+
+    Owner decision (#153): `absence_evaluable_from: null` means absence is not
+    provable for that pattern, and it never falls back to the presence gate. So
+    never-used and underused are computed over the populated-gate entries only —
+    currently a minority of the observable catalog.
+
+    Without the denominator beside them, a short never-used list reads as a
+    statement about the speaker. It is mostly a statement about coverage, and
+    `absence_unknowable` is what makes the difference legible.
+    """
+    provable = 0
+    unknowable = 0
+    for entry in getattr(catalog, "entries", {}).values():
+        if not getattr(entry, "observable", False):
+            continue
+        if getattr(entry, "absence_evaluable_from", None) is None:
+            unknowable += 1
+        else:
+            provable += 1
+    return {
+        "schema_version": ABSENCE_PROVABILITY_SCHEMA_VERSION,
+        "absence_provable_count": provable,
+        "absence_unknowable_count": unknowable,
+        "observable_count": provable + unknowable,
+    }
