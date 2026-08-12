@@ -53,7 +53,7 @@ This is an antipattern and should always be avoided in presentation slides. Repl
 The one exception is when you are deliberately creating an Infodeck — a slide deck designed for solo consumption without a presenter. In that context, bullet points are appropriate and useful. But if you are presenting live, every bullet on your slide is a competitor for your audience's attention.
 
 ## Detection Heuristics
-When scoring talks, count the proportion of slides that consist primarily of bullet points (three or more text bullets occupying the majority of the slide). Note whether the audience appears to be reading ahead of the speaker. Look for auto-shrunk fonts (inconsistent text sizes that indicate PowerPoint has compressed the text to fit). Also note if the presenter is reading bullet points verbatim from the slide.
+When scoring talks, count the proportion of slides that consist primarily of bullet points (four or more text bullets occupying the majority of the slide). Note whether the audience appears to be reading ahead of the speaker. Look for auto-shrunk fonts (inconsistent text sizes that indicate PowerPoint has compressed the text to fit). Also note if the presenter is reading bullet points verbatim from the slide.
 
 ## Scoring Criteria
 - Strong signal (antipattern present): Majority of slides are bullet-point lists of four or more items, presenter reads bullets from slides, fonts are auto-shrunk to accommodate text volume
