@@ -1171,3 +1171,53 @@ def test_a_no_op_migration_stays_callable_under_an_active_claim(
 
     assert migration.changed is False
     assert migration.database["pptx_catalog"][0]["schema_version"] == 3
+
+
+@pytest.mark.parametrize(
+    "codes",
+    [
+        ["identity_unassessed_legacy_binding"],
+        ["identity_matched", "identity_unassessed_legacy_binding"],
+        ["identity_ambiguous_candidates"],
+        [],
+    ],
+)
+def test_a_matched_verdict_cannot_claim_a_refusal_reason(
+    mutate_tracking_database, codes
+) -> None:
+    """Taxonomy membership is not enough: every code but the matched one
+    explains a refusal, and the legacy-binding code means the opposite of
+    proven."""
+    record = _current_record(
+        identity_assessment=_identity_assessment(reason_codes=codes)
+    )
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="must be exactly",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def test_the_migration_stamp_cannot_be_replayed_as_a_proven_binding(
+    mutate_tracking_database, tracking_database
+) -> None:
+    """The exact escalation: take migration's own output, flip the verdict."""
+    database = _database([_evidence_bound_record()])
+    migrated = tracking_database.migrate_tracking_database(database)
+    assessment = copy.deepcopy(
+        migrated.database["pptx_catalog"][0]["identity_assessment"]
+    )
+    assessment["verdict"] = "matched"
+    assessment["selected_talk_filename"] = "2024-04-10-talk.md"
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="must be exactly",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]),
+            [_identity_mutation(_current_record(identity_assessment=assessment))],
+        )

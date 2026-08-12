@@ -56,6 +56,7 @@ from pptx_discovery_contract import (
     validate_pptx_directory_exclusions,
 )
 from pptx_talk_identity import (
+    MATCHED_REASON_CODES,
     PPTX_TALK_IDENTITY_SCHEMA_VERSION,
     REASON_CODES,
     ROLE_DELIVERY,
@@ -1159,6 +1160,15 @@ def _require_bound_identity_assessment(
     if unknown:
         raise TrackingDatabaseMutationError(
             f"{label}.reason_codes carries codes outside the closed taxonomy: {unknown}"
+        )
+    # Membership in the taxonomy is not enough. Every code but the matched one
+    # explains a refusal, so a `matched` verdict carrying one describes an
+    # assessment that cannot exist — and the legacy-binding code means the exact
+    # opposite of proven.
+    if sorted(set(reason_codes)) != sorted(MATCHED_REASON_CODES):
+        raise TrackingDatabaseMutationError(
+            f"{label}.reason_codes must be exactly {sorted(MATCHED_REASON_CODES)} "
+            f"for a {VERDICT_MATCHED!r} verdict, got {reason_codes}"
         )
 
 

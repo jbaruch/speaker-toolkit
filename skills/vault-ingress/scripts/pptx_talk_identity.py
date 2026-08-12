@@ -121,6 +121,12 @@ REASON_CODES = frozenset(
     }
 )
 
+# The only reason a `matched` verdict may claim. Every other code in the
+# taxonomy explains a refusal, so pairing one with `matched` describes an
+# assessment that cannot exist — most dangerously the legacy-binding code, which
+# means the opposite of proven.
+MATCHED_REASON_CODES = frozenset({REASON_MATCHED})
+
 # An editable master and a published static export are legitimate artifacts for
 # a delivery, but they are not the delivery deck and must not silently become
 # its evidence. Roles are reported so the owner records which artifact is the
