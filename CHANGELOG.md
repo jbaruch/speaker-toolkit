@@ -1,5 +1,36 @@
 # Changelog
 
+### feat(vault-ingress) — weight the aggregate score, versioned not retrofitted (#153)
+
+Implements the #153 aggregate-score decision. Flat `+1/-1` counting made a
+slides-only talk and a full-evidence talk emit scores that read as equivalent,
+which was the issue's original complaint.
+
+`DETECTION_WEIGHTS` is `{strong: 1.0, moderate: 0.5, weak: 0.25}`. The decision
+named only strong and moderate; `weak` is an owner decision taken alongside this
+work, because `CONFIDENCE_LEVELS` admits it and a weak detection can appear in a
+detected array, so the table had to be total. A test asserts exactly that — every
+confidence level has a weight, since a partial table leaves some detection
+unscoreable.
+
+Every emitted weighted score carries a `pattern_score_basis`: per-lane
+confidence counts, the applied weights, and the `not_evaluable` count. A single
+number cannot say whether it came from two strong detections or four moderate
+ones, nor how much of the catalog was unevaluable, so a drop reads as a
+regression when it may only be thinner evidence.
+
+**Weighting is a v6 return contract, not a reinterpretation of v5.** A v5 return
+was produced by a worker counting `+1/-1`; rescoring it under the weight table
+would restate what that worker meant rather than validate what it wrote, which
+is the reinterpretation `stateful-artifacts` forbids. Each schema is checked
+against the arithmetic in force when it was written, and a v5 return carrying a
+`pattern_score_basis` is rejected outright.
+
+`PATTERN_SCORING_SCHEMA_VERSION` deliberately stays at 5. Bumping it now would
+strand every persisted talk on a scoring generation nothing has produced yet,
+forcing a reparse to adopt arithmetic no worker is using. It moves in the change
+that makes v6 the required return schema.
+
 ### fix(catalog) — resolve the last three dimension labels (#156)
 
 Closes #156.

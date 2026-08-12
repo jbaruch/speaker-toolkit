@@ -245,6 +245,9 @@ PREVIOUS_RETURN_SCHEMA_VERSION = 2
 BASELINE_RETURN_SCHEMA_VERSION = 3
 SOURCE_LOCATED_RETURN_SCHEMA_VERSION = 4
 RETURN_SCHEMA_VERSION = 5
+# The first return schema whose aggregate is weighted. Below it the flat +1/-1
+# contract stands, because that is the arithmetic its worker used.
+WEIGHTED_SCORE_RETURN_SCHEMA_VERSION = 6
 SUPPORTED_RETURN_SCHEMA_VERSIONS = frozenset(
     {
         LEGACY_RETURN_SCHEMA_VERSION,
@@ -276,7 +279,12 @@ SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS = frozenset(
     }
 )
 EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS = frozenset({RETURN_SCHEMA_VERSION})
-PATTERN_SCORING_SCHEMA_VERSION = 6
+# Stays at 5 until a return actually emits a weighted score. The weight table
+# below is part of the NEXT scoring generation; bumping this constant now would
+# strand every persisted talk on a generation nothing has produced yet, forcing
+# a reparse to adopt arithmetic no worker is using.
+PATTERN_SCORING_SCHEMA_VERSION = 5
+WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION = 6
 # Owner decision (#153): the aggregate stays one number, but a strong detection
 # and a moderate one stop counting the same. Flat +1/-1 made a slides-only talk
 # and a full-evidence talk emit scores that read as equivalent.
@@ -2597,7 +2605,7 @@ def pattern_score_basis(
             lane_counts[detection["confidence"]] += 1
         counts[lane] = lane_counts
     return {
-        "schema_version": PATTERN_SCORING_SCHEMA_VERSION,
+        "schema_version": WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION,
         "weights": dict(sorted(DETECTION_WEIGHTS.items())),
         "patterns": counts["patterns"],
         "antipatterns": counts["antipatterns"],
@@ -2616,15 +2624,70 @@ def expected_weighted_score(patterns: list[dict], antipatterns: list[dict]) -> f
     return round(total, 2)
 
 
+def _validate_flat_score(
+    raw: object, pattern_count: int, antipattern_count: int
+) -> None:
+    """The pre-v6 contract: every detection counts one, whatever its confidence."""
+    expected = pattern_count - antipattern_count
+    if isinstance(raw, bool):
+        raise ReturnValidationError(
+            "pattern_observations.pattern_score cannot be a boolean"
+        )
+    if isinstance(raw, int):
+        if raw != expected:
+            raise ReturnValidationError(
+                f"pattern_score is {raw}, but {pattern_count} patterns minus "
+                f"{antipattern_count} antipatterns is {expected}"
+            )
+        return
+    if not isinstance(raw, dict):
+        raise ReturnValidationError(
+            "pattern_observations.pattern_score must be an integer or the "
+            "declared score object"
+        )
+    required = {
+        "patterns_used": pattern_count,
+        "antipatterns_detected": antipattern_count,
+        "score": expected,
+    }
+    for field, wanted in required.items():
+        value = raw.get(field)
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ReturnValidationError(f"pattern_score.{field} must be an integer")
+        if value != wanted:
+            raise ReturnValidationError(
+                f"pattern_score.{field} is {value}, but the detection arrays "
+                f"require {wanted}"
+            )
+
+
 def _validate_score(
     observations: dict,
     patterns: list[dict],
     antipatterns: list[dict],
     not_evaluable: list[dict],
+    return_schema_version: int,
 ) -> None:
+    """Validate the aggregate against the contract its schema was produced under.
+
+    Weighted scoring is a v6 contract, not a reinterpretation of v5. A v5 return
+    was PRODUCED by a worker counting +1/-1, so rescoring it under the weight
+    table would not validate that return — it would silently restate what the
+    worker meant, which is the reinterpretation `stateful-artifacts` forbids.
+    Each schema is checked against the arithmetic in force when it was written.
+    """
     if "pattern_score" not in observations:
         raise ReturnValidationError("pattern_observations.pattern_score is required")
     raw = observations["pattern_score"]
+    if return_schema_version < WEIGHTED_SCORE_RETURN_SCHEMA_VERSION:
+        _validate_flat_score(raw, len(patterns), len(antipatterns))
+        if "pattern_score_basis" in observations:
+            raise ReturnValidationError(
+                "pattern_score_basis is a v"
+                f"{WEIGHTED_SCORE_RETURN_SCHEMA_VERSION} field; a v"
+                f"{return_schema_version} return cannot carry one"
+            )
+        return
     expected = expected_weighted_score(patterns, antipatterns)
     if isinstance(raw, bool):
         raise ReturnValidationError(
@@ -4652,7 +4715,13 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
             "pattern ids cannot be both detected and not_evaluable: "
             f"{sorted(unavailable_overlap)}"
         )
-    _validate_score(observations, patterns, antipatterns, not_evaluable)
+    _validate_score(
+        observations,
+        patterns,
+        antipatterns,
+        not_evaluable,
+        return_schema_version,
+    )
     _validate_adherence_comparison(
         ret,
         return_schema_version,
