@@ -6,7 +6,7 @@ part: prepare
 phase_relevance:
   - intent
   - architecture
-vault_dimensions: [2, 8]
+vault_dimensions: [2, 13]
 detection_signals:
   - "ideation, capture, and organization artifacts predate slide authoring"
   - "speaker confirms the four-phase preparation workflow"
@@ -48,7 +48,7 @@ those sources is unevaluable, not evidence that the process occurred.
 - Unevaluable: Preparation artifacts or speaker confirmation are unavailable
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 2 (Structure/Organization). Relates to Dimension 8 (Slide Design/Visual Quality).
+Relates to Dimension 2 (Structure/Organization). Relates to Dimension 13 (Slide Design/Visual Quality).
 
 ## Combinatorics
 Pairs naturally with Narrative Arc (Fourthought's organize phase is where you discover your arc), Unifying Visual Theme (the design phase is where visual themes are applied to already-organized ideas), and Backtracking (having a clear structure makes it easy to reference earlier material). Fourthought is the inverse of Cookie Cutter — where Cookie Cutter lets the tool drive the thinking, Fourthought insists that thinking drives the tool.

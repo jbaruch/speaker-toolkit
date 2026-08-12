@@ -7,7 +7,7 @@ phase_relevance:
   - architecture
   - content
   - slides
-vault_dimensions: [2, 5, 13]
+vault_dimensions: [2, 13]
 evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "visible progress indicator"
@@ -73,7 +73,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Dimension 2 (Structure and Flow): a direct expression of structural awareness. Dimension 5 (Storytelling and Narrative): narrative-based Context Keepers signal structural position. Dimension 13 (Visual Polish and Craft): the visual implementation of context keeping elements.
+Dimension 2 (Structure and Flow): a direct expression of structural awareness. Dimension 2 (Storytelling and Narrative): narrative-based Context Keepers signal structural position. Dimension 13 (Visual Polish and Craft): the visual implementation of context keeping elements.
 
 ## Combinatorics
 Context Keeper is a parent pattern that encompasses Breadcrumbs, Bookends, Narrative Arc, and Charred Trail as specific implementations. It pairs well with Cave Painting (persistent background elements that provide context). The pattern supports A La Carte Content by providing a return-to-menu mechanism that doubles as a progress indicator. It also enhances any long-form presentation pattern by ensuring the audience maintains orientation throughout.

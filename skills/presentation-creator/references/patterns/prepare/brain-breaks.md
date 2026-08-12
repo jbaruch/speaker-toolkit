@@ -6,7 +6,7 @@ part: prepare
 phase_relevance:
   - architecture
   - content
-vault_dimensions: [3, 12]
+vault_dimensions: [12]
 evidence_channels: [timed_transcript, video]
 detection_signals:
   - "humor/story every 10-20 minutes"
@@ -77,7 +77,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 3 (Delivery/Presentation Skills). Relates to Dimension 12 (Time/Pacing).
+Relates to Dimension 12 (Delivery/Presentation Skills). Relates to Dimension 12 (Time/Pacing).
 
 ## Combinatorics
 Pairs with Leet Grammars (insider humor is the most effective Brain Break), Narrative Arc (breaks should work within the narrative structure, not against it), Entertainment (Brain Breaks are targeted micro-entertainment), and Crucible (live delivery reveals which breaks work and which do not). The inverse is Alienating Artifact — a "break" that offends rather than refreshes.

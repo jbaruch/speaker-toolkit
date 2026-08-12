@@ -5,7 +5,7 @@ type: pattern
 part: prepare
 phase_relevance:
   - content
-vault_dimensions: [2, 8]
+vault_dimensions: [2, 13]
 detection_signals:
   - "creation history documents non-linear authoring"
   - "collaboration record names one Slide Wrangler"
@@ -55,7 +55,7 @@ the work was authored out of order or coordinated through one Slide Wrangler.
 - Unevaluable: No creation history, collaboration record, or speaker confirmation is available
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 2 (Structure/Organization). Relates to Dimension 8 (Slide Design/Visual Quality).
+Relates to Dimension 2 (Structure/Organization). Relates to Dimension 13 (Slide Design/Visual Quality).
 
 ## Combinatorics
 Pairs with Talklet (modular units can be created concurrently by different authors) and Unifying Visual Theme (visual consistency is the glue that holds concurrent contributions together). Also benefits from Narrative Arc awareness — all contributors must understand the overall story to create pieces that fit.

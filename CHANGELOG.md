@@ -1,5 +1,34 @@
 # Changelog
 
+### feat(catalog) — remap the dimension numbers to what the prose says (#156)
+
+Closes the mechanical half of #156.
+
+`vault_dimensions` is a list of bare integers, so a range check was the only
+validation a number could carry — and a range check cannot tell that `4` means
+Audience Interaction while the prose beside it says humor. Entries filed
+evidence under dimensions they are not about, and every downstream aggregation
+inherited it.
+
+Per the 2026-08-09 owner decision the prose is the intent of record, so
+`_dimensions.yaml` makes the labels resolvable and the numbers follow them. 42
+prose claims and 38 entries' frontmatter were remapped; the index's per-entry
+column and reverse map are regenerated from the approved frontmatter rather than
+maintained by hand. The catalog auditor reports 0 errors and 0 semantic debts,
+down from 37. Both worked examples in the issue land exactly as specified:
+`progressive-reveal` becomes `[3, 13]` and `three-part-close` becomes `[2, 6]`.
+
+No pattern's meaning changes. This is a renumbering, not a re-classification.
+
+A label with no owner-approved alias does not resolve, and an unresolved claim
+KEEPS the number written beside it — preserved, not endorsed. Dropping a
+membership on the strength of a missing alias would be a bigger change than the
+drift being fixed. Three labels remain unresolved and need an owner decision:
+`Content Depth / Value`, `Overall Quality Indicators`, and `Visual Storytelling`.
+
+The catalog fingerprint moves, so this belongs in the same revalidation pass as
+#167 rather than triggering a second one.
+
 ## 0.20.56 — 2026-08-11
 
 ### feat(vault-ingress) — prove which talk a deck belongs to before it becomes evidence (#176)

@@ -6,7 +6,7 @@ part: build
 phase_relevance:
   - guardrails
   - slides
-vault_dimensions: [8, 13]
+vault_dimensions: [13]
 evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "ideas forced into single slides"
@@ -67,7 +67,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 An absence finding is authorized only from a complete, separately declared rendered PDF (`static_slides`); a native deck, delivery video, transcript, or comparison artifact does not authorize absence.
 
 ## Relationship to Vault Dimensions
-Dimension 8 (Slide Design): Cookie Cutter fundamentally compromises slide design by subordinating design decisions to arbitrary size constraints rather than content requirements. Dimension 13 (Slide Aesthetics): The visual cramming that results from Cookie Cutter thinking produces aesthetically poor slides with inconsistent text sizes, cluttered layouts, and no visual breathing room.
+Dimension 13 (Slide Design): Cookie Cutter fundamentally compromises slide design by subordinating design decisions to arbitrary size constraints rather than content requirements. Dimension 13 (Slide Aesthetics): The visual cramming that results from Cookie Cutter thinking produces aesthetically poor slides with inconsistent text sizes, cluttered layouts, and no visual breathing room.
 
 ## Combinatorics
 Cookie Cutter is the inverse of Soft Transitions, which explicitly encourages multi-slide sequences that blur the boundaries between ideas. It often co-occurs with Bullet-Riddled Corpse (bullets used to fit more content per slide) and Ant Fonts (small text used to fit more content per slide). The Fourthought pattern, when applied properly during the ideation phase, helps prevent Cookie Cutter by encouraging ideas to find their natural size before slides are designed.

@@ -5,7 +5,7 @@ type: pattern
 part: build
 phase_relevance:
   - content
-vault_dimensions: [2, 5]
+vault_dimensions: [2]
 evidence_channels: [transcript, timed_transcript, slides, slide_sequence, video]
 detection_signals:
   - "early planted clues"
@@ -72,7 +72,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Dimension 2 (Structure and Flow): Foreshadowing creates a non-linear structural layer on top of the presentation's sequential flow, connecting distant parts of the talk through thematic threads. Dimension 5 (Storytelling and Narrative): Foreshadowing is a storytelling technique woven into the narrative.
+Dimension 2 (Structure and Flow): Foreshadowing creates a non-linear structural layer on top of the presentation's sequential flow, connecting distant parts of the talk through thematic threads. Dimension 2 (Storytelling and Narrative): Foreshadowing is a storytelling technique woven into the narrative.
 
 ## Combinatorics
 Foreshadowing pairs powerfully with Narrative Arc, as both create a sense of progression and resolution. It works well with Talklet when each self-contained section plants a clue that connects to a larger theme. The Backtracking pattern can serve as a reveal mechanism for foreshadowed elements. Intermezzi slides are a natural vehicle for carrying foreshadowing elements between sections.

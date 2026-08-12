@@ -5,7 +5,7 @@ type: pattern
 part: build
 phase_relevance:
   - content
-vault_dimensions: [2, 5]
+vault_dimensions: [2, 4]
 evidence_channels: [transcript, timed_transcript, slides, slide_sequence, video]
 detection_signals:
   - "explicit callbacks to earlier content"
@@ -70,7 +70,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Dimension 2 (Structure and Flow): Backtracking creates a non-linear narrative architecture. Dimension 5 (Audience Engagement): Backtracking engages the audience's memory and pattern-matching capabilities.
+Dimension 2 (Structure and Flow): Backtracking creates a non-linear narrative architecture. Dimension 4 (Audience Engagement): Backtracking engages the audience's memory and pattern-matching capabilities.
 
 ## Combinatorics
 Backtracking has a natural partnership with Foreshadowing — where Foreshadowing plants seeds for what is to come, Backtracking harvests seeds that were planted earlier. Used together, they create a rich temporal texture. Backtracking pairs well with the Talklet pattern. Transitions between Talklets are natural moments for revisitation. It also benefits from Fourthought. The mind-mapping process is where crosscutting connections are first identified and catalogued for later use as Backtracking opportunities.

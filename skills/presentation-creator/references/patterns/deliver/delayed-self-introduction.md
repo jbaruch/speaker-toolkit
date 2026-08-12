@@ -5,7 +5,7 @@ type: pattern
 part: deliver
 phase_relevance:
   - content
-vault_dimensions: [2, 11]
+vault_dimensions: [2, 9]
 evidence_channels: [timed_transcript, slides, video]
 detection_signals:
   - "speaker opens with hook/content rather than name and role"
@@ -60,7 +60,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Dimension 2 (Structure and Flow): Delayed Self-Introduction is a structural decision about where attention is invested in the opening. Dimension 11 (Self-Presentation): The pattern reframes the speaker's authority as earned by content rather than declared by credentials.
+Dimension 2 (Structure and Flow): Delayed Self-Introduction is a structural decision about where attention is invested in the opening. Dimension 9 (Self-Presentation): The pattern reframes the speaker's authority as earned by content rather than declared by credentials.
 
 ## Combinatorics
 Pairs naturally with Opening Punch (a hook needs to land hard) and The Big Why (the opening claim is often the talk's central question). Anti-Sell complements it — both downplay the speaker's own authority in service of the topic. Avoid combining with extensive corporate branding on the title slide, which signals "this is an ad" before the hook can do its work.

@@ -5,7 +5,7 @@ type: antipattern
 part: prepare
 phase_relevance:
   - guardrails
-vault_dimensions: [3, 10, 14]
+vault_dimensions: [10, 12, 14]
 evidence_channels: [transcript, slides, video]
 detection_signals:
   - "offensive humor attempts"
@@ -65,7 +65,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 3 (Delivery/Presentation Skills). Relates to Dimension 10 (Creativity/Originality). Relates to Dimension 14 (Overall Impression/Polish).
+Relates to Dimension 12 (Delivery/Presentation Skills). Relates to Dimension 10 (Creativity/Originality). Relates to Dimension 14 (Overall Impression/Polish).
 
 ## Combinatorics
 Relates to Know Your Audience (understanding audience composition prevents many alienating choices) and Brain Breaks (this antipattern is the dark mirror of Brain Breaks — where Brain Breaks refresh and engage, Alienating Artifacts repel and disengage). Brain Breaks is the inverse pattern — the positive version of using humor and diversions effectively.

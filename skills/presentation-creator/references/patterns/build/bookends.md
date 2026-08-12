@@ -6,7 +6,7 @@ part: build
 phase_relevance:
   - content
   - slides
-vault_dimensions: [2, 5, 13]
+vault_dimensions: [2, 13]
 evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "section opener/closer slides"
@@ -77,7 +77,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 An absence finding is authorized only from a complete, separately declared rendered PDF (`static_slides`); a native deck, delivery video, transcript, or comparison artifact does not authorize absence.
 
 ## Relationship to Vault Dimensions
-Dimension 2 (Structure and Flow): Bookends are the most visible expression of structural organization, literally marking the boundaries between content sections. Dimension 5 (Storytelling and Narrative): When aligned with narrative phases, Bookends reinforce the story structure. Dimension 13 (Visual Polish and Craft): Well-designed Bookends demonstrate visual design skill and attention to structural consistency.
+Dimension 2 (Structure and Flow): Bookends are the most visible expression of structural organization, literally marking the boundaries between content sections. Dimension 2 (Storytelling and Narrative): When aligned with narrative phases, Bookends reinforce the story structure. Dimension 13 (Visual Polish and Craft): Well-designed Bookends demonstrate visual design skill and attention to structural consistency.
 
 ## Combinatorics
 Bookends pair naturally with Context Keeper and Breadcrumbs — Bookends mark the boundaries while Breadcrumbs track progress across those boundaries. They complement Narrative Arc by providing visual markers for narrative phase transitions. Intermezzi is a related pattern that serves a similar structural role but with more thematic emphasis. Bookends work well with Defy Defaults as an opportunity to express custom visual identity, and they serve as a natural inverse of Floodmarks by containing required branding in structural slides rather than spreading it across every content slide.

@@ -6,7 +6,7 @@ part: build
 phase_relevance:
   - content
   - slides
-vault_dimensions: [2, 10]
+vault_dimensions: [2, 6]
 evidence_channels: [slide_sequence, video]
 detection_signals:
   - "closing sequence has summary slide, CTA slide, and thanks slide"
@@ -68,7 +68,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Dimension 2 (Structure and Flow): Three-Part Close is a structural commitment to giving the ending the same care as the opening. Dimension 10 (Closing Strategy): The pattern is the most explicit expression of a designed closing.
+Dimension 2 (Structure and Flow): Three-Part Close is a structural commitment to giving the ending the same care as the opening. Dimension 6 (Closing Strategy): The pattern is the most explicit expression of a designed closing.
 
 ## Combinatorics
 Pairs with Bookends — the closing three slides often mirror the opening structure. Call to Action lives inside the pattern as the middle slide. Coda and New Bliss describe the rhetorical purpose of the recap-and-projection movement. The pattern is the inverse of Shortchanged closings where the talk runs out of time and ends abruptly.

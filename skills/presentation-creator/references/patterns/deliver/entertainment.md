@@ -5,7 +5,7 @@ type: pattern
 part: deliver
 phase_relevance:
   - content
-vault_dimensions: [3, 10]
+vault_dimensions: [3]
 evidence_channels: [transcript, slides, video]
 detection_signals:
   - "humor used for engagement"
@@ -65,7 +65,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-This pattern maps to Vault Dimension 3 (Engagement / Entertainment Value) directly, and to Vault Dimension 10 (Memorability).
+This pattern maps to Vault Dimension 3 (Engagement / Entertainment Value) directly, and to Vault Dimension 3 (Memorability).
 
 ## Combinatorics
 Entertainment works with Know Your Audience (understanding what this audience finds funny and relatable), Brain Breaks (entertainment naturally creates cognitive rest), and Make It Rain (physical props add entertainment value). It is the inverse of the Alienating Artifact antipattern, where entertainment choices exclude or offend. The Mentor pattern provides a useful frame for entertainment — humor and stories that serve the audience's learning journey rather than the speaker's ego.

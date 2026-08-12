@@ -5,7 +5,7 @@ type: pattern
 part: build
 phase_relevance:
   - content
-vault_dimensions: [2, 5, 7]
+vault_dimensions: [2, 7]
 evidence_channels: [transcript, timed_transcript, slides, slide_sequence, video]
 detection_signals:
   - "single anecdote introduced early and referenced 3+ times across the talk"
@@ -94,7 +94,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 5 (Storytelling/Narrative) directly. Relates to Dimension 2 (Narrative Structure). Relates to Dimension 7 (Verbal Signatures).
+Relates to Dimension 2 (Storytelling/Narrative) directly. Relates to Dimension 2 (Narrative Structure). Relates to Dimension 7 (Verbal Signatures).
 
 ## Combinatorics
 Master Story pairs with `narrative-arc` (the master story can serve as the arc's emotional through-line even when the talk's surface structure is topical), with `foreshadowing` (the first telling can plant elements paid off in later returns — plant the rag doll's name in the original, pay off "Pandy" as compressed shorthand later), and with `star-moment` (the first telling of the master story is often itself a S.T.A.R. emotive-storytelling moment). It composes with `the-big-why` (the Big Idea is what the master story's metaphorical content is mapped to; the Big Idea construction rules live in the "Big Idea — Statement Format" subsection of `the-big-why.md`) and is reinforced by `bookends` (the first and last bookend slides often carry an image from the master story).

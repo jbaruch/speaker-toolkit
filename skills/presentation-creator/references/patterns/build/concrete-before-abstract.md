@@ -5,7 +5,7 @@ type: pattern
 part: build
 phase_relevance:
   - content
-vault_dimensions: [11, 9, 2]
+vault_dimensions: [2, 9, 11]
 evidence_channels: [timed_transcript, slide_sequence, video]
 detection_signals:
   - "a tangible example, object, story, or live demo precedes the named concept it illustrates"
