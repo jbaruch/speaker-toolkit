@@ -1399,6 +1399,16 @@ def _migrate_talk_record(talk: dict[str, Any]) -> bool:
     return talk_version_added
 
 
+def _require_no_active_writers(talks: list[Any]) -> None:
+    """Refuse to change persisted shape while a writer owns the database."""
+    active = _active_claim_filenames(talks)
+    if active:
+        raise TrackingDatabaseError(
+            "tracking database has active queue writers; recover or complete these "
+            f"claims before migration: {active}"
+        )
+
+
 def _migrate_pptx_catalog_records(candidate: dict[str, Any]) -> int:
     """Upgrade evidence-bound catalog records to the identity-bound shape.
 
@@ -1450,17 +1460,7 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
         raise TrackingDatabaseError("tracking database root must be a JSON object")
 
     candidate: dict[str, Any] = copy.deepcopy(database)
-    # Ahead of both migration branches. A shape change is a shape change whether
-    # the root version moves or only a record's does, so an active writer must
-    # block it either way — gating only the root-migration path would let a
-    # record-level bump rewrite the database out from under a live claim.
     talks = _object_collection(candidate, "talks", required=True)
-    active = _active_claim_filenames(talks)
-    if active:
-        raise TrackingDatabaseError(
-            "tracking database has active queue writers; recover or complete these "
-            f"claims before migration: {active}"
-        )
 
     if assessment.state == "current":
         # A current ROOT does not mean current RECORDS. Returning on the root
@@ -1471,6 +1471,12 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
         require_current_tracking_database(candidate)
         counts = _empty_record_counts()
         counts["pptx_catalog"] = _migrate_pptx_catalog_records(candidate)
+        if any(counts.values()):
+            # Guarded only once state would actually change. A no-op migration
+            # must stay callable while a claim is live: Step 1 migrates before
+            # Step 2 can recover a stranded claim, so refusing here would leave
+            # an interrupted run unable to resume.
+            _require_no_active_writers(talks)
         return TrackingDatabaseMigration(
             database=candidate,
             changed=any(counts.values()),
@@ -1479,6 +1485,9 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
             record_counts=counts,
         )
 
+    # Reaching here means the root or config shape moves, which is always a
+    # state change.
+    _require_no_active_writers(talks)
     root_version = tracking_database_schema_version(candidate)
 
     config = candidate.setdefault("config", {})

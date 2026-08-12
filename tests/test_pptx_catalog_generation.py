@@ -1128,29 +1128,46 @@ def test_migration_is_idempotent(tracking_database) -> None:
     assert twice.database["pptx_catalog"] == once.database["pptx_catalog"]
 
 
+def _claimed_talk() -> dict:
+    """A talk whose queue claim is live."""
+    return {
+        "schema_version": 5,
+        "filename": "2024-04-10-talk.md",
+        "status": "reprocessing-inflight",
+        "reprocess_generation": 1,
+        "_queue_claim": {
+            "schema_version": 2,
+            "run_id": "reparse-2026-08",
+            "batch_id": "1",
+            "claimed_at": "2026-08-01T00:00:00+00:00",
+            "previous_status": "needs-reprocessing",
+            "reprocess_generation": 1,
+            "state": "claimed",
+        },
+    }
+
+
 def test_an_active_claim_blocks_a_record_level_migration(tracking_database) -> None:
     """A shape change is a shape change whether the root moves or a record does;
     an active writer must block it either way."""
     database = _database([_evidence_bound_record()])
-    database["talks"] = [
-        {
-            "schema_version": 5,
-            "filename": "2024-04-10-talk.md",
-            "status": "reprocessing-inflight",
-            "reprocess_generation": 1,
-            "_queue_claim": {
-                "schema_version": 2,
-                "run_id": "reparse-2026-08",
-                "batch_id": "1",
-                "claimed_at": "2026-08-01T00:00:00+00:00",
-                "previous_status": "needs-reprocessing",
-                "reprocess_generation": 1,
-                "state": "claimed",
-            },
-        }
-    ]
+    database["talks"] = [_claimed_talk()]
 
     with pytest.raises(
         tracking_database.TrackingDatabaseError, match="active queue writers"
     ):
         tracking_database.migrate_tracking_database(database)
+
+
+def test_a_no_op_migration_stays_callable_under_an_active_claim(
+    tracking_database,
+) -> None:
+    """Step 1 migrates before Step 2 can recover a stranded claim, so refusing a
+    no-op here would leave an interrupted run unable to resume."""
+    database = _database([_current_record()])
+    database["talks"] = [_claimed_talk()]
+
+    migration = tracking_database.migrate_tracking_database(database)
+
+    assert migration.changed is False
+    assert migration.database["pptx_catalog"][0]["schema_version"] == 3
