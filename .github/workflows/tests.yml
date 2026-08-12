@@ -209,8 +209,12 @@ jobs:
             $probe = Get-ChildItem -Path 'C:\ProgramData\chocolatey\lib\ffmpeg' `
               -Filter 'ffprobe.exe' -Recurse -File |
               Select-Object -First 1
-          } catch {
-            throw "cannot read the Chocolatey ffmpeg package tree: $($_.Exception.Message) — check the install succeeded and the runner can read C:\ProgramData\chocolatey\lib\ffmpeg"
+          } catch [System.IO.DirectoryNotFoundException] {
+            throw "the Chocolatey ffmpeg package directory does not exist — the install reported success but laid nothing down; check the pinned version still resolves"
+          } catch [System.UnauthorizedAccessException] {
+            throw "cannot read the Chocolatey ffmpeg package tree: access denied — the runner lacks permission on C:\ProgramData\chocolatey\lib\ffmpeg"
+          } catch [System.IO.IOException] {
+            throw "cannot read the Chocolatey ffmpeg package tree: $($_.Exception.Message)"
           }
           if (-not $probe) {
             throw "Chocolatey installed ffmpeg 9.0.0 but no ffprobe.exe is in its package tree — check the package layout and update this step's search root"
