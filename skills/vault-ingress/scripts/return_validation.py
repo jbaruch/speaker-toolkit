@@ -131,6 +131,13 @@ PATTERN_OBSERVATION_RETURN_FIELDS = frozenset(
 V5_PATTERN_OBSERVATION_RETURN_FIELDS = PATTERN_OBSERVATION_RETURN_FIELDS | {
     "applicability_assessments"
 }
+# v6 keeps the v5 block and adds the basis its weighted score cannot travel
+# without. Without this, a correctly-formed v6 return is rejected as carrying an
+# unknown field — the contract would be reachable by version and unusable in
+# practice.
+V6_PATTERN_OBSERVATION_RETURN_FIELDS = V5_PATTERN_OBSERVATION_RETURN_FIELDS | {
+    "pattern_score_basis"
+}
 PERSISTED_PATTERN_OBSERVATION_FIELDS = frozenset(
     {
         "evidence_schema_version",
@@ -1539,7 +1546,7 @@ def _validate_applicability_assessments(
     exact raw shape, catalog authority, polarity, and declared-source gate.
     """
     raw = observations.get("applicability_assessments")
-    if return_schema_version != RETURN_SCHEMA_VERSION:
+    if return_schema_version not in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
         if raw is not None:
             raise ReturnValidationError(
                 "applicability_assessments is supported only by return schema v5"
@@ -2525,7 +2532,7 @@ def _validate_not_evaluable(
                 else SOURCE_INSPECTION_REASON_CODE
             }
             if (
-                return_schema_version == RETURN_SCHEMA_VERSION
+                return_schema_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS
                 and entry.applicability_evaluable_from is not None
             ):
                 expected_reasons.add(APPLICABILITY_INSPECTION_REASON_CODE)
@@ -4183,7 +4190,7 @@ def validate_claim_against_talk(
             )
     if (
         ret.get("status") in ANALYSIS_STATUSES
-        and return_schema_version == RETURN_SCHEMA_VERSION
+        and return_schema_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS
         and artifact_capabilities is not None
     ):
         observations = ret.get("pattern_observations")
@@ -4654,11 +4661,12 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
             "pattern_observations is required and must be an object"
         )
     if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
-        allowed_observation_fields = (
-            V5_PATTERN_OBSERVATION_RETURN_FIELDS
-            if return_schema_version == RETURN_SCHEMA_VERSION
-            else PATTERN_OBSERVATION_RETURN_FIELDS
-        )
+        if return_schema_version >= WEIGHTED_SCORE_RETURN_SCHEMA_VERSION:
+            allowed_observation_fields = V6_PATTERN_OBSERVATION_RETURN_FIELDS
+        elif return_schema_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
+            allowed_observation_fields = V5_PATTERN_OBSERVATION_RETURN_FIELDS
+        else:
+            allowed_observation_fields = PATTERN_OBSERVATION_RETURN_FIELDS
         unknown_observations = sorted(set(observations) - allowed_observation_fields)
         if unknown_observations:
             raise ReturnValidationError(
@@ -4700,7 +4708,7 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
         detected_ids,
         return_schema_version,
     )
-    if return_schema_version == RETURN_SCHEMA_VERSION:
+    if return_schema_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
         validate_native_deck_design_receipt(
             structured=structured,
             observations=observations,

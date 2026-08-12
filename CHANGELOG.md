@@ -26,6 +26,15 @@ is the reinterpretation `stateful-artifacts` forbids. Each schema is checked
 against the arithmetic in force when it was written, and a v5 return carrying a
 `pattern_score_basis` is rejected outright.
 
+Reachable in practice, not just by version number. `pattern_score_basis` joins
+v6's allowed observation fields — without it a correctly-formed v6 return was
+rejected as carrying an unknown field — and the gates that compared against v5
+exactly now test set membership, so each schema inheriting the v5 shape is
+admitted rather than silently excluded. The end-to-end tests drive
+`validate_return`, the entry point that owns schema resolution; testing the
+private score helper proved the arithmetic but not that any real return could
+reach it.
+
 v6 is a supported return schema, in every semantic set v5 belongs to — it adds
 weighting to v5 and drops nothing. Shipping the arithmetic behind a version no
 input could resolve would have been code nothing can invoke.
