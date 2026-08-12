@@ -75,6 +75,7 @@ def _identity_assessment(**overrides) -> dict:
         "artifact_role": "delivery",
         "selected_talk_filename": "2024-04-10-talk.md",
         "reason_codes": ["identity_matched"],
+        "candidates": [],
     }
     assessment.update(overrides)
     return assessment

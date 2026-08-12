@@ -646,4 +646,7 @@ def unassessed_legacy_binding(pptx_path: str) -> dict[str, Any]:
         "artifact_role": ROLE_DELIVERY,
         "selected_talk_filename": None,
         "reason_codes": [REASON_UNASSESSED_LEGACY_BINDING],
+        # Empty rather than absent: migration assessed no candidates, which is
+        # a different statement from having assessed some and reported none.
+        "candidates": [],
     }

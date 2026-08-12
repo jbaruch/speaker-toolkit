@@ -97,6 +97,10 @@ PPTX_IDENTITY_ASSESSMENT_REQUIRED_FIELDS = frozenset(
         "artifact_role",
         "selected_talk_filename",
         "reason_codes",
+        # The assessor always emits its candidate table, and it is the only
+        # record of what the other talks scored. Accepting an assessment without
+        # it would persist a verdict nobody can re-examine.
+        "candidates",
     }
 )
 # Both versions bind a visual claim to the extractor generation that produced

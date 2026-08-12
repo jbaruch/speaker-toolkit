@@ -1115,7 +1115,6 @@ def _require_bound_identity_assessment(
     _require_keys(
         assessment,
         required=PPTX_IDENTITY_ASSESSMENT_REQUIRED_FIELDS,
-        optional={"candidates"},
         label=label,
     )
     assessed_path = assessment["pptx_path"]
