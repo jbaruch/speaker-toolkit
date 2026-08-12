@@ -109,10 +109,17 @@ dimensions:
       - Visual Aids Effectiveness
       - Slide Design/Visual Quality
       - Visual Design Quality
+      # Owner decision: the failure is in how the images are chosen and
+      # composed, which is slide design.
+      - Visual Storytelling
   - id: areas-for-improvement
     ordinal: 14
     name: "Reflection: Areas for Improvement"
     aliases:
       - Areas for Improvement
       - Overall Impression/Polish
+      - Overall Quality Indicators
       - Speaker Craft / Professionalism
+      # Owner decision: polish outrunning substance is an overall-impression
+      # judgement, not a slide-to-speech mismatch.
+      - Content Depth / Value

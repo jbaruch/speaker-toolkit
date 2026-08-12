@@ -244,7 +244,7 @@ entries are skipped and surfaced as go-live actions, not emitted as per-talk
 | ant-fonts | Ant Fonts | antipattern | 13, 14 | guardrails, slides | bullet-riddled-corpse, infodeck |
 | fontaholic | Fontaholic | antipattern | 13, 14 | guardrails, slides | floodmarks |
 | floodmarks | Floodmarks | antipattern | 13, 14 | guardrails, slides | bookends, defy-defaults, unifying-visual-theme |
-| photomaniac | Photomaniac | antipattern | 10, 13, 14 | guardrails, slides | unifying-visual-theme, vacation-photos |
+| photomaniac | Photomaniac | antipattern | 13, 14 | guardrails, slides | unifying-visual-theme, vacation-photos |
 | borrowed-shoes | Borrowed Shoes | antipattern | 7, 13, 14 | guardrails | crucible, narrative-arc, carnegie-hall |
 | slideuments | Slideuments | antipattern | 13, 14 | guardrails | infodeck, charred-trail, gradual-consistency |
 | dead-demo | Dead Demo | antipattern | 11, 14 | guardrails | live-demo, a-la-carte-content |
@@ -286,7 +286,7 @@ entries are skipped and surfaced as go-live actions, not emitted as per-talk
 | negative-ignorance | Negative Ignorance | antipattern | 4, 14 | guardrails | know-your-audience, seeding-satisfaction |
 | dual-headed-monster | Dual-Headed Monster | antipattern | 4, 14 | guardrails | live-on-tape, weatherman |
 | tower-of-babble | Tower of Babble | antipattern | 7, 9, 14 | guardrails | know-your-audience, leet-grammars |
-| lipstick-on-a-pig | Lipstick on a Pig | antipattern | 8, 9, 14 | guardrails | narrative-arc |
+| lipstick-on-a-pig | Lipstick on a Pig | antipattern | 9, 14 | guardrails | narrative-arc |
 | flyover | Flyover | antipattern | 4, 14 | guardrails | know-your-audience, seeding-satisfaction, mentor |
 | nodding-room | The Nodding Room | antipattern | 4, 12, 14 | guardrails | retrieval-beat, guess-first, spaced-followup, carnegie-hall, red-yellow-green |
 
@@ -403,9 +403,9 @@ Reverse lookup: which patterns relate to each of the 14 rhetoric analysis dimens
 | 5 | Transition Techniques |  |  |
 | 6 | Closing Pattern | call-to-action, new-bliss, spaced-followup, three-part-close |  |
 | 7 | Verbal Signatures | peer-review, breathing-room, echo-chamber, master-story | hiccup-words, borrowed-shoes, tower-of-babble |
-| 8 | Slide-to-Speech Relationship | coda, second-look, crawling-credits | lipstick-on-a-pig |
+| 8 | Slide-to-Speech Relationship | coda, second-look, crawling-credits |  |
 | 9 | Persuasion Techniques | know-your-audience, required, the-big-why, proposed, display-of-high-value, emotional-state, mentor, greek-chorus, sparkline, call-to-adventure, call-to-action, new-bliss, inoculation, concrete-before-abstract, walk-around, anti-sell, delayed-self-introduction | disowning-your-topic, going-meta, tower-of-babble, lipstick-on-a-pig, golden-rule |
-| 10 | Cultural & Pop-Culture References | leet-grammars, unifying-visual-theme, meme-as-argument | alienating-artifact, photomaniac |
+| 10 | Cultural & Pop-Culture References | leet-grammars, unifying-visual-theme, meme-as-argument | alienating-artifact |
 | 11 | Technical Content Delivery | live-demo, lipsync, traveling-highlights, crawling-code, emergence, mentor, lightsaber, concrete-before-abstract, guess-first, leet-grammars | dead-demo |
 | 12 | Pacing Clues | crucible, expansion-joints, talklet, brain-breaks, lightning-talk, takahashi, carnegie-hall, breathing-room, weatherman, screen-blackout, retrieval-beat | shortchanged, disowning-your-topic, nodding-room, alienating-artifact |
 | 13 | Slide Design Patterns | unifying-visual-theme, takahashi, cave-painting, composite-animation, vacation-photos, defy-defaults, analog-noise, gradual-consistency, charred-trail, exuberant-title-top, invisibility, context-keeper, breadcrumbs, bookends, soft-transitions, intermezzi, preroll, crawling-credits, lipsync, traveling-highlights, crawling-code, emergence, screen-blackout, star-moment, second-look, coda, concurrent-creation, fourthought, infodeck, live-on-tape, meme-as-argument, peer-review, progressive-reveal | cookie-cutter, bullet-riddled-corpse, ant-fonts, fontaholic, floodmarks, photomaniac, laser-weapons, borrowed-shoes, injured-outlines, slideuments |
