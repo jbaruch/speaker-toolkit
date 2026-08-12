@@ -393,6 +393,12 @@ Current `schema_version`: **5**. The validator (`scripts/validate-profile.py`,
       }
     ],
     "never_used_patterns": [],
+    "absence_provability": {
+      "schema_version": 1,
+      "absence_provable_count": 16,
+      "absence_unknowable_count": 65,
+      "observable_count": 81
+    },
     "signature_combinations": [],
     "mastery_levels": {
       "signature": ["narrative-arc"],
@@ -650,7 +656,22 @@ policy-backed absence classification. `not_yet_observed` says that this corpus h
 positive detection while absence remains unknown. A conclusive absence that does not
 reach a named tier remains `unclassified` with observation status `confirmed_absent`.
 Only classifier-emitted `never_tried` IDs enter `never_used_patterns`; no other zero
-state may be presented as proof that the speaker has never tried the technique. The
+state may be presented as proof that the speaker has never tried the technique.
+
+`absence_provability` is the denominator that qualifies that list, emitted beside
+it by `classify-pattern-profile.py`. `absence_provable_count` is the number of
+observable catalog entries carrying a populated `absence_evaluable_from` gate —
+the only entries a never-used claim may be computed over.
+`absence_unknowable_count` is the rest, where absence is not provable at all, and
+`observable_count` is their sum. Against the current catalog that is 16 provable
+of 81 observable, so a short `never_used_patterns` list is mostly a statement
+about coverage rather than about the speaker; a reader presenting the list
+without these counts misreports it.
+
+The field arrives with `classification_schema_version: 2`. A block at version 1
+predates it and stays readable — the counts are a fact about the catalog, not a
+claim the older block got anything wrong — so readers treat the field as absent
+rather than the profile as invalid. The
 antipattern equivalent is `confirmed_none`; every other zero-detection antipattern
 remains non-recurring unless the classifier says otherwise.
 

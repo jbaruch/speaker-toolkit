@@ -119,3 +119,28 @@ class TestTheWriterEmitsIt:
             "absence_provability"
             not in profile_pattern_provenance._V5_PATTERN_PROFILE_FIELDS
         )
+
+
+class TestSchemaVersioning:
+    """A shape change to a persisted artifact bumps its governing version."""
+
+    def test_the_classification_contract_bumped(
+        self, profile_pattern_provenance
+    ) -> None:
+        assert profile_pattern_provenance.CLASSIFICATION_SCHEMA_VERSION == 2
+
+    def test_the_writer_stamps_the_new_version(
+        self, classify_pattern_profile, profile_pattern_provenance
+    ) -> None:
+        """Writer and reader share one constant, not two copies."""
+        assert (
+            classify_pattern_profile.CLASSIFICATION_SCHEMA_VERSION
+            == profile_pattern_provenance.CLASSIFICATION_SCHEMA_VERSION
+        )
+
+    def test_a_v1_block_stays_readable(self, profile_pattern_provenance) -> None:
+        """The counts are a fact about the catalog, not a claim the older block
+        got something wrong — refusing v1 would strand every profile on disk."""
+        readable = profile_pattern_provenance.READABLE_CLASSIFICATION_SCHEMA_VERSIONS
+        assert 1 in readable
+        assert profile_pattern_provenance.CLASSIFICATION_SCHEMA_VERSION in readable

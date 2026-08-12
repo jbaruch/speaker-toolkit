@@ -53,7 +53,14 @@ REASON_CLASSIFICATION_POLICY_INVALID = "pattern_classification_policy_invalid"
 
 LEGACY_CLASSIFICATION_AVAILABILITY_SCHEMA_VERSION = 1
 CLASSIFICATION_AVAILABILITY_SCHEMA_VERSION = 2
-CLASSIFICATION_SCHEMA_VERSION = 1
+CLASSIFICATION_SCHEMA_VERSION = 2
+# v1 predates `absence_provability`. It stays readable: the field is a coverage
+# fact about the catalog, not a claim the older block got wrong, so refusing v1
+# would strand every profile already on disk to gain nothing.
+LEGACY_CLASSIFICATION_SCHEMA_VERSIONS = frozenset({1})
+READABLE_CLASSIFICATION_SCHEMA_VERSIONS = frozenset(
+    {*LEGACY_CLASSIFICATION_SCHEMA_VERSIONS, CLASSIFICATION_SCHEMA_VERSION}
+)
 CLASSIFICATION_POLICY_UNAVAILABLE_REASON = "owner_policy_unconfigured"
 
 _LEGACY_AVAILABILITY_FIELDS = frozenset({"schema_version", "status", "reason_codes"})
@@ -1279,9 +1286,12 @@ def _validate_v5_policy_fields(
     classification_schema_version = pattern_profile.get("classification_schema_version")
     if (
         not _is_integer(classification_schema_version)
-        or classification_schema_version != CLASSIFICATION_SCHEMA_VERSION
+        or classification_schema_version not in READABLE_CLASSIFICATION_SCHEMA_VERSIONS
     ):
-        errors.append("pattern_profile.classification_schema_version must be 1")
+        errors.append(
+            "pattern_profile.classification_schema_version must be one of "
+            f"{sorted(READABLE_CLASSIFICATION_SCHEMA_VERSIONS)}"
+        )
     try:
         stamp = validate_policy_stamp(pattern_profile.get("classification_policy"))
         digest = str(stamp["semantic_sha256"])

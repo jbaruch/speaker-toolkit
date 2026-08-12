@@ -629,12 +629,12 @@ def test_v5_assessment_rejects_policy_digest_tampering(validate_profile):
         (
             ("classification_schema_version",),
             True,
-            "pattern_profile.classification_schema_version must be 1",
+            "pattern_profile.classification_schema_version must be one of [1, 2]",
         ),
         (
             ("classification_schema_version",),
             1.0,
-            "pattern_profile.classification_schema_version must be 1",
+            "pattern_profile.classification_schema_version must be one of [1, 2]",
         ),
         (
             ("classification_availability", "schema_version"),

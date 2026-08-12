@@ -15,6 +15,12 @@ statement about the speaker. It is mostly a statement about coverage.
 from the catalog rather than hardcoded, so populating a gate moves the numbers
 instead of dating a constant.
 
+The classification contract bumps to **v2** to carry it, since this is a shape
+change to a persisted artifact. A v1 block stays readable: the counts are a fact
+about the catalog, not a claim the older block got something wrong, so refusing
+v1 would strand every profile already on disk to gain nothing. The field and its
+version boundary are documented in `speaker-profile-schema.md`.
+
 `classify-pattern-profile.py` emits it beside `never_used_patterns`, so the list
 and its denominator always travel together. The field is allowed but never
 required: a profile written before it existed is not thereby invalid, and

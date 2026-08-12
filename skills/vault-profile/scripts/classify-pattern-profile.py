@@ -64,7 +64,7 @@ from profile_pattern_provenance import absence_provability  # noqa: E402
 
 POLICY_SCHEMA_VERSION = 1
 POLICY_STAMP_SCHEMA_VERSION = 1
-CLASSIFICATION_SCHEMA_VERSION = 1
+CLASSIFICATION_SCHEMA_VERSION = 2
 CLASSIFICATION_AVAILABILITY_SCHEMA_VERSION = 2
 DEFAULT_POLICY_PATH = (
     pathlib.Path(__file__).resolve().parent.parent
