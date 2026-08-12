@@ -1,5 +1,26 @@
 # Changelog
 
+### fix(catalog) — one bullet threshold, not two (#153)
+
+`_anti_bullet-riddled-corpse` disagreed with itself. Line 56 counted slides with
+"three or more text bullets" toward the bullet-slide proportion, while line 59
+set the strong signal at four or more and line 60 excluded "a compact list of
+three or fewer short items" from standalone signals. A three-bullet slide was
+simultaneously counted and excluded, so every reader had to learn which number
+applied where.
+
+Per the 2026-08-09 owner decision it is four or more, everywhere in the entry. A
+three-bullet slide is never antipattern evidence — not standalone, and not
+toward the proportion.
+
+The catalog fingerprint moves, so this belongs in the same revalidation pass as
+#156 and #167.
+
+Still open on #153: the weighted aggregate score (strong 1.0, moderate 0.5) and
+its `pattern_score_basis` sibling. Runtime scoring is still flat +1/-1 in
+`return_validation._validate_score`; changing it is a scoring-schema bump that
+lands with #160's provenance object.
+
 ## 0.20.56 — 2026-08-11
 
 ### feat(vault-ingress) — prove which talk a deck belongs to before it becomes evidence (#176)
