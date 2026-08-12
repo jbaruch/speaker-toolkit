@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.58 — 2026-08-12
+
 ### feat(catalog) — remap the dimension numbers to what the prose says (#156)
 
 Closes the mechanical half of #156.
