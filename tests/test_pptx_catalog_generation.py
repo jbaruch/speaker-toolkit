@@ -834,7 +834,7 @@ def test_a_matched_record_with_a_null_assessment_is_refused(
 ) -> None:
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
-        match="required on a matched record",
+        match="identity_assessment_missing",
     ):
         mutate_tracking_database.build_candidate(
             _database([]),
@@ -851,7 +851,7 @@ def test_an_unproven_verdict_cannot_bind_a_talk(
 
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
-        match="must be 'matched' to bind a talk",
+        match="identity_verdict_not_matched",
     ):
         mutate_tracking_database.build_candidate(
             _database([]), [_identity_mutation(record)]
@@ -867,7 +867,7 @@ def test_an_assessment_without_a_deck_identity_is_refused(
 
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
-        match=r"missing \['pptx_path'\]",
+        match="identity_assessment_incomplete",
     ):
         mutate_tracking_database.build_candidate(
             _database([]),
@@ -888,7 +888,7 @@ def test_an_assessment_for_another_deck_is_refused(
 
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
-        match="does not match the record's pptx_path",
+        match="identity_deck_mismatch",
     ):
         mutate_tracking_database.build_candidate(
             _database([]), [_identity_mutation(record)]
@@ -907,7 +907,7 @@ def test_an_assessment_naming_another_talk_is_refused(
 
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
-        match="does not match the record's talk_filename",
+        match="identity_talk_mismatch",
     ):
         mutate_tracking_database.build_candidate(
             _database([]), [_identity_mutation(record)]
@@ -924,7 +924,7 @@ def test_a_non_delivery_artifact_cannot_bind_a_talk(
 
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
-        match="is not a delivery artifact",
+        match="identity_non_delivery_artifact",
     ):
         mutate_tracking_database.build_candidate(
             _database([]), [_identity_mutation(record)]
@@ -938,7 +938,7 @@ def test_an_assessment_from_a_future_schema_is_refused(
 
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
-        match="schema_version must be exact integer 1",
+        match="identity_assessment_schema_unsupported",
     ):
         mutate_tracking_database.build_candidate(
             _database([]), [_identity_mutation(record)]
@@ -954,7 +954,7 @@ def test_a_reason_code_outside_the_taxonomy_is_refused(
 
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
-        match="outside the closed taxonomy",
+        match="identity_reason_codes_contradict_verdict",
     ):
         mutate_tracking_database.build_candidate(
             _database([]), [_identity_mutation(record)]
@@ -996,18 +996,15 @@ def test_a_proven_binding_is_persisted(mutate_tracking_database) -> None:
     assert any(change["kind"] == "match_pptx_talk" for change in changes)
 
 
-def test_the_assessment_binds_to_the_module_that_produces_it(
-    mutate_tracking_database, pptx_talk_identity
+def test_the_writer_and_preflight_share_one_binding_predicate(
+    mutate_tracking_database, preflight_vault, pptx_talk_identity
 ) -> None:
-    """The writer's constants are the assessor's, not a second copy of them."""
+    """Two copies of this rule would drift, and the direction they drift is a
+    reader trusting what a writer would have refused."""
     assert (
-        mutate_tracking_database.PPTX_TALK_IDENTITY_SCHEMA_VERSION
-        == pptx_talk_identity.PPTX_TALK_IDENTITY_SCHEMA_VERSION
+        mutate_tracking_database.binding_refusal is pptx_talk_identity.binding_refusal
     )
-    assert mutate_tracking_database.VERDICT_MATCHED == (
-        pptx_talk_identity.VERDICT_MATCHED
-    )
-    assert mutate_tracking_database.ROLE_DELIVERY == pptx_talk_identity.ROLE_DELIVERY
+    assert preflight_vault.binding_refusal is pptx_talk_identity.binding_refusal
 
 
 def test_an_assessment_the_assessor_produced_satisfies_the_writer(
@@ -1195,7 +1192,7 @@ def test_a_matched_verdict_cannot_claim_a_refusal_reason(
 
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
-        match="must be exactly",
+        match="identity_reason_codes_contradict_verdict",
     ):
         mutate_tracking_database.build_candidate(
             _database([]), [_identity_mutation(record)]
@@ -1216,7 +1213,7 @@ def test_the_migration_stamp_cannot_be_replayed_as_a_proven_binding(
 
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
-        match="must be exactly",
+        match="identity_reason_codes_contradict_verdict",
     ):
         mutate_tracking_database.build_candidate(
             _database([]),
@@ -1308,3 +1305,33 @@ def test_preflight_flags_a_row_migration_has_not_reached(
     )
 
     assert ("pptx_talk_binding_unassessed", "warning") in codes
+
+
+def test_preflight_refuses_an_assessment_that_proves_another_pair(
+    preflight_vault, tmp_path
+) -> None:
+    """Hints, Not Authority: a persisted `matched` verdict for a different deck
+    must not read as proof of this row."""
+    record = _current_record(
+        identity_assessment=_identity_assessment(
+            pptx_path="Conference/2024/Some Other Deck.pptx"
+        )
+    )
+
+    codes = _preflight_codes(preflight_vault, _database([record]), tmp_path)
+
+    assert ("pptx_talk_binding_unproven", "blocking") in codes
+
+
+def test_preflight_refuses_a_matched_verdict_naming_another_talk(
+    preflight_vault, tmp_path
+) -> None:
+    record = _current_record(
+        identity_assessment=_identity_assessment(
+            selected_talk_filename="2023-01-01-someone-elses-talk.md"
+        )
+    )
+
+    codes = _preflight_codes(preflight_vault, _database([record]), tmp_path)
+
+    assert ("pptx_talk_binding_unproven", "blocking") in codes

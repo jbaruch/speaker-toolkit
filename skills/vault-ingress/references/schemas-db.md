@@ -66,10 +66,11 @@ v2, and v3.
   belongs to the talk the record names. v2 bound a visual claim to the bytes it
   came from but said nothing about whose deck those bytes were, so a deck could
   carry a perfectly-attested extraction receipt for the wrong talk.
-- The writer refuses an assessment that does not authorize the binding; the
-  acceptance predicate lives in
-  `skills/vault-ingress/scripts/mutate-tracking-database.py`
-  `_require_bound_identity_assessment`. Verdicts, artifact roles, and reason
+- One predicate decides whether an assessment authorizes a binding —
+  `binding_refusal` in `skills/vault-ingress/scripts/pptx_talk_identity.py`.
+  The owner writer raises on it so an unproven binding is never persisted, and
+  preflight reports it so a binding persisted before this contract existed
+  cannot pass as proven. Verdicts, artifact roles, and reason
   codes are the assessor's closed taxonomies, in
   `skills/vault-ingress/scripts/pptx_talk_identity.py` top-of-file constants.
 - Readers validate v3 shape only — that the field is null exactly when

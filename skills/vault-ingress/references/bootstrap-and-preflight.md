@@ -230,9 +230,9 @@ A matched record also carries `identity_assessment`: the assessment produced by
 the database's talks, serialized whole. Obtain it by assessing the deck BEFORE
 deciding the binding — the assessment is what decides it, not a confirmation of a
 decision already made. An unmatched record carries `identity_assessment: null`.
-The writer rejects an assessment that does not authorize the binding; its
-acceptance predicate lives in `skills/vault-ingress/scripts/mutate-tracking-database.py`
-`_require_bound_identity_assessment`. Route a rejected deck to owner review
+The writer rejects an assessment that does not authorize the binding; the
+predicate is `binding_refusal` in
+`skills/vault-ingress/scripts/pptx_talk_identity.py`, shared with preflight. Route a rejected deck to owner review
 rather than persisting it.
 Never decide from
 `visual_extracted` alone whether a deck needs extraction. Run:

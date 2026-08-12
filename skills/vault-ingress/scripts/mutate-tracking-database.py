@@ -29,7 +29,6 @@ from tracking_database import (
     IMPROVEMENT_GOAL_REQUIRED_FIELDS as OWNER_IMPROVEMENT_GOAL_REQUIRED_FIELDS,
     PPTX_CATALOG_RECORD_SCHEMA_VERSION,
     PPTX_CATALOG_V3_REQUIRED_FIELDS,
-    PPTX_IDENTITY_ASSESSMENT_REQUIRED_FIELDS,
     validate_pptx_visual_evidence,
     RESOURCE_RECORD_SCHEMA_VERSION,
     RESOURCE_REQUIRED_FIELDS as OWNER_RESOURCE_REQUIRED_FIELDS,
@@ -55,13 +54,7 @@ from pptx_discovery_contract import (
     PptxDiscoveryContractError,
     validate_pptx_directory_exclusions,
 )
-from pptx_talk_identity import (
-    MATCHED_REASON_CODES,
-    PPTX_TALK_IDENTITY_SCHEMA_VERSION,
-    REASON_CODES,
-    ROLE_DELIVERY,
-    VERDICT_MATCHED,
-)
+from pptx_talk_identity import binding_refusal
 
 
 PLAN_SCHEMA_VERSION = 1
@@ -1107,67 +1100,14 @@ def _require_bound_identity_assessment(
                 f"{label} must be null on an unmatched record"
             )
         return
-    if not isinstance(assessment, dict):
-        raise TrackingDatabaseMutationError(
-            f"{label} is required on a matched record: a talk binding must be "
-            "proven before the deck's contents become that talk's evidence"
-        )
-    _require_keys(
-        assessment,
-        required=PPTX_IDENTITY_ASSESSMENT_REQUIRED_FIELDS,
-        label=label,
+    refusal = binding_refusal(
+        assessment, pptx_path=pptx_path, talk_filename=talk_filename
     )
-    assessed_path = assessment["pptx_path"]
-    if assessed_path != pptx_path:
+    if refusal is not None:
         raise TrackingDatabaseMutationError(
-            f"{label}.pptx_path {assessed_path!r} does not match the record's "
-            f"pptx_path {pptx_path!r}"
-        )
-    if not json_values_equal(
-        assessment["schema_version"], PPTX_TALK_IDENTITY_SCHEMA_VERSION
-    ):
-        raise TrackingDatabaseMutationError(
-            f"{label}.schema_version must be exact integer "
-            f"{PPTX_TALK_IDENTITY_SCHEMA_VERSION}"
-        )
-    verdict = assessment["verdict"]
-    if verdict != VERDICT_MATCHED:
-        raise TrackingDatabaseMutationError(
-            f"{label}.verdict must be {VERDICT_MATCHED!r} to bind a talk, got "
-            f"{verdict!r}; route a {verdict!r} deck to owner review instead"
-        )
-    selected = assessment["selected_talk_filename"]
-    if selected != talk_filename:
-        raise TrackingDatabaseMutationError(
-            f"{label}.selected_talk_filename {selected!r} does not match the "
-            f"record's talk_filename {talk_filename!r}"
-        )
-    role = assessment["artifact_role"]
-    if role != ROLE_DELIVERY:
-        raise TrackingDatabaseMutationError(
-            f"{label}.artifact_role {role!r} is not a delivery artifact; record "
-            "which artifact is the published source before binding it"
-        )
-    reason_codes = assessment["reason_codes"]
-    if not isinstance(reason_codes, list) or not all(
-        isinstance(code, str) for code in reason_codes
-    ):
-        raise TrackingDatabaseMutationError(
-            f"{label}.reason_codes must be an array of strings"
-        )
-    unknown = sorted(set(reason_codes) - REASON_CODES)
-    if unknown:
-        raise TrackingDatabaseMutationError(
-            f"{label}.reason_codes carries codes outside the closed taxonomy: {unknown}"
-        )
-    # Membership in the taxonomy is not enough. Every code but the matched one
-    # explains a refusal, so a `matched` verdict carrying one describes an
-    # assessment that cannot exist — and the legacy-binding code means the exact
-    # opposite of proven.
-    if sorted(set(reason_codes)) != sorted(MATCHED_REASON_CODES):
-        raise TrackingDatabaseMutationError(
-            f"{label}.reason_codes must be exactly {sorted(MATCHED_REASON_CODES)} "
-            f"for a {VERDICT_MATCHED!r} verdict, got {reason_codes}"
+            f"{label} does not authorize this binding ({refusal}); a talk "
+            "binding must be proven before the deck's contents become that "
+            "talk's evidence"
         )
 
 

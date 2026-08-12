@@ -650,3 +650,53 @@ def unassessed_legacy_binding(pptx_path: str) -> dict[str, Any]:
         # a different statement from having assessed some and reported none.
         "candidates": [],
     }
+
+
+def binding_refusal(
+    assessment: object,
+    *,
+    pptx_path: str,
+    talk_filename: str,
+) -> str | None:
+    """Say why an assessment fails to authorize a binding, or None if it does.
+
+    One predicate, two callers. The owner writer raises on it so an unproven
+    binding is never persisted; preflight reports it so a binding persisted
+    before this contract existed cannot pass as proven. Two copies of this rule
+    would drift, and the direction they drift is a reader trusting what a writer
+    would have refused (`stateful-artifacts` -> Hints, Not Authority).
+
+    Checks the whole triple, not the verdict alone: an assessment names a deck
+    AND a talk, so one that proves a different pair proves nothing about this
+    row. Reason codes are checked because every code but the matched one
+    explains a refusal.
+    """
+    if not isinstance(assessment, Mapping):
+        return "identity_assessment_missing"
+    missing = {
+        "schema_version",
+        "pptx_path",
+        "verdict",
+        "artifact_role",
+        "selected_talk_filename",
+        "reason_codes",
+        "candidates",
+    } - set(assessment)
+    if missing:
+        return "identity_assessment_incomplete"
+    if assessment["schema_version"] != PPTX_TALK_IDENTITY_SCHEMA_VERSION:
+        return "identity_assessment_schema_unsupported"
+    if assessment["verdict"] != VERDICT_MATCHED:
+        return "identity_verdict_not_matched"
+    if assessment["pptx_path"] != pptx_path:
+        return "identity_deck_mismatch"
+    if assessment["selected_talk_filename"] != talk_filename:
+        return "identity_talk_mismatch"
+    if assessment["artifact_role"] != ROLE_DELIVERY:
+        return "identity_non_delivery_artifact"
+    codes = assessment["reason_codes"]
+    if not isinstance(codes, list) or not all(isinstance(code, str) for code in codes):
+        return "identity_reason_codes_invalid"
+    if sorted(set(codes)) != sorted(MATCHED_REASON_CODES):
+        return "identity_reason_codes_contradict_verdict"
+    return None

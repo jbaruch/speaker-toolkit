@@ -75,6 +75,7 @@ from pptx_catalog_selection import classify_catalog
 from pptx_talk_identity import (
     REASON_UNASSESSED_LEGACY_BINDING,
     VERDICT_MATCHED,
+    binding_refusal,
 )
 from pptx_evidence import (
     PPTX_EXTRACTION_PIPELINE_VERSION,
@@ -382,7 +383,18 @@ class VaultPreflight:
                     actual=None,
                 )
                 continue
-            if assessment.get("verdict") == VERDICT_MATCHED:
+            pptx_path = record.get("pptx_path")
+            talk_filename = record.get("talk_filename")
+            refusal = (
+                binding_refusal(
+                    assessment,
+                    pptx_path=pptx_path,
+                    talk_filename=talk_filename,
+                )
+                if isinstance(pptx_path, str) and isinstance(talk_filename, str)
+                else "identity_assessment_incomplete"
+            )
+            if refusal is None:
                 continue
             reason_codes = assessment.get("reason_codes")
             codes = reason_codes if isinstance(reason_codes, list) else []
@@ -395,6 +407,7 @@ class VaultPreflight:
                 field=f"pptx_catalog[{index}].identity_assessment",
                 expected=VERDICT_MATCHED,
                 actual={
+                    "refusal": refusal,
                     "verdict": assessment.get("verdict"),
                     "reason_codes": codes,
                     "pptx_path": record.get("pptx_path"),
