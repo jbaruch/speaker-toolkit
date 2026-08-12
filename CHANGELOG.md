@@ -36,7 +36,7 @@ drift being fixed. Three labels remain unresolved and need an owner decision:
 
 The catalog fingerprint moves, so this belongs in the same revalidation pass as
 #167 rather than triggering a second one.
-||||||| 1498528
+
 ## 0.20.57 — 2026-08-12
 
 ### fix(catalog) — one bullet threshold, not two (#153)
