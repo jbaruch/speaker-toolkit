@@ -11,6 +11,13 @@ describes — the feed serves only the current version, so a literal pin breaks 
 the next advance. The consumed surface is an ffprobe command line, not a
 semver-governed API, so tracking current costs nothing the pin was buying.
 
+Unpinning exposed a second assumption: the step hardcoded
+`tools\ffmpeg\bin\ffprobe.exe`, and the newer package moved it. The step now
+searches the package tree for the real binary and verifies ffmpeg.exe sits
+beside it — a hardcoded layout fails on exactly the upgrade that tracking
+current invites, so discovering the path is what makes the unpin safe rather
+than merely green today.
+
 The macOS lane keeps its pin: evermeet.cx serves immutable archives and each is
 checksum-verified, so that pin still resolves and still proves what it fetched.
 

@@ -197,10 +197,21 @@ jobs:
         # the supervised worker intentionally permits only itself plus one
         # ffprobe child.
         run: |
+          $ErrorActionPreference = 'Stop'
           choco install ffmpeg --no-progress -y
-          $ffmpegBin = 'C:\ProgramData\chocolatey\lib\ffmpeg\tools\ffmpeg\bin'
-          if (-not (Test-Path "$ffmpegBin\ffprobe.exe" -PathType Leaf)) {
-            throw "Chocolatey ffprobe binary was not installed at the pinned path"
+          # Locate the real binary rather than assuming a layout. The package
+          # moved ffprobe.exe out of tools\ffmpeg\bin between versions, so a
+          # hardcoded path fails on exactly the upgrade that unpinning invites.
+          # Searching the package tree is what makes tracking-current safe.
+          $probe = Get-ChildItem -Path 'C:\ProgramData\chocolatey\lib\ffmpeg' `
+            -Filter 'ffprobe.exe' -Recurse -File -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (-not $probe) {
+            throw "Chocolatey installed ffmpeg but no ffprobe.exe is in its package tree"
+          }
+          $ffmpegBin = $probe.DirectoryName
+          if (-not (Test-Path (Join-Path $ffmpegBin 'ffmpeg.exe') -PathType Leaf)) {
+            throw "ffprobe.exe found at $ffmpegBin but ffmpeg.exe is not beside it"
           }
           $ffmpegBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - run: pip install ".[test]"
