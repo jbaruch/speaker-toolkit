@@ -18,6 +18,7 @@ reporting it. All three are now decided:
 Two prose claims and two entries' frontmatter moved; four index rows followed.
 The catalog auditor now reports **0 errors and 0 semantic debts** — the first
 time both have been clean since the dimension contract was written.
+## 0.20.58 — 2026-08-12
 
 ### feat(catalog) — remap the dimension numbers to what the prose says (#156)
 
