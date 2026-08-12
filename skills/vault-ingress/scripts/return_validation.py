@@ -276,7 +276,19 @@ SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS = frozenset(
     }
 )
 EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS = frozenset({RETURN_SCHEMA_VERSION})
-PATTERN_SCORING_SCHEMA_VERSION = 5
+PATTERN_SCORING_SCHEMA_VERSION = 6
+# Owner decision (#153): the aggregate stays one number, but a strong detection
+# and a moderate one stop counting the same. Flat +1/-1 made a slides-only talk
+# and a full-evidence talk emit scores that read as equivalent.
+#
+# The weights are PART OF the scoring schema version — changing a value here is
+# a scoring-generation bump under #160, not a tuning knob, because every
+# persisted score was computed under the table in force at the time.
+DETECTION_WEIGHTS: dict[str, float] = {
+    "strong": 1.0,
+    "moderate": 0.5,
+    "weak": 0.25,
+}
 ADHERENCE_COMPARISON_SCHEMA_VERSION = 1
 MIN_ADHERENCE_BASELINE_TALKS = 10
 CURRENT_PATTERN_SCORING_GENERATION_STATUS = "current"
@@ -2562,54 +2574,111 @@ def _validate_unavailable_catalog_gates(
         )
 
 
+def weighted_detection_total(detections: list[dict]) -> float:
+    """Sum one polarity's detections under the owner-approved weight table."""
+    return sum(DETECTION_WEIGHTS[detection["confidence"]] for detection in detections)
+
+
+def pattern_score_basis(
+    patterns: list[dict], antipatterns: list[dict], not_evaluable: list[dict]
+) -> dict:
+    """The evidence composition that travels with every emitted score.
+
+    A single weighted number cannot say whether it came from two strong
+    detections or four moderate ones, and it cannot say how much of the catalog
+    was unevaluable for this talk. Without that, a score drop reads as a
+    regression when it may only be thinner evidence. The basis is what makes the
+    number honest, so it is required rather than optional.
+    """
+    counts: dict[str, dict[str, int]] = {}
+    for lane, detections in (("patterns", patterns), ("antipatterns", antipatterns)):
+        lane_counts = {level: 0 for level in sorted(DETECTION_WEIGHTS)}
+        for detection in detections:
+            lane_counts[detection["confidence"]] += 1
+        counts[lane] = lane_counts
+    return {
+        "schema_version": PATTERN_SCORING_SCHEMA_VERSION,
+        "weights": dict(sorted(DETECTION_WEIGHTS.items())),
+        "patterns": counts["patterns"],
+        "antipatterns": counts["antipatterns"],
+        "not_evaluable_count": len(not_evaluable),
+    }
+
+
+def expected_weighted_score(patterns: list[dict], antipatterns: list[dict]) -> float:
+    """The aggregate the detection arrays require, rounded deterministically.
+
+    Weights are eighths at worst, so two decimal places represent every
+    reachable value exactly; rounding here keeps a float sum from emitting
+    0.30000000000000004 and failing an equality check that is logically true.
+    """
+    total = weighted_detection_total(patterns) - weighted_detection_total(antipatterns)
+    return round(total, 2)
+
+
 def _validate_score(
-    observations: dict, pattern_count: int, antipattern_count: int
+    observations: dict,
+    patterns: list[dict],
+    antipatterns: list[dict],
+    not_evaluable: list[dict],
 ) -> None:
     if "pattern_score" not in observations:
         raise ReturnValidationError("pattern_observations.pattern_score is required")
     raw = observations["pattern_score"]
-    expected = pattern_count - antipattern_count
+    expected = expected_weighted_score(patterns, antipatterns)
     if isinstance(raw, bool):
         raise ReturnValidationError(
             "pattern_observations.pattern_score cannot be a boolean"
         )
-    if isinstance(raw, int):
-        if raw != expected:
+    if isinstance(raw, (int, float)):
+        if round(float(raw), 2) != expected:
             raise ReturnValidationError(
-                f"pattern_score is {raw}, but {pattern_count} patterns minus "
-                f"{antipattern_count} antipatterns is {expected}"
+                f"pattern_score is {raw}, but the weighted detection arrays "
+                f"require {expected} (weights {dict(sorted(DETECTION_WEIGHTS.items()))})"
             )
         return
     if not isinstance(raw, dict):
         raise ReturnValidationError(
-            "pattern_observations.pattern_score must be an integer or the declared score object"
+            "pattern_observations.pattern_score must be a number or the declared score object"
         )
 
-    required = {
-        "patterns_used": pattern_count,
-        "antipatterns_detected": antipattern_count,
+    required: dict[str, float] = {
+        "patterns_used": float(len(patterns)),
+        "antipatterns_detected": float(len(antipatterns)),
         "score": expected,
     }
     for field, wanted in required.items():
         value = raw.get(field)
-        if isinstance(value, bool) or not isinstance(value, int):
-            raise ReturnValidationError(f"pattern_score.{field} must be an integer")
-        if value != wanted:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ReturnValidationError(f"pattern_score.{field} must be a number")
+        if round(float(value), 2) != wanted:
             raise ReturnValidationError(
                 f"pattern_score.{field} is {value}, but the detection arrays require {wanted}"
             )
+    basis = observations.get("pattern_score_basis")
+    if basis is None:
+        raise ReturnValidationError(
+            "pattern_observations.pattern_score_basis is required alongside a "
+            "weighted score; a bare number cannot say what evidence produced it"
+        )
+    wanted_basis = pattern_score_basis(patterns, antipatterns, not_evaluable)
+    if basis != wanted_basis:
+        raise ReturnValidationError(
+            f"pattern_score_basis {basis} does not match the detection arrays "
+            f"{wanted_basis}"
+        )
 
 
-def resolved_return_pattern_score(observations: dict) -> int:
-    """Return the already-validated integer score from one observation block."""
+def resolved_return_pattern_score(observations: dict) -> float:
+    """Return the already-validated weighted score from one observation block."""
     raw = observations["pattern_score"]
     if isinstance(raw, dict):
-        return raw["score"]
-    return raw
+        return float(raw["score"])
+    return float(raw)
 
 
 def _validate_adherence_comparison(
-    ret: dict, return_schema_version: int, talk_pattern_score: int
+    ret: dict, return_schema_version: int, talk_pattern_score: float
 ) -> None:
     """Validate the standalone half of the claim-bound adherence contract."""
     comparison = ret.get("adherence_comparison")
@@ -4583,7 +4652,7 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
             "pattern ids cannot be both detected and not_evaluable: "
             f"{sorted(unavailable_overlap)}"
         )
-    _validate_score(observations, len(patterns), len(antipatterns))
+    _validate_score(observations, patterns, antipatterns, not_evaluable)
     _validate_adherence_comparison(
         ret,
         return_schema_version,
