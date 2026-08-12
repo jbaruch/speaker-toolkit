@@ -1238,3 +1238,73 @@ def test_a_legacy_config_does_not_skip_the_record_migration(
     assert migration.changed is True
     assert record["schema_version"] == 3
     assert record["identity_assessment"]["verdict"] == "review_required"
+
+
+# The catalog-wide sweep: preflight consumes the assessment (#176).
+
+
+def _preflight_codes(preflight_vault, database, tmp_path):
+    """Run only the identity sweep; the rest of preflight needs a real vault."""
+    validator = preflight_vault.VaultPreflight(
+        database, tmp_path, tmp_path / "tracking-database.json"
+    )
+    validator._check_pptx_talk_identity()
+    return {(finding["code"], finding["severity"]) for finding in validator.findings}
+
+
+def test_preflight_warns_on_a_migrated_legacy_binding(
+    preflight_vault, tracking_database, tmp_path
+) -> None:
+    """Migration's own stamp applies to every legacy row at once, so blocking
+    on it would refuse the whole vault over a condition migration created."""
+    database = _database([_evidence_bound_record()])
+    migrated = tracking_database.migrate_tracking_database(database).database
+
+    codes = _preflight_codes(preflight_vault, migrated, tmp_path)
+
+    assert ("pptx_talk_binding_unproven", "warning") in codes
+    assert ("pptx_talk_binding_unproven", "blocking") not in codes
+
+
+def test_preflight_blocks_on_an_assessment_that_actually_refused(
+    preflight_vault, tmp_path
+) -> None:
+    """An assessor that looked and refused is a specific, actionable finding."""
+    record = _current_record(
+        identity_assessment=_identity_assessment(
+            verdict="review_required",
+            selected_talk_filename=None,
+            reason_codes=["identity_ambiguous_candidates"],
+        )
+    )
+
+    codes = _preflight_codes(preflight_vault, _database([record]), tmp_path)
+
+    assert ("pptx_talk_binding_unproven", "blocking") in codes
+
+
+def test_preflight_is_silent_on_a_proven_binding(preflight_vault, tmp_path) -> None:
+    codes = _preflight_codes(preflight_vault, _database([_current_record()]), tmp_path)
+
+    assert not any(code.startswith("pptx_talk_binding") for code, _ in codes)
+
+
+def test_preflight_ignores_an_unmatched_row(preflight_vault, tmp_path) -> None:
+    """No talk is bound, so there is no binding to prove."""
+    record = _current_record(
+        talk_filename=None, matched=False, identity_assessment=None
+    )
+
+    codes = _preflight_codes(preflight_vault, _database([record]), tmp_path)
+
+    assert not any(code.startswith("pptx_talk_binding") for code, _ in codes)
+
+
+def test_preflight_flags_a_row_migration_has_not_reached(
+    preflight_vault, tmp_path
+) -> None:
+    codes = _preflight_codes(
+        preflight_vault, _database([_evidence_bound_record()]), tmp_path
+    )
+
+    assert ("pptx_talk_binding_unassessed", "warning") in codes

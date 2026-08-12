@@ -34,6 +34,20 @@ downstream may treat it as current until someone looks. v1 records stay at v1,
 matching the established position that migration preserves such a record rather
 than inventing a binding for it.
 
+Preflight consumes the stamp, which is what keeps it from being inert. A row
+whose binding is not proven is reported by the catalog-wide sweep, with severity
+split on where the doubt came from: migration's own stamp warns, because it
+applies to every legacy row at once and blocking on all of them would refuse the
+whole vault over a condition the migration created; a verdict from a real
+assessment blocks, because an assessor that looked and refused is one specific,
+actionable row.
+
+Identity is deliberately not currency. A row can hold a perfectly current
+extraction receipt for the wrong talk, so none of this touches
+`classify_pptx_visual_evidence` — a wrong binding is not stale evidence, it is
+evidence filed against the wrong talk, and conflating them would send every
+migrated deck back through extraction to fix a problem extraction cannot fix.
+
 Fixing that also closed a bypass: `migrate_tracking_database` returned early
 whenever the database ROOT was current, which is true of every live database. A
 record-level shape bump would have been skipped for all of them. Record
