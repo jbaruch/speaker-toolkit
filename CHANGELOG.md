@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.57 — 2026-08-12
+
 ### fix(catalog) — one bullet threshold, not two (#153)
 
 `_anti_bullet-riddled-corpse` disagreed with itself. Line 56 counted slides with
