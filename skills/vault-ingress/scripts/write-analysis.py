@@ -94,7 +94,9 @@ from return_validation import (
     validate_batch,
     validate_persisted_v2_analysis_state,
     validate_persisted_catalog_generation,
+    load_catalog,
 )
+from persisted_pattern_observations import assess_persisted_pattern_observations
 from retained_stage import (
     RetainedStageError,
     close_retained_stage,
@@ -170,6 +172,38 @@ class AnalysisBatchUnverifiedError(AnalysisBatchWriteError):
     """
 
 
+def _require_usable_persisted_observations(talk):
+    """Refuse to render an analysis from a corrupt observation block (#167).
+
+    Rendering is where persisted corruption becomes a document a human reads and
+    a profile aggregates, so a block the classifier calls unusable must not
+    reach it.
+
+    This gate could only land after the migration repair path. Wired before it,
+    it failed closed on every legacy talk at once — the block was corrupt, and
+    nothing existed to repair or requeue it, so no analysis could be re-rendered
+    until each was fixed by hand. Migration now repairs the exact swap and
+    requeues the rest, so a talk arriving here has already been through that
+    door.
+
+    Scoped to source-located returns. A legacy return predates the detection
+    contract this classifier reads, so judging one against it would refuse a
+    render for failing a rule that did not exist when it was written. A talk
+    with no block is not corrupt either, only incomplete.
+    """
+    if talk.get("pattern_observations") is None:
+        return
+    assessment = assess_persisted_pattern_observations(talk, load_catalog())
+    if assessment.usable:
+        return
+    raise ReturnValidationError(
+        f"{talk.get('filename')}: persisted pattern observations are not usable "
+        f"as current scoring evidence ({', '.join(assessment.reason_codes)}); "
+        "run the tracking-database migration to repair or requeue this talk "
+        "before rendering its analysis"
+    )
+
+
 def effective_render_payload(ret, talk):
     """Build the single canonical payload rendered after persistence.
 
@@ -179,6 +213,8 @@ def effective_render_payload(ret, talk):
     """
     if resolve_return_schema_version(ret) in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
         validate_persisted_v2_analysis_state(talk)
+    if resolve_return_schema_version(ret) in SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS:
+        _require_usable_persisted_observations(talk)
     payload = {
         "filename": ret["filename"],
         "return_schema_version": resolve_return_schema_version(ret),

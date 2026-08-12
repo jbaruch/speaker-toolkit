@@ -142,6 +142,7 @@ def _return(**overrides):
                     "confidence": "strong",
                     "evidence_source": "transcript",
                     "evidence": "Four-act catalog.",
+                    "dimensions": [2],
                 },
             ],
             "antipatterns_detected": [
@@ -150,6 +151,7 @@ def _return(**overrides):
                     "confidence": "moderate",
                     "evidence_source": "static_slides",
                     "evidence": "7.5pt body text.",
+                    "dimensions": [13, 14],
                 },
             ],
             "evidence_sources": [
