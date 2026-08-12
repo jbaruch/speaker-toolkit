@@ -52,6 +52,14 @@ from catalog_io import (
     load_catalog_yaml,
     parse_evidence_source_groups,
 )
+from catalog_dimension_registry import (
+    REGISTRY_FILENAME,
+    CatalogDimensionRegistryError,
+    DimensionRegistry,
+    dimension_claims,
+    load_dimension_registry,
+    resolved_vault_dimensions,
+)
 from catalog_normalization import normalize_catalog_alias
 
 
@@ -523,6 +531,67 @@ def _validate_entry_identity(entry: CatalogEntry, errors: list[Issue]) -> None:
                 pattern_id or "",
             )
         )
+
+
+def _validate_dimension_labels(
+    entry: CatalogEntry,
+    registry: DimensionRegistry,
+    errors: list[Issue],
+    debts: list[Issue],
+) -> None:
+    """Check each `Dimension N (Label)` claim against the registry.
+
+    Two finding classes, deliberately separated. A claim whose label resolves to
+    a DIFFERENT number is an objective disagreement between two things the entry
+    itself asserts, so it is an error. A label the registry cannot resolve is a
+    semantic question only an owner can answer — reporting it as an error would
+    turn an unreviewed alias into a build break, and resolving it by guess would
+    turn this reviewed migration into an automatic renumbering.
+    """
+    claims = dimension_claims(entry.text, registry)
+    for claim in claims:
+        if claim.unresolved:
+            debts.append(
+                Issue(
+                    "dimension_label_unresolved",
+                    f"prose label {claim.label!r} resolves to no dimension; add "
+                    "an owner-approved alias to _dimensions.yaml or correct the "
+                    "label",
+                    entry.relative_path,
+                    entry.pattern_id or "",
+                    "vault_dimensions",
+                )
+            )
+        elif not claim.agrees:
+            errors.append(
+                Issue(
+                    "dimension_label_disagrees",
+                    f"prose claims Dimension {claim.stated_ordinal} but label "
+                    f"{claim.label!r} resolves to {claim.resolved_ordinal}",
+                    entry.relative_path,
+                    entry.pattern_id or "",
+                    "vault_dimensions",
+                )
+            )
+    stored = entry.metadata.get("vault_dimensions")
+    if claims and isinstance(stored, list):
+        wanted = resolved_vault_dimensions(claims)
+        held = sorted(
+            value
+            for value in stored
+            if isinstance(value, int) and not isinstance(value, bool)
+        )
+        if held != wanted:
+            errors.append(
+                Issue(
+                    "dimension_frontmatter_disagrees",
+                    f"vault_dimensions {held} differ from what the prose "
+                    f"supports {wanted}",
+                    entry.relative_path,
+                    entry.pattern_id or "",
+                    "vault_dimensions",
+                )
+            )
 
 
 def _validate_dimensions_and_phases(
@@ -1464,6 +1533,18 @@ def audit_catalog(
     root = Path(catalog_dir) if catalog_dir is not None else default_catalog_dir()
     errors: list[Issue] = []
     debts: list[Issue] = []
+    registry: DimensionRegistry | None = None
+    if root.is_dir():
+        # Only meaningful once the catalog directory exists; a missing directory
+        # is reported below and subsumes every finding inside it.
+        try:
+            registry = load_dimension_registry(root)
+        except CatalogDimensionRegistryError as exc:
+            # A malformed registry is an error, not a silent skip: without it
+            # every dimension claim in the catalog becomes uncheckable.
+            errors.append(
+                Issue("dimension_registry_invalid", str(exc), REGISTRY_FILENAME)
+            )
     if not root.is_dir():
         errors.append(
             Issue(
@@ -1497,6 +1578,8 @@ def audit_catalog(
         if enforce_current_source_capabilities:
             _validate_current_absence_capability(entry, errors)
         _validate_scoring(entry, errors)
+        if registry is not None:
+            _validate_dimension_labels(entry, registry, errors, debts)
         entry_dimensions, entry_phases = _validate_dimensions_and_phases(entry, errors)
         entry_related, entry_inverse, entry_aliases = _entry_references(entry, errors)
         if entry.pattern_id is None:

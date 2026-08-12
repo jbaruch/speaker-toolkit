@@ -20,6 +20,14 @@ down from 37. Both worked examples in the issue land exactly as specified:
 
 No pattern's meaning changes. This is a renumbering, not a re-classification.
 
+`audit-pattern-catalog.py` enforces the registry, so this is a deterministic
+gate rather than a one-time script run. A prose label that resolves to a
+different number than its claim states is an ERROR — two things the entry itself
+asserts disagree. A label the registry cannot resolve is a semantic DEBT, since
+turning an unreviewed alias into a build break would be the wrong lever and
+resolving it by guess would make this an automatic renumbering. A malformed
+registry is an error: without it every dimension claim becomes uncheckable.
+
 A label with no owner-approved alias does not resolve, and an unresolved claim
 KEEPS the number written beside it — preserved, not endorsed. Dropping a
 membership on the strength of a missing alias would be a bigger change than the

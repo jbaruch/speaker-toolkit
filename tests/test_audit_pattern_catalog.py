@@ -59,6 +59,15 @@ def _metadata(entry: dict) -> dict:
     }
 
 
+LIVE_CATALOG = (
+    Path(__file__).resolve().parents[1]
+    / "skills"
+    / "presentation-creator"
+    / "references"
+    / "patterns"
+)
+
+
 def _write_catalog(
     tmp_path: Path,
     entries: list[dict] | None = None,
@@ -68,6 +77,13 @@ def _write_catalog(
 ) -> Path:
     root = tmp_path / "patterns"
     root.mkdir()
+    # The dimension registry is part of the catalog contract (#156), so a
+    # synthetic catalog carries the real one — otherwise every fixture reports
+    # a missing registry and drowns the finding each test is actually about.
+    (root / "_dimensions.yaml").write_text(
+        (LIVE_CATALOG / "_dimensions.yaml").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
     values = copy.deepcopy(entries or _base_entries())
     for entry in values:
         directory = entry.get("_directory", entry["part"])

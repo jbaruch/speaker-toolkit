@@ -193,3 +193,56 @@ class TestRegistryValidation:
             registry_module.load_dimension_registry(
                 self._write(tmp_path, "\n".join(lines) + "\n")
             )
+
+
+@pytest.fixture(scope="module")
+def report(audit_pattern_catalog):
+    return audit_pattern_catalog.audit_catalog()
+
+
+class TestAuditorEnforcesTheRegistry:
+    """The registry is only real if the deterministic auditor reads it."""
+
+    def test_the_live_catalog_has_no_dimension_errors(self, report) -> None:
+        codes = [issue["code"] for issue in report["errors"]]
+        assert [c for c in codes if c.startswith("dimension_")] == []
+
+    def test_unresolved_labels_surface_as_semantic_debts(self, report) -> None:
+        """A label no owner approved is a question, not a build break."""
+        codes = [issue["code"] for issue in report["semantic_debts"]]
+        assert set(codes) <= {"dimension_label_unresolved"}
+
+    def test_a_disagreeing_label_is_an_error_not_a_debt(
+        self, audit_pattern_catalog, tmp_path: Path
+    ) -> None:
+        entry = tmp_path / "drift.md"
+        entry.write_text(
+            "---\nid: drift\nname: Drift\ntype: pattern\npart: build\n"
+            "vault_dimensions: [13]\n---\n\n"
+            "## Relationship to Vault Dimensions\n"
+            "Dimension 4 (Slide Design): mismatched on purpose.\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "_dimensions.yaml").write_text(
+            (CATALOG / "_dimensions.yaml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+
+        report = audit_pattern_catalog.audit_catalog(catalog_dir=tmp_path)
+
+        codes = [issue["code"] for issue in report["errors"]]
+        assert "dimension_label_disagrees" in codes
+
+    def test_a_malformed_registry_is_an_error(
+        self, audit_pattern_catalog, tmp_path: Path
+    ) -> None:
+        """Without it every dimension claim becomes uncheckable, so the auditor
+        must say so rather than skipping silently."""
+        (tmp_path / "_dimensions.yaml").write_text(
+            "schema_version: 99\ndimensions: []\n", encoding="utf-8"
+        )
+
+        report = audit_pattern_catalog.audit_catalog(catalog_dir=tmp_path)
+
+        codes = [issue["code"] for issue in report["errors"]]
+        assert "dimension_registry_invalid" in codes
