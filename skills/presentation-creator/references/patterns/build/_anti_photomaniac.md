@@ -6,7 +6,7 @@ part: build
 phase_relevance:
   - guardrails
   - slides
-vault_dimensions: [10, 13, 14]
+vault_dimensions: [13, 14]
 evidence_channels: [slides, video]
 detection_signals:
   - "random stock photos"
@@ -64,7 +64,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Dimension 10 (Visual Storytelling): Photomaniac is a direct failure of visual storytelling. The images tell no story. Dimension 13 (Slide Aesthetics): While individual Photomaniac images may be attractive, the lack of visual coherence degrades the overall aesthetic of the presentation. Dimension 14 (Overall Quality Indicators): Random stock photo selection signals a superficial approach to presentation design that prioritizes appearance over substance.
+Dimension 13 (Visual Storytelling): Photomaniac is a direct failure of visual storytelling. The images tell no story. Dimension 13 (Slide Aesthetics): While individual Photomaniac images may be attractive, the lack of visual coherence degrades the overall aesthetic of the presentation. Dimension 14 (Overall Quality Indicators): Random stock photo selection signals a superficial approach to presentation design that prioritizes appearance over substance.
 
 ## Combinatorics
 Photomaniac is the inverse of the Unifying Visual Theme pattern, which establishes a coherent visual vocabulary that guides image selection. It has a complex relationship with Vacation Photos: the Vacation Photos pattern correctly advocates for image-heavy slides, but Photomaniac is what happens when that advice is followed without the discipline of a visual theme. The solution is not fewer images but better-selected images that serve the narrative rather than decorating the slides.

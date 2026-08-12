@@ -1,5 +1,24 @@
 # Changelog
 
+### fix(catalog) — resolve the last three dimension labels (#156)
+
+Closes #156.
+
+The remap left three labels unresolved because no owner had approved a mapping
+for them, so each preserved the number written beside it and the auditor kept
+reporting it. All three are now decided:
+
+- `Visual Storytelling` → D13. `_anti_photomaniac`'s failure is in how images
+  are chosen and composed, which is slide design.
+- `Content Depth / Value` → D14. Polish outrunning substance is an
+  overall-impression judgement, not a slide-to-speech mismatch.
+- `Overall Quality Indicators` → D14, joining `Overall Impression/Polish` in the
+  lane it already shares. No number changes.
+
+Two prose claims and two entries' frontmatter moved; four index rows followed.
+The catalog auditor now reports **0 errors and 0 semantic debts** — the first
+time both have been clean since the dimension contract was written.
+
 ### feat(catalog) — remap the dimension numbers to what the prose says (#156)
 
 Closes the mechanical half of #156.
