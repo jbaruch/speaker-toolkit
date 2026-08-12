@@ -203,9 +203,15 @@ jobs:
           # moved ffprobe.exe out of tools\ffmpeg\bin between versions, so a
           # hardcoded path fails on exactly the upgrade that unpinning invites.
           # Searching the package tree is what makes tracking-current safe.
-          $probe = Get-ChildItem -Path 'C:\ProgramData\chocolatey\lib\ffmpeg' `
-            -Filter 'ffprobe.exe' -Recurse -File -ErrorAction SilentlyContinue |
-            Select-Object -First 1
+          # No -ErrorAction override: a traversal failure is a different fault
+          # from an absent binary, and swallowing it would report the wrong one.
+          try {
+            $probe = Get-ChildItem -Path 'C:\ProgramData\chocolatey\lib\ffmpeg' `
+              -Filter 'ffprobe.exe' -Recurse -File |
+              Select-Object -First 1
+          } catch {
+            throw "cannot read the Chocolatey ffmpeg package tree: $($_.Exception.Message) — check the install succeeded and the runner can read C:\ProgramData\chocolatey\lib\ffmpeg"
+          }
           if (-not $probe) {
             throw "Chocolatey installed ffmpeg 9.0.0 but no ffprobe.exe is in its package tree — check the package layout and update this step's search root"
           }
