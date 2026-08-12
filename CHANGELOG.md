@@ -24,6 +24,17 @@ and the repair fixes only the swap. The report gains a `persisted_observations`
 object with both counts, since a silent repair is indistinguishable from no
 corruption at all.
 
+The analysis writer now fails closed on the same classifier. Rendering is where
+persisted corruption becomes a document a human reads and a profile aggregates,
+so a block the classifier calls unusable no longer reaches it.
+
+That gate could only land after the repair path. Wired before it, it failed
+closed on every legacy talk at once — the block was corrupt and nothing existed
+to repair or requeue it, so no analysis could be re-rendered until each was fixed
+by hand. It is scoped to source-located returns: a legacy return predates the
+detection contract, and judging one against it would refuse a render for
+breaking a rule that did not exist when it was written.
+
 A talk with no observation block is skipped. Absence is incompleteness, not
 corruption — the boundary preflight already draws, and requeueing every talk
 that predates pattern scoring would flood a queue that is working.

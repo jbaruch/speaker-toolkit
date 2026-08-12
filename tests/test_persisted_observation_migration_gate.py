@@ -189,3 +189,47 @@ class TestLosslessRepair:
         )
         assert collection[0]["evidence"] == prose
         assert collection[0]["dimensions"] == list(entry.vault_dimensions)
+
+
+class TestWriterFailsClosed:
+    """Rendering is where persisted corruption becomes a document a human reads
+    and a profile aggregates (#167).
+
+    Aimed at the gate itself. The full render path is already exercised by
+    `test_write_analysis.py`, whose fixtures now carry catalog dimensions
+    precisely because this gate rejects a block without them.
+    """
+
+    def _corrupt(self) -> dict:
+        return {
+            "filename": "talk.md",
+            "pattern_observations": {"patterns_detected": "not a list"},
+        }
+
+    def test_a_corrupt_block_cannot_be_rendered(
+        self, write_analysis, return_validation
+    ) -> None:
+        with pytest.raises(return_validation.ReturnValidationError, match="not usable"):
+            write_analysis._require_usable_persisted_observations(self._corrupt())
+
+    def test_the_message_names_the_way_out(
+        self, write_analysis, return_validation
+    ) -> None:
+        """An error that does not say what to run is a dead end."""
+        with pytest.raises(return_validation.ReturnValidationError, match="migration"):
+            write_analysis._require_usable_persisted_observations(self._corrupt())
+
+    def test_an_absent_block_is_not_corruption(self, write_analysis) -> None:
+        write_analysis._require_usable_persisted_observations({"filename": "talk.md"})
+
+    def test_the_gate_is_scoped_to_source_located_returns(
+        self, write_analysis, return_validation
+    ) -> None:
+        """A legacy return predates the detection contract, so judging it
+        against one would refuse a render for breaking a rule that did not exist
+        when it was written."""
+        assert (
+            return_validation.RETURN_SCHEMA_VERSION
+            in return_validation.SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS
+        )
+        assert 1 not in return_validation.SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS
