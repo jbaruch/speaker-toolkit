@@ -29,6 +29,26 @@ than the gap it closes.
 
 An unobservable entry lands in neither count: it is not scored at all, so it
 belongs to no denominator.
+### ci — renew the Chocolatey ffmpeg pin
+
+`main` went red with no source change: `choco install ffmpeg --version=8.1.2`
+stopped resolving because the Chocolatey feed withdrew that version. A re-run
+cannot fix a pin that no longer exists.
+
+The pin moves to 9.0.0, the feed's current version. Renewal is manual — no
+Dependabot ecosystem covers Chocolatey — so the step's comment states the
+cadence and the trigger: check the feed whenever this fails to resolve, or
+quarterly, whichever comes first. Chocolatey serves only the current version, so
+expect to renew again.
+
+Renewing exposed a second assumption: the step hardcoded
+`tools\ffmpeg\bin\ffprobe.exe`, and the newer package moved it, so the install
+succeeded and the very next line threw. The step now searches the package tree
+for the real binary and verifies ffmpeg.exe sits beside it, with failure
+messages that name the fix.
+
+The macOS lane keeps its pin: evermeet.cx serves immutable archives and each is
+checksum-verified, so that pin still resolves and still proves what it fetched.
 
 ### fix(catalog) — resolve the last three dimension labels (#156)
 
