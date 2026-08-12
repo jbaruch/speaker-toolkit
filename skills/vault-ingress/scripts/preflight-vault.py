@@ -73,7 +73,6 @@ from source_identity_matching import (
 )
 from pptx_catalog_selection import classify_catalog
 from pptx_talk_identity import (
-    REASON_UNASSESSED_LEGACY_BINDING,
     VERDICT_MATCHED,
     binding_refusal,
 )
@@ -349,11 +348,12 @@ class VaultPreflight:
         that stamp it would be inert — the deck would still feed slide counts,
         OCR, and pattern observations to whichever talk the row names.
 
-        Severity splits on where the doubt came from. Migration's own stamp
-        warns: it applies to every legacy row at once, and blocking on all of
-        them would refuse the whole vault over a condition the migration
-        created. A verdict from a REAL assessment blocks — an assessor that
-        looked and refused is a specific, actionable finding about one row.
+        Every unproven binding blocks, including the one migration stamped.
+        A warning would let Step 1's blocking-only gate proceed on state the
+        database itself marks unproven, which is the whole failure this exists
+        to stop. The cost is real and deliberate: a vault carrying legacy rows
+        stays blocked until they are assessed, so assessing them is reparse
+        prerequisite work rather than something to discover mid-run.
 
         Identity is not currency. A row can hold a perfectly current extraction
         receipt for the wrong talk, so this never touches
@@ -398,9 +398,8 @@ class VaultPreflight:
                 continue
             reason_codes = assessment.get("reason_codes")
             codes = reason_codes if isinstance(reason_codes, list) else []
-            legacy_only = codes == [REASON_UNASSESSED_LEGACY_BINDING]
             self.add(
-                "warning" if legacy_only else "blocking",
+                "blocking",
                 "pptx_talk_binding_unproven",
                 "catalog row binds a talk its identity assessment does not "
                 "prove; review before its contents become that talk's evidence",

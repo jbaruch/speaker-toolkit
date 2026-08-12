@@ -108,7 +108,14 @@ def _complete_plan() -> dict[str, Any]:
                         "artifact_role": "delivery",
                         "selected_talk_filename": "talk.md",
                         "reason_codes": ["identity_matched"],
-                        "candidates": [],
+                        "candidates": [
+                            {
+                                "talk_filename": "talk.md",
+                                "signals": {},
+                                "agreeing": ["venue"],
+                                "conflicting": [],
+                            }
+                        ],
                     },
                 },
             },

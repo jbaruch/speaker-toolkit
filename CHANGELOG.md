@@ -34,13 +34,23 @@ downstream may treat it as current until someone looks. v1 records stay at v1,
 matching the established position that migration preserves such a record rather
 than inventing a binding for it.
 
-Preflight consumes the stamp, which is what keeps it from being inert. A row
-whose binding is not proven is reported by the catalog-wide sweep, with severity
-split on where the doubt came from: migration's own stamp warns, because it
-applies to every legacy row at once and blocking on all of them would refuse the
-whole vault over a condition the migration created; a verdict from a real
-assessment blocks, because an assessor that looked and refused is one specific,
-actionable row.
+Preflight consumes the stamp, which is what keeps it from being inert. Every
+unproven binding blocks, the migration's own stamp included. A warning would let
+Step 1's blocking-only gate proceed on state the database itself marks unproven,
+which is the whole failure this exists to stop.
+
+The cost is real and deliberate: **a vault carrying legacy catalog rows stays
+blocked until those rows are assessed.** That makes assessing them reparse
+prerequisite work rather than something to discover mid-run.
+
+One predicate decides whether an assessment authorizes a binding —
+`binding_refusal` — and both the writer and preflight call it. Two copies would
+drift, and the direction they drift is a reader trusting what a writer would
+have refused. It checks the evidence, not just the verdict: a `matched` verdict
+over an empty candidate table is a conclusion with nothing under it, so the
+table must show the talk winning the way the assessor makes it win —
+corroborated by a selecting signal, contradicted by none, with no rival equally
+corroborated.
 
 Identity is deliberately not currency. A row can hold a perfectly current
 extraction receipt for the wrong talk, so none of this touches

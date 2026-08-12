@@ -699,4 +699,46 @@ def binding_refusal(
         return "identity_reason_codes_invalid"
     if sorted(set(codes)) != sorted(MATCHED_REASON_CODES):
         return "identity_reason_codes_contradict_verdict"
+    return _candidate_table_refusal(assessment["candidates"], talk_filename)
+
+
+def _candidate_table_refusal(candidates: object, talk_filename: str) -> str | None:
+    """Check the evidence behind the verdict, not just the verdict.
+
+    A `matched` verdict over an empty candidate table is a conclusion with
+    nothing under it — which is exactly what a fabricated assessment looks like.
+    The table must show this talk winning the way `assess_pptx_talk_identity`
+    makes it win: corroborated by a selecting signal, contradicted by none, and
+    with no rival equally corroborated.
+    """
+    if not isinstance(candidates, list) or not candidates:
+        return "identity_candidate_table_missing"
+    selected: Mapping[str, Any] | None = None
+    rivals = 0
+    for candidate in candidates:
+        if not isinstance(candidate, Mapping):
+            return "identity_candidate_table_invalid"
+        name = candidate.get("talk_filename")
+        agreeing = candidate.get("agreeing")
+        conflicting = candidate.get("conflicting")
+        if (
+            not isinstance(name, str)
+            or not isinstance(agreeing, list)
+            or not isinstance(conflicting, list)
+        ):
+            return "identity_candidate_table_invalid"
+        if name == talk_filename:
+            if selected is not None:
+                return "identity_candidate_table_invalid"
+            selected = candidate
+        elif agreeing and not conflicting:
+            rivals += 1
+    if selected is None:
+        return "identity_candidate_absent"
+    if not selected["agreeing"] or selected["conflicting"]:
+        return "identity_candidate_not_selectable"
+    if any(signal not in SELECTING_SIGNALS for signal in selected["agreeing"]):
+        return "identity_candidate_agreement_not_selecting"
+    if rivals:
+        return "identity_candidate_not_unique"
     return None

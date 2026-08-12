@@ -75,7 +75,14 @@ def _identity_assessment(**overrides) -> dict:
         "artifact_role": "delivery",
         "selected_talk_filename": "2024-04-10-talk.md",
         "reason_codes": ["identity_matched"],
-        "candidates": [],
+        "candidates": [
+            {
+                "talk_filename": "2024-04-10-talk.md",
+                "signals": {},
+                "agreeing": ["venue"],
+                "conflicting": [],
+            }
+        ],
     }
     assessment.update(overrides)
     return assessment
@@ -1249,18 +1256,17 @@ def _preflight_codes(preflight_vault, database, tmp_path):
     return {(finding["code"], finding["severity"]) for finding in validator.findings}
 
 
-def test_preflight_warns_on_a_migrated_legacy_binding(
+def test_preflight_blocks_on_a_migrated_legacy_binding(
     preflight_vault, tracking_database, tmp_path
 ) -> None:
-    """Migration's own stamp applies to every legacy row at once, so blocking
-    on it would refuse the whole vault over a condition migration created."""
+    """A warning would let Step 1's blocking-only gate proceed on state the
+    database itself marks unproven."""
     database = _database([_evidence_bound_record()])
     migrated = tracking_database.migrate_tracking_database(database).database
 
     codes = _preflight_codes(preflight_vault, migrated, tmp_path)
 
-    assert ("pptx_talk_binding_unproven", "warning") in codes
-    assert ("pptx_talk_binding_unproven", "blocking") not in codes
+    assert ("pptx_talk_binding_unproven", "blocking") in codes
 
 
 def test_preflight_blocks_on_an_assessment_that_actually_refused(
@@ -1335,3 +1341,124 @@ def test_preflight_refuses_a_matched_verdict_naming_another_talk(
     codes = _preflight_codes(preflight_vault, _database([record]), tmp_path)
 
     assert ("pptx_talk_binding_unproven", "blocking") in codes
+
+
+def test_a_matched_verdict_over_an_empty_candidate_table_proves_nothing(
+    mutate_tracking_database,
+) -> None:
+    """A conclusion with nothing under it is what a fabricated assessment
+    looks like."""
+    record = _current_record(identity_assessment=_identity_assessment(candidates=[]))
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="identity_candidate_table_missing",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def test_a_candidate_table_that_does_not_name_the_selected_talk_is_refused(
+    mutate_tracking_database,
+) -> None:
+    record = _current_record(
+        identity_assessment=_identity_assessment(
+            candidates=[
+                {
+                    "talk_filename": "2023-01-01-other.md",
+                    "signals": {},
+                    "agreeing": ["venue"],
+                    "conflicting": [],
+                }
+            ]
+        )
+    )
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="identity_candidate_absent",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def test_a_selected_candidate_with_no_agreement_is_refused(
+    mutate_tracking_database,
+) -> None:
+    record = _current_record(
+        identity_assessment=_identity_assessment(
+            candidates=[
+                {
+                    "talk_filename": "2024-04-10-talk.md",
+                    "signals": {},
+                    "agreeing": [],
+                    "conflicting": [],
+                }
+            ]
+        )
+    )
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="identity_candidate_not_selectable",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def test_a_candidate_agreeing_only_on_a_non_selecting_signal_is_refused(
+    mutate_tracking_database,
+) -> None:
+    """Filename similarity and delivery year report but never elect."""
+    record = _current_record(
+        identity_assessment=_identity_assessment(
+            candidates=[
+                {
+                    "talk_filename": "2024-04-10-talk.md",
+                    "signals": {},
+                    "agreeing": ["filename_similarity", "delivery_year"],
+                    "conflicting": [],
+                }
+            ]
+        )
+    )
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="identity_candidate_agreement_not_selecting",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def test_an_equally_corroborated_rival_is_refused(mutate_tracking_database) -> None:
+    record = _current_record(
+        identity_assessment=_identity_assessment(
+            candidates=[
+                {
+                    "talk_filename": "2024-04-10-talk.md",
+                    "signals": {},
+                    "agreeing": ["venue"],
+                    "conflicting": [],
+                },
+                {
+                    "talk_filename": "2024-04-11-rival.md",
+                    "signals": {},
+                    "agreeing": ["venue"],
+                    "conflicting": [],
+                },
+            ]
+        )
+    )
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="identity_candidate_not_unique",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
