@@ -98,6 +98,94 @@ class TestOutcomesAreExclusive:
 
         assert counts["repaired"] + counts["requeued"] == 1
 
-    def test_the_migration_report_carries_the_counts(self, gate) -> None:
-        """A silent repair is indistinguishable from no corruption at all."""
-        assert gate.REQUEUE_REASON == "persisted_observation_invalid"
+    def test_the_migration_report_carries_the_counts(self, gate, tmp_path) -> None:
+        """A silent repair is indistinguishable from no corruption at all, so
+        the report has to carry the counts — asserted through the real CLI
+        entry point, not the constant."""
+        import hashlib
+        import json
+
+        database = _database(_talk({"patterns_detected": "not a list"}))
+        path = tmp_path / "tracking-database.json"
+        raw = (json.dumps(database, indent=2) + "\n").encode("utf-8")
+        path.write_bytes(raw)
+
+        report = gate.execute(
+            path, apply=True, expected_sha256=hashlib.sha256(raw).hexdigest()
+        )
+
+        assert report["persisted_observations"] == {"repaired": 0, "requeued": 1}
+        assert report["changed"] is True
+        stored = json.loads(path.read_text(encoding="utf-8"))
+        assert stored["talks"][0]["status"] == "needs-reprocessing"
+
+
+class TestLosslessRepair:
+    """The one signature repairable without inventing a value."""
+
+    def _swapped_talk(self, entry) -> dict:
+        prose = "The speaker opened with the map, at 00:41."
+        collection = (
+            "antipatterns_detected"
+            if entry.entry_type == "antipattern"
+            else "patterns_detected"
+        )
+        return _talk(
+            {
+                "patterns_detected": [],
+                "antipatterns_detected": [],
+                "not_evaluable": [],
+                collection: [
+                    {
+                        "pattern_id": entry.pattern_id,
+                        "confidence": "strong",
+                        # Both fields satisfy the other's schema exactly.
+                        "evidence": list(entry.vault_dimensions),
+                        "dimensions": prose,
+                    }
+                ],
+            }
+        )
+
+    def _entry(self, catalog):
+        for entry in sorted(catalog.entries.values(), key=lambda i: i.pattern_id):
+            if entry.observable and len(entry.vault_dimensions) >= 2:
+                return entry
+        raise AssertionError("catalog has no observable entry with two dimensions")
+
+    def test_an_exact_swap_is_undone_in_place(self, gate, return_validation) -> None:
+        entry = self._entry(return_validation.load_catalog())
+        database = _database(self._swapped_talk(entry))
+
+        counts = gate.gate_persisted_observations(database)
+
+        assert counts == {"repaired": 1, "requeued": 0}
+
+    def test_the_repaired_talk_keeps_claiming_its_analysis(
+        self, gate, return_validation
+    ) -> None:
+        """A repair restores the record; it does not send it back to the queue."""
+        entry = self._entry(return_validation.load_catalog())
+        database = _database(self._swapped_talk(entry))
+
+        gate.gate_persisted_observations(database)
+
+        talk = database["talks"][0]
+        assert talk["status"] == "processed"
+        assert "reprocess_reason" not in talk
+
+    def test_both_values_land_where_they_belong(self, gate, return_validation) -> None:
+        entry = self._entry(return_validation.load_catalog())
+        prose = "The speaker opened with the map, at 00:41."
+        database = _database(self._swapped_talk(entry))
+
+        gate.gate_persisted_observations(database)
+
+        block = database["talks"][0]["pattern_observations"]
+        collection = (
+            block["antipatterns_detected"]
+            if entry.entry_type == "antipattern"
+            else block["patterns_detected"]
+        )
+        assert collection[0]["evidence"] == prose
+        assert collection[0]["dimensions"] == list(entry.vault_dimensions)
