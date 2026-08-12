@@ -183,22 +183,22 @@ jobs:
       - name: Install Windows media evidence dependencies
         if: runner.os == 'Windows'
         shell: pwsh
-        # Unpinned on purpose (dependency-management -> OS-Package Runtime
-        # Carve-Out). The Chocolatey feed serves only the current version of a
-        # package, so a literal pin stops resolving the moment the package
-        # advances — which is exactly how 8.1.2 took `main` red without a single
-        # source change. The consumed surface is an ffprobe command line, not a
-        # semver API, so tracking current costs nothing a pin was buying.
+        # Chocolatey package pin, renewed from 8.1.2 to 9.0.0 after the feed
+        # withdrew 8.1.2 and took `main` red with no source change. No
+        # Dependabot ecosystem covers Chocolatey, so RENEWAL IS MANUAL: check
+        # the feed's current version whenever this step fails to resolve, or
+        # quarterly, whichever comes first. Chocolatey serves only the current
+        # version of a package, so expect this pin to need renewing again.
         #
-        # The macOS lane keeps its pin: evermeet.cx serves immutable archives
-        # and each is checksum-verified above, so that pin still resolves.
+        # The macOS lane pins separately: evermeet.cx serves immutable archives
+        # and each is checksum-verified above, so that pin does not rot.
         #
         # Put the real binaries ahead of Chocolatey's process-spawning shims:
         # the supervised worker intentionally permits only itself plus one
         # ffprobe child.
         run: |
           $ErrorActionPreference = 'Stop'
-          choco install ffmpeg --no-progress -y
+          choco install ffmpeg --version=9.0.0 --no-progress -y
           # Locate the real binary rather than assuming a layout. The package
           # moved ffprobe.exe out of tools\ffmpeg\bin between versions, so a
           # hardcoded path fails on exactly the upgrade that unpinning invites.
@@ -207,11 +207,11 @@ jobs:
             -Filter 'ffprobe.exe' -Recurse -File -ErrorAction SilentlyContinue |
             Select-Object -First 1
           if (-not $probe) {
-            throw "Chocolatey installed ffmpeg but no ffprobe.exe is in its package tree"
+            throw "Chocolatey installed ffmpeg 9.0.0 but no ffprobe.exe is in its package tree — check the package layout and update this step's search root"
           }
           $ffmpegBin = $probe.DirectoryName
           if (-not (Test-Path (Join-Path $ffmpegBin 'ffmpeg.exe') -PathType Leaf)) {
-            throw "ffprobe.exe found at $ffmpegBin but ffmpeg.exe is not beside it"
+            throw "ffprobe.exe found at $ffmpegBin but ffmpeg.exe is not beside it — the package split the binaries; put both on PATH explicitly"
           }
           $ffmpegBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - run: pip install ".[test]"
