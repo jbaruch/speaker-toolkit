@@ -1221,3 +1221,19 @@ def test_the_migration_stamp_cannot_be_replayed_as_a_proven_binding(
             _database([]),
             [_identity_mutation(_current_record(identity_assessment=assessment))],
         )
+
+
+def test_a_legacy_config_does_not_skip_the_record_migration(
+    tracking_database,
+) -> None:
+    """Root v1 with a legacy config takes its own return path; the record
+    migration must run before it, not after."""
+    database = _database([_evidence_bound_record()])
+    database["config"] = {"schema_version": 1}
+
+    migration = tracking_database.migrate_tracking_database(database)
+    record = migration.database["pptx_catalog"][0]
+
+    assert migration.changed is True
+    assert record["schema_version"] == 3
+    assert record["identity_assessment"]["verdict"] == "review_required"

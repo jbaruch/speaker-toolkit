@@ -1514,11 +1514,16 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
         config["schema_version"] = CONFIG_RECORD_SCHEMA_VERSION
         counts["config"] = 1
 
+    # Ahead of the root-current return. A database at root v1 with a legacy
+    # config takes that return, so a record migration placed after it would be
+    # skipped for exactly the databases whose config still needed upgrading.
+    counts["pptx_catalog"] += _migrate_pptx_catalog_records(candidate)
+
     if root_version == TRACKING_DATABASE_SCHEMA_VERSION:
         require_current_tracking_database(candidate)
         return TrackingDatabaseMigration(
             database=candidate,
-            changed=bool(counts["config"]),
+            changed=bool(counts["config"] or counts["pptx_catalog"]),
             from_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
             to_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
             record_counts=counts,
@@ -1533,8 +1538,6 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
             )
         if _migrate_talk_record(talk):
             counts["talks"] += 1
-
-    counts["pptx_catalog"] += _migrate_pptx_catalog_records(candidate)
 
     simple_collections = {
         # An unversioned pptx_catalog record persisted no extractor generation,
