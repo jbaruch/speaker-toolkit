@@ -6,7 +6,7 @@ part: build
 phase_relevance:
   - content
   - slides
-vault_dimensions: [4, 7]
+vault_dimensions: [3, 13]
 evidence_channels: [slide_sequence, video]
 detection_signals:
   - "single base image annotated across multiple slides"
@@ -70,7 +70,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Dimension 4 (Humor and Surprise Techniques): Progressive Reveal is a primary mechanism for landing visual punchlines. Dimension 7 (Slide Design): The technique requires deliberate slide-construction discipline; the same image must reappear with controlled diff across slides.
+Dimension 3 (Humor and Surprise Techniques): Progressive Reveal is a primary mechanism for landing visual punchlines. Dimension 13 (Slide Design): The technique requires deliberate slide-construction discipline; the same image must reappear with controlled diff across slides.
 
 ## Combinatorics
 Pairs with Composite Animation when the additions are layered graphic elements rather than annotations. Foreshadowing reinforces the pattern: the early slides plant questions that the payoff resolves. Traveling Highlights is a related but lower-intensity version where attention moves across a static image rather than building cumulatively. The pattern is the inverse of Bullet-Riddled Corpse slides where everything appears at once with no controlled pacing.

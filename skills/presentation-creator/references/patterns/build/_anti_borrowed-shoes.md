@@ -5,7 +5,7 @@ type: antipattern
 part: build
 phase_relevance:
   - guardrails
-vault_dimensions: [7, 8, 14]
+vault_dimensions: [7, 13, 14]
 detection_signals:
   - "deck provenance identifies a different author"
   - "version history shows no substantive adaptation by the presenter"
@@ -49,7 +49,7 @@ both facts, treat the cause of the mismatch as unknown.
 - Unevaluable: Authorship or version history is unavailable
 
 ## Relationship to Vault Dimensions
-Dimension 7 (Language and Communication): Borrowed Shoes creates a mismatch between the presenter's natural communication style and the language embedded in the slides. Dimension 8 (Slide Design): The design choices in borrowed slides reflect someone else's visual thinking. Dimension 14 (Overall Quality Indicators): A presenter working from borrowed material almost always delivers at a lower quality level than their natural capability.
+Dimension 7 (Language and Communication): Borrowed Shoes creates a mismatch between the presenter's natural communication style and the language embedded in the slides. Dimension 13 (Slide Design): The design choices in borrowed slides reflect someone else's visual thinking. Dimension 14 (Overall Quality Indicators): A presenter working from borrowed material almost always delivers at a lower quality level than their natural capability.
 
 ## Combinatorics
 Borrowed Shoes is mitigated by the Crucible pattern (intensive rehearsal transforms unfamiliar material into internalized content), the Narrative Arc pattern (understanding the story structure helps the presenter navigate borrowed material), and the Carnegie Hall pattern (deliberate practice reduces the friction of presenting someone else's slides). When these patterns are applied rigorously, the worst effects of Borrowed Shoes can be reduced — though the ideal solution remains reworking the material to fit the presenter's own style.

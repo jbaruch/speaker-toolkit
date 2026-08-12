@@ -6,7 +6,7 @@ part: build
 phase_relevance:
   - architecture
   - slides
-vault_dimensions: [8, 13]
+vault_dimensions: [13]
 evidence_channels: [transcript, slides, video]
 detection_signals:
   - "full-bleed image slides"
@@ -85,7 +85,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Dimension 8 (Slide Design): Vacation Photos represents a deliberate architectural choice about how slides function — as emotional/visual backdrops rather than information carriers. Dimension 13 (Visual Polish and Craft): The quality and curation of images directly reflects the presenter's investment in visual craft.
+Dimension 13 (Slide Design): Vacation Photos represents a deliberate architectural choice about how slides function — as emotional/visual backdrops rather than information carriers. Dimension 13 (Visual Polish and Craft): The quality and curation of images directly reflects the presenter's investment in visual craft.
 
 ## Combinatorics
 Vacation Photos pairs powerfully with Unifying Visual Theme, where a consistent photographic style or subject matter creates visual coherence across the deck. It works well with Narrative Arc. The Coda pattern is an essential companion, providing a place for the detailed references and text that Vacation Photos deliberately excludes from the spoken portion.

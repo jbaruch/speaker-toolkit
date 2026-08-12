@@ -5,7 +5,7 @@ type: pattern
 part: deliver
 phase_relevance:
   - content
-vault_dimensions: [11, 6]
+vault_dimensions: [9]
 evidence_channels: [transcript, video]
 detection_signals:
   - "speaker downplays own product, employer, or work"
@@ -56,7 +56,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Dimension 11 (Self-Presentation): how the speaker positions themselves relative to commercial interests. Dimension 6 (Evidence and Persuasion): a credibility move.
+Dimension 9 (Self-Presentation): how the speaker positions themselves relative to commercial interests. Dimension 9 (Evidence and Persuasion): a credibility move.
 
 ## Combinatorics
 Pairs naturally with Delayed Self-Introduction (the bio comes late, and when it comes it includes the Anti-Sell). The Big Why benefits when Anti-Sell has cleared the suspicion that the "why" is sales-driven. Mentor framing is reinforced — the speaker who refuses to pitch reads as someone there to teach. The pattern is the inverse of Disowning Your Topic, where the speaker sounds embarrassed by their own affiliation; Anti-Sell owns the affiliation while refusing to weaponize it.

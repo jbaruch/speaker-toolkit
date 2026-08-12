@@ -6,7 +6,7 @@ part: build
 phase_relevance:
   - architecture
   - content
-vault_dimensions: [2, 5, 9]
+vault_dimensions: [2, 9]
 evidence_channels: [timed_transcript, slides, slide_sequence, video]
 detection_signals:
   - "establishes 'what is' baseline before introducing thesis"
@@ -104,7 +104,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 2 (Narrative Structure) as a top-level structural choice alongside `narrative-arc`. Relates to Dimension 5 (Storytelling/Narrative). Relates to Dimension 9 (Persuasion Techniques).
+Relates to Dimension 2 (Narrative Structure) as a top-level structural choice alongside `narrative-arc`. Relates to Dimension 2 (Storytelling/Narrative). Relates to Dimension 9 (Persuasion Techniques).
 
 ## Combinatorics
 Sparkline is composed of several other patterns acting in concert: it begins with `know-your-audience` and `mentor` (the speaker has researched the hero and adopted the mentor stance — the audience-as-hero framing lives in the "Adopting the Stance — Planning Implications" subsection of `mentor.md`); the gap-revelation is `call-to-adventure`; the closing zone is `call-to-action` followed by `new-bliss`. It pairs with `bookends` (the structural opening and closing slides mark the sparkline's three sections), with `foreshadowing` (early plants get paid off at later peaks), and with `star-moment` (a planted memorable beat usually lands at one of the high points in the oscillation).

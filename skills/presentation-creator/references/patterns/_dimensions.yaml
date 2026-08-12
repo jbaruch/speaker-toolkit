@@ -1,0 +1,118 @@
+# Machine-readable authority for the 14 vault dimensions (#156).
+#
+# Entry frontmatter carries `vault_dimensions` as bare numbers, and entry prose
+# names each one as `Dimension N (Label)`. Those two drifted: the numbers were
+# assigned against a superseded taxonomy while the prose kept describing what
+# the pattern is actually about. A range check passes either way, so downstream
+# analysis attached evidence to the wrong semantic dimension.
+#
+# Owner decision (2026-08-09): the prose is the intent of record. Numbers are
+# remapped to match the label; no pattern's meaning changes.
+#
+# `aliases` is the owner-approved resolution for every label the catalog prose
+# actually uses. A label absent from every alias list does NOT resolve — the
+# auditor reports it for owner review rather than guessing, which is what keeps
+# this a reviewed migration instead of an automatic renumbering.
+#
+# Canonical names and ordinals come from
+# `skills/vault-ingress/references/rhetoric-dimensions.md` sections 1-14.
+schema_version: 1
+dimensions:
+  - id: opening-pattern
+    ordinal: 1
+    name: Opening Pattern
+    aliases:
+      - Topic and Thesis
+  - id: narrative-structure
+    ordinal: 2
+    name: Narrative Structure
+    aliases:
+      - Structure and Flow
+      - Structure/Organization
+      - Storytelling/Narrative
+      - Storytelling and Narrative
+  - id: humor-wit
+    ordinal: 3
+    name: Humor & Wit
+    aliases:
+      - Humor and Surprise Techniques
+      - Engagement / Entertainment Value
+      # Owner decision: the entertainment entry's only other claim, and a
+      # memorable beat is the wit landing rather than a cultural reference.
+      - Memorability
+  - id: audience-interaction
+    ordinal: 4
+    name: Audience Interaction
+    aliases:
+      - Audience Engagement
+  - id: transition-techniques
+    ordinal: 5
+    name: Transition Techniques
+    aliases: []
+  - id: closing-pattern
+    ordinal: 6
+    name: Closing Pattern
+    aliases:
+      - Closing Strategy
+  - id: verbal-signatures
+    ordinal: 7
+    name: Verbal Signatures
+    aliases:
+      - Clarity / Communication
+      - Language and Communication
+  - id: slide-to-speech-relationship
+    ordinal: 8
+    name: Slide-to-Speech Relationship
+    aliases:
+      # Owner decision: both uses weigh what sits on the screen against what is
+      # spoken, which is this dimension rather than a closing concern.
+      - Information Density
+  - id: persuasion-techniques
+    ordinal: 9
+    name: Persuasion Techniques
+    aliases:
+      - Speaker Authority / Credibility
+      - Speaker Credibility/Ethos
+      - Evidence and Persuasion
+      # Owner decision: positioning one's own authority is an ethos move.
+      - Self-Presentation
+  - id: cultural-pop-culture-references
+    ordinal: 10
+    name: Cultural & Pop-Culture References
+    aliases:
+      - Cultural References
+      # Owner decision: kept here, treating this as the broader
+      # creative-resonance lane the catalog actually uses it as.
+      - Creativity/Originality
+  - id: technical-content-delivery
+    ordinal: 11
+    name: Technical Content Delivery
+    aliases:
+      - Demonstrations and Tools
+      - Teaching Effectiveness
+      - Technical Depth/Accuracy
+  - id: pacing-clues
+    ordinal: 12
+    name: Pacing Clues
+    aliases:
+      - Time/Pacing
+      - Delivery Mechanics
+      # Owner decision: grouped with Delivery Mechanics, which already sits here.
+      - Delivery/Presentation Skills
+  - id: slide-design-patterns
+    ordinal: 13
+    name: Slide Design Patterns
+    aliases:
+      - Slide Design
+      - Slide Aesthetics
+      - Visual Polish and Craft
+      - Visual Aids Effectiveness
+      - Slide Design/Visual Quality
+      - Visual Design Quality
+  - id: areas-for-improvement
+    ordinal: 14
+    name: "Reflection: Areas for Improvement"
+    aliases:
+      - Areas for Improvement
+      - Overall Impression/Polish
+      - Speaker Craft / Professionalism

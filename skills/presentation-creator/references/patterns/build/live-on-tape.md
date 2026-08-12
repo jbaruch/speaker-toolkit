@@ -5,7 +5,7 @@ type: pattern
 part: build
 phase_relevance:
   - publishing
-vault_dimensions: [8]
+vault_dimensions: [13]
 detection_signals:
   - "recorded full presentation"
   - "video artifact of talk"
@@ -53,7 +53,7 @@ every non-video talk falsely absent. Keep this as a publishing checklist until a
 `published_recording` artifact role is modeled.
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 8 (Slide Design) as a distributable artifact of the full slide design experience.
+Relates to Dimension 13 (Slide Design) as a distributable artifact of the full slide design experience.
 
 ## Combinatorics
 Live on Tape pairs naturally with Lipsync, as any Lipsync recordings embedded in the presentation are automatically captured in the Live on Tape version, creating a seamless viewing experience. It also supports the Entertainment pattern by preserving the performative elements — humor, timing, audience interaction — that make a presentation engaging beyond its informational content. The Live on Tape recording becomes the definitive artifact of the presentation, superseding any static export in value and utility.

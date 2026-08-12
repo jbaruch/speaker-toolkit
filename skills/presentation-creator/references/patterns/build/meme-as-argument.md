@@ -6,7 +6,7 @@ part: build
 phase_relevance:
   - content
   - slides
-vault_dimensions: [4, 7, 12]
+vault_dimensions: [3, 10, 13]
 evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "internet memes carry argumentative weight, not decoration"
@@ -62,7 +62,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Dimension 4 (Humor and Surprise Techniques): Meme as Argument is a high-density humor mechanism that does double duty as rhetoric. Dimension 7 (Slide Design): The technique requires deliberate slide-construction discipline; the meme is a chosen visual asset, not a stock image grab. Dimension 12 (Cultural References): The pattern relies on shared meme literacy and lives or dies by audience-meme-fit.
+Dimension 3 (Humor and Surprise Techniques): Meme as Argument is a high-density humor mechanism that does double duty as rhetoric. Dimension 13 (Slide Design): The technique requires deliberate slide-construction discipline; the meme is a chosen visual asset, not a stock image grab. Dimension 10 (Cultural References): The pattern relies on shared meme literacy and lives or dies by audience-meme-fit.
 
 ## Combinatorics
 Pairs with Entertainment as a primary delivery mechanism — Meme as Argument is one of the most efficient ways to keep a talk entertaining without sacrificing rhetorical density. Brain Breaks uses memes more decoratively; the patterns can coexist but should be distinguished. Foreshadowing benefits when a recurring meme structure (e.g., the same unmasking template) is set up early and pays off later. Unifying Visual Theme provides the consistency that lets memes feel earned rather than random.

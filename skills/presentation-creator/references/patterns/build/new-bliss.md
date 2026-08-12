@@ -5,7 +5,7 @@ type: pattern
 part: build
 phase_relevance:
   - content
-vault_dimensions: [5, 6, 9]
+vault_dimensions: [2, 6, 9]
 evidence_channels: [timed_transcript, video]
 detection_signals:
   - "vivid future-state description in the closing zone"
@@ -90,7 +90,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 5 (Storytelling/Narrative). Relates to Dimension 6 (Closing Pattern) as one of three named closing-zone elements (alongside `call-to-action` and `coda`). Relates to Dimension 9 (Persuasion Techniques).
+Relates to Dimension 2 (Storytelling/Narrative). Relates to Dimension 6 (Closing Pattern) as one of three named closing-zone elements (alongside `call-to-action` and `coda`). Relates to Dimension 9 (Persuasion Techniques).
 
 ## Combinatorics
 New Bliss must follow `call-to-action` — they are paired structural elements. It pairs with `sparkline` (where it is the talk's final element) and with `bookends` (the closing-bookend slide often visualizes the New Bliss). It composes with `coda` (which can sit *after* the New Bliss as supplementary reference material — links, contact, further reading — kept structurally separate from the persuasive close so the New Bliss retains its emotional weight). It pairs with `the-big-why`. The New Bliss is the visualization of *what the Big Idea looks like once realized*; the two should feel like the same idea expressed twice — once in thesis form, once in vision form. The Big Idea construction rules live in the "Big Idea — Statement Format" subsection of `the-big-why.md`.
