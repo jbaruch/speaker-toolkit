@@ -2624,6 +2624,26 @@ def expected_weighted_score(patterns: list[dict], antipatterns: list[dict]) -> f
     return round(total, 2)
 
 
+def _require_score_basis(observations: dict, wanted: dict) -> None:
+    """Every weighted score carries its basis, bare number or score object.
+
+    The requirement is on the SCORE, not on the shape it was written in. Gating
+    it inside the score-object branch would let a return emit a bare weighted
+    number with no record of the evidence behind it — precisely the
+    unaccompanied number the basis exists to prevent.
+    """
+    basis = observations.get("pattern_score_basis")
+    if basis is None:
+        raise ReturnValidationError(
+            "pattern_observations.pattern_score_basis is required alongside a "
+            "weighted score; a bare number cannot say what evidence produced it"
+        )
+    if basis != wanted:
+        raise ReturnValidationError(
+            f"pattern_score_basis {basis} does not match the detection arrays {wanted}"
+        )
+
+
 def _validate_flat_score(
     raw: object, pattern_count: int, antipattern_count: int
 ) -> None:
@@ -2693,12 +2713,14 @@ def _validate_score(
         raise ReturnValidationError(
             "pattern_observations.pattern_score cannot be a boolean"
         )
+    wanted_basis = pattern_score_basis(patterns, antipatterns, not_evaluable)
     if isinstance(raw, (int, float)):
         if round(float(raw), 2) != expected:
             raise ReturnValidationError(
                 f"pattern_score is {raw}, but the weighted detection arrays "
                 f"require {expected} (weights {dict(sorted(DETECTION_WEIGHTS.items()))})"
             )
+        _require_score_basis(observations, wanted_basis)
         return
     if not isinstance(raw, dict):
         raise ReturnValidationError(
@@ -2718,18 +2740,7 @@ def _validate_score(
             raise ReturnValidationError(
                 f"pattern_score.{field} is {value}, but the detection arrays require {wanted}"
             )
-    basis = observations.get("pattern_score_basis")
-    if basis is None:
-        raise ReturnValidationError(
-            "pattern_observations.pattern_score_basis is required alongside a "
-            "weighted score; a bare number cannot say what evidence produced it"
-        )
-    wanted_basis = pattern_score_basis(patterns, antipatterns, not_evaluable)
-    if basis != wanted_basis:
-        raise ReturnValidationError(
-            f"pattern_score_basis {basis} does not match the detection arrays "
-            f"{wanted_basis}"
-        )
+    _require_score_basis(observations, wanted_basis)
 
 
 def resolved_return_pattern_score(observations: dict) -> float:
