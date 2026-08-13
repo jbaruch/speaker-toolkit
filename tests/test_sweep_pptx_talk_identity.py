@@ -522,6 +522,49 @@ class TestReport:
         assert first == second
 
 
+class TestSourceDirectoryFallback:
+    def test_an_absent_source_dir_falls_back_to_the_vault_root(
+        self, tmp_path: Path
+    ) -> None:
+        """`schemas-db.md`: a null or absent `pptx_source_dir` means the vault root.
+
+        Passing the absent value through would report every deck unreadable —
+        a configuration default read as universal damage.
+        """
+        deck(tmp_path, "Voxxed Days Ticino/2025/DevOps for Developers.pptx")
+        payload = database(
+            [
+                catalog_row(
+                    "Voxxed Days Ticino/2025/DevOps for Developers.pptx",
+                    VOXXED_TALK["filename"],
+                )
+            ],
+            [VOXXED_TALK, DEVOXX_TALK],
+            tmp_path,
+        )
+        del payload["config"]["pptx_source_dir"]
+        path = tmp_path / "tracking-database.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        report = sweep.execute(path)
+        assert report["rows"][0]["deck_facts_reason_code"] == "deck_facts_read"
+        assert report["rows"][0]["disposition"] == sweep.DISPOSITION_CONFIRMED
+
+    @pytest.mark.parametrize("configured", [None, "", "   "])
+    def test_a_blank_source_dir_falls_back_too(
+        self, tmp_path: Path, configured: object
+    ) -> None:
+        deck(tmp_path, "Voxxed Days Ticino/2025/DevOps for Developers.pptx")
+        payload = database([], [VOXXED_TALK], tmp_path)
+        payload["config"]["pptx_source_dir"] = configured
+        assert sweep.resolve_pptx_source_dir(payload, vault_root=tmp_path) == tmp_path
+
+    def test_a_configured_source_dir_wins(self, tmp_path: Path) -> None:
+        payload = database([], [VOXXED_TALK], tmp_path / "Presentations")
+        assert sweep.resolve_pptx_source_dir(payload, vault_root=tmp_path) == str(
+            tmp_path / "Presentations"
+        )
+
+
 class TestVaultResolution:
     def test_a_vault_root_resolves_to_its_canonical_database(
         self, tmp_path: Path

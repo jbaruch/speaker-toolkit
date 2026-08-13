@@ -57,6 +57,12 @@ public in its owner module, so the deck reader shares one containment rule with
 the evidence classifier rather than copying it. The sweep must not be able to
 read a file the classifier would have refused.
 
+An absent or blank `config.pptx_source_dir` falls back to the vault root, as
+`schemas-db.md` documents. Passing the absent value through would report every
+deck in such a vault unreadable — a configuration default read as universal
+damage, putting every binding into `binding_unproven` on evidence nobody
+looked for.
+
 The published-PDF signal is not observed. The vault's talk-referenced PDFs live
 under the vault's own `slides/`, never beside a deck, so no deterministic
 deck-to-PDF binding exists to read — and guessing one would manufacture exactly

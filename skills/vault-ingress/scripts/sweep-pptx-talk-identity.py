@@ -110,6 +110,26 @@ def resolve_input(value: str | Path) -> tuple[Path, Path]:
     return path, path / DATABASE_BASENAME
 
 
+def resolve_pptx_source_dir(
+    database: Mapping[str, Any],
+    *,
+    vault_root: Path,
+) -> object:
+    """Resolve where catalog decks live, falling back to the vault root.
+
+    `config.pptx_source_dir` is optional, and `schemas-db.md` documents that a
+    null or absent value falls back to the vault root. Passing the absent value
+    straight through would report every deck in such a vault unreadable —
+    a configuration default read as universal damage, and one that would put
+    every binding into `binding_unproven` on evidence nobody looked for.
+    """
+    config = database.get("config")
+    configured = config.get("pptx_source_dir") if isinstance(config, Mapping) else None
+    if isinstance(configured, str) and configured.strip():
+        return configured
+    return vault_root
+
+
 def _candidate_talks(database: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Every talk carrying a filename, in stored order.
 
@@ -263,7 +283,7 @@ def execute(
     *,
     dispositions: Sequence[str] = (),
 ) -> dict[str, Any]:
-    database_path = resolve_input(value)[1]
+    vault_root, database_path = resolve_input(value)
     snapshot = snapshot_tracking_database(database_path)
     database = decode_json_object(snapshot)
     try:
@@ -279,11 +299,10 @@ def execute(
             "tracking database has no usable legacy/current owner state",
             reason_code="owner_state_unusable",
         )
-    config = database.get("config")
-    pptx_source_dir = (
-        config.get("pptx_source_dir") if isinstance(config, Mapping) else None
+    rows = sweep_catalog(
+        database,
+        pptx_source_dir=resolve_pptx_source_dir(database, vault_root=vault_root),
     )
-    rows = sweep_catalog(database, pptx_source_dir=pptx_source_dir)
     counts = {name: 0 for name in DISPOSITIONS}
     for row in rows:
         counts[str(row["disposition"])] += 1
