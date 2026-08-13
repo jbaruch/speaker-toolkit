@@ -66,6 +66,28 @@ def _evidence(**overrides) -> dict:
     return evidence
 
 
+_SIGNAL_NAMES = (
+    "title",
+    "venue",
+    "delivery_year",
+    "hashtag",
+    "published_pdf",
+    "filename_similarity",
+)
+
+
+def _signals(*, agree=(), conflict=()) -> dict:
+    """A complete per-signal map, the evidence a candidate's arrays summarize.
+
+    The owner gate recomputes `agreeing`/`conflicting` from this map, so a
+    fixture asserting a standing has to supply readings that produce it.
+    """
+    verdicts = dict.fromkeys(_SIGNAL_NAMES, "unknown")
+    verdicts.update(dict.fromkeys(agree, "agree"))
+    verdicts.update(dict.fromkeys(conflict, "conflict"))
+    return verdicts
+
+
 def _identity_assessment(**overrides) -> dict:
     """A v3 record's proof that this deck belongs to the talk it names (#176)."""
     assessment = {
@@ -78,7 +100,7 @@ def _identity_assessment(**overrides) -> dict:
         "candidates": [
             {
                 "talk_filename": "2024-04-10-talk.md",
-                "signals": {},
+                "signals": _signals(agree=("venue",)),
                 "agreeing": ["venue"],
                 "conflicting": [],
             }
@@ -1367,7 +1389,7 @@ def test_a_candidate_table_that_does_not_name_the_selected_talk_is_refused(
             candidates=[
                 {
                     "talk_filename": "2023-01-01-other.md",
-                    "signals": {},
+                    "signals": _signals(agree=("venue",)),
                     "agreeing": ["venue"],
                     "conflicting": [],
                 }
@@ -1392,7 +1414,7 @@ def test_a_selected_candidate_with_no_agreement_is_refused(
             candidates=[
                 {
                     "talk_filename": "2024-04-10-talk.md",
-                    "signals": {},
+                    "signals": _signals(),
                     "agreeing": [],
                     "conflicting": [],
                 }
@@ -1418,8 +1440,8 @@ def test_a_candidate_agreeing_only_on_a_non_selecting_signal_is_refused(
             candidates=[
                 {
                     "talk_filename": "2024-04-10-talk.md",
-                    "signals": {},
-                    "agreeing": ["filename_similarity", "delivery_year"],
+                    "signals": _signals(agree=("filename_similarity", "delivery_year")),
+                    "agreeing": [],
                     "conflicting": [],
                 }
             ]
@@ -1428,7 +1450,7 @@ def test_a_candidate_agreeing_only_on_a_non_selecting_signal_is_refused(
 
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
-        match="identity_candidate_agreement_not_selecting",
+        match="identity_candidate_not_selectable",
     ):
         mutate_tracking_database.build_candidate(
             _database([]), [_identity_mutation(record)]
@@ -1441,13 +1463,13 @@ def test_an_equally_corroborated_rival_is_refused(mutate_tracking_database) -> N
             candidates=[
                 {
                     "talk_filename": "2024-04-10-talk.md",
-                    "signals": {},
+                    "signals": _signals(agree=("venue",)),
                     "agreeing": ["venue"],
                     "conflicting": [],
                 },
                 {
                     "talk_filename": "2024-04-11-rival.md",
-                    "signals": {},
+                    "signals": _signals(agree=("venue",)),
                     "agreeing": ["venue"],
                     "conflicting": [],
                 },

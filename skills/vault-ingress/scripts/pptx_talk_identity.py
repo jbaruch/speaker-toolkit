@@ -214,6 +214,30 @@ class CandidateAssessment:
         }
 
 
+def derive_candidate_standing(
+    signals: Mapping[str, str],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Derive `(agreeing, conflicting)` from a candidate's per-signal map.
+
+    One rule, used by the producer that writes a candidate and by the owner gate
+    that later reads one back. A stored candidate's arrays are a summary of its
+    signal map, so a gate that trusts the summary without recomputing it accepts
+    any pair of values a caller cares to put there — `agreeing: ["venue"]` over a
+    signal map where venue conflicts, or over no venue reading at all.
+
+    Only selecting signals can corroborate; every signal can contradict.
+    """
+    agreeing = tuple(
+        name
+        for name in SIGNAL_NAMES
+        if name in SELECTING_SIGNALS and signals.get(name) == SIGNAL_AGREE
+    )
+    conflicting = tuple(
+        name for name in SIGNAL_NAMES if signals.get(name) == SIGNAL_CONFLICT
+    )
+    return agreeing, conflicting
+
+
 @dataclass(frozen=True)
 class TalkIdentityAssessment:
     """The full, schema-versioned identity verdict for one deck."""
@@ -540,14 +564,7 @@ def assess_candidate(
         name: evaluator(facts, talk, known_aliases)
         for name, evaluator in _SIGNAL_EVALUATORS.items()
     }
-    agreeing = tuple(
-        name
-        for name in SIGNAL_NAMES
-        if name in SELECTING_SIGNALS and signals[name] == SIGNAL_AGREE
-    )
-    conflicting = tuple(
-        name for name in SIGNAL_NAMES if signals[name] == SIGNAL_CONFLICT
-    )
+    agreeing, conflicting = derive_candidate_standing(signals)
     return CandidateAssessment(
         talk_filename=filename,
         signals=signals,
@@ -713,32 +730,43 @@ def _candidate_table_refusal(candidates: object, talk_filename: str) -> str | No
     """
     if not isinstance(candidates, list) or not candidates:
         return "identity_candidate_table_missing"
-    selected: Mapping[str, Any] | None = None
+    selected: tuple[tuple[str, ...], tuple[str, ...]] | None = None
     rivals = 0
     for candidate in candidates:
         if not isinstance(candidate, Mapping):
             return "identity_candidate_table_invalid"
         name = candidate.get("talk_filename")
-        agreeing = candidate.get("agreeing")
-        conflicting = candidate.get("conflicting")
+        signals = candidate.get("signals")
+        stored_agreeing = candidate.get("agreeing")
+        stored_conflicting = candidate.get("conflicting")
         if (
             not isinstance(name, str)
-            or not isinstance(agreeing, list)
-            or not isinstance(conflicting, list)
+            or not isinstance(signals, Mapping)
+            or not isinstance(stored_agreeing, list)
+            or not isinstance(stored_conflicting, list)
         ):
             return "identity_candidate_table_invalid"
+        # The signal map is the evidence; the two arrays are its summary. Read
+        # the evidence and recompute the summary, so a candidate cannot assert a
+        # standing its own readings do not support.
+        if set(signals) != set(SIGNAL_NAMES) or any(
+            signals[key] not in SIGNAL_VERDICTS for key in signals
+        ):
+            return "identity_candidate_signals_invalid"
+        agreeing, conflicting = derive_candidate_standing(signals)
+        if list(agreeing) != stored_agreeing or list(conflicting) != stored_conflicting:
+            return "identity_candidate_standing_contradicts_signals"
         if name == talk_filename:
             if selected is not None:
                 return "identity_candidate_table_invalid"
-            selected = candidate
+            selected = (agreeing, conflicting)
         elif agreeing and not conflicting:
             rivals += 1
     if selected is None:
         return "identity_candidate_absent"
-    if not selected["agreeing"] or selected["conflicting"]:
+    selected_agreeing, selected_conflicting = selected
+    if not selected_agreeing or selected_conflicting:
         return "identity_candidate_not_selectable"
-    if any(signal not in SELECTING_SIGNALS for signal in selected["agreeing"]):
-        return "identity_candidate_agreement_not_selecting"
     if rivals:
         return "identity_candidate_not_unique"
     return None

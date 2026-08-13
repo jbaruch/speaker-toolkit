@@ -111,7 +111,14 @@ def _complete_plan() -> dict[str, Any]:
                         "candidates": [
                             {
                                 "talk_filename": "talk.md",
-                                "signals": {},
+                                "signals": {
+                                    "title": "unknown",
+                                    "venue": "agree",
+                                    "delivery_year": "unknown",
+                                    "hashtag": "unknown",
+                                    "published_pdf": "unknown",
+                                    "filename_similarity": "unknown",
+                                },
                                 "agreeing": ["venue"],
                                 "conflicting": [],
                             }

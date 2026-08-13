@@ -2,6 +2,29 @@
 
 ### feat(vault-ingress) — refuse a talk binding nothing proved (#176)
 
+The candidate table's `signals` map is the evidence; `agreeing` and `conflicting`
+are its summary. The gate read the summary and trusted it, so a fabricated
+candidate could claim `agreeing: ["venue"]` over a signal map where venue
+conflicts, or carries no venue reading at all — and authorize the binding on a
+standing its own readings never supported.
+
+`derive_candidate_standing` is now the single rule, used by the producer that
+writes a candidate and by the owner gate that reads one back. The gate validates
+the complete signal map and recomputes both arrays from it, refusing on
+`identity_candidate_signals_invalid` or
+`identity_candidate_standing_contradicts_signals`. That also makes
+`identity_candidate_agreement_not_selecting` unreachable: the derivation admits
+only selecting signals to `agreeing`, so the state it named cannot be
+represented.
+
+`schemas-db.md`'s matched example carried `candidates: []` — a record the new
+writer rejects outright, so the schema reference was telling agents to build
+mutations that cannot persist. It now shows a complete selectable candidate,
+including the non-selecting `delivery_year` and `filename_similarity` readings
+that report without electing. Two tests parse that example straight out of the
+reference and run it through the gate, so the document cannot drift from the
+contract again.
+
 Part of #176.
 
 The assessment landed with no caller. `pptx_catalog` records advance to v3,

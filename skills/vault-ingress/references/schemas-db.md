@@ -73,6 +73,13 @@ v2, and v3.
   cannot pass as proven. Verdicts, artifact roles, and reason
   codes are the assessor's closed taxonomies, in
   `skills/vault-ingress/scripts/pptx_talk_identity.py` top-of-file constants.
+- A matched assessment carries a non-empty `candidates` table, and each entry's
+  `signals` map is the evidence its `agreeing` / `conflicting` arrays summarize.
+  The gate recomputes those arrays from the map rather than trusting them, so a
+  candidate cannot assert a standing its own readings do not support. Only
+  selecting signals reach `agreeing` — the example's agreeing `delivery_year`
+  and `filename_similarity` report without electing, which is why they appear in
+  `signals` and not in `agreeing`.
 - Readers validate v3 shape only — that the field is null exactly when
   `talk_filename` is null, and an object otherwise. The binding's semantics are
   the writer's gate, matching how `visual_evidence` is handled.
@@ -347,7 +354,21 @@ customization, not the owner default. See the
       "artifact_role": "delivery",
       "selected_talk_filename": "2024-04-10-talk-slug.md",
       "reason_codes": ["identity_matched"],
-      "candidates": []
+      "candidates": [
+        {
+          "talk_filename": "2024-04-10-talk-slug.md",
+          "signals": {
+            "title": "agree",
+            "venue": "agree",
+            "delivery_year": "agree",
+            "hashtag": "unknown",
+            "published_pdf": "unknown",
+            "filename_similarity": "agree"
+          },
+          "agreeing": ["title", "venue"],
+          "conflicting": []
+        }
+      ]
     }
   }],
   "_comment_pptx_catalog_failed": {

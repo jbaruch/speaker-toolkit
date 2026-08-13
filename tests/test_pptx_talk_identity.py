@@ -7,6 +7,7 @@ the filesystem, or a live vault, so a run today and a run next year agree.
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -455,3 +456,54 @@ class TestSerialization:
         ]:
             result = _assess(deck, candidates)
             assert result.selected_talk_filename is None
+
+
+def _documented_identity_assessment() -> dict:
+    """Pull the schema reference's own matched-assessment example."""
+    text = (
+        Path(__file__).resolve().parent.parent
+        / "skills"
+        / "vault-ingress"
+        / "references"
+        / "schemas-db.md"
+    ).read_text(encoding="utf-8")
+    start = text.index('"identity_assessment": {') + len('"identity_assessment": ')
+    depth = 0
+    for offset, char in enumerate(text[start:], start):
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return json.loads(text[start : offset + 1])
+    raise AssertionError("unbalanced identity_assessment example in schemas-db.md")
+
+
+def test_the_documented_matched_example_authorizes_its_binding(
+    pptx_talk_identity,
+) -> None:
+    """A schema reference prescribing a record the writer rejects is worse than
+    none: it tells an agent to build mutations that cannot persist."""
+    assessment = _documented_identity_assessment()
+
+    refusal = pptx_talk_identity.binding_refusal(
+        assessment,
+        pptx_path=assessment["pptx_path"],
+        talk_filename=assessment["selected_talk_filename"],
+    )
+
+    assert refusal is None, refusal
+
+
+def test_the_documented_example_agrees_with_the_derivation(
+    pptx_talk_identity,
+) -> None:
+    """Its arrays are what the signal map produces — not a hand-written summary."""
+    candidate = _documented_identity_assessment()["candidates"][0]
+
+    agreeing, conflicting = pptx_talk_identity.derive_candidate_standing(
+        candidate["signals"]
+    )
+
+    assert list(agreeing) == candidate["agreeing"]
+    assert list(conflicting) == candidate["conflicting"]
