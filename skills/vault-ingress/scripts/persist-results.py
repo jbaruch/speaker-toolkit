@@ -102,13 +102,13 @@ from return_validation import (
     ADDITIVE_MAP,
     ANALYSIS_STATUSES,
     CURRENT_PATTERN_SCORING_GENERATION_STATUS,
+    EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS,
     IMAGE_SOURCE_GROUP,
     LEGACY_QUEUE_CLAIM_SCHEMA_VERSION,
     LEGACY_RETURN_SCHEMA_VERSION,
     LEGACY_UNBASELINEABLE_SCORING_STATUS,
     PATTERN_SCORING_SCHEMA_VERSION,
     PREVIOUS_QUEUE_CLAIM_SCHEMA_VERSION,
-    RETURN_SCHEMA_VERSION,
     SNAPSHOT_RETURN_SCHEMA_VERSIONS,
     SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS,
     STRUCTURED_FIELD_POLICIES,
@@ -483,6 +483,9 @@ def resolve_pattern_score(observations, patterns, antipatterns):
     The score is count(patterns) minus count(antipatterns), so it is an INTEGER
     by construction. `True` satisfies `isinstance(x, int)` in Python and a float
     looks numeric; neither is a score.
+
+    A weighted v6 return never reaches here: it does not canonicalize, so it does
+    not persist. Weighted arithmetic arrives with the activation change.
     """
     if "pattern_score" not in observations or observations["pattern_score"] is None:
         return None, False
@@ -651,7 +654,7 @@ def merge_talk(
         )
     scoring_assessment = assess_scoring_generation(evidence_ret, resolved_catalog)
     if (
-        return_schema_version == RETURN_SCHEMA_VERSION
+        return_schema_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS
         and not scoring_assessment.current
     ):
         raise ValueError(

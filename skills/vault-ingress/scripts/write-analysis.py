@@ -82,8 +82,8 @@ from pattern_evidence import (
 from video_evidence import VideoEvidenceAssessment
 from return_validation import (
     ANALYSIS_STATUSES,
+    EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS,
     LEGACY_UNBASELINEABLE_SCORING_STATUS,
-    RETURN_SCHEMA_VERSION,
     SNAPSHOT_RETURN_SCHEMA_VERSIONS,
     SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS,
     ReturnValidationError,
@@ -577,7 +577,7 @@ def render_adherence_assessment(payload):
         return []
 
     return_schema_version = resolve_return_schema_version(payload)
-    if return_schema_version != RETURN_SCHEMA_VERSION:
+    if return_schema_version not in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
         return [
             "## Adherence Assessment (Legacy, Unverified)",
             "",
@@ -593,15 +593,16 @@ def render_adherence_assessment(payload):
     comparison = payload.get("adherence_comparison")
     if not isinstance(comparison, dict):
         raise ReturnValidationError(
-            f"return-schema v{RETURN_SCHEMA_VERSION} adherence prose has no "
-            "persisted, validated "
-            "adherence_comparison"
+            f"return-schema v{return_schema_version} adherence prose has no "
+            "persisted, validated adherence_comparison; run persist-results.py "
+            "to store one before rendering this analysis"
         )
     baseline = comparison.get("baseline")
     if not isinstance(baseline, dict):
         raise ReturnValidationError(
-            f"return-schema v{RETURN_SCHEMA_VERSION} adherence_comparison has "
-            "no persisted baseline"
+            f"return-schema v{return_schema_version} adherence_comparison has no "
+            "persisted baseline; run persist-results.py to store a validated "
+            "comparison before rendering this analysis"
         )
 
     anchor = (
@@ -676,7 +677,7 @@ def render_analysis(ret, title=None, run_date=None, *, persisted_date=None):
         return_version = resolve_return_schema_version(ret)
         expected_evidence_schema = (
             PATTERN_EVIDENCE_SCHEMA_VERSION
-            if return_version == RETURN_SCHEMA_VERSION
+            if return_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS
             else LEGACY_PATTERN_EVIDENCE_SCHEMA_VERSION
         )
         located = (
@@ -1327,7 +1328,8 @@ def main():
                             "pattern_outcomes",
                             "opportunity_coverage_identity",
                         }
-                        and resolve_return_schema_version(ret) != RETURN_SCHEMA_VERSION
+                        and resolve_return_schema_version(ret)
+                        not in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS
                     ):
                         continue
                     if field not in persisted_observations:

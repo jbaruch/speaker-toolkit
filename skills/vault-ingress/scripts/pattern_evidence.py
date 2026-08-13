@@ -60,6 +60,13 @@ LEGACY_PATTERN_EVIDENCE_SCHEMA_VERSION = 1
 PATTERN_EVIDENCE_SCHEMA_VERSION = 2
 SOURCE_LOCATED_RETURN_SCHEMA_VERSION = 4
 EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION = 5
+# v6 validates as a return contract but does not persist yet: admitting it here
+# would store a new record shape under talk schema v5. Persistence, the talk
+# schema bump, the claim contract, and the migration advance together in the
+# activation change, not piecemeal.
+CANONICALIZABLE_RETURN_SCHEMA_VERSIONS = frozenset(
+    {SOURCE_LOCATED_RETURN_SCHEMA_VERSION, EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION}
+)
 CURRENT_PATTERN_SCORING_SCHEMA_VERSION = 5
 PATTERN_OUTCOMES = frozenset(
     {"detected", "undetected", "not_evaluable", "not_applicable"}
@@ -3286,12 +3293,10 @@ def canonicalize_return_evidence(
     """Return a v4/v5 payload with source claims canonically located."""
     canonical = copy.deepcopy(dict(ret))
     return_schema_version = canonical.get("return_schema_version")
-    if return_schema_version not in {
-        SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
-        EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION,
-    }:
+    if return_schema_version not in CANONICALIZABLE_RETURN_SCHEMA_VERSIONS:
         raise PatternEvidenceError(
-            "source evidence canonicalization supports return schemas v4/v5"
+            "source evidence canonicalization supports return schemas "
+            f"{sorted(CANONICALIZABLE_RETURN_SCHEMA_VERSIONS)}"
         )
     observations = canonical.get("pattern_observations")
     if not isinstance(observations, dict):
