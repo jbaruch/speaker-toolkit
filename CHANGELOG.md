@@ -29,6 +29,16 @@ title on an interior slide agrees with that talk, and a deck agreeing with
 everything is indistinguishable from one carrying no evidence. Measured, not
 reasoned about.
 
+Which part IS the title slide comes from `ppt/presentation.xml`'s `sldIdLst`
+resolved through the presentation's relationships — never from the part name
+`ppt/slides/slide1.xml`. OPC leaves slide order to that list, so a reordered
+deck can hold an interior slide in `slide1.xml`, and reading it would feed
+interior text in as the deck's own title: the same defect the title-slide rule
+exists to avoid, arriving by a different door. When the chain cannot be
+resolved no slide is opened at all, and `app.xml`'s slide-title list — which is
+already in presentation order — supplies the title instead. Guessing a part
+name is what this replaced.
+
 Against the live vault the sweep resolves 30 bindings, contradicts 7, and leaves
 37 for review. The 7 are real: `UberConf/2023/DevOps Reframed.pptx` was bound to
 a BaselOne talk, `Devoxx/Ukraine/2023/DPE with LLM.pptx` to a 2024 Devoxx one,

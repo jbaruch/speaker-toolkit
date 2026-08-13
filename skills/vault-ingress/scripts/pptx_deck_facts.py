@@ -7,10 +7,11 @@ returns the mapping `deck_identity_facts` accepts.
 
 Three properties shape it.
 
-* **Bounded.** Only `docProps/core.xml`, `docProps/app.xml`, and the first
-  slide are read, each under an expanded-size cap. A catalog row is persisted
-  state, and persisted state is a hint, never a licence to decompress an
-  arbitrary host file (`stateful-artifacts` -> Hints, Not Authority).
+* **Bounded.** Only `docProps/core.xml`, `docProps/app.xml`, the presentation
+  part and its relationships, and the first slide are read, each under an
+  expanded-size cap. A catalog row is persisted state, and persisted state is a
+  hint, never a licence to decompress an arbitrary host file
+  (`stateful-artifacts` -> Hints, Not Authority).
 * **Never fatal.** An unreadable, damaged, or absent deck returns the facts
   gathered so far with a reason code. Damage must weaken the evidence, never
   the identity requirements, so the caller still assesses the deck from its
@@ -30,11 +31,21 @@ indistinguishable from knowing nothing.
 
 The title slide cannot do that. Its runs are this deck's own title and
 subtitle, which is what the catalog's title is being compared against.
+
+## Which part IS the title slide
+
+Not `ppt/slides/slide1.xml`. That is a part name, and OPC leaves slide ORDER to
+`ppt/presentation.xml`'s `sldIdLst` resolved through the presentation's
+relationships. A deck whose slides were reordered can hold an interior slide in
+`slide1.xml`, and reading it would feed interior text in as the deck's title —
+the same defect this module's title-slide rule exists to avoid, arriving by a
+different door.
 """
 
 from __future__ import annotations
 
 import os
+import posixpath
 import re
 import zipfile
 from dataclasses import dataclass, field
@@ -75,7 +86,9 @@ DECK_FACTS_REASON_CODES = frozenset(
 
 _CORE_PART = "docProps/core.xml"
 _APP_PART = "docProps/app.xml"
-_TITLE_SLIDE_PART = "ppt/slides/slide1.xml"
+_PRESENTATION_PART = "ppt/presentation.xml"
+_PRESENTATION_RELS_PART = "ppt/_rels/presentation.xml.rels"
+_PRESENTATION_BASE = "ppt"
 
 # A metadata part and one slide are small. These caps bound decompression on a
 # path chosen by persisted state; a real deck's parts are orders below them.
@@ -94,6 +107,14 @@ _VT_NS = "{http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes}
 _DC_NS = "{http://purl.org/dc/elements/1.1/}"
 _DCTERMS_NS = "{http://purl.org/dc/terms/}"
 _DRAWING_NS = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+_PRESENTATION_NS = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
+_RELATIONSHIP_ID_NS = (
+    "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+)
+_PACKAGE_RELS_NS = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+_SLIDE_RELATIONSHIP_TYPE = (
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide"
+)
 
 _SLIDE_TITLES_HEADING = "Slide Titles"
 _HASHTAG_RE = re.compile(r"#\w+", re.UNICODE)
@@ -199,6 +220,66 @@ def _title_slide_runs(slide_xml: bytes) -> list[str]:
         if text is not None:
             runs.append(text)
     return runs
+
+
+def _first_slide_relationship_id(presentation_xml: bytes) -> str | None:
+    """The r:id of the first entry in the presentation's slide-id list."""
+    root = ET.fromstring(presentation_xml)
+    slide_ids = root.find(f"{_PRESENTATION_NS}sldIdLst")
+    if slide_ids is None:
+        return None
+    for slide_id in slide_ids.findall(f"{_PRESENTATION_NS}sldId"):
+        relationship_id = slide_id.get(f"{_RELATIONSHIP_ID_NS}id")
+        if isinstance(relationship_id, str) and relationship_id:
+            return relationship_id
+    return None
+
+
+def _slide_part_for_relationship(rels_xml: bytes, relationship_id: str) -> str | None:
+    """Resolve one slide relationship to its part name inside the package."""
+    root = ET.fromstring(rels_xml)
+    for relationship in root.findall(f"{_PACKAGE_RELS_NS}Relationship"):
+        if relationship.get("Id") != relationship_id:
+            continue
+        if relationship.get("Type") != _SLIDE_RELATIONSHIP_TYPE:
+            return None
+        target = relationship.get("Target")
+        if not isinstance(target, str) or not target:
+            return None
+        if target.startswith("/"):
+            return posixpath.normpath(target.lstrip("/"))
+        resolved = posixpath.normpath(posixpath.join(_PRESENTATION_BASE, target))
+        # A target that climbs out of the package is not a part of it.
+        if resolved.startswith("../") or resolved.startswith("/"):
+            return None
+        return resolved
+    return None
+
+
+def _title_slide_part(archive: zipfile.ZipFile) -> str | None:
+    """Name the part holding the deck's FIRST slide, in presentation order.
+
+    `ppt/slides/slide1.xml` is a part name, not a position. OPC leaves slide
+    order to `ppt/presentation.xml`'s `sldIdLst`, resolved through the
+    presentation's relationships, so a deck whose slides were reordered can
+    hold an interior slide in `slide1.xml` — and reading that one would feed
+    an interior slide's text in as the deck's own title.
+
+    Returns None when the chain cannot be resolved. The caller then reads no
+    slide at all rather than guessing a part name: `docProps/app.xml` already
+    lists slide titles in presentation order, so the fallback stays ordered.
+    """
+    presentation_xml = _read_part(archive, _PRESENTATION_PART)
+    rels_xml = _read_part(archive, _PRESENTATION_RELS_PART)
+    if presentation_xml is None or rels_xml is None:
+        return None
+    try:
+        relationship_id = _first_slide_relationship_id(presentation_xml)
+        if relationship_id is None:
+            return None
+        return _slide_part_for_relationship(rels_xml, relationship_id)
+    except ET.ParseError:
+        return None
 
 
 def _resolve_descriptor(pptx_path: str, pptx_source_dir: object) -> int | None:
@@ -342,7 +423,10 @@ def _read_parts(
             parts_read.append(_APP_PART)
             hashtag_sources.extend(titles)
 
-    slide_xml = _read_part(archive, _TITLE_SLIDE_PART)
+    title_slide_part = _title_slide_part(archive)
+    slide_xml = (
+        None if title_slide_part is None else _read_part(archive, title_slide_part)
+    )
     runs: list[str] = []
     if slide_xml is not None:
         try:
@@ -350,7 +434,7 @@ def _read_parts(
         except ET.ParseError:
             malformed = True
         else:
-            parts_read.append(_TITLE_SLIDE_PART)
+            parts_read.append(str(title_slide_part))
             hashtag_sources.extend(runs)
 
     # The title slide's first run is this deck's own headline; app.xml's first

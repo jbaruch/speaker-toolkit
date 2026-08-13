@@ -8,6 +8,7 @@ run next year agree.
 from __future__ import annotations
 
 import importlib.util
+import posixpath
 import sys
 import zipfile
 from pathlib import Path
@@ -62,6 +63,21 @@ SLIDE_XML = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
  xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
 <p:cSld><p:spTree>{runs}</p:spTree></p:cSld></p:sld>"""
 
+PRESENTATION_XML = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:presentation
+ xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+ xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<p:sldIdLst>{slide_ids}</p:sldIdLst></p:presentation>"""
+
+PRESENTATION_RELS = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships
+ xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+{relationships}</Relationships>"""
+
+SLIDE_RELATIONSHIP_TYPE = (
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide"
+)
+
 
 def app_xml(*, fonts: list[str], slide_titles: list[str], slides: int) -> str:
     """Build an app.xml whose TitlesOfParts really does concatenate categories.
@@ -96,6 +112,30 @@ def write_deck(root: Path, relative: str, members: dict[str, str]) -> Path:
     return path
 
 
+def presentation_parts(slide_parts: list[str]) -> dict[str, str]:
+    """Build a presentation part plus rels declaring slide order explicitly.
+
+    Order is `sldIdLst`'s order, and the part names it reaches are whatever the
+    relationships say. Tests that care about order pass the part names in the
+    order PowerPoint would present them, which is not necessarily numeric.
+    """
+    slide_ids = "".join(
+        f'<p:sldId id="{256 + index}" r:id="rId{index + 1}"/>'
+        for index in range(len(slide_parts))
+    )
+    relationships = "".join(
+        f'<Relationship Id="rId{index + 1}" Type="{SLIDE_RELATIONSHIP_TYPE}" '
+        f'Target="{posixpath.relpath(part, "ppt")}"/>'
+        for index, part in enumerate(slide_parts)
+    )
+    return {
+        "ppt/presentation.xml": PRESENTATION_XML.format(slide_ids=slide_ids),
+        "ppt/_rels/presentation.xml.rels": PRESENTATION_RELS.format(
+            relationships=relationships
+        ),
+    }
+
+
 def full_deck_members(
     *,
     document_title: str = "This is your presentation title",
@@ -113,6 +153,7 @@ def full_deck_members(
             else ["DevOps for Developers", "shownotes"],
             slides=slides,
         ),
+        **presentation_parts(["ppt/slides/slide1.xml"]),
         "ppt/slides/slide1.xml": slide_xml(
             runs
             if runs is not None
@@ -191,6 +232,105 @@ class TestReadingAWholeDeck:
         reading = pptx_deck_facts.read_deck_identity_facts("Deck.pptx", source_root)
         assert reading.facts["rendered_title"] == "Devops... reframed"
         assert reading.facts["rendered_footers"] == ["Embracing the Path"]
+
+
+class TestSlideOrderComesFromThePresentationPart:
+    def test_a_reordered_deck_reads_its_real_first_slide(
+        self, source_root: Path
+    ) -> None:
+        """`slide1.xml` is a part name, not a position.
+
+        This deck presents `slide7.xml` first. A reader that assumed the part
+        name would take `slide1.xml`'s interior text as the deck's own title
+        and could confirm — or contradict — the wrong talk on it.
+        """
+        members = {
+            "docProps/app.xml": app_xml(
+                fonts=["Calibri"],
+                slide_titles=["Securing the Software Supply Chain"],
+                slides=2,
+            ),
+            **presentation_parts(["ppt/slides/slide7.xml", "ppt/slides/slide1.xml"]),
+            "ppt/slides/slide7.xml": slide_xml(
+                ["Securing the Software Supply Chain", "a subtitle"]
+            ),
+            "ppt/slides/slide1.xml": slide_xml(["DevOps for Developers"]),
+        }
+        write_deck(source_root, "Deck.pptx", members)
+        reading = pptx_deck_facts.read_deck_identity_facts("Deck.pptx", source_root)
+        assert reading.facts["rendered_title"] == "Securing the Software Supply Chain"
+        assert reading.facts["rendered_footers"] == ["a subtitle"]
+        assert "ppt/slides/slide7.xml" in reading.parts_read
+
+    def test_an_absolute_relationship_target_resolves(self, source_root: Path) -> None:
+        members = full_deck_members()
+        members["ppt/_rels/presentation.xml.rels"] = PRESENTATION_RELS.format(
+            relationships=(
+                f'<Relationship Id="rId1" Type="{SLIDE_RELATIONSHIP_TYPE}" '
+                'Target="/ppt/slides/slide1.xml"/>'
+            )
+        )
+        write_deck(source_root, "Deck.pptx", members)
+        reading = pptx_deck_facts.read_deck_identity_facts("Deck.pptx", source_root)
+        assert reading.facts["rendered_title"] == "DevOps for Developers"
+
+    def test_no_presentation_part_reads_no_slide_at_all(
+        self, source_root: Path
+    ) -> None:
+        """Guessing a part name is what this replaced, so it must not creep back.
+
+        `app.xml` lists slide titles in presentation order, so the fallback
+        title stays ordered — but no slide is opened, and no footers are
+        invented from one.
+        """
+        members = full_deck_members(
+            slide_titles=["The Ordered First Title"],
+            runs=["Whatever slide1 happens to hold", "and its subtitle"],
+        )
+        del members["ppt/presentation.xml"]
+        write_deck(source_root, "Deck.pptx", members)
+        reading = pptx_deck_facts.read_deck_identity_facts("Deck.pptx", source_root)
+        assert reading.facts["rendered_title"] == "The Ordered First Title"
+        assert "rendered_footers" not in reading.facts
+        assert "ppt/slides/slide1.xml" not in reading.parts_read
+
+    def test_a_relationship_of_another_type_is_not_a_slide(
+        self, source_root: Path
+    ) -> None:
+        members = full_deck_members(slide_titles=["The Ordered First Title"])
+        members["ppt/_rels/presentation.xml.rels"] = PRESENTATION_RELS.format(
+            relationships=(
+                '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org'
+                '/officeDocument/2006/relationships/slideMaster" '
+                'Target="slideMasters/slideMaster1.xml"/>'
+            )
+        )
+        write_deck(source_root, "Deck.pptx", members)
+        reading = pptx_deck_facts.read_deck_identity_facts("Deck.pptx", source_root)
+        assert reading.facts["rendered_title"] == "The Ordered First Title"
+        assert "rendered_footers" not in reading.facts
+
+    def test_a_target_climbing_out_of_the_package_is_refused(
+        self, source_root: Path
+    ) -> None:
+        members = full_deck_members(slide_titles=["The Ordered First Title"])
+        members["ppt/_rels/presentation.xml.rels"] = PRESENTATION_RELS.format(
+            relationships=(
+                f'<Relationship Id="rId1" Type="{SLIDE_RELATIONSHIP_TYPE}" '
+                'Target="../../outside.xml"/>'
+            )
+        )
+        write_deck(source_root, "Deck.pptx", members)
+        reading = pptx_deck_facts.read_deck_identity_facts("Deck.pptx", source_root)
+        assert reading.facts["rendered_title"] == "The Ordered First Title"
+
+    def test_an_empty_slide_list_reads_no_slide(self, source_root: Path) -> None:
+        members = full_deck_members(slide_titles=["The Ordered First Title"])
+        members["ppt/presentation.xml"] = PRESENTATION_XML.format(slide_ids="")
+        write_deck(source_root, "Deck.pptx", members)
+        reading = pptx_deck_facts.read_deck_identity_facts("Deck.pptx", source_root)
+        assert reading.facts["rendered_title"] == "The Ordered First Title"
+        assert "rendered_footers" not in reading.facts
 
 
 class TestInteriorSlidesNeverBecomeRenderedText:
