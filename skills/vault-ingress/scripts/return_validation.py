@@ -2682,9 +2682,10 @@ def pattern_score_basis(
 def expected_weighted_score(patterns: list[dict], antipatterns: list[dict]) -> float:
     """The aggregate the detection arrays require, rounded deterministically.
 
-    Weights are eighths at worst, so two decimal places represent every
-    reachable value exactly; rounding here keeps a float sum from emitting
-    0.30000000000000004 and failing an equality check that is logically true.
+    Every weight is a multiple of 0.25, so every reachable total is too, and two
+    decimal places represent it exactly; rounding here keeps a float sum from
+    emitting 0.30000000000000004 and failing an equality check that is logically
+    true.
     """
     total = weighted_detection_total(patterns) - weighted_detection_total(antipatterns)
     return round(total, 2)
