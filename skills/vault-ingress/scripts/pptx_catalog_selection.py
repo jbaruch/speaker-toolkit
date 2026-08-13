@@ -44,7 +44,7 @@ _READ_CHUNK_BYTES = 1024 * 1024
 _REQUIRED_OPEN_FLAGS = ("O_NOFOLLOW", "O_DIRECTORY")
 
 
-def _open_contained(root: object, parts: tuple[str, ...]) -> int | None:
+def open_contained_descriptor(root: object, parts: tuple[str, ...]) -> int | None:
     """Open a descendant of ``root``, refusing every symlink below the root.
 
     Checking a resolved path and then opening it by name are two separate
@@ -115,7 +115,7 @@ def digest_and_size(path: object, root: object) -> tuple[str, int] | None:
         parts = resolved.relative_to(Path(str(root))).parts
     except (ArtifactLocatorError, TypeError, ValueError):
         return None
-    descriptor = _open_contained(root, parts)
+    descriptor = open_contained_descriptor(root, parts)
     if descriptor is None:
         return None
     digest = hashlib.sha256()
@@ -217,4 +217,5 @@ __all__ = [
     "digest_and_size",
     "observed_artifact_digest",
     "observed_source_fingerprint",
+    "open_contained_descriptor",
 ]

@@ -1,5 +1,78 @@
 # Changelog
 
+### feat(vault-ingress) — assess the bindings that predate the assessment (#176)
+
+`_apply_record_pptx` refuses a new talk binding nothing proved, and preflight
+blocks a catalog row whose binding is unproven. Neither could say anything about
+the rows already stored: the live vault's 82 catalog rows are all schema v1, its
+74 bound rows carry no `identity_assessment` at all, and migration deliberately
+leaves v1 rows alone rather than inventing one. So every one of them blocks, and
+nothing in the toolkit could tell a correct binding from a wrong one.
+
+`skills/vault-ingress/scripts/sweep-pptx-talk-identity.py` is the catalog-wide
+assessment. It runs every row against every talk in the vault and reports one
+disposition each — `binding_confirmed`, `binding_contradicted`,
+`binding_review_required`, `binding_unproven`, `unbound_row`. Read-only: a
+disposition is evidence for an owner decision, never a decision.
+
+`skills/vault-ingress/scripts/pptx_deck_facts.py` is the observer it needed.
+`pptx_talk_identity` decides from facts someone else gathered, and no one
+gathered them for a deck already on disk. It reads `docProps/core.xml`,
+`docProps/app.xml`, and the title slide out of the OPC package — stdlib only,
+bounded per part, and never fatal, so a damaged deck is still assessed from its
+path rather than skipped.
+
+Only the title slide supplies rendered text, and that is load-bearing. Feeding
+in `app.xml`'s full slide-title list instead made 69 of the live vault's 74
+bound decks `identity_ambiguous_candidates`: a deck that mentions another talk's
+title on an interior slide agrees with that talk, and a deck agreeing with
+everything is indistinguishable from one carrying no evidence. Measured, not
+reasoned about.
+
+Which part IS the title slide comes from `ppt/presentation.xml`'s `sldIdLst`
+resolved through the presentation's relationships — never from the part name
+`ppt/slides/slide1.xml`. OPC leaves slide order to that list, so a reordered
+deck can hold an interior slide in `slide1.xml`, and reading it would feed
+interior text in as the deck's own title: the same defect the title-slide rule
+exists to avoid, arriving by a different door. When the chain cannot be
+resolved no slide is opened at all, and `app.xml`'s slide-title list — which is
+already in presentation order — supplies the title instead. Guessing a part
+name is what this replaced.
+
+Against the live vault the sweep resolves 30 bindings, contradicts 7, and leaves
+37 for review. The 7 are real: `UberConf/2023/DevOps Reframed.pptx` was bound to
+a BaselOne talk, `Devoxx/Ukraine/2023/DPE with LLM.pptx` to a 2024 Devoxx one,
+and `DeveloperWeek/CA 2024/Sadogursky, Baruch, Fri.pptx` — same venue, same day
+as the talk it was bound to, so only the deck's own title slide could tell them
+apart — to the wrong one of two Developer Week 2024 talks.
+
+The candidate table is serialized down to material candidates. 215 talks against
+82 rows means a row's table is mostly six-`unknown` verdicts, and emitting those
+buries the handful that decided the verdict. Every candidate that could have
+contested the winner had to agree with something, so it survives the trim; a
+test asserts the trimmed assessment still satisfies `binding_refusal`.
+
+`pptx_catalog_selection._open_contained` becomes `open_contained_descriptor`,
+public in its owner module, so the deck reader shares one containment rule with
+the evidence classifier rather than copying it. The sweep must not be able to
+read a file the classifier would have refused.
+
+An absent or blank `config.pptx_source_dir` falls back to the vault root, as
+`schemas-db.md` documents. Passing the absent value through would report every
+deck in such a vault unreadable — a configuration default read as universal
+damage, putting every binding into `binding_unproven` on evidence nobody
+looked for.
+
+The published-PDF signal is not observed. The vault's talk-referenced PDFs live
+under the vault's own `slides/`, never beside a deck, so no deterministic
+deck-to-PDF binding exists to read — and guessing one would manufacture exactly
+the evidence this contract exists to require. The signal stays covered by a
+contract regression so a future producer inherits it.
+
+Carries this issue's synthetic regressions: same-title decks across venues and
+years, unrelated decks in nearby directories, master/static pairs with different
+slide counts, and a published PDF that disambiguates two candidates.
+
 ## 0.20.69 — 2026-08-13
 
 ### docs — the guardrail rule references the contract instead of repeating it
