@@ -1,5 +1,23 @@
 # Changelog
 
+### test — assert the lint gate's outcome, not tessl's wording (#265)
+
+`test_an_over_length_description_fails_the_gate` matched the literal string
+`Frontmatter validation failed`. tessl 0.96.0 phrases the same rejection as
+`SKILL.md frontmatter field "description" must be at most 1024 characters.`, so
+the test failed locally while the gate it covers worked correctly.
+
+Three PR bodies carried this as a pre-existing environmental failure. It was
+neither: CI passed only because its pinned tessl still emitted the old wording,
+so the next bump would have broken the gate's own test there too.
+
+The assertion now names the outcome and the offending skill — the gate failed
+and the error identifies `demo` — rather than any sentence the external tool
+happened to phrase it with. Matching the new wording would only have swapped
+which CLI version it broke on; the two truncate the message at different points.
+The old wording stays covered by the fake-CLI classification test, which owns a
+captured transcript rather than a live tool.
+
 ### feat(vault-ingress) — refuse a talk binding nothing proved (#176)
 
 The candidate table's `signals` map is the evidence; `agreeing` and `conflicting`
