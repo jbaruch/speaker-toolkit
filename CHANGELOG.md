@@ -1,5 +1,71 @@
 # Changelog
 
+### feat(vault-profile) — the denominator behind a never-used claim (#160)
+
+Part of #160 section 3, implementing the #153 null-absence-gate decision.
+
+`absence_evaluable_from: null` means absence is not provable for that pattern and
+never falls back to the presence gate, so never-used and underused are computed
+over the populated-gate entries only. Against the live catalog that is **16 of 81
+observable entries** — 65 are unknowable. Without that denominator beside it, a
+short never-used list reads as a statement about the speaker when it is mostly a
+statement about coverage. `absence_provability` reports both counts plus the
+observable total, computed from the catalog rather than hardcoded, so populating
+a gate moves the numbers instead of dating a constant. An unobservable entry
+lands in neither count: it is not scored at all, so it belongs to no denominator.
+
+`classify-pattern-profile.py` emits it beside `never_used_patterns`, so the list
+and its denominator always travel together.
+
+**The version boundary.** The classification contract bumps to **v2** to carry
+the field, since this is a shape change to a persisted artifact. Presence follows
+that generation rather than the outer v5 contract: required at classification v2,
+forbidden at v1 and on the v4 contract, which carries no classification block at
+all. A v1 block that omits it stays readable — the counts are a fact about the
+catalog, not a claim the older block got anything wrong, and refusing v1 outright
+would strand every profile on disk to gain nothing. A v1 block that *carries* it
+is rejected: the stamp and the payload disagree. The schema reference states the
+output contract and points at `_validate_absence_provability` for the predicate
+rather than restating it, so the two cannot drift.
+
+A v1 block is nonetheless a superseded classification generation, so a reader
+takes the no-usable-prior-state path on it — every derived domain is withheld and
+the assessment carries `pattern_classification_schema_superseded`, distinct from
+`pattern_classification_policy_unavailable`, which marks a v4 contract that never
+had a policy stamp. Nothing upgrades the block in place; vault-profile
+regenerates the profile wholesale, so the next owner run replaces it. Occurrence
+rows stay readable across the boundary — they belong to the pattern-profile
+contract, not to the classification generation.
+
+**What the reader checks.** Allowlisting a field without checking it is how a
+malformed object reaches a reader that believes the shape was verified, and a
+wrong count here misreports coverage as speaker behaviour — the exact confusion
+the field exists to prevent. So: exact field set; nonnegative integer counts with
+booleans excluded; a type-checked `schema_version`, since Python's `True == 1`
+would otherwise admit a boolean stamp; the sum invariant; and the counts
+recomputed from the active catalog. `1 + 2 = 3` sums perfectly and describes a
+three-entry catalog nobody has, so internal consistency alone would let a
+fabricated denominator present as current coverage — including a correct total
+split the wrong way, since the split is the whole point.
+
+`_PATTERN_HISTORY_KEYS` in `validate-profile.py` learned the field too. That set
+keeps catalog-derived history inside `pattern_profile`, and a field the writer
+emits but the set never learned about could sit duplicated under
+`rhetoric_defaults` unchallenged. A regression derives its expectation from what
+the writer actually emits, so the next omission fails in the suite rather than in
+a profile.
+
+**On the tests.** Review found the first revision comparing the outer contract
+version (4 or 5) against a classification floor of 2, so the gate admitted every
+block it existed to reject. That defect survived because the tests called the
+private validator and supplied the version by hand — a shape the real call path
+cannot produce. They run through `assess_pattern_profile` now, and both
+version-gate cases fail against the original code. The writer's coverage moved
+off `inspect.getsource` for the same reason: matching a call expression in source
+text passes for code that never runs and fails for a correct refactor. The floor
+is pinned to the generation that introduced the field rather than to the current
+one, so a later classification bump does not start rejecting version 2.
+
 ### test — assert the lint gate's outcome, not tessl's wording (#265)
 
 `test_an_over_length_description_fails_the_gate` matched the literal string
