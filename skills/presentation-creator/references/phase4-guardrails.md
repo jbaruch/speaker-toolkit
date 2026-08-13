@@ -410,6 +410,49 @@ SKIP for low-stakes talks (internal demos, small-group presentations, tutorial s
 
 ---
 
+## 14. AI Writing Patterns
+
+Every prose surface this workflow produces — speaker notes, the abstract, section
+descriptions, the outline's connective text — was drafted with an LLM, and LLM
+prose has tells.
+
+**Delegate the scan; never reimplement it.** Call
+`Skill(skill: "blog-writer")`, which owns the AI-writing-pattern catalog and
+returns the flagged phrasings. Apply its findings here and continue.
+
+Scan prose only. Slide visual descriptions and image prompts are not prose and
+are covered by the illustration checks above.
+
+### Check
+
+```
+[PASS/WARN/FAIL/SKIP] AI writing patterns: {high} high, {medium} medium findings
+```
+
+- **PASS**: no high findings and at most two medium
+- **WARN**: one to three high, or three or more medium
+- **FAIL**: four or more high
+- **SKIP**: `blog-writer` is not installed
+
+If WARN or FAIL, list the findings with their location and blog-writer's rewrite
+suggestion. Flag only — the author decides what to change, because a pattern the
+scan calls a tell may be this speaker's deliberate voice.
+
+Suppress findings that match the speaker's documented voice when the vault is
+loaded: a speaker whose profile shows heavy em-dash use is writing in their own
+register, not producing an AI tell.
+
+### When `blog-writer` is not installed
+
+Report SKIP, say the scan did not run, and tell the author how to get it:
+
+```
+tessl install jbaruch/blog-writer
+```
+
+Never approximate the scan inline. A partial reimplementation drifts from the
+catalog blog-writer maintains and reports confident findings from a stale copy.
+
 ## Guardrail Summary Template
 
 Render this human summary from the JSON report after completing the agent-run checks.
@@ -436,6 +479,7 @@ GUARDRAIL CHECK — {talk title} — {date}
 [PASS/WARN/FAIL] Big Idea alignment: {N}/{total} sections traceable to Big Idea
 [PASS/WARN] Emotion balance: {N}% analytical / {M}% emotional vs. {target}%
 [PASS/WARN/SKIP] Screening with critics: {scheduled / completed / not applicable}
+[PASS/WARN/FAIL/SKIP] AI writing patterns: {high} high, {medium} medium
 ================================================
 ```
 

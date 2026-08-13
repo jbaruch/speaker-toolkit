@@ -1,5 +1,25 @@
 # Changelog
 
+### feat(presentation-creator) — defer the prose scan to blog-writer (#287)
+
+Every prose surface this workflow produces — speaker notes, the abstract, section
+descriptions, the outline's connective text — is LLM-drafted, and LLM prose has
+tells. Nothing checked for them.
+
+Guardrail 14 does, by delegating to `Skill(skill: "blog-writer")`, which owns the
+AI-writing-pattern catalog. It is not reimplemented here: a partial copy drifts
+from the catalog blog-writer maintains and then reports confident findings from a
+stale one. When the skill is absent the check reports SKIP and points the author
+at `tessl install jbaruch/blog-writer` rather than approximating it — which is
+also what the CFP abstract check now does, where it previously skipped in silence.
+
+Findings flag, never rewrite. A pattern the scan calls a tell may be the
+speaker's deliberate voice, so vault-documented voice traits are suppressed: a
+speaker whose profile shows heavy em-dash use is writing in their own register.
+
+Closes #287. The unlanded `skills/humanizer/` branch was an early copy of
+blog-writer's detector; deferring to the original beats maintaining a fork of it.
+
 ### fix(vault-ingress) — an old block is old, not corrupt (#167)
 
 The persisted-observation classifier reported a block carrying both detection
