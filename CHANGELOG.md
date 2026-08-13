@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.70 — 2026-08-13
+
 ### feat(vault-ingress) — assess the bindings that predate the assessment (#176)
 
 `_apply_record_pptx` refuses a new talk binding nothing proved, and preflight
