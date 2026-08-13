@@ -2799,7 +2799,11 @@ def _validate_score(
         )
     wanted_basis = pattern_score_basis(patterns, antipatterns, not_evaluable)
     if isinstance(raw, (int, float)):
-        if round(float(raw), 2) != expected:
+        # Compared exactly, never rounded. `expected` is already the canonical
+        # two-decimal result, so rounding the UNTRUSTED value before comparing
+        # accepts anything within half a hundredth of it — 1.504 for 1.5 — and
+        # persists a score no declared arithmetic produces.
+        if raw != expected:
             raise ReturnValidationError(
                 f"pattern_score is {raw}, but the weighted detection arrays "
                 f"require {expected} (weights {dict(sorted(DETECTION_WEIGHTS.items()))})"
@@ -2811,19 +2815,27 @@ def _validate_score(
             "pattern_observations.pattern_score must be a number or the declared score object"
         )
 
-    required: dict[str, float] = {
-        "patterns_used": float(len(patterns)),
-        "antipatterns_detected": float(len(antipatterns)),
-        "score": expected,
-    }
-    for field, wanted in required.items():
+    # v6 keeps v5's count semantics: these two are lane lengths, so they are
+    # exact integers. Rounding admitted `patterns_used: 1.004` as a count of one.
+    for field, wanted_count in (
+        ("patterns_used", len(patterns)),
+        ("antipatterns_detected", len(antipatterns)),
+    ):
         value = raw.get(field)
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise ReturnValidationError(f"pattern_score.{field} must be a number")
-        if round(float(value), 2) != wanted:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ReturnValidationError(f"pattern_score.{field} must be an integer")
+        if value != wanted_count:
             raise ReturnValidationError(
-                f"pattern_score.{field} is {value}, but the detection arrays require {wanted}"
+                f"pattern_score.{field} is {value}, but the detection arrays "
+                f"require {wanted_count}"
             )
+    score = raw.get("score")
+    if isinstance(score, bool) or not isinstance(score, (int, float)):
+        raise ReturnValidationError("pattern_score.score must be a number")
+    if score != expected:
+        raise ReturnValidationError(
+            f"pattern_score.score is {score}, but the detection arrays require {expected}"
+        )
     _require_score_basis(observations, wanted_basis)
 
 

@@ -338,3 +338,95 @@ class TestATypeConfusedBasisIsRejected:
             return_validation.ReturnValidationError, match="must be an object"
         ):
             return_validation.validate_return(ret, catalog)
+
+
+class TestTheSuppliedScoreIsComparedExactly:
+    """Rounding the untrusted value accepts anything near the right answer.
+
+    `expected_weighted_score` already rounds the CANONICAL result to two places.
+    Rounding the supplied value too widened the gate by half a hundredth in
+    either direction, so a score no declared arithmetic produces validated and
+    persisted.
+    """
+
+    def test_a_near_miss_bare_score_is_rejected(
+        self, return_validation, catalog
+    ) -> None:
+        ret = _v6(return_validation)
+        canonical = ret["pattern_observations"]["pattern_score"]["score"]
+        ret["pattern_observations"]["pattern_score"] = canonical + 0.004
+
+        with pytest.raises(
+            return_validation.ReturnValidationError, match="weighted detection arrays"
+        ):
+            return_validation.validate_return(ret, catalog)
+
+    def test_a_near_miss_score_object_value_is_rejected(
+        self, return_validation, catalog
+    ) -> None:
+        ret = _v6(return_validation)
+        block = ret["pattern_observations"]["pattern_score"]
+        block["score"] = block["score"] + 0.004
+
+        with pytest.raises(
+            return_validation.ReturnValidationError, match="pattern_score.score"
+        ):
+            return_validation.validate_return(ret, catalog)
+
+    def test_a_fractional_lane_count_is_rejected(
+        self, return_validation, catalog
+    ) -> None:
+        """A count of 1.004 is not a count. v6 keeps v5's integer lane semantics."""
+        ret = _v6(return_validation)
+        ret["pattern_observations"]["pattern_score"]["patterns_used"] = 1.004
+
+        with pytest.raises(
+            return_validation.ReturnValidationError, match="must be an integer"
+        ):
+            return_validation.validate_return(ret, catalog)
+
+    def test_a_float_lane_count_is_rejected_even_when_whole(
+        self, return_validation, catalog
+    ) -> None:
+        ret = _v6(return_validation)
+        ret["pattern_observations"]["pattern_score"]["antipatterns_detected"] = 0.0
+
+        with pytest.raises(
+            return_validation.ReturnValidationError, match="must be an integer"
+        ):
+            return_validation.validate_return(ret, catalog)
+
+    def test_a_boolean_lane_count_is_rejected(self, return_validation, catalog) -> None:
+        ret = _v6(return_validation)
+        ret["pattern_observations"]["pattern_score"]["antipatterns_detected"] = False
+
+        with pytest.raises(
+            return_validation.ReturnValidationError, match="must be an integer"
+        ):
+            return_validation.validate_return(ret, catalog)
+
+    def test_an_exact_whole_score_written_as_an_int_still_passes(
+        self, return_validation, catalog
+    ) -> None:
+        """Exactness is about value, not type.
+
+        One strong detection weighs 1.0 exactly, and an int `1` equals that — a
+        legitimate JSON representation of a whole-number weighted score, not a
+        near miss.
+        """
+        ret = _v6(return_validation)
+        block = ret["pattern_observations"]
+        block["patterns_detected"] = [{**_detection(), "confidence": "strong"}]
+        patterns = block["patterns_detected"]
+        antipatterns = block["antipatterns_detected"]
+        assert return_validation.expected_weighted_score(patterns, antipatterns) == 1.0
+        block["pattern_score"] = {
+            "patterns_used": len(patterns),
+            "antipatterns_detected": len(antipatterns),
+            "score": 1,
+        }
+        block["pattern_score_basis"] = return_validation.pattern_score_basis(
+            patterns, antipatterns, block["not_evaluable"]
+        )
+
+        return_validation.validate_return(ret, catalog)

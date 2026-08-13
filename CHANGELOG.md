@@ -16,6 +16,12 @@ and no exhaustive outcome lanes at all — silently, since every check that woul
 have caught it was gated on the same equality. They now test membership of
 `EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS`.
 
+The supplied score is compared exactly, never rounded. `expected_weighted_score`
+already rounds the canonical result to two places, so rounding the untrusted
+value too widened the gate by half a hundredth either way — `1.504` validated as
+`1.5`. The two lane counts keep v5's integer semantics rather than being read as
+numbers, so `patterns_used: 1.004` no longer counts as one.
+
 The basis object's types are checked before its values are compared. Python
 equality makes `True == 1` and `6.0 == 6`, so a basis carrying boolean lane
 counts or a float `schema_version` compared equal to the expected object and
