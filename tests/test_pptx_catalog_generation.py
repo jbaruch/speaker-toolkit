@@ -66,7 +66,52 @@ def _evidence(**overrides) -> dict:
     return evidence
 
 
-def _current_record(**overrides) -> dict:
+_SIGNAL_NAMES = (
+    "title",
+    "venue",
+    "delivery_year",
+    "hashtag",
+    "published_pdf",
+    "filename_similarity",
+)
+
+
+def _signals(*, agree=(), conflict=()) -> dict:
+    """A complete per-signal map, the evidence a candidate's arrays summarize.
+
+    The owner gate recomputes `agreeing`/`conflicting` from this map, so a
+    fixture asserting a standing has to supply readings that produce it.
+    """
+    verdicts = dict.fromkeys(_SIGNAL_NAMES, "unknown")
+    verdicts.update(dict.fromkeys(agree, "agree"))
+    verdicts.update(dict.fromkeys(conflict, "conflict"))
+    return verdicts
+
+
+def _identity_assessment(**overrides) -> dict:
+    """A v3 record's proof that this deck belongs to the talk it names (#176)."""
+    assessment = {
+        "schema_version": 1,
+        "pptx_path": "Conference/2024/Talk.pptx",
+        "verdict": "matched",
+        "artifact_role": "delivery",
+        "selected_talk_filename": "2024-04-10-talk.md",
+        "reason_codes": ["identity_matched"],
+        "candidates": [
+            {
+                "talk_filename": "2024-04-10-talk.md",
+                "signals": _signals(agree=("venue",)),
+                "agreeing": ["venue"],
+                "conflicting": [],
+            }
+        ],
+    }
+    assessment.update(overrides)
+    return assessment
+
+
+def _evidence_bound_record(**overrides) -> dict:
+    """A schema-v2 record: evidence bound to a generation, talk binding assumed."""
     record = {
         "schema_version": 2,
         "pptx_path": "Conference/2024/Talk.pptx",
@@ -76,6 +121,14 @@ def _current_record(**overrides) -> dict:
         "visual_extracted": True,
         "visual_evidence": _evidence(),
     }
+    record.update(overrides)
+    return record
+
+
+def _current_record(**overrides) -> dict:
+    record = _evidence_bound_record()
+    record["schema_version"] = 3
+    record["identity_assessment"] = _identity_assessment()
     record.update(overrides)
     return record
 
@@ -269,7 +322,7 @@ def test_unknown_classification_is_rejected_rather_than_treated_as_current(
 
 def test_a_future_record_says_the_reader_is_lagging(tracking_database) -> None:
     """stateful-artifacts: newer than accepted is no usable prior state."""
-    record = _current_record(schema_version=3)
+    record = _current_record(schema_version=4)
 
     with pytest.raises(
         tracking_database.TrackingDatabaseError, match="newer than this reader accepts"
@@ -382,12 +435,12 @@ def test_owner_writer_refuses_a_record_without_the_generation_binding(
 
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
-        match=r"missing \['visual_evidence'\]",
+        match=r"missing \['identity_assessment', 'visual_evidence'\]",
     ):
         mutate_tracking_database.build_candidate(_database([]), [mutation])
 
 
-def test_owner_writer_refuses_a_v2_shape_declared_as_v1(
+def test_owner_writer_refuses_a_current_shape_declared_as_v1(
     mutate_tracking_database,
 ) -> None:
     """The version is validated per kind: pptx_catalog left v1 behind."""
@@ -395,12 +448,17 @@ def test_owner_writer_refuses_a_v2_shape_declared_as_v1(
         "kind": "record_pptx",
         "expect": {"$missing": True},
         "record": _current_record()
-        | {"talk_filename": None, "matched": False, "schema_version": 1},
+        | {
+            "talk_filename": None,
+            "matched": False,
+            "identity_assessment": None,
+            "schema_version": 1,
+        },
     }
 
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
-        match="schema_version must be exact integer 2",
+        match="schema_version must be exact integer 3",
     ):
         mutate_tracking_database.build_candidate(_database([]), [mutation])
 
@@ -408,7 +466,11 @@ def test_owner_writer_refuses_a_v2_shape_declared_as_v1(
 def test_owner_writer_accepts_a_bound_receipt_the_reader_calls_current(
     mutate_tracking_database, tracking_database
 ) -> None:
-    record = _current_record() | {"talk_filename": None, "matched": False}
+    record = _current_record() | {
+        "talk_filename": None,
+        "matched": False,
+        "identity_assessment": None,
+    }
     mutation = {
         "kind": "record_pptx",
         "expect": {"$missing": True},
@@ -771,3 +833,654 @@ def test_a_rejected_receipt_reports_a_code_not_the_persisted_value(
     assert rows[0]["needs_extraction"] is True
     assert rows[0]["reason_code"] == "source_fingerprint_invalid"
     assert "sekrit-algorithm-name" not in json.dumps(rows)
+
+
+# The identity gate: a talk binding must be proven before the deck's contents
+# become that talk's evidence (#176).
+
+
+def _identity_mutation(record: dict) -> dict:
+    return {"kind": "record_pptx", "expect": {"$missing": True}, "record": record}
+
+
+def test_a_matched_record_without_an_assessment_is_refused(
+    mutate_tracking_database,
+) -> None:
+    record = _current_record()
+    del record["identity_assessment"]
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match=r"missing \['identity_assessment'\]",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def test_a_matched_record_with_a_null_assessment_is_refused(
+    mutate_tracking_database,
+) -> None:
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="identity_assessment_missing",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]),
+            [_identity_mutation(_current_record(identity_assessment=None))],
+        )
+
+
+@pytest.mark.parametrize("verdict", ["review_required", "unmatched"])
+def test_an_unproven_verdict_cannot_bind_a_talk(
+    mutate_tracking_database, verdict
+) -> None:
+    """A `review_required` deck is an owner decision nobody has made yet."""
+    record = _current_record(identity_assessment=_identity_assessment(verdict=verdict))
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="identity_verdict_not_matched",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def test_an_assessment_without_a_deck_identity_is_refused(
+    mutate_tracking_database,
+) -> None:
+    """An assessment binds a pair; the deck endpoint is not optional."""
+    assessment = _identity_assessment()
+    del assessment["pptx_path"]
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="identity_assessment_incomplete",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]),
+            [_identity_mutation(_current_record(identity_assessment=assessment))],
+        )
+
+
+def test_an_assessment_for_another_deck_is_refused(
+    mutate_tracking_database,
+) -> None:
+    """The same defect in the other direction: a correct assessment for deck A
+    pasted onto deck B would bind B's contents to A's talk."""
+    record = _current_record(
+        identity_assessment=_identity_assessment(
+            pptx_path="Conference/2024/Some Other Deck.pptx"
+        )
+    )
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="identity_deck_mismatch",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def test_an_assessment_naming_another_talk_is_refused(
+    mutate_tracking_database,
+) -> None:
+    """The exact defect: a proven assessment pasted onto the wrong record."""
+    record = _current_record(
+        identity_assessment=_identity_assessment(
+            selected_talk_filename="2023-01-01-someone-elses-talk.md"
+        )
+    )
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="identity_talk_mismatch",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+@pytest.mark.parametrize("role", ["master", "static_export", "backup"])
+def test_a_non_delivery_artifact_cannot_bind_a_talk(
+    mutate_tracking_database, role
+) -> None:
+    record = _current_record(
+        identity_assessment=_identity_assessment(artifact_role=role)
+    )
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="identity_non_delivery_artifact",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def test_an_assessment_from_a_future_schema_is_refused(
+    mutate_tracking_database,
+) -> None:
+    record = _current_record(identity_assessment=_identity_assessment(schema_version=2))
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="identity_assessment_schema_unsupported",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def test_a_reason_code_outside_the_taxonomy_is_refused(
+    mutate_tracking_database,
+) -> None:
+    record = _current_record(
+        identity_assessment=_identity_assessment(reason_codes=["looked_about_right"])
+    )
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="identity_reason_codes_contradict_verdict",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def test_an_unmatched_record_must_not_carry_an_assessment(
+    mutate_tracking_database,
+) -> None:
+    record = _current_record(talk_filename=None, matched=False)
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="must be null on an unmatched record",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def _database_with_talk(filename: str) -> dict:
+    database = _database([])
+    database["talks"] = [
+        {"schema_version": 5, "filename": filename, "status": "pending"}
+    ]
+    return database
+
+
+def test_a_proven_binding_is_persisted(mutate_tracking_database) -> None:
+    record = _current_record()
+    mutation = _identity_mutation(copy.deepcopy(record))
+    mutation["expect_talk_pptx_path"] = {"$missing": True}
+
+    candidate, changes = mutate_tracking_database.build_candidate(
+        _database_with_talk(record["talk_filename"]), [mutation]
+    )
+
+    assert candidate["pptx_catalog"][0] == record
+    assert any(change["kind"] == "match_pptx_talk" for change in changes)
+
+
+def test_the_writer_and_preflight_share_one_binding_predicate(
+    mutate_tracking_database, preflight_vault, pptx_talk_identity
+) -> None:
+    """Two copies of this rule would drift, and the direction they drift is a
+    reader trusting what a writer would have refused."""
+    assert (
+        mutate_tracking_database.binding_refusal is pptx_talk_identity.binding_refusal
+    )
+    assert preflight_vault.binding_refusal is pptx_talk_identity.binding_refusal
+
+
+def test_an_assessment_the_assessor_produced_satisfies_the_writer(
+    mutate_tracking_database, pptx_talk_identity
+) -> None:
+    """End to end: the assessor's own output is what the gate accepts."""
+    talk = {
+        "filename": "2024-04-10-talk.md",
+        "title": "A Talk About Things",
+        "conference": "Voxxed Days Ticino",
+        "date": "2024-04-10",
+    }
+    assessment = pptx_talk_identity.assess_pptx_talk_identity(
+        {"pptx_path": "Voxxed Days Ticino/2024/A Talk About Things.pptx"},
+        [talk],
+    )
+    assert assessment.verdict == pptx_talk_identity.VERDICT_MATCHED
+
+    record = _current_record(
+        pptx_path=assessment.pptx_path,
+        talk_filename=talk["filename"],
+        identity_assessment=assessment.as_json(),
+    )
+
+    mutation = _identity_mutation(copy.deepcopy(record))
+    mutation["expect_talk_pptx_path"] = {"$missing": True}
+
+    candidate, _ = mutate_tracking_database.build_candidate(
+        _database_with_talk(talk["filename"]), [mutation]
+    )
+
+    assert candidate["pptx_catalog"][0]["identity_assessment"] == assessment.as_json()
+
+
+# Owner migration: v2 records upgrade to v3 without inventing proof (#176).
+
+
+def test_migration_upgrades_a_matched_v2_record_to_review_required(
+    tracking_database,
+) -> None:
+    database = _database([_evidence_bound_record()])
+
+    migration = tracking_database.migrate_tracking_database(database)
+    record = migration.database["pptx_catalog"][0]
+
+    assert record["schema_version"] == 3
+    assessment = record["identity_assessment"]
+    assert assessment["verdict"] == "review_required"
+    assert assessment["selected_talk_filename"] is None
+    assert assessment["reason_codes"] == ["identity_unassessed_legacy_binding"]
+    assert assessment["pptx_path"] == record["pptx_path"]
+
+
+def test_migration_preserves_the_legacy_binding_it_cannot_prove(
+    tracking_database,
+) -> None:
+    """The binding survives; only its provenance is marked unproven."""
+    database = _database([_evidence_bound_record()])
+
+    migration = tracking_database.migrate_tracking_database(database)
+    record = migration.database["pptx_catalog"][0]
+
+    assert record["talk_filename"] == "2024-04-10-talk.md"
+    assert record["matched"] is True
+    assert record["visual_evidence"] == _evidence()
+
+
+def test_migration_never_invents_a_matched_verdict(tracking_database) -> None:
+    """Forging `matched` would manufacture the evidence v3 exists to require."""
+    database = _database([_evidence_bound_record()])
+
+    migration = tracking_database.migrate_tracking_database(database)
+
+    assessment = migration.database["pptx_catalog"][0]["identity_assessment"]
+    assert assessment["verdict"] != "matched"
+
+
+def test_migration_gives_an_unmatched_v2_record_a_null_assessment(
+    tracking_database,
+) -> None:
+    database = _database([_evidence_bound_record(talk_filename=None, matched=False)])
+
+    migration = tracking_database.migrate_tracking_database(database)
+    record = migration.database["pptx_catalog"][0]
+
+    assert record["schema_version"] == 3
+    assert record["identity_assessment"] is None
+
+
+def test_migration_leaves_v1_records_at_v1(tracking_database) -> None:
+    """A v1 record has no visual_evidence either; the established position is
+    to preserve it rather than invent one."""
+    database = _database([_legacy_record()])
+
+    migration = tracking_database.migrate_tracking_database(database)
+    record = migration.database["pptx_catalog"][0]
+
+    assert record["schema_version"] == 1
+    assert "identity_assessment" not in record
+
+
+def test_a_migrated_record_reads_as_a_current_database_shape(
+    tracking_database,
+) -> None:
+    database = _database([_evidence_bound_record()])
+
+    migration = tracking_database.migrate_tracking_database(database)
+    assessment = tracking_database.assess_tracking_database(migration.database)
+
+    assert assessment.usable is True
+
+
+def test_migration_is_idempotent(tracking_database) -> None:
+    database = _database([_evidence_bound_record()])
+
+    once = tracking_database.migrate_tracking_database(database)
+    twice = tracking_database.migrate_tracking_database(copy.deepcopy(once.database))
+
+    assert twice.database["pptx_catalog"] == once.database["pptx_catalog"]
+
+
+def _claimed_talk() -> dict:
+    """A talk whose queue claim is live."""
+    return {
+        "schema_version": 5,
+        "filename": "2024-04-10-talk.md",
+        "status": "reprocessing-inflight",
+        "reprocess_generation": 1,
+        "_queue_claim": {
+            "schema_version": 2,
+            "run_id": "reparse-2026-08",
+            "batch_id": "1",
+            "claimed_at": "2026-08-01T00:00:00+00:00",
+            "previous_status": "needs-reprocessing",
+            "reprocess_generation": 1,
+            "state": "claimed",
+        },
+    }
+
+
+def test_an_active_claim_blocks_a_record_level_migration(tracking_database) -> None:
+    """A shape change is a shape change whether the root moves or a record does;
+    an active writer must block it either way."""
+    database = _database([_evidence_bound_record()])
+    database["talks"] = [_claimed_talk()]
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="active queue writers"
+    ):
+        tracking_database.migrate_tracking_database(database)
+
+
+def test_a_no_op_migration_stays_callable_under_an_active_claim(
+    tracking_database,
+) -> None:
+    """Step 1 migrates before Step 2 can recover a stranded claim, so refusing a
+    no-op here would leave an interrupted run unable to resume."""
+    database = _database([_current_record()])
+    database["talks"] = [_claimed_talk()]
+
+    migration = tracking_database.migrate_tracking_database(database)
+
+    assert migration.changed is False
+    assert migration.database["pptx_catalog"][0]["schema_version"] == 3
+
+
+@pytest.mark.parametrize(
+    "codes",
+    [
+        ["identity_unassessed_legacy_binding"],
+        ["identity_matched", "identity_unassessed_legacy_binding"],
+        ["identity_ambiguous_candidates"],
+        [],
+    ],
+)
+def test_a_matched_verdict_cannot_claim_a_refusal_reason(
+    mutate_tracking_database, codes
+) -> None:
+    """Taxonomy membership is not enough: every code but the matched one
+    explains a refusal, and the legacy-binding code means the opposite of
+    proven."""
+    record = _current_record(
+        identity_assessment=_identity_assessment(reason_codes=codes)
+    )
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="identity_reason_codes_contradict_verdict",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def test_the_migration_stamp_cannot_be_replayed_as_a_proven_binding(
+    mutate_tracking_database, tracking_database
+) -> None:
+    """The exact escalation: take migration's own output, flip the verdict."""
+    database = _database([_evidence_bound_record()])
+    migrated = tracking_database.migrate_tracking_database(database)
+    assessment = copy.deepcopy(
+        migrated.database["pptx_catalog"][0]["identity_assessment"]
+    )
+    assessment["verdict"] = "matched"
+    assessment["selected_talk_filename"] = "2024-04-10-talk.md"
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="identity_reason_codes_contradict_verdict",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]),
+            [_identity_mutation(_current_record(identity_assessment=assessment))],
+        )
+
+
+def test_a_legacy_config_does_not_skip_the_record_migration(
+    tracking_database,
+) -> None:
+    """Root v1 with a legacy config takes its own return path; the record
+    migration must run before it, not after."""
+    database = _database([_evidence_bound_record()])
+    database["config"] = {"schema_version": 1}
+
+    migration = tracking_database.migrate_tracking_database(database)
+    record = migration.database["pptx_catalog"][0]
+
+    assert migration.changed is True
+    assert record["schema_version"] == 3
+    assert record["identity_assessment"]["verdict"] == "review_required"
+
+
+# The catalog-wide sweep: preflight consumes the assessment (#176).
+
+
+def _preflight_codes(preflight_vault, database, tmp_path):
+    """Run only the identity sweep; the rest of preflight needs a real vault."""
+    validator = preflight_vault.VaultPreflight(
+        database, tmp_path, tmp_path / "tracking-database.json"
+    )
+    validator._check_pptx_talk_identity()
+    return {(finding["code"], finding["severity"]) for finding in validator.findings}
+
+
+def test_preflight_blocks_on_a_migrated_legacy_binding(
+    preflight_vault, tracking_database, tmp_path
+) -> None:
+    """A warning would let Step 1's blocking-only gate proceed on state the
+    database itself marks unproven."""
+    database = _database([_evidence_bound_record()])
+    migrated = tracking_database.migrate_tracking_database(database).database
+
+    codes = _preflight_codes(preflight_vault, migrated, tmp_path)
+
+    assert ("pptx_talk_binding_unproven", "blocking") in codes
+
+
+def test_preflight_blocks_on_an_assessment_that_actually_refused(
+    preflight_vault, tmp_path
+) -> None:
+    """An assessor that looked and refused is a specific, actionable finding."""
+    record = _current_record(
+        identity_assessment=_identity_assessment(
+            verdict="review_required",
+            selected_talk_filename=None,
+            reason_codes=["identity_ambiguous_candidates"],
+        )
+    )
+
+    codes = _preflight_codes(preflight_vault, _database([record]), tmp_path)
+
+    assert ("pptx_talk_binding_unproven", "blocking") in codes
+
+
+def test_preflight_is_silent_on_a_proven_binding(preflight_vault, tmp_path) -> None:
+    codes = _preflight_codes(preflight_vault, _database([_current_record()]), tmp_path)
+
+    assert not any(code.startswith("pptx_talk_binding") for code, _ in codes)
+
+
+def test_preflight_ignores_an_unmatched_row(preflight_vault, tmp_path) -> None:
+    """No talk is bound, so there is no binding to prove."""
+    record = _current_record(
+        talk_filename=None, matched=False, identity_assessment=None
+    )
+
+    codes = _preflight_codes(preflight_vault, _database([record]), tmp_path)
+
+    assert not any(code.startswith("pptx_talk_binding") for code, _ in codes)
+
+
+def test_preflight_blocks_a_row_migration_will_never_reach(
+    preflight_vault, tmp_path
+) -> None:
+    codes = _preflight_codes(
+        preflight_vault, _database([_evidence_bound_record()]), tmp_path
+    )
+
+    assert ("pptx_talk_binding_unassessed", "blocking") in codes
+
+
+def test_preflight_refuses_an_assessment_that_proves_another_pair(
+    preflight_vault, tmp_path
+) -> None:
+    """Hints, Not Authority: a persisted `matched` verdict for a different deck
+    must not read as proof of this row."""
+    record = _current_record(
+        identity_assessment=_identity_assessment(
+            pptx_path="Conference/2024/Some Other Deck.pptx"
+        )
+    )
+
+    codes = _preflight_codes(preflight_vault, _database([record]), tmp_path)
+
+    assert ("pptx_talk_binding_unproven", "blocking") in codes
+
+
+def test_preflight_refuses_a_matched_verdict_naming_another_talk(
+    preflight_vault, tmp_path
+) -> None:
+    record = _current_record(
+        identity_assessment=_identity_assessment(
+            selected_talk_filename="2023-01-01-someone-elses-talk.md"
+        )
+    )
+
+    codes = _preflight_codes(preflight_vault, _database([record]), tmp_path)
+
+    assert ("pptx_talk_binding_unproven", "blocking") in codes
+
+
+def test_a_matched_verdict_over_an_empty_candidate_table_proves_nothing(
+    mutate_tracking_database,
+) -> None:
+    """A conclusion with nothing under it is what a fabricated assessment
+    looks like."""
+    record = _current_record(identity_assessment=_identity_assessment(candidates=[]))
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="identity_candidate_table_missing",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def test_a_candidate_table_that_does_not_name_the_selected_talk_is_refused(
+    mutate_tracking_database,
+) -> None:
+    record = _current_record(
+        identity_assessment=_identity_assessment(
+            candidates=[
+                {
+                    "talk_filename": "2023-01-01-other.md",
+                    "signals": _signals(agree=("venue",)),
+                    "agreeing": ["venue"],
+                    "conflicting": [],
+                }
+            ]
+        )
+    )
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="identity_candidate_absent",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def test_a_selected_candidate_with_no_agreement_is_refused(
+    mutate_tracking_database,
+) -> None:
+    record = _current_record(
+        identity_assessment=_identity_assessment(
+            candidates=[
+                {
+                    "talk_filename": "2024-04-10-talk.md",
+                    "signals": _signals(),
+                    "agreeing": [],
+                    "conflicting": [],
+                }
+            ]
+        )
+    )
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="identity_candidate_not_selectable",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def test_a_candidate_agreeing_only_on_a_non_selecting_signal_is_refused(
+    mutate_tracking_database,
+) -> None:
+    """Filename similarity and delivery year report but never elect."""
+    record = _current_record(
+        identity_assessment=_identity_assessment(
+            candidates=[
+                {
+                    "talk_filename": "2024-04-10-talk.md",
+                    "signals": _signals(agree=("filename_similarity", "delivery_year")),
+                    "agreeing": [],
+                    "conflicting": [],
+                }
+            ]
+        )
+    )
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="identity_candidate_not_selectable",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )
+
+
+def test_an_equally_corroborated_rival_is_refused(mutate_tracking_database) -> None:
+    record = _current_record(
+        identity_assessment=_identity_assessment(
+            candidates=[
+                {
+                    "talk_filename": "2024-04-10-talk.md",
+                    "signals": _signals(agree=("venue",)),
+                    "agreeing": ["venue"],
+                    "conflicting": [],
+                },
+                {
+                    "talk_filename": "2024-04-11-rival.md",
+                    "signals": _signals(agree=("venue",)),
+                    "agreeing": ["venue"],
+                    "conflicting": [],
+                },
+            ]
+        )
+    )
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="identity_candidate_not_unique",
+    ):
+        mutate_tracking_database.build_candidate(
+            _database([]), [_identity_mutation(record)]
+        )

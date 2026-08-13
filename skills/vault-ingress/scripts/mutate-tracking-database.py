@@ -28,7 +28,7 @@ from tracking_database import (
     IMPROVEMENT_GOAL_RECORD_SCHEMA_VERSION,
     IMPROVEMENT_GOAL_REQUIRED_FIELDS as OWNER_IMPROVEMENT_GOAL_REQUIRED_FIELDS,
     PPTX_CATALOG_RECORD_SCHEMA_VERSION,
-    PPTX_CATALOG_V2_REQUIRED_FIELDS,
+    PPTX_CATALOG_V3_REQUIRED_FIELDS,
     validate_pptx_visual_evidence,
     RESOURCE_RECORD_SCHEMA_VERSION,
     RESOURCE_REQUIRED_FIELDS as OWNER_RESOURCE_REQUIRED_FIELDS,
@@ -54,13 +54,15 @@ from pptx_discovery_contract import (
     PptxDiscoveryContractError,
     validate_pptx_directory_exclusions,
 )
+from pptx_talk_identity import binding_refusal
 
 
 PLAN_SCHEMA_VERSION = 1
 OWNER_RECORD_SCHEMA_VERSION = CONFIRMED_INTENT_RECORD_SCHEMA_VERSION
-# pptx_catalog left this shared version behind at v2, where each record binds
-# its visual evidence to an extractor generation, and is validated per kind by
-# _apply_record_pptx against PPTX_CATALOG_RECORD_SCHEMA_VERSION.
+# pptx_catalog left this shared version behind at v3, where each record binds
+# its visual evidence to an extractor generation AND its talk binding to a
+# proven identity assessment. Validated per kind by _apply_record_pptx against
+# PPTX_CATALOG_RECORD_SCHEMA_VERSION.
 if (
     len(
         {
@@ -130,7 +132,7 @@ CONFIRMED_INTENT_REQUIRED_FIELDS = OWNER_CONFIRMED_INTENT_REQUIRED_FIELDS | {
     "schema_version"
 }
 RESOURCE_REQUIRED_FIELDS = OWNER_RESOURCE_REQUIRED_FIELDS | {"schema_version"}
-PPTX_REQUIRED_FIELDS = PPTX_CATALOG_V2_REQUIRED_FIELDS | {"schema_version"}
+PPTX_REQUIRED_FIELDS = PPTX_CATALOG_V3_REQUIRED_FIELDS | {"schema_version"}
 THUMBNAIL_REQUIRED_FIELDS = OWNER_THUMBNAIL_REQUIRED_FIELDS | {"schema_version"}
 
 
@@ -1069,6 +1071,46 @@ def _apply_retire_improvement_goal(
     )
 
 
+def _require_bound_identity_assessment(
+    assessment: object,
+    *,
+    pptx_path: str,
+    talk_filename: str | None,
+    label: str,
+) -> None:
+    """Refuse a talk binding the assessment does not actually prove.
+
+    This is the gate the whole of #176 exists for. Everything guarding deck
+    evidence runs after persistence, so if an unproven binding gets written here
+    nothing downstream can tell that a talk's slide counts, OCR, and pattern
+    observations came from someone else's deck.
+
+    Four things must hold together, and checking fewer is checking none: the
+    assessment must be a `matched` verdict, it must be ABOUT this record's deck,
+    it must name THIS record's talk, and it must be for a delivery artifact.
+
+    Both endpoints are checked because an assessment binds a pair. Verifying the
+    talk alone leaves the deck free: a real, correctly-decided assessment for
+    deck A pasted onto deck B's record would pass every other check and bind B's
+    contents to A's talk — the same defect in the other direction.
+    """
+    if talk_filename is None:
+        if assessment is not None:
+            raise TrackingDatabaseMutationError(
+                f"{label} must be null on an unmatched record"
+            )
+        return
+    refusal = binding_refusal(
+        assessment, pptx_path=pptx_path, talk_filename=talk_filename
+    )
+    if refusal is not None:
+        raise TrackingDatabaseMutationError(
+            f"{label} does not authorize this binding ({refusal}); a talk "
+            "binding must be proven before the deck's contents become that "
+            "talk's evidence"
+        )
+
+
 def _apply_record_pptx(
     database: dict[str, Any],
     mutation: dict[str, Any],
@@ -1139,6 +1181,12 @@ def _apply_record_pptx(
         raise TrackingDatabaseMutationError(
             f"mutations[{index}] matched must be true exactly when talk_filename is set"
         )
+    _require_bound_identity_assessment(
+        record.get("identity_assessment"),
+        pptx_path=pptx_path,
+        talk_filename=talk_filename,
+        label=f"{record_label}.identity_assessment",
+    )
     records = _collection(database, "pptx_catalog")
     record_index, current = _find_unique_record(
         records,
