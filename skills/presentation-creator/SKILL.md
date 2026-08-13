@@ -284,10 +284,10 @@ status; the agent adds these categories manually:
 - Time-sensitive content scan
 - Murder-Your-Darlings filter pass
 - Emotion-balance and screening-with-critics where applicable
-- AI writing patterns across every prose surface, delegated with
-  `Skill(skill: "blog-writer")` — it owns the pattern catalog, so never
-  reimplement the scan here; report SKIP and point the author at
-  `tessl install jbaruch/blog-writer` when it is absent
+- AI writing patterns across every prose surface, via `Skill(skill: "blog-writer")`
+- Never reimplement that scan here
+- Report SKIP and point the author at `tessl install jbaruch/blog-writer` when
+  the skill is absent
 
 Iterate on author feedback. Apply changes first, guardrail second. Flag but don't
 block intentionally overridden guardrails.
