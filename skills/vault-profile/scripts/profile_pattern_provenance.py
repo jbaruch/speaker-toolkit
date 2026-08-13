@@ -112,9 +112,11 @@ _V5_PATTERN_PROFILE_FIELDS = _COMMON_PATTERN_PROFILE_FIELDS | frozenset(
         "trend_analysis",
     }
 )
-# Allowed, never required. The writer emits it, but a profile written before it
-# existed is not thereby invalid — making it required would refuse to read every
-# profile already on disk, which is a bigger break than the gap it closes.
+# Presence is generation-dependent, so the field is neither globally required nor
+# globally optional. The v2 writer always emits it and never-used claims cannot be
+# read without it, so v2 REQUIRES it; v1 predates it and must not carry it. This
+# set only keeps it out of the unknown-field sweep — `_validate_absence_provability`
+# owns which generation must carry it.
 _OPTIONAL_PATTERN_PROFILE_FIELDS = frozenset({"absence_provability"})
 _REQUIRED_PATTERN_BREADTH_FIELDS = frozenset(
     {"avg_distinct_patterns_per_talk", "trend", "note"}
@@ -1670,9 +1672,25 @@ def _validate_absence_provability(
     The floor is the CLASSIFICATION schema version, not the outer pattern-profile
     contract version. The outer contract is 4 or 5, so comparing it against a
     classification floor of 2 admits every block it was meant to reject.
+
+    Presence is required from that generation onward and forbidden before it. The
+    v2 writer always emits the field, and a never-used list cannot be read without
+    its denominator, so a v2 record missing it is incomplete rather than merely
+    older.
     """
     path = "pattern_profile.absence_provability"
+    carries_field = (
+        _is_integer(classification_schema_version)
+        and classification_schema_version
+        >= ABSENCE_PROVABILITY_MIN_CLASSIFICATION_SCHEMA_VERSION
+    )
     if not present:
+        if carries_field:
+            return [
+                f"{path} is required at classification_schema_version "
+                f"{classification_schema_version}; a never-used list without its "
+                "denominator reads as speaker behaviour rather than coverage"
+            ]
         return []
     if (
         not _is_integer(classification_schema_version)

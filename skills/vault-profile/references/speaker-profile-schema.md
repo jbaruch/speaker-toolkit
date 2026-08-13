@@ -668,13 +668,18 @@ of 81 observable, so a short `never_used_patterns` list is mostly a statement
 about coverage rather than about the speaker; a reader presenting the list
 without these counts misreports it.
 
-The field arrives with `classification_schema_version: 2`. A version-1 block that
-omits it stays readable — the counts are a fact about the catalog, not a claim
-the older block got anything wrong — so readers treat the field as absent rather
-than the profile as invalid. A version-1 block that *carries* it is rejected:
-the field did not exist under that generation's contract, so its presence means
-the stamp and the payload disagree. Contract v4 carries no classification block
-at all and never admits the field.
+The field arrives with `classification_schema_version: 2`, and presence is
+generation-dependent rather than optional:
+
+| Generation | `absence_provability` |
+|---|---|
+| classification v2 and later | **required** — the writer always emits it, and a never-used list is unreadable without its denominator |
+| classification v1 | **forbidden** — the field did not exist under that contract, so its presence means the stamp and the payload disagree |
+| contract v4 | **forbidden** — v4 carries no classification block at all |
+
+A version-1 block that omits it stays readable — the counts are a fact about the
+catalog, not a claim the older block got anything wrong — so readers treat the
+field as absent rather than the profile as invalid.
 
 **Migration boundary.** A version-1 block is a superseded classification
 generation, so a reader gets no usable classification state from it: every

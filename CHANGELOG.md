@@ -67,6 +67,11 @@ owner run replaces it. The reason code is distinct from
 had a policy stamp. Occurrence rows stay readable across the boundary — they
 belong to the pattern-profile contract, not to the classification generation.
 
+Presence is generation-dependent rather than optional. Classification v2 requires
+the field — the writer always emits it, and a never-used list is unreadable
+without its denominator, so a v2 record missing it is incomplete rather than
+merely older. v1 and contract v4 forbid it.
+
 `classify-pattern-profile.py` emits it beside `never_used_patterns`, so the list
 and its denominator always travel together. The field is allowed but never
 required: a profile written before it existed is not thereby invalid, and

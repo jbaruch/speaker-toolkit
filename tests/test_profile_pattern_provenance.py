@@ -627,6 +627,23 @@ class TestAbsenceProvabilityThroughTheAssessor:
         assert "absence_provability" in pattern_profile
         assert assessment.current_contract is True
 
+    def test_the_current_generation_must_carry_it(self, validate_profile):
+        """The v2 writer always emits it, and a never-used list is unreadable
+        without its denominator — so a v2 record missing it is incomplete, not
+        merely older."""
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        del pattern_profile["absence_provability"]
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is False
+        assert any(
+            "absence_provability is required at classification_schema_version" in error
+            for error in assessment.errors
+        )
+
     def test_a_classification_v1_block_cannot_carry_it(self, validate_profile):
         pattern_profile = _v5_pattern_profile(validate_profile)
         pattern_profile["classification_schema_version"] = 1
