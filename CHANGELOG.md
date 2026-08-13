@@ -1,5 +1,16 @@
 # Changelog
 
+### docs — the guardrail rule references the contract instead of repeating it
+
+`rules/guardrail-rules.md` had grown a copy of the prose scan's invocation,
+suppression, classification, and absent-scanner steps, which
+`phase4-guardrails.md` already carries. Rules state the contract; skills carry
+the executable form, and two copies of one contract drift.
+
+Also renames `test_a_high_finding_alone_leaves_pass` — its assertion is that a
+single high finding does NOT leave PASS, so the name said the opposite of the
+test.
+
 ### feat(presentation-creator) — defer the prose scan to blog-writer (#287)
 
 Every prose surface this workflow produces — speaker notes, the abstract, section

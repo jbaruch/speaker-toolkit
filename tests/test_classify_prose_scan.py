@@ -50,7 +50,7 @@ class TestTheBoundaries:
     ) -> None:
         assert classify_prose_scan.classify(high, medium) == expected
 
-    def test_a_high_finding_alone_leaves_pass(self, classify_prose_scan) -> None:
+    def test_a_single_high_finding_ends_pass(self, classify_prose_scan) -> None:
         """One confident finding is worth reading, whatever the mediums say."""
         assert classify_prose_scan.classify(0, 0) == "PASS"
         assert classify_prose_scan.classify(1, 0) != "PASS"
