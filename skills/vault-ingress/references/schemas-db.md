@@ -1086,6 +1086,14 @@ travels with the score it explains — a weighted number alone cannot say whethe
 it came from two strong detections or four moderate ones, so persisting the score
 without it stores exactly the unaccompanied figure the basis exists to prevent.
 
+**Scoring generation.** A v6 return's opportunity identity is stamped with
+pattern-scoring schema **6**, not 5. Weighted and flat scores are not comparable,
+so sharing an identity would file them in one cohort and let an aggregate average
+across two arithmetics. `PATTERN_SCORING_SCHEMA_VERSION` stays 5 — that names the
+CURRENT generation, and no worker emits v6 yet — while
+`scoring_schema_version_for_return` maps each return schema to the generation its
+score belongs to.
+
 **Migration.** None. A persisted v5 talk stays v5 and remains comparable within
 its own generation; it becomes v6 only by reparse under a v6 claim. Weights are
 part of the scoring schema version, so changing one is a scoring-generation bump,

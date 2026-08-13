@@ -16,6 +16,14 @@ and no exhaustive outcome lanes at all — silently, since every check that woul
 have caught it was gated on the same equality. They now test membership of
 `EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS`.
 
+A v6 return's opportunity identity is stamped with pattern-scoring schema 6.
+Accepting v6 into canonical persistence while it still carried scoring schema 5
+would have filed weighted scores in the same cohort as flat ones, letting an
+aggregate average across two arithmetics with every field looking well-formed.
+`PATTERN_SCORING_SCHEMA_VERSION` still names the current generation and stays at
+5; `scoring_schema_version_for_return` maps a return schema to the generation its
+score belongs to, and producer and validator share that one rule.
+
 The supplied score is compared exactly, never rounded. `expected_weighted_score`
 already rounds the canonical result to two places, so rounding the untrusted
 value too widened the gate by half a hundredth either way — `1.504` validated as

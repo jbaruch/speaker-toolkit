@@ -485,3 +485,77 @@ class TestTheSuppliedScoreIsComparedExactly:
         )
 
         return_validation.validate_return(ret, catalog)
+
+
+class TestV6GetsItsOwnScoringGeneration:
+    """Weighted and flat scores are not comparable, so they cannot share one.
+
+    The opportunity identity is what files a talk into a scoring cohort. Stamping
+    a v6 identity with scoring schema 5 would put a weighted score in the same
+    cohort as the flat ones and let an aggregate average across two different
+    arithmetics — silently, since every field would look well-formed.
+    """
+
+    def test_a_v6_return_is_stamped_with_the_weighted_generation(
+        self, return_validation
+    ) -> None:
+        assert (
+            return_validation.scoring_schema_version_for_return(
+                return_validation.WEIGHTED_SCORE_RETURN_SCHEMA_VERSION
+            )
+            == return_validation.WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
+        )
+
+    def test_a_v5_return_keeps_the_flat_generation(self, return_validation) -> None:
+        assert (
+            return_validation.scoring_schema_version_for_return(
+                return_validation.RETURN_SCHEMA_VERSION
+            )
+            == return_validation.PATTERN_SCORING_SCHEMA_VERSION
+        )
+
+    def test_the_two_generations_differ(self, return_validation) -> None:
+        """If they were equal the split would be decorative."""
+        assert (
+            return_validation.WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
+            != return_validation.PATTERN_SCORING_SCHEMA_VERSION
+        )
+
+    def test_persistence_files_v5_and_v6_in_different_cohorts(
+        self, return_validation, catalog, tmp_path, transcript_timing
+    ) -> None:
+        """The identity is the cohort key, so the two must not collide."""
+        v5_persisted = _persist(
+            return_validation,
+            catalog,
+            tmp_path / "v5",
+            transcript_timing,
+            _v5(),
+        )
+        v6_persisted = _persist(
+            return_validation,
+            catalog,
+            tmp_path / "v6",
+            transcript_timing,
+            _v6(return_validation),
+        )
+
+        assert (
+            v5_persisted["opportunity_coverage_identity"]
+            != v6_persisted["opportunity_coverage_identity"]
+        )
+
+    def test_the_producer_and_the_validator_agree(
+        self, return_validation, catalog, tmp_path, transcript_timing
+    ) -> None:
+        """`_persist` runs the real canonicalizer and then the real validator, so
+        a disagreement between them fails here rather than at persistence."""
+        persisted = _persist(
+            return_validation,
+            catalog,
+            tmp_path,
+            transcript_timing,
+            _v6(return_validation),
+        )
+
+        assert persisted["opportunity_coverage_identity"]

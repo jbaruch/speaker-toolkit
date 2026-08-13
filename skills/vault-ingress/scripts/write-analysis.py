@@ -84,7 +84,6 @@ from return_validation import (
     ANALYSIS_STATUSES,
     EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS,
     LEGACY_UNBASELINEABLE_SCORING_STATUS,
-    RETURN_SCHEMA_VERSION,
     SNAPSHOT_RETURN_SCHEMA_VERSIONS,
     SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS,
     ReturnValidationError,
@@ -594,15 +593,16 @@ def render_adherence_assessment(payload):
     comparison = payload.get("adherence_comparison")
     if not isinstance(comparison, dict):
         raise ReturnValidationError(
-            f"return-schema v{RETURN_SCHEMA_VERSION} adherence prose has no "
-            "persisted, validated "
-            "adherence_comparison"
+            f"return-schema v{return_schema_version} adherence prose has no "
+            "persisted, validated adherence_comparison; run persist-results.py "
+            "to store one before rendering this analysis"
         )
     baseline = comparison.get("baseline")
     if not isinstance(baseline, dict):
         raise ReturnValidationError(
-            f"return-schema v{RETURN_SCHEMA_VERSION} adherence_comparison has "
-            "no persisted baseline"
+            f"return-schema v{return_schema_version} adherence_comparison has no "
+            "persisted baseline; run persist-results.py to store a validated "
+            "comparison before rendering this analysis"
         )
 
     anchor = (

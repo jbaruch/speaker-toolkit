@@ -69,6 +69,7 @@ EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS = frozenset(
 CANONICALIZABLE_RETURN_SCHEMA_VERSIONS = frozenset(
     {SOURCE_LOCATED_RETURN_SCHEMA_VERSION, *EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS}
 )
+WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION = 6
 CURRENT_PATTERN_SCORING_SCHEMA_VERSION = 5
 PATTERN_OUTCOMES = frozenset(
     {"detected", "undetected", "not_evaluable", "not_applicable"}
@@ -3674,10 +3675,19 @@ def canonicalize_return_evidence(
             for pattern_id in sorted(outcomes)
         ]
         observations["pattern_outcomes"] = pattern_outcomes
+        # A weighted return belongs to its own scoring generation whatever the
+        # caller passes: flat and weighted scores are not comparable, so sharing
+        # an identity would file them in one cohort and let an aggregate average
+        # across two arithmetics. The parameter names the generation for FLAT
+        # returns only.
         observations["opportunity_coverage_identity"] = opportunity_coverage_identity(
             pattern_outcomes,
             pattern_catalog_fingerprint=catalog.fingerprint,
-            pattern_scoring_schema_version=pattern_scoring_schema_version,
+            pattern_scoring_schema_version=(
+                WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
+                if return_schema_version == WEIGHTED_SCORE_RETURN_SCHEMA_VERSION
+                else pattern_scoring_schema_version
+            ),
         )
         observations["evidence_schema_version"] = PATTERN_EVIDENCE_SCHEMA_VERSION
     else:

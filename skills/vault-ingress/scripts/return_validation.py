@@ -300,12 +300,42 @@ EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS = frozenset(
 WEIGHTED_SCORE_RETURN_SCHEMA_VERSIONS = frozenset(
     {WEIGHTED_SCORE_RETURN_SCHEMA_VERSION}
 )
+
 # Stays at 5 until a return actually emits a weighted score. The weight table
 # below is part of the NEXT scoring generation; bumping this constant now would
 # strand every persisted talk on a generation nothing has produced yet, forcing
 # a reparse to adopt arithmetic no worker is using.
 PATTERN_SCORING_SCHEMA_VERSION = 5
 WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION = 6
+
+
+def _persisted_scoring_schema_version(talk: Mapping[str, object]) -> int:
+    """The generation a persisted talk was stamped with.
+
+    A stored talk carries no return version — that field belongs to the result
+    it came from. Its own stamp is what a replay must rebuild the identity
+    against, so an unstamped or malformed record falls back to the current
+    generation and fails the comparison rather than silently matching.
+    """
+    stamped = talk.get("pattern_scoring_schema_version")
+    if isinstance(stamped, bool) or not isinstance(stamped, int):
+        return PATTERN_SCORING_SCHEMA_VERSION
+    return stamped
+
+
+def scoring_schema_version_for_return(return_schema_version: int) -> int:
+    """The scoring generation a return's score belongs to.
+
+    Weighted and flat scores are not comparable, so they cannot share a
+    generation. Stamping a v6 identity with scoring schema 5 would file a
+    weighted score in the same cohort as the flat ones and let an aggregate
+    average across two different arithmetics.
+    """
+    if return_schema_version in WEIGHTED_SCORE_RETURN_SCHEMA_VERSIONS:
+        return WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
+    return PATTERN_SCORING_SCHEMA_VERSION
+
+
 # Owner decision (#153): the aggregate stays one number, but a strong detection
 # and a moderate one stop counting the same. Flat +1/-1 made a slides-only talk
 # and a full-evidence talk emit scores that read as equivalent.
@@ -1556,13 +1586,16 @@ def _validate_applicability_assessments(
     if return_schema_version not in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
         if raw is not None:
             raise ReturnValidationError(
-                "applicability_assessments is supported only by return schema v5"
+                "applicability_assessments is supported only by return schemas "
+                f"{sorted(EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS)}; this return "
+                f"is v{return_schema_version} — remove the field or emit a "
+                "supported schema"
             )
         return []
     if not isinstance(raw, list):
         raise ReturnValidationError(
-            "return-schema v5 pattern observations require an "
-            "applicability_assessments array"
+            f"return-schema v{return_schema_version} pattern observations require "
+            "an applicability_assessments array"
         )
     seen: set[str] = set()
     for index, assessment in enumerate(raw):
@@ -1847,8 +1880,15 @@ def _canonical_gate_complete(
 def _validate_canonical_v5_outcomes(
     observations: dict,
     catalog: PatternCatalog,
+    scoring_schema_version: int = PATTERN_SCORING_SCHEMA_VERSION,
 ) -> list[dict]:
-    """Validate the exhaustive engine-owned v5 outcome projection."""
+    """Validate the exhaustive engine-owned outcome projection.
+
+    Takes the SCORING generation rather than the return version: the identity it
+    rebuilds is what makes two scores comparable, and callers arrive holding
+    different things — a return knows its schema, a persisted talk knows only the
+    generation it was stamped with.
+    """
     if observations.get("evidence_schema_version") != PATTERN_EVIDENCE_SCHEMA_VERSION:
         raise ReturnValidationError(
             "canonical return-schema v5 observations require evidence schema "
@@ -2009,7 +2049,7 @@ def _validate_canonical_v5_outcomes(
         expected_identity = opportunity_coverage_identity(
             canonical_outcomes,
             pattern_catalog_fingerprint=catalog.fingerprint,
-            pattern_scoring_schema_version=PATTERN_SCORING_SCHEMA_VERSION,
+            pattern_scoring_schema_version=scoring_schema_version,
         )
     except PatternEvidenceError as exc:
         raise ReturnValidationError(
@@ -2050,6 +2090,7 @@ def assess_current_persisted_pattern_evidence_freshness(
             _validate_canonical_v5_outcomes(
                 observations,
                 catalog if catalog is not None else load_catalog(),
+                _persisted_scoring_schema_version(talk),
             )
         except ReturnValidationError:
             reasons.add("pattern_outcomes_catalog_projection_drift")
@@ -2193,7 +2234,9 @@ def assess_scoring_generation(
         and observations.get("evidence_schema_version")
         == PATTERN_EVIDENCE_SCHEMA_VERSION
     ):
-        _validate_canonical_v5_outcomes(observations, catalog)
+        _validate_canonical_v5_outcomes(
+            observations, catalog, scoring_schema_version_for_return(version)
+        )
 
     raw_not_evaluable = observations.get("not_evaluable")
     not_evaluable_ids = (
@@ -2286,7 +2329,9 @@ def canonical_persisted_pattern_observations(
             observations.get("source_inspection")
         )
     if return_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
-        _validate_canonical_v5_outcomes(observations, catalog)
+        _validate_canonical_v5_outcomes(
+            observations, catalog, scoring_schema_version_for_return(return_version)
+        )
         persisted["applicability_assessments"] = copy.deepcopy(
             observations.get("applicability_assessments")
         )
