@@ -43,6 +43,45 @@ input could resolve would have been code nothing can invoke.
 strand every persisted talk on a scoring generation nothing has produced yet,
 forcing a reparse to adopt arithmetic no worker is using. It moves in the change
 that makes v6 the required return schema.
+
+### feat(vault-ingress) — migration repairs or requeues, never stamps (#167)
+
+Closes the migration-integration half of #167.
+
+`#147` migration stamped a talk as current record schema without ever reading
+its nested detection objects, so a block with `evidence` and `dimensions`
+swapped, an unknown pattern id, or a missing dimensions array became "current"
+on the strength of its container's shape. The classifier that finds those
+landed in #285 and preflight consumed it in #286; migration still did not.
+
+`migrate-tracking-database.py` now gates every talk claiming completed analysis,
+between the stamp and the write. Two outcomes, and no third:
+
+- an exact inverse-schema swap is undone in place, because both original values
+  live in the repair record and putting them back is reversible;
+- everything else keeps its original bytes and goes back on the queue with
+  `reprocess_reason: persisted_observation_invalid`.
+
+A repair counts only when re-assessment says the block it produced would have
+passed on its own — a talk can carry a repairable swap AND an unrelated defect,
+and the repair fixes only the swap. The report gains a `persisted_observations`
+object with both counts, since a silent repair is indistinguishable from no
+corruption at all.
+
+The analysis writer now fails closed on the same classifier. Rendering is where
+persisted corruption becomes a document a human reads and a profile aggregates,
+so a block the classifier calls unusable no longer reaches it.
+
+That gate could only land after the repair path. Wired before it, it failed
+closed on every legacy talk at once — the block was corrupt and nothing existed
+to repair or requeue it, so no analysis could be re-rendered until each was fixed
+by hand. It is scoped to source-located returns: a legacy return predates the
+detection contract, and judging one against it would refuse a render for
+breaking a rule that did not exist when it was written.
+
+A talk with no observation block is skipped. Absence is incompleteness, not
+corruption — the boundary preflight already draws, and requeueing every talk
+that predates pattern scoring would flood a queue that is working.
 ### ci — renew the Chocolatey ffmpeg pin
 
 `main` went red with no source change: `choco install ffmpeg --version=8.1.2`
