@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from test_schema5_pattern_outcomes import (  # noqa: E402
+from test_schema5_pattern_outcomes import (
     _assessment,
     _catalog,
     _detection,
