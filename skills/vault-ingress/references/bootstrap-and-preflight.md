@@ -244,6 +244,20 @@ The writer rejects an assessment that does not authorize the binding; the
 predicate is `binding_refusal` in
 `skills/vault-ingress/scripts/pptx_talk_identity.py`, shared with preflight. Route a rejected deck to owner review
 rather than persisting it.
+
+Rows bound before that writer existed carry no assessment, and preflight blocks
+every one of them. Assess the whole catalog at once with:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/sweep-pptx-talk-identity.py" \
+  "{vault_root}"
+```
+
+Read-only. It reports one disposition per row — the taxonomy and the signals it
+observes are in the script's module docstring. `binding_contradicted` names a
+deck feeding one talk's evidence to another and is owner-review work before any
+reparse; `binding_confirmed` supplies the assessment a `record_pptx` write
+carries. `--dispositions` narrows the reported rows without changing the counts.
 Never decide from
 `visual_extracted` alone whether a deck needs extraction. Run:
 
