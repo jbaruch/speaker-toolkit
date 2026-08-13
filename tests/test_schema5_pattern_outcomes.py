@@ -866,6 +866,7 @@ def test_mixed_opportunity_baseline_preserves_eligible_cohort_but_suppresses_sco
         pattern_catalog_fingerprint="a" * 64,
         pattern_scoring_schema_version=5,
         evidence_freshness_assessor=lambda _talk: (),
+        persisted_observation_assessor=lambda _talk: (),
     )
 
     assert baseline["eligible_talk_count"] == 2
@@ -901,6 +902,7 @@ def test_all_unknown_opportunity_baseline_suppresses_zero_raw_score(
         pattern_catalog_fingerprint="a" * 64,
         pattern_scoring_schema_version=5,
         evidence_freshness_assessor=lambda _talk: (),
+        persisted_observation_assessor=lambda _talk: (),
     )
 
     assert baseline["eligible_talk_count"] == 2
@@ -927,6 +929,7 @@ def test_adherence_comparison_is_suppressed_when_opportunity_identity_differs(
         pattern_catalog_fingerprint="a" * 64,
         pattern_scoring_schema_version=5,
         evidence_freshness_assessor=lambda _talk: (),
+        persisted_observation_assessor=lambda _talk: (),
     )
     talk = {"_queue_claim": {"adherence_baseline": baseline}}
     canonical = {

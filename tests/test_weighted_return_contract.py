@@ -184,6 +184,7 @@ class TestAWeightedScoreCanBeCompared:
             pattern_catalog_fingerprint="a" * 64,
             pattern_scoring_schema_version=rv.PATTERN_SCORING_SCHEMA_VERSION,
             evidence_freshness_assessor=lambda _talk: (),
+            persisted_observation_assessor=lambda _talk: (),
         )
         ret["adherence_assessment"] = "It rose against the baseline. Clearly so."
         ret["adherence_comparison"] = {

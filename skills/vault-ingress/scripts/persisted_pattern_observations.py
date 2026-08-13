@@ -678,3 +678,27 @@ def apply_swapped_field_repairs(
         detection["evidence"] = repair.evidence
         detection["dimensions"] = list(repair.dimensions)
     return repaired
+
+
+def persisted_observation_assessor(catalog: PatternCatalog):
+    """Bind the classifier as the cohort selector's reason-code assessor.
+
+    `partition_pattern_scoring_cohort` takes a callable returning the codes
+    that make a talk unusable, empty when it is fine. Three callers need that
+    adapter — queue normalization, the post-batch cohort, and the profile
+    snapshot — and three copies of "usable means empty" is three chances to
+    invert it. This is the one copy.
+
+    Memoized per talk object, because the selector may assess one talk twice
+    inside a single build and the classifier walks every detection.
+    """
+    cache: dict[int, tuple[str, ...]] = {}
+
+    def assess(talk: Any) -> tuple[str, ...]:
+        identity = id(talk)
+        if identity not in cache:
+            assessment = assess_persisted_pattern_observations(talk, catalog)
+            cache[identity] = () if assessment.usable else assessment.reason_codes
+        return cache[identity]
+
+    return assess

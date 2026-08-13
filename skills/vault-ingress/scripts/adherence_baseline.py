@@ -32,8 +32,13 @@ LEGACY_GENERATION_REASON = "legacy_generation"
 CATALOG_FINGERPRINT_MISMATCH_REASON = "catalog_fingerprint_mismatch"
 SCORING_SCHEMA_VERSION_MISMATCH_REASON = "scoring_schema_version_mismatch"
 PERSISTED_EVIDENCE_STALE_REASON = "persisted_evidence_stale"
+PERSISTED_OBSERVATIONS_INVALID_REASON = "persisted_observations_invalid"
 EVIDENCE_BOUND_SCORING_SCHEMA_VERSION = 4
 OPPORTUNITY_BOUND_SCORING_SCHEMA_VERSION = 5
+# A talk's score is computed FROM its persisted observations, so a score whose
+# observations are structurally invalid is a number derived from a shape nothing
+# validated. From this generation the cohort refuses it (#167).
+OBSERVATION_BOUND_SCORING_SCHEMA_VERSION = 5
 NO_EVALUABLE_PATTERN_OPPORTUNITIES_REASON = "no_evaluable_pattern_opportunities"
 _PATTERN_OUTCOMES = frozenset(
     {"detected", "undetected", "not_evaluable", "not_applicable"}
@@ -78,6 +83,12 @@ class AdherenceBaselineError(ValueError):
 
 
 EvidenceFreshnessAssessor = Callable[[Mapping[str, object]], Iterable[str]]
+# Same shape, different question: which structural defects make this talk's
+# persisted observations unusable as current scoring evidence. Empty means
+# usable. Supplied by the caller for the same reason the freshness assessor is
+# — this module stays a pure function of its arguments, and the catalog the
+# classifier needs belongs to the caller that already loaded it.
+PersistedObservationAssessor = Callable[[Mapping[str, object]], Iterable[str]]
 
 
 def normalize_as_of(value: object) -> str:
@@ -352,6 +363,37 @@ def _evidence_freshness_details(
     return sorted(set(details))
 
 
+def _persisted_observation_reasons(
+    talk: Mapping[str, object],
+    *,
+    filename: str,
+    assessor: PersistedObservationAssessor,
+) -> list[str]:
+    """Return the caller-supplied structural defects, canonically ordered."""
+    try:
+        raw_reasons = assessor(talk)
+    except (OSError, ValueError) as exc:
+        raise AdherenceBaselineError(
+            f"{filename}: persisted observation assessment failed: {exc}"
+        ) from exc
+    if isinstance(raw_reasons, (str, bytes, Mapping)) or not isinstance(
+        raw_reasons, Iterable
+    ):
+        raise AdherenceBaselineError(
+            f"{filename}: persisted observation assessor must return an iterable "
+            "of stable reason-code strings"
+        )
+    reasons: list[str] = []
+    for index, reason in enumerate(raw_reasons):
+        if not isinstance(reason, str) or not reason or reason != reason.strip():
+            raise AdherenceBaselineError(
+                f"{filename}: persisted observation reason {index} must be a "
+                "non-empty string without edge whitespace"
+            )
+        reasons.append(reason)
+    return sorted(set(reasons))
+
+
 def _average_pattern_score(score_sum: int, talk_count: int) -> float | None:
     if talk_count == 0:
         return None
@@ -381,6 +423,7 @@ def partition_pattern_scoring_cohort(
     pattern_catalog_fingerprint: object,
     pattern_scoring_schema_version: object,
     evidence_freshness_assessor: EvidenceFreshnessAssessor | None,
+    persisted_observation_assessor: PersistedObservationAssessor | None = None,
 ) -> tuple[
     list[Mapping[str, object]],
     list[Mapping[str, object]],
@@ -404,6 +447,15 @@ def partition_pattern_scoring_cohort(
     schemas retain their historical generation-only behavior and do not invoke
     the assessor.
 
+    Scoring schema v5 and later likewise require a persisted-observation
+    assessor.  A talk's score is computed FROM its observations, so a matching
+    generation stamp over a structurally invalid block is a number derived from
+    a shape nothing validated.  A non-empty result excludes the talk with the
+    stable ``persisted_observations_invalid`` reason and preserves the codes in
+    ``persisted_observation_reason_codes``.  This is the one authority the
+    queue and the profile cohort share, so a talk the queue requeues cannot
+    still be scored by the profile (#167).
+
     Malformed metadata is never silently classified as legacy: unknown
     statuses, invalid generation identity, incomplete current-generation
     claims, and invalid score lanes raise :class:`AdherenceBaselineError`.
@@ -423,6 +475,13 @@ def partition_pattern_scoring_cohort(
         raise AdherenceBaselineError(
             "scoring schema v4 and later require an explicit callable "
             "evidence_freshness_assessor"
+        )
+    if exact_scoring_version >= OBSERVATION_BOUND_SCORING_SCHEMA_VERSION and not (
+        callable(persisted_observation_assessor)
+    ):
+        raise AdherenceBaselineError(
+            "scoring schema v5 and later require an explicit callable "
+            "persisted_observation_assessor"
         )
     excluded = frozenset(_selected_filenames(excluded_filenames))
 
@@ -502,6 +561,35 @@ def partition_pattern_scoring_cohort(
                     }
                 )
                 continue
+        if exact_scoring_version >= OBSERVATION_BOUND_SCORING_SCHEMA_VERSION:
+            assert persisted_observation_assessor is not None
+            observation_reasons = _persisted_observation_reasons(
+                talk,
+                filename=filename,
+                assessor=persisted_observation_assessor,
+            )
+            if observation_reasons:
+                noncurrent.append(talk)
+                exclusion_details.append(
+                    {
+                        "filename": filename,
+                        "reason_codes": [PERSISTED_OBSERVATIONS_INVALID_REASON],
+                        "persisted_observation_reason_codes": observation_reasons,
+                        "observed_pattern_scoring_generation_status": (observed_status),
+                        "observed_pattern_catalog_fingerprint": (observed_fingerprint),
+                        "observed_pattern_scoring_schema_version": (
+                            observed_scoring_version
+                        ),
+                        "expected_pattern_scoring_generation_status": (
+                            CURRENT_PATTERN_SCORING_GENERATION_STATUS
+                        ),
+                        "expected_pattern_catalog_fingerprint": exact_fingerprint,
+                        "expected_pattern_scoring_schema_version": (
+                            exact_scoring_version
+                        ),
+                    }
+                )
+                continue
         current.append(talk)
     return current, noncurrent, exclusion_details
 
@@ -514,6 +602,7 @@ def _build_adherence_baseline(
     pattern_catalog_fingerprint: object,
     pattern_scoring_schema_version: object,
     evidence_freshness_assessor: EvidenceFreshnessAssessor | None,
+    persisted_observation_assessor: PersistedObservationAssessor | None,
     active_batch_excluded: bool,
 ) -> dict[str, object]:
     """Build one deterministic global baseline with explicit cohort scope."""
@@ -537,6 +626,7 @@ def _build_adherence_baseline(
         pattern_catalog_fingerprint=exact_fingerprint,
         pattern_scoring_schema_version=exact_scoring_version,
         evidence_freshness_assessor=evidence_freshness_assessor,
+        persisted_observation_assessor=persisted_observation_assessor,
     )
     opportunity_identity: str | None = None
     comparison_talks = current_talks
@@ -622,6 +712,7 @@ def build_adherence_baseline(
     pattern_catalog_fingerprint: object,
     pattern_scoring_schema_version: object,
     evidence_freshness_assessor: EvidenceFreshnessAssessor | None,
+    persisted_observation_assessor: PersistedObservationAssessor | None = None,
 ) -> dict[str, object]:
     """Build a claim-time baseline excluding the exact active batch.
 
@@ -635,6 +726,7 @@ def build_adherence_baseline(
         pattern_catalog_fingerprint=pattern_catalog_fingerprint,
         pattern_scoring_schema_version=pattern_scoring_schema_version,
         evidence_freshness_assessor=evidence_freshness_assessor,
+        persisted_observation_assessor=persisted_observation_assessor,
         active_batch_excluded=True,
     )
 
@@ -646,6 +738,7 @@ def build_current_cohort_baseline(
     pattern_catalog_fingerprint: object,
     pattern_scoring_schema_version: object,
     evidence_freshness_assessor: EvidenceFreshnessAssessor | None,
+    persisted_observation_assessor: PersistedObservationAssessor | None = None,
 ) -> dict[str, object]:
     """Build an all-inclusive post-batch snapshot of the current cohort."""
     return _build_adherence_baseline(
@@ -655,6 +748,7 @@ def build_current_cohort_baseline(
         pattern_catalog_fingerprint=pattern_catalog_fingerprint,
         pattern_scoring_schema_version=pattern_scoring_schema_version,
         evidence_freshness_assessor=evidence_freshness_assessor,
+        persisted_observation_assessor=persisted_observation_assessor,
         active_batch_excluded=False,
     )
 

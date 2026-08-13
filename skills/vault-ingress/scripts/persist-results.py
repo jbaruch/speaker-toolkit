@@ -90,6 +90,7 @@ from ingress_contract import (
     validate_talk_record_schemas,
 )
 from tracking_database import TrackingDatabaseError, require_current_tracking_database
+from persisted_pattern_observations import persisted_observation_assessor
 from pattern_evidence import (
     PatternEvidenceError,
     admit_return_artifacts,
@@ -1085,6 +1086,9 @@ def main():
                     video_evidence_assessment=video_evidence_assessment,
                 )
             ),
+            # A return this run just merged is validated; a talk merged under
+            # an older contract may not be, and this cohort spans both (#167).
+            persisted_observation_assessor=persisted_observation_assessor(catalog),
         )
     except AdherenceBaselineError as exc:
         print(
