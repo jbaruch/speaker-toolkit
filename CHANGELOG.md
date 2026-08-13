@@ -68,6 +68,93 @@ strand every persisted talk on a scoring generation nothing has produced yet,
 forcing a reparse to adopt arithmetic no worker is using. It moves in the change
 that makes v6 the required return schema.
 
+### feat(vault-ingress) — refuse a talk binding nothing proved (#176)
+
+The candidate table's `signals` map is the evidence; `agreeing` and `conflicting`
+are its summary. The gate read the summary and trusted it, so a fabricated
+candidate could claim `agreeing: ["venue"]` over a signal map where venue
+conflicts, or carries no venue reading at all — and authorize the binding on a
+standing its own readings never supported.
+
+`derive_candidate_standing` is now the single rule, used by the producer that
+writes a candidate and by the owner gate that reads one back. The gate validates
+the complete signal map and recomputes both arrays from it, refusing on
+`identity_candidate_signals_invalid` or
+`identity_candidate_standing_contradicts_signals`. That also makes
+`identity_candidate_agreement_not_selecting` unreachable: the derivation admits
+only selecting signals to `agreeing`, so the state it named cannot be
+represented.
+
+`schemas-db.md`'s matched example carried `candidates: []` — a record the new
+writer rejects outright, so the schema reference was telling agents to build
+mutations that cannot persist. It now shows a complete selectable candidate,
+including the non-selecting `delivery_year` and `filename_similarity` readings
+that report without electing. Two tests parse that example straight out of the
+reference and run it through the gate, so the document cannot drift from the
+contract again.
+
+Part of #176.
+
+The assessment landed with no caller. `pptx_catalog` records advance to v3,
+where a matched record carries the assessment that proves its deck belongs to
+the talk it names, and `record_pptx` refuses to persist one that does not.
+
+Four things must hold together, and checking fewer is checking none: the
+verdict is `matched`, the assessment is about this record's deck, it names this
+record's talk, and the artifact is a delivery deck. A `review_required` verdict
+naming the right talk is still an owner decision nobody has made yet, so it
+cannot bind either.
+
+Both endpoints are checked because an assessment binds a pair. Verifying the
+talk alone leaves the deck free: a real, correctly-decided assessment for deck A
+pasted onto deck B's record would pass every other check and bind B's contents
+to A's talk — the same defect running the other way.
+
+Readers accept v1, v2, and v3, and check v3 shape only — the field is null
+exactly when `talk_filename` is null. The binding's semantics stay the writer's
+gate, matching how `visual_evidence` is already handled: a malformed receipt is
+per-record trouble for a reader, but a record that cannot be proven is a record
+that must not be persisted.
+
+Existing v2 records migrate rather than linger. Migration cannot prove a binding
+it did not witness, and forging a `matched` verdict would manufacture exactly the
+evidence v3 exists to require — so a v2 record upgrades carrying a
+`review_required` assessment with reason `identity_unassessed_legacy_binding`.
+The binding survives; only its provenance is marked unproven, and nothing
+downstream may treat it as current until someone looks. v1 records stay at v1,
+matching the established position that migration preserves such a record rather
+than inventing a binding for it.
+
+Preflight consumes the stamp, which is what keeps it from being inert. Every
+unproven binding blocks, the migration's own stamp included. A warning would let
+Step 1's blocking-only gate proceed on state the database itself marks unproven,
+which is the whole failure this exists to stop.
+
+The cost is real and deliberate: **a vault carrying legacy catalog rows stays
+blocked until those rows are assessed.** That makes assessing them reparse
+prerequisite work rather than something to discover mid-run.
+
+One predicate decides whether an assessment authorizes a binding —
+`binding_refusal` — and both the writer and preflight call it. Two copies would
+drift, and the direction they drift is a reader trusting what a writer would
+have refused. It checks the evidence, not just the verdict: a `matched` verdict
+over an empty candidate table is a conclusion with nothing under it, so the
+table must show the talk winning the way the assessor makes it win —
+corroborated by a selecting signal, contradicted by none, with no rival equally
+corroborated.
+
+Identity is deliberately not currency. A row can hold a perfectly current
+extraction receipt for the wrong talk, so none of this touches
+`classify_pptx_visual_evidence` — a wrong binding is not stale evidence, it is
+evidence filed against the wrong talk, and conflating them would send every
+migrated deck back through extraction to fix a problem extraction cannot fix.
+
+Fixing that also closed a bypass: `migrate_tracking_database` returned early
+whenever the database ROOT was current, which is true of every live database. A
+record-level shape bump would have been skipped for all of them. Record
+migrations now run before that check, and only a genuinely unchanged database
+takes the no-op path.
+
 ### feat(vault-ingress) — migration repairs or requeues, never stamps (#167)
 
 Closes the migration-integration half of #167.

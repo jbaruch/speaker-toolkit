@@ -103,6 +103,10 @@ REASON_AMBIGUOUS_CANDIDATES = "identity_ambiguous_candidates"
 REASON_CONFLICTING_SIGNALS = "identity_conflicting_signals"
 REASON_MATCHED = "identity_matched"
 REASON_NON_DELIVERY_ARTIFACT = "identity_non_delivery_artifact"
+# Stamped by migration onto a record that bound its talk before any assessment
+# existed. The binding is not declared wrong — it is declared unproven, which is
+# the honest reading and the one that routes it to review instead of trusting it.
+REASON_UNASSESSED_LEGACY_BINDING = "identity_unassessed_legacy_binding"
 
 REASON_CODES = frozenset(
     {
@@ -113,8 +117,15 @@ REASON_CODES = frozenset(
         REASON_CONFLICTING_SIGNALS,
         REASON_MATCHED,
         REASON_NON_DELIVERY_ARTIFACT,
+        REASON_UNASSESSED_LEGACY_BINDING,
     }
 )
+
+# The only reason a `matched` verdict may claim. Every other code in the
+# taxonomy explains a refusal, so pairing one with `matched` describes an
+# assessment that cannot exist — most dangerously the legacy-binding code, which
+# means the opposite of proven.
+MATCHED_REASON_CODES = frozenset({REASON_MATCHED})
 
 # An editable master and a published static export are legitimate artifacts for
 # a delivery, but they are not the delivery deck and must not silently become
@@ -201,6 +212,30 @@ class CandidateAssessment:
             "agreeing": list(self.agreeing),
             "conflicting": list(self.conflicting),
         }
+
+
+def derive_candidate_standing(
+    signals: Mapping[str, str],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Derive `(agreeing, conflicting)` from a candidate's per-signal map.
+
+    One rule, used by the producer that writes a candidate and by the owner gate
+    that later reads one back. A stored candidate's arrays are a summary of its
+    signal map, so a gate that trusts the summary without recomputing it accepts
+    any pair of values a caller cares to put there — `agreeing: ["venue"]` over a
+    signal map where venue conflicts, or over no venue reading at all.
+
+    Only selecting signals can corroborate; every signal can contradict.
+    """
+    agreeing = tuple(
+        name
+        for name in SIGNAL_NAMES
+        if name in SELECTING_SIGNALS and signals.get(name) == SIGNAL_AGREE
+    )
+    conflicting = tuple(
+        name for name in SIGNAL_NAMES if signals.get(name) == SIGNAL_CONFLICT
+    )
+    return agreeing, conflicting
 
 
 @dataclass(frozen=True)
@@ -529,14 +564,7 @@ def assess_candidate(
         name: evaluator(facts, talk, known_aliases)
         for name, evaluator in _SIGNAL_EVALUATORS.items()
     }
-    agreeing = tuple(
-        name
-        for name in SIGNAL_NAMES
-        if name in SELECTING_SIGNALS and signals[name] == SIGNAL_AGREE
-    )
-    conflicting = tuple(
-        name for name in SIGNAL_NAMES if signals[name] == SIGNAL_CONFLICT
-    )
+    agreeing, conflicting = derive_candidate_standing(signals)
     return CandidateAssessment(
         talk_filename=filename,
         signals=signals,
@@ -616,3 +644,129 @@ def assess_pptx_talk_identity(
         return result(VERDICT_REVIEW_REQUIRED, None, REASON_FILENAME_SIMILARITY_ONLY)
 
     return result(VERDICT_UNMATCHED, None, REASON_NO_AGREEING_SIGNAL)
+
+
+def unassessed_legacy_binding(pptx_path: str) -> dict[str, Any]:
+    """The assessment for a talk binding made before assessments existed.
+
+    Migration cannot prove a binding it did not witness, and inventing a
+    `matched` verdict for one would forge exactly the evidence this module was
+    written to require. It cannot call the binding wrong either — most legacy
+    bindings are right. `review_required` is the only honest verdict: the record
+    upgrades, the binding survives, and nothing downstream may treat it as
+    proven until someone looks.
+    """
+    return {
+        "schema_version": PPTX_TALK_IDENTITY_SCHEMA_VERSION,
+        "pptx_path": pptx_path,
+        "verdict": VERDICT_REVIEW_REQUIRED,
+        "artifact_role": ROLE_DELIVERY,
+        "selected_talk_filename": None,
+        "reason_codes": [REASON_UNASSESSED_LEGACY_BINDING],
+        # Empty rather than absent: migration assessed no candidates, which is
+        # a different statement from having assessed some and reported none.
+        "candidates": [],
+    }
+
+
+def binding_refusal(
+    assessment: object,
+    *,
+    pptx_path: str,
+    talk_filename: str,
+) -> str | None:
+    """Say why an assessment fails to authorize a binding, or None if it does.
+
+    One predicate, two callers. The owner writer raises on it so an unproven
+    binding is never persisted; preflight reports it so a binding persisted
+    before this contract existed cannot pass as proven. Two copies of this rule
+    would drift, and the direction they drift is a reader trusting what a writer
+    would have refused (`stateful-artifacts` -> Hints, Not Authority).
+
+    Checks the whole triple, not the verdict alone: an assessment names a deck
+    AND a talk, so one that proves a different pair proves nothing about this
+    row. Reason codes are checked because every code but the matched one
+    explains a refusal.
+    """
+    if not isinstance(assessment, Mapping):
+        return "identity_assessment_missing"
+    missing = {
+        "schema_version",
+        "pptx_path",
+        "verdict",
+        "artifact_role",
+        "selected_talk_filename",
+        "reason_codes",
+        "candidates",
+    } - set(assessment)
+    if missing:
+        return "identity_assessment_incomplete"
+    if assessment["schema_version"] != PPTX_TALK_IDENTITY_SCHEMA_VERSION:
+        return "identity_assessment_schema_unsupported"
+    if assessment["verdict"] != VERDICT_MATCHED:
+        return "identity_verdict_not_matched"
+    if assessment["pptx_path"] != pptx_path:
+        return "identity_deck_mismatch"
+    if assessment["selected_talk_filename"] != talk_filename:
+        return "identity_talk_mismatch"
+    if assessment["artifact_role"] != ROLE_DELIVERY:
+        return "identity_non_delivery_artifact"
+    codes = assessment["reason_codes"]
+    if not isinstance(codes, list) or not all(isinstance(code, str) for code in codes):
+        return "identity_reason_codes_invalid"
+    if sorted(set(codes)) != sorted(MATCHED_REASON_CODES):
+        return "identity_reason_codes_contradict_verdict"
+    return _candidate_table_refusal(assessment["candidates"], talk_filename)
+
+
+def _candidate_table_refusal(candidates: object, talk_filename: str) -> str | None:
+    """Check the evidence behind the verdict, not just the verdict.
+
+    A `matched` verdict over an empty candidate table is a conclusion with
+    nothing under it — which is exactly what a fabricated assessment looks like.
+    The table must show this talk winning the way `assess_pptx_talk_identity`
+    makes it win: corroborated by a selecting signal, contradicted by none, and
+    with no rival equally corroborated.
+    """
+    if not isinstance(candidates, list) or not candidates:
+        return "identity_candidate_table_missing"
+    selected: tuple[tuple[str, ...], tuple[str, ...]] | None = None
+    rivals = 0
+    for candidate in candidates:
+        if not isinstance(candidate, Mapping):
+            return "identity_candidate_table_invalid"
+        name = candidate.get("talk_filename")
+        signals = candidate.get("signals")
+        stored_agreeing = candidate.get("agreeing")
+        stored_conflicting = candidate.get("conflicting")
+        if (
+            not isinstance(name, str)
+            or not isinstance(signals, Mapping)
+            or not isinstance(stored_agreeing, list)
+            or not isinstance(stored_conflicting, list)
+        ):
+            return "identity_candidate_table_invalid"
+        # The signal map is the evidence; the two arrays are its summary. Read
+        # the evidence and recompute the summary, so a candidate cannot assert a
+        # standing its own readings do not support.
+        if set(signals) != set(SIGNAL_NAMES) or any(
+            signals[key] not in SIGNAL_VERDICTS for key in signals
+        ):
+            return "identity_candidate_signals_invalid"
+        agreeing, conflicting = derive_candidate_standing(signals)
+        if list(agreeing) != stored_agreeing or list(conflicting) != stored_conflicting:
+            return "identity_candidate_standing_contradicts_signals"
+        if name == talk_filename:
+            if selected is not None:
+                return "identity_candidate_table_invalid"
+            selected = (agreeing, conflicting)
+        elif agreeing and not conflicting:
+            rivals += 1
+    if selected is None:
+        return "identity_candidate_absent"
+    selected_agreeing, selected_conflicting = selected
+    if not selected_agreeing or selected_conflicting:
+        return "identity_candidate_not_selectable"
+    if rivals:
+        return "identity_candidate_not_unique"
+    return None

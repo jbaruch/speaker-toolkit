@@ -72,6 +72,10 @@ from source_identity_matching import (
     titles_agree,
 )
 from pptx_catalog_selection import classify_catalog
+from pptx_talk_identity import (
+    VERDICT_MATCHED,
+    binding_refusal,
+)
 from pptx_evidence import (
     PPTX_EXTRACTION_PIPELINE_VERSION,
     PPTX_EXTRACTION_SCHEMA_VERSION,
@@ -334,6 +338,86 @@ class VaultPreflight:
                 },
             )
 
+    def _check_pptx_talk_identity(self) -> None:
+        """Report catalog rows whose talk binding is not proven (#176).
+
+        This is the catalog-wide sweep. The writer refuses a NEW unproven
+        binding, but the rows already in the database were bound before any
+        assessment existed, and migration deliberately stamped them
+        `review_required` rather than forging proof. Without a reader consuming
+        that stamp it would be inert — the deck would still feed slide counts,
+        OCR, and pattern observations to whichever talk the row names.
+
+        Every unproven binding blocks, including the one migration stamped.
+        A warning would let Step 1's blocking-only gate proceed on state the
+        database itself marks unproven, which is the whole failure this exists
+        to stop. The cost is real and deliberate: a vault carrying legacy rows
+        stays blocked until they are assessed, so assessing them is reparse
+        prerequisite work rather than something to discover mid-run.
+
+        Identity is not currency. A row can hold a perfectly current extraction
+        receipt for the wrong talk, so this never touches
+        `classify_pptx_visual_evidence` — a wrong binding is not stale evidence,
+        it is evidence filed against the wrong talk.
+        """
+        records = self.database.get("pptx_catalog")
+        if not isinstance(records, list):
+            return
+        for index, record in enumerate(records):
+            if not isinstance(record, dict):
+                continue
+            if record.get("talk_filename") is None:
+                continue
+            assessment = record.get("identity_assessment")
+            if not isinstance(assessment, dict):
+                # A v1 or v2 row that migration has not reached yet. Its binding
+                # is no more proven than a migrated one, and saying so is the
+                # point of the sweep.
+                # v1 rows stay at v1 by design, so migration will not reach
+                # this one. That makes it MORE unproven than a migrated row,
+                # not less, and a warning would let Step 1 proceed on it.
+                self.add(
+                    "blocking",
+                    "pptx_talk_binding_unassessed",
+                    "catalog row binds a talk with no identity assessment; "
+                    "assess the deck before its contents become that talk's "
+                    "evidence",
+                    field=f"pptx_catalog[{index}].identity_assessment",
+                    expected=VERDICT_MATCHED,
+                    actual=None,
+                )
+                continue
+            pptx_path = record.get("pptx_path")
+            talk_filename = record.get("talk_filename")
+            refusal = (
+                binding_refusal(
+                    assessment,
+                    pptx_path=pptx_path,
+                    talk_filename=talk_filename,
+                )
+                if isinstance(pptx_path, str) and isinstance(talk_filename, str)
+                else "identity_assessment_incomplete"
+            )
+            if refusal is None:
+                continue
+            reason_codes = assessment.get("reason_codes")
+            codes = reason_codes if isinstance(reason_codes, list) else []
+            self.add(
+                "blocking",
+                "pptx_talk_binding_unproven",
+                "catalog row binds a talk its identity assessment does not "
+                "prove; review before its contents become that talk's evidence",
+                field=f"pptx_catalog[{index}].identity_assessment",
+                expected=VERDICT_MATCHED,
+                actual={
+                    "refusal": refusal,
+                    "verdict": assessment.get("verdict"),
+                    "reason_codes": codes,
+                    "pptx_path": record.get("pptx_path"),
+                    "talk_filename": record.get("talk_filename"),
+                },
+            )
+
     def add(
         self,
         severity: str,
@@ -482,6 +566,7 @@ class VaultPreflight:
             )
 
         self._check_pptx_visual_evidence()
+        self._check_pptx_talk_identity()
 
         talks = self.database.get("talks")
         if not isinstance(talks, list):

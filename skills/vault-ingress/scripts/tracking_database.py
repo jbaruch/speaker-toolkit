@@ -25,6 +25,7 @@ from pptx_discovery_contract import (
     PptxDiscoveryContractError,
     validate_pptx_directory_exclusions,
 )
+from pptx_talk_identity import unassessed_legacy_binding
 
 
 LEGACY_TRACKING_DATABASE_SCHEMA_VERSION = 0
@@ -34,7 +35,8 @@ TALK_RECORD_SCHEMA_VERSION = 5
 LEGACY_CONFIG_RECORD_SCHEMA_VERSION = 1
 CONFIG_RECORD_SCHEMA_VERSION = 2
 LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION = 1
-PPTX_CATALOG_RECORD_SCHEMA_VERSION = 2
+PPTX_CATALOG_EVIDENCE_BOUND_RECORD_SCHEMA_VERSION = 2
+PPTX_CATALOG_RECORD_SCHEMA_VERSION = 3
 LEGACY_QR_CODE_RECORD_SCHEMA_VERSION = 1
 QR_CODE_RECORD_SCHEMA_VERSION = 2
 RESOURCE_RECORD_SCHEMA_VERSION = 1
@@ -80,6 +82,36 @@ PPTX_CATALOG_REQUIRED_FIELDS = frozenset(
 # source bytes that produced it. A v1 record carries no such binding, so its
 # bare `visual_extracted: true` cannot say which extractor schema it refers to.
 PPTX_CATALOG_V2_REQUIRED_FIELDS = PPTX_CATALOG_REQUIRED_FIELDS | {"visual_evidence"}
+# v3 adds the identity assessment that proves the deck belongs to the talk it
+# names. v2 bound a visual claim to the bytes it came from but said nothing
+# about WHOSE deck those bytes were, so a deck could carry a perfectly-attested
+# extraction receipt for the wrong talk.
+PPTX_CATALOG_V3_REQUIRED_FIELDS = PPTX_CATALOG_V2_REQUIRED_FIELDS | {
+    "identity_assessment"
+}
+PPTX_IDENTITY_ASSESSMENT_REQUIRED_FIELDS = frozenset(
+    {
+        "schema_version",
+        "pptx_path",
+        "verdict",
+        "artifact_role",
+        "selected_talk_filename",
+        "reason_codes",
+        # The assessor always emits its candidate table, and it is the only
+        # record of what the other talks scored. Accepting an assessment without
+        # it would persist a verdict nobody can re-examine.
+        "candidates",
+    }
+)
+# Both versions bind a visual claim to the extractor generation that produced
+# it, so both classify. They differ only in whether the talk binding is proven,
+# which is an identity question, not a currency one.
+_EVIDENCE_BOUND_PPTX_CATALOG_SCHEMA_VERSIONS = frozenset(
+    {
+        PPTX_CATALOG_EVIDENCE_BOUND_RECORD_SCHEMA_VERSION,
+        PPTX_CATALOG_RECORD_SCHEMA_VERSION,
+    }
+)
 PPTX_VISUAL_EVIDENCE_REQUIRED_FIELDS = frozenset(
     {
         "outcome",
@@ -527,14 +559,15 @@ def classify_pptx_visual_evidence(
         if record.get("visual_extracted") is True:
             return PPTX_EVIDENCE_UNKNOWN_LEGACY
         return PPTX_EVIDENCE_PENDING
-    if version != PPTX_CATALOG_RECORD_SCHEMA_VERSION:
+    if version not in _EVIDENCE_BOUND_PPTX_CATALOG_SCHEMA_VERSIONS:
         # A record newer than this reader accepts means the reader is lagging,
         # not that the record is legacy. Classifying it as pending would send
         # a deck back through extraction on the strength of a shape this
         # function cannot read; the caller must update instead.
         raise TrackingDatabaseError(
             f"pptx_catalog record schema_version {version} is newer than this "
-            f"reader accepts (v{LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION} and "
+            f"reader accepts (v{LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION}, "
+            f"v{PPTX_CATALOG_EVIDENCE_BOUND_RECORD_SCHEMA_VERSION}, and "
             f"v{PPTX_CATALOG_RECORD_SCHEMA_VERSION}); update speaker-toolkit"
         )
     # Validate before trusting. A receipt is the licence to SKIP extraction, so
@@ -803,16 +836,15 @@ def _validate_collection_record(
         version = record.get(
             "schema_version", LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION
         )
-        is_v2 = version == PPTX_CATALOG_RECORD_SCHEMA_VERSION
-        _require_closed_shape(
-            record,
-            required=(
-                PPTX_CATALOG_V2_REQUIRED_FIELDS
-                if is_v2
-                else PPTX_CATALOG_REQUIRED_FIELDS
-            ),
-            label=label,
-        )
+        is_v3 = version == PPTX_CATALOG_RECORD_SCHEMA_VERSION
+        is_v2 = version == PPTX_CATALOG_EVIDENCE_BOUND_RECORD_SCHEMA_VERSION
+        if is_v3:
+            required = PPTX_CATALOG_V3_REQUIRED_FIELDS
+        elif is_v2:
+            required = PPTX_CATALOG_V2_REQUIRED_FIELDS
+        else:
+            required = PPTX_CATALOG_REQUIRED_FIELDS
+        _require_closed_shape(record, required=required, label=label)
         _require_nonempty_string(record["pptx_path"], f"{label}.pptx_path")
         talk_filename = record["talk_filename"]
         if talk_filename is not None:
@@ -826,10 +858,27 @@ def _validate_collection_record(
         _require_exact_integer(record["slide_count"], f"{label}.slide_count")
         if type(record["visual_extracted"]) is not bool:
             raise TrackingDatabaseError(f"{label}.visual_extracted must be a boolean")
-        if is_v2 and not isinstance(record["visual_evidence"], (Mapping, type(None))):
+        if (is_v2 or is_v3) and not isinstance(
+            record["visual_evidence"], (Mapping, type(None))
+        ):
             raise TrackingDatabaseError(
                 f"{label}.visual_evidence must be an object or null"
             )
+        if is_v3:
+            # Shape only, and only enough to keep a reader from mistaking an
+            # unproven binding for a proven one. The binding's own semantics are
+            # the writer's gate — see `_apply_record_pptx`.
+            assessment = record["identity_assessment"]
+            if talk_filename is None:
+                if assessment is not None:
+                    raise TrackingDatabaseError(
+                        f"{label}.identity_assessment must be null when "
+                        "talk_filename is null"
+                    )
+            elif not isinstance(assessment, Mapping):
+                raise TrackingDatabaseError(
+                    f"{label}.identity_assessment must be an object on a matched record"
+                )
         # The receipt's own shape is NOT validated here. A malformed receipt is
         # per-record evidence trouble, not unusable owner state: failing the
         # whole assessment would make preflight refuse the vault over one bad
@@ -1105,7 +1154,7 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
         "pptx_catalog": frozenset(
             {
                 LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION,
-                PPTX_CATALOG_RECORD_SCHEMA_VERSION,
+                *_EVIDENCE_BOUND_PPTX_CATALOG_SCHEMA_VERSIONS,
             }
         ),
         "qr_codes": frozenset(
@@ -1354,6 +1403,55 @@ def _migrate_talk_record(talk: dict[str, Any]) -> bool:
     return talk_version_added
 
 
+def _require_no_active_writers(talks: list[Any]) -> None:
+    """Refuse to change persisted shape while a writer owns the database."""
+    active = _active_claim_filenames(talks)
+    if active:
+        raise TrackingDatabaseError(
+            "tracking database has active queue writers; recover or complete these "
+            f"claims before migration: {active}"
+        )
+
+
+def _migrate_pptx_catalog_records(candidate: dict[str, Any]) -> int:
+    """Upgrade evidence-bound catalog records to the identity-bound shape.
+
+    A v2 record's talk binding was made before any assessment existed, so
+    migration cannot prove it. It must not invent a `matched` verdict — that
+    would forge the evidence the v3 shape exists to require — and it must not
+    call the binding wrong, because most legacy bindings are right. Stamping
+    `review_required` upgrades the record, preserves the binding, and stops
+    anything downstream from treating it as proven until someone looks.
+
+    v1 records stay at v1: they carry no `visual_evidence` either, and the
+    established position is that migration preserves such a record rather than
+    inventing a binding for it.
+    """
+    records = candidate.get("pptx_catalog")
+    if not isinstance(records, list):
+        return 0
+    migrated = 0
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        if (
+            record.get("schema_version")
+            != PPTX_CATALOG_EVIDENCE_BOUND_RECORD_SCHEMA_VERSION
+        ):
+            continue
+        pptx_path = record.get("pptx_path")
+        if not isinstance(pptx_path, str) or not pptx_path.strip():
+            continue
+        record["schema_version"] = PPTX_CATALOG_RECORD_SCHEMA_VERSION
+        record["identity_assessment"] = (
+            unassessed_legacy_binding(pptx_path)
+            if record.get("talk_filename") is not None
+            else None
+        )
+        migrated += 1
+    return migrated
+
+
 def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
     """Build the deterministic owner migration to root v1/config v2."""
     assessment = assess_tracking_database(database)
@@ -1362,27 +1460,39 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
             "tracking database cannot be migrated by this owner version: "
             + ", ".join(assessment.reason_codes)
         )
-    if assessment.state == "current":
-        current = require_current_tracking_database(database)
-        return TrackingDatabaseMigration(
-            database=copy.deepcopy(current),
-            changed=False,
-            from_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
-            to_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
-            record_counts=_empty_record_counts(),
-        )
     if not isinstance(database, dict):
         raise TrackingDatabaseError("tracking database root must be a JSON object")
 
     candidate: dict[str, Any] = copy.deepcopy(database)
-    root_version = tracking_database_schema_version(candidate)
     talks = _object_collection(candidate, "talks", required=True)
-    active = _active_claim_filenames(talks)
-    if active:
-        raise TrackingDatabaseError(
-            "tracking database has active queue writers; recover or complete these "
-            f"claims before migration: {active}"
+
+    if assessment.state == "current":
+        # A current ROOT does not mean current RECORDS. Returning on the root
+        # version alone is how a record-level shape bump gets skipped for every
+        # live database, since they all reached root v1 long ago — so the record
+        # migrations run first and only a genuinely unchanged database takes the
+        # no-op path.
+        require_current_tracking_database(candidate)
+        counts = _empty_record_counts()
+        counts["pptx_catalog"] = _migrate_pptx_catalog_records(candidate)
+        if any(counts.values()):
+            # Guarded only once state would actually change. A no-op migration
+            # must stay callable while a claim is live: Step 1 migrates before
+            # Step 2 can recover a stranded claim, so refusing here would leave
+            # an interrupted run unable to resume.
+            _require_no_active_writers(talks)
+        return TrackingDatabaseMigration(
+            database=candidate,
+            changed=any(counts.values()),
+            from_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
+            to_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
+            record_counts=counts,
         )
+
+    # Reaching here means the root or config shape moves, which is always a
+    # state change.
+    _require_no_active_writers(talks)
+    root_version = tracking_database_schema_version(candidate)
 
     config = candidate.setdefault("config", {})
     if not isinstance(config, dict):
@@ -1408,11 +1518,16 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
         config["schema_version"] = CONFIG_RECORD_SCHEMA_VERSION
         counts["config"] = 1
 
+    # Ahead of the root-current return. A database at root v1 with a legacy
+    # config takes that return, so a record migration placed after it would be
+    # skipped for exactly the databases whose config still needed upgrading.
+    counts["pptx_catalog"] += _migrate_pptx_catalog_records(candidate)
+
     if root_version == TRACKING_DATABASE_SCHEMA_VERSION:
         require_current_tracking_database(candidate)
         return TrackingDatabaseMigration(
             database=candidate,
-            changed=bool(counts["config"]),
+            changed=bool(counts["config"] or counts["pptx_catalog"]),
             from_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
             to_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
             record_counts=counts,

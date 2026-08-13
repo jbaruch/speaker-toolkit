@@ -229,11 +229,22 @@ do not omit `--directory` or
 pre-probe the root with `find`, a recursive glob, or a per-file loop. The bounded
 authenticated discovery worker owns root validation and enumeration. Report counts,
 then persist each reviewed result with a `record_pptx`
-mutation and `schema_version: 2`, including the exact prior catalog record and, for
+mutation and `schema_version: 3`, including the exact prior catalog record and, for
 a match, the talk's exact prior `pptx_path` expectation. A record whose deck has
 had no extraction attempt carries `visual_evidence: null`; a record claiming
 visual evidence carries the receipt binding extractor schema, pipeline version,
-exact source fingerprint, and artifact identity. Never decide from
+exact source fingerprint, and artifact identity.
+
+A matched record also carries `identity_assessment`: the assessment produced by
+`skills/vault-ingress/scripts/pptx_talk_identity.py` for that exact deck against
+the database's talks, serialized whole. Obtain it by assessing the deck BEFORE
+deciding the binding — the assessment is what decides it, not a confirmation of a
+decision already made. An unmatched record carries `identity_assessment: null`.
+The writer rejects an assessment that does not authorize the binding; the
+predicate is `binding_refusal` in
+`skills/vault-ingress/scripts/pptx_talk_identity.py`, shared with preflight. Route a rejected deck to owner review
+rather than persisting it.
+Never decide from
 `visual_extracted` alone whether a deck needs extraction. Run:
 
 ```bash
