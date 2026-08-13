@@ -121,6 +121,7 @@ from return_validation import (
     load_catalog,
     normalize_processing_stamp,
     resolve_return_schema_version,
+    scoring_schema_version_for_return,
     validate_batch_claims_against_talks,
     validate_claim_against_talk,
     validate_batch,
@@ -788,7 +789,12 @@ def merge_talk(
                 CURRENT_PATTERN_SCORING_GENERATION_STATUS
             )
             candidate["pattern_scoring_generation_reasons"] = []
-            candidate["pattern_scoring_schema_version"] = PATTERN_SCORING_SCHEMA_VERSION
+            # The generation this return's SCORE belongs to, which is not the
+            # current generation for a weighted return. Stamping the current one
+            # would contradict the identity canonicalization already wrote.
+            candidate["pattern_scoring_schema_version"] = (
+                scoring_schema_version_for_return(return_schema_version)
+            )
             candidate["pattern_catalog_fingerprint"] = resolved_catalog.fingerprint
         else:
             candidate["pattern_scoring_generation_status"] = (
@@ -1006,7 +1012,9 @@ def main():
                     vault_root,
                     catalog,
                     source_roots=source_roots,
-                    pattern_scoring_schema_version=(PATTERN_SCORING_SCHEMA_VERSION),
+                    pattern_scoring_schema_version=scoring_schema_version_for_return(
+                        resolve_return_schema_version(ret)
+                    ),
                     video_evidence_assessment=video_evidence_assessment,
                 )
             else:

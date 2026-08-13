@@ -559,3 +559,57 @@ class TestV6GetsItsOwnScoringGeneration:
         )
 
         assert persisted["opportunity_coverage_identity"]
+
+
+class TestThePersistedStampAgreesWithTheIdentity:
+    """One record cannot claim two generations.
+
+    Canonicalization stamps a v6 identity with scoring generation 6. If the
+    writer persisted the CURRENT generation (5) beside it, the record would carry
+    contradictory authority and a later freshness replay — which rebuilds the
+    identity from the talk's own stamp — would recompute with 5 and never match.
+    """
+
+    def test_the_writer_stamps_the_return_s_own_generation(
+        self, return_validation
+    ) -> None:
+        assert return_validation.scoring_schema_version_for_return(
+            return_validation.WEIGHTED_SCORE_RETURN_SCHEMA_VERSION
+        ) != return_validation.scoring_schema_version_for_return(
+            return_validation.RETURN_SCHEMA_VERSION
+        )
+
+    def test_the_persisted_identity_is_the_weighted_generation_s(
+        self, return_validation, catalog, tmp_path, transcript_timing
+    ) -> None:
+        """Rebuild the identity independently at generation 6 and at 5. The
+        persisted one must be the former, or the record's stamp and its identity
+        describe different cohorts."""
+        import pattern_evidence
+
+        persisted = _persist(
+            return_validation,
+            catalog,
+            tmp_path,
+            transcript_timing,
+            _v6(return_validation),
+        )
+        outcomes = persisted["pattern_outcomes"]
+
+        weighted = pattern_evidence.opportunity_coverage_identity(
+            outcomes,
+            pattern_catalog_fingerprint=catalog.fingerprint,
+            pattern_scoring_schema_version=(
+                return_validation.WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
+            ),
+        )
+        flat = pattern_evidence.opportunity_coverage_identity(
+            outcomes,
+            pattern_catalog_fingerprint=catalog.fingerprint,
+            pattern_scoring_schema_version=(
+                return_validation.PATTERN_SCORING_SCHEMA_VERSION
+            ),
+        )
+
+        assert persisted["opportunity_coverage_identity"] == weighted
+        assert persisted["opportunity_coverage_identity"] != flat

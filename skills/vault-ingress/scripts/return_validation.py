@@ -4488,11 +4488,17 @@ def validate_persisted_catalog_generation(
             "pattern_scoring_generation_reasons array"
         )
     scoring_version = talk.get("pattern_scoring_schema_version")
-    if scoring_version != PATTERN_SCORING_SCHEMA_VERSION:
+    # The generation this return's score belongs to, not the current one: a
+    # weighted return persists its own, and comparing it against the current
+    # generation would reject the record the writer was required to produce.
+    expected_scoring_version = scoring_schema_version_for_return(
+        resolve_return_schema_version(ret)
+    )
+    if scoring_version != expected_scoring_version:
         raise ReturnValidationError(
             f"{filename} persisted pattern_scoring_schema_version "
-            f"{scoring_version!r} does not match renderer version "
-            f"{PATTERN_SCORING_SCHEMA_VERSION}; rerun persist-results.py"
+            f"{scoring_version!r} does not match the return's scoring generation "
+            f"{expected_scoring_version}; rerun persist-results.py"
         )
     fingerprint = talk.get("pattern_catalog_fingerprint")
     if fingerprint != catalog.fingerprint:

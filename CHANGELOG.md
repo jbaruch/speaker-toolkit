@@ -22,7 +22,11 @@ would have filed weighted scores in the same cohort as flat ones, letting an
 aggregate average across two arithmetics with every field looking well-formed.
 `PATTERN_SCORING_SCHEMA_VERSION` still names the current generation and stays at
 5; `scoring_schema_version_for_return` maps a return schema to the generation its
-score belongs to, and producer and validator share that one rule.
+score belongs to, and producer and validator share that one rule. The persisted
+record is stamped with that same generation rather than the current one — a
+stamp of 5 beside an identity built at 6 would give one record two conflicting
+authorities, and a freshness replay rebuilds the identity from the record's own
+stamp, so it would never match.
 
 The supplied score is compared exactly, never rounded. `expected_weighted_score`
 already rounds the canonical result to two places, so rounding the untrusted
