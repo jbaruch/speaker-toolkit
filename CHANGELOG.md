@@ -16,6 +16,11 @@ and no exhaustive outcome lanes at all — silently, since every check that woul
 have caught it was gated on the same equality. They now test membership of
 `EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS`.
 
+The basis object's types are checked before its values are compared. Python
+equality makes `True == 1` and `6.0 == 6`, so a basis carrying boolean lane
+counts or a float `schema_version` compared equal to the expected object and
+persisted as a type-confused record every later reader believed was verified.
+
 `pattern_score_basis` persists beside the score it explains. The tests drive the
 real canonicalization path rather than handing persistence a raw return, since a
 raw return omits the engine-owned evidence fields on purpose and would prove

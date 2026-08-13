@@ -2667,10 +2667,65 @@ def _require_score_basis(observations: dict, wanted: dict) -> None:
             "pattern_observations.pattern_score_basis is required alongside a "
             "weighted score; a bare number cannot say what evidence produced it"
         )
+    _validate_score_basis_types(basis)
     if basis != wanted:
         raise ReturnValidationError(
             f"pattern_score_basis {basis} does not match the detection arrays {wanted}"
         )
+
+
+def _basis_count(value: object) -> bool:
+    """A count is a non-negative int. `True` is an int in Python; a count is not."""
+    return not isinstance(value, bool) and isinstance(value, int) and value >= 0
+
+
+def _validate_score_basis_types(basis: object) -> None:
+    """Check the basis object's shape before comparing it by value.
+
+    Equality alone does not gate types: Python makes `True == 1` and `6.0 == 6`,
+    so a basis carrying boolean counts or a float schema version compares equal
+    to the expected object and persists as a type-confused record. Every reader
+    afterwards believes the shape was verified.
+    """
+    path = "pattern_observations.pattern_score_basis"
+    if not isinstance(basis, dict):
+        raise ReturnValidationError(f"{path} must be an object")
+    expected_fields = {
+        "schema_version",
+        "weights",
+        "patterns",
+        "antipatterns",
+        "not_evaluable_count",
+    }
+    if set(basis) != expected_fields:
+        raise ReturnValidationError(
+            f"{path} must contain exactly {sorted(expected_fields)}"
+        )
+    if not _basis_count(basis["schema_version"]):
+        raise ReturnValidationError(f"{path}.schema_version must be an integer")
+    if not _basis_count(basis["not_evaluable_count"]):
+        raise ReturnValidationError(
+            f"{path}.not_evaluable_count must be a nonnegative integer"
+        )
+    weights = basis["weights"]
+    if not isinstance(weights, dict) or set(weights) != set(DETECTION_WEIGHTS):
+        raise ReturnValidationError(
+            f"{path}.weights must name exactly {sorted(DETECTION_WEIGHTS)}"
+        )
+    for level, weight in weights.items():
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)):
+            raise ReturnValidationError(f"{path}.weights.{level} must be a number")
+    for lane in ("patterns", "antipatterns"):
+        counts = basis[lane]
+        if not isinstance(counts, dict) or set(counts) != set(DETECTION_WEIGHTS):
+            raise ReturnValidationError(
+                f"{path}.{lane} must name exactly {sorted(DETECTION_WEIGHTS)}"
+            )
+        for level, count in counts.items():
+            if not _basis_count(count):
+                raise ReturnValidationError(
+                    f"{path}.{lane}.{level} must be a nonnegative integer"
+                )
 
 
 def _validate_flat_score(

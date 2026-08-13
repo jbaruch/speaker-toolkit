@@ -249,3 +249,92 @@ class TestV6IsRepresentableAsPersistedState:
         assert basis["weights"] == return_validation.DETECTION_WEIGHTS
         assert set(basis["patterns"]) == set(return_validation.DETECTION_WEIGHTS)
         assert set(basis["antipatterns"]) == set(return_validation.DETECTION_WEIGHTS)
+
+
+class TestATypeConfusedBasisIsRejected:
+    """Equality alone does not gate types.
+
+    Python makes `True == 1` and `6.0 == 6`, so a basis carrying boolean counts
+    or a float schema version compares equal to the expected object and persists
+    as a type-confused record every later reader believes was verified.
+    """
+
+    def _basis(self, rv, **overrides):
+        ret = _v6(rv)
+        block = ret["pattern_observations"]
+        basis = block["pattern_score_basis"]
+        for path, value in overrides.items():
+            keys = path.split(".")
+            target = basis
+            for key in keys[:-1]:
+                target = target[key]
+            target[keys[-1]] = value
+        return ret
+
+    def test_a_boolean_lane_count_is_rejected(self, return_validation, catalog) -> None:
+        """`True == 1` — the count would compare equal and pass."""
+        ret = self._basis(return_validation, **{"patterns.strong": True})
+
+        with pytest.raises(
+            return_validation.ReturnValidationError, match="nonnegative integer"
+        ):
+            return_validation.validate_return(ret, catalog)
+
+    def test_a_float_schema_version_is_rejected(
+        self, return_validation, catalog
+    ) -> None:
+        """`6.0 == 6` — the version would compare equal and pass."""
+        ret = self._basis(return_validation, schema_version=6.0)
+
+        with pytest.raises(
+            return_validation.ReturnValidationError, match="schema_version"
+        ):
+            return_validation.validate_return(ret, catalog)
+
+    def test_a_boolean_not_evaluable_count_is_rejected(
+        self, return_validation, catalog
+    ) -> None:
+        ret = self._basis(return_validation, not_evaluable_count=False)
+
+        with pytest.raises(
+            return_validation.ReturnValidationError, match="not_evaluable_count"
+        ):
+            return_validation.validate_return(ret, catalog)
+
+    def test_a_boolean_weight_is_rejected(self, return_validation, catalog) -> None:
+        ret = self._basis(return_validation, **{"weights.weak": True})
+
+        with pytest.raises(
+            return_validation.ReturnValidationError, match="must be a number"
+        ):
+            return_validation.validate_return(ret, catalog)
+
+    def test_an_extra_field_is_rejected(self, return_validation, catalog) -> None:
+        ret = _v6(return_validation)
+        ret["pattern_observations"]["pattern_score_basis"]["extra"] = 1
+
+        with pytest.raises(
+            return_validation.ReturnValidationError, match="must contain exactly"
+        ):
+            return_validation.validate_return(ret, catalog)
+
+    def test_a_missing_confidence_level_is_rejected(
+        self, return_validation, catalog
+    ) -> None:
+        """A lane that omits a level cannot report the composition it claims."""
+        ret = _v6(return_validation)
+        del ret["pattern_observations"]["pattern_score_basis"]["antipatterns"]["weak"]
+
+        with pytest.raises(
+            return_validation.ReturnValidationError, match="must name exactly"
+        ):
+            return_validation.validate_return(ret, catalog)
+
+    def test_a_non_object_basis_is_rejected(self, return_validation, catalog) -> None:
+        ret = _v6(return_validation)
+        ret["pattern_observations"]["pattern_score_basis"] = [1, 2, 3]
+
+        with pytest.raises(
+            return_validation.ReturnValidationError, match="must be an object"
+        ):
+            return_validation.validate_return(ret, catalog)
