@@ -60,16 +60,13 @@ LEGACY_PATTERN_EVIDENCE_SCHEMA_VERSION = 1
 PATTERN_EVIDENCE_SCHEMA_VERSION = 2
 SOURCE_LOCATED_RETURN_SCHEMA_VERSION = 4
 EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION = 5
-WEIGHTED_SCORE_RETURN_SCHEMA_VERSION = 6
-# v6 changes the score's arithmetic and nothing about how evidence is located, so
-# every source-location rule that holds for v5 holds for it unchanged.
-EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS = frozenset(
-    {EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION, WEIGHTED_SCORE_RETURN_SCHEMA_VERSION}
-)
+# v6 validates as a return contract but does not persist yet: admitting it here
+# would store a new record shape under talk schema v5. Persistence, the talk
+# schema bump, the claim contract, and the migration advance together in the
+# activation change, not piecemeal.
 CANONICALIZABLE_RETURN_SCHEMA_VERSIONS = frozenset(
-    {SOURCE_LOCATED_RETURN_SCHEMA_VERSION, *EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS}
+    {SOURCE_LOCATED_RETURN_SCHEMA_VERSION, EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION}
 )
-WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION = 6
 CURRENT_PATTERN_SCORING_SCHEMA_VERSION = 5
 PATTERN_OUTCOMES = frozenset(
     {"detected", "undetected", "not_evaluable", "not_applicable"}
@@ -3293,7 +3290,7 @@ def canonicalize_return_evidence(
     pattern_scoring_schema_version: int = CURRENT_PATTERN_SCORING_SCHEMA_VERSION,
     video_evidence_assessment: VideoEvidenceAssessment | None = None,
 ) -> dict[str, object]:
-    """Return a v4/v5/v6 payload with source claims canonically located."""
+    """Return a v4/v5 payload with source claims canonically located."""
     canonical = copy.deepcopy(dict(ret))
     return_schema_version = canonical.get("return_schema_version")
     if return_schema_version not in CANONICALIZABLE_RETURN_SCHEMA_VERSIONS:
@@ -3477,7 +3474,7 @@ def canonicalize_return_evidence(
     raw_assessments = observations.get("applicability_assessments")
     assessment_entries = raw_assessments if isinstance(raw_assessments, list) else []
     assessments_by_id: dict[str, Mapping[str, object]] = {}
-    if return_schema_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
+    if return_schema_version == EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION:
         for index, raw_assessment in enumerate(assessment_entries):
             if not isinstance(raw_assessment, Mapping):
                 raise PatternEvidenceError(
@@ -3507,7 +3504,7 @@ def canonicalize_return_evidence(
         assessment = assessments_by_id.get(pattern_id)
         applicability_gate = getattr(entry, "applicability_evaluable_from", None)
         conditions = getattr(entry, "not_applicable_when", None)
-        if return_schema_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS and (
+        if return_schema_version == EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION and (
             applicability_gate is not None or conditions is not None
         ):
             if applicability_gate is None or conditions is None:
@@ -3665,7 +3662,7 @@ def canonicalize_return_evidence(
         }
         for pattern_id in sorted(expected_ids)
     ]
-    if return_schema_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
+    if return_schema_version == EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION:
         observations["applicability_assessments"] = sorted(
             canonical_assessments,
             key=lambda item: cast(str, item["pattern_id"]),
@@ -3675,19 +3672,10 @@ def canonicalize_return_evidence(
             for pattern_id in sorted(outcomes)
         ]
         observations["pattern_outcomes"] = pattern_outcomes
-        # A weighted return belongs to its own scoring generation whatever the
-        # caller passes: flat and weighted scores are not comparable, so sharing
-        # an identity would file them in one cohort and let an aggregate average
-        # across two arithmetics. The parameter names the generation for FLAT
-        # returns only.
         observations["opportunity_coverage_identity"] = opportunity_coverage_identity(
             pattern_outcomes,
             pattern_catalog_fingerprint=catalog.fingerprint,
-            pattern_scoring_schema_version=(
-                WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
-                if return_schema_version == WEIGHTED_SCORE_RETURN_SCHEMA_VERSION
-                else pattern_scoring_schema_version
-            ),
+            pattern_scoring_schema_version=pattern_scoring_schema_version,
         )
         observations["evidence_schema_version"] = PATTERN_EVIDENCE_SCHEMA_VERSION
     else:

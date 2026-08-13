@@ -109,7 +109,6 @@ from return_validation import (
     LEGACY_UNBASELINEABLE_SCORING_STATUS,
     PATTERN_SCORING_SCHEMA_VERSION,
     PREVIOUS_QUEUE_CLAIM_SCHEMA_VERSION,
-    RETURN_SCHEMA_VERSION,
     SNAPSHOT_RETURN_SCHEMA_VERSIONS,
     SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS,
     STRUCTURED_FIELD_POLICIES,
@@ -121,11 +120,7 @@ from return_validation import (
     canonical_return_sha256,
     load_catalog,
     normalize_processing_stamp,
-    expected_weighted_score,
-    pattern_score_is_valid,
     resolve_return_schema_version,
-    scoring_generation_is_weighted,
-    scoring_schema_version_for_return,
     validate_batch_claims_against_talks,
     validate_claim_against_talk,
     validate_batch,
@@ -466,12 +461,7 @@ def require_detections(observations, field):
     return value
 
 
-def resolve_pattern_score(
-    observations,
-    patterns,
-    antipatterns,
-    return_schema_version=RETURN_SCHEMA_VERSION,
-):
+def resolve_pattern_score(observations, patterns, antipatterns):
     """Single source of truth for the talk's `pattern_score`.
 
     Returns (score, coerced); `score` is None when the return carries none.
@@ -490,15 +480,13 @@ def resolve_pattern_score(
     the requirement in the brief has not moved the rate across four batches, so
     the tooling absorbs the variant — and recomputes rather than trusting it.
 
-    Through v5 the score is count(patterns) minus count(antipatterns), so it is
-    an INTEGER by construction and a float is a defect. A v6 return weighs each
-    detection by confidence, so 1.5 is the correct answer there and the same
-    check would make a valid return unpersistable. `True` satisfies
-    `isinstance(x, int)` in Python and is never a score in either generation.
+    The score is count(patterns) minus count(antipatterns), so it is an INTEGER
+    by construction. `True` satisfies `isinstance(x, int)` in Python and a float
+    looks numeric; neither is a score.
+
+    A weighted v6 return never reaches here: it does not canonicalize, so it does
+    not persist. Weighted arithmetic arrives with the activation change.
     """
-    weighted = scoring_generation_is_weighted(
-        scoring_schema_version_for_return(return_schema_version)
-    )
     if "pattern_score" not in observations or observations["pattern_score"] is None:
         return None, False
 
@@ -518,42 +506,25 @@ def resolve_pattern_score(
         )
 
     label = "pattern_score" if coerced else "pattern_score.score"
-    if not pattern_score_is_valid(nested, weighted=weighted):
-        expected = (
-            "a number — the score is the confidence-weighted sum of the "
-            "detection arrays, so a string and a bool are wrong"
-            if weighted
-            else "an integer — the score is count(patterns) minus "
-            "count(antipatterns), so a float, a string and a bool are all wrong"
-        )
+    if isinstance(nested, bool) or not isinstance(nested, int):
         raise ValueError(
-            f"{label} is {nested!r} ({type(nested).__name__}). It must be "
-            f"{expected}. Emit "
-            '{"patterns_used": N, "antipatterns_detected": M, "score": <score>}.'
+            f"{label} is {nested!r} ({type(nested).__name__}). It must be an "
+            "integer — the score is count(patterns) minus count(antipatterns), "
+            "so a float, a string and a bool are all wrong. Emit "
+            '{"patterns_used": N, "antipatterns_detected": M, "score": N-M}.'
         )
 
     # Only the coerced form is cross-checked. It is the shape that arrived
     # without its accompanying counts, so the arrays are the only evidence that
     # the number is right.
     if coerced:
-        if weighted:
-            expected_score = expected_weighted_score(
-                list(patterns or []), list(antipatterns or [])
+        used, against = len(patterns or []), len(antipatterns or [])
+        if used - against != nested:
+            raise ValueError(
+                f"pattern_score is the bare int {nested}, but patterns_detected "
+                f"({used}) minus antipatterns_detected ({against}) is "
+                f"{used - against}. Refusing to guess which is right."
             )
-            if expected_score != nested:
-                raise ValueError(
-                    f"pattern_score is the bare number {nested}, but the "
-                    f"confidence-weighted detection arrays require "
-                    f"{expected_score}. Refusing to guess which is right."
-                )
-        else:
-            used, against = len(patterns or []), len(antipatterns or [])
-            if used - against != nested:
-                raise ValueError(
-                    f"pattern_score is the bare int {nested}, but patterns_detected "
-                    f"({used}) minus antipatterns_detected ({against}) is "
-                    f"{used - against}. Refusing to guess which is right."
-                )
     return nested, coerced
 
 
@@ -694,7 +665,7 @@ def merge_talk(
     patterns = scoring_assessment.patterns_detected
     antipatterns = scoring_assessment.antipatterns_detected
     score, coerced_score = resolve_pattern_score(
-        observation_values, patterns, antipatterns, return_schema_version
+        observation_values, patterns, antipatterns
     )
 
     if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
@@ -820,12 +791,7 @@ def merge_talk(
                 CURRENT_PATTERN_SCORING_GENERATION_STATUS
             )
             candidate["pattern_scoring_generation_reasons"] = []
-            # The generation this return's SCORE belongs to, which is not the
-            # current generation for a weighted return. Stamping the current one
-            # would contradict the identity canonicalization already wrote.
-            candidate["pattern_scoring_schema_version"] = (
-                scoring_schema_version_for_return(return_schema_version)
-            )
+            candidate["pattern_scoring_schema_version"] = PATTERN_SCORING_SCHEMA_VERSION
             candidate["pattern_catalog_fingerprint"] = resolved_catalog.fingerprint
         else:
             candidate["pattern_scoring_generation_status"] = (
@@ -1043,9 +1009,7 @@ def main():
                     vault_root,
                     catalog,
                     source_roots=source_roots,
-                    pattern_scoring_schema_version=scoring_schema_version_for_return(
-                        resolve_return_schema_version(ret)
-                    ),
+                    pattern_scoring_schema_version=(PATTERN_SCORING_SCHEMA_VERSION),
                     video_evidence_assessment=video_evidence_assessment,
                 )
             else:

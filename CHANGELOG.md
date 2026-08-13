@@ -17,25 +17,26 @@ schema is checked against the arithmetic in force when it was written, so a v5
 return carrying a `pattern_score_basis` is rejected outright.
 
 v6 keeps every v5 semantic and joins each version set v5 belongs to. Its
-persisted `pattern_observations` is the exhaustive v5 field set plus the basis —
-a distinct accepted shape, so a v5 record carrying a basis and a v6 record
-missing one are both malformed — and its `pattern_score` may be fractional, where
-a flat score stays an integer by construction.
+`pattern_observations` gains `pattern_score_basis` on the return, and the
+validator checks the basis object's types before comparing its values — Python
+equality makes `True == 1` and `6.0 == 6`, so a boolean lane count or a float
+schema version would otherwise pass. The supplied score is compared exactly
+rather than rounded: `expected_weighted_score` already rounds the canonical
+result, so rounding the untrusted value too admitted `1.504` as `1.5`.
 
-**v6 gets its own scoring generation.** Weighted and flat scores are not
-comparable, so `scoring_schema_version_for_return` maps a return schema to the
-generation its score belongs to, and the opportunity identity, the persisted
-stamp, and the freshness replay all use that one rule. Sharing generation 5 would
-have filed weighted scores in the flat cohort and let an aggregate average across
-two arithmetics. `PATTERN_SCORING_SCHEMA_VERSION` still names the CURRENT
-generation and stays at 5, since no worker emits v6 yet — every fresh claim is
-schema v5 with `required_return_schema_version: 5`, so v6 is
-accepted-but-unissued until the claim contract advances.
+**Not yet persisted.** v6 validates and nothing further. Persisting a weighted
+score is a new talk-record shape, and `mutate-tracking-database` requires the
+exact current talk schema before any mutation — so admitting it alone would leave
+every stored talk unmutatable until a migration restamped it. Persistence, the
+talk schema bump, the claim contract, and the migration advance together in one
+activation change, alongside the reparse.
 
-**Migration.** None. A persisted v5 talk stays v5 and becomes v6 only by reparse
-under a v6 claim. Weights are part of the scoring schema version, so changing one
-is a generation bump rather than a tuning knob. `schemas-db.md` documents v6's
-writer, reader, migration behaviour, and persisted shape.
+`PATTERN_SCORING_SCHEMA_VERSION` stays 5. `scoring_schema_version_for_return`
+records which generation a return's score belongs to, so that change has the rule
+ready: weighted and flat scores are not comparable and must not share a cohort.
+
+**Migration.** None. Weights are part of the scoring schema version, so changing
+one is a generation bump rather than a tuning knob.
 
 ### fix(vault-ingress) — an old block is old, not corrupt (#167)
 

@@ -1086,26 +1086,21 @@ travels with the score it explains — a weighted number alone cannot say whethe
 it came from two strong detections or four moderate ones, so persisting the score
 without it stores exactly the unaccompanied figure the basis exists to prevent.
 
-**Persisted shape.** A v6 talk's `pattern_observations` is the exhaustive v5 field
-set plus `pattern_score_basis` — a distinct accepted shape, not a loose one, so a
-v5 record carrying a basis and a v6 record missing one are both malformed. The
-persisted `pattern_score` may be fractional at this generation; through v5 it
-stays an integer, since a flat score is a count difference by construction.
+**Not yet persisted.** v6 validates as a return contract and nothing further: it
+is absent from `CANONICALIZABLE_RETURN_SCHEMA_VERSIONS`, so a v6 return cannot be
+canonicalized and therefore cannot reach the database. A persisted `pattern_score`
+stays an integer, and no stored `pattern_observations` carries a basis.
 
-**Scoring generation.** A v6 return's opportunity identity is stamped with
-pattern-scoring schema **6**, not 5. Weighted and flat scores are not comparable,
-so sharing an identity would file them in one cohort and let an aggregate average
-across two arithmetics. `PATTERN_SCORING_SCHEMA_VERSION` stays 5 — that names the
-CURRENT generation, and no worker emits v6 yet — while
-`scoring_schema_version_for_return` maps each return schema to the generation its
-score belongs to.
+Persisting a weighted score is a new talk-record shape, and
+`mutate-tracking-database` requires the exact current talk schema before any
+mutation — so admitting it alone would leave every stored talk unmutatable until
+a migration restamped it. That shape, its schema bump, the claim contract, and
+the migration advance together in one activation change.
 
-**Migration.** None. A persisted v5 talk stays v5 and remains comparable within
-its own generation; it becomes v6 only by reparse under a v6 claim. Weights are
-part of the scoring schema version, so changing one is a scoring-generation bump,
-never a tuning knob.
+**Migration.** None. Weights are part of the scoring schema version, so changing
+one is a scoring-generation bump, never a tuning knob.
 
-The persisted basis has this shape:
+The basis a v6 return carries has this shape:
 
 ```json
 {
