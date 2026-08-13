@@ -419,7 +419,8 @@ prose has tells.
 **Delegate the scan; never reimplement it.** Call
 `Skill(skill: "blog-writer")`, which owns the AI-writing-pattern catalog and
 returns the flagged phrasings with whatever rewrite suggestion it offers for
-each. Apply its findings here and continue.
+each. Carry those findings into the classification below and continue — this
+guardrail reports them, and never applies them.
 
 Scan prose only. Slide visual descriptions and image prompts are not prose and
 are covered by the illustration checks above.
