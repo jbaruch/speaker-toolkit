@@ -54,6 +54,13 @@ owner run replaces it. The reason code is distinct from
 had a policy stamp. Occurrence rows stay readable across the boundary — they
 belong to the pattern-profile contract, not to the classification generation.
 
+The reader's leakage guard learned the new field. `_PATTERN_HISTORY_KEYS` in
+`validate-profile.py` is what keeps catalog-derived history inside
+`pattern_profile`, and a field the writer emits but that set never learned about
+could sit duplicated under `rhetoric_defaults` unchallenged. A regression derives
+its expectation from what the writer actually emits, so the next omission fails
+in the suite rather than in a profile.
+
 The version stamp is type-checked, not just compared. Python makes `True == 1`,
 so equality alone admitted a boolean `schema_version` while every count beside it
 already rejected one.

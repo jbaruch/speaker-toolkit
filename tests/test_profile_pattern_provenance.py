@@ -1868,7 +1868,10 @@ def test_pattern_baseline_rejects_unknown_fields(validate_profile, tmp_path, cap
     assert "fields are noncanonical" in report["errors"][0]
 
 
-@pytest.mark.parametrize("duplicate", ["signature_combinations", "mastery_levels"])
+@pytest.mark.parametrize(
+    "duplicate",
+    ["signature_combinations", "mastery_levels", "absence_provability"],
+)
 def test_rhetoric_defaults_cannot_duplicate_pattern_history(
     validate_profile,
     tmp_path,
@@ -1884,6 +1887,42 @@ def test_rhetoric_defaults_cannot_duplicate_pattern_history(
     assert any(
         "rhetoric_defaults duplicates catalog history" in error
         for error in report["errors"]
+    )
+
+
+# Prose the profile carries for a human reader. Not catalog-derived history, so a
+# copy elsewhere duplicates nothing.
+_PROSE_PATTERN_PROFILE_FIELDS = frozenset({"note", "strengths_note"})
+
+
+def test_every_history_field_the_writer_emits_is_guarded(
+    validate_profile, tmp_path, capsys
+):
+    """The leakage guard is a hand-maintained key set, so it drifts silently.
+
+    `absence_provability` was emitted into `pattern_profile` while the reader's
+    set still listed the fields that existed before it, which let a conflicting
+    copy sit under `rhetoric_defaults` unchallenged. Deriving the expectation
+    from what the writer actually emits makes the next omission fail here rather
+    than in a profile.
+    """
+    emitted = set(_v5_pattern_profile(validate_profile)) - _PROSE_PATTERN_PROFILE_FIELDS
+    unguarded = []
+
+    for index, field in enumerate(sorted(emitted)):
+        profile = _profile(validate_profile)
+        profile["rhetoric_defaults"][field] = [] if field.endswith("s") else {}
+        vault = tmp_path / f"case{index}"
+        vault.mkdir()
+        return_code, report = _run(validate_profile, profile, vault, capsys)
+        if return_code != 1 or not any(
+            "rhetoric_defaults duplicates catalog history" in error
+            for error in report["errors"]
+        ):
+            unguarded.append(field)
+
+    assert not unguarded, (
+        f"pattern_profile fields the leakage guard does not cover: {unguarded}"
     )
 
 
