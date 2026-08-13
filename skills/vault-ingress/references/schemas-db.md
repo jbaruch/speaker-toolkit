@@ -1080,12 +1080,6 @@ claim contract advances. `PATTERN_SCORING_SCHEMA_VERSION` stays at 5 for the sam
 reason: bumping it before a return emits a weighted score would strand every
 persisted talk on a generation nothing has produced.
 
-**Reader.** `canonical_persisted_pattern_observations` persists
-`pattern_score_basis` for v6 alongside the fields v5 already carries. The basis
-travels with the score it explains — a weighted number alone cannot say whether
-it came from two strong detections or four moderate ones, so persisting the score
-without it stores exactly the unaccompanied figure the basis exists to prevent.
-
 **Not yet persisted.** v6 validates as a return contract and nothing further: it
 is absent from `CANONICALIZABLE_RETURN_SCHEMA_VERSIONS`, so a v6 return cannot be
 canonicalized and therefore cannot reach the database. A persisted `pattern_score`

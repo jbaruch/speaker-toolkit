@@ -2936,15 +2936,25 @@ def _validate_adherence_comparison(
             f"population of {MIN_ADHERENCE_BASELINE_TALKS} talks"
         )
     comparison_score = comparison.get("talk_pattern_score")
-    if (
-        isinstance(comparison_score, bool)
-        or not isinstance(comparison_score, int)
-        or comparison_score != talk_pattern_score
-    ):
+    # The comparison restates the score the block already carries, so it takes
+    # that generation's type: fractional under weighted arithmetic, integer under
+    # a count difference. Requiring an integer of both would reject every valid
+    # weighted return that reports an adherence comparison.
+    weighted = return_schema_version in WEIGHTED_SCORE_RETURN_SCHEMA_VERSIONS
+    if isinstance(comparison_score, bool):
+        numeric = False
+    elif isinstance(comparison_score, int):
+        numeric = True
+    elif weighted and isinstance(comparison_score, float):
+        numeric = math.isfinite(comparison_score)
+    else:
+        numeric = False
+    if not numeric or comparison_score != talk_pattern_score:
         raise ReturnValidationError(
-            "adherence_comparison.talk_pattern_score must be an integer equal "
-            "to the validated "
-            f"pattern_observations.pattern_score {talk_pattern_score}"
+            "adherence_comparison.talk_pattern_score must be "
+            + ("a finite number" if weighted else "an integer")
+            + " equal to the validated "
+            + f"pattern_observations.pattern_score {talk_pattern_score}"
         )
     if not isinstance(assessment, str) or not assessment.strip():
         raise ReturnValidationError(

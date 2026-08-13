@@ -18,6 +18,7 @@ from test_schema5_pattern_outcomes import (  # noqa: E402
     _detection,
     _entry,
     _raw_return,
+    _scored_talk,
 )
 
 
@@ -162,3 +163,73 @@ class TestTheBasisIsRequiredByTheScoreNotItsShape:
             return_validation.validate_return(
                 _v6(return_validation, bare=True, basis=basis), catalog
             )
+
+
+class TestAWeightedScoreCanBeCompared:
+    """The adherence comparison restates the block's own score.
+
+    It therefore takes that generation's type. Requiring an integer of both
+    generations rejects every valid weighted return that reports a comparison —
+    which would mean v6 does not actually retain the v5 adherence contract it
+    claims to inherit.
+    """
+
+    def _with_comparison(self, rv, ret, score):
+        import adherence_baseline
+
+        baseline = adherence_baseline.build_adherence_baseline(
+            [_scored_talk(f"talk-{index}.md", "1" * 64) for index in range(10)],
+            selected_filenames=[],
+            as_of="2026-07-31T12:00:00+00:00",
+            pattern_catalog_fingerprint="a" * 64,
+            pattern_scoring_schema_version=rv.PATTERN_SCORING_SCHEMA_VERSION,
+            evidence_freshness_assessor=lambda _talk: (),
+        )
+        ret["adherence_assessment"] = "It rose against the baseline. Clearly so."
+        ret["adherence_comparison"] = {
+            "schema_version": 1,
+            "baseline": baseline,
+            "talk_pattern_score": score,
+        }
+        return ret
+
+    def test_a_fractional_comparison_score_passes_the_type_gate(
+        self, return_validation, catalog
+    ) -> None:
+        ret = _v6(return_validation)
+        score = ret["pattern_observations"]["pattern_score"]["score"]
+        assert score != int(score), "fixture must exercise a fractional score"
+
+        self._with_comparison(return_validation, ret, score)
+
+        # The comparison may still be suppressed on opportunity identity, which is
+        # a different contract. What must not happen is rejection on TYPE.
+        try:
+            return_validation.validate_return(ret, catalog)
+        except return_validation.ReturnValidationError as exc:
+            assert "must be a finite number" not in str(exc)
+            assert "must be an integer" not in str(exc)
+
+    def test_a_non_finite_comparison_score_is_rejected(
+        self, return_validation, catalog
+    ) -> None:
+        """`inf` is numeric and is not a score."""
+        ret = _v6(return_validation)
+        self._with_comparison(return_validation, ret, float("inf"))
+
+        with pytest.raises(
+            return_validation.ReturnValidationError, match="finite number"
+        ):
+            return_validation.validate_return(ret, catalog)
+
+    def test_a_v5_comparison_still_refuses_a_float(
+        self, return_validation, catalog
+    ) -> None:
+        """The weighted allowance must not loosen the flat contract."""
+        ret = _v5()
+        self._with_comparison(return_validation, ret, 1.5)
+
+        with pytest.raises(
+            return_validation.ReturnValidationError, match="must be an integer"
+        ):
+            return_validation.validate_return(ret, catalog)

@@ -24,6 +24,12 @@ schema version would otherwise pass. The supplied score is compared exactly
 rather than rounded: `expected_weighted_score` already rounds the canonical
 result, so rounding the untrusted value too admitted `1.504` as `1.5`.
 
+A v6 adherence comparison restates the block's own score, so it takes that
+generation's type — finite and possibly fractional under weighted arithmetic,
+integer under a count difference. Requiring an integer of both would have
+rejected every valid weighted return reporting a comparison, which would mean v6
+did not retain the v5 adherence contract it inherits.
+
 **Not yet persisted.** v6 validates and nothing further. Persisting a weighted
 score is a new talk-record shape, and `mutate-tracking-database` requires the
 exact current talk schema before any mutation — so admitting it alone would leave
