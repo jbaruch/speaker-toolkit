@@ -1,5 +1,18 @@
 # Changelog
 
+### test — assert the lint gate's outcome, not tessl's wording (#265)
+
+`test_an_over_length_description_fails_the_gate` matched the literal string
+`Frontmatter validation failed`. tessl 0.96.0 reports the same rejection as
+`SKILL.md frontmatter field "description" must be at most 1024 characters.`, so
+the test failed while the gate it covers worked correctly.
+
+Carried in three PR bodies as a pre-existing environmental failure. It was
+neither: CI passed only because its pinned tessl still emitted the old wording,
+so the next bump would have broken the gate's own test in CI. The assertion now
+names the defect — an error mentioning `description` and `1024` — instead of the
+sentence the external tool happened to phrase it with.
+
 ### feat(vault-profile) — the denominator behind a never-used claim (#160)
 
 Part of #160 section 3, implementing the #153 null-absence-gate decision.

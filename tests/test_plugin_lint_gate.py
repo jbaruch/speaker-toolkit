@@ -179,7 +179,15 @@ def test_an_over_length_description_fails_the_gate(tmp_path: Path) -> None:
     assert result.returncode == 1
     report = json.loads(result.stdout)
     assert report["ok"] is False
-    assert any("Frontmatter validation failed" in error for error in report["errors"])
+    # Assert the gate rejected THIS defect, not the wording tessl rejected it in.
+    # Pinning the prose ("Frontmatter validation failed") broke on tessl 0.96.0,
+    # which reports the same rejection as `SKILL.md frontmatter field
+    # "description" must be at most 1024 characters.` — the gate was right and
+    # the assertion was reading the message instead of the outcome.
+    assert report["errors"], "an over-length description must produce an error"
+    assert any(
+        "description" in error and "1024" in error for error in report["errors"]
+    ), f"no error named the over-length description: {report['errors']}"
 
 
 def test_a_valid_plugin_passes_the_gate(tmp_path: Path) -> None:
