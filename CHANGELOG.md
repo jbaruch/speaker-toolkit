@@ -25,8 +25,23 @@ exists to prevent.
 The classification contract bumps to **v2** to carry it, since this is a shape
 change to a persisted artifact. A v1 block stays readable: the counts are a fact
 about the catalog, not a claim the older block got something wrong, so refusing
-v1 would strand every profile already on disk to gain nothing. The field and its
-version boundary are documented in `speaker-profile-schema.md`.
+v1 would strand every profile already on disk to gain nothing. A v1 block that
+*carries* the field is a different matter and is rejected — the stamp and the
+payload disagree. The field and its version boundary are documented in
+`speaker-profile-schema.md`.
+
+The version floor reads the **classification** schema version, not the outer
+pattern-profile contract version. Review found the first revision comparing the
+contract version (4 or 5) against a classification floor of 2, so the gate
+admitted every block it existed to reject. The floor is also pinned to the
+generation that introduced the field rather than to the current one, so a later
+classification bump does not start rejecting version 2.
+
+That defect survived because the tests called the private validator and supplied
+the version by hand, which is a shape the real call path cannot produce. They now
+run through `assess_pattern_profile`, where a classification-v1 block carrying the
+field and a v4 contract carrying it are both refused. Both tests fail against the
+original code.
 
 `classify-pattern-profile.py` emits it beside `never_used_patterns`, so the list
 and its denominator always travel together. The field is allowed but never

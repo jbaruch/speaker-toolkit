@@ -1445,7 +1445,13 @@ def assess_pattern_profile(
     errors.extend(
         _validate_absence_provability(
             pattern_profile.get("absence_provability"),
-            contract_version=contract_version,
+            # v4 carries no classification block at all, so it can never reach the
+            # generation that introduced this field.
+            classification_schema_version=(
+                pattern_profile.get("classification_schema_version")
+                if contract_version == 5
+                else None
+            ),
             present="absence_provability" in pattern_profile,
         )
     )
@@ -1624,10 +1630,14 @@ def assess_pattern_profile(
 
 
 ABSENCE_PROVABILITY_SCHEMA_VERSION = 1
+# The classification generation that introduced `absence_provability`. The floor
+# is this constant rather than the current version, so a later bump does not
+# start rejecting the generation that first carried the field.
+ABSENCE_PROVABILITY_MIN_CLASSIFICATION_SCHEMA_VERSION = 2
 
 
 def _validate_absence_provability(
-    value: object, *, contract_version: int, present: bool
+    value: object, *, classification_schema_version: object, present: bool
 ) -> list[str]:
     """Validate the denominator instead of merely permitting it.
 
@@ -1635,14 +1645,23 @@ def _validate_absence_provability(
     reader that believes the shape was verified. These counts qualify every
     never-used claim, so a wrong one misreports coverage as speaker behavior —
     the exact confusion the field exists to prevent.
+
+    The floor is the CLASSIFICATION schema version, not the outer pattern-profile
+    contract version. The outer contract is 4 or 5, so comparing it against a
+    classification floor of 2 admits every block it was meant to reject.
     """
     path = "pattern_profile.absence_provability"
     if not present:
         return []
-    if contract_version < CLASSIFICATION_SCHEMA_VERSION:
+    if (
+        not _is_integer(classification_schema_version)
+        or classification_schema_version
+        < ABSENCE_PROVABILITY_MIN_CLASSIFICATION_SCHEMA_VERSION
+    ):
         return [
             f"{path} requires classification_schema_version "
-            f"{CLASSIFICATION_SCHEMA_VERSION}, not {contract_version}"
+            f"{ABSENCE_PROVABILITY_MIN_CLASSIFICATION_SCHEMA_VERSION} or later, not "
+            f"{classification_schema_version!r}"
         ]
     if not isinstance(value, Mapping):
         return [f"{path} must be an object"]

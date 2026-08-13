@@ -606,6 +606,132 @@ def test_v5_assessment_enables_independent_policy_domains(validate_profile):
     )
 
 
+class TestAbsenceProvabilityThroughTheAssessor:
+    """The denominator's version gate, exercised through the public entry point.
+
+    The gate reads the CLASSIFICATION schema version, not the outer pattern-profile
+    contract version. Testing the private helper with a hand-supplied version hid
+    that: the helper was being handed a contract version of 4 or 5 and comparing it
+    against a classification floor of 2, so it admitted every block it existed to
+    reject. Only a profile that travels the real call path shows it.
+    """
+
+    def test_the_current_generation_carries_it(self, validate_profile):
+        pattern_profile = _v5_pattern_profile(validate_profile)
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert pattern_profile["classification_schema_version"] == 2
+        assert "absence_provability" in pattern_profile
+        assert assessment.current_contract is True
+
+    def test_a_classification_v1_block_cannot_carry_it(self, validate_profile):
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        pattern_profile["classification_schema_version"] = 1
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is False
+        assert any(
+            "absence_provability requires classification_schema_version" in error
+            for error in assessment.errors
+        )
+
+    def test_a_classification_v1_block_without_it_still_reads(self, validate_profile):
+        """Refusing v1 outright would strand every profile already on disk."""
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        pattern_profile["classification_schema_version"] = 1
+        del pattern_profile["absence_provability"]
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is True
+
+    def test_a_v4_contract_cannot_carry_it(self, validate_profile):
+        """v4 has no classification block, so it never reaches the generation
+        that introduced the field."""
+        pattern_profile = _pattern_profile(validate_profile)
+        pattern_profile["absence_provability"] = {
+            "schema_version": 1,
+            "absence_provable_count": 16,
+            "absence_unknowable_count": 65,
+            "observable_count": 81,
+        }
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=4
+        )
+
+        assert assessment.current_contract is False
+        assert any(
+            "absence_provability requires classification_schema_version" in error
+            for error in assessment.errors
+        )
+
+    def test_counts_that_do_not_sum_are_rejected(self, validate_profile):
+        """The two halves ARE the observable catalog; a mismatch describes a
+        catalog that does not exist."""
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        pattern_profile["absence_provability"]["observable_count"] = 99
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is False
+        assert any(
+            "must sum to observable_count" in error for error in assessment.errors
+        )
+
+    def test_a_non_object_is_rejected(self, validate_profile):
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        pattern_profile["absence_provability"] = [16, 65, 81]
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is False
+        assert any(
+            "absence_provability must be an object" in error
+            for error in assessment.errors
+        )
+
+    def test_a_boolean_count_is_rejected(self, validate_profile):
+        """`True` is an int in Python; a count is not a flag."""
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        pattern_profile["absence_provability"]["absence_provable_count"] = True
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is False
+        assert any(
+            "must be a nonnegative integer" in error for error in assessment.errors
+        )
+
+    def test_a_missing_count_is_rejected(self, validate_profile):
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        del pattern_profile["absence_provability"]["observable_count"]
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is False
+        assert any(
+            "absence_provability must contain exactly" in error
+            for error in assessment.errors
+        )
+
+
 def test_v5_assessment_rejects_policy_digest_tampering(validate_profile):
     pattern_profile = _v5_pattern_profile(validate_profile)
     pattern_profile["classification_policy"]["semantic_sha256"] = "0" * 64

@@ -407,7 +407,7 @@ Current `schema_version`: **5**. The validator (`scripts/validate-profile.py`,
       "rare": [],
       "never_tried": []
     },
-    "classification_schema_version": 1,
+    "classification_schema_version": 2,
     "classification_policy": {
       "schema_version": 1,
       "policy_id": "speaker-toolkit-default",
@@ -668,10 +668,13 @@ of 81 observable, so a short `never_used_patterns` list is mostly a statement
 about coverage rather than about the speaker; a reader presenting the list
 without these counts misreports it.
 
-The field arrives with `classification_schema_version: 2`. A block at version 1
-predates it and stays readable — the counts are a fact about the catalog, not a
-claim the older block got anything wrong — so readers treat the field as absent
-rather than the profile as invalid. The
+The field arrives with `classification_schema_version: 2`. A version-1 block that
+omits it stays readable — the counts are a fact about the catalog, not a claim
+the older block got anything wrong — so readers treat the field as absent rather
+than the profile as invalid. A version-1 block that *carries* it is rejected:
+the field did not exist under that generation's contract, so its presence means
+the stamp and the payload disagree. Contract v4 carries no classification block
+at all and never admits the field. The
 antipattern equivalent is `confirmed_none`; every other zero-detection antipattern
 remains non-recurring unless the classifier says otherwise.
 
