@@ -1,24 +1,5 @@
 # Changelog
 
-### test — assert the lint gate's outcome, not tessl's wording (#265)
-
-`test_an_over_length_description_fails_the_gate` matched the literal string
-`Frontmatter validation failed`. tessl 0.96.0 reports the same rejection as
-`SKILL.md frontmatter field "description" must be at most 1024 characters.`, so
-the test failed while the gate it covers worked correctly.
-
-Carried in three PR bodies as a pre-existing environmental failure. It was
-neither: CI passed only because its pinned tessl still emitted the old wording,
-so the next bump would have broken the gate's own test in CI.
-
-The assertion now names the
-outcome and the offending skill — the gate failed and the error identifies
-`demo` — instead of any sentence the external tool happened to phrase it with.
-Matching the new wording would only have swapped which CLI version it broke on;
-the two truncate the message at different points. The old wording stays covered
-by the fake-CLI classification test, which owns a captured transcript rather
-than a live tool.
-
 ### feat(vault-profile) — the denominator behind a never-used claim (#160)
 
 Part of #160 section 3, implementing the #153 null-absence-gate decision.
@@ -72,6 +53,10 @@ owner run replaces it. The reason code is distinct from
 `pattern_classification_policy_unavailable`, which marks a v4 contract that never
 had a policy stamp. Occurrence rows stay readable across the boundary — they
 belong to the pattern-profile contract, not to the classification generation.
+
+The version stamp is type-checked, not just compared. Python makes `True == 1`,
+so equality alone admitted a boolean `schema_version` while every count beside it
+already rejected one.
 
 The counts are checked against the active catalog, not merely against each
 other. `1 + 2 = 3` sums perfectly and describes a three-entry catalog nobody has,

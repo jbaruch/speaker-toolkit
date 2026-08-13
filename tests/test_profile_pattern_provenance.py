@@ -836,6 +836,19 @@ class TestASupersededClassificationGeneration:
             for error in assessment.errors
         )
 
+    def test_a_boolean_schema_version_is_rejected(self, validate_profile):
+        """`True == 1` in Python, so equality alone admits a boolean version
+        while every count beside it explicitly rejects one."""
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        pattern_profile["absence_provability"]["schema_version"] = True
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is False
+        assert any("schema_version must be" in error for error in assessment.errors)
+
     def test_a_boolean_count_is_rejected(self, validate_profile):
         """`True` is an int in Python; a count is not a flag."""
         pattern_profile = _v5_pattern_profile(validate_profile)

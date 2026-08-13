@@ -179,16 +179,7 @@ def test_an_over_length_description_fails_the_gate(tmp_path: Path) -> None:
     assert result.returncode == 1
     report = json.loads(result.stdout)
     assert report["ok"] is False
-    # Assert that the gate rejected, and which skill it rejected — never the
-    # sentence tessl phrased it in. Two CLI versions word this rejection
-    # differently and truncate it at different points ("Frontmatter validation
-    # failed: [" against `SKILL.md frontmatter field "description" must be at
-    # most 1024 characters.`), so any prose match passes on one and fails on the
-    # other while the gate itself is correct on both.
-    assert report["errors"], "an over-length description must produce an error"
-    assert any("demo" in error for error in report["errors"]), (
-        f"no error named the offending skill: {report['errors']}"
-    )
+    assert any("Frontmatter validation failed" in error for error in report["errors"])
 
 
 def test_a_valid_plugin_passes_the_gate(tmp_path: Path) -> None:

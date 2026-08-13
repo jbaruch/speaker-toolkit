@@ -1717,7 +1717,12 @@ def _validate_absence_provability(
     }
     if set(value) != expected:
         return [f"{path} must contain exactly {sorted(expected)}"]
-    if value["schema_version"] != ABSENCE_PROVABILITY_SCHEMA_VERSION:
+    # `_is_integer` first: Python makes `True == 1`, so equality alone admits a
+    # boolean version while every count beside it explicitly rejects one.
+    if (
+        not _is_integer(value["schema_version"])
+        or value["schema_version"] != ABSENCE_PROVABILITY_SCHEMA_VERSION
+    ):
         return [f"{path}.schema_version must be {ABSENCE_PROVABILITY_SCHEMA_VERSION}"]
     errors: list[str] = []
     counts: dict[str, int] = {}
