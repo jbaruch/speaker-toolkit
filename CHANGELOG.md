@@ -1,5 +1,22 @@
 # Changelog
 
+### fix(vault-ingress) — an old block is old, not corrupt (#167)
+
+The persisted-observation classifier reported a block carrying both detection
+lanes but no `not_evaluable` as `detection_collection_absent` — the same code it
+uses for a writer that stopped halfway.
+
+That shape is what the writer emitted before exhaustive outcomes existed, and it
+is the live vault's dominant state: all 80 talks claiming completed analysis are
+in it. Reporting them as corrupt sends the owner hunting for damage in records
+that are merely old.
+
+They now classify as `outcome_collection_predates_contract`, which stays blocking
+— the evidence still is not current and the reparse is still required — but names
+the cause and the remedy. The older-generation reading requires both detection
+lanes to be well-formed containers, so neither an unfinished writer nor a
+block holding a malformed lane can launder itself as a legacy record.
+
 ### feat(vault-profile) — the denominator behind a never-used claim (#160)
 
 Part of #160 section 3, implementing the #153 null-absence-gate decision.
