@@ -309,17 +309,20 @@ PATTERN_SCORING_SCHEMA_VERSION = 5
 WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION = 6
 
 
-def _persisted_scoring_schema_version(talk: Mapping[str, object]) -> int:
-    """The generation a persisted talk was stamped with.
+def _persisted_scoring_schema_version(talk: Mapping[str, object]) -> int | None:
+    """The generation a persisted talk was stamped with, or None if it has none.
 
-    A stored talk carries no return version — that field belongs to the result
-    it came from. Its own stamp is what a replay must rebuild the identity
-    against, so an unstamped or malformed record falls back to the current
-    generation and fails the comparison rather than silently matching.
+    A stored talk carries no return version — that field belongs to the result it
+    came from. Its own stamp is what a replay rebuilds the identity against.
+
+    Substituting the current generation for a missing or malformed stamp would
+    let a record whose identity was computed under that generation match by
+    coincidence, reporting unusable state as fresh. The caller treats None as a
+    freshness reason instead.
     """
     stamped = talk.get("pattern_scoring_schema_version")
     if isinstance(stamped, bool) or not isinstance(stamped, int):
-        return PATTERN_SCORING_SCHEMA_VERSION
+        return None
     return stamped
 
 
@@ -2086,14 +2089,20 @@ def assess_current_persisted_pattern_evidence_freshness(
         and observations.get("evidence_schema_version")
         == PATTERN_EVIDENCE_SCHEMA_VERSION
     ):
-        try:
-            _validate_canonical_v5_outcomes(
-                observations,
-                catalog if catalog is not None else load_catalog(),
-                _persisted_scoring_schema_version(talk),
-            )
-        except ReturnValidationError:
-            reasons.add("pattern_outcomes_catalog_projection_drift")
+        stamped_generation = _persisted_scoring_schema_version(talk)
+        if stamped_generation is None:
+            # No stamp means no generation to replay against. Guessing one lets a
+            # record match by coincidence and report as fresh.
+            reasons.add("pattern_scoring_schema_version_unusable")
+        else:
+            try:
+                _validate_canonical_v5_outcomes(
+                    observations,
+                    catalog if catalog is not None else load_catalog(),
+                    stamped_generation,
+                )
+            except ReturnValidationError:
+                reasons.add("pattern_outcomes_catalog_projection_drift")
     return tuple(sorted(reasons))
 
 
