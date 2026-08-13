@@ -956,3 +956,68 @@ def test_adherence_comparison_is_suppressed_when_opportunity_identity_differs(
         match="opportunity coverage identity mismatch",
     ):
         return_validation.validate_v5_adherence_opportunity(talk, misleading, canonical)
+
+
+@pytest.mark.parametrize(
+    "stamp",
+    [None, True, False, "5", 5.0],
+    ids=["missing", "true", "false", "string", "float"],
+)
+def test_an_unusable_scoring_stamp_is_not_replaced_with_the_current_one(
+    return_validation,
+    transcript_timing,
+    tmp_path,
+    stamp,
+):
+    """A record with no usable generation stamp has nothing to replay against.
+
+    Substituting the current generation lets a record whose identity was computed
+    under it match by coincidence, so unusable state reports as fresh — which is
+    the opposite of what a freshness check is for.
+    """
+    _pattern_evidence, vault, talk = _persisted_v5(
+        return_validation, transcript_timing, tmp_path
+    )
+    if stamp is None:
+        talk.pop("pattern_scoring_schema_version", None)
+    else:
+        talk["pattern_scoring_schema_version"] = stamp
+
+    reasons = return_validation.assess_current_persisted_pattern_evidence_freshness(
+        talk,
+        vault_root=vault,
+        catalog=_catalog(
+            return_validation,
+            _entry(return_validation, "detected"),
+            _entry(return_validation, "conditional", applicability=True),
+            _entry(return_validation, "undetected"),
+            _entry(return_validation, "positive-only", absence_gate=None),
+        ),
+    )
+
+    assert "pattern_scoring_schema_version_unusable" in reasons
+
+
+def test_a_correctly_stamped_record_still_replays_clean(
+    return_validation,
+    transcript_timing,
+    tmp_path,
+):
+    """The guard must not make every record unusable."""
+    _pattern_evidence, vault, talk = _persisted_v5(
+        return_validation, transcript_timing, tmp_path
+    )
+
+    reasons = return_validation.assess_current_persisted_pattern_evidence_freshness(
+        talk,
+        vault_root=vault,
+        catalog=_catalog(
+            return_validation,
+            _entry(return_validation, "detected"),
+            _entry(return_validation, "conditional", applicability=True),
+            _entry(return_validation, "undetected"),
+            _entry(return_validation, "positive-only", absence_gate=None),
+        ),
+    )
+
+    assert "pattern_scoring_schema_version_unusable" not in reasons

@@ -131,6 +131,13 @@ PATTERN_OBSERVATION_RETURN_FIELDS = frozenset(
 V5_PATTERN_OBSERVATION_RETURN_FIELDS = PATTERN_OBSERVATION_RETURN_FIELDS | {
     "applicability_assessments"
 }
+# v6 keeps the v5 block and adds the basis its weighted score cannot travel
+# without. Without this, a correctly-formed v6 return is rejected as carrying an
+# unknown field — the contract would be reachable by version and unusable in
+# practice.
+V6_PATTERN_OBSERVATION_RETURN_FIELDS = V5_PATTERN_OBSERVATION_RETURN_FIELDS | {
+    "pattern_score_basis"
+}
 PERSISTED_PATTERN_OBSERVATION_FIELDS = frozenset(
     {
         "evidence_schema_version",
@@ -245,6 +252,10 @@ PREVIOUS_RETURN_SCHEMA_VERSION = 2
 BASELINE_RETURN_SCHEMA_VERSION = 3
 SOURCE_LOCATED_RETURN_SCHEMA_VERSION = 4
 RETURN_SCHEMA_VERSION = 5
+# The first return schema whose aggregate is weighted. Below it the flat +1/-1
+# contract stands, because that is the arithmetic its worker used. v6 keeps
+# every v5 semantic and adds weighting, so it joins each set v5 belongs to.
+WEIGHTED_SCORE_RETURN_SCHEMA_VERSION = 6
 SUPPORTED_RETURN_SCHEMA_VERSIONS = frozenset(
     {
         LEGACY_RETURN_SCHEMA_VERSION,
@@ -252,6 +263,7 @@ SUPPORTED_RETURN_SCHEMA_VERSIONS = frozenset(
         BASELINE_RETURN_SCHEMA_VERSION,
         SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
         RETURN_SCHEMA_VERSION,
+        WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
     }
 )
 SNAPSHOT_RETURN_SCHEMA_VERSIONS = frozenset(
@@ -260,6 +272,7 @@ SNAPSHOT_RETURN_SCHEMA_VERSIONS = frozenset(
         BASELINE_RETURN_SCHEMA_VERSION,
         SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
         RETURN_SCHEMA_VERSION,
+        WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
     }
 )
 OUTCOME_GATE_RETURN_SCHEMA_VERSIONS = frozenset(
@@ -267,16 +280,77 @@ OUTCOME_GATE_RETURN_SCHEMA_VERSIONS = frozenset(
         BASELINE_RETURN_SCHEMA_VERSION,
         SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
         RETURN_SCHEMA_VERSION,
+        WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
     }
 )
 SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS = frozenset(
     {
         SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
         RETURN_SCHEMA_VERSION,
+        WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
     }
 )
-EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS = frozenset({RETURN_SCHEMA_VERSION})
+EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS = frozenset(
+    {RETURN_SCHEMA_VERSION, WEIGHTED_SCORE_RETURN_SCHEMA_VERSION}
+)
+# The returns whose aggregate is weighted, and which therefore carry a
+# `pattern_score_basis`. Separate from the exhaustive-outcome set because the two
+# properties are independent: v5 is exhaustive and flat, v6 is exhaustive and
+# weighted, and a later schema could be one without the other.
+WEIGHTED_SCORE_RETURN_SCHEMA_VERSIONS = frozenset(
+    {WEIGHTED_SCORE_RETURN_SCHEMA_VERSION}
+)
+
+# Stays at 5 until a return actually emits a weighted score. The weight table
+# below is part of the NEXT scoring generation; bumping this constant now would
+# strand every persisted talk on a generation nothing has produced yet, forcing
+# a reparse to adopt arithmetic no worker is using.
 PATTERN_SCORING_SCHEMA_VERSION = 5
+WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION = 6
+
+
+def _persisted_scoring_schema_version(talk: Mapping[str, object]) -> int | None:
+    """The generation a persisted talk was stamped with, or None if it has none.
+
+    A stored talk carries no return version — that field belongs to the result it
+    came from. Its own stamp is what a replay rebuilds the identity against.
+
+    Substituting the current generation for a missing or malformed stamp would
+    let a record whose identity was computed under that generation match by
+    coincidence, reporting unusable state as fresh. The caller treats None as a
+    freshness reason instead.
+    """
+    stamped = talk.get("pattern_scoring_schema_version")
+    if isinstance(stamped, bool) or not isinstance(stamped, int):
+        return None
+    return stamped
+
+
+def scoring_schema_version_for_return(return_schema_version: int) -> int:
+    """The scoring generation a return's score belongs to.
+
+    Weighted and flat scores are not comparable, so they cannot share a
+    generation. Stamping a v6 identity with scoring schema 5 would file a
+    weighted score in the same cohort as the flat ones and let an aggregate
+    average across two different arithmetics.
+    """
+    if return_schema_version in WEIGHTED_SCORE_RETURN_SCHEMA_VERSIONS:
+        return WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
+    return PATTERN_SCORING_SCHEMA_VERSION
+
+
+# Owner decision (#153): the aggregate stays one number, but a strong detection
+# and a moderate one stop counting the same. Flat +1/-1 made a slides-only talk
+# and a full-evidence talk emit scores that read as equivalent.
+#
+# The weights are PART OF the scoring schema version — changing a value here is
+# a scoring-generation bump under #160, not a tuning knob, because every
+# persisted score was computed under the table in force at the time.
+DETECTION_WEIGHTS: dict[str, float] = {
+    "strong": 1.0,
+    "moderate": 0.5,
+    "weak": 0.25,
+}
 ADHERENCE_COMPARISON_SCHEMA_VERSION = 1
 MIN_ADHERENCE_BASELINE_TALKS = 10
 CURRENT_PATTERN_SCORING_GENERATION_STATUS = "current"
@@ -1512,16 +1586,19 @@ def _validate_applicability_assessments(
     exact raw shape, catalog authority, polarity, and declared-source gate.
     """
     raw = observations.get("applicability_assessments")
-    if return_schema_version != RETURN_SCHEMA_VERSION:
+    if return_schema_version not in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
         if raw is not None:
             raise ReturnValidationError(
-                "applicability_assessments is supported only by return schema v5"
+                "applicability_assessments is supported only by return schemas "
+                f"{sorted(EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS)}; this return "
+                f"is v{return_schema_version} — remove the field or emit a "
+                "supported schema"
             )
         return []
     if not isinstance(raw, list):
         raise ReturnValidationError(
-            "return-schema v5 pattern observations require an "
-            "applicability_assessments array"
+            f"return-schema v{return_schema_version} pattern observations require "
+            "an applicability_assessments array"
         )
     seen: set[str] = set()
     for index, assessment in enumerate(raw):
@@ -1806,8 +1883,15 @@ def _canonical_gate_complete(
 def _validate_canonical_v5_outcomes(
     observations: dict,
     catalog: PatternCatalog,
+    scoring_schema_version: int = PATTERN_SCORING_SCHEMA_VERSION,
 ) -> list[dict]:
-    """Validate the exhaustive engine-owned v5 outcome projection."""
+    """Validate the exhaustive engine-owned outcome projection.
+
+    Takes the SCORING generation rather than the return version: the identity it
+    rebuilds is what makes two scores comparable, and callers arrive holding
+    different things — a return knows its schema, a persisted talk knows only the
+    generation it was stamped with.
+    """
     if observations.get("evidence_schema_version") != PATTERN_EVIDENCE_SCHEMA_VERSION:
         raise ReturnValidationError(
             "canonical return-schema v5 observations require evidence schema "
@@ -1968,7 +2052,7 @@ def _validate_canonical_v5_outcomes(
         expected_identity = opportunity_coverage_identity(
             canonical_outcomes,
             pattern_catalog_fingerprint=catalog.fingerprint,
-            pattern_scoring_schema_version=PATTERN_SCORING_SCHEMA_VERSION,
+            pattern_scoring_schema_version=scoring_schema_version,
         )
     except PatternEvidenceError as exc:
         raise ReturnValidationError(
@@ -2005,13 +2089,20 @@ def assess_current_persisted_pattern_evidence_freshness(
         and observations.get("evidence_schema_version")
         == PATTERN_EVIDENCE_SCHEMA_VERSION
     ):
-        try:
-            _validate_canonical_v5_outcomes(
-                observations,
-                catalog if catalog is not None else load_catalog(),
-            )
-        except ReturnValidationError:
-            reasons.add("pattern_outcomes_catalog_projection_drift")
+        stamped_generation = _persisted_scoring_schema_version(talk)
+        if stamped_generation is None:
+            # No stamp means no generation to replay against. Guessing one lets a
+            # record match by coincidence and report as fresh.
+            reasons.add("pattern_scoring_schema_version_unusable")
+        else:
+            try:
+                _validate_canonical_v5_outcomes(
+                    observations,
+                    catalog if catalog is not None else load_catalog(),
+                    stamped_generation,
+                )
+            except ReturnValidationError:
+                reasons.add("pattern_outcomes_catalog_projection_drift")
     return tuple(sorted(reasons))
 
 
@@ -2148,11 +2239,13 @@ def assess_scoring_generation(
         normalized_lanes.append(normalized)
 
     if (
-        version == RETURN_SCHEMA_VERSION
+        version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS
         and observations.get("evidence_schema_version")
         == PATTERN_EVIDENCE_SCHEMA_VERSION
     ):
-        _validate_canonical_v5_outcomes(observations, catalog)
+        _validate_canonical_v5_outcomes(
+            observations, catalog, scoring_schema_version_for_return(version)
+        )
 
     raw_not_evaluable = observations.get("not_evaluable")
     not_evaluable_ids = (
@@ -2165,8 +2258,8 @@ def assess_scoring_generation(
         else set()
     )
     for pattern_id, entry in catalog.entries.items():
-        if version == RETURN_SCHEMA_VERSION:
-            # Exhaustive v5 outcome validation above owns applicability and
+        if version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
+            # Exhaustive outcome validation above owns applicability and
             # absence precedence. Reapplying the v4 absence-only projection
             # would misclassify catalog-authorized not-applicable outcomes.
             continue
@@ -2238,14 +2331,16 @@ def canonical_persisted_pattern_observations(
     if return_version in SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS:
         persisted["evidence_schema_version"] = (
             PATTERN_EVIDENCE_SCHEMA_VERSION
-            if return_version == RETURN_SCHEMA_VERSION
+            if return_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS
             else LEGACY_PATTERN_EVIDENCE_SCHEMA_VERSION
         )
         persisted["source_inspection"] = copy.deepcopy(
             observations.get("source_inspection")
         )
-    if return_version == RETURN_SCHEMA_VERSION:
-        _validate_canonical_v5_outcomes(observations, catalog)
+    if return_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
+        _validate_canonical_v5_outcomes(
+            observations, catalog, scoring_schema_version_for_return(return_version)
+        )
         persisted["applicability_assessments"] = copy.deepcopy(
             observations.get("applicability_assessments")
         )
@@ -2498,7 +2593,7 @@ def _validate_not_evaluable(
                 else SOURCE_INSPECTION_REASON_CODE
             }
             if (
-                return_schema_version == RETURN_SCHEMA_VERSION
+                return_schema_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS
                 and entry.applicability_evaluable_from is not None
             ):
                 expected_reasons.add(APPLICABILITY_INSPECTION_REASON_CODE)
@@ -2562,12 +2657,128 @@ def _validate_unavailable_catalog_gates(
         )
 
 
-def _validate_score(
-    observations: dict, pattern_count: int, antipattern_count: int
+def weighted_detection_total(detections: list[dict]) -> float:
+    """Sum one polarity's detections under the owner-approved weight table."""
+    return sum(DETECTION_WEIGHTS[detection["confidence"]] for detection in detections)
+
+
+def pattern_score_basis(
+    patterns: list[dict], antipatterns: list[dict], not_evaluable: list[dict]
+) -> dict:
+    """The evidence composition that travels with every emitted score.
+
+    A single weighted number cannot say whether it came from two strong
+    detections or four moderate ones, and it cannot say how much of the catalog
+    was unevaluable for this talk. Without that, a score drop reads as a
+    regression when it may only be thinner evidence. The basis is what makes the
+    number honest, so it is required rather than optional.
+    """
+    counts: dict[str, dict[str, int]] = {}
+    for lane, detections in (("patterns", patterns), ("antipatterns", antipatterns)):
+        lane_counts = {level: 0 for level in sorted(DETECTION_WEIGHTS)}
+        for detection in detections:
+            lane_counts[detection["confidence"]] += 1
+        counts[lane] = lane_counts
+    return {
+        "schema_version": WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION,
+        "weights": dict(sorted(DETECTION_WEIGHTS.items())),
+        "patterns": counts["patterns"],
+        "antipatterns": counts["antipatterns"],
+        "not_evaluable_count": len(not_evaluable),
+    }
+
+
+def expected_weighted_score(patterns: list[dict], antipatterns: list[dict]) -> float:
+    """The aggregate the detection arrays require, rounded deterministically.
+
+    Every weight is a multiple of 0.25, so every reachable total is too, and two
+    decimal places represent it exactly; rounding here keeps a float sum from
+    emitting 0.30000000000000004 and failing an equality check that is logically
+    true.
+    """
+    total = weighted_detection_total(patterns) - weighted_detection_total(antipatterns)
+    return round(total, 2)
+
+
+def _require_score_basis(observations: dict, wanted: dict) -> None:
+    """Every weighted score carries its basis, bare number or score object.
+
+    The requirement is on the SCORE, not on the shape it was written in. Gating
+    it inside the score-object branch would let a return emit a bare weighted
+    number with no record of the evidence behind it — precisely the
+    unaccompanied number the basis exists to prevent.
+    """
+    basis = observations.get("pattern_score_basis")
+    if basis is None:
+        raise ReturnValidationError(
+            "pattern_observations.pattern_score_basis is required alongside a "
+            "weighted score; a bare number cannot say what evidence produced it"
+        )
+    _validate_score_basis_types(basis)
+    if basis != wanted:
+        raise ReturnValidationError(
+            f"pattern_score_basis {basis} does not match the detection arrays {wanted}"
+        )
+
+
+def _basis_count(value: object) -> bool:
+    """A count is a non-negative int. `True` is an int in Python; a count is not."""
+    return not isinstance(value, bool) and isinstance(value, int) and value >= 0
+
+
+def _validate_score_basis_types(basis: object) -> None:
+    """Check the basis object's shape before comparing it by value.
+
+    Equality alone does not gate types: Python makes `True == 1` and `6.0 == 6`,
+    so a basis carrying boolean counts or a float schema version compares equal
+    to the expected object and persists as a type-confused record. Every reader
+    afterwards believes the shape was verified.
+    """
+    path = "pattern_observations.pattern_score_basis"
+    if not isinstance(basis, dict):
+        raise ReturnValidationError(f"{path} must be an object")
+    expected_fields = {
+        "schema_version",
+        "weights",
+        "patterns",
+        "antipatterns",
+        "not_evaluable_count",
+    }
+    if set(basis) != expected_fields:
+        raise ReturnValidationError(
+            f"{path} must contain exactly {sorted(expected_fields)}"
+        )
+    if not _basis_count(basis["schema_version"]):
+        raise ReturnValidationError(f"{path}.schema_version must be an integer")
+    if not _basis_count(basis["not_evaluable_count"]):
+        raise ReturnValidationError(
+            f"{path}.not_evaluable_count must be a nonnegative integer"
+        )
+    weights = basis["weights"]
+    if not isinstance(weights, dict) or set(weights) != set(DETECTION_WEIGHTS):
+        raise ReturnValidationError(
+            f"{path}.weights must name exactly {sorted(DETECTION_WEIGHTS)}"
+        )
+    for level, weight in weights.items():
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)):
+            raise ReturnValidationError(f"{path}.weights.{level} must be a number")
+    for lane in ("patterns", "antipatterns"):
+        counts = basis[lane]
+        if not isinstance(counts, dict) or set(counts) != set(DETECTION_WEIGHTS):
+            raise ReturnValidationError(
+                f"{path}.{lane} must name exactly {sorted(DETECTION_WEIGHTS)}"
+            )
+        for level, count in counts.items():
+            if not _basis_count(count):
+                raise ReturnValidationError(
+                    f"{path}.{lane}.{level} must be a nonnegative integer"
+                )
+
+
+def _validate_flat_score(
+    raw: object, pattern_count: int, antipattern_count: int
 ) -> None:
-    if "pattern_score" not in observations:
-        raise ReturnValidationError("pattern_observations.pattern_score is required")
-    raw = observations["pattern_score"]
+    """The pre-v6 contract: every detection counts one, whatever its confidence."""
     expected = pattern_count - antipattern_count
     if isinstance(raw, bool):
         raise ReturnValidationError(
@@ -2582,9 +2793,9 @@ def _validate_score(
         return
     if not isinstance(raw, dict):
         raise ReturnValidationError(
-            "pattern_observations.pattern_score must be an integer or the declared score object"
+            "pattern_observations.pattern_score must be an integer or the "
+            "declared score object"
         )
-
     required = {
         "patterns_used": pattern_count,
         "antipatterns_detected": antipattern_count,
@@ -2596,20 +2807,95 @@ def _validate_score(
             raise ReturnValidationError(f"pattern_score.{field} must be an integer")
         if value != wanted:
             raise ReturnValidationError(
-                f"pattern_score.{field} is {value}, but the detection arrays require {wanted}"
+                f"pattern_score.{field} is {value}, but the detection arrays "
+                f"require {wanted}"
             )
 
 
-def resolved_return_pattern_score(observations: dict) -> int:
-    """Return the already-validated integer score from one observation block."""
+def _validate_score(
+    observations: dict,
+    patterns: list[dict],
+    antipatterns: list[dict],
+    not_evaluable: list[dict],
+    return_schema_version: int,
+) -> None:
+    """Validate the aggregate against the contract its schema was produced under.
+
+    Weighted scoring is a v6 contract, not a reinterpretation of v5. A v5 return
+    was PRODUCED by a worker counting +1/-1, so rescoring it under the weight
+    table would not validate that return — it would silently restate what the
+    worker meant, which is the reinterpretation `stateful-artifacts` forbids.
+    Each schema is checked against the arithmetic in force when it was written.
+    """
+    if "pattern_score" not in observations:
+        raise ReturnValidationError("pattern_observations.pattern_score is required")
+    raw = observations["pattern_score"]
+    if return_schema_version < WEIGHTED_SCORE_RETURN_SCHEMA_VERSION:
+        _validate_flat_score(raw, len(patterns), len(antipatterns))
+        if "pattern_score_basis" in observations:
+            raise ReturnValidationError(
+                "pattern_score_basis is a v"
+                f"{WEIGHTED_SCORE_RETURN_SCHEMA_VERSION} field; a v"
+                f"{return_schema_version} return cannot carry one"
+            )
+        return
+    expected = expected_weighted_score(patterns, antipatterns)
+    if isinstance(raw, bool):
+        raise ReturnValidationError(
+            "pattern_observations.pattern_score cannot be a boolean"
+        )
+    wanted_basis = pattern_score_basis(patterns, antipatterns, not_evaluable)
+    if isinstance(raw, (int, float)):
+        # Compared exactly, never rounded. `expected` is already the canonical
+        # two-decimal result, so rounding the UNTRUSTED value before comparing
+        # accepts anything within half a hundredth of it — 1.504 for 1.5 — and
+        # persists a score no declared arithmetic produces.
+        if raw != expected:
+            raise ReturnValidationError(
+                f"pattern_score is {raw}, but the weighted detection arrays "
+                f"require {expected} (weights {dict(sorted(DETECTION_WEIGHTS.items()))})"
+            )
+        _require_score_basis(observations, wanted_basis)
+        return
+    if not isinstance(raw, dict):
+        raise ReturnValidationError(
+            "pattern_observations.pattern_score must be a number or the declared score object"
+        )
+
+    # v6 keeps v5's count semantics: these two are lane lengths, so they are
+    # exact integers. Rounding admitted `patterns_used: 1.004` as a count of one.
+    for field, wanted_count in (
+        ("patterns_used", len(patterns)),
+        ("antipatterns_detected", len(antipatterns)),
+    ):
+        value = raw.get(field)
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ReturnValidationError(f"pattern_score.{field} must be an integer")
+        if value != wanted_count:
+            raise ReturnValidationError(
+                f"pattern_score.{field} is {value}, but the detection arrays "
+                f"require {wanted_count}"
+            )
+    score = raw.get("score")
+    if isinstance(score, bool) or not isinstance(score, (int, float)):
+        raise ReturnValidationError("pattern_score.score must be a number")
+    if score != expected:
+        raise ReturnValidationError(
+            f"pattern_score.score is {score}, but the detection arrays require {expected}"
+        )
+    _require_score_basis(observations, wanted_basis)
+
+
+def resolved_return_pattern_score(observations: dict) -> float:
+    """Return the already-validated weighted score from one observation block."""
     raw = observations["pattern_score"]
     if isinstance(raw, dict):
-        return raw["score"]
-    return raw
+        return float(raw["score"])
+    return float(raw)
 
 
 def _validate_adherence_comparison(
-    ret: dict, return_schema_version: int, talk_pattern_score: int
+    ret: dict, return_schema_version: int, talk_pattern_score: float
 ) -> None:
     """Validate the standalone half of the claim-bound adherence contract."""
     comparison = ret.get("adherence_comparison")
@@ -2660,15 +2946,25 @@ def _validate_adherence_comparison(
             f"population of {MIN_ADHERENCE_BASELINE_TALKS} talks"
         )
     comparison_score = comparison.get("talk_pattern_score")
-    if (
-        isinstance(comparison_score, bool)
-        or not isinstance(comparison_score, int)
-        or comparison_score != talk_pattern_score
-    ):
+    # The comparison restates the score the block already carries, so it takes
+    # that generation's type: fractional under weighted arithmetic, integer under
+    # a count difference. Requiring an integer of both would reject every valid
+    # weighted return that reports an adherence comparison.
+    weighted = return_schema_version in WEIGHTED_SCORE_RETURN_SCHEMA_VERSIONS
+    if isinstance(comparison_score, bool):
+        numeric = False
+    elif isinstance(comparison_score, int):
+        numeric = True
+    elif weighted and isinstance(comparison_score, float):
+        numeric = math.isfinite(comparison_score)
+    else:
+        numeric = False
+    if not numeric or comparison_score != talk_pattern_score:
         raise ReturnValidationError(
-            "adherence_comparison.talk_pattern_score must be an integer equal "
-            "to the validated "
-            f"pattern_observations.pattern_score {talk_pattern_score}"
+            "adherence_comparison.talk_pattern_score must be "
+            + ("a finite number" if weighted else "an integer")
+            + " equal to the validated "
+            + f"pattern_observations.pattern_score {talk_pattern_score}"
         )
     if not isinstance(assessment, str) or not assessment.strip():
         raise ReturnValidationError(
@@ -2699,8 +2995,11 @@ def validate_v5_adherence_opportunity(
     ret: dict,
     canonical_ret: dict,
 ) -> None:
-    """Bind a v5 raw-score comparison to one exact opportunity denominator."""
-    if resolve_return_schema_version(ret) != RETURN_SCHEMA_VERSION:
+    """Bind an exhaustive-outcome raw-score comparison to one opportunity denominator."""
+    if (
+        resolve_return_schema_version(ret)
+        not in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS
+    ):
         return
     if ret.get("status") not in ANALYSIS_STATUSES:
         return
@@ -4033,7 +4332,7 @@ def validate_claim_against_talk(
             )
     if (
         ret.get("status") in ANALYSIS_STATUSES
-        and return_schema_version == RETURN_SCHEMA_VERSION
+        and return_schema_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS
         and artifact_capabilities is not None
     ):
         observations = ret.get("pattern_observations")
@@ -4103,7 +4402,7 @@ def validate_persisted_catalog_generation(
         raise ReturnValidationError(
             f"{filename} canonical evidence changed return_schema_version"
         )
-    if return_version == RETURN_SCHEMA_VERSION:
+    if return_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
         validate_v5_adherence_opportunity(talk, ret, evidence_ret)
     assessment = assess_scoring_generation(evidence_ret, catalog)
     observations = talk.get("pattern_observations")
@@ -4127,7 +4426,7 @@ def validate_persisted_catalog_generation(
     status = talk.get("pattern_scoring_generation_status")
     reasons = talk.get("pattern_scoring_generation_reasons")
     if not assessment.current:
-        if return_version == RETURN_SCHEMA_VERSION:
+        if return_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
             raise ReturnValidationError(
                 f"{filename} current return cannot satisfy scoring generation "
                 f"{PATTERN_SCORING_SCHEMA_VERSION}: "
@@ -4201,11 +4500,17 @@ def validate_persisted_catalog_generation(
             "pattern_scoring_generation_reasons array"
         )
     scoring_version = talk.get("pattern_scoring_schema_version")
-    if scoring_version != PATTERN_SCORING_SCHEMA_VERSION:
+    # The generation this return's score belongs to, not the current one: a
+    # weighted return persists its own, and comparing it against the current
+    # generation would reject the record the writer was required to produce.
+    expected_scoring_version = scoring_schema_version_for_return(
+        resolve_return_schema_version(ret)
+    )
+    if scoring_version != expected_scoring_version:
         raise ReturnValidationError(
             f"{filename} persisted pattern_scoring_schema_version "
-            f"{scoring_version!r} does not match renderer version "
-            f"{PATTERN_SCORING_SCHEMA_VERSION}; rerun persist-results.py"
+            f"{scoring_version!r} does not match the return's scoring generation "
+            f"{expected_scoring_version}; rerun persist-results.py"
         )
     fingerprint = talk.get("pattern_catalog_fingerprint")
     if fingerprint != catalog.fingerprint:
@@ -4504,11 +4809,12 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
             "pattern_observations is required and must be an object"
         )
     if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
-        allowed_observation_fields = (
-            V5_PATTERN_OBSERVATION_RETURN_FIELDS
-            if return_schema_version == RETURN_SCHEMA_VERSION
-            else PATTERN_OBSERVATION_RETURN_FIELDS
-        )
+        if return_schema_version >= WEIGHTED_SCORE_RETURN_SCHEMA_VERSION:
+            allowed_observation_fields = V6_PATTERN_OBSERVATION_RETURN_FIELDS
+        elif return_schema_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
+            allowed_observation_fields = V5_PATTERN_OBSERVATION_RETURN_FIELDS
+        else:
+            allowed_observation_fields = PATTERN_OBSERVATION_RETURN_FIELDS
         unknown_observations = sorted(set(observations) - allowed_observation_fields)
         if unknown_observations:
             raise ReturnValidationError(
@@ -4550,7 +4856,7 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
         detected_ids,
         return_schema_version,
     )
-    if return_schema_version == RETURN_SCHEMA_VERSION:
+    if return_schema_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
         validate_native_deck_design_receipt(
             structured=structured,
             observations=observations,
@@ -4583,7 +4889,13 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
             "pattern ids cannot be both detected and not_evaluable: "
             f"{sorted(unavailable_overlap)}"
         )
-    _validate_score(observations, len(patterns), len(antipatterns))
+    _validate_score(
+        observations,
+        patterns,
+        antipatterns,
+        not_evaluable,
+        return_schema_version,
+    )
     _validate_adherence_comparison(
         ret,
         return_schema_version,

@@ -1776,7 +1776,7 @@ def absence_provability(catalog: object) -> dict[str, int]:
 
     Without the denominator beside them, a short never-used list reads as a
     statement about the speaker. It is mostly a statement about coverage, and
-    `absence_unknowable` is what makes the difference legible.
+    `absence_unknowable_count` is what makes the difference legible.
     """
     provable = 0
     unknowable = 0

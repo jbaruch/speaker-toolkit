@@ -28,6 +28,50 @@ speaker whose profile shows heavy em-dash use is writing in their own register.
 Closes #287. The unlanded `skills/humanizer/` branch was an early copy of
 blog-writer's detector; deferring to the original beats maintaining a fork of it.
 
+### feat(vault-ingress) — weight the aggregate score, versioned not retrofitted (#153)
+
+Implements the #153 aggregate-score decision. `DETECTION_WEIGHTS` are
+`{strong: 1.0, moderate: 0.5, weak: 0.25}`, and every weighted score carries a
+required `pattern_score_basis` with per-lane confidence counts, the applied
+weights, and the `not_evaluable` count. Flat `+1/-1` counting made a slides-only
+talk and a full-evidence talk emit scores that read as equivalent, which was the
+issue's original complaint. The `weak` weight is an owner decision taken with
+this work: `CONFIDENCE_LEVELS` admits `weak`, so the table had to be total.
+
+**Weighting is a v6 return contract, not a reinterpretation of v5.** A v5 return
+was produced by a worker counting `+1/-1`; rescoring it under the weight table
+would restate what that worker meant rather than validate what it said. Each
+schema is checked against the arithmetic in force when it was written, so a v5
+return carrying a `pattern_score_basis` is rejected outright.
+
+v6 keeps every v5 semantic and joins each version set v5 belongs to. Its
+`pattern_observations` gains `pattern_score_basis` on the return, and the
+validator checks the basis object's types before comparing its values — Python
+equality makes `True == 1` and `6.0 == 6`, so a boolean lane count or a float
+schema version would otherwise pass. The supplied score is compared exactly
+rather than rounded: `expected_weighted_score` already rounds the canonical
+result, so rounding the untrusted value too admitted `1.504` as `1.5`.
+
+A v6 adherence comparison restates the block's own score, so it takes that
+generation's type — finite and possibly fractional under weighted arithmetic,
+integer under a count difference. Requiring an integer of both would have
+rejected every valid weighted return reporting a comparison, which would mean v6
+did not retain the v5 adherence contract it inherits.
+
+**Not yet persisted.** v6 validates and nothing further. Persisting a weighted
+score is a new talk-record shape, and `mutate-tracking-database` requires the
+exact current talk schema before any mutation — so admitting it alone would leave
+every stored talk unmutatable until a migration restamped it. Persistence, the
+talk schema bump, the claim contract, and the migration advance together in one
+activation change, alongside the reparse.
+
+`PATTERN_SCORING_SCHEMA_VERSION` stays 5. `scoring_schema_version_for_return`
+records which generation a return's score belongs to, so that change has the rule
+ready: weighted and flat scores are not comparable and must not share a cohort.
+
+**Migration.** None. Weights are part of the scoring schema version, so changing
+one is a generation bump rather than a tuning knob.
+
 ### fix(vault-ingress) — an old block is old, not corrupt (#167)
 
 The persisted-observation classifier reported a block carrying both detection
