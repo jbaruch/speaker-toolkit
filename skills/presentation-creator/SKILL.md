@@ -286,7 +286,8 @@ status; the agent adds these categories manually:
 - Emotion-balance and screening-with-critics where applicable
 - AI writing patterns across every prose surface, via `Skill(skill: "blog-writer")`
 - Never reimplement that scan here
-- Classify its counts with `scripts/classify-prose-scan.py`
+- Classify its counts with
+  `{speaker_toolkit_root}/skills/presentation-creator/scripts/classify-prose-scan.py`
 - Run that script with `--unavailable` when the skill is absent
 
 Iterate on author feedback. Apply changes first, guardrail second. Flag but don't
