@@ -73,10 +73,10 @@ without its denominator, so a v2 record missing it is incomplete rather than
 merely older. v1 and contract v4 forbid it.
 
 `classify-pattern-profile.py` emits it beside `never_used_patterns`, so the list
-and its denominator always travel together. The field is allowed but never
-required: a profile written before it existed is not thereby invalid, and
-demanding it would refuse to read every profile already on disk — a bigger break
-than the gap it closes.
+and its denominator always travel together. A classification-v1 profile written
+before the field existed stays readable without it — demanding it everywhere
+would refuse every profile already on disk, a bigger break than the gap it
+closes.
 
 An unobservable entry lands in neither count: it is not scored at all, so it
 belongs to no denominator.
