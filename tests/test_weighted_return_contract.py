@@ -36,8 +36,13 @@ def _v5(**kwargs) -> dict[str, Any]:
     return _raw_return(detections=[_detection()], assessments=[_assessment()], **kwargs)
 
 
-def _v6(rv, *, score=None, basis=None, drop_basis=False) -> dict[str, Any]:
-    """A v6 return: the v5 shape with weighted arithmetic and its basis."""
+def _v6(rv, *, score=None, basis=None, drop_basis=False, bare=False) -> dict[str, Any]:
+    """A v6 return: the v5 shape with weighted arithmetic and its basis.
+
+    `bare` emits the score as a plain number instead of the declared score
+    object. Both shapes are legal, and the basis is required by the SCORE rather
+    than by the shape it was written in.
+    """
     ret = copy.deepcopy(_v5())
     ret["return_schema_version"] = rv.WEIGHTED_SCORE_RETURN_SCHEMA_VERSION
     block = ret["pattern_observations"]
@@ -45,11 +50,16 @@ def _v6(rv, *, score=None, basis=None, drop_basis=False) -> dict[str, Any]:
     antipatterns = block["antipatterns_detected"]
     not_evaluable = block["not_evaluable"]
     weighted = rv.expected_weighted_score(patterns, antipatterns)
-    block["pattern_score"] = {
-        "patterns_used": len(patterns),
-        "antipatterns_detected": len(antipatterns),
-        "score": weighted if score is None else score,
-    }
+    resolved = weighted if score is None else score
+    block["pattern_score"] = (
+        resolved
+        if bare
+        else {
+            "patterns_used": len(patterns),
+            "antipatterns_detected": len(antipatterns),
+            "score": resolved,
+        }
+    )
     if not drop_basis:
         block["pattern_score_basis"] = basis or rv.pattern_score_basis(
             patterns, antipatterns, not_evaluable
@@ -107,6 +117,51 @@ class TestV6IsAcceptedEndToEnd:
         ):
             return_validation.validate_return(
                 _v6(return_validation, basis=basis), catalog
+            )
+
+
+class TestTheBasisIsRequiredByTheScoreNotItsShape:
+    """Gating the basis inside the score-object branch would let a bare weighted
+    number ship with no record of the evidence behind it."""
+
+    def test_a_bare_weighted_number_with_its_basis_passes(
+        self, return_validation, catalog
+    ) -> None:
+        return_validation.validate_return(_v6(return_validation, bare=True), catalog)
+
+    def test_a_bare_weighted_number_without_a_basis_is_rejected(
+        self, return_validation, catalog
+    ) -> None:
+        """The shape carries no counts of its own, so an unaccompanied bare
+        number says nothing at all about the evidence behind it."""
+        with pytest.raises(
+            return_validation.ReturnValidationError, match="pattern_score_basis"
+        ):
+            return_validation.validate_return(
+                _v6(return_validation, bare=True, drop_basis=True), catalog
+            )
+
+    def test_a_bare_number_ignoring_the_weights_is_rejected(
+        self, return_validation, catalog
+    ) -> None:
+        with pytest.raises(
+            return_validation.ReturnValidationError, match="weighted detection arrays"
+        ):
+            return_validation.validate_return(
+                _v6(return_validation, bare=True, score=99), catalog
+            )
+
+    def test_a_bare_basis_contradicting_the_arrays_is_rejected(
+        self, return_validation, catalog
+    ) -> None:
+        basis = return_validation.pattern_score_basis([], [], [])
+        basis["patterns"] = {"strong": 9, "moderate": 0, "weak": 0}
+
+        with pytest.raises(
+            return_validation.ReturnValidationError, match="does not match"
+        ):
+            return_validation.validate_return(
+                _v6(return_validation, bare=True, basis=basis), catalog
             )
 
 
