@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.69 — 2026-08-13
+
 ### docs — the guardrail rule references the contract instead of repeating it
 
 `rules/guardrail-rules.md` had grown a copy of the prose scan's invocation,
