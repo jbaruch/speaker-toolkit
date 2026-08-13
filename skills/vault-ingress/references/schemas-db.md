@@ -1008,7 +1008,63 @@ For newly emitted work, `validate-returns.py` must report the processed talk's
 scoring-generation status as `current`; a valid but
 `legacy_unbaselineable` result is replay-only and must be repaired.
 
-Versions 2–5 share the complete-snapshot merge contract: supplied declared
+### Return schema v6 — the weighted aggregate
+
+v6 keeps every v5 semantic and changes one thing: `pattern_score` is weighted by
+detection confidence rather than counted flat. It therefore joins every version
+set v5 belongs to — snapshot merge, outcome gate, source-located evidence, and
+exhaustive outcomes.
+
+| | v5 | v6 |
+|---|---|---|
+| `pattern_score` | `patterns_detected - antipatterns_detected`, each detection ±1 | weighted sum, `strong` 1.0 / `moderate` 0.5 / `weak` 0.25, rounded to two places |
+| `pattern_score_basis` | forbidden | **required** alongside the score |
+| exhaustive `pattern_outcomes` | required | required |
+
+Each version is validated against the arithmetic in force when it was written. A
+v5 return was produced by a worker counting ±1, so rescoring it under the weight
+table would restate what that worker meant rather than validate what it said. A
+v5 return carrying `pattern_score_basis` is rejected outright — the field cannot
+exist under its contract.
+
+**Writer.** No worker emits v6 yet. Every fresh claim is schema v5 with
+`required_return_schema_version: 5`, so v6 is accepted-but-unissued until the
+claim contract advances. `PATTERN_SCORING_SCHEMA_VERSION` stays at 5 for the same
+reason: bumping it before a return emits a weighted score would strand every
+persisted talk on a generation nothing has produced.
+
+**Reader.** `canonical_persisted_pattern_observations` persists
+`pattern_score_basis` for v6 alongside the fields v5 already carries. The basis
+travels with the score it explains — a weighted number alone cannot say whether
+it came from two strong detections or four moderate ones, so persisting the score
+without it stores exactly the unaccompanied figure the basis exists to prevent.
+
+**Migration.** None. A persisted v5 talk stays v5 and remains comparable within
+its own generation; it becomes v6 only by reparse under a v6 claim. Weights are
+part of the scoring schema version, so changing one is a scoring-generation bump,
+never a tuning knob.
+
+The persisted basis has this shape:
+
+```json
+{
+  "pattern_score": 1.5,
+  "pattern_score_basis": {
+    "schema_version": 6,
+    "weights": {"moderate": 0.5, "strong": 1.0, "weak": 0.25},
+    "patterns": {"moderate": 1, "strong": 1, "weak": 0},
+    "antipatterns": {"moderate": 0, "strong": 0, "weak": 0},
+    "not_evaluable_count": 12
+  }
+}
+```
+
+`weights` is the complete table, not the subset this talk used, so a reader can
+recompute the score without consulting the engine. The per-lane counts cover every
+confidence level the catalog admits; a level added without a weight fails the
+table's own exhaustiveness test rather than silently scoring as zero.
+
+Versions 2–6 share the complete-snapshot merge contract: supplied declared
 scalar and list fields replace prior values, including empties only where the
 field contract permits emptiness; complete structured maps and each verbatim
 lane replace their prior snapshots; omitted fields remain untouched. The
@@ -1049,7 +1105,7 @@ comparison only after persistence, only when the talk identity exactly equals a
 schema-v2 baseline identity, `raw_score_comparison_status` is `available`, and
 the baseline has at least ten exact-identity scored talks. Comparisons from
 return v1–v4 are archival only and never verified current numeric evidence.
-Versions 2–5 require `rhetoric_notes` and `areas_for_improvement` to contain
+Versions 2–6 require `rhetoric_notes` and `areas_for_improvement` to contain
 substantive non-whitespace analysis. An unknown `transcript_source` is omitted; a present value
 must be one of the declared enums and must never be JSON `null`. Missing/version-1
 returns retain their historical type-only and empty-value no-op behavior. A skipped

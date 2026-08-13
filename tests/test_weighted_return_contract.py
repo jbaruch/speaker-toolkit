@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from test_schema5_pattern_outcomes import (  # noqa: E402
+    _artifact,
     _assessment,
     _catalog,
     _detection,
@@ -107,3 +108,144 @@ class TestV6IsAcceptedEndToEnd:
             return_validation.validate_return(
                 _v6(return_validation, basis=basis), catalog
             )
+
+
+def _persist(return_validation, catalog, tmp_path, transcript_timing, ret):
+    """Drive a raw return through the real canonicalization/persistence path.
+
+    Not `canonical_persisted_pattern_observations(raw, ...)` — the raw return
+    omits the engine-owned evidence fields on purpose, so calling persistence on
+    it would test a shape no worker ever produces.
+    """
+    import pattern_evidence
+
+    return_validation.validate_return(ret, catalog)
+    vault, owner = _artifact(tmp_path, transcript_timing)
+    canonical = pattern_evidence.canonicalize_return_evidence(
+        copy.deepcopy(ret),
+        owner,
+        vault,
+        catalog,
+        pattern_scoring_schema_version=return_validation.PATTERN_SCORING_SCHEMA_VERSION,
+    )
+    generation = return_validation.assess_scoring_generation(canonical, catalog)
+    return return_validation.canonical_persisted_pattern_observations(
+        canonical, catalog, generation
+    )
+
+
+class TestV6IsRepresentableAsPersistedState:
+    """An accepted return that persistence cannot represent is a broken contract.
+
+    Accepting v6 at the validator while the persistence path still tested
+    `== RETURN_SCHEMA_VERSION` meant a v6 return would have been stored with a
+    legacy evidence stamp and no exhaustive outcomes at all — silently, since
+    every check that would have caught it was gated on the same equality.
+    """
+
+    def test_the_basis_is_persisted_beside_the_score(
+        self, return_validation, catalog, tmp_path, transcript_timing
+    ) -> None:
+        ret = _v6(return_validation)
+
+        persisted = _persist(
+            return_validation, catalog, tmp_path, transcript_timing, ret
+        )
+
+        assert (
+            persisted["pattern_score_basis"]
+            == (ret["pattern_observations"]["pattern_score_basis"])
+        )
+        assert (
+            persisted["pattern_score"]
+            == (ret["pattern_observations"]["pattern_score"]["score"])
+        )
+
+    def test_a_v5_return_persists_no_basis(
+        self, return_validation, catalog, tmp_path, transcript_timing
+    ) -> None:
+        """The field cannot exist under the v5 contract, persisted or otherwise."""
+        persisted = _persist(
+            return_validation, catalog, tmp_path, transcript_timing, _v5()
+        )
+
+        assert "pattern_score_basis" not in persisted
+
+    def test_v6_keeps_the_current_evidence_stamp(
+        self, return_validation, catalog, tmp_path, transcript_timing
+    ) -> None:
+        """v6 is source-located and exhaustive, exactly as v5 is."""
+        persisted = _persist(
+            return_validation,
+            catalog,
+            tmp_path,
+            transcript_timing,
+            _v6(return_validation),
+        )
+
+        assert (
+            persisted["evidence_schema_version"]
+            == return_validation.PATTERN_EVIDENCE_SCHEMA_VERSION
+        )
+
+    def test_v6_persists_the_exhaustive_outcome_lanes(
+        self, return_validation, catalog, tmp_path, transcript_timing
+    ) -> None:
+        """Gated on equality with v5, these three vanished from a v6 talk."""
+        persisted = _persist(
+            return_validation,
+            catalog,
+            tmp_path,
+            transcript_timing,
+            _v6(return_validation),
+        )
+
+        assert "pattern_outcomes" in persisted
+        assert "applicability_assessments" in persisted
+        assert "opportunity_coverage_identity" in persisted
+
+    def test_v6_persists_the_same_lanes_as_v5(
+        self, return_validation, catalog, tmp_path, transcript_timing
+    ) -> None:
+        """The two generations differ by the basis alone — nothing else moves."""
+        v5_persisted = _persist(
+            return_validation,
+            catalog,
+            tmp_path / "v5",
+            transcript_timing,
+            _v5(),
+        )
+        v6_persisted = _persist(
+            return_validation,
+            catalog,
+            tmp_path / "v6",
+            transcript_timing,
+            _v6(return_validation),
+        )
+
+        assert set(v6_persisted) - set(v5_persisted) == {"pattern_score_basis"}
+        assert not set(v5_persisted) - set(v6_persisted)
+
+    def test_the_documented_basis_shape_is_what_persistence_stores(
+        self, return_validation, catalog, tmp_path, transcript_timing
+    ) -> None:
+        """schemas-db.md prints this object; a reader recomputes the score from it."""
+        persisted = _persist(
+            return_validation,
+            catalog,
+            tmp_path,
+            transcript_timing,
+            _v6(return_validation),
+        )
+
+        basis = persisted["pattern_score_basis"]
+        assert set(basis) == {
+            "schema_version",
+            "weights",
+            "patterns",
+            "antipatterns",
+            "not_evaluable_count",
+        }
+        assert basis["weights"] == return_validation.DETECTION_WEIGHTS
+        assert set(basis["patterns"]) == set(return_validation.DETECTION_WEIGHTS)
+        assert set(basis["antipatterns"]) == set(return_validation.DETECTION_WEIGHTS)

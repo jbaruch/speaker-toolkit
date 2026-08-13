@@ -2,6 +2,25 @@
 
 ### feat(vault-ingress) — weight the aggregate score, versioned not retrofitted (#153)
 
+Return schema **v6** is now documented in `schemas-db.md` — its writer, reader,
+migration behaviour, and the canonical persisted shape carrying
+`pattern_score_basis`. An accepted return the owner schema does not describe is a
+contract with no reader.
+
+Accepting v6 at the validator was not enough on its own. Nine sites across
+`return_validation.py`, `pattern_evidence.py`, `persist-results.py`, and
+`write-analysis.py` tested `== RETURN_SCHEMA_VERSION` to mean "the current
+contract". With v6 accepted but not admitted to that set, a v6 return would have
+canonicalized as an unsupported schema, or persisted with a legacy evidence stamp
+and no exhaustive outcome lanes at all — silently, since every check that would
+have caught it was gated on the same equality. They now test membership of
+`EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS`.
+
+`pattern_score_basis` persists beside the score it explains. The tests drive the
+real canonicalization path rather than handing persistence a raw return, since a
+raw return omits the engine-owned evidence fields on purpose and would prove
+nothing about the shape a worker actually produces.
+
 Implements the #153 aggregate-score decision. Flat `+1/-1` counting made a
 slides-only talk and a full-evidence talk emit scores that read as equivalent,
 which was the issue's original complaint.

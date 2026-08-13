@@ -293,6 +293,13 @@ SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS = frozenset(
 EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS = frozenset(
     {RETURN_SCHEMA_VERSION, WEIGHTED_SCORE_RETURN_SCHEMA_VERSION}
 )
+# The returns whose aggregate is weighted, and which therefore carry a
+# `pattern_score_basis`. Separate from the exhaustive-outcome set because the two
+# properties are independent: v5 is exhaustive and flat, v6 is exhaustive and
+# weighted, and a later schema could be one without the other.
+WEIGHTED_SCORE_RETURN_SCHEMA_VERSIONS = frozenset(
+    {WEIGHTED_SCORE_RETURN_SCHEMA_VERSION}
+)
 # Stays at 5 until a return actually emits a weighted score. The weight table
 # below is part of the NEXT scoring generation; bumping this constant now would
 # strand every persisted talk on a generation nothing has produced yet, forcing
@@ -2182,7 +2189,7 @@ def assess_scoring_generation(
         normalized_lanes.append(normalized)
 
     if (
-        version == RETURN_SCHEMA_VERSION
+        version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS
         and observations.get("evidence_schema_version")
         == PATTERN_EVIDENCE_SCHEMA_VERSION
     ):
@@ -2199,8 +2206,8 @@ def assess_scoring_generation(
         else set()
     )
     for pattern_id, entry in catalog.entries.items():
-        if version == RETURN_SCHEMA_VERSION:
-            # Exhaustive v5 outcome validation above owns applicability and
+        if version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
+            # Exhaustive outcome validation above owns applicability and
             # absence precedence. Reapplying the v4 absence-only projection
             # would misclassify catalog-authorized not-applicable outcomes.
             continue
@@ -2272,13 +2279,13 @@ def canonical_persisted_pattern_observations(
     if return_version in SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS:
         persisted["evidence_schema_version"] = (
             PATTERN_EVIDENCE_SCHEMA_VERSION
-            if return_version == RETURN_SCHEMA_VERSION
+            if return_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS
             else LEGACY_PATTERN_EVIDENCE_SCHEMA_VERSION
         )
         persisted["source_inspection"] = copy.deepcopy(
             observations.get("source_inspection")
         )
-    if return_version == RETURN_SCHEMA_VERSION:
+    if return_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
         _validate_canonical_v5_outcomes(observations, catalog)
         persisted["applicability_assessments"] = copy.deepcopy(
             observations.get("applicability_assessments")
@@ -2288,6 +2295,14 @@ def canonical_persisted_pattern_observations(
         )
         persisted["opportunity_coverage_identity"] = observations.get(
             "opportunity_coverage_identity"
+        )
+    if return_version in WEIGHTED_SCORE_RETURN_SCHEMA_VERSIONS:
+        # The basis travels with the score it explains. Persisting the weighted
+        # number without it would store exactly the unaccompanied figure the
+        # basis exists to prevent — a reader could not tell two strong
+        # detections from four moderate ones.
+        persisted["pattern_score_basis"] = copy.deepcopy(
+            observations.get("pattern_score_basis")
         )
     return persisted
 
@@ -2856,8 +2871,11 @@ def validate_v5_adherence_opportunity(
     ret: dict,
     canonical_ret: dict,
 ) -> None:
-    """Bind a v5 raw-score comparison to one exact opportunity denominator."""
-    if resolve_return_schema_version(ret) != RETURN_SCHEMA_VERSION:
+    """Bind an exhaustive-outcome raw-score comparison to one opportunity denominator."""
+    if (
+        resolve_return_schema_version(ret)
+        not in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS
+    ):
         return
     if ret.get("status") not in ANALYSIS_STATUSES:
         return
@@ -4260,7 +4278,7 @@ def validate_persisted_catalog_generation(
         raise ReturnValidationError(
             f"{filename} canonical evidence changed return_schema_version"
         )
-    if return_version == RETURN_SCHEMA_VERSION:
+    if return_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
         validate_v5_adherence_opportunity(talk, ret, evidence_ret)
     assessment = assess_scoring_generation(evidence_ret, catalog)
     observations = talk.get("pattern_observations")
@@ -4284,7 +4302,7 @@ def validate_persisted_catalog_generation(
     status = talk.get("pattern_scoring_generation_status")
     reasons = talk.get("pattern_scoring_generation_reasons")
     if not assessment.current:
-        if return_version == RETURN_SCHEMA_VERSION:
+        if return_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
             raise ReturnValidationError(
                 f"{filename} current return cannot satisfy scoring generation "
                 f"{PATTERN_SCORING_SCHEMA_VERSION}: "

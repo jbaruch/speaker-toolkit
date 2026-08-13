@@ -60,6 +60,15 @@ LEGACY_PATTERN_EVIDENCE_SCHEMA_VERSION = 1
 PATTERN_EVIDENCE_SCHEMA_VERSION = 2
 SOURCE_LOCATED_RETURN_SCHEMA_VERSION = 4
 EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION = 5
+WEIGHTED_SCORE_RETURN_SCHEMA_VERSION = 6
+# v6 changes the score's arithmetic and nothing about how evidence is located, so
+# every source-location rule that holds for v5 holds for it unchanged.
+EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS = frozenset(
+    {EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION, WEIGHTED_SCORE_RETURN_SCHEMA_VERSION}
+)
+CANONICALIZABLE_RETURN_SCHEMA_VERSIONS = frozenset(
+    {SOURCE_LOCATED_RETURN_SCHEMA_VERSION, *EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS}
+)
 CURRENT_PATTERN_SCORING_SCHEMA_VERSION = 5
 PATTERN_OUTCOMES = frozenset(
     {"detected", "undetected", "not_evaluable", "not_applicable"}
@@ -3283,15 +3292,13 @@ def canonicalize_return_evidence(
     pattern_scoring_schema_version: int = CURRENT_PATTERN_SCORING_SCHEMA_VERSION,
     video_evidence_assessment: VideoEvidenceAssessment | None = None,
 ) -> dict[str, object]:
-    """Return a v4/v5 payload with source claims canonically located."""
+    """Return a v4/v5/v6 payload with source claims canonically located."""
     canonical = copy.deepcopy(dict(ret))
     return_schema_version = canonical.get("return_schema_version")
-    if return_schema_version not in {
-        SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
-        EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION,
-    }:
+    if return_schema_version not in CANONICALIZABLE_RETURN_SCHEMA_VERSIONS:
         raise PatternEvidenceError(
-            "source evidence canonicalization supports return schemas v4/v5"
+            "source evidence canonicalization supports return schemas "
+            f"{sorted(CANONICALIZABLE_RETURN_SCHEMA_VERSIONS)}"
         )
     observations = canonical.get("pattern_observations")
     if not isinstance(observations, dict):
@@ -3469,7 +3476,7 @@ def canonicalize_return_evidence(
     raw_assessments = observations.get("applicability_assessments")
     assessment_entries = raw_assessments if isinstance(raw_assessments, list) else []
     assessments_by_id: dict[str, Mapping[str, object]] = {}
-    if return_schema_version == EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION:
+    if return_schema_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
         for index, raw_assessment in enumerate(assessment_entries):
             if not isinstance(raw_assessment, Mapping):
                 raise PatternEvidenceError(
@@ -3499,7 +3506,7 @@ def canonicalize_return_evidence(
         assessment = assessments_by_id.get(pattern_id)
         applicability_gate = getattr(entry, "applicability_evaluable_from", None)
         conditions = getattr(entry, "not_applicable_when", None)
-        if return_schema_version == EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION and (
+        if return_schema_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS and (
             applicability_gate is not None or conditions is not None
         ):
             if applicability_gate is None or conditions is None:
@@ -3657,7 +3664,7 @@ def canonicalize_return_evidence(
         }
         for pattern_id in sorted(expected_ids)
     ]
-    if return_schema_version == EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION:
+    if return_schema_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
         observations["applicability_assessments"] = sorted(
             canonical_assessments,
             key=lambda item: cast(str, item["pattern_id"]),

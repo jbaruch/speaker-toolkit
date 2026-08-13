@@ -102,13 +102,13 @@ from return_validation import (
     ADDITIVE_MAP,
     ANALYSIS_STATUSES,
     CURRENT_PATTERN_SCORING_GENERATION_STATUS,
+    EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS,
     IMAGE_SOURCE_GROUP,
     LEGACY_QUEUE_CLAIM_SCHEMA_VERSION,
     LEGACY_RETURN_SCHEMA_VERSION,
     LEGACY_UNBASELINEABLE_SCORING_STATUS,
     PATTERN_SCORING_SCHEMA_VERSION,
     PREVIOUS_QUEUE_CLAIM_SCHEMA_VERSION,
-    RETURN_SCHEMA_VERSION,
     SNAPSHOT_RETURN_SCHEMA_VERSIONS,
     SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS,
     STRUCTURED_FIELD_POLICIES,
@@ -651,7 +651,7 @@ def merge_talk(
         )
     scoring_assessment = assess_scoring_generation(evidence_ret, resolved_catalog)
     if (
-        return_schema_version == RETURN_SCHEMA_VERSION
+        return_schema_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS
         and not scoring_assessment.current
     ):
         raise ValueError(
