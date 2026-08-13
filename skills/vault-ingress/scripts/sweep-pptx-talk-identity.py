@@ -306,10 +306,11 @@ def execute(
     counts = {name: 0 for name in DISPOSITIONS}
     for row in rows:
         counts[str(row["disposition"])] += 1
+    reported = frozenset(dispositions)
     selected = (
         rows
-        if not dispositions
-        else [row for row in rows if row["disposition"] in set(dispositions)]
+        if not reported
+        else [row for row in rows if row["disposition"] in reported]
     )
     return {
         "schema_version": REPORT_SCHEMA_VERSION,

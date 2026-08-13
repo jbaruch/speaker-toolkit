@@ -253,11 +253,19 @@ every one of them. Assess the whole catalog at once with:
   "{vault_root}"
 ```
 
-Read-only. It reports one disposition per row — the taxonomy and the signals it
-observes are in the script's module docstring. `binding_contradicted` names a
-deck feeding one talk's evidence to another and is owner-review work before any
-reparse; `binding_confirmed` supplies the assessment a `record_pptx` write
-carries. `--dispositions` narrows the reported rows without changing the counts.
+Read-only. Stdout is one JSON object carrying `disposition_counts`,
+`unresolved_binding_count`, and a `rows[]` entry per catalog row. Exit 0 means
+the catalog was assessed — contradictions included, since this reports rather
+than gates; preflight is the gate. Exit 2 means the database is unusable and
+writes an error object with a closed `code` to stdout plus one diagnostic line
+to stderr; stop there and repair the database, never consume a failed report as
+if the catalog were clean. The disposition taxonomy and the signals it observes
+are in the script's module docstring.
+
+`binding_contradicted` names a deck feeding one talk's evidence to another and
+is owner-review work before any reparse; `binding_confirmed` supplies the
+assessment a `record_pptx` write carries. `--dispositions` narrows the reported
+rows without changing the counts.
 Never decide from
 `visual_extracted` alone whether a deck needs extraction. Run:
 
