@@ -23,15 +23,10 @@ Add the remaining checks (time-sensitive, current-outline contextual antipattern
 illustration coverage, pattern strategy, AI writing patterns) to the report
 manually.
 
-The AI-writing-pattern scan is delegated, never reimplemented here:
-
-- Call `Skill(skill: "blog-writer")`, which owns the pattern catalog
-- Suppress findings matching the speaker's documented voice before counting
-- Classify the retained counts with
-  `skills/presentation-creator/scripts/classify-prose-scan.py`
-- Run that script with `--unavailable` when the skill is absent
-- Flag findings, never rewrite
-- Leave every change to the author
+The AI-writing-pattern scan is delegated to `blog-writer`, never reimplemented
+here, and it reports findings without applying them. Its execution contract —
+invocation, voice suppression, classification, and the absent-scanner path — is
+in `skills/presentation-creator/references/phase4-guardrails.md`.
 
 A disabled pattern-history result affects only catalog-derived speaker history. Keep
 independent profile configuration and guardrails enabled. When history is partially
