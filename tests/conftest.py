@@ -415,6 +415,14 @@ def check_rhetorical():
 
 
 @pytest.fixture(scope="session")
+def classify_prose_scan():
+    """The prose-scan guardrail classifier (#287)."""
+    return _import_script(
+        os.path.join(SCRIPTS_PC, "classify-prose-scan.py"), "classify_prose_scan"
+    )
+
+
+@pytest.fixture(scope="session")
 def model_registry():
     return _import_script(
         os.path.join(SCRIPTS_ILL, "model_registry.py"), "model_registry"

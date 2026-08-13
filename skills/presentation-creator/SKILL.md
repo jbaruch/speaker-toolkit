@@ -286,8 +286,8 @@ status; the agent adds these categories manually:
 - Emotion-balance and screening-with-critics where applicable
 - AI writing patterns across every prose surface, via `Skill(skill: "blog-writer")`
 - Never reimplement that scan here
-- Report SKIP and point the author at `tessl install jbaruch/blog-writer` when
-  the skill is absent
+- Classify its counts with `scripts/classify-prose-scan.py`
+- Run that script with `--unavailable` when the skill is absent
 
 Iterate on author feedback. Apply changes first, guardrail second. Flag but don't
 block intentionally overridden guardrails.

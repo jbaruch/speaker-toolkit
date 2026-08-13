@@ -425,14 +425,18 @@ are covered by the illustration checks above.
 
 ### Check
 
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/classify-prose-scan.py" --high N --medium N
+```
+
+Pass blog-writer's finding counts; the script emits one schema-v1 JSON object
+carrying the status. Thresholds are its own — see
+`skills/presentation-creator/scripts/classify-prose-scan.py`, named constants at
+the top of the file. Exit 0 covers every classified result, FAIL included.
+
 ```
 [PASS/WARN/FAIL/SKIP] AI writing patterns: {high} high, {medium} medium findings
 ```
-
-- **PASS**: no high findings and at most two medium
-- **WARN**: one to three high, or three or more medium
-- **FAIL**: four or more high
-- **SKIP**: `blog-writer` is not installed
 
 If WARN or FAIL, list the findings with their location and blog-writer's rewrite
 suggestion. Flag only — the author decides what to change, because a pattern the
@@ -444,10 +448,11 @@ register, not producing an AI tell.
 
 ### When `blog-writer` is not installed
 
-Report SKIP, say the scan did not run, and tell the author how to get it:
+Run the same script with `--unavailable`. It reports SKIP and carries the remedy
+the author needs:
 
-```
-tessl install jbaruch/blog-writer
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/classify-prose-scan.py" --unavailable
 ```
 
 Never approximate the scan inline. A partial reimplementation drifts from the

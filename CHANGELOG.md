@@ -13,6 +13,11 @@ stale one. When the skill is absent the check reports SKIP and points the author
 at `tessl install jbaruch/blog-writer` rather than approximating it — which is
 also what the CFP abstract check now does, where it previously skipped in silence.
 
+`classify-prose-scan.py` owns the PASS/WARN/FAIL mapping. It is a total function
+of two integers, and a threshold sentence in skill prose drifts from the one
+anybody actually applies. `--unavailable` emits the SKIP report with the install
+command, so an absent scanner is never mistaken for clean prose.
+
 Findings flag, never rewrite. A pattern the scan calls a tell may be the
 speaker's deliberate voice, so vault-documented voice traits are suppressed: a
 speaker whose profile shows heavy em-dash use is writing in their own register.
