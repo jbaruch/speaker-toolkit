@@ -2,99 +2,40 @@
 
 ### feat(vault-ingress) — weight the aggregate score, versioned not retrofitted (#153)
 
-Return schema **v6** is now documented in `schemas-db.md` — its writer, reader,
-migration behaviour, and the canonical persisted shape carrying
-`pattern_score_basis`. An accepted return the owner schema does not describe is a
-contract with no reader.
-
-Accepting v6 at the validator was not enough on its own. Nine sites across
-`return_validation.py`, `pattern_evidence.py`, `persist-results.py`, and
-`write-analysis.py` tested `== RETURN_SCHEMA_VERSION` to mean "the current
-contract". With v6 accepted but not admitted to that set, a v6 return would have
-canonicalized as an unsupported schema, or persisted with a legacy evidence stamp
-and no exhaustive outcome lanes at all — silently, since every check that would
-have caught it was gated on the same equality. They now test membership of
-`EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS`.
-
-A weighted score now survives the real writer. `validate_return` accepted a
-fractional 1.5 while `resolve_pattern_score` still demanded an integer, the
-persisted-snapshot field set knew nothing of `pattern_score_basis`, and the
-evidence-v2 shape check required exactly the v5 fields — so a v6 return could
-pass validation and then be unmergeable. The score predicate is now keyed on the
-scoring generation, the persisted v6 shape is the v5 set plus the basis, and the
-bare-number cross-check uses weighted arithmetic instead of a count difference.
-Tests drive canonicalize → `merge_talk` → persisted-state validation, which is
-the path that was never exercised.
-
-A v6 return's opportunity identity is stamped with pattern-scoring schema 6.
-Accepting v6 into canonical persistence while it still carried scoring schema 5
-would have filed weighted scores in the same cohort as flat ones, letting an
-aggregate average across two arithmetics with every field looking well-formed.
-`PATTERN_SCORING_SCHEMA_VERSION` still names the current generation and stays at
-5; `scoring_schema_version_for_return` maps a return schema to the generation its
-score belongs to, and producer and validator share that one rule. The persisted
-record is stamped with that same generation rather than the current one — a
-stamp of 5 beside an identity built at 6 would give one record two conflicting
-authorities, and a freshness replay rebuilds the identity from the record's own
-stamp, so it would never match.
-
-The supplied score is compared exactly, never rounded. `expected_weighted_score`
-already rounds the canonical result to two places, so rounding the untrusted
-value too widened the gate by half a hundredth either way — `1.504` validated as
-`1.5`. The two lane counts keep v5's integer semantics rather than being read as
-numbers, so `patterns_used: 1.004` no longer counts as one.
-
-The basis object's types are checked before its values are compared. Python
-equality makes `True == 1` and `6.0 == 6`, so a basis carrying boolean lane
-counts or a float `schema_version` compared equal to the expected object and
-persisted as a type-confused record every later reader believed was verified.
-
-`pattern_score_basis` persists beside the score it explains. The tests drive the
-real canonicalization path rather than handing persistence a raw return, since a
-raw return omits the engine-owned evidence fields on purpose and would prove
-nothing about the shape a worker actually produces.
-
-Implements the #153 aggregate-score decision. Flat `+1/-1` counting made a
-slides-only talk and a full-evidence talk emit scores that read as equivalent,
-which was the issue's original complaint.
-
-`DETECTION_WEIGHTS` is `{strong: 1.0, moderate: 0.5, weak: 0.25}`. The decision
-named only strong and moderate; `weak` is an owner decision taken alongside this
-work, because `CONFIDENCE_LEVELS` admits it and a weak detection can appear in a
-detected array, so the table had to be total. A test asserts exactly that — every
-confidence level has a weight, since a partial table leaves some detection
-unscoreable.
-
-Every emitted weighted score carries a `pattern_score_basis`: per-lane
-confidence counts, the applied weights, and the `not_evaluable` count. A single
-number cannot say whether it came from two strong detections or four moderate
-ones, nor how much of the catalog was unevaluable, so a drop reads as a
-regression when it may only be thinner evidence.
+Implements the #153 aggregate-score decision. `DETECTION_WEIGHTS` are
+`{strong: 1.0, moderate: 0.5, weak: 0.25}`, and every weighted score carries a
+required `pattern_score_basis` with per-lane confidence counts, the applied
+weights, and the `not_evaluable` count. Flat `+1/-1` counting made a slides-only
+talk and a full-evidence talk emit scores that read as equivalent, which was the
+issue's original complaint. The `weak` weight is an owner decision taken with
+this work: `CONFIDENCE_LEVELS` admits `weak`, so the table had to be total.
 
 **Weighting is a v6 return contract, not a reinterpretation of v5.** A v5 return
 was produced by a worker counting `+1/-1`; rescoring it under the weight table
-would restate what that worker meant rather than validate what it wrote, which
-is the reinterpretation `stateful-artifacts` forbids. Each schema is checked
-against the arithmetic in force when it was written, and a v5 return carrying a
-`pattern_score_basis` is rejected outright.
+would restate what that worker meant rather than validate what it said. Each
+schema is checked against the arithmetic in force when it was written, so a v5
+return carrying a `pattern_score_basis` is rejected outright.
 
-Reachable in practice, not just by version number. `pattern_score_basis` joins
-v6's allowed observation fields — without it a correctly-formed v6 return was
-rejected as carrying an unknown field — and the gates that compared against v5
-exactly now test set membership, so each schema inheriting the v5 shape is
-admitted rather than silently excluded. The end-to-end tests drive
-`validate_return`, the entry point that owns schema resolution; testing the
-private score helper proved the arithmetic but not that any real return could
-reach it.
+v6 keeps every v5 semantic and joins each version set v5 belongs to. Its
+persisted `pattern_observations` is the exhaustive v5 field set plus the basis —
+a distinct accepted shape, so a v5 record carrying a basis and a v6 record
+missing one are both malformed — and its `pattern_score` may be fractional, where
+a flat score stays an integer by construction.
 
-v6 is a supported return schema, in every semantic set v5 belongs to — it adds
-weighting to v5 and drops nothing. Shipping the arithmetic behind a version no
-input could resolve would have been code nothing can invoke.
+**v6 gets its own scoring generation.** Weighted and flat scores are not
+comparable, so `scoring_schema_version_for_return` maps a return schema to the
+generation its score belongs to, and the opportunity identity, the persisted
+stamp, and the freshness replay all use that one rule. Sharing generation 5 would
+have filed weighted scores in the flat cohort and let an aggregate average across
+two arithmetics. `PATTERN_SCORING_SCHEMA_VERSION` still names the CURRENT
+generation and stays at 5, since no worker emits v6 yet — every fresh claim is
+schema v5 with `required_return_schema_version: 5`, so v6 is
+accepted-but-unissued until the claim contract advances.
 
-`PATTERN_SCORING_SCHEMA_VERSION` deliberately stays at 5. Bumping it now would
-strand every persisted talk on a scoring generation nothing has produced yet,
-forcing a reparse to adopt arithmetic no worker is using. It moves in the change
-that makes v6 the required return schema.
+**Migration.** None. A persisted v5 talk stays v5 and becomes v6 only by reparse
+under a v6 claim. Weights are part of the scoring schema version, so changing one
+is a generation bump rather than a tuning knob. `schemas-db.md` documents v6's
+writer, reader, migration behaviour, and persisted shape.
 
 ### feat(vault-profile) — the denominator behind a never-used claim (#160)
 
