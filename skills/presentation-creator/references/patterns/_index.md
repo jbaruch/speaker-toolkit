@@ -175,21 +175,21 @@ entries are skipped and surfaced as go-live actions, not emitted as per-talk
 | required | Required | pattern | 9 | intake, intent | proposed, posse, concurrent-creation, crucible |
 | the-big-why | The Big Why | pattern | 9 | intake | carnegie-hall, crucible |
 | proposed | Proposed | pattern | 9 | intake, intent | required, peer-review, know-your-audience |
-| narrative-arc | Narrative Arc | pattern | 2, 5 | intent, architecture, content | triad, bookends, intermezzi, unifying-visual-theme, context-keeper |
-| fourthought | Fourthought | pattern | 2, 8 | intent, architecture | unifying-visual-theme, backtracking, narrative-arc |
+| narrative-arc | Narrative Arc | pattern | 2 | intent, architecture, content | triad, bookends, intermezzi, unifying-visual-theme, context-keeper |
+| fourthought | Fourthought | pattern | 2, 13 | intent, architecture | unifying-visual-theme, backtracking, narrative-arc |
 | crucible | Crucible | pattern | 12, 14 | content | brain-breaks, fourthought, carnegie-hall, traveling-highlights |
-| concurrent-creation | Concurrent Creation | pattern | 2, 8 | content | talklet, unifying-visual-theme |
+| concurrent-creation | Concurrent Creation | pattern | 2, 13 | content | talklet, unifying-visual-theme |
 | triad | Triad | pattern | 2 | intent, architecture | narrative-arc, fourthought, talklet |
 | expansion-joints | Expansion Joints | pattern | 2, 12 | architecture, content | talklet, narrative-arc |
 | talklet | Talklet | pattern | 2, 12 | architecture, content | narrative-arc, foreshadowing, backtracking, a-la-carte-content, expansion-joints |
 | unifying-visual-theme | Unifying Visual Theme | pattern | 10, 13 | architecture, slides | brain-breaks, defy-defaults, narrative-arc |
-| brain-breaks | Brain Breaks | pattern | 3, 12 | architecture, content | leet-grammars, narrative-arc, entertainment, crucible, retrieval-beat |
-| leet-grammars | Leet Grammars | pattern | 7, 10 | content | analog-noise, brain-breaks |
+| brain-breaks | Brain Breaks | pattern | 12 | architecture, content | leet-grammars, narrative-arc, entertainment, crucible, retrieval-beat |
+| leet-grammars | Leet Grammars | pattern | 10, 11 | content | analog-noise, brain-breaks |
 | lightning-talk | Lightning Talk | pattern | 2, 12 | architecture | talklet, carnegie-hall, fourthought, defy-defaults, narrative-arc |
-| takahashi | Takahashi | pattern | 8, 12, 13 | architecture, slides | brain-breaks |
-| cave-painting | Cave Painting | pattern | 5, 13 | architecture, slides | context-keeper, soft-transitions, brain-breaks, takahashi, lipsync |
+| takahashi | Takahashi | pattern | 12, 13 | architecture, slides | brain-breaks |
+| cave-painting | Cave Painting | pattern | 2, 13 | architecture, slides | context-keeper, soft-transitions, brain-breaks, takahashi, lipsync |
 | abstract-attorney | Abstract Attorney | antipattern | 2, 14 | intent, guardrails | preroll, narrative-arc, fourthought, triad, crucible, carnegie-hall |
-| alienating-artifact | Alienating Artifact | antipattern | 3, 10, 14 | guardrails | know-your-audience, brain-breaks |
+| alienating-artifact | Alienating Artifact | antipattern | 10, 12, 14 | guardrails | know-your-audience, brain-breaks |
 | celery | Celery | antipattern | 2, 14 | guardrails | required, know-your-audience, narrative-arc, brain-breaks |
 | golden-rule | The Golden Rule | antipattern | 4, 9, 14 | guardrails | walk-around, know-your-audience, leet-grammars, crucible |
 
@@ -197,56 +197,56 @@ entries are skipped and surfaced as go-live actions, not emitted as per-talk
 
 | ID | Name | Type | Vault Dims | Creator Phases | Related |
 |----|------|------|------------|----------------|---------|
-| sparkline | Sparkline | pattern | 2, 5, 9 | architecture, content | narrative-arc, bookends, mentor, know-your-audience, the-big-why, call-to-adventure, call-to-action, new-bliss, foreshadowing, star-moment |
-| three-part-close | Three-Part Close | pattern | 2, 10 | content, slides | bookends, call-to-action, coda, new-bliss |
-| progressive-reveal | Progressive Reveal | pattern | 4, 7 | content, slides | composite-animation, foreshadowing, traveling-highlights, sparkline |
-| meme-as-argument | Meme as Argument | pattern | 4, 7, 12 | content, slides | entertainment, brain-breaks, foreshadowing, unifying-visual-theme |
+| sparkline | Sparkline | pattern | 2, 9 | architecture, content | narrative-arc, bookends, mentor, know-your-audience, the-big-why, call-to-adventure, call-to-action, new-bliss, foreshadowing, star-moment |
+| three-part-close | Three-Part Close | pattern | 2, 6 | content, slides | bookends, call-to-action, coda, new-bliss |
+| progressive-reveal | Progressive Reveal | pattern | 3, 13 | content, slides | composite-animation, foreshadowing, traveling-highlights, sparkline |
+| meme-as-argument | Meme as Argument | pattern | 3, 10, 13 | content, slides | entertainment, brain-breaks, foreshadowing, unifying-visual-theme |
 | call-to-adventure | Call to Adventure | pattern | 1, 2, 9 | architecture, content | sparkline, the-big-why, opening-punch, narrative-arc, foreshadowing, know-your-audience, mentor |
 | call-to-action | Call to Action | pattern | 4, 6, 9 | content, publishing | sparkline, coda, mentor, the-big-why, new-bliss |
-| new-bliss | New Bliss | pattern | 5, 6, 9 | content | sparkline, call-to-action, coda, bookends, the-big-why |
-| star-moment | S.T.A.R. Moment | pattern | 3, 5, 13 | content, slides | the-big-why, sparkline, narrative-arc, vacation-photos, foreshadowing, call-to-adventure |
+| new-bliss | New Bliss | pattern | 2, 6, 9 | content | sparkline, call-to-action, coda, bookends, the-big-why |
+| star-moment | S.T.A.R. Moment | pattern | 2, 3, 13 | content, slides | the-big-why, sparkline, narrative-arc, vacation-photos, foreshadowing, call-to-adventure |
 | inoculation | Inoculation | pattern | 4, 9 | content, guardrails | know-your-audience, mentor, peer-review, sparkline, the-big-why |
-| master-story | Master Story | pattern | 2, 5, 7 | content | narrative-arc, foreshadowing, sparkline, the-big-why, star-moment |
-| concrete-before-abstract | Concrete Before Abstract | pattern | 11, 9, 2 | content | live-demo, master-story, vacation-photos, mentor, the-big-why, sparkline |
+| master-story | Master Story | pattern | 2, 7 | content | narrative-arc, foreshadowing, sparkline, the-big-why, star-moment |
+| concrete-before-abstract | Concrete Before Abstract | pattern | 2, 9, 11 | content | live-demo, master-story, vacation-photos, mentor, the-big-why, sparkline |
 | guess-first | Guess First | pattern | 2, 4, 11 | content, slides | concrete-before-abstract, retrieval-beat, live-demo, progressive-reveal, foreshadowing, inoculation |
 | retrieval-beat | Retrieval Beat | pattern | 4, 12 | architecture, content, slides | guess-first, backtracking, breadcrumbs, brain-breaks, spaced-followup, bookends |
 | second-look | Second Look | pattern | 8, 13 | slides, publishing | unifying-visual-theme, spaced-followup, coda, star-moment, vacation-photos, gradual-consistency, infodeck |
-| coda | Coda | pattern | 6, 8 | content, slides | infodeck, vacation-photos |
-| peer-review | Peer Review | pattern | 7, 8 | content, guardrails | leet-grammars |
-| foreshadowing | Foreshadowing | pattern | 2, 5 | content | narrative-arc, talklet, backtracking, intermezzi |
+| coda | Coda | pattern | 8, 13 | content, slides | infodeck, vacation-photos |
+| peer-review | Peer Review | pattern | 7, 13 | content, guardrails | leet-grammars |
+| foreshadowing | Foreshadowing | pattern | 2 | content | narrative-arc, talklet, backtracking, intermezzi |
 | composite-animation | Composite Animation | pattern | 13 | slides | emergence, gradual-consistency |
 | a-la-carte-content | Á la Carte Content | pattern | 2, 4 | architecture, content | talklet, coda, live-demo |
-| vacation-photos | Vacation Photos | pattern | 8, 13 | architecture, slides | unifying-visual-theme |
+| vacation-photos | Vacation Photos | pattern | 13 | architecture, slides | unifying-visual-theme |
 | defy-defaults | Defy Defaults | pattern | 13 | slides | analog-noise, bookends, intermezzi |
 | analog-noise | Analog Noise | pattern | 13 | slides | defy-defaults, leet-grammars |
-| infodeck | Infodeck | pattern | 8 | architecture | coda |
-| gradual-consistency | Gradual Consistency | pattern | 8, 13 | slides | exuberant-title-top, composite-animation, analog-noise |
-| charred-trail | Charred Trail | pattern | 8, 13 | slides | context-keeper, exuberant-title-top, bookends |
+| infodeck | Infodeck | pattern | 13 | architecture | coda |
+| gradual-consistency | Gradual Consistency | pattern | 13 | slides | exuberant-title-top, composite-animation, analog-noise |
+| charred-trail | Charred Trail | pattern | 13 | slides | context-keeper, exuberant-title-top, bookends |
 | exuberant-title-top | Exuberant Title Top | pattern | 13 | slides | charred-trail, gradual-consistency |
 | invisibility | Invisibility | pattern | 13 | slides | gradual-consistency |
-| context-keeper | Context Keeper | pattern | 2, 5, 13 | architecture, content, slides | breadcrumbs, bookends, narrative-arc, charred-trail, cave-painting |
+| context-keeper | Context Keeper | pattern | 2, 13 | architecture, content, slides | breadcrumbs, bookends, narrative-arc, charred-trail, cave-painting |
 | breadcrumbs | Breadcrumbs | pattern | 2, 13 | content, slides | context-keeper, bookends |
-| bookends | Bookends | pattern | 2, 5, 13 | content, slides | context-keeper, narrative-arc, intermezzi, defy-defaults |
-| soft-transitions | Soft Transitions | pattern | 5, 13 | slides | intermezzi, cave-painting |
-| intermezzi | Intermezzi | pattern | 2, 5, 13 | content, slides | context-keeper, bookends, narrative-arc, unifying-visual-theme, brain-breaks |
-| backtracking | Backtracking | pattern | 2, 5 | content | fourthought, foreshadowing, talklet |
+| bookends | Bookends | pattern | 2, 13 | content, slides | context-keeper, narrative-arc, intermezzi, defy-defaults |
+| soft-transitions | Soft Transitions | pattern | 2, 13 | slides | intermezzi, cave-painting |
+| intermezzi | Intermezzi | pattern | 2, 13 | content, slides | context-keeper, bookends, narrative-arc, unifying-visual-theme, brain-breaks |
+| backtracking | Backtracking | pattern | 2, 4 | content | fourthought, foreshadowing, talklet |
 | preroll | Preroll | pattern | 1, 13 | slides, publishing | seeding-the-first-question |
-| crawling-credits | Crawling Credits | pattern | 6, 13 | slides | coda |
+| crawling-credits | Crawling Credits | pattern | 8, 13 | slides | coda |
 | live-demo | Live Demo | pattern | 11 | architecture, content | lipsync, traveling-highlights |
 | lipsync | Lipsync | pattern | 11, 13 | content, slides | live-demo, cave-painting, live-on-tape |
 | traveling-highlights | Traveling Highlights | pattern | 11, 13 | slides | crawling-code, emergence |
 | crawling-code | Crawling Code | pattern | 11, 13 | slides | traveling-highlights, emergence |
 | emergence | Emergence | pattern | 11, 13 | content, slides | composite-animation, traveling-highlights, crawling-code |
-| live-on-tape | Live on Tape | pattern | 8 | publishing | lipsync, entertainment |
-| cookie-cutter | Cookie Cutter | antipattern | 8, 13 | guardrails, slides | soft-transitions, fourthought |
-| injured-outlines | Injured Outlines | antipattern | 8, 14 | guardrails | fourthought |
-| bullet-riddled-corpse | Bullet-Riddled Corpse | antipattern | 8, 13, 14 | guardrails, slides | charred-trail, infodeck |
+| live-on-tape | Live on Tape | pattern | 13 | publishing | lipsync, entertainment |
+| cookie-cutter | Cookie Cutter | antipattern | 13 | guardrails, slides | soft-transitions, fourthought |
+| injured-outlines | Injured Outlines | antipattern | 13, 14 | guardrails | fourthought |
+| bullet-riddled-corpse | Bullet-Riddled Corpse | antipattern | 13, 14 | guardrails, slides | charred-trail, infodeck |
 | ant-fonts | Ant Fonts | antipattern | 13, 14 | guardrails, slides | bullet-riddled-corpse, infodeck |
 | fontaholic | Fontaholic | antipattern | 13, 14 | guardrails, slides | floodmarks |
 | floodmarks | Floodmarks | antipattern | 13, 14 | guardrails, slides | bookends, defy-defaults, unifying-visual-theme |
-| photomaniac | Photomaniac | antipattern | 10, 13, 14 | guardrails, slides | unifying-visual-theme, vacation-photos |
-| borrowed-shoes | Borrowed Shoes | antipattern | 7, 8, 14 | guardrails | crucible, narrative-arc, carnegie-hall |
-| slideuments | Slideuments | antipattern | 8, 14 | guardrails | infodeck, charred-trail, gradual-consistency |
+| photomaniac | Photomaniac | antipattern | 13, 14 | guardrails, slides | unifying-visual-theme, vacation-photos |
+| borrowed-shoes | Borrowed Shoes | antipattern | 7, 13, 14 | guardrails | crucible, narrative-arc, carnegie-hall |
+| slideuments | Slideuments | antipattern | 13, 14 | guardrails | infodeck, charred-trail, gradual-consistency |
 | dead-demo | Dead Demo | antipattern | 11, 14 | guardrails | live-demo, a-la-carte-content |
 
 ### Deliver Phase (22 patterns + 14 antipatterns)
@@ -254,8 +254,8 @@ entries are skipped and surfaced as go-live actions, not emitted as per-talk
 | ID | Name | Type | Vault Dims | Creator Phases | Related |
 |----|------|------|------------|----------------|---------|
 | preparation | Preparation | pattern | 14 | publishing | know-your-audience, carnegie-hall |
-| delayed-self-introduction | Delayed Self-Introduction | pattern | 2, 11 | content | opening-punch, the-big-why, anti-sell |
-| anti-sell | Anti-Sell | pattern | 11, 6 | content | delayed-self-introduction, the-big-why, mentor |
+| delayed-self-introduction | Delayed Self-Introduction | pattern | 2, 9 | content | opening-punch, the-big-why, anti-sell |
+| anti-sell | Anti-Sell | pattern | 9 | content | delayed-self-introduction, the-big-why, mentor |
 | screen-blackout | Screen Blackout | pattern | 12, 13 | content, slides | breathing-room, intermezzi, brain-breaks, mentor |
 | carnegie-hall | Carnegie Hall | pattern | 12, 14 | publishing | crucible, retrieval-beat |
 | posse | Posse | pattern | 4 | publishing | greek-chorus, seeding-satisfaction |
@@ -267,7 +267,7 @@ entries are skipped and surfaced as go-live actions, not emitted as per-talk
 | breathing-room | Breathing Room | pattern | 7, 12 | content | narrative-arc, brain-breaks, know-your-audience |
 | mentor | Mentor | pattern | 9, 11 | intent, content | narrative-arc, display-of-high-value |
 | weatherman | Weatherman | pattern | 12 | publishing | make-it-rain, lipsync |
-| entertainment | Entertainment | pattern | 3, 10 | content | know-your-audience, brain-breaks, make-it-rain |
+| entertainment | Entertainment | pattern | 3 | content | know-your-audience, brain-breaks, make-it-rain |
 | make-it-rain | Make It Rain | pattern | 4 | content | entertainment, weatherman |
 | echo-chamber | Echo Chamber | pattern | 4, 7 | publishing | seeding-the-first-question |
 | red-yellow-green | Red, Yellow, Green | pattern | 4 | publishing | crucible, know-your-audience, retrieval-beat, spaced-followup |
@@ -286,7 +286,7 @@ entries are skipped and surfaced as go-live actions, not emitted as per-talk
 | negative-ignorance | Negative Ignorance | antipattern | 4, 14 | guardrails | know-your-audience, seeding-satisfaction |
 | dual-headed-monster | Dual-Headed Monster | antipattern | 4, 14 | guardrails | live-on-tape, weatherman |
 | tower-of-babble | Tower of Babble | antipattern | 7, 9, 14 | guardrails | know-your-audience, leet-grammars |
-| lipstick-on-a-pig | Lipstick on a Pig | antipattern | 8, 9, 14 | guardrails | narrative-arc |
+| lipstick-on-a-pig | Lipstick on a Pig | antipattern | 9, 14 | guardrails | narrative-arc |
 | flyover | Flyover | antipattern | 4, 14 | guardrails | know-your-audience, seeding-satisfaction, mentor |
 | nodding-room | The Nodding Room | antipattern | 4, 12, 14 | guardrails | retrieval-beat, guess-first, spaced-followup, carnegie-hall, red-yellow-green |
 
@@ -396,19 +396,19 @@ Reverse lookup: which patterns relate to each of the 14 rhetoric analysis dimens
 
 | Dim | Name | Patterns | Antipatterns |
 |-----|------|----------|--------------|
-| 1 | Opening Pattern | preroll, opening-punch, call-to-adventure | — |
-| 2 | Narrative Structure | narrative-arc, fourthought, triad, expansion-joints, talklet, context-keeper, breadcrumbs, bookends, intermezzi, foreshadowing, backtracking, a-la-carte-content, concurrent-creation, lightning-talk, sparkline, call-to-adventure, master-story, concrete-before-abstract, guess-first | abstract-attorney, celery |
-| 3 | Humor & Wit | brain-breaks, entertainment, star-moment | alienating-artifact |
-| 4 | Audience Interaction | know-your-audience, social-media-advertising, a-la-carte-content, posse, seeding-satisfaction, seeding-the-first-question, emotional-state, make-it-rain, echo-chamber, red-yellow-green, greek-chorus, opening-punch, call-to-action, inoculation, guess-first, retrieval-beat, walk-around | bunker, hecklers, backchannel, negative-ignorance, dual-headed-monster, flyover, nodding-room, golden-rule |
-| 5 | Transition Techniques | narrative-arc, foreshadowing, backtracking, context-keeper, bookends, intermezzi, soft-transitions, cave-painting, sparkline, new-bliss, star-moment, master-story | — |
-| 6 | Closing Pattern | coda, crawling-credits, call-to-action, new-bliss, spaced-followup | — |
-| 7 | Verbal Signatures | leet-grammars, peer-review, breathing-room, echo-chamber, master-story | hiccup-words, borrowed-shoes, tower-of-babble |
-| 8 | Slide-to-Speech Relationship | fourthought, concurrent-creation, coda, vacation-photos, infodeck, gradual-consistency, charred-trail, takahashi, live-on-tape, peer-review, second-look | cookie-cutter, injured-outlines, bullet-riddled-corpse, borrowed-shoes, slideuments, lipstick-on-a-pig |
-| 9 | Persuasion Techniques | know-your-audience, required, the-big-why, proposed, display-of-high-value, emotional-state, mentor, greek-chorus, sparkline, call-to-adventure, call-to-action, new-bliss, inoculation, concrete-before-abstract, walk-around | disowning-your-topic, going-meta, tower-of-babble, lipstick-on-a-pig, golden-rule |
-| 10 | Cultural & Pop-Culture References | leet-grammars, unifying-visual-theme, entertainment | alienating-artifact, photomaniac |
-| 11 | Technical Content Delivery | live-demo, lipsync, traveling-highlights, crawling-code, emergence, mentor, lightsaber, concrete-before-abstract, guess-first | dead-demo |
-| 12 | Pacing Clues | crucible, expansion-joints, talklet, brain-breaks, lightning-talk, takahashi, carnegie-hall, breathing-room, weatherman, screen-blackout, retrieval-beat | shortchanged, disowning-your-topic, nodding-room |
-| 13 | Slide Design Patterns | unifying-visual-theme, takahashi, cave-painting, composite-animation, vacation-photos, defy-defaults, analog-noise, gradual-consistency, charred-trail, exuberant-title-top, invisibility, context-keeper, breadcrumbs, bookends, soft-transitions, intermezzi, preroll, crawling-credits, lipsync, traveling-highlights, crawling-code, emergence, screen-blackout, star-moment, second-look | cookie-cutter, bullet-riddled-corpse, ant-fonts, fontaholic, floodmarks, photomaniac, laser-weapons |
+| 1 | Opening Pattern | preroll, opening-punch, call-to-adventure |  |
+| 2 | Narrative Structure | narrative-arc, fourthought, triad, expansion-joints, talklet, context-keeper, breadcrumbs, bookends, intermezzi, foreshadowing, backtracking, a-la-carte-content, concurrent-creation, lightning-talk, sparkline, call-to-adventure, master-story, concrete-before-abstract, guess-first, cave-painting, delayed-self-introduction, new-bliss, soft-transitions, star-moment, three-part-close | abstract-attorney, celery |
+| 3 | Humor & Wit | entertainment, star-moment, meme-as-argument, progressive-reveal |  |
+| 4 | Audience Interaction | know-your-audience, social-media-advertising, a-la-carte-content, posse, seeding-satisfaction, seeding-the-first-question, emotional-state, make-it-rain, echo-chamber, red-yellow-green, greek-chorus, opening-punch, call-to-action, inoculation, guess-first, retrieval-beat, walk-around, backtracking | bunker, hecklers, backchannel, negative-ignorance, dual-headed-monster, flyover, nodding-room, golden-rule |
+| 5 | Transition Techniques |  |  |
+| 6 | Closing Pattern | call-to-action, new-bliss, spaced-followup, three-part-close |  |
+| 7 | Verbal Signatures | peer-review, breathing-room, echo-chamber, master-story | hiccup-words, borrowed-shoes, tower-of-babble |
+| 8 | Slide-to-Speech Relationship | coda, second-look, crawling-credits |  |
+| 9 | Persuasion Techniques | know-your-audience, required, the-big-why, proposed, display-of-high-value, emotional-state, mentor, greek-chorus, sparkline, call-to-adventure, call-to-action, new-bliss, inoculation, concrete-before-abstract, walk-around, anti-sell, delayed-self-introduction | disowning-your-topic, going-meta, tower-of-babble, lipstick-on-a-pig, golden-rule |
+| 10 | Cultural & Pop-Culture References | leet-grammars, unifying-visual-theme, meme-as-argument | alienating-artifact |
+| 11 | Technical Content Delivery | live-demo, lipsync, traveling-highlights, crawling-code, emergence, mentor, lightsaber, concrete-before-abstract, guess-first, leet-grammars | dead-demo |
+| 12 | Pacing Clues | crucible, expansion-joints, talklet, brain-breaks, lightning-talk, takahashi, carnegie-hall, breathing-room, weatherman, screen-blackout, retrieval-beat | shortchanged, disowning-your-topic, nodding-room, alienating-artifact |
+| 13 | Slide Design Patterns | unifying-visual-theme, takahashi, cave-painting, composite-animation, vacation-photos, defy-defaults, analog-noise, gradual-consistency, charred-trail, exuberant-title-top, invisibility, context-keeper, breadcrumbs, bookends, soft-transitions, intermezzi, preroll, crawling-credits, lipsync, traveling-highlights, crawling-code, emergence, screen-blackout, star-moment, second-look, coda, concurrent-creation, fourthought, infodeck, live-on-tape, meme-as-argument, peer-review, progressive-reveal | cookie-cutter, bullet-riddled-corpse, ant-fonts, fontaholic, floodmarks, photomaniac, laser-weapons, borrowed-shoes, injured-outlines, slideuments |
 | 14 | Areas for Improvement | crucible, preparation, carnegie-hall, shoeless, stakeout | abstract-attorney, alienating-artifact, celery, injured-outlines, bullet-riddled-corpse, ant-fonts, fontaholic, floodmarks, photomaniac, borrowed-shoes, slideuments, dead-demo, shortchanged, hiccup-words, disowning-your-topic, going-meta, bunker, hecklers, backchannel, laser-weapons, negative-ignorance, dual-headed-monster, tower-of-babble, lipstick-on-a-pig, flyover, nodding-room, golden-rule |
 
 ---

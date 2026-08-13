@@ -34,7 +34,8 @@ command. Run the owner migration before any other database mutation:
 ```
 
 Exit 0 writes one dry-run JSON report with `input_sha256`, source and target
-schema versions, `output_sha256`, `record_counts`, `changed`,
+schema versions, `output_sha256`, `record_counts`, `persisted_observations`,
+`changed`,
 `database_written: false`, `warnings`, and the deterministic backup path. A
 changed report authorizes this exact apply command:
 
@@ -48,7 +49,16 @@ the complete original bytes under `{vault_root}/.backups/`, and atomically
 installs database schema v1 with config schema v2. A current root with config
 schema v1 is also a migration: root `from_schema_version` and
 `to_schema_version` both remain `1`, while `record_counts.config` records the
-config upgrade. A non-empty `warnings` array means replacement
+config upgrade.
+
+`persisted_observations` reports what the migration did to corrupt persisted
+pattern observations: `repaired` counts talks whose exact inverse-schema field
+swap was undone in place, `requeued` counts talks whose defect it refused to
+guess at, which keep their original bytes and return to the queue with
+`reprocess_reason: persisted_observation_invalid`. A non-zero count in either
+field means the migration changed state and is a real write, not a no-op. The
+decision predicate is `gate_persisted_observations` in
+`skills/vault-ingress/scripts/migrate-tracking-database.py`. A non-empty `warnings` array means replacement
 completed with a durability warning and must not be reported as a failed/no-write
 run. Exit 2 writes one error object to stdout plus a diagnostic to stderr and
 leaves the database unchanged. Recover or

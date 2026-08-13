@@ -6,7 +6,7 @@ part: build
 phase_relevance:
   - content
   - slides
-vault_dimensions: [6, 8]
+vault_dimensions: [8, 13]
 evidence_channels: [transcript, slides, slide_sequence, video]
 detection_signals:
   - "reference slides at end"
@@ -71,7 +71,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Dimension 6 (Information Density): manages information density across the spoken portion and the reference section. Dimension 8 (Slide Design): a deck-structure decision about what belongs in the spoken flow versus reference material.
+Dimension 8 (Information Density): manages information density across the spoken portion and the reference section. Dimension 13 (Slide Design): a deck-structure decision about what belongs in the spoken flow versus reference material.
 
 ## Combinatorics
 The Coda pairs naturally with the Infodeck pattern, as both deal with content designed for solo consumption. It works well alongside Vacation Photos. Image-heavy spoken slides benefit from having a text-rich reference section at the end. The Coda also supports Narrative Arc by keeping disruptive reference material out of the story flow.

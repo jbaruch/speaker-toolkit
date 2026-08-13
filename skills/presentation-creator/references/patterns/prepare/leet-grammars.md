@@ -5,7 +5,7 @@ type: pattern
 part: prepare
 phase_relevance:
   - content
-vault_dimensions: [7, 10]
+vault_dimensions: [10, 11]
 detection_signals:
   - "correct use of community jargon"
   - "insider references"
@@ -50,7 +50,7 @@ cannot be established from the speaker's own words or slides without independent
 community and speaker context. Do not turn fluent jargon into inferred identity or belonging.
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 7 (Technical Depth/Accuracy). Relates to Dimension 10 (Creativity/Originality).
+Relates to Dimension 11 (Technical Depth/Accuracy). Relates to Dimension 10 (Creativity/Originality).
 
 ## Combinatorics
 Pairs with Analog Noise (authentic personal touches reinforce community membership signals) and Brain Breaks (insider humor is the most effective break type). The inverse is Tower of Babble — using jargon incorrectly or excessively to the point of incomprehensibility.

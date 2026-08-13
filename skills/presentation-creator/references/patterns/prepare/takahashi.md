@@ -6,7 +6,7 @@ part: prepare
 phase_relevance:
   - architecture
   - slides
-vault_dimensions: [8, 12, 13]
+vault_dimensions: [12, 13]
 evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "one element per slide"
@@ -64,7 +64,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 An absence finding is authorized only from a complete, separately declared rendered PDF (`static_slides`); a native deck, delivery video, transcript, or comparison artifact does not authorize absence.
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 8 (Slide Design/Visual Quality). Relates to Dimension 12 (Time/Pacing). Relates to Dimension 13 (Visual Aids Effectiveness).
+Relates to Dimension 13 (Slide Design/Visual Quality). Relates to Dimension 12 (Time/Pacing). Relates to Dimension 13 (Visual Aids Effectiveness).
 
 ## Combinatorics
 Pairs with Brain Breaks (the rapid visual changes function as continuous micro-breaks for attention). The inverse is Bullet-Riddled Corpse — where Takahashi puts one element per slide, the antipattern crams as many bullet points as possible onto each slide.

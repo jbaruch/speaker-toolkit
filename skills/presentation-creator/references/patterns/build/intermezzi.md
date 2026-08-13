@@ -6,7 +6,7 @@ part: build
 phase_relevance:
   - content
   - slides
-vault_dimensions: [2, 5, 13]
+vault_dimensions: [2, 13]
 evidence_channels: [slides, slide_sequence, video]
 detection_signals:
   - "section divider slides"
@@ -74,7 +74,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Dimension 2 (Structure and Flow): Intermezzi contribute to structural clarity by marking section boundaries. Dimension 5 (Storytelling and Narrative): Intermezzi support narrative flow and emotional pacing. Dimension 13 (Visual Polish and Craft): Well-designed Intermezzi contribute to the overall aesthetic coherence of the presentation.
+Dimension 2 (Structure and Flow): Intermezzi contribute to structural clarity by marking section boundaries. Dimension 2 (Storytelling and Narrative): Intermezzi support narrative flow and emotional pacing. Dimension 13 (Visual Polish and Craft): Well-designed Intermezzi contribute to the overall aesthetic coherence of the presentation.
 
 ## Combinatorics
 Intermezzi pair naturally with Context Keeper and Bookends as complementary structural mechanisms — Bookends provide explicit structural labels while Intermezzi provide atmospheric transitions. They work well with Narrative Arc by marking act transitions or emotional shifts. The Unifying Visual Theme pattern often provides the imagery or motifs used in Intermezzi. Brain Breaks can be incorporated directly into Intermezzo slides. Foreshadowing can transform Intermezzi from simple transitions into narrative devices, as demonstrated by Neal Ford's Rock-Paper-Scissors example.

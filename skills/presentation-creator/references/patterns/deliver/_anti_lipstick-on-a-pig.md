@@ -5,7 +5,7 @@ type: antipattern
 part: deliver
 phase_relevance:
   - guardrails
-vault_dimensions: [8, 9, 14]
+vault_dimensions: [9, 14]
 evidence_channels: [transcript, slides, video]
 detection_signals:
   - "beautiful slides but shallow content"
@@ -68,7 +68,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-This antipattern maps to Vault Dimension 8 (Content Depth / Value). It also maps to Vault Dimension 9 (Speaker Authority / Credibility). It also maps to Vault Dimension 14 (Speaker Craft / Professionalism).
+This antipattern maps to Vault Dimension 14 (Content Depth / Value). It also maps to Vault Dimension 9 (Speaker Authority / Credibility). It also maps to Vault Dimension 14 (Speaker Craft / Professionalism).
 
 ## Combinatorics
 Lipstick on a Pig is the inverse of Narrative Arc, which ensures content integrity before visual design. The Mentor pattern helps prevent it by orienting the talk around audience learning outcomes rather than speaker performance. Carnegie Hall rehearsal can reveal content gaps if rehearsal audiences are asked "What did you learn?" rather than "How did it look?" Know Your Audience provides the research foundation that generates substantive, audience-relevant content.

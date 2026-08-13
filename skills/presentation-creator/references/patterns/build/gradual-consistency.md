@@ -5,7 +5,7 @@ type: pattern
 part: build
 phase_relevance:
   - slides
-vault_dimensions: [8, 13]
+vault_dimensions: [13]
 evidence_channels: [slide_sequence, video]
 detection_signals:
   - "build animations revealing final state"
@@ -66,7 +66,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Dimension 8 (Slide Design): Gradual Consistency designs for two consumption contexts simultaneously. Dimension 13 (Visual Polish and Craft): The technique requires careful spatial planning and animation design.
+Dimension 13 (Slide Design): Gradual Consistency designs for two consumption contexts simultaneously. Dimension 13 (Visual Polish and Craft): The technique requires careful spatial planning and animation design.
 
 ## Combinatorics
 Gradual Consistency pairs well with Exuberant Title Top, where the title's migration from center to top is one step in a larger gradual build. Composite Animation can enhance the individual build steps. Analog Noise elements can be revealed gradually to create a sketch-like "drawing in real time" effect. The pattern is essential for making Infodeck-style content presentable in a live format.

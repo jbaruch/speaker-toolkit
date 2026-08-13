@@ -6,7 +6,7 @@ part: build
 phase_relevance:
   - content
   - guardrails
-vault_dimensions: [7, 8]
+vault_dimensions: [7, 13]
 detection_signals:
   - "review comments or copyediting artifact are available"
   - "speaker identifies the colleague or editor who reviewed the text"
@@ -76,7 +76,7 @@ identifies the reviewer and the material they reviewed.
 - Unevaluable: Review artifacts and speaker confirmation are unavailable
 
 ## Relationship to Vault Dimensions
-Dimension 7 (Language and Communication): Peer Review covers language quality across the presentation. Dimension 8 (Slide Design): clean, error-free text is part of professional slide design.
+Dimension 7 (Language and Communication): Peer Review covers language quality across the presentation. Dimension 13 (Slide Design): clean, error-free text is part of professional slide design.
 
 ## Combinatorics
 Peer Review pairs naturally with the Leet Grammars pattern, which deals with intentional deviations from standard language conventions. When you deliberately break grammar rules for effect (Leet Grammars), the rest of your text must be impeccable so the audience recognizes the deviation as intentional. Peer Review also supports every other content pattern by ensuring the textual foundation is solid.

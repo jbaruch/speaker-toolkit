@@ -5,7 +5,7 @@ type: pattern
 part: build
 phase_relevance:
   - slides
-vault_dimensions: [8, 13]
+vault_dimensions: [13]
 evidence_channels: [slide_sequence, video]
 detection_signals:
   - "sequential item reveal"
@@ -73,7 +73,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Dimension 8 (Slide Design): Charred Trail demonstrates thoughtful slide design by managing visual attention through animation rather than relying on the audience to follow along unaided. Dimension 13 (Visual Polish and Craft): The consistent application of dim effects and reveal timing reflects attention to visual polish.
+Dimension 13 (Slide Design): Charred Trail demonstrates thoughtful slide design by managing visual attention through animation rather than relying on the audience to follow along unaided. Dimension 13 (Visual Polish and Craft): The consistent application of dim effects and reveal timing reflects attention to visual polish.
 
 ## Combinatorics
 Charred Trail pairs naturally with Context Keeper as a slide-level manifestation of the broader structural awareness concept. It complements Exuberant Title Top by adding item-level focus management beneath an already-animated title. The pattern works well with Bookends, as the Charred Trail within a section can mirror the section-level progress indicated by Bookend slides. It is also a simpler alternative to Gradual Consistency for list-based content.

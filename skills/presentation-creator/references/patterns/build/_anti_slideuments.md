@@ -5,7 +5,7 @@ type: antipattern
 part: build
 phase_relevance:
   - guardrails
-vault_dimensions: [8, 14]
+vault_dimensions: [13, 14]
 detection_signals:
   - "dense slides meant to be read"
   - "dual-purpose document/presentation"
@@ -53,7 +53,7 @@ policy. Keep density findings under visual antipatterns until those artifact rol
 compared directly.
 
 ## Relationship to Vault Dimensions
-Dimension 8 (Slide Design): Slideuments represent a fundamental design failure. Dimension 14 (Overall Quality Indicators): The presence of Slideument behavior is a strong negative quality signal.
+Dimension 13 (Slide Design): Slideuments represent a fundamental design failure. Dimension 14 (Overall Quality Indicators): The presence of Slideument behavior is a strong negative quality signal.
 
 ## Combinatorics
 Slideuments is the inverse of the Infodeck pattern — where an Infodeck is deliberately designed for reading (embracing document characteristics), a Slideument accidentally tries to be both and fails at both. It relates to the Charred Trail pattern (leaving a trail of content for after-the-fact consumption) and Gradual Consistency (building coherent artifacts over time). The Bullet-Riddled Corpse antipattern often appears within Slideuments, as the dual-purpose compromise tends to produce bullet-heavy slides.

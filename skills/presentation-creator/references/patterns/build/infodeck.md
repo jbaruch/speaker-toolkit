@@ -5,7 +5,7 @@ type: pattern
 part: build
 phase_relevance:
   - architecture
-vault_dimensions: [8]
+vault_dimensions: [13]
 detection_signals:
   - "self-contained document format"
   - "dense information without animations"
@@ -52,7 +52,7 @@ talk ingress does not model a `distributed_document` role, so an input deck cann
 that separation and delivery video cannot prove what was distributed afterward.
 
 ## Relationship to Vault Dimensions
-Dimension 8 (Slide Design): The Infodeck pattern directly addresses slide design by establishing that different consumption contexts demand different design approaches. Understanding when to create an Infodeck versus a presentation is a foundational slide design skill.
+Dimension 13 (Slide Design): The Infodeck pattern directly addresses slide design by establishing that different consumption contexts demand different design approaches. Understanding when to create an Infodeck versus a presentation is a foundational slide design skill.
 
 ## Combinatorics
 The Infodeck pairs with Coda, as the Coda section of a live presentation can function as a mini-Infodeck — dense reference material appended after the spoken content. Understanding the Infodeck pattern also helps apply the Gradual Consistency pattern correctly: Gradual Consistency is the technique for making an Infodeck's content presentable live by adding temporal build animations.

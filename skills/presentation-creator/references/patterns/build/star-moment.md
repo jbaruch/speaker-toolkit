@@ -6,7 +6,7 @@ part: build
 phase_relevance:
   - content
   - slides
-vault_dimensions: [3, 5, 13]
+vault_dimensions: [2, 3, 13]
 evidence_channels: [video]
 detection_signals:
   - "deliberately constructed peak moment that audiences quote afterward"
@@ -80,7 +80,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Multi-dimensional pattern. Relates to Dimension 3 (Humor & Wit) for sound-bite and dramatization sub-types. Relates to Dimension 5 (Storytelling/Narrative) directly via the emotive-storytelling sub-type and the master-story technique. Relates to Dimension 13 (Slide Design) via the evocative-visual sub-type, where a single slide is constructed to be the moment. The pattern is one of the few that spans three vault dimensions.
+Multi-dimensional pattern. Relates to Dimension 3 (Humor & Wit) for sound-bite and dramatization sub-types. Relates to Dimension 2 (Storytelling/Narrative) directly via the emotive-storytelling sub-type and the master-story technique. Relates to Dimension 13 (Slide Design) via the evocative-visual sub-type, where a single slide is constructed to be the moment. The pattern is one of the few that spans three vault dimensions.
 
 ## Combinatorics
 S.T.A.R. Moment pairs with `the-big-why` (the moment must serve the Big Idea — every S.T.A.R. moment is a Big Idea amplifier; the Big Idea construction rules live in the "Big Idea — Statement Format" subsection of `the-big-why.md`), with `sparkline` (S.T.A.R. moments typically land at the structural peaks of the persuasive oscillation), and with `narrative-arc` (the master-story sub-type is a structural element of the arc itself). It composes with `foreshadowing` (a S.T.A.R. moment can be planted early as a teaser and paid off later as the full beat) and with `call-to-adventure` (the gap-reveal is often executed as a S.T.A.R. moment — Jobs's "today, Apple is going to reinvent the phone" with the iPod-rotary-dial fake is simultaneously a call-to-adventure and a memorable-dramatization S.T.A.R.).

@@ -63,6 +63,147 @@ whenever the database ROOT was current, which is true of every live database. A
 record-level shape bump would have been skipped for all of them. Record
 migrations now run before that check, and only a genuinely unchanged database
 takes the no-op path.
+
+### feat(vault-ingress) — migration repairs or requeues, never stamps (#167)
+
+Closes the migration-integration half of #167.
+
+`#147` migration stamped a talk as current record schema without ever reading
+its nested detection objects, so a block with `evidence` and `dimensions`
+swapped, an unknown pattern id, or a missing dimensions array became "current"
+on the strength of its container's shape. The classifier that finds those
+landed in #285 and preflight consumed it in #286; migration still did not.
+
+`migrate-tracking-database.py` now gates every talk claiming completed analysis,
+between the stamp and the write. Two outcomes, and no third:
+
+- an exact inverse-schema swap is undone in place, because both original values
+  live in the repair record and putting them back is reversible;
+- everything else keeps its original bytes and goes back on the queue with
+  `reprocess_reason: persisted_observation_invalid`.
+
+A repair counts only when re-assessment says the block it produced would have
+passed on its own — a talk can carry a repairable swap AND an unrelated defect,
+and the repair fixes only the swap. The report gains a `persisted_observations`
+object with both counts, since a silent repair is indistinguishable from no
+corruption at all.
+
+The analysis writer now fails closed on the same classifier. Rendering is where
+persisted corruption becomes a document a human reads and a profile aggregates,
+so a block the classifier calls unusable no longer reaches it.
+
+That gate could only land after the repair path. Wired before it, it failed
+closed on every legacy talk at once — the block was corrupt and nothing existed
+to repair or requeue it, so no analysis could be re-rendered until each was fixed
+by hand. It is scoped to source-located returns: a legacy return predates the
+detection contract, and judging one against it would refuse a render for
+breaking a rule that did not exist when it was written.
+
+A talk with no observation block is skipped. Absence is incompleteness, not
+corruption — the boundary preflight already draws, and requeueing every talk
+that predates pattern scoring would flood a queue that is working.
+### ci — renew the Chocolatey ffmpeg pin
+
+`main` went red with no source change: `choco install ffmpeg --version=8.1.2`
+stopped resolving because the Chocolatey feed withdrew that version. A re-run
+cannot fix a pin that no longer exists.
+
+The pin moves to 9.0.0, the feed's current version. Renewal is manual — no
+Dependabot ecosystem covers Chocolatey — so the step's comment states the
+cadence and the trigger: check the feed whenever this fails to resolve, or
+quarterly, whichever comes first. Chocolatey serves only the current version, so
+expect to renew again.
+
+Renewing exposed a second assumption: the step hardcoded
+`tools\ffmpeg\bin\ffprobe.exe`, and the newer package moved it, so the install
+succeeded and the very next line threw. The step now searches the package tree
+for the real binary and verifies ffmpeg.exe sits beside it, with failure
+messages that name the fix.
+
+The macOS lane keeps its pin: evermeet.cx serves immutable archives and each is
+checksum-verified, so that pin still resolves and still proves what it fetched.
+
+### fix(catalog) — resolve the last three dimension labels (#156)
+
+Closes #156.
+
+The remap left three labels unresolved because no owner had approved a mapping
+for them, so each preserved the number written beside it and the auditor kept
+reporting it. All three are now decided:
+
+- `Visual Storytelling` → D13. `_anti_photomaniac`'s failure is in how images
+  are chosen and composed, which is slide design.
+- `Content Depth / Value` → D14. Polish outrunning substance is an
+  overall-impression judgement, not a slide-to-speech mismatch.
+- `Overall Quality Indicators` → D14, joining `Overall Impression/Polish` in the
+  lane it already shares. No number changes.
+
+Two prose claims and two entries' frontmatter moved; four index rows followed.
+The catalog auditor now reports **0 errors and 0 semantic debts** — the first
+time both have been clean since the dimension contract was written.
+## 0.20.58 — 2026-08-12
+
+### feat(catalog) — remap the dimension numbers to what the prose says (#156)
+
+Closes the mechanical half of #156.
+
+`vault_dimensions` is a list of bare integers, so a range check was the only
+validation a number could carry — and a range check cannot tell that `4` means
+Audience Interaction while the prose beside it says humor. Entries filed
+evidence under dimensions they are not about, and every downstream aggregation
+inherited it.
+
+Per the 2026-08-09 owner decision the prose is the intent of record, so
+`_dimensions.yaml` makes the labels resolvable and the numbers follow them. 42
+prose claims and 38 entries' frontmatter were remapped; the index's per-entry
+column and reverse map are regenerated from the approved frontmatter rather than
+maintained by hand. The catalog auditor reports 0 errors, down from 37 semantic
+debts of the drift kind; the 11 debts it now reports are the unresolved-label
+findings the newly-wired registry check surfaces, listed below. Both worked examples in the issue land exactly as specified:
+`progressive-reveal` becomes `[3, 13]` and `three-part-close` becomes `[2, 6]`.
+
+No pattern's meaning changes. This is a renumbering, not a re-classification.
+
+`audit-pattern-catalog.py` enforces the registry, so this is a deterministic
+gate rather than a one-time script run. A prose label that resolves to a
+different number than its claim states is an ERROR — two things the entry itself
+asserts disagree. A label the registry cannot resolve is a semantic DEBT, since
+turning an unreviewed alias into a build break would be the wrong lever and
+resolving it by guess would make this an automatic renumbering. A malformed
+registry is an error: without it every dimension claim becomes uncheckable.
+
+A label with no owner-approved alias does not resolve, and an unresolved claim
+KEEPS the number written beside it — preserved, not endorsed. Dropping a
+membership on the strength of a missing alias would be a bigger change than the
+drift being fixed. Three labels remain unresolved and need an owner decision:
+`Content Depth / Value`, `Overall Quality Indicators`, and `Visual Storytelling`.
+
+The catalog fingerprint moves, so this belongs in the same revalidation pass as
+#167 rather than triggering a second one.
+
+## 0.20.57 — 2026-08-12
+
+### fix(catalog) — one bullet threshold, not two (#153)
+
+`_anti_bullet-riddled-corpse` disagreed with itself. Line 56 counted slides with
+"three or more text bullets" toward the bullet-slide proportion, while line 59
+set the strong signal at four or more and line 60 excluded "a compact list of
+three or fewer short items" from standalone signals. A three-bullet slide was
+simultaneously counted and excluded, so every reader had to learn which number
+applied where.
+
+Per the 2026-08-09 owner decision it is four or more, everywhere in the entry. A
+three-bullet slide is never antipattern evidence — not standalone, and not
+toward the proportion.
+
+The catalog fingerprint moves, so this belongs in the same revalidation pass as
+#156 and #167.
+
+Still open on #153: the weighted aggregate score (strong 1.0, moderate 0.5) and
+its `pattern_score_basis` sibling. Runtime scoring is still flat +1/-1 in
+`return_validation._validate_score`; changing it is a scoring-schema bump that
+lands with #160's provenance object.
+
 ## 0.20.56 — 2026-08-11
 
 ### feat(vault-ingress) — prove which talk a deck belongs to before it becomes evidence (#176)

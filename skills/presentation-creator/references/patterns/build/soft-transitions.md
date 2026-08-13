@@ -5,7 +5,7 @@ type: pattern
 part: build
 phase_relevance:
   - slides
-vault_dimensions: [5, 13]
+vault_dimensions: [2, 13]
 evidence_channels: [slide_sequence, video]
 detection_signals:
   - "dissolve transitions"
@@ -63,7 +63,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Dimension 5 (Storytelling and Narrative): Soft Transitions support narrative flow. Dimension 13 (Visual Polish and Craft): The technique requires careful attention to timing, element coordination, and visual continuity.
+Dimension 2 (Storytelling and Narrative): Soft Transitions support narrative flow. Dimension 13 (Visual Polish and Craft): The technique requires careful attention to timing, element coordination, and visual continuity.
 
 ## Combinatorics
 Soft Transitions pair powerfully with Cave Painting, where persistent background elements provide visual continuity that the dissolve transitions leverage. They complement Intermezzi by providing smooth flow within sections while Intermezzi provide clear breaks between sections. The pattern is the natural inverse of Cookie Cutter, where identical transitions on every slide create a mechanical rather than organic rhythm. Soft Transitions also enhance Gradual Consistency by making the transition between build steps feel more fluid.

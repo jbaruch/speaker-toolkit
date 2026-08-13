@@ -7,7 +7,7 @@ phase_relevance:
   - intent
   - architecture
   - content
-vault_dimensions: [2, 5]
+vault_dimensions: [2]
 evidence_channels: [transcript, timed_transcript, slides, slide_sequence, video]
 detection_signals:
   - "clear three-act structure"
@@ -66,7 +66,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 2 (Structure/Organization) as the primary structural pattern for presentations. Relates to Dimension 5 (Storytelling/Narrative) directly — this pattern IS the narrative dimension.
+Relates to Dimension 2 (Structure/Organization) as the primary structural pattern for presentations. Relates to Dimension 2 (Storytelling/Narrative) directly — this pattern IS the narrative dimension.
 
 ## Combinatorics
 Pairs powerfully with Triad (three-act structure maps to three main themes), Bookends (opening and closing that frame the arc), Intermezzi (transitions between arc sections), Unifying Visual Theme (visual coherence reinforces narrative coherence), and Context Keeper (maintaining audience orientation within the arc). The Narrative Arc is arguably the most foundational pattern — nearly every other pattern either supports it or depends on it.

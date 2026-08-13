@@ -5,7 +5,7 @@ type: antipattern
 part: build
 phase_relevance:
   - guardrails
-vault_dimensions: [8, 14]
+vault_dimensions: [13, 14]
 evidence_channels: [slides, video]
 detection_signals:
   - "single sub-bullet under headers"
@@ -64,7 +64,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 An absence finding is authorized only from a complete, separately declared rendered PDF (`static_slides`); a native deck, delivery video, transcript, or comparison artifact does not authorize absence.
 
 ## Relationship to Vault Dimensions
-Dimension 8 (Slide Design): Injured Outlines represent a structural flaw in slide content organization. Dimension 14 (Overall Quality Indicators): The presence of Injured Outlines is a signal of insufficient preparation and incomplete analytical thinking.
+Dimension 13 (Slide Design): Injured Outlines represent a structural flaw in slide content organization. Dimension 14 (Overall Quality Indicators): The presence of Injured Outlines is a signal of insufficient preparation and incomplete analytical thinking.
 
 ## Combinatorics
 Injured Outlines is the inverse of the Fourthought pattern, which emphasizes thorough brainstorming and categorization that naturally produces complete hierarchies. When Fourthought is applied rigorously, Injured Outlines do not occur. The antipattern often co-occurs with other preparation-related issues.

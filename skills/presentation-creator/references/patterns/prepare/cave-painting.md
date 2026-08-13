@@ -6,7 +6,7 @@ part: prepare
 phase_relevance:
   - architecture
   - slides
-vault_dimensions: [5, 13]
+vault_dimensions: [2, 13]
 evidence_channels: [slide_sequence, video]
 detection_signals:
   - "canvas-based layout"
@@ -72,7 +72,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Relates to Dimension 5 (Storytelling/Narrative). Relates to Dimension 13 (Visual Aids Effectiveness).
+Relates to Dimension 2 (Storytelling/Narrative). Relates to Dimension 13 (Visual Aids Effectiveness).
 
 ## Combinatorics
 Pairs with Context Keeper (Cave Painting is inherently a context-keeping device), Soft Transitions (zooming between sections creates smooth visual transitions), Brain Breaks (the zoom-out moments serve as visual palate cleansers), Takahashi (individual zoomed-in sections can use Takahashi-style single elements), and Lipsync (spatial layout helps synchronize verbal and visual content).

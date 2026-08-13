@@ -6,7 +6,7 @@ part: build
 phase_relevance:
   - guardrails
   - slides
-vault_dimensions: [8, 13, 14]
+vault_dimensions: [13, 14]
 evidence_channels: [slides, video]
 detection_signals:
   - "text-heavy bullet slides"
@@ -53,7 +53,7 @@ This is an antipattern and should always be avoided in presentation slides. Repl
 The one exception is when you are deliberately creating an Infodeck — a slide deck designed for solo consumption without a presenter. In that context, bullet points are appropriate and useful. But if you are presenting live, every bullet on your slide is a competitor for your audience's attention.
 
 ## Detection Heuristics
-When scoring talks, count the proportion of slides that consist primarily of bullet points (three or more text bullets occupying the majority of the slide). Note whether the audience appears to be reading ahead of the speaker. Look for auto-shrunk fonts (inconsistent text sizes that indicate PowerPoint has compressed the text to fit). Also note if the presenter is reading bullet points verbatim from the slide.
+When scoring talks, count the proportion of slides that consist primarily of bullet points (four or more text bullets occupying the majority of the slide). Note whether the audience appears to be reading ahead of the speaker. Look for auto-shrunk fonts (inconsistent text sizes that indicate PowerPoint has compressed the text to fit). Also note if the presenter is reading bullet points verbatim from the slide.
 
 ## Scoring Criteria
 - Strong signal (antipattern present): Majority of slides are bullet-point lists of four or more items, presenter reads bullets from slides, fonts are auto-shrunk to accommodate text volume
@@ -65,7 +65,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Dimension 8 (Slide Design): Bullet-Riddled Corpse is a fundamental failure of slide design that misunderstands the purpose of projected visuals in a live presentation. Dimension 13 (Slide Aesthetics): Text-heavy bullet slides are among the least aesthetically pleasing slide formats, producing dense, uniform visual patterns that numb the audience. Dimension 14 (Overall Quality Indicators): The prevalence of bullet-point slides is one of the most reliable negative indicators of overall presentation quality.
+Dimension 13 (Slide Design): Bullet-Riddled Corpse is a fundamental failure of slide design that misunderstands the purpose of projected visuals in a live presentation. Dimension 13 (Slide Aesthetics): Text-heavy bullet slides are among the least aesthetically pleasing slide formats, producing dense, uniform visual patterns that numb the audience. Dimension 14 (Overall Quality Indicators): The prevalence of bullet-point slides is one of the most reliable negative indicators of overall presentation quality.
 
 ## Combinatorics
 Bullet-Riddled Corpse is the inverse of both Vacation Photos (image-centric slides with minimal text) and Takahashi (slides with single large words or phrases). It often co-occurs with Cookie Cutter (cramming ideas into slide-sized containers) and Ant Fonts (shrinking text to fit more bullets). The Charred Trail pattern (leaving breadcrumbs of previous content) and the Infodeck pattern (document-style decks) both represent contexts where text density is more appropriate. Breaking free from Bullet-Riddled Corpse often requires fundamental rethinking of how slides function in a live presentation.

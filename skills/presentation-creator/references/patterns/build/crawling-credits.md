@@ -5,7 +5,7 @@ type: pattern
 part: build
 phase_relevance:
   - slides
-vault_dimensions: [6, 13]
+vault_dimensions: [8, 13]
 evidence_channels: [slides, video]
 detection_signals:
   - "scrolling credits animation"
@@ -64,7 +64,7 @@ Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` a
 Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
 
 ## Relationship to Vault Dimensions
-Dimension 6 (Information Density): Crawling Credits manages high-density acknowledgment information by distributing it over time rather than space, keeping the screen uncluttered at any given moment while still conveying comprehensive credit. Dimension 13 (Slide Aesthetics): The cinematic quality of well-executed Crawling Credits elevates the overall aesthetic of the presentation, turning a potentially mundane obligation into a visually engaging moment.
+Dimension 8 (Information Density): Crawling Credits manages high-density acknowledgment information by distributing it over time rather than space, keeping the screen uncluttered at any given moment while still conveying comprehensive credit. Dimension 13 (Slide Aesthetics): The cinematic quality of well-executed Crawling Credits elevates the overall aesthetic of the presentation, turning a potentially mundane obligation into a visually engaging moment.
 
 ## Combinatorics
 Crawling Credits pairs naturally with the Coda pattern, as the end-of-deck reference section is the ideal location for extended contributor acknowledgments. It can also complement any pattern that involves collaborative work, providing a graceful way to transition from the substance of the talk to the social obligations of acknowledgment without breaking the flow.
