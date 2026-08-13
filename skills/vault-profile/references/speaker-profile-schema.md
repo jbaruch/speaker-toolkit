@@ -618,7 +618,10 @@ The respective stable reasons are `mixed_opportunity_coverage` and
 `no_evaluable_pattern_opportunities`; the per-pattern occurrence rows remain
 available.
 
-All `pattern_profile` fields in the schema are required in v5. If the vault has no
+All `pattern_profile` fields in the schema are required in v5, except
+`absence_provability`, whose presence follows the classification generation
+rather than the v5 contract — required at classification v2, forbidden before it
+(see the table below). If the vault has no
 `pattern-classification-policy.json`, the loader automatically applies the bundled
 `speaker-toolkit-default@1` policy; users are not asked to invent thresholds. A present
 override is strict and fail-closed: an unreadable file, duplicate key, non-finite

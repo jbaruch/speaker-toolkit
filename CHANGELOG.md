@@ -4,87 +4,66 @@
 
 Part of #160 section 3, implementing the #153 null-absence-gate decision.
 
-`absence_evaluable_from: null` means absence is not provable for that pattern
-and never falls back to the presence gate, so never-used and underused are
-computed over the populated-gate entries only. Against the live catalog that is
-**16 of 81 observable entries** — 65 are unknowable.
-
-Without that denominator beside them, a short never-used list reads as a
-statement about the speaker. It is mostly a statement about coverage.
-`absence_provability` reports both counts plus the observable total, computed
-from the catalog rather than hardcoded, so populating a gate moves the numbers
-instead of dating a constant.
-
-The reader validates it rather than merely permitting it: exact field set,
-nonnegative integer counts with booleans excluded, the sum invariant, and the
-version floor. Allowlisting a field without checking it is how a malformed
-object reaches a reader that believes the shape was verified — and a wrong count
-here misreports coverage as speaker behavior, the exact confusion the field
-exists to prevent.
-
-The classification contract bumps to **v2** to carry it, since this is a shape
-change to a persisted artifact. A v1 block stays readable: the counts are a fact
-about the catalog, not a claim the older block got something wrong, so refusing
-v1 would strand every profile already on disk to gain nothing. A v1 block that
-*carries* the field is a different matter and is rejected — the stamp and the
-payload disagree. The field and its version boundary are documented in
-`speaker-profile-schema.md`.
-
-The version floor reads the **classification** schema version, not the outer
-pattern-profile contract version. Review found the first revision comparing the
-contract version (4 or 5) against a classification floor of 2, so the gate
-admitted every block it existed to reject. The floor is also pinned to the
-generation that introduced the field rather than to the current one, so a later
-classification bump does not start rejecting version 2.
-
-That defect survived because the tests called the private validator and supplied
-the version by hand, which is a shape the real call path cannot produce. They now
-run through `assess_pattern_profile`, where a classification-v1 block carrying the
-field and a v4 contract carrying it are both refused. Both tests fail against the
-original code. The writer's coverage moved off `inspect.getsource` and onto its
-emitted payload for the same reason: matching a call expression in source text
-passes for code that never runs and fails for a correct refactor.
-
-A version-1 block is a superseded classification generation, so a reader takes
-the no-usable-prior-state path on it — every derived domain is withheld and the
-assessment carries `pattern_classification_schema_superseded`. Nothing upgrades
-the block in place; vault-profile regenerates the profile wholesale, so the next
-owner run replaces it. The reason code is distinct from
-`pattern_classification_policy_unavailable`, which marks a v4 contract that never
-had a policy stamp. Occurrence rows stay readable across the boundary — they
-belong to the pattern-profile contract, not to the classification generation.
-
-The reader's leakage guard learned the new field. `_PATTERN_HISTORY_KEYS` in
-`validate-profile.py` is what keeps catalog-derived history inside
-`pattern_profile`, and a field the writer emits but that set never learned about
-could sit duplicated under `rhetoric_defaults` unchallenged. A regression derives
-its expectation from what the writer actually emits, so the next omission fails
-in the suite rather than in a profile.
-
-The version stamp is type-checked, not just compared. Python makes `True == 1`,
-so equality alone admitted a boolean `schema_version` while every count beside it
-already rejected one.
-
-The counts are checked against the active catalog, not merely against each
-other. `1 + 2 = 3` sums perfectly and describes a three-entry catalog nobody has,
-so internal consistency alone would let a fabricated denominator present as
-current coverage. The reader recomputes both halves from the installed catalog
-and rejects any payload that disagrees — including a correct total split the
-wrong way, since the split is the whole point.
-
-Presence is generation-dependent rather than optional. Classification v2 requires
-the field — the writer always emits it, and a never-used list is unreadable
-without its denominator, so a v2 record missing it is incomplete rather than
-merely older. v1 and contract v4 forbid it.
+`absence_evaluable_from: null` means absence is not provable for that pattern and
+never falls back to the presence gate, so never-used and underused are computed
+over the populated-gate entries only. Against the live catalog that is **16 of 81
+observable entries** — 65 are unknowable. Without that denominator beside it, a
+short never-used list reads as a statement about the speaker when it is mostly a
+statement about coverage. `absence_provability` reports both counts plus the
+observable total, computed from the catalog rather than hardcoded, so populating
+a gate moves the numbers instead of dating a constant. An unobservable entry
+lands in neither count: it is not scored at all, so it belongs to no denominator.
 
 `classify-pattern-profile.py` emits it beside `never_used_patterns`, so the list
-and its denominator always travel together. A classification-v1 profile written
-before the field existed stays readable without it — demanding it everywhere
-would refuse every profile already on disk, a bigger break than the gap it
-closes.
+and its denominator always travel together.
 
-An unobservable entry lands in neither count: it is not scored at all, so it
-belongs to no denominator.
+**The version boundary.** The classification contract bumps to **v2** to carry
+the field, since this is a shape change to a persisted artifact. Presence follows
+that generation rather than the outer v5 contract: required at classification v2,
+forbidden at v1 and on the v4 contract, which carries no classification block at
+all. A v1 block that omits it stays readable — the counts are a fact about the
+catalog, not a claim the older block got anything wrong, and refusing v1 outright
+would strand every profile on disk to gain nothing. A v1 block that *carries* it
+is rejected: the stamp and the payload disagree. `speaker-profile-schema.md`
+documents the table.
+
+A v1 block is nonetheless a superseded classification generation, so a reader
+takes the no-usable-prior-state path on it — every derived domain is withheld and
+the assessment carries `pattern_classification_schema_superseded`, distinct from
+`pattern_classification_policy_unavailable`, which marks a v4 contract that never
+had a policy stamp. Nothing upgrades the block in place; vault-profile
+regenerates the profile wholesale, so the next owner run replaces it. Occurrence
+rows stay readable across the boundary — they belong to the pattern-profile
+contract, not to the classification generation.
+
+**What the reader checks.** Allowlisting a field without checking it is how a
+malformed object reaches a reader that believes the shape was verified, and a
+wrong count here misreports coverage as speaker behaviour — the exact confusion
+the field exists to prevent. So: exact field set; nonnegative integer counts with
+booleans excluded; a type-checked `schema_version`, since Python's `True == 1`
+would otherwise admit a boolean stamp; the sum invariant; and the counts
+recomputed from the active catalog. `1 + 2 = 3` sums perfectly and describes a
+three-entry catalog nobody has, so internal consistency alone would let a
+fabricated denominator present as current coverage — including a correct total
+split the wrong way, since the split is the whole point.
+
+`_PATTERN_HISTORY_KEYS` in `validate-profile.py` learned the field too. That set
+keeps catalog-derived history inside `pattern_profile`, and a field the writer
+emits but the set never learned about could sit duplicated under
+`rhetoric_defaults` unchallenged. A regression derives its expectation from what
+the writer actually emits, so the next omission fails in the suite rather than in
+a profile.
+
+**On the tests.** Review found the first revision comparing the outer contract
+version (4 or 5) against a classification floor of 2, so the gate admitted every
+block it existed to reject. That defect survived because the tests called the
+private validator and supplied the version by hand — a shape the real call path
+cannot produce. They run through `assess_pattern_profile` now, and both
+version-gate cases fail against the original code. The writer's coverage moved
+off `inspect.getsource` for the same reason: matching a call expression in source
+text passes for code that never runs and fails for a correct refactor. The floor
+is pinned to the generation that introduced the field rather than to the current
+one, so a later classification bump does not start rejecting version 2.
 
 ### test — assert the lint gate's outcome, not tessl's wording (#265)
 
