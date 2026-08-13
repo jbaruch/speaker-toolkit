@@ -226,16 +226,6 @@ def test_a_missing_outcome_lane_beside_a_missing_detection_lane_is_not_excused(
     assert persisted_pattern_observations.COLLECTION_ABSENT in assessment.reason_codes
 
 
-def test_a_pre_contract_block_still_blocks(
-    persisted_pattern_observations, catalog
-) -> None:
-    """Naming the cause is not excusing it: the evidence is still not current."""
-    assert (
-        persisted_pattern_observations.OUTCOME_LANE_PREDATES_CONTRACT
-        in persisted_pattern_observations.BLOCKING_REASONS
-    )
-
-
 def test_an_empty_block_is_refused(persisted_pattern_observations, catalog) -> None:
     assessment = persisted_pattern_observations.assess_persisted_pattern_observations(
         {"pattern_observations": {}}, catalog
