@@ -193,22 +193,28 @@ class TestAWeightedScoreCanBeCompared:
         }
         return ret
 
-    def test_a_fractional_comparison_score_passes_the_type_gate(
+    def test_a_fractional_comparison_score_validates(
         self, return_validation, catalog
     ) -> None:
+        """The whole return completes — not merely "fails for another reason"."""
         ret = _v6(return_validation)
         score = ret["pattern_observations"]["pattern_score"]["score"]
         assert score != int(score), "fixture must exercise a fractional score"
 
         self._with_comparison(return_validation, ret, score)
 
-        # The comparison may still be suppressed on opportunity identity, which is
-        # a different contract. What must not happen is rejection on TYPE.
-        try:
-            return_validation.validate_return(ret, catalog)
-        except return_validation.ReturnValidationError as exc:
-            assert "must be a finite number" not in str(exc)
-            assert "must be an integer" not in str(exc)
+        return_validation.validate_return(ret, catalog)
+
+    def test_the_flat_contract_still_validates_its_own_comparison(
+        self, return_validation, catalog
+    ) -> None:
+        """The weighted allowance is an addition, not a loosening."""
+        ret = _v5()
+        raw = ret["pattern_observations"]["pattern_score"]
+        score = raw["score"] if isinstance(raw, dict) else raw
+        self._with_comparison(return_validation, ret, score)
+
+        return_validation.validate_return(ret, catalog)
 
     def test_a_non_finite_comparison_score_is_rejected(
         self, return_validation, catalog
