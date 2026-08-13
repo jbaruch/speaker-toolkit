@@ -16,6 +16,16 @@ and no exhaustive outcome lanes at all — silently, since every check that woul
 have caught it was gated on the same equality. They now test membership of
 `EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS`.
 
+A weighted score now survives the real writer. `validate_return` accepted a
+fractional 1.5 while `resolve_pattern_score` still demanded an integer, the
+persisted-snapshot field set knew nothing of `pattern_score_basis`, and the
+evidence-v2 shape check required exactly the v5 fields — so a v6 return could
+pass validation and then be unmergeable. The score predicate is now keyed on the
+scoring generation, the persisted v6 shape is the v5 set plus the basis, and the
+bare-number cross-check uses weighted arithmetic instead of a count difference.
+Tests drive canonicalize → `merge_talk` → persisted-state validation, which is
+the path that was never exercised.
+
 A v6 return's opportunity identity is stamped with pattern-scoring schema 6.
 Accepting v6 into canonical persistence while it still carried scoring schema 5
 would have filed weighted scores in the same cohort as flat ones, letting an

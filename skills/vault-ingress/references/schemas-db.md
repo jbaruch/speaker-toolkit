@@ -1086,6 +1086,12 @@ travels with the score it explains — a weighted number alone cannot say whethe
 it came from two strong detections or four moderate ones, so persisting the score
 without it stores exactly the unaccompanied figure the basis exists to prevent.
 
+**Persisted shape.** A v6 talk's `pattern_observations` is the exhaustive v5 field
+set plus `pattern_score_basis` — a distinct accepted shape, not a loose one, so a
+v5 record carrying a basis and a v6 record missing one are both malformed. The
+persisted `pattern_score` may be fractional at this generation; through v5 it
+stays an integer, since a flat score is a count difference by construction.
+
 **Scoring generation.** A v6 return's opportunity identity is stamped with
 pattern-scoring schema **6**, not 5. Weighted and flat scores are not comparable,
 so sharing an identity would file them in one cohort and let an aggregate average

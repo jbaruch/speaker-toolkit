@@ -613,3 +613,128 @@ class TestThePersistedStampAgreesWithTheIdentity:
 
         assert persisted["opportunity_coverage_identity"] == weighted
         assert persisted["opportunity_coverage_identity"] != flat
+
+
+class TestAWeightedScoreSurvivesTheRealWriter:
+    """Validation and persistence have to agree on what a score is.
+
+    `validate_return` accepted a weighted 1.5 while the writer still required an
+    integer and the persisted-snapshot contract knew nothing of
+    `pattern_score_basis`, so a return could pass validation and then be
+    unmergeable. Canonicalizing and asserting the persisted block never touched
+    the writer, which is where that broke.
+    """
+
+    def _merge(
+        self, return_validation, persist_results, catalog, tmp_path, timing, ret
+    ):
+        import pattern_evidence
+
+        return_validation.validate_return(ret, catalog)
+        vault, owner = _artifact(tmp_path, timing)
+        canonical = pattern_evidence.canonicalize_return_evidence(
+            copy.deepcopy(ret),
+            owner,
+            vault,
+            catalog,
+            pattern_scoring_schema_version=(
+                return_validation.PATTERN_SCORING_SCHEMA_VERSION
+            ),
+        )
+        talk = copy.deepcopy(owner)
+        persist_results.merge_talk(talk, ret, catalog=catalog, canonical_ret=canonical)
+        return talk
+
+    def test_a_fractional_score_merges_and_validates(
+        self,
+        return_validation,
+        persist_results,
+        catalog,
+        tmp_path,
+        transcript_timing,
+    ) -> None:
+        ret = _v6(return_validation)
+        expected = ret["pattern_observations"]["pattern_score"]["score"]
+        assert expected != int(expected), "fixture must exercise a fractional score"
+
+        talk = self._merge(
+            return_validation,
+            persist_results,
+            catalog,
+            tmp_path,
+            transcript_timing,
+            ret,
+        )
+
+        assert talk["pattern_score"] == expected
+        assert talk["pattern_observations"]["pattern_score"] == expected
+
+    def test_the_merged_record_carries_its_basis(
+        self,
+        return_validation,
+        persist_results,
+        catalog,
+        tmp_path,
+        transcript_timing,
+    ) -> None:
+        ret = _v6(return_validation)
+
+        talk = self._merge(
+            return_validation,
+            persist_results,
+            catalog,
+            tmp_path,
+            transcript_timing,
+            ret,
+        )
+
+        assert (
+            talk["pattern_observations"]["pattern_score_basis"]
+            == ret["pattern_observations"]["pattern_score_basis"]
+        )
+
+    def test_the_merged_record_is_stamped_with_the_weighted_generation(
+        self,
+        return_validation,
+        persist_results,
+        catalog,
+        tmp_path,
+        transcript_timing,
+    ) -> None:
+        talk = self._merge(
+            return_validation,
+            persist_results,
+            catalog,
+            tmp_path,
+            transcript_timing,
+            _v6(return_validation),
+        )
+
+        assert (
+            talk["pattern_scoring_schema_version"]
+            == return_validation.WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
+        )
+
+    def test_a_v5_record_still_merges_with_a_flat_integer_score(
+        self,
+        return_validation,
+        persist_results,
+        catalog,
+        tmp_path,
+        transcript_timing,
+    ) -> None:
+        """The weighted path must not loosen the flat contract."""
+        talk = self._merge(
+            return_validation,
+            persist_results,
+            catalog,
+            tmp_path,
+            transcript_timing,
+            _v5(),
+        )
+
+        assert isinstance(talk["pattern_score"], int)
+        assert (
+            talk["pattern_scoring_schema_version"]
+            == return_validation.PATTERN_SCORING_SCHEMA_VERSION
+        )

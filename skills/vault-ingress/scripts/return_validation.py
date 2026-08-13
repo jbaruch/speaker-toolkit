@@ -157,6 +157,12 @@ V5_PERSISTED_PATTERN_OBSERVATION_FIELDS = PERSISTED_PATTERN_OBSERVATION_FIELDS |
     "pattern_outcomes",
     "opportunity_coverage_identity",
 }
+# v6 is the v5 snapshot plus the basis that explains its weighted score. The two
+# are separate accepted shapes rather than one loose set: a v5 record carrying a
+# basis, or a v6 record missing one, is malformed in each direction.
+V6_PERSISTED_PATTERN_OBSERVATION_FIELDS = V5_PERSISTED_PATTERN_OBSERVATION_FIELDS | {
+    "pattern_score_basis",
+}
 LEGACY_PERSISTED_PATTERN_OBSERVATION_FIELDS = PERSISTED_PATTERN_OBSERVATION_FIELDS - {
     "evidence_schema_version",
     "source_inspection",
@@ -307,6 +313,24 @@ WEIGHTED_SCORE_RETURN_SCHEMA_VERSIONS = frozenset(
 # a reparse to adopt arithmetic no worker is using.
 PATTERN_SCORING_SCHEMA_VERSION = 5
 WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION = 6
+
+
+def scoring_generation_is_weighted(scoring_schema_version: object) -> bool:
+    """Whether scores in this generation may be fractional.
+
+    Flat generations compute count(patterns) - count(antipatterns), so a score is
+    an integer by construction and a float is a defect. Weighted generations sum
+    eighths, so 1.5 is the correct answer and rejecting it would make a valid
+    return unpersistable.
+    """
+    return scoring_schema_version == WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
+
+
+def pattern_score_is_valid(value: object, *, weighted: bool) -> bool:
+    """`True` is an int in Python; a score is not a flag, in either generation."""
+    if isinstance(value, bool):
+        return False
+    return isinstance(value, (int, float)) if weighted else isinstance(value, int)
 
 
 def _persisted_scoring_schema_version(talk: Mapping[str, object]) -> int:
@@ -2944,15 +2968,18 @@ def _validate_adherence_comparison(
             f"population of {MIN_ADHERENCE_BASELINE_TALKS} talks"
         )
     comparison_score = comparison.get("talk_pattern_score")
+    weighted = scoring_generation_is_weighted(
+        scoring_schema_version_for_return(return_schema_version)
+    )
     if (
-        isinstance(comparison_score, bool)
-        or not isinstance(comparison_score, int)
+        not pattern_score_is_valid(comparison_score, weighted=weighted)
         or comparison_score != talk_pattern_score
     ):
         raise ReturnValidationError(
-            "adherence_comparison.talk_pattern_score must be an integer equal "
-            "to the validated "
-            f"pattern_observations.pattern_score {talk_pattern_score}"
+            "adherence_comparison.talk_pattern_score must be "
+            + ("a number" if weighted else "an integer")
+            + " equal to the validated "
+            + f"pattern_observations.pattern_score {talk_pattern_score}"
         )
     if not isinstance(assessment, str) or not assessment.strip():
         raise ReturnValidationError(
@@ -3477,6 +3504,7 @@ def validate_persisted_v2_analysis_state(talk: dict) -> None:
 
     actual_fields = set(observations)
     allowed_fields = {
+        frozenset(V6_PERSISTED_PATTERN_OBSERVATION_FIELDS),
         frozenset(V5_PERSISTED_PATTERN_OBSERVATION_FIELDS),
         PERSISTED_PATTERN_OBSERVATION_FIELDS,
         LEGACY_PERSISTED_PATTERN_OBSERVATION_FIELDS,
@@ -3484,6 +3512,7 @@ def validate_persisted_v2_analysis_state(talk: dict) -> None:
     if actual_fields not in allowed_fields:
         raise ReturnValidationError(
             "persisted pattern snapshot has noncanonical fields; expected the "
+            f"v6 {sorted(V6_PERSISTED_PATTERN_OBSERVATION_FIELDS)}, "
             f"v5 {sorted(V5_PERSISTED_PATTERN_OBSERVATION_FIELDS)}, source-located "
             f"v4 {sorted(PERSISTED_PATTERN_OBSERVATION_FIELDS)}, or legacy "
             f"{sorted(LEGACY_PERSISTED_PATTERN_OBSERVATION_FIELDS)}, got "
@@ -3501,10 +3530,15 @@ def validate_persisted_v2_analysis_state(talk: dict) -> None:
         )
     if (
         evidence_schema_version == PATTERN_EVIDENCE_SCHEMA_VERSION
-        and actual_fields != set(V5_PERSISTED_PATTERN_OBSERVATION_FIELDS)
+        and actual_fields
+        not in (
+            set(V5_PERSISTED_PATTERN_OBSERVATION_FIELDS),
+            set(V6_PERSISTED_PATTERN_OBSERVATION_FIELDS),
+        )
     ):
         raise ReturnValidationError(
-            "evidence-schema v2 persisted snapshots require exhaustive v5 fields"
+            "evidence-schema v2 persisted snapshots require the exhaustive v5 "
+            "fields, or those plus pattern_score_basis for a weighted v6 record"
         )
     if (
         evidence_schema_version == LEGACY_PATTERN_EVIDENCE_SCHEMA_VERSION
@@ -3650,9 +3684,11 @@ def validate_persisted_v2_analysis_state(talk: dict) -> None:
                 "outcome ledger and generation"
             )
     score = observations["pattern_score"]
-    if isinstance(score, bool) or not isinstance(score, int):
+    weighted = scoring_generation_is_weighted(_persisted_scoring_schema_version(talk))
+    if not pattern_score_is_valid(score, weighted=weighted):
         raise ReturnValidationError(
-            "persisted pattern snapshot pattern_score must be an integer"
+            "persisted pattern snapshot pattern_score must be "
+            + ("a number" if weighted else "an integer")
         )
     if talk.get("pattern_score") != score:
         raise ReturnValidationError(
