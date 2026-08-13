@@ -1,5 +1,33 @@
 # Changelog
 
+### feat(presentation-creator) — defer the prose scan to blog-writer (#287)
+
+Every prose surface this workflow produces — speaker notes, the abstract, section
+descriptions, the outline's connective text — is LLM-drafted, and LLM prose has
+tells. Nothing checked for them.
+
+Guardrail 14 does, by delegating to `Skill(skill: "blog-writer")`, which owns the
+AI-writing-pattern catalog. It is not reimplemented here: a partial copy drifts
+from the catalog blog-writer maintains and then reports confident findings from a
+stale one. When the skill is absent the check reports SKIP and points the author
+at `tessl install jbaruch/blog-writer` rather than approximating it — which is
+also what the CFP abstract check now does, where it previously skipped in silence.
+
+`classify-prose-scan.py` owns the PASS/WARN/FAIL mapping. It is a total function
+of two integers, and a threshold sentence in skill prose drifts from the one
+anybody actually applies. `--unavailable` emits the SKIP report with the install
+command, so an absent scanner is never mistaken for clean prose.
+
+Order is part of the contract: voice-matching findings are suppressed before the
+counts are taken, so a speaker's own register never drives the status.
+
+Findings flag, never rewrite. A pattern the scan calls a tell may be the
+speaker's deliberate voice, so vault-documented voice traits are suppressed: a
+speaker whose profile shows heavy em-dash use is writing in their own register.
+
+Closes #287. The unlanded `skills/humanizer/` branch was an early copy of
+blog-writer's detector; deferring to the original beats maintaining a fork of it.
+
 ### feat(vault-ingress) — weight the aggregate score, versioned not retrofitted (#153)
 
 Implements the #153 aggregate-score decision. `DETECTION_WEIGHTS` are

@@ -20,7 +20,18 @@ completeness, cut lines, data attribution, profanity, and branding. Its
 `recurring_antipatterns` array is the complete catalog recurrence output. Render those
 records without re-filtering them or adding movement data.
 Add the remaining checks (time-sensitive, current-outline contextual antipatterns,
-illustration coverage, pattern strategy) to the report manually.
+illustration coverage, pattern strategy, AI writing patterns) to the report
+manually.
+
+The AI-writing-pattern scan is delegated, never reimplemented here:
+
+- Call `Skill(skill: "blog-writer")`, which owns the pattern catalog
+- Suppress findings matching the speaker's documented voice before counting
+- Classify the retained counts with
+  `skills/presentation-creator/scripts/classify-prose-scan.py`
+- Run that script with `--unavailable` when the skill is absent
+- Flag findings, never rewrite
+- Leave every change to the author
 
 A disabled pattern-history result affects only catalog-derived speaker history. Keep
 independent profile configuration and guardrails enabled. When history is partially

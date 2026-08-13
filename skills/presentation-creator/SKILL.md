@@ -284,6 +284,7 @@ status; the agent adds these categories manually:
 - Time-sensitive content scan
 - Murder-Your-Darlings filter pass
 - Emotion-balance and screening-with-critics where applicable
+- AI writing patterns across every prose surface
 
 Iterate on author feedback. Apply changes first, guardrail second. Flag but don't
 block intentionally overridden guardrails.

@@ -83,7 +83,9 @@ starting a new CFP; adapt rather than rewrite.
   the tracking database and analysis files.
 - Run an anti-pattern check on entries before saving. Delegate it with
   `Skill(skill: "blog-writer")`, which returns the flagged phrasings for the
-  abstract; apply them here and continue. If that skill is not installed, note
-  that the check was skipped rather than approximating it. Keep the
+  abstract; apply them here and continue. If that skill is not installed, say the
+  check was skipped and tell the author to run
+  `tessl install jbaruch/blog-writer` — never approximate it inline, since a
+  partial copy drifts from the catalog blog-writer maintains. Keep the
   "Last updated" date current.
 - Entries are separated by `---` horizontal rules for easy scanning.

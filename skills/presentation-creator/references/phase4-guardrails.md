@@ -410,6 +410,62 @@ SKIP for low-stakes talks (internal demos, small-group presentations, tutorial s
 
 ---
 
+## 14. AI Writing Patterns
+
+Every prose surface this workflow produces — speaker notes, the abstract, section
+descriptions, the outline's connective text — was drafted with an LLM, and LLM
+prose has tells.
+
+**Delegate the scan; never reimplement it.** Call
+`Skill(skill: "blog-writer")`, which owns the AI-writing-pattern catalog and
+returns the flagged phrasings with whatever rewrite suggestion it offers for
+each. Carry those findings into the classification below and continue — this
+guardrail reports them, and never applies them.
+
+Scan prose only. Slide visual descriptions and image prompts are not prose and
+are covered by the illustration checks above.
+
+### Check
+
+Order matters: suppress, then count, then classify. Counting first would produce
+a WARN or FAIL from findings this same contract says are not AI tells.
+
+1. Take blog-writer's findings.
+2. Drop every finding that matches the speaker's documented voice when the vault
+   is loaded — a speaker whose profile shows heavy em-dash use is writing in
+   their own register, not producing an AI tell.
+3. Count the retained findings by severity.
+4. Classify those counts:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/classify-prose-scan.py" --high N --medium N
+```
+
+The script emits one schema-v1 JSON object carrying the status. Thresholds are
+its own — see
+`skills/presentation-creator/scripts/classify-prose-scan.py`, named constants at
+the top of the file. Exit 0 covers every classified result, FAIL included.
+
+```
+[PASS/WARN/FAIL/SKIP] AI writing patterns: {high} high, {medium} medium findings
+```
+
+If WARN or FAIL, list the retained findings with their location and any rewrite
+suggestion blog-writer returned. Flag only — the author decides what to change,
+because a pattern the scan calls a tell may be this speaker's deliberate voice.
+
+### When `blog-writer` is not installed
+
+Run the same script with `--unavailable`. It reports SKIP and carries the remedy
+the author needs:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/classify-prose-scan.py" --unavailable
+```
+
+Never approximate the scan inline. A partial reimplementation drifts from the
+catalog blog-writer maintains and reports confident findings from a stale copy.
+
 ## Guardrail Summary Template
 
 Render this human summary from the JSON report after completing the agent-run checks.
@@ -436,6 +492,7 @@ GUARDRAIL CHECK — {talk title} — {date}
 [PASS/WARN/FAIL] Big Idea alignment: {N}/{total} sections traceable to Big Idea
 [PASS/WARN] Emotion balance: {N}% analytical / {M}% emotional vs. {target}%
 [PASS/WARN/SKIP] Screening with critics: {scheduled / completed / not applicable}
+[PASS/WARN/FAIL/SKIP] AI writing patterns: {high} high, {medium} medium
 ================================================
 ```
 
