@@ -30,7 +30,8 @@ The AI-writing-pattern scan is delegated, never reimplemented here:
 - Classify the retained counts with
   `skills/presentation-creator/scripts/classify-prose-scan.py`
 - Run that script with `--unavailable` when the skill is absent
-- Flag findings; the author decides what to change
+- Flag findings, never rewrite
+- Leave every change to the author
 
 A disabled pattern-history result affects only catalog-derived speaker history. Keep
 independent profile configuration and guardrails enabled. When history is partially

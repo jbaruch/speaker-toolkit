@@ -418,7 +418,8 @@ prose has tells.
 
 **Delegate the scan; never reimplement it.** Call
 `Skill(skill: "blog-writer")`, which owns the AI-writing-pattern catalog and
-returns the flagged phrasings. Apply its findings here and continue.
+returns the flagged phrasings with whatever rewrite suggestion it offers for
+each. Apply its findings here and continue.
 
 Scan prose only. Slide visual descriptions and image prompts are not prose and
 are covered by the illustration checks above.
@@ -448,9 +449,9 @@ the top of the file. Exit 0 covers every classified result, FAIL included.
 [PASS/WARN/FAIL/SKIP] AI writing patterns: {high} high, {medium} medium findings
 ```
 
-If WARN or FAIL, list the retained findings with their location and blog-writer's
-rewrite suggestion. Flag only — the author decides what to change, because a
-pattern the scan calls a tell may be this speaker's deliberate voice.
+If WARN or FAIL, list the retained findings with their location and any rewrite
+suggestion blog-writer returned. Flag only — the author decides what to change,
+because a pattern the scan calls a tell may be this speaker's deliberate voice.
 
 ### When `blog-writer` is not installed
 
