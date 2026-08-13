@@ -13,8 +13,9 @@ that are merely old.
 
 They now classify as `outcome_collection_predates_contract`, which stays blocking
 — the evidence still is not current and the reparse is still required — but names
-the cause and the remedy. The older-generation reading requires BOTH detection
-lanes present, so an unfinished writer cannot launder itself as a legacy record.
+the cause and the remedy. The older-generation reading requires both detection
+lanes to be well-formed containers, so neither an unfinished writer nor a
+block holding a malformed lane can launder itself as a legacy record.
 
 ### feat(vault-profile) — the denominator behind a never-used claim (#160)
 

@@ -470,7 +470,13 @@ def _audit_outcomes(
         # the writer emitted before exhaustive outcomes existed. Reporting that
         # in the same bucket as a half-written block tells the owner to hunt for
         # corruption in a record that is merely old.
-        predates = all(name in observations for name in DETECTION_COLLECTIONS)
+        # Presence is not enough: a lane holding a string is a defect, and a
+        # block carrying one has not earned the older-generation reading. Both
+        # detection lanes must be well-formed containers before an absent outcome
+        # lane counts as age rather than damage.
+        predates = all(
+            isinstance(observations.get(name), list) for name in DETECTION_COLLECTIONS
+        )
         return [
             ObservationFinding(
                 OUTCOME_LANE_PREDATES_CONTRACT if predates else COLLECTION_ABSENT,

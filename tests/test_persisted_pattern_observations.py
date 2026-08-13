@@ -690,3 +690,28 @@ def test_the_report_is_json_ready(
     assert payload["repairs"][0]["dimensions"] == list(
         observable_entry.vault_dimensions
     )
+
+
+def test_a_malformed_detection_lane_forfeits_the_legacy_reading(
+    persisted_pattern_observations, catalog
+) -> None:
+    """Key presence is not well-formedness.
+
+    A lane holding a string is damage, and a block carrying one has not earned
+    the older-generation reading — labelling it legacy is the same category
+    error, inverted.
+    """
+    block = _block()
+    del block["not_evaluable"]
+    block["patterns_detected"] = "not a list"
+
+    assessment = persisted_pattern_observations.assess_persisted_pattern_observations(
+        {"pattern_observations": block}, catalog
+    )
+
+    assert assessment.usable is False
+    assert (
+        persisted_pattern_observations.OUTCOME_LANE_PREDATES_CONTRACT
+        not in assessment.reason_codes
+    )
+    assert persisted_pattern_observations.COLLECTION_INVALID in assessment.reason_codes
