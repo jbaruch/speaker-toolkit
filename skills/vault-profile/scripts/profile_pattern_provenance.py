@@ -49,11 +49,22 @@ REASON_CATALOG_FINGERPRINT_MISMATCH = "pattern_catalog_fingerprint_mismatch"
 REASON_SCORING_SCHEMA_MISMATCH = "pattern_scoring_schema_mismatch"
 REASON_EMPTY_CURRENT_COHORT = "empty_current_pattern_cohort"
 REASON_CLASSIFICATION_POLICY_UNAVAILABLE = "pattern_classification_policy_unavailable"
+# A readable block from a superseded classification generation. Distinct from
+# POLICY_UNAVAILABLE (a v4 contract that never had a policy stamp): this block
+# has one, it just belongs to an older generation.
+REASON_CLASSIFICATION_SCHEMA_SUPERSEDED = "pattern_classification_schema_superseded"
 REASON_CLASSIFICATION_POLICY_INVALID = "pattern_classification_policy_invalid"
 
 LEGACY_CLASSIFICATION_AVAILABILITY_SCHEMA_VERSION = 1
 CLASSIFICATION_AVAILABILITY_SCHEMA_VERSION = 2
-CLASSIFICATION_SCHEMA_VERSION = 1
+CLASSIFICATION_SCHEMA_VERSION = 2
+# v1 predates `absence_provability`. It stays readable: the field is a coverage
+# fact about the catalog, not a claim the older block got wrong, so refusing v1
+# would strand every profile already on disk to gain nothing.
+LEGACY_CLASSIFICATION_SCHEMA_VERSIONS = frozenset({1})
+READABLE_CLASSIFICATION_SCHEMA_VERSIONS = frozenset(
+    {*LEGACY_CLASSIFICATION_SCHEMA_VERSIONS, CLASSIFICATION_SCHEMA_VERSION}
+)
 CLASSIFICATION_POLICY_UNAVAILABLE_REASON = "owner_policy_unconfigured"
 
 _LEGACY_AVAILABILITY_FIELDS = frozenset({"schema_version", "status", "reason_codes"})
@@ -101,6 +112,12 @@ _V5_PATTERN_PROFILE_FIELDS = _COMMON_PATTERN_PROFILE_FIELDS | frozenset(
         "trend_analysis",
     }
 )
+# Presence is generation-dependent, so the field is neither globally required nor
+# globally optional. The v2 writer always emits it and never-used claims cannot be
+# read without it, so v2 REQUIRES it; v1 predates it and must not carry it. This
+# set only keeps it out of the unknown-field sweep — `_validate_absence_provability`
+# owns which generation must carry it.
+_OPTIONAL_PATTERN_PROFILE_FIELDS = frozenset({"absence_provability"})
 _REQUIRED_PATTERN_BREADTH_FIELDS = frozenset(
     {"avg_distinct_patterns_per_talk", "trend", "note"}
 )
@@ -1275,9 +1292,12 @@ def _validate_v5_policy_fields(
     classification_schema_version = pattern_profile.get("classification_schema_version")
     if (
         not _is_integer(classification_schema_version)
-        or classification_schema_version != CLASSIFICATION_SCHEMA_VERSION
+        or classification_schema_version not in READABLE_CLASSIFICATION_SCHEMA_VERSIONS
     ):
-        errors.append("pattern_profile.classification_schema_version must be 1")
+        errors.append(
+            "pattern_profile.classification_schema_version must be one of "
+            f"{sorted(READABLE_CLASSIFICATION_SCHEMA_VERSIONS)}"
+        )
     try:
         stamp = validate_policy_stamp(pattern_profile.get("classification_policy"))
         digest = str(stamp["semantic_sha256"])
@@ -1424,7 +1444,10 @@ def assess_pattern_profile(
         else _V4_PATTERN_PROFILE_FIELDS
     )
     missing_fields = sorted(required_fields - set(pattern_profile))
-    unknown_fields = sorted(set(pattern_profile) - required_fields, key=str)
+    unknown_fields = sorted(
+        set(pattern_profile) - required_fields - _OPTIONAL_PATTERN_PROFILE_FIELDS,
+        key=str,
+    )
     if missing_fields:
         errors.append(
             f"pattern_profile is missing required schema-v{contract_version} fields: "
@@ -1481,6 +1504,20 @@ def assess_pattern_profile(
         )
         _append_reason(reason_codes, REASON_ACTIVE_CATALOG_UNAVAILABLE)
         active_fingerprint = None
+    errors.extend(
+        _validate_absence_provability(
+            pattern_profile.get("absence_provability"),
+            # v4 carries no classification block at all, so it can never reach the
+            # generation that introduced this field.
+            classification_schema_version=(
+                pattern_profile.get("classification_schema_version")
+                if contract_version == 5
+                else None
+            ),
+            present="absence_provability" in pattern_profile,
+            active_catalog=active_catalog,
+        )
+    )
     if (
         active_fingerprint is not None
         and baseline["pattern_catalog_fingerprint"] != active_fingerprint
@@ -1555,6 +1592,7 @@ def assess_pattern_profile(
 
     domains = frozenset()
     policy_digest = None
+    superseded_classification = False
     if contract_version == 4:
         errors.extend(_validate_v4_unavailable(pattern_profile))
     elif active_catalog is not None:
@@ -1566,6 +1604,20 @@ def assess_pattern_profile(
         errors.extend(policy_errors)
         if policy_digest is None:
             _append_reason(reason_codes, REASON_CLASSIFICATION_POLICY_INVALID)
+        # A superseded classification generation is prior state, not current
+        # evidence. This module reads the block for consumers outside the owning
+        # skill and never migrates it: vault-profile regenerates the profile
+        # wholesale, so the next owner run replaces the block rather than
+        # upgrading it in place. Until then its classification-derived domains
+        # are no usable prior state. Occurrence rows survive — they belong to the
+        # pattern-profile contract, not to the classification generation.
+        superseded_classification = (
+            _is_integer(pattern_profile.get("classification_schema_version"))
+            and pattern_profile["classification_schema_version"]
+            < CLASSIFICATION_SCHEMA_VERSION
+        )
+        if superseded_classification:
+            domains = frozenset()
 
     if errors:
         _append_reason(reason_codes, REASON_INVALID_CONTRACT)
@@ -1585,6 +1637,8 @@ def assess_pattern_profile(
         _append_reason(reason_codes, REASON_EMPTY_CURRENT_COHORT)
     if contract_version == 4:
         _append_reason(reason_codes, REASON_CLASSIFICATION_POLICY_UNAVAILABLE)
+    if superseded_classification:
+        _append_reason(reason_codes, REASON_CLASSIFICATION_SCHEMA_SUPERSEDED)
     return PatternProfileAssessment(
         current_contract=True,
         catalog_fields_available=eligible_count > 0,
@@ -1597,3 +1651,145 @@ def assess_pattern_profile(
         contract_version=contract_version,
         policy_semantic_sha256=policy_digest,
     )
+
+
+ABSENCE_PROVABILITY_SCHEMA_VERSION = 1
+# The classification generation that introduced `absence_provability`. The floor
+# is this constant rather than the current version, so a later bump does not
+# start rejecting the generation that first carried the field.
+ABSENCE_PROVABILITY_MIN_CLASSIFICATION_SCHEMA_VERSION = 2
+
+
+def _validate_absence_provability(
+    value: object,
+    *,
+    classification_schema_version: object,
+    present: bool,
+    active_catalog: object = None,
+) -> list[str]:
+    """Validate the denominator instead of merely permitting it.
+
+    Allowlisting a field without checking it is how a malformed object reaches a
+    reader that believes the shape was verified. These counts qualify every
+    never-used claim, so a wrong one misreports coverage as speaker behavior —
+    the exact confusion the field exists to prevent.
+
+    The floor is the CLASSIFICATION schema version, not the outer pattern-profile
+    contract version. The outer contract is 4 or 5, so comparing it against a
+    classification floor of 2 admits every block it was meant to reject.
+
+    Presence is required from that generation onward and forbidden before it. The
+    v2 writer always emits the field, and a never-used list cannot be read without
+    its denominator, so a v2 record missing it is incomplete rather than merely
+    older.
+    """
+    path = "pattern_profile.absence_provability"
+    carries_field = (
+        _is_integer(classification_schema_version)
+        and classification_schema_version
+        >= ABSENCE_PROVABILITY_MIN_CLASSIFICATION_SCHEMA_VERSION
+    )
+    if not present:
+        if carries_field:
+            return [
+                f"{path} is required at classification_schema_version "
+                f"{classification_schema_version}; a never-used list without its "
+                "denominator reads as speaker behaviour rather than coverage"
+            ]
+        return []
+    if (
+        not _is_integer(classification_schema_version)
+        or classification_schema_version
+        < ABSENCE_PROVABILITY_MIN_CLASSIFICATION_SCHEMA_VERSION
+    ):
+        return [
+            f"{path} requires classification_schema_version "
+            f"{ABSENCE_PROVABILITY_MIN_CLASSIFICATION_SCHEMA_VERSION} or later, not "
+            f"{classification_schema_version!r}"
+        ]
+    if not isinstance(value, Mapping):
+        return [f"{path} must be an object"]
+    expected = {
+        "schema_version",
+        "absence_provable_count",
+        "absence_unknowable_count",
+        "observable_count",
+    }
+    if set(value) != expected:
+        return [f"{path} must contain exactly {sorted(expected)}"]
+    # `_is_integer` first: Python makes `True == 1`, so equality alone admits a
+    # boolean version while every count beside it explicitly rejects one.
+    if (
+        not _is_integer(value["schema_version"])
+        or value["schema_version"] != ABSENCE_PROVABILITY_SCHEMA_VERSION
+    ):
+        return [f"{path}.schema_version must be {ABSENCE_PROVABILITY_SCHEMA_VERSION}"]
+    errors: list[str] = []
+    counts: dict[str, int] = {}
+    for field in (
+        "absence_provable_count",
+        "absence_unknowable_count",
+        "observable_count",
+    ):
+        raw = value[field]
+        if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
+            errors.append(f"{path}.{field} must be a nonnegative integer")
+        else:
+            counts[field] = raw
+    if len(counts) == 3:
+        total = counts["absence_provable_count"] + counts["absence_unknowable_count"]
+        if total != counts["observable_count"]:
+            # The two halves ARE the observable catalog; a mismatch means the
+            # object describes a catalog that does not exist.
+            errors.append(
+                f"{path} counts must sum to observable_count: "
+                f"{counts['absence_provable_count']} + "
+                f"{counts['absence_unknowable_count']} != "
+                f"{counts['observable_count']}"
+            )
+        elif active_catalog is not None:
+            # Internal consistency is not correctness. `1 + 2 = 3` sums perfectly
+            # and describes a three-entry catalog that does not exist, presenting
+            # a fabricated denominator as current coverage. The counts are a
+            # function of the active catalog, so recompute them and compare.
+            expected = absence_provability(active_catalog)
+            observed = {field: counts[field] for field in counts}
+            expected_counts = {
+                field: expected[field] for field in observed if field in expected
+            }
+            if observed != expected_counts:
+                errors.append(
+                    f"{path} does not describe the active catalog: expected "
+                    f"{expected_counts}, got {observed}; regenerate the profile "
+                    "against the installed catalog"
+                )
+    return errors
+
+
+def absence_provability(catalog: object) -> dict[str, int]:
+    """Split the observable catalog into what absence can and cannot be proven for.
+
+    Owner decision (#153): `absence_evaluable_from: null` means absence is not
+    provable for that pattern, and it never falls back to the presence gate. So
+    never-used and underused are computed over the populated-gate entries only —
+    currently a minority of the observable catalog.
+
+    Without the denominator beside them, a short never-used list reads as a
+    statement about the speaker. It is mostly a statement about coverage, and
+    `absence_unknowable` is what makes the difference legible.
+    """
+    provable = 0
+    unknowable = 0
+    for entry in getattr(catalog, "entries", {}).values():
+        if not getattr(entry, "observable", False):
+            continue
+        if getattr(entry, "absence_evaluable_from", None) is None:
+            unknowable += 1
+        else:
+            provable += 1
+    return {
+        "schema_version": ABSENCE_PROVABILITY_SCHEMA_VERSION,
+        "absence_provable_count": provable,
+        "absence_unknowable_count": unknowable,
+        "observable_count": provable + unknowable,
+    }

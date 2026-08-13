@@ -606,6 +606,278 @@ def test_v5_assessment_enables_independent_policy_domains(validate_profile):
     )
 
 
+class TestAbsenceProvabilityThroughTheAssessor:
+    """The denominator's version gate, exercised through the public entry point.
+
+    The gate reads the CLASSIFICATION schema version, not the outer pattern-profile
+    contract version. Testing the private helper with a hand-supplied version hid
+    that: the helper was being handed a contract version of 4 or 5 and comparing it
+    against a classification floor of 2, so it admitted every block it existed to
+    reject. Only a profile that travels the real call path shows it.
+    """
+
+    def test_the_current_generation_carries_it(self, validate_profile):
+        pattern_profile = _v5_pattern_profile(validate_profile)
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert pattern_profile["classification_schema_version"] == 2
+        assert "absence_provability" in pattern_profile
+        assert assessment.current_contract is True
+
+    def test_the_current_generation_must_carry_it(self, validate_profile):
+        """The v2 writer always emits it, and a never-used list is unreadable
+        without its denominator — so a v2 record missing it is incomplete, not
+        merely older."""
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        del pattern_profile["absence_provability"]
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is False
+        assert any(
+            "absence_provability is required at classification_schema_version" in error
+            for error in assessment.errors
+        )
+
+    def test_a_classification_v1_block_cannot_carry_it(self, validate_profile):
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        pattern_profile["classification_schema_version"] = 1
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is False
+        assert any(
+            "absence_provability requires classification_schema_version" in error
+            for error in assessment.errors
+        )
+
+    def test_a_classification_v1_block_without_it_still_reads(self, validate_profile):
+        """Refusing v1 outright would strand every profile already on disk."""
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        pattern_profile["classification_schema_version"] = 1
+        del pattern_profile["absence_provability"]
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is True
+
+
+class TestASupersededClassificationGeneration:
+    """`stateful-artifacts` Migration Policy: a reader never treats an older
+    record as usable current state.
+
+    vault-profile regenerates the profile wholesale, so nothing upgrades a v1
+    classification block in place — the next owner run replaces it. Until then a
+    reader gets no usable classification state from it. Occurrence rows survive,
+    because they belong to the pattern-profile contract rather than to the
+    classification generation.
+    """
+
+    def test_its_classification_domains_are_withheld(self, validate_profile):
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        pattern_profile["classification_schema_version"] = 1
+        del pattern_profile["absence_provability"]
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.classification_fields_available is False
+        assert assessment.available_classification_domains == frozenset()
+        assert assessment.domain_available("mastery_and_novelty") is False
+
+    def test_it_says_why_rather_than_going_quiet(self, validate_profile):
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        pattern_profile["classification_schema_version"] = 1
+        del pattern_profile["absence_provability"]
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        provenance = importlib.import_module("profile_pattern_provenance")
+        assert (
+            provenance.REASON_CLASSIFICATION_SCHEMA_SUPERSEDED
+            in assessment.reason_codes
+        )
+
+    def test_its_occurrence_rows_stay_readable(self, validate_profile):
+        """The rows are contract-v5 data, untouched by the classification bump."""
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        pattern_profile["classification_schema_version"] = 1
+        del pattern_profile["absence_provability"]
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is True
+        assert assessment.catalog_fields_available is True
+        assert assessment.scored_talk_count == 2
+
+    def test_the_current_generation_keeps_its_domains(self, validate_profile):
+        pattern_profile = _v5_pattern_profile(validate_profile)
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        provenance = importlib.import_module("profile_pattern_provenance")
+        assert assessment.classification_fields_available is True
+        assert (
+            provenance.REASON_CLASSIFICATION_SCHEMA_SUPERSEDED
+            not in assessment.reason_codes
+        )
+
+    def test_a_v4_contract_cannot_carry_it(self, validate_profile):
+        """v4 has no classification block, so it never reaches the generation
+        that introduced the field."""
+        pattern_profile = _pattern_profile(validate_profile)
+        pattern_profile["absence_provability"] = {
+            "schema_version": 1,
+            "absence_provable_count": 16,
+            "absence_unknowable_count": 65,
+            "observable_count": 81,
+        }
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=4
+        )
+
+        assert assessment.current_contract is False
+        assert any(
+            "absence_provability requires classification_schema_version" in error
+            for error in assessment.errors
+        )
+
+    def test_counts_that_do_not_sum_are_rejected(self, validate_profile):
+        """The two halves ARE the observable catalog; a mismatch describes a
+        catalog that does not exist."""
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        pattern_profile["absence_provability"]["observable_count"] = 99
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is False
+        assert any(
+            "must sum to observable_count" in error for error in assessment.errors
+        )
+
+    def test_a_sum_consistent_payload_that_is_not_the_active_catalog_is_rejected(
+        self, validate_profile
+    ):
+        """Internal consistency is not correctness.
+
+        `1 + 2 = 3` sums perfectly and describes a three-entry catalog nobody
+        has. Accepted, it presents a fabricated denominator as current coverage —
+        the exact misreading the field exists to prevent.
+        """
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        pattern_profile["absence_provability"].update(
+            {
+                "absence_provable_count": 1,
+                "absence_unknowable_count": 2,
+                "observable_count": 3,
+            }
+        )
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is False
+        assert any(
+            "does not describe the active catalog" in error
+            for error in assessment.errors
+        )
+
+    def test_shifting_the_split_within_a_correct_total_is_rejected(
+        self, validate_profile
+    ):
+        """The provable/unknowable split is the whole point — a right total with
+        a wrong split still misstates how much of the catalog is provable."""
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        block = pattern_profile["absence_provability"]
+        block["absence_provable_count"] += 1
+        block["absence_unknowable_count"] -= 1
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is False
+        assert any(
+            "does not describe the active catalog" in error
+            for error in assessment.errors
+        )
+
+    def test_a_non_object_is_rejected(self, validate_profile):
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        pattern_profile["absence_provability"] = [16, 65, 81]
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is False
+        assert any(
+            "absence_provability must be an object" in error
+            for error in assessment.errors
+        )
+
+    def test_a_boolean_schema_version_is_rejected(self, validate_profile):
+        """`True == 1` in Python, so equality alone admits a boolean version
+        while every count beside it explicitly rejects one."""
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        pattern_profile["absence_provability"]["schema_version"] = True
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is False
+        assert any("schema_version must be" in error for error in assessment.errors)
+
+    def test_a_boolean_count_is_rejected(self, validate_profile):
+        """`True` is an int in Python; a count is not a flag."""
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        pattern_profile["absence_provability"]["absence_provable_count"] = True
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is False
+        assert any(
+            "must be a nonnegative integer" in error for error in assessment.errors
+        )
+
+    def test_a_missing_count_is_rejected(self, validate_profile):
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        del pattern_profile["absence_provability"]["observable_count"]
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is False
+        assert any(
+            "absence_provability must contain exactly" in error
+            for error in assessment.errors
+        )
+
+
 def test_v5_assessment_rejects_policy_digest_tampering(validate_profile):
     pattern_profile = _v5_pattern_profile(validate_profile)
     pattern_profile["classification_policy"]["semantic_sha256"] = "0" * 64
@@ -629,12 +901,12 @@ def test_v5_assessment_rejects_policy_digest_tampering(validate_profile):
         (
             ("classification_schema_version",),
             True,
-            "pattern_profile.classification_schema_version must be 1",
+            "pattern_profile.classification_schema_version must be one of [1, 2]",
         ),
         (
             ("classification_schema_version",),
             1.0,
-            "pattern_profile.classification_schema_version must be 1",
+            "pattern_profile.classification_schema_version must be one of [1, 2]",
         ),
         (
             ("classification_availability", "schema_version"),
@@ -1596,7 +1868,10 @@ def test_pattern_baseline_rejects_unknown_fields(validate_profile, tmp_path, cap
     assert "fields are noncanonical" in report["errors"][0]
 
 
-@pytest.mark.parametrize("duplicate", ["signature_combinations", "mastery_levels"])
+@pytest.mark.parametrize(
+    "duplicate",
+    ["signature_combinations", "mastery_levels", "absence_provability"],
+)
 def test_rhetoric_defaults_cannot_duplicate_pattern_history(
     validate_profile,
     tmp_path,
@@ -1612,6 +1887,42 @@ def test_rhetoric_defaults_cannot_duplicate_pattern_history(
     assert any(
         "rhetoric_defaults duplicates catalog history" in error
         for error in report["errors"]
+    )
+
+
+# Prose the profile carries for a human reader. Not catalog-derived history, so a
+# copy elsewhere duplicates nothing.
+_PROSE_PATTERN_PROFILE_FIELDS = frozenset({"note", "strengths_note"})
+
+
+def test_every_history_field_the_writer_emits_is_guarded(
+    validate_profile, tmp_path, capsys
+):
+    """The leakage guard is a hand-maintained key set, so it drifts silently.
+
+    `absence_provability` was emitted into `pattern_profile` while the reader's
+    set still listed the fields that existed before it, which let a conflicting
+    copy sit under `rhetoric_defaults` unchallenged. Deriving the expectation
+    from what the writer actually emits makes the next omission fail here rather
+    than in a profile.
+    """
+    emitted = set(_v5_pattern_profile(validate_profile)) - _PROSE_PATTERN_PROFILE_FIELDS
+    unguarded = []
+
+    for index, field in enumerate(sorted(emitted)):
+        profile = _profile(validate_profile)
+        profile["rhetoric_defaults"][field] = [] if field.endswith("s") else {}
+        vault = tmp_path / f"case{index}"
+        vault.mkdir()
+        return_code, report = _run(validate_profile, profile, vault, capsys)
+        if return_code != 1 or not any(
+            "rhetoric_defaults duplicates catalog history" in error
+            for error in report["errors"]
+        ):
+            unguarded.append(field)
+
+    assert not unguarded, (
+        f"pattern_profile fields the leakage guard does not cover: {unguarded}"
     )
 
 

@@ -144,6 +144,9 @@ def _legacy_pattern_profile() -> dict[str, Any]:
         "pattern_classifications",
         "antipattern_classifications",
         "trend_analysis",
+        # Arrives with classification v2, so it cannot survive the projection back
+        # to a contract that carries no classification block at all.
+        "absence_provability",
     ):
         profile.pop(field)
     profile.update(

@@ -128,6 +128,7 @@ _PATTERN_HISTORY_KEYS = frozenset(
         "pattern_classifications",
         "antipattern_classifications",
         "trend_analysis",
+        "absence_provability",
     }
 )
 _FORBIDDEN_NON_PATTERN_ENTRY_FIELDS = frozenset(

@@ -393,6 +393,12 @@ Current `schema_version`: **5**. The validator (`scripts/validate-profile.py`,
       }
     ],
     "never_used_patterns": [],
+    "absence_provability": {
+      "schema_version": 1,
+      "absence_provable_count": 16,
+      "absence_unknowable_count": 65,
+      "observable_count": 81
+    },
     "signature_combinations": [],
     "mastery_levels": {
       "signature": ["narrative-arc"],
@@ -401,7 +407,7 @@ Current `schema_version`: **5**. The validator (`scripts/validate-profile.py`,
       "rare": [],
       "never_tried": []
     },
-    "classification_schema_version": 1,
+    "classification_schema_version": 2,
     "classification_policy": {
       "schema_version": 1,
       "policy_id": "speaker-toolkit-default",
@@ -612,7 +618,10 @@ The respective stable reasons are `mixed_opportunity_coverage` and
 `no_evaluable_pattern_opportunities`; the per-pattern occurrence rows remain
 available.
 
-All `pattern_profile` fields in the schema are required in v5. If the vault has no
+All `pattern_profile` fields in the schema are required in v5, except
+`absence_provability`, whose presence follows the classification generation
+rather than the v5 contract (see `absence_provability` below). If the vault has
+no
 `pattern-classification-policy.json`, the loader automatically applies the bundled
 `speaker-toolkit-default@1` policy; users are not asked to invent thresholds. A present
 override is strict and fail-closed: an unreadable file, duplicate key, non-finite
@@ -650,7 +659,33 @@ policy-backed absence classification. `not_yet_observed` says that this corpus h
 positive detection while absence remains unknown. A conclusive absence that does not
 reach a named tier remains `unclassified` with observation status `confirmed_absent`.
 Only classifier-emitted `never_tried` IDs enter `never_used_patterns`; no other zero
-state may be presented as proof that the speaker has never tried the technique. The
+state may be presented as proof that the speaker has never tried the technique.
+
+`absence_provability` is the denominator that qualifies that list, emitted beside
+it by `skills/vault-profile/scripts/classify-pattern-profile.py`. It is an object
+of `schema_version`, `absence_provable_count`, `absence_unknowable_count`, and
+`observable_count` — the provable set being the only entries a never-used claim
+may be computed over. Most of the catalog is unprovable, so a
+`never_used_patterns` list presented without these counts misreports coverage as
+speaker behaviour. How each count is derived lives in
+`skills/vault-profile/scripts/profile_pattern_provenance.py` at
+`absence_provability()`.
+
+The field arrives with `classification_schema_version: 2`. Presence is
+generation-dependent rather than optional, and the exact predicate — which
+generations require it, which forbid it, and the errors each produces — is
+`_validate_absence_provability` in the same module, keyed on
+`ABSENCE_PROVABILITY_MIN_CLASSIFICATION_SCHEMA_VERSION`. A profile that omits it
+where it is required, or carries it where it is not, fails validation.
+
+**Migration boundary.** A block from a superseded classification generation
+yields no usable classification state: every derived domain is withheld and the
+assessment carries `pattern_classification_schema_superseded`, distinct from
+`pattern_classification_policy_unavailable`, which marks a contract that never
+had a policy stamp. Nothing upgrades such a block in place — vault-profile
+regenerates the profile wholesale, so the next owner run replaces it. Occurrence
+rows remain readable across the boundary: they belong to the pattern-profile
+contract, not to the classification generation. The
 antipattern equivalent is `confirmed_none`; every other zero-detection antipattern
 remains non-recurring unless the classifier says otherwise.
 
