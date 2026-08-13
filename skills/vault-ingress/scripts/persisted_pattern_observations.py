@@ -70,6 +70,12 @@ CONTAINER_LEGACY_LIST = "observations_legacy_list"
 CONTAINER_INVALID = "observations_invalid"
 COLLECTION_ABSENT = "detection_collection_absent"
 COLLECTION_INVALID = "detection_collection_invalid"
+# Both detection lanes present, the outcome lane absent. That is the shape a
+# writer produced BEFORE the exhaustive-outcomes contract existed, not one whose
+# writer stopped halfway — so it reads as an older generation needing a reparse
+# rather than as corruption. Still unusable as current evidence, and still
+# blocking; what changes is what the owner is told to do about it.
+OUTCOME_LANE_PREDATES_CONTRACT = "outcome_collection_predates_contract"
 
 # One detection object's own shape.
 DETECTION_NOT_OBJECT = "detection_not_object"
@@ -103,6 +109,7 @@ BLOCKING_REASONS = frozenset(
         CONTAINER_INVALID,
         COLLECTION_ABSENT,
         COLLECTION_INVALID,
+        OUTCOME_LANE_PREDATES_CONTRACT,
         DETECTION_NOT_OBJECT,
         DETECTION_ID_MISSING,
         DETECTION_ID_UNKNOWN,
@@ -459,13 +466,26 @@ def _audit_outcomes(
     unknown, which is not the same as complete.
     """
     if OUTCOME_COLLECTION not in observations:
+        # A block carrying both detection lanes and no outcome lane is the shape
+        # the writer emitted before exhaustive outcomes existed. Reporting that
+        # in the same bucket as a half-written block tells the owner to hunt for
+        # corruption in a record that is merely old.
+        predates = all(name in observations for name in DETECTION_COLLECTIONS)
         return [
             ObservationFinding(
-                COLLECTION_ABSENT,
+                OUTCOME_LANE_PREDATES_CONTRACT if predates else COLLECTION_ABSENT,
                 OUTCOME_COLLECTION,
                 None,
-                f"a current block carries {OUTCOME_COLLECTION}; an absent lane "
-                "is not an empty one",
+                (
+                    f"the block carries both detection lanes but no "
+                    f"{OUTCOME_COLLECTION}; it predates exhaustive outcomes and "
+                    "needs a reparse, not a repair"
+                )
+                if predates
+                else (
+                    f"a current block carries {OUTCOME_COLLECTION}; an absent "
+                    "lane is not an empty one"
+                ),
             )
         ]
     raw = observations.get(OUTCOME_COLLECTION)
