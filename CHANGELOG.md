@@ -54,7 +54,18 @@ That defect survived because the tests called the private validator and supplied
 the version by hand, which is a shape the real call path cannot produce. They now
 run through `assess_pattern_profile`, where a classification-v1 block carrying the
 field and a v4 contract carrying it are both refused. Both tests fail against the
-original code.
+original code. The writer's coverage moved off `inspect.getsource` and onto its
+emitted payload for the same reason: matching a call expression in source text
+passes for code that never runs and fails for a correct refactor.
+
+A version-1 block is a superseded classification generation, so a reader takes
+the no-usable-prior-state path on it — every derived domain is withheld and the
+assessment carries `pattern_classification_schema_superseded`. Nothing upgrades
+the block in place; vault-profile regenerates the profile wholesale, so the next
+owner run replaces it. The reason code is distinct from
+`pattern_classification_policy_unavailable`, which marks a v4 contract that never
+had a policy stamp. Occurrence rows stay readable across the boundary — they
+belong to the pattern-profile contract, not to the classification generation.
 
 `classify-pattern-profile.py` emits it beside `never_used_patterns`, so the list
 and its denominator always travel together. The field is allowed but never

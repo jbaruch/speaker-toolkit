@@ -49,6 +49,10 @@ REASON_CATALOG_FINGERPRINT_MISMATCH = "pattern_catalog_fingerprint_mismatch"
 REASON_SCORING_SCHEMA_MISMATCH = "pattern_scoring_schema_mismatch"
 REASON_EMPTY_CURRENT_COHORT = "empty_current_pattern_cohort"
 REASON_CLASSIFICATION_POLICY_UNAVAILABLE = "pattern_classification_policy_unavailable"
+# A readable block from a superseded classification generation. Distinct from
+# POLICY_UNAVAILABLE (a v4 contract that never had a policy stamp): this block
+# has one, it just belongs to an older generation.
+REASON_CLASSIFICATION_SCHEMA_SUPERSEDED = "pattern_classification_schema_superseded"
 REASON_CLASSIFICATION_POLICY_INVALID = "pattern_classification_policy_invalid"
 
 LEGACY_CLASSIFICATION_AVAILABILITY_SCHEMA_VERSION = 1
@@ -1585,6 +1589,7 @@ def assess_pattern_profile(
 
     domains = frozenset()
     policy_digest = None
+    superseded_classification = False
     if contract_version == 4:
         errors.extend(_validate_v4_unavailable(pattern_profile))
     elif active_catalog is not None:
@@ -1596,6 +1601,20 @@ def assess_pattern_profile(
         errors.extend(policy_errors)
         if policy_digest is None:
             _append_reason(reason_codes, REASON_CLASSIFICATION_POLICY_INVALID)
+        # A superseded classification generation is prior state, not current
+        # evidence. This module reads the block for consumers outside the owning
+        # skill and never migrates it: vault-profile regenerates the profile
+        # wholesale, so the next owner run replaces the block rather than
+        # upgrading it in place. Until then its classification-derived domains
+        # are no usable prior state. Occurrence rows survive — they belong to the
+        # pattern-profile contract, not to the classification generation.
+        superseded_classification = (
+            _is_integer(pattern_profile.get("classification_schema_version"))
+            and pattern_profile["classification_schema_version"]
+            < CLASSIFICATION_SCHEMA_VERSION
+        )
+        if superseded_classification:
+            domains = frozenset()
 
     if errors:
         _append_reason(reason_codes, REASON_INVALID_CONTRACT)
@@ -1615,6 +1634,8 @@ def assess_pattern_profile(
         _append_reason(reason_codes, REASON_EMPTY_CURRENT_COHORT)
     if contract_version == 4:
         _append_reason(reason_codes, REASON_CLASSIFICATION_POLICY_UNAVAILABLE)
+    if superseded_classification:
+        _append_reason(reason_codes, REASON_CLASSIFICATION_SCHEMA_SUPERSEDED)
     return PatternProfileAssessment(
         current_contract=True,
         catalog_fields_available=eligible_count > 0,

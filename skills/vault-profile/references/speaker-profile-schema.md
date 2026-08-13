@@ -674,7 +674,18 @@ the older block got anything wrong — so readers treat the field as absent rath
 than the profile as invalid. A version-1 block that *carries* it is rejected:
 the field did not exist under that generation's contract, so its presence means
 the stamp and the payload disagree. Contract v4 carries no classification block
-at all and never admits the field. The
+at all and never admits the field.
+
+**Migration boundary.** A version-1 block is a superseded classification
+generation, so a reader gets no usable classification state from it: every
+derived domain is withheld and the assessment carries
+`pattern_classification_schema_superseded`. Nothing upgrades the block in place
+— vault-profile regenerates the profile wholesale, so the next owner run
+replaces it. That reason code is distinct from
+`pattern_classification_policy_unavailable`, which marks a v4 contract that
+never had a policy stamp at all. Occurrence rows remain readable across the
+boundary: they belong to the pattern-profile contract, not to the classification
+generation. The
 antipattern equivalent is `confirmed_none`; every other zero-detection antipattern
 remains non-recurring unless the classifier says otherwise.
 

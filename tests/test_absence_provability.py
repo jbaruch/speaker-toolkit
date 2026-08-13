@@ -9,14 +9,36 @@ it is mostly a statement about coverage.
 
 from __future__ import annotations
 
+import importlib
+from pathlib import Path
+
 import pytest
 
 
-@pytest.fixture(scope="module")
-def provability(profile_pattern_provenance, return_validation):
-    return profile_pattern_provenance.absence_provability(
-        return_validation.load_catalog()
+def _no_policy_override(runtime):
+    """The bundled default policy — no on-disk override for this test run."""
+    return runtime.resolve_classification_policy(
+        Path(__file__).resolve().parent / "__no_policy_override__"
     )
+
+
+@pytest.fixture(scope="module")
+def classification_runtime(profile_pattern_provenance):
+    # Depends on profile_pattern_provenance for its import side effect: that
+    # fixture puts the vault-profile scripts directory on the path, which is what
+    # makes this plain module import resolve.
+    del profile_pattern_provenance
+    return importlib.import_module("pattern_classification_runtime")
+
+
+@pytest.fixture(scope="module")
+def pattern_catalog(return_validation):
+    return return_validation.load_catalog()
+
+
+@pytest.fixture(scope="module")
+def provability(profile_pattern_provenance, pattern_catalog):
+    return profile_pattern_provenance.absence_provability(pattern_catalog)
 
 
 class _Entry:
@@ -92,32 +114,50 @@ class TestPartition:
 
 
 class TestTheWriterEmitsIt:
-    """An unused helper is not a contract — the reason this was rejected once."""
+    """An unused helper is not a contract — the reason this was rejected once.
+
+    Asserted against the writer's emitted payload, not its source text. Matching
+    a call expression in `inspect.getsource` passes for code that is never
+    reached and fails for a correct refactor, so it measures the spelling rather
+    than the behaviour.
+    """
 
     def test_the_profile_writer_emits_the_denominator(
-        self, classify_pattern_profile
+        self, classification_runtime, pattern_catalog
     ) -> None:
-        import inspect
-
-        source = inspect.getsource(classify_pattern_profile)
-        assert '"absence_provability": absence_provability(' in source
-
-    def test_the_validator_accepts_a_profile_carrying_it(
-        self, profile_pattern_provenance
-    ) -> None:
-        assert (
-            "absence_provability"
-            in profile_pattern_provenance._OPTIONAL_PATTERN_PROFILE_FIELDS
+        emitted = classification_runtime.classify_pattern_profile(
+            [], _no_policy_override(classification_runtime), catalog=pattern_catalog
         )
 
-    def test_it_is_not_required_of_profiles_written_before_it(
-        self, profile_pattern_provenance
+        assert "absence_provability" in emitted
+        assert set(emitted["absence_provability"]) == {
+            "schema_version",
+            "absence_provable_count",
+            "absence_unknowable_count",
+            "observable_count",
+        }
+
+    def test_the_emitted_counts_match_the_live_catalog(
+        self, classification_runtime, pattern_catalog, provability
     ) -> None:
-        """Requiring it would refuse to read every profile already on disk — a
-        bigger break than the gap it closes."""
+        """The writer reports the catalog it actually ran against."""
+        emitted = classification_runtime.classify_pattern_profile(
+            [], _no_policy_override(classification_runtime), catalog=pattern_catalog
+        )
+
+        assert emitted["absence_provability"] == provability
+
+    def test_the_writer_stamps_the_generation_that_carries_it(
+        self, classification_runtime, pattern_catalog, profile_pattern_provenance
+    ) -> None:
+        """The field and its version stamp are emitted together or not at all."""
+        emitted = classification_runtime.classify_pattern_profile(
+            [], _no_policy_override(classification_runtime), catalog=pattern_catalog
+        )
+
         assert (
-            "absence_provability"
-            not in profile_pattern_provenance._V5_PATTERN_PROFILE_FIELDS
+            emitted["classification_schema_version"]
+            == profile_pattern_provenance.CLASSIFICATION_SCHEMA_VERSION
         )
 
 

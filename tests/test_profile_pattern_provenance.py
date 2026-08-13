@@ -653,6 +653,74 @@ class TestAbsenceProvabilityThroughTheAssessor:
 
         assert assessment.current_contract is True
 
+
+class TestASupersededClassificationGeneration:
+    """`stateful-artifacts` Migration Policy: a reader never treats an older
+    record as usable current state.
+
+    vault-profile regenerates the profile wholesale, so nothing upgrades a v1
+    classification block in place — the next owner run replaces it. Until then a
+    reader gets no usable classification state from it. Occurrence rows survive,
+    because they belong to the pattern-profile contract rather than to the
+    classification generation.
+    """
+
+    def test_its_classification_domains_are_withheld(self, validate_profile):
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        pattern_profile["classification_schema_version"] = 1
+        del pattern_profile["absence_provability"]
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.classification_fields_available is False
+        assert assessment.available_classification_domains == frozenset()
+        assert assessment.domain_available("mastery_and_novelty") is False
+
+    def test_it_says_why_rather_than_going_quiet(self, validate_profile):
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        pattern_profile["classification_schema_version"] = 1
+        del pattern_profile["absence_provability"]
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        provenance = importlib.import_module("profile_pattern_provenance")
+        assert (
+            provenance.REASON_CLASSIFICATION_SCHEMA_SUPERSEDED
+            in assessment.reason_codes
+        )
+
+    def test_its_occurrence_rows_stay_readable(self, validate_profile):
+        """The rows are contract-v5 data, untouched by the classification bump."""
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        pattern_profile["classification_schema_version"] = 1
+        del pattern_profile["absence_provability"]
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is True
+        assert assessment.catalog_fields_available is True
+        assert assessment.scored_talk_count == 2
+
+    def test_the_current_generation_keeps_its_domains(self, validate_profile):
+        pattern_profile = _v5_pattern_profile(validate_profile)
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        provenance = importlib.import_module("profile_pattern_provenance")
+        assert assessment.classification_fields_available is True
+        assert (
+            provenance.REASON_CLASSIFICATION_SCHEMA_SUPERSEDED
+            not in assessment.reason_codes
+        )
+
     def test_a_v4_contract_cannot_carry_it(self, validate_profile):
         """v4 has no classification block, so it never reaches the generation
         that introduced the field."""
