@@ -774,6 +774,54 @@ class TestASupersededClassificationGeneration:
             "must sum to observable_count" in error for error in assessment.errors
         )
 
+    def test_a_sum_consistent_payload_that_is_not_the_active_catalog_is_rejected(
+        self, validate_profile
+    ):
+        """Internal consistency is not correctness.
+
+        `1 + 2 = 3` sums perfectly and describes a three-entry catalog nobody
+        has. Accepted, it presents a fabricated denominator as current coverage —
+        the exact misreading the field exists to prevent.
+        """
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        pattern_profile["absence_provability"].update(
+            {
+                "absence_provable_count": 1,
+                "absence_unknowable_count": 2,
+                "observable_count": 3,
+            }
+        )
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is False
+        assert any(
+            "does not describe the active catalog" in error
+            for error in assessment.errors
+        )
+
+    def test_shifting_the_split_within_a_correct_total_is_rejected(
+        self, validate_profile
+    ):
+        """The provable/unknowable split is the whole point — a right total with
+        a wrong split still misstates how much of the catalog is provable."""
+        pattern_profile = _v5_pattern_profile(validate_profile)
+        block = pattern_profile["absence_provability"]
+        block["absence_provable_count"] += 1
+        block["absence_unknowable_count"] -= 1
+
+        assessment = validate_profile.assess_pattern_profile(
+            pattern_profile, expected_contract_version=5
+        )
+
+        assert assessment.current_contract is False
+        assert any(
+            "does not describe the active catalog" in error
+            for error in assessment.errors
+        )
+
     def test_a_non_object_is_rejected(self, validate_profile):
         pattern_profile = _v5_pattern_profile(validate_profile)
         pattern_profile["absence_provability"] = [16, 65, 81]

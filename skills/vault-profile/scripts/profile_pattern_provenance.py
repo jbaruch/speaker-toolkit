@@ -1448,19 +1448,6 @@ def assess_pattern_profile(
         set(pattern_profile) - required_fields - _OPTIONAL_PATTERN_PROFILE_FIELDS,
         key=str,
     )
-    errors.extend(
-        _validate_absence_provability(
-            pattern_profile.get("absence_provability"),
-            # v4 carries no classification block at all, so it can never reach the
-            # generation that introduced this field.
-            classification_schema_version=(
-                pattern_profile.get("classification_schema_version")
-                if contract_version == 5
-                else None
-            ),
-            present="absence_provability" in pattern_profile,
-        )
-    )
     if missing_fields:
         errors.append(
             f"pattern_profile is missing required schema-v{contract_version} fields: "
@@ -1517,6 +1504,20 @@ def assess_pattern_profile(
         )
         _append_reason(reason_codes, REASON_ACTIVE_CATALOG_UNAVAILABLE)
         active_fingerprint = None
+    errors.extend(
+        _validate_absence_provability(
+            pattern_profile.get("absence_provability"),
+            # v4 carries no classification block at all, so it can never reach the
+            # generation that introduced this field.
+            classification_schema_version=(
+                pattern_profile.get("classification_schema_version")
+                if contract_version == 5
+                else None
+            ),
+            present="absence_provability" in pattern_profile,
+            active_catalog=active_catalog,
+        )
+    )
     if (
         active_fingerprint is not None
         and baseline["pattern_catalog_fingerprint"] != active_fingerprint
@@ -1660,7 +1661,11 @@ ABSENCE_PROVABILITY_MIN_CLASSIFICATION_SCHEMA_VERSION = 2
 
 
 def _validate_absence_provability(
-    value: object, *, classification_schema_version: object, present: bool
+    value: object,
+    *,
+    classification_schema_version: object,
+    present: bool,
+    active_catalog: object = None,
 ) -> list[str]:
     """Validate the denominator instead of merely permitting it.
 
@@ -1737,6 +1742,22 @@ def _validate_absence_provability(
                 f"{counts['absence_unknowable_count']} != "
                 f"{counts['observable_count']}"
             )
+        elif active_catalog is not None:
+            # Internal consistency is not correctness. `1 + 2 = 3` sums perfectly
+            # and describes a three-entry catalog that does not exist, presenting
+            # a fabricated denominator as current coverage. The counts are a
+            # function of the active catalog, so recompute them and compare.
+            expected = absence_provability(active_catalog)
+            observed = {field: counts[field] for field in counts}
+            expected_counts = {
+                field: expected[field] for field in observed if field in expected
+            }
+            if observed != expected_counts:
+                errors.append(
+                    f"{path} does not describe the active catalog: expected "
+                    f"{expected_counts}, got {observed}; regenerate the profile "
+                    "against the installed catalog"
+                )
     return errors
 
 

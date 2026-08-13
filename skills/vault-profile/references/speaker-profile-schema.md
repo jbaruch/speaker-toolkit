@@ -659,7 +659,7 @@ Only classifier-emitted `never_tried` IDs enter `never_used_patterns`; no other 
 state may be presented as proof that the speaker has never tried the technique.
 
 `absence_provability` is the denominator that qualifies that list, emitted beside
-it by `classify-pattern-profile.py`. `absence_provable_count` is the number of
+it by `skills/vault-profile/scripts/classify-pattern-profile.py`. `absence_provable_count` is the number of
 observable catalog entries carrying a populated `absence_evaluable_from` gate —
 the only entries a never-used claim may be computed over.
 `absence_unknowable_count` is the rest, where absence is not provable at all, and

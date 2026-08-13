@@ -9,9 +9,15 @@ the test failed while the gate it covers worked correctly.
 
 Carried in three PR bodies as a pre-existing environmental failure. It was
 neither: CI passed only because its pinned tessl still emitted the old wording,
-so the next bump would have broken the gate's own test in CI. The assertion now
-names the defect — an error mentioning `description` and `1024` — instead of the
-sentence the external tool happened to phrase it with.
+so the next bump would have broken the gate's own test in CI.
+
+The assertion now names the
+outcome and the offending skill — the gate failed and the error identifies
+`demo` — instead of any sentence the external tool happened to phrase it with.
+Matching the new wording would only have swapped which CLI version it broke on;
+the two truncate the message at different points. The old wording stays covered
+by the fake-CLI classification test, which owns a captured transcript rather
+than a live tool.
 
 ### feat(vault-profile) — the denominator behind a never-used claim (#160)
 
@@ -66,6 +72,13 @@ owner run replaces it. The reason code is distinct from
 `pattern_classification_policy_unavailable`, which marks a v4 contract that never
 had a policy stamp. Occurrence rows stay readable across the boundary — they
 belong to the pattern-profile contract, not to the classification generation.
+
+The counts are checked against the active catalog, not merely against each
+other. `1 + 2 = 3` sums perfectly and describes a three-entry catalog nobody has,
+so internal consistency alone would let a fabricated denominator present as
+current coverage. The reader recomputes both halves from the installed catalog
+and rejects any payload that disagrees — including a correct total split the
+wrong way, since the split is the whole point.
 
 Presence is generation-dependent rather than optional. Classification v2 requires
 the field — the writer always emits it, and a never-used list is unreadable
