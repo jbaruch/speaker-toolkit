@@ -425,12 +425,22 @@ are covered by the illustration checks above.
 
 ### Check
 
+Order matters: suppress, then count, then classify. Counting first would produce
+a WARN or FAIL from findings this same contract says are not AI tells.
+
+1. Take blog-writer's findings.
+2. Drop every finding that matches the speaker's documented voice when the vault
+   is loaded — a speaker whose profile shows heavy em-dash use is writing in
+   their own register, not producing an AI tell.
+3. Count the retained findings by severity.
+4. Classify those counts:
+
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/classify-prose-scan.py" --high N --medium N
 ```
 
-Pass blog-writer's finding counts; the script emits one schema-v1 JSON object
-carrying the status. Thresholds are its own — see
+The script emits one schema-v1 JSON object carrying the status. Thresholds are
+its own — see
 `skills/presentation-creator/scripts/classify-prose-scan.py`, named constants at
 the top of the file. Exit 0 covers every classified result, FAIL included.
 
@@ -438,13 +448,9 @@ the top of the file. Exit 0 covers every classified result, FAIL included.
 [PASS/WARN/FAIL/SKIP] AI writing patterns: {high} high, {medium} medium findings
 ```
 
-If WARN or FAIL, list the findings with their location and blog-writer's rewrite
-suggestion. Flag only — the author decides what to change, because a pattern the
-scan calls a tell may be this speaker's deliberate voice.
-
-Suppress findings that match the speaker's documented voice when the vault is
-loaded: a speaker whose profile shows heavy em-dash use is writing in their own
-register, not producing an AI tell.
+If WARN or FAIL, list the retained findings with their location and blog-writer's
+rewrite suggestion. Flag only — the author decides what to change, because a
+pattern the scan calls a tell may be this speaker's deliberate voice.
 
 ### When `blog-writer` is not installed
 
