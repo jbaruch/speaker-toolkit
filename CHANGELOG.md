@@ -24,8 +24,9 @@ forbidden at v1 and on the v4 contract, which carries no classification block at
 all. A v1 block that omits it stays readable — the counts are a fact about the
 catalog, not a claim the older block got anything wrong, and refusing v1 outright
 would strand every profile on disk to gain nothing. A v1 block that *carries* it
-is rejected: the stamp and the payload disagree. `speaker-profile-schema.md`
-documents the table.
+is rejected: the stamp and the payload disagree. The schema reference states the
+output contract and points at `_validate_absence_provability` for the predicate
+rather than restating it, so the two cannot drift.
 
 A v1 block is nonetheless a superseded classification generation, so a reader
 takes the no-usable-prior-state path on it — every derived domain is withheld and

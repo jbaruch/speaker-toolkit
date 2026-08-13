@@ -620,8 +620,8 @@ available.
 
 All `pattern_profile` fields in the schema are required in v5, except
 `absence_provability`, whose presence follows the classification generation
-rather than the v5 contract — required at classification v2, forbidden before it
-(see the table below). If the vault has no
+rather than the v5 contract (see `absence_provability` below). If the vault has
+no
 `pattern-classification-policy.json`, the loader automatically applies the bundled
 `speaker-toolkit-default@1` policy; users are not asked to invent thresholds. A present
 override is strict and fail-closed: an unreadable file, duplicate key, non-finite
@@ -662,38 +662,30 @@ Only classifier-emitted `never_tried` IDs enter `never_used_patterns`; no other 
 state may be presented as proof that the speaker has never tried the technique.
 
 `absence_provability` is the denominator that qualifies that list, emitted beside
-it by `skills/vault-profile/scripts/classify-pattern-profile.py`. `absence_provable_count` is the number of
-observable catalog entries carrying a populated `absence_evaluable_from` gate —
-the only entries a never-used claim may be computed over.
-`absence_unknowable_count` is the rest, where absence is not provable at all, and
-`observable_count` is their sum. Against the current catalog that is 16 provable
-of 81 observable, so a short `never_used_patterns` list is mostly a statement
-about coverage rather than about the speaker; a reader presenting the list
-without these counts misreports it.
+it by `skills/vault-profile/scripts/classify-pattern-profile.py`. It is an object
+of `schema_version`, `absence_provable_count`, `absence_unknowable_count`, and
+`observable_count` — the provable set being the only entries a never-used claim
+may be computed over. Most of the catalog is unprovable, so a
+`never_used_patterns` list presented without these counts misreports coverage as
+speaker behaviour. How each count is derived lives in
+`skills/vault-profile/scripts/profile_pattern_provenance.py` at
+`absence_provability()`.
 
-The field arrives with `classification_schema_version: 2`, and presence is
-generation-dependent rather than optional:
+The field arrives with `classification_schema_version: 2`. Presence is
+generation-dependent rather than optional, and the exact predicate — which
+generations require it, which forbid it, and the errors each produces — is
+`_validate_absence_provability` in the same module, keyed on
+`ABSENCE_PROVABILITY_MIN_CLASSIFICATION_SCHEMA_VERSION`. A profile that omits it
+where it is required, or carries it where it is not, fails validation.
 
-| Generation | `absence_provability` |
-|---|---|
-| classification v2 and later | **required** — the writer always emits it, and a never-used list is unreadable without its denominator |
-| classification v1 | **forbidden** — the field did not exist under that contract, so its presence means the stamp and the payload disagree |
-| contract v4 | **forbidden** — v4 carries no classification block at all |
-
-A version-1 block that omits it stays readable — the counts are a fact about the
-catalog, not a claim the older block got anything wrong — so readers treat the
-field as absent rather than the profile as invalid.
-
-**Migration boundary.** A version-1 block is a superseded classification
-generation, so a reader gets no usable classification state from it: every
-derived domain is withheld and the assessment carries
-`pattern_classification_schema_superseded`. Nothing upgrades the block in place
-— vault-profile regenerates the profile wholesale, so the next owner run
-replaces it. That reason code is distinct from
-`pattern_classification_policy_unavailable`, which marks a v4 contract that
-never had a policy stamp at all. Occurrence rows remain readable across the
-boundary: they belong to the pattern-profile contract, not to the classification
-generation. The
+**Migration boundary.** A block from a superseded classification generation
+yields no usable classification state: every derived domain is withheld and the
+assessment carries `pattern_classification_schema_superseded`, distinct from
+`pattern_classification_policy_unavailable`, which marks a contract that never
+had a policy stamp. Nothing upgrades such a block in place — vault-profile
+regenerates the profile wholesale, so the next owner run replaces it. Occurrence
+rows remain readable across the boundary: they belong to the pattern-profile
+contract, not to the classification generation. The
 antipattern equivalent is `confirmed_none`; every other zero-detection antipattern
 remains non-recurring unless the classifier says otherwise.
 
