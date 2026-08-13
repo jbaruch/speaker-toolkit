@@ -155,13 +155,11 @@ def test_a_non_list_collection_is_refused(
     )
 
 
-@pytest.mark.parametrize(
-    "lane", ["patterns_detected", "antipatterns_detected", "not_evaluable"]
-)
-def test_an_absent_lane_is_not_an_empty_lane(
+@pytest.mark.parametrize("lane", ["patterns_detected", "antipatterns_detected"])
+def test_an_absent_detection_lane_is_not_an_empty_lane(
     persisted_pattern_observations, catalog, lane
 ) -> None:
-    """A block missing a lane is one whose writer never finished.
+    """A block missing a detection lane is one whose writer never finished.
 
     Reading it as empty reports coverage the record never claimed — `{}` would
     pass as a clean current block.
@@ -179,6 +177,53 @@ def test_an_absent_lane_is_not_an_empty_lane(
         persisted_pattern_observations.COLLECTION_ABSENT,
     )
     assert assessment.findings[0].location == lane
+
+
+def test_a_block_predating_exhaustive_outcomes_says_so(
+    persisted_pattern_observations, catalog
+) -> None:
+    """Both detection lanes and no outcome lane is the pre-contract shape.
+
+    It is the live vault's dominant state, and reporting it as a half-written
+    block sends the owner hunting for corruption in a record that is merely old.
+    """
+    block = _block()
+    del block["not_evaluable"]
+
+    assessment = persisted_pattern_observations.assess_persisted_pattern_observations(
+        {"pattern_observations": block}, catalog
+    )
+
+    assert assessment.usable is False
+    assert assessment.reason_codes == (
+        persisted_pattern_observations.OUTCOME_LANE_PREDATES_CONTRACT,
+    )
+    assert assessment.findings[0].location == "not_evaluable"
+    assert "reparse" in assessment.findings[0].detail
+
+
+def test_a_missing_outcome_lane_beside_a_missing_detection_lane_is_not_excused(
+    persisted_pattern_observations, catalog
+) -> None:
+    """The older-generation reading requires BOTH detection lanes present.
+
+    Without that, an unfinished writer would launder itself as a legacy record
+    and skip the corruption report it has earned.
+    """
+    block = _block()
+    del block["not_evaluable"]
+    del block["patterns_detected"]
+
+    assessment = persisted_pattern_observations.assess_persisted_pattern_observations(
+        {"pattern_observations": block}, catalog
+    )
+
+    assert assessment.usable is False
+    assert (
+        persisted_pattern_observations.OUTCOME_LANE_PREDATES_CONTRACT
+        not in assessment.reason_codes
+    )
+    assert persisted_pattern_observations.COLLECTION_ABSENT in assessment.reason_codes
 
 
 def test_an_empty_block_is_refused(persisted_pattern_observations, catalog) -> None:
@@ -635,3 +680,28 @@ def test_the_report_is_json_ready(
     assert payload["repairs"][0]["dimensions"] == list(
         observable_entry.vault_dimensions
     )
+
+
+def test_a_malformed_detection_lane_forfeits_the_legacy_reading(
+    persisted_pattern_observations, catalog
+) -> None:
+    """Key presence is not well-formedness.
+
+    A lane holding a string is damage, and a block carrying one has not earned
+    the older-generation reading — labelling it legacy is the same category
+    error, inverted.
+    """
+    block = _block()
+    del block["not_evaluable"]
+    block["patterns_detected"] = "not a list"
+
+    assessment = persisted_pattern_observations.assess_persisted_pattern_observations(
+        {"pattern_observations": block}, catalog
+    )
+
+    assert assessment.usable is False
+    assert (
+        persisted_pattern_observations.OUTCOME_LANE_PREDATES_CONTRACT
+        not in assessment.reason_codes
+    )
+    assert persisted_pattern_observations.COLLECTION_INVALID in assessment.reason_codes
