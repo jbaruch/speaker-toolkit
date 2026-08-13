@@ -412,6 +412,7 @@ def _current_claimed_talk(return_validation, ret, **overrides):
             return_validation.PATTERN_SCORING_SCHEMA_VERSION
         ),
         evidence_freshness_assessor=lambda _talk: (),
+        persisted_observation_assessor=lambda _talk: (),
     )
     talk["_queue_claim"].update(
         {

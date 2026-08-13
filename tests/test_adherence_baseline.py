@@ -19,6 +19,7 @@ SCRIPT = (
 CATALOG = "a" * 64
 OTHER_CATALOG = "b" * 64
 AS_OF = "2026-07-31T13:30:45.987654-05:00"
+OPPORTUNITY_IDENTITY = "c" * 64
 
 
 @pytest.fixture(scope="session")
@@ -55,6 +56,12 @@ def _talk(
     }
     if nested:
         talk["pattern_observations"] = {"pattern_score": score}
+    if scoring_schema >= 5 and nested:
+        # v5 binds the score to the opportunity set it was computed over, so a
+        # v5 fixture without one is rejected before any cohort rule runs.
+        talk["pattern_observations"]["opportunity_coverage_identity"] = (
+            OPPORTUNITY_IDENTITY
+        )
     return talk
 
 
@@ -686,3 +693,155 @@ def test_constructor_rejects_duplicate_talk_filenames(adherence_baseline):
             adherence_baseline,
             [_talk("same.md", 1), _talk("same.md", 1, status="pending")],
         )
+
+
+def test_invalid_persisted_observations_leave_the_cohort(adherence_baseline):
+    """A score computed from a block nothing validated is not current evidence."""
+    talk = _talk("corrupt.md", 2, scoring_schema=5)
+
+    current, excluded, details = adherence_baseline.partition_pattern_scoring_cohort(
+        [talk],
+        excluded_filenames=(),
+        pattern_catalog_fingerprint=CATALOG,
+        pattern_scoring_schema_version=5,
+        evidence_freshness_assessor=lambda _talk: (),
+        persisted_observation_assessor=lambda _talk: (
+            "dimensions_membership_drift",
+            "detection_pattern_id_unknown",
+            "dimensions_membership_drift",
+        ),
+    )
+
+    assert current == []
+    assert excluded == [talk]
+    assert details == [
+        {
+            "filename": "corrupt.md",
+            "reason_codes": ["persisted_observations_invalid"],
+            "persisted_observation_reason_codes": [
+                "detection_pattern_id_unknown",
+                "dimensions_membership_drift",
+            ],
+            "observed_pattern_scoring_generation_status": "current",
+            "observed_pattern_catalog_fingerprint": CATALOG,
+            "observed_pattern_scoring_schema_version": 5,
+            "expected_pattern_scoring_generation_status": "current",
+            "expected_pattern_catalog_fingerprint": CATALOG,
+            "expected_pattern_scoring_schema_version": 5,
+        }
+    ]
+
+
+def test_usable_persisted_observations_stay_in_the_cohort(adherence_baseline):
+    talk = _talk("clean.md", 2, scoring_schema=5)
+
+    current, excluded, details = adherence_baseline.partition_pattern_scoring_cohort(
+        [talk],
+        excluded_filenames=(),
+        pattern_catalog_fingerprint=CATALOG,
+        pattern_scoring_schema_version=5,
+        evidence_freshness_assessor=lambda _talk: (),
+        persisted_observation_assessor=lambda _talk: (),
+    )
+
+    assert current == [talk]
+    assert excluded == []
+    assert details == []
+
+
+def test_scoring_v5_refuses_to_run_without_an_observation_assessor(
+    adherence_baseline,
+):
+    """Fail closed: an omitted assessor must not read as nothing to check."""
+    with pytest.raises(adherence_baseline.AdherenceBaselineError) as excinfo:
+        adherence_baseline.partition_pattern_scoring_cohort(
+            [_talk("clean.md", 2, scoring_schema=5)],
+            excluded_filenames=(),
+            pattern_catalog_fingerprint=CATALOG,
+            pattern_scoring_schema_version=5,
+            evidence_freshness_assessor=lambda _talk: (),
+        )
+
+    assert "persisted_observation_assessor" in str(excinfo.value)
+
+
+def test_historical_scoring_schema_never_invokes_the_observation_assessor(
+    adherence_baseline,
+):
+    def explode(_talk):
+        raise AssertionError("pre-v5 scoring must not consult the assessor")
+
+    talk = _talk("historical.md", 2, scoring_schema=4)
+
+    current, excluded, details = adherence_baseline.partition_pattern_scoring_cohort(
+        [talk],
+        excluded_filenames=(),
+        pattern_catalog_fingerprint=CATALOG,
+        pattern_scoring_schema_version=4,
+        evidence_freshness_assessor=lambda _talk: (),
+        persisted_observation_assessor=explode,
+    )
+
+    assert current == [talk]
+    assert excluded == []
+    assert details == []
+
+
+def test_stale_evidence_is_reported_before_invalid_observations(adherence_baseline):
+    """Both defects present: the freshness reason is the one reported.
+
+    Not arbitrary — an artifact that moved is the defect an owner repairs
+    first, and a talk excluded twice would need two reprocess reasons where
+    the claim contract admits one ordered sequence.
+    """
+    talk = _talk("both.md", 2, scoring_schema=5)
+
+    _current, _excluded, details = adherence_baseline.partition_pattern_scoring_cohort(
+        [talk],
+        excluded_filenames=(),
+        pattern_catalog_fingerprint=CATALOG,
+        pattern_scoring_schema_version=5,
+        evidence_freshness_assessor=lambda _talk: ("source_inspection[0]:missing",),
+        persisted_observation_assessor=lambda _talk: ("dimensions_absent",),
+    )
+
+    assert details[0]["reason_codes"] == ["persisted_evidence_stale"]
+
+
+@pytest.mark.parametrize(
+    "returned",
+    [
+        "dimensions_absent",
+        {"dimensions_absent": True},
+        [""],
+        ["  padded  "],
+        [17],
+    ],
+)
+def test_an_observation_assessor_returning_junk_raises(adherence_baseline, returned):
+    with pytest.raises(adherence_baseline.AdherenceBaselineError):
+        adherence_baseline.partition_pattern_scoring_cohort(
+            [_talk("corrupt.md", 2, scoring_schema=5)],
+            excluded_filenames=(),
+            pattern_catalog_fingerprint=CATALOG,
+            pattern_scoring_schema_version=5,
+            evidence_freshness_assessor=lambda _talk: (),
+            persisted_observation_assessor=lambda _talk: returned,
+        )
+
+
+def test_an_observation_assessor_failure_names_the_talk(adherence_baseline):
+    def fail(_talk):
+        raise ValueError("catalog unreadable")
+
+    with pytest.raises(adherence_baseline.AdherenceBaselineError) as excinfo:
+        adherence_baseline.partition_pattern_scoring_cohort(
+            [_talk("corrupt.md", 2, scoring_schema=5)],
+            excluded_filenames=(),
+            pattern_catalog_fingerprint=CATALOG,
+            pattern_scoring_schema_version=5,
+            evidence_freshness_assessor=lambda _talk: (),
+            persisted_observation_assessor=fail,
+        )
+
+    assert "corrupt.md" in str(excinfo.value)

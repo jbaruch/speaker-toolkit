@@ -1,5 +1,50 @@
 # Changelog
 
+### feat(vault-ingress) — a score is only as current as the block it came from (#167)
+
+#285 classified persisted pattern observations, #286 made preflight block on
+them, and #294 made the migration repair or requeue them. Everything downstream
+of a claim still scored whatever the database said. A talk's `pattern_score` is
+computed FROM its observations, so a current generation stamp over a
+structurally invalid block is a number derived from a shape nothing validated —
+and 78 of the live vault's 80 processed talks carry exactly that after the
+#290/#292 dimension remap.
+
+The gate goes in `partition_pattern_scoring_cohort`, not in each consumer. That
+function is the one authority the queue and the profile already share, so
+`persisted_observations_invalid` excludes a talk from the scoring cohort and
+requeues it in the same act. Two rules would drift, and the direction they
+drift is a profile scoring a talk the queue already called unusable.
+
+What that reaches, through one change:
+
+- `queue-state.py normalize` requeues with
+  `pattern_scoring_generation:persisted_observations_invalid`
+- `persist-results.py`'s post-batch cohort, which spans talks merged under
+  older contracts as well as the ones this run validated
+- `queue-state.py claim`'s preclaim baseline
+- every profile surface, since `load-vault.py`, `validate-profile.py`, and
+  Section 15's `section15_pattern_history.py` all build through
+  `build_current_pattern_snapshot`
+
+Required at `OBSERVATION_BOUND_SCORING_SCHEMA_VERSION` (5, the active
+generation) rather than optional. An assessor a caller may forget is a gate
+that reads "nothing to check" exactly when nobody wired it — the same fail-open
+shape the evidence-freshness assessor was made required to avoid at v4.
+
+The adapter turning an assessment into reason codes lives in
+`persisted_pattern_observations.persisted_observation_assessor`, beside the
+classifier. Three callers need it, and three copies of "usable means empty" is
+three chances to invert it.
+
+An archival finding is not a defect. An entry the catalog no longer observes is
+a catalog move, and requeueing every talk that ever cited one would requeue the
+whole vault forever.
+
+Stale evidence is still reported ahead of invalid observations when a talk has
+both: an artifact that moved is what an owner repairs first, and the claim
+contract admits one ordered reason sequence per exclusion, not two.
+
 ## 0.20.70 — 2026-08-13
 
 ### feat(vault-ingress) — assess the bindings that predate the assessment (#176)

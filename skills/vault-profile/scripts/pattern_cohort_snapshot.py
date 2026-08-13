@@ -31,6 +31,9 @@ from pattern_opportunities import (  # noqa: E402
     PatternOpportunityError,
     build_pattern_opportunity_rows,
 )
+from persisted_pattern_observations import (  # noqa: E402
+    persisted_observation_assessor,
+)
 from return_validation import (  # noqa: E402
     PATTERN_SCORING_SCHEMA_VERSION,
     ReturnValidationError,
@@ -120,6 +123,7 @@ def build_current_pattern_snapshot(
             talk for talk in talks if talk.get("status") in ELIGIBLE_STATUSES
         ]
         resolved_catalog = catalog or load_catalog()
+        observation_assessor = persisted_observation_assessor(resolved_catalog)
         (
             baseline_talks,
             excluded_pattern_talks,
@@ -130,6 +134,7 @@ def build_current_pattern_snapshot(
             pattern_catalog_fingerprint=resolved_catalog.fingerprint,
             pattern_scoring_schema_version=PATTERN_SCORING_SCHEMA_VERSION,
             evidence_freshness_assessor=evidence_freshness_assessor,
+            persisted_observation_assessor=observation_assessor,
         )
         pattern_baseline = build_current_cohort_baseline(
             processed_talks,
@@ -137,6 +142,7 @@ def build_current_pattern_snapshot(
             pattern_catalog_fingerprint=resolved_catalog.fingerprint,
             pattern_scoring_schema_version=PATTERN_SCORING_SCHEMA_VERSION,
             evidence_freshness_assessor=evidence_freshness_assessor,
+            persisted_observation_assessor=observation_assessor,
         )
         pattern_opportunities = build_pattern_opportunity_rows(
             baseline_talks,

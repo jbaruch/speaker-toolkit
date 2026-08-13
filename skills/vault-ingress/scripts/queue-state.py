@@ -96,6 +96,7 @@ from adherence_baseline import (
     build_adherence_baseline,
     partition_pattern_scoring_cohort,
 )
+from persisted_pattern_observations import persisted_observation_assessor
 from pattern_evidence import (
     assess_talk_artifact_capabilities,
     required_pptx_evidence_blocking_reason,
@@ -526,7 +527,14 @@ def normalize_legacy_statuses(database, *, capability_assessor):
 
 
 def normalize_pattern_scoring_generations(database, *, evidence_freshness_assessor):
-    """Requeue every valid processed talk outside the active score generation."""
+    """Requeue every valid processed talk outside the active score generation.
+
+    "Outside the generation" includes a talk whose persisted observations are
+    structurally invalid: its score was computed from a block nothing
+    validated, so it is not current evidence however current its stamp says it
+    is. Requeueing it here and excluding it from the cohort are the same act,
+    because both read `partition_pattern_scoring_cohort` (#167).
+    """
     try:
         catalog = load_catalog()
         _, _, exclusion_details = partition_pattern_scoring_cohort(
@@ -535,6 +543,7 @@ def normalize_pattern_scoring_generations(database, *, evidence_freshness_assess
             pattern_catalog_fingerprint=catalog.fingerprint,
             pattern_scoring_schema_version=PATTERN_SCORING_SCHEMA_VERSION,
             evidence_freshness_assessor=evidence_freshness_assessor,
+            persisted_observation_assessor=persisted_observation_assessor(catalog),
         )
     except (AdherenceBaselineError, ReturnValidationError, OSError) as exc:
         raise QueueStateError(
@@ -857,6 +866,7 @@ def command_claim(
                 path,
                 video_evidence_assessment=video_evidence_assessment,
             ),
+            persisted_observation_assessor=persisted_observation_assessor(catalog),
         )
     except (AdherenceBaselineError, ReturnValidationError, OSError) as exc:
         raise QueueStateError(
