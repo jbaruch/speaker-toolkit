@@ -1071,6 +1071,106 @@ def _apply_retire_improvement_goal(
     )
 
 
+def _apply_sever_pptx_talk_binding(
+    database: dict[str, Any],
+    mutation: dict[str, Any],
+    changes: list[dict[str, Any]],
+    *,
+    index: int,
+) -> None:
+    """Break a talk binding nothing proved, on BOTH sides, in one step.
+
+    A binding is a pair. The catalog row names a talk, and the talk names the
+    deck back through its own `pptx_path`. `record_pptx` writes the talk side
+    on a match and never clears it, so before this there was no way to undo
+    one: `sweep-pptx-talk-identity.py` could prove a binding wrong and nothing
+    could act on the proof.
+
+    Both sides move together because severing one is worse than severing
+    neither. Clearing only the catalog row leaves the talk still naming the
+    deck, and every reader that resolves a talk's slides through
+    `talks[].pptx_path` keeps drawing evidence from it — the exact failure
+    #176 exists to stop, now with the audit trail saying it was handled.
+
+    This does not decide anything. The assessment decides; `--emit-mutations`
+    on the sweep writes the plan; the owner reviews it. This is the writer that
+    applies a decision already made, which is why it takes exact-old-value
+    preconditions on both sides rather than a filename and a promise.
+
+    The catalog row survives, unbound: the deck still exists and the catalog
+    still knows about it. Only the claim that it belongs to this talk goes.
+    """
+    _require_keys(
+        mutation,
+        required={"kind", "pptx_path", "expect", "expect_talk_pptx_path"},
+        label=f"mutations[{index}]",
+    )
+    pptx_path = _nonempty(mutation["pptx_path"], f"mutations[{index}].pptx_path")
+    records = _collection(database, "pptx_catalog")
+    record_index, current = _find_unique_record(
+        records,
+        "pptx_path",
+        pptx_path,
+        label="pptx_catalog",
+    )
+    if current is None or record_index is None:
+        raise TrackingDatabaseMutationError(
+            f"pptx_catalog[{pptx_path!r}] does not exist; a binding that is not "
+            "stored cannot be severed"
+        )
+    _expect_value(
+        exists=True,
+        actual=current,
+        expected=mutation["expect"],
+        label=f"pptx_catalog[{pptx_path!r}]",
+    )
+    talk_filename = current.get("talk_filename")
+    if talk_filename is None:
+        raise TrackingDatabaseMutationError(
+            f"pptx_catalog[{pptx_path!r}] binds no talk; severing it would "
+            "report work that did not happen"
+        )
+    talk_filename = _nonempty(
+        talk_filename, f"pptx_catalog[{pptx_path!r}].talk_filename"
+    )
+
+    talk = _talk_by_filename(database, talk_filename)
+    _expect_value(
+        exists="pptx_path" in talk,
+        actual=talk.get("pptx_path"),
+        expected=mutation["expect_talk_pptx_path"],
+        label=f"talks[{talk_filename!r}].pptx_path",
+    )
+
+    before_record = copy.deepcopy(current)
+    replacement = copy.deepcopy(current)
+    replacement["talk_filename"] = None
+    replacement["matched"] = False
+    # Only a v3 row carries the field at all. An unbound row's assessment is
+    # null by the shape's own rule, so setting it on a v1/v2 row would add a
+    # field that generation does not have.
+    if "identity_assessment" in replacement:
+        replacement["identity_assessment"] = None
+    records[record_index] = replacement
+    _record_change(
+        changes,
+        kind="sever_pptx_talk_binding",
+        identity=pptx_path,
+        before=before_record,
+        after=replacement,
+    )
+
+    talk_before = talk.get("pptx_path", MISSING_MARKER)
+    talk.pop("pptx_path", None)
+    _record_change(
+        changes,
+        kind="clear_talk_pptx_path",
+        identity=talk_filename,
+        before=talk_before,
+        after=MISSING_MARKER,
+    )
+
+
 def _require_bound_identity_assessment(
     assessment: object,
     *,
@@ -1332,6 +1432,8 @@ def build_candidate(
             _apply_collection_upsert(candidate, mutation, changes, index=index)
         elif kind == "record_pptx":
             _apply_record_pptx(candidate, mutation, changes, index=index)
+        elif kind == "sever_pptx_talk_binding":
+            _apply_sever_pptx_talk_binding(candidate, mutation, changes, index=index)
         elif kind == "apply_reviewed_metadata":
             _apply_reviewed_metadata(candidate, mutation, changes, index=index)
         elif kind == "update_talk_publishing":

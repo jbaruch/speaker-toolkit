@@ -1,5 +1,43 @@
 # Changelog
 
+### feat(vault-ingress) — sever a binding nothing proved (#176)
+
+The sweep could prove a binding wrong and nothing could act on the proof. A
+binding is a pair — the catalog row's `talk_filename` and the talk's own
+`pptx_path` — and `record_pptx` writes the talk side on a match and never
+clears it.
+
+`sever_pptx_talk_binding` is that writer. Both sides move together because
+severing one is worse than severing neither: clearing only the catalog row
+leaves the talk still naming the deck, and every reader that resolves slides
+through `talks[].pptx_path` keeps drawing evidence from it, now with an audit
+trail saying it was handled.
+
+`sweep-pptx-talk-identity.py --emit-mutations` writes two plans. `mutation_plan`
+severs the unproven bindings; `proof_plan` stores the assessment behind the
+confirmed ones through `record_pptx`. Separate because keeping a binding and
+breaking one are different owner decisions, and one file carrying both invites
+applying half of what was reviewed.
+
+Both plans carry exact-old-value preconditions on both sides, and those
+preconditions found two defects in the live catalog that per-deck assessment
+cannot see:
+
+- **Two unproven rows naming one talk.** Two UberConf 2024 decks bind the same
+  delivery, so the second sever would fail a precondition the first made false.
+  The plan expects the missing marker for every sever after the first on a
+  given talk.
+- **Two confirmed rows claiming one talk.** `IJ Conference/2025/PDD.pptx` and
+  `PDD for GS.pptx` both confirm `2025-03-20-ij-2025-prompt-driven.md`. Two
+  decks cannot both be one talk's delivery deck; each is assessed alone and each
+  agrees, so the contradiction is only visible across rows. Proving either would
+  assert what the other disproves, so the plan proves neither and both stay
+  blocking for owner review.
+
+Measured end to end on a copy of the live database — sever, re-sweep, prove,
+migrate — blocking preflight findings go **1550 → 4**: the two decks contesting
+one talk, and two unrelated `video_extraction_provenance_invalid` findings.
+
 ## 0.20.72 — 2026-08-14
 
 ### feat(vault-ingress) — activate weighted scoring (#299)
