@@ -32,6 +32,10 @@ LEGACY_GENERATION_REASON = "legacy_generation"
 CATALOG_FINGERPRINT_MISMATCH_REASON = "catalog_fingerprint_mismatch"
 SCORING_SCHEMA_VERSION_MISMATCH_REASON = "scoring_schema_version_mismatch"
 PERSISTED_EVIDENCE_STALE_REASON = "persisted_evidence_stale"
+# The scoring generation whose aggregate is confidence-weighted, and therefore
+# fractional. Mirrors `return_validation`; restated rather than imported so this
+# module keeps performing no I/O and importing nothing that loads a catalog.
+WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION = 6
 PERSISTED_OBSERVATIONS_INVALID_REASON = "persisted_observations_invalid"
 EVIDENCE_BOUND_SCORING_SCHEMA_VERSION = 4
 OPPORTUNITY_BOUND_SCORING_SCHEMA_VERSION = 5
@@ -226,11 +230,27 @@ def _classify_generation(
     )
 
 
+def _require_number(value: object, label: str) -> float:
+    """A finite real number. `True` is an int in Python; a score is not.
+
+    Returned unchanged rather than coerced to float. A weighted score that
+    happens to be whole is still that number, and widening it here would restate
+    it as `5.0` in every message and store `12.0` where the flat generation
+    stores `12` — a difference in the record that no arithmetic asked for.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise AdherenceBaselineError(f"{label} must be a number, got {value!r}")
+    if not math.isfinite(value):
+        raise AdherenceBaselineError(f"{label} must be finite, got {value!r}")
+    return value
+
+
 def _resolved_pattern_score(
     talk: Mapping[str, object],
     *,
     filename: str,
-) -> int:
+    weighted: bool = False,
+) -> float:
     top_score = talk.get("pattern_score", _MISSING)
     observations = talk.get("pattern_observations", _MISSING)
     if top_score is _MISSING:
@@ -250,8 +270,12 @@ def _resolved_pattern_score(
             "nested pattern_observations.pattern_score"
         )
 
-    validated_top = _require_integer(top_score, f"{filename}.pattern_score")
-    validated_nested = _require_integer(
+    # A weighted aggregate is a sum of 1.0/0.5/0.25 terms, so it is fractional
+    # by construction. The flat generation still requires an integer: a float
+    # there means arithmetic other than count-minus-count produced it.
+    require = _require_number if weighted else _require_integer
+    validated_top = require(top_score, f"{filename}.pattern_score")
+    validated_nested = require(
         nested_score,
         f"{filename}.pattern_observations.pattern_score",
     )
@@ -394,7 +418,7 @@ def _persisted_observation_reasons(
     return sorted(set(reasons))
 
 
-def _average_pattern_score(score_sum: int, talk_count: int) -> float | None:
+def _average_pattern_score(score_sum: float, talk_count: int) -> float | None:
     if talk_count == 0:
         return None
     try:
@@ -529,7 +553,11 @@ def partition_pattern_scoring_cohort(
                 }
             )
             continue
-        _resolved_pattern_score(talk, filename=filename)
+        _resolved_pattern_score(
+            talk,
+            filename=filename,
+            weighted=(exact_scoring_version >= WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION),
+        )
         if exact_scoring_version >= OPPORTUNITY_BOUND_SCORING_SCHEMA_VERSION:
             _resolved_opportunity_coverage_identity(talk, filename=filename)
         if exact_scoring_version >= EVIDENCE_BOUND_SCORING_SCHEMA_VERSION:
@@ -665,13 +693,24 @@ def _build_adherence_baseline(
             comparison_status = "unavailable"
             comparison_reason = "empty_current_cohort"
     scored_talk_count = len(comparison_talks)
+    weighted_generation = (
+        exact_scoring_version >= WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
+    )
     pattern_score_sum = sum(
         _resolved_pattern_score(
             talk,
             filename=_require_filename(talk.get("filename"), "talk filename"),
+            weighted=weighted_generation,
         )
         for talk in comparison_talks
     )
+    if weighted_generation:
+        # Every weighted score is canonical to two decimals, so a sum of them is
+        # too and this rounds nothing away. It normalizes float dust instead: the
+        # cohort admits any finite number a persisted record carries, and an
+        # un-canonical sum would be stored in a snapshot other code compares
+        # exactly. Same canonicalization `expected_weighted_score` applies.
+        pattern_score_sum = round(pattern_score_sum, 2)
 
     snapshot: dict[str, object] = {
         "schema_version": (
@@ -835,7 +874,14 @@ def validate_adherence_baseline(snapshot: object) -> dict[str, object]:
         "scored_talk_count",
         minimum=0,
     )
-    score_sum = _require_integer(snapshot["pattern_score_sum"], "pattern_score_sum")
+    # The sum takes its generation's arithmetic, exactly as the per-talk score
+    # does: a weighted cohort sums fractions, so demanding an integer here would
+    # reject every baseline the weighted generation can build.
+    score_sum = (
+        _require_number(snapshot["pattern_score_sum"], "pattern_score_sum")
+        if scoring_version >= WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
+        else _require_integer(snapshot["pattern_score_sum"], "pattern_score_sum")
+    )
     expected_average = _average_pattern_score(score_sum, talk_count)
     raw_average = snapshot["average_pattern_score"]
     if talk_count == 0:
