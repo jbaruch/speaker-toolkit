@@ -27,17 +27,17 @@ def test_claim_issuance_is_live_and_version_bound() -> None:
         assert "#157" not in text, f"{name} still carries the temporary issue gate"
         assert "issuance pause" not in text.lower()
 
-    assert '"schema_version": 5' in docs["queue"]
-    assert '"required_return_schema_version": 5' in docs["queue"]
+    assert '"schema_version": 6' in docs["queue"]
+    assert '"required_return_schema_version": 6' in docs["queue"]
     assert '"adherence_baseline": {"schema_version": 2' in docs["queue"]
-    assert "Fresh claims always use schema v5 and require return v5" in docs["queue"]
+    assert "Fresh claims always use schema v6 and require return v6" in docs["queue"]
     assert (
         "Saved claim schemas v1/v2 authorize only return schemas v1/v2"
         in docs["schemas"]
     )
     assert (
-        "schema v3 authorizes only v3; schema v4 authorizes only archival v4"
-        in docs["schemas"]
+        "schema v3 authorizes only v3; schema v4 authorizes only archival v4; "
+        "schema v5\nauthorizes only v5" in docs["schemas"]
     )
     assert "Recover a live legacy lease" in docs["worker"]
 
@@ -239,7 +239,7 @@ def test_source_located_worker_and_engine_evidence_ownership_is_explicit() -> No
     )
     worker_example = (
         docs["worker"]
-        .split("Minimal processed structure for a fresh v5 claim", 1)[1]
+        .split("Minimal processed structure for a fresh v6 claim", 1)[1]
         .split("```json", 1)[1]
         .split("```", 1)[0]
     )
@@ -282,13 +282,14 @@ def test_claim_return_talk_and_scoring_axes_preserve_archival_v4() -> None:
         "| v4 | v4 only | archival source-located v4 | never current v5 |"
         in docs["schemas"]
     )
+    assert "| v5 | v5 only | v5 | never current v6 |" in docs["schemas"]
     assert (
-        "| v5 | v5 only | v5 | v5 when canonical evidence/outcomes are fresh |"
+        "| v6 | v6 only | v6 | v6 when canonical evidence/outcomes are fresh |"
         in docs["schemas"]
     )
-    assert "Fresh queue work uses claim schema v5" in docs["selection"]
+    assert "Fresh queue work uses claim schema v6" in docs["selection"]
     assert (
-        "only return generation eligible for pattern-scoring schema v5"
+        "only return generation eligible for pattern-scoring schema v6"
         in docs["worker"]
     )
 

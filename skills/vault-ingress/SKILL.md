@@ -122,7 +122,7 @@ Then claim each exact batch:
   --batch-id <stable-batch> --now <timezone-aware-ISO>
 ```
 
-Fresh claims are schema v5 and require return v5. Use the stored claim on replay;
+Fresh claims are schema v6 and require return v6. A v6 return carries `pattern_score_basis` and may carry a fractional `pattern_score`. Use the stored claim on replay;
 recover a stranded lease and issue a new generation. Set the best verified slide
 source, use `skipped_no_sources` only when every source is unavailable, and honor
 an explicit filename/title argument as a one-talk selection.
@@ -207,8 +207,8 @@ If `{vault_root}/speaker-profile.json` exists, invoke `Skill(skill: "vault-profi
 with the updated tracking database plus the resolved `{vault_root}` and exact
 database-configured `{python_path}` as handoff context. The profile skill re-reads
 the database and rejects a missing or mismatched interpreter; never let the handoff
-fall back to `python3` on `PATH`. It writes schema v5 by classifying the existing raw
-outcomes; this does not reparse talks. Report the diff of changes (added fields,
+fall back to `python3` on `PATH`. It writes speaker-profile schema v5 by classifying the existing raw
+outcomes; this does not reparse talks. Speaker-profile schema versions are independent of the return, claim, and talk schema versions. Report the diff of changes (added fields,
 changed values) so the speaker can verify.
 
 If the profile doesn't exist, skip this step silently.

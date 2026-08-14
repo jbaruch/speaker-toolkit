@@ -6,6 +6,7 @@ network or reads subagent returns.
 
 import copy
 import hashlib
+import importlib
 import json
 from typing import Any
 import os
@@ -32,6 +33,10 @@ SCRIPT = (
     / "scripts"
     / "queue-state.py"
 )
+if str(SCRIPT.parent) not in sys.path:
+    sys.path.insert(0, str(SCRIPT.parent))
+queue_claim_contract = importlib.import_module("queue_claim_contract")
+return_validation = importlib.import_module("return_validation")
 NOW = "2026-07-31T18:00:00+00:00"
 
 
@@ -86,7 +91,14 @@ def _write_db(tmp_path, talks, *, config=None, current=True):
     transcripts = tmp_path / "transcripts"
     transcripts.mkdir(exist_ok=True)
     for talk in talks:
-        if talk.get("pattern_scoring_schema_version") != 5:
+        # Enrich every talk stamped at the ACTIVE scoring generation. Pinned to
+        # the literal 5, this silently stopped enriching the moment the
+        # generation advanced, and the talks it skipped then failed the
+        # opportunity-identity check as if the fixture had never been valid.
+        if (
+            talk.get("pattern_scoring_schema_version")
+            != return_validation.PATTERN_SCORING_SCHEMA_VERSION
+        ):
             continue
         observations = talk.get("pattern_observations")
         if not isinstance(observations, dict):
@@ -1483,7 +1495,7 @@ def test_claim_is_idempotent_for_an_existing_run_and_batch(tmp_path):
     assert path.read_bytes() == first_bytes
 
 
-def test_new_claim_is_v5_with_one_immutable_batch_baseline(tmp_path):
+def test_a_new_claim_is_current_with_one_immutable_batch_baseline(tmp_path):
     talks = [_talk("eg6gqvUFh6Q"), _talk("iPYc7LCH608")]
     path = _write_db(tmp_path, talks)
 
@@ -1491,8 +1503,12 @@ def test_new_claim_is_v5_with_one_immutable_batch_baseline(tmp_path):
 
     assert result.returncode == 0, result.stderr
     claims = json.loads(result.stdout)["claimed"]
-    assert {claim["schema_version"] for claim in claims} == {5}
-    assert {claim["required_return_schema_version"] for claim in claims} == {5}
+    assert {claim["schema_version"] for claim in claims} == {
+        queue_claim_contract.CURRENT_QUEUE_CLAIM_SCHEMA_VERSION
+    }
+    assert {claim["required_return_schema_version"] for claim in claims} == {
+        return_validation.RETURN_SCHEMA_VERSION
+    }
     assert claims[0]["adherence_baseline"] == claims[1]["adherence_baseline"]
     baseline: dict[str, Any] = claims[0]["adherence_baseline"]
     assert baseline["as_of"] == NOW
@@ -1528,7 +1544,7 @@ def test_inspect_dual_reads_a_schema_v3_adherence_claim(tmp_path):
     assert path.read_bytes() == before
 
 
-def test_schema_v5_claim_cannot_request_a_schema_v3_return(tmp_path):
+def test_a_current_claim_cannot_request_a_schema_v3_return(tmp_path):
     path = _write_db(tmp_path, [_talk("eg6gqvUFh6Q")])
     claimed = _claim(path)
     assert claimed.returncode == 0, claimed.stderr
@@ -1540,7 +1556,10 @@ def test_schema_v5_claim_cannot_request_a_schema_v3_return(tmp_path):
     inspected = _run(path, "inspect", "--run-id", "run-1")
 
     assert inspected.returncode == 2
-    assert "must equal its claim schema version 5" in inspected.stderr
+    assert (
+        "must equal its claim schema version "
+        f"{queue_claim_contract.CURRENT_QUEUE_CLAIM_SCHEMA_VERSION}"
+    ) in inspected.stderr
     assert path.read_bytes() == before
 
 
@@ -1615,7 +1634,9 @@ def test_same_run_and_batch_reclaims_a_stale_recovered_generation(tmp_path):
     assert talk["reprocess_generation"] == 2
     assert talk["_queue_claim"]["reprocess_generation"] == 2
     archived = talk["_queue_claim_history"][0]
-    assert archived["schema_version"] == 5
+    assert archived["schema_version"] == (
+        queue_claim_contract.CURRENT_QUEUE_CLAIM_SCHEMA_VERSION
+    )
     assert archived["adherence_baseline"] == first_claim["adherence_baseline"]
     assert archived["state"] == "stale_recovered"
     assert archived["released_at"] == "2026-07-31T18:00:00+00:00"

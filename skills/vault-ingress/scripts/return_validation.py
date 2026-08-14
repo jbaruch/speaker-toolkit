@@ -157,6 +157,14 @@ V5_PERSISTED_PATTERN_OBSERVATION_FIELDS = PERSISTED_PATTERN_OBSERVATION_FIELDS |
     "pattern_outcomes",
     "opportunity_coverage_identity",
 }
+# The weighted generation's persisted shape. A DISTINCT accepted set, never v5
+# plus an optional field: a v5 record carrying a basis and a v6 record missing
+# one are both malformed, and an optional field cannot say that. The basis is
+# what makes a fractional score checkable, so a weighted record without one is a
+# number with no arithmetic behind it.
+V6_PERSISTED_PATTERN_OBSERVATION_FIELDS = V5_PERSISTED_PATTERN_OBSERVATION_FIELDS | {
+    "pattern_score_basis",
+}
 LEGACY_PERSISTED_PATTERN_OBSERVATION_FIELDS = PERSISTED_PATTERN_OBSERVATION_FIELDS - {
     "evidence_schema_version",
     "source_inspection",
@@ -242,7 +250,7 @@ LANGUAGE_RE = re.compile(r"^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$")
 CONDITION_ID_RE = re.compile(r"^[a-z0-9]+(?:[-_][a-z0-9]+)*$")
 VIDEO_SOURCE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 VIDEO_EXTRACTION_SCHEMA_VERSION = 3
-QUEUE_CLAIM_SCHEMA_VERSION = 5
+QUEUE_CLAIM_SCHEMA_VERSION = 6
 SOURCE_LOCATED_QUEUE_CLAIM_SCHEMA_VERSION = 4
 BASELINE_QUEUE_CLAIM_SCHEMA_VERSION = 3
 PREVIOUS_QUEUE_CLAIM_SCHEMA_VERSION = 2
@@ -251,18 +259,24 @@ LEGACY_RETURN_SCHEMA_VERSION = 1
 PREVIOUS_RETURN_SCHEMA_VERSION = 2
 BASELINE_RETURN_SCHEMA_VERSION = 3
 SOURCE_LOCATED_RETURN_SCHEMA_VERSION = 4
-RETURN_SCHEMA_VERSION = 5
+EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION = 5
 # The first return schema whose aggregate is weighted. Below it the flat +1/-1
 # contract stands, because that is the arithmetic its worker used. v6 keeps
 # every v5 semantic and adds weighting, so it joins each set v5 belongs to.
 WEIGHTED_SCORE_RETURN_SCHEMA_VERSION = 6
+# The generation a fresh claim issues, derived rather than written. Every set
+# below names the generation it means; if they named THIS pointer instead,
+# advancing it would silently drop the generation it used to point at from
+# each of those sets — a validation set that quietly stops accepting v5 the
+# moment v6 becomes current.
+RETURN_SCHEMA_VERSION = WEIGHTED_SCORE_RETURN_SCHEMA_VERSION
 SUPPORTED_RETURN_SCHEMA_VERSIONS = frozenset(
     {
         LEGACY_RETURN_SCHEMA_VERSION,
         PREVIOUS_RETURN_SCHEMA_VERSION,
         BASELINE_RETURN_SCHEMA_VERSION,
         SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
-        RETURN_SCHEMA_VERSION,
+        EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION,
         WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
     }
 )
@@ -271,7 +285,7 @@ SNAPSHOT_RETURN_SCHEMA_VERSIONS = frozenset(
         PREVIOUS_RETURN_SCHEMA_VERSION,
         BASELINE_RETURN_SCHEMA_VERSION,
         SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
-        RETURN_SCHEMA_VERSION,
+        EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION,
         WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
     }
 )
@@ -279,19 +293,19 @@ OUTCOME_GATE_RETURN_SCHEMA_VERSIONS = frozenset(
     {
         BASELINE_RETURN_SCHEMA_VERSION,
         SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
-        RETURN_SCHEMA_VERSION,
+        EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION,
         WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
     }
 )
 SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS = frozenset(
     {
         SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
-        RETURN_SCHEMA_VERSION,
+        EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION,
         WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
     }
 )
 EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS = frozenset(
-    {RETURN_SCHEMA_VERSION, WEIGHTED_SCORE_RETURN_SCHEMA_VERSION}
+    {EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION, WEIGHTED_SCORE_RETURN_SCHEMA_VERSION}
 )
 # The returns whose aggregate is weighted, and which therefore carry a
 # `pattern_score_basis`. Separate from the exhaustive-outcome set because the two
@@ -301,12 +315,14 @@ WEIGHTED_SCORE_RETURN_SCHEMA_VERSIONS = frozenset(
     {WEIGHTED_SCORE_RETURN_SCHEMA_VERSION}
 )
 
-# Stays at 5 until a return actually emits a weighted score. The weight table
-# below is part of the NEXT scoring generation; bumping this constant now would
-# strand every persisted talk on a generation nothing has produced yet, forcing
-# a reparse to adopt arithmetic no worker is using.
-PATTERN_SCORING_SCHEMA_VERSION = 5
+FLAT_PATTERN_SCORING_SCHEMA_VERSION = 5
 WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION = 6
+# Advanced with the activation (#299): returns now emit a weighted score, so
+# the generation persisted talks are stamped with is the weighted one. Derived
+# from the weighted constant rather than written as a literal, for the same
+# reason `RETURN_SCHEMA_VERSION` is — a reader that wants "the flat
+# generation" must name it, not reach for whatever is current.
+PATTERN_SCORING_SCHEMA_VERSION = WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
 
 
 def _persisted_scoring_schema_version(talk: Mapping[str, object]) -> int | None:
@@ -336,7 +352,7 @@ def scoring_schema_version_for_return(return_schema_version: int) -> int:
     """
     if return_schema_version in WEIGHTED_SCORE_RETURN_SCHEMA_VERSIONS:
         return WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
-    return PATTERN_SCORING_SCHEMA_VERSION
+    return FLAT_PATTERN_SCORING_SCHEMA_VERSION
 
 
 # Owner decision (#153): the aggregate stays one number, but a strong detection
@@ -2350,6 +2366,18 @@ def canonical_persisted_pattern_observations(
         persisted["opportunity_coverage_identity"] = observations.get(
             "opportunity_coverage_identity"
         )
+    if return_version in WEIGHTED_SCORE_RETURN_SCHEMA_VERSIONS:
+        # Recomputed from the canonical detection lanes, not copied from the
+        # return. The return's own basis was already checked against those
+        # lanes by `_validate_score`; recomputing here keeps the PERSISTED
+        # basis bound to the arrays actually being persisted, which is what
+        # `validate_persisted_pattern_score_basis` will check it against.
+        #
+        # Omitting it would persist a weighted return under the v5 field set,
+        # and the fractional score it carries is rejected at that shape.
+        persisted["pattern_score_basis"] = pattern_score_basis(
+            patterns_detected, antipatterns_detected, not_evaluable
+        )
     return persisted
 
 
@@ -2810,6 +2838,49 @@ def _validate_flat_score(
                 f"pattern_score.{field} is {value}, but the detection arrays "
                 f"require {wanted}"
             )
+
+
+def validate_persisted_pattern_score_basis(observations: dict, score: object) -> None:
+    """Check a persisted weighted score against the basis stored beside it.
+
+    The return-side validator (`_validate_score`) proves the arithmetic once,
+    when the result arrives. This proves it again on the way out of the
+    database, because a persisted record is a hint and not authority
+    (`stateful-artifacts` -> Hints, Not Authority): a record edited by hand, or
+    written by an older generation of this writer, reaches readers with nobody
+    having rechecked its sum.
+
+    The basis is RECOMPUTED from the persisted detection lanes rather than
+    trusted. A stored basis that agrees with a stored score proves only that
+    whoever wrote them agreed with themselves.
+    """
+    patterns = observations.get("patterns_detected")
+    antipatterns = observations.get("antipatterns_detected")
+    not_evaluable = observations.get("not_evaluable")
+    if (
+        not isinstance(patterns, list)
+        or not isinstance(antipatterns, list)
+        or not isinstance(not_evaluable, list)
+    ):
+        raise ReturnValidationError(
+            "weighted persisted pattern snapshot requires its three detection lanes"
+        )
+    wanted = pattern_score_basis(patterns, antipatterns, not_evaluable)
+    basis = observations.get("pattern_score_basis")
+    _validate_score_basis_types(basis)
+    if basis != wanted:
+        raise ReturnValidationError(
+            "persisted pattern_score_basis does not match its detection arrays"
+        )
+    expected = expected_weighted_score(patterns, antipatterns)
+    # Exact comparison, never rounded: `expected` is already canonical to two
+    # decimals, so rounding the stored value first would accept anything within
+    # half a hundredth of a score no declared arithmetic produces.
+    if score != expected:
+        raise ReturnValidationError(
+            f"persisted pattern_score is {score}, but its weighted detection "
+            f"arrays require {expected}"
+        )
 
 
 def _validate_score(
@@ -3489,6 +3560,7 @@ def validate_persisted_v2_analysis_state(talk: dict) -> None:
 
     actual_fields = set(observations)
     allowed_fields = {
+        frozenset(V6_PERSISTED_PATTERN_OBSERVATION_FIELDS),
         frozenset(V5_PERSISTED_PATTERN_OBSERVATION_FIELDS),
         PERSISTED_PATTERN_OBSERVATION_FIELDS,
         LEGACY_PERSISTED_PATTERN_OBSERVATION_FIELDS,
@@ -3496,11 +3568,13 @@ def validate_persisted_v2_analysis_state(talk: dict) -> None:
     if actual_fields not in allowed_fields:
         raise ReturnValidationError(
             "persisted pattern snapshot has noncanonical fields; expected the "
+            f"weighted v6 {sorted(V6_PERSISTED_PATTERN_OBSERVATION_FIELDS)}, "
             f"v5 {sorted(V5_PERSISTED_PATTERN_OBSERVATION_FIELDS)}, source-located "
             f"v4 {sorted(PERSISTED_PATTERN_OBSERVATION_FIELDS)}, or legacy "
             f"{sorted(LEGACY_PERSISTED_PATTERN_OBSERVATION_FIELDS)}, got "
             f"{sorted(actual_fields)}"
         )
+    weighted = actual_fields == set(V6_PERSISTED_PATTERN_OBSERVATION_FIELDS)
     evidence_schema_version = observations.get("evidence_schema_version")
     located_evidence = evidence_schema_version is not None
     if located_evidence and evidence_schema_version not in {
@@ -3511,12 +3585,12 @@ def validate_persisted_v2_analysis_state(talk: dict) -> None:
             "persisted pattern snapshot evidence_schema_version must be one of "
             f"{[LEGACY_PATTERN_EVIDENCE_SCHEMA_VERSION, PATTERN_EVIDENCE_SCHEMA_VERSION]}"
         )
-    if (
-        evidence_schema_version == PATTERN_EVIDENCE_SCHEMA_VERSION
-        and actual_fields != set(V5_PERSISTED_PATTERN_OBSERVATION_FIELDS)
+    if evidence_schema_version == PATTERN_EVIDENCE_SCHEMA_VERSION and not (
+        weighted or actual_fields == set(V5_PERSISTED_PATTERN_OBSERVATION_FIELDS)
     ):
         raise ReturnValidationError(
-            "evidence-schema v2 persisted snapshots require exhaustive v5 fields"
+            "evidence-schema v2 persisted snapshots require exhaustive v5 or "
+            "weighted v6 fields"
         )
     if (
         evidence_schema_version == LEGACY_PATTERN_EVIDENCE_SCHEMA_VERSION
@@ -3662,7 +3736,24 @@ def validate_persisted_v2_analysis_state(talk: dict) -> None:
                 "outcome ledger and generation"
             )
     score = observations["pattern_score"]
-    if isinstance(score, bool) or not isinstance(score, int):
+    if weighted:
+        # A weighted aggregate is a sum of 1.0/0.5/0.25 terms, so it is
+        # fractional by construction. It is admitted ONLY at this generation:
+        # a flat score is count(patterns) minus count(antipatterns) and a float
+        # there means a different arithmetic produced it.
+        if isinstance(score, bool) or not isinstance(score, (int, float)):
+            raise ReturnValidationError(
+                "weighted persisted pattern snapshot pattern_score must be a number"
+            )
+        if not math.isfinite(score):
+            raise ReturnValidationError(
+                "weighted persisted pattern snapshot pattern_score must be finite"
+            )
+        # The basis is the arithmetic. Recomputed from the detection arrays
+        # rather than trusted, so a persisted score cannot claim a total its
+        # own lanes do not produce.
+        validate_persisted_pattern_score_basis(observations, score)
+    elif isinstance(score, bool) or not isinstance(score, int):
         raise ReturnValidationError(
             "persisted pattern snapshot pattern_score must be an integer"
         )

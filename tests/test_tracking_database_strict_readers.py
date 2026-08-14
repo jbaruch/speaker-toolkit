@@ -7,6 +7,16 @@ import json
 
 import pytest
 
+import importlib as _importlib
+import sys as _sys
+
+_SCRIPTS = Path(__file__).resolve().parents[1] / "skills" / "vault-ingress" / "scripts"
+if str(_SCRIPTS) not in _sys.path:
+    _sys.path.insert(0, str(_SCRIPTS))
+_FUTURE_TALK_SCHEMA_VERSION = (
+    _importlib.import_module("tracking_database").TALK_RECORD_SCHEMA_VERSION + 1
+)
+
 
 STRICT_INVALID_CASES = (
     pytest.param(
@@ -107,7 +117,10 @@ def test_owner_reader_accepts_implicit_legacy_after_schema_assessment(
             "config": {},
             "talks": [
                 {
-                    "schema_version": 6,
+                    # One above the current record schema: a literal stops
+                    # being "future" the moment the schema reaches it, and the
+                    # payload then exercises a different rejection path.
+                    "schema_version": _FUTURE_TALK_SCHEMA_VERSION,
                     "talk_id": "future-talk",
                 }
             ],

@@ -240,3 +240,87 @@ class TestAWeightedScoreCanBeCompared:
             return_validation.ReturnValidationError, match="must be an integer"
         ):
             return_validation.validate_return(ret, catalog)
+
+
+class TestAWeightedBlockSurvivesTheReadGate:
+    """The activation's point: a weighted block persists AND reads back.
+
+    The gate keys the weighted shape off the field SET, so a canonical block
+    that omits `pattern_score_basis` is a v5 block — and the fractional score
+    it carries is then rejected at that shape. v6 that cannot be stored.
+    """
+
+    def _talk(self, rv, block: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "structured_data": {},
+            "verbatim_examples": {},
+            "pattern_observations": block,
+            "pattern_score": block["pattern_score"],
+        }
+
+    def _weighted_block(self, rv) -> dict[str, Any]:
+        patterns = [
+            {
+                "pattern_id": "one",
+                "confidence": "moderate",
+                "evidence": "text",
+                "evidence_citations": [],
+                "dimensions": [1],
+            }
+        ]
+        block = {
+            "patterns_detected": patterns,
+            "pattern_ids": ["one"],
+            "antipatterns_detected": [],
+            "antipattern_ids": [],
+            "not_evaluable": [],
+            "not_evaluable_ids": [],
+            "evidence_sources": ["transcript"],
+            "pattern_score": rv.expected_weighted_score(patterns, []),
+            "applicability_assessments": [],
+            "pattern_outcomes": [],
+            "opportunity_coverage_identity": None,
+            "pattern_score_basis": rv.pattern_score_basis(patterns, [], []),
+        }
+        return block
+
+    def test_the_weighted_field_set_is_v5_plus_the_basis(self, return_validation):
+        assert set(return_validation.V6_PERSISTED_PATTERN_OBSERVATION_FIELDS) == (
+            set(return_validation.V5_PERSISTED_PATTERN_OBSERVATION_FIELDS)
+            | {"pattern_score_basis"}
+        )
+
+    def test_a_fractional_score_is_accepted_at_the_weighted_shape(
+        self, return_validation
+    ):
+        block = self._weighted_block(return_validation)
+        assert block["pattern_score"] != int(block["pattern_score"])
+
+        return_validation.validate_persisted_pattern_score_basis(
+            block, block["pattern_score"]
+        )
+
+    def test_the_basis_is_checked_against_the_persisted_lanes(self, return_validation):
+        """A stored basis agreeing with a stored score proves only that whoever
+        wrote them agreed with themselves."""
+        block = self._weighted_block(return_validation)
+        block["patterns_detected"].append(
+            {
+                "pattern_id": "two",
+                "confidence": "strong",
+                "evidence": "text",
+                "evidence_citations": [],
+                "dimensions": [1],
+            }
+        )
+
+        with pytest.raises(return_validation.ReturnValidationError):
+            return_validation.validate_persisted_pattern_score_basis(
+                block, block["pattern_score"]
+            )
+
+    def test_a_score_the_lanes_do_not_produce_is_refused(self, return_validation):
+        block = self._weighted_block(return_validation)
+
+        with pytest.raises(return_validation.ReturnValidationError):
+            return_validation.validate_persisted_pattern_score_basis(block, 99.0)

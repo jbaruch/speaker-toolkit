@@ -10,6 +10,23 @@ from pathlib import Path
 import pytest
 
 
+import importlib as _importlib
+import sys as _sys
+
+_SCRIPTS_DIR = (
+    Path(__file__).resolve().parents[1] / "skills" / "vault-ingress" / "scripts"
+)
+if str(_SCRIPTS_DIR) not in _sys.path:
+    _sys.path.insert(0, str(_SCRIPTS_DIR))
+
+# Talk-record fixtures track the current schema rather than pinning a literal:
+# a pin makes every fixture in this module unmutatable the moment the talk
+# record shape advances, which surfaces as "must be exact current talk schema"
+# on tests that are about something else entirely.
+CURRENT_TALK_SCHEMA = _importlib.import_module(
+    "tracking_database"
+).TALK_RECORD_SCHEMA_VERSION
+
 MISSING = {"$missing": True}
 DEFAULT_DIRECTORY_EXCLUSIONS = [
     ".venv",
@@ -45,7 +62,13 @@ def _base_database() -> dict[str, Any]:
     return {
         "schema_version": 1,
         "config": _current_config(),
-        "talks": [{"schema_version": 5, "filename": "talk.md", "status": "processed"}],
+        "talks": [
+            {
+                "schema_version": CURRENT_TALK_SCHEMA,
+                "filename": "talk.md",
+                "status": "processed",
+            }
+        ],
         "pptx_catalog": [],
         "qr_codes": [],
         "resources": [],
@@ -619,7 +642,9 @@ def test_talk_clarification_operation_accepts_only_structured_exact_fields(
         )
 
 
-@pytest.mark.parametrize("schema_version", [1, 2, 3, 4])
+# Every version below the current one, so the set widens with each bump
+# instead of quietly leaving the newest stale version untested.
+@pytest.mark.parametrize("schema_version", list(range(1, CURRENT_TALK_SCHEMA)))
 @pytest.mark.parametrize(
     ("kind", "field", "value"),
     [
@@ -644,7 +669,7 @@ def test_talk_metadata_mutations_require_exact_current_talk_schema(
 
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
-        match="must be exact current talk schema 5",
+        match=f"must be exact current talk schema {CURRENT_TALK_SCHEMA}",
     ):
         mutate_tracking_database.build_candidate(
             database,

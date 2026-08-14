@@ -131,7 +131,11 @@ def _return(**overrides):
 
 def _talk(**overrides):
     talk = {
-        "schema_version": 5,
+        # Tracks the current record schema; a literal here makes every fixture
+        # in this module unmutatable the moment the shape advances.
+        "schema_version": importlib.import_module(
+            "ingress_contract"
+        ).TALK_SCHEMA_VERSION,
         "filename": "talk.md",
         "status": "reprocessing-inflight",
         "reprocess_generation": 1,

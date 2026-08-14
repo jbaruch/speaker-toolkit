@@ -27,10 +27,16 @@ from adherence_baseline import (
 )
 
 
-CURRENT_QUEUE_CLAIM_SCHEMA_VERSION = 5
+CURRENT_QUEUE_CLAIM_SCHEMA_VERSION = 6
 LEGACY_QUEUE_CLAIM_SCHEMA_VERSION = 1
 RECEIPT_QUEUE_CLAIM_SCHEMA_VERSION = 2
 ADHERENCE_QUEUE_CLAIM_SCHEMA_VERSION = 3
+# The claim generation that introduced adherence-baseline schema v2. Named
+# because the requirement belongs to THAT generation and every later one, not
+# to whichever generation is current: keyed on "current", advancing the claim
+# schema retroactively demands the legacy baseline of every already-stored
+# claim written under the previous current, and rejects the lot.
+OPPORTUNITY_QUEUE_CLAIM_SCHEMA_VERSION = 5
 SUPPORTED_QUEUE_CLAIM_SCHEMA_VERSIONS = frozenset(
     range(
         LEGACY_QUEUE_CLAIM_SCHEMA_VERSION,
@@ -307,7 +313,7 @@ def validate_queue_claim(
             ) from exc
         expected_baseline_schema = (
             ADHERENCE_BASELINE_SCHEMA_VERSION
-            if version == CURRENT_QUEUE_CLAIM_SCHEMA_VERSION
+            if version >= OPPORTUNITY_QUEUE_CLAIM_SCHEMA_VERSION
             else LEGACY_ADHERENCE_BASELINE_SCHEMA_VERSION
         )
         if baseline.get("schema_version") != expected_baseline_schema:

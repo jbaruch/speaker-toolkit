@@ -31,7 +31,10 @@ from pptx_talk_identity import unassessed_legacy_binding
 LEGACY_TRACKING_DATABASE_SCHEMA_VERSION = 0
 TRACKING_DATABASE_SCHEMA_VERSION = 1
 LEGACY_TALK_RECORD_SCHEMA_VERSION = 1
-TALK_RECORD_SCHEMA_VERSION = 5
+FLAT_SCORE_TALK_RECORD_SCHEMA_VERSION = 5
+# The weighted generation's record shape (#299): `pattern_observations` may
+# carry a `pattern_score_basis` and `pattern_score` may be fractional.
+TALK_RECORD_SCHEMA_VERSION = 6
 LEGACY_CONFIG_RECORD_SCHEMA_VERSION = 1
 CONFIG_RECORD_SCHEMA_VERSION = 2
 LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION = 1
@@ -1403,6 +1406,39 @@ def _migrate_talk_record(talk: dict[str, Any]) -> bool:
     return talk_version_added
 
 
+def _restamp_talk_records(candidate: dict[str, Any]) -> int:
+    """Restamp v5 talk records to the weighted record shape (#299).
+
+    A RESTAMP, never a rescore. The v6 shape admits a `pattern_score_basis` and
+    a fractional `pattern_score`; a stored v5 record has neither, and computing
+    them here would recompute a score under arithmetic its worker never used —
+    the silent reinterpretation `stateful-artifacts` forbids and the exact thing
+    `_validate_score` refuses on the way in.
+
+    So the record's SHAPE advances and its SCORE does not. The talk keeps
+    `pattern_scoring_schema_version: 5`, which is the truth about the arithmetic
+    behind its number, and `partition_pattern_scoring_cohort` therefore excludes
+    it as a generation mismatch and requeues it. That is the reparse, and this
+    migration is what makes it mechanical rather than remembered.
+
+    Without the restamp every stored talk would be unmutatable: the owner writer
+    requires the exact current talk schema before any mutation, so the bump
+    alone would lock the database until this ran.
+    """
+    talks = candidate.get("talks")
+    if not isinstance(talks, list):
+        return 0
+    restamped = 0
+    for talk in talks:
+        if not isinstance(talk, dict):
+            continue
+        if talk.get("schema_version") != FLAT_SCORE_TALK_RECORD_SCHEMA_VERSION:
+            continue
+        talk["schema_version"] = TALK_RECORD_SCHEMA_VERSION
+        restamped += 1
+    return restamped
+
+
 def _require_no_active_writers(talks: list[Any]) -> None:
     """Refuse to change persisted shape while a writer owns the database."""
     active = _active_claim_filenames(talks)
@@ -1475,6 +1511,7 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
         require_current_tracking_database(candidate)
         counts = _empty_record_counts()
         counts["pptx_catalog"] = _migrate_pptx_catalog_records(candidate)
+        counts["talks"] = _restamp_talk_records(candidate)
         if any(counts.values()):
             # Guarded only once state would actually change. A no-op migration
             # must stay callable while a claim is live: Step 1 migrates before
@@ -1522,12 +1559,17 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
     # config takes that return, so a record migration placed after it would be
     # skipped for exactly the databases whose config still needed upgrading.
     counts["pptx_catalog"] += _migrate_pptx_catalog_records(candidate)
+    counts["talks"] += _restamp_talk_records(candidate)
 
     if root_version == TRACKING_DATABASE_SCHEMA_VERSION:
         require_current_tracking_database(candidate)
         return TrackingDatabaseMigration(
             database=candidate,
-            changed=bool(counts["config"] or counts["pptx_catalog"]),
+            # Every record count, never a hand-listed subset: a flag that names
+            # the collections it knows about goes stale the moment a migration
+            # touches one it does not, and reports no-change over mutated
+            # records.
+            changed=any(counts.values()),
             from_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
             to_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
             record_counts=counts,
