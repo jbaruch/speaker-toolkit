@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.77 — 2026-08-14
+
 ### fix(catalog) — an entry evaluable from a transcript can now cite one
 
 Eleven observable entries declared `transcript` in `evaluable_from` — ten of
