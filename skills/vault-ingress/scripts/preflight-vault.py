@@ -1544,9 +1544,16 @@ class VaultPreflight:
         try:
             state = validate_video_extraction_manifest({"video_extraction": extraction})
         except ReturnValidationError as exc:
+            # The caller's severity, not a hardcoded block. An ABSENT manifest
+            # three lines up already respects it — a legacy record queued for
+            # reprocessing reports actionable work rather than deadlocking the
+            # repair that would fix it. An invalid manifest on that same record
+            # is the same situation, and hardcoding `blocking` here held the
+            # whole vault's reparse hostage to two pre-contract manifests the
+            # reparse itself regenerates.
             self.talk_add(
                 index,
-                "blocking",
+                severity,
                 "video_extraction_provenance_invalid",
                 "video extraction manifest violates the schema-v3 artifact contract",
                 field="structured_data.video_extraction",

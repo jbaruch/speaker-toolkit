@@ -4175,3 +4175,33 @@ def test_preflight_warns_when_the_extraction_artifact_was_replaced(
 
     findings = _catalog_findings(report)
     assert findings[0]["actual"]["classification"] == "stale"
+
+
+def test_an_invalid_legacy_video_manifest_on_a_requeued_talk_is_a_warning(
+    preflight_vault,
+    vault_fixture,
+):
+    """An ABSENT manifest on a requeued record already reports actionable work
+    rather than deadlocking the repair. An INVALID one on that same record is
+    the same situation: hardcoding `blocking` held the whole vault's reparse
+    hostage to pre-contract manifests the reparse itself regenerates.
+    """
+    materialize_transcript(vault_fixture)
+    write_pdf(vault_fixture["slides"] / f"{VIDEO_ID}.pdf")
+    talk = base_talk(status="needs-reprocessing", slide_source="video_extracted")
+    talk["structured_data"] = {
+        "video_extraction": {
+            # The live vault's shape: a manifest that predates the contract.
+            "schema_version": 0,
+            "output_pdf": f"slides/{VIDEO_ID}.pdf",
+            "pipeline_version": "0.4.0",
+            "slide_source": "video_extracted",
+            "unique_slides_count": 12,
+        }
+    }
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["blocking_count"] == 0
+    assert "video_extraction_provenance_invalid" in finding_codes(report, "warning")
