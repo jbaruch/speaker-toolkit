@@ -1414,3 +1414,87 @@ def test_empty_container_rejects_before_probe_worker(
         video_evidence.probe_video_artifact("empty.mp4", trusted_root=tmp_path)
 
     assert caught.value.reason_code == "video_invalid_container"
+
+
+def _venv_root_link(root: Path) -> Path:
+    """Link the running venv to a path under `root`, on either platform.
+
+    The condition under test is that the interpreter's own path contains the
+    trusted root — the live vault's `<vault>/.venv/bin/python3`. Reproducing it
+    needs a link, not a copy: a copied interpreter loses the venv and fails on
+    its own dependencies, which would test the fixture instead of the
+    supervisor.
+
+    POSIX gets a symlink. Windows gets a directory junction, which needs no
+    privilege where `os.symlink` does. The link is deliberately UNRESOLVED —
+    resolving follows through to the base installation and drops the venv's
+    site-packages.
+    """
+    link = root / ".venv"
+    if link.exists():
+        return link
+    source = Path(sys.executable).parent.parent
+    if os.name == "nt":
+        created = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", os.fspath(link), os.fspath(source)],
+            capture_output=True,
+            check=False,
+        )
+        assert created.returncode == 0, created.stderr.decode("utf-8", errors="replace")
+    else:
+        link.symlink_to(source)
+    return link
+
+
+def _interpreter_under(root: Path) -> Path:
+    """The linked venv's interpreter, named as this platform names it."""
+    executable = Path(sys.executable)
+    return _venv_root_link(root) / executable.parent.name / executable.name
+
+
+def test_a_video_probe_runs_under_an_interpreter_inside_the_trusted_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The supervisor must not flag the worker's own interpreter as a secret.
+
+    With `config.python_path` inside the vault, `sys.executable` contains the
+    trusted root, and without an `immutable_process_identity` declaration the
+    guard refuses to start the worker — every video probe failed
+    `video_probe_start_failure`.
+    """
+    artifact = tmp_path / "talk.mp4"
+    created = subprocess.run(
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=160x90:r=2",
+            "-t",
+            "1",
+            "-an",
+            "-c:v",
+            "mpeg4",
+            "-pix_fmt",
+            "yuv420p",
+            "-y",
+            os.fspath(artifact),
+        ],
+        capture_output=True,
+        check=False,
+    )
+    assert created.returncode == 0, created.stderr.decode("utf-8", errors="replace")
+    monkeypatch.setattr(sys, "executable", os.fspath(_interpreter_under(tmp_path)))
+
+    probe = video_evidence.VideoEvidenceAssessment().probe(
+        artifact.name,
+        trusted_root=tmp_path,
+    )
+
+    assert probe.duration_seconds == pytest.approx(1.0, abs=0.1)
+    assert probe.video_stream_count == 1

@@ -400,6 +400,11 @@ def _invoke_metadata_worker(
         {},
         cast(Any, payload),
         limits,
+        # See video_evidence: the interpreter and this module's own path are
+        # fixed process identity, not leaked secrets. A vault whose configured
+        # interpreter lives inside the trusted root otherwise fails every probe
+        # with `unsafe_worker_process_metadata`.
+        immutable_process_identity=command[:2],
         sensitive_values=sensitive_values,
         schema_generation=PDF_PROBE_SCHEMA_VERSION,
         pipeline_generation=PDF_PROBE_PIPELINE_VERSION,
@@ -1286,6 +1291,11 @@ def _invoke_probe_worker(
         expected_generations,
         cast(Any, payload),
         limits,
+        # See video_evidence: the interpreter and this module's own path are
+        # fixed process identity, not leaked secrets. A vault whose configured
+        # interpreter lives inside the trusted root otherwise fails every probe
+        # with `unsafe_worker_process_metadata`.
+        immutable_process_identity=command[:2],
         sensitive_values=sensitive_values,
         schema_generation=PDF_PROBE_SCHEMA_VERSION,
         pipeline_generation=PDF_PROBE_PIPELINE_VERSION,

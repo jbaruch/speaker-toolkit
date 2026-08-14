@@ -6,6 +6,7 @@ import hashlib
 import importlib
 import logging
 import os
+import subprocess
 import sys
 import types
 from dataclasses import replace
@@ -1353,3 +1354,67 @@ def test_deadline_is_validated_and_clamps_worker_profile(
     with pytest.raises(pdf_evidence.PdfEvidenceError) as caught:
         pdf_evidence._limits_before_deadline(pdf_evidence.PDF_PROBE_LIMITS, True)
     assert caught.value.reason_code == "pdf_evidence_invalid"
+
+
+def _venv_root_link(root: Path) -> Path:
+    """Link the running venv to a path under `root`, on either platform.
+
+    The condition under test is that the interpreter's own path contains the
+    trusted root — the live vault's `<vault>/.venv/bin/python3`. Reproducing it
+    needs a link, not a copy: a copied interpreter loses the venv and fails on
+    its own dependencies, which would test the fixture instead of the
+    supervisor.
+
+    POSIX gets a symlink. Windows gets a directory junction, which needs no
+    privilege where `os.symlink` does. The link is deliberately UNRESOLVED —
+    resolving follows through to the base installation and drops the venv's
+    site-packages.
+    """
+    link = root / ".venv"
+    if link.exists():
+        return link
+    source = Path(sys.executable).parent.parent
+    if os.name == "nt":
+        created = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", os.fspath(link), os.fspath(source)],
+            capture_output=True,
+            check=False,
+        )
+        assert created.returncode == 0, created.stderr.decode("utf-8", errors="replace")
+    else:
+        link.symlink_to(source)
+    return link
+
+
+def _interpreter_under(root: Path) -> Path:
+    """The linked venv's interpreter, named as this platform names it."""
+    executable = Path(sys.executable)
+    return _venv_root_link(root) / executable.parent.name / executable.name
+
+
+def test_a_pdf_probe_runs_under_an_interpreter_inside_the_trusted_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same defect as the video probe, same shape, both PDF worker paths.
+
+    With `config.python_path` inside the vault — the layout `check-runtime`
+    recommends and the live vault uses — `sys.executable` contains the trusted
+    root. Without an `immutable_process_identity` declaration the supervisor
+    reads the worker's own interpreter as leaked metadata and refuses to start
+    it, so every PDF admission failed `pdf_probe_start_failure`.
+
+    Exercised through `probe_pdf_artifact`, which drives the metadata worker and
+    the probe worker in turn, so both changed call sites are covered by the
+    outcome rather than by their wiring.
+    """
+    source = _synthetic_pdf(3)
+    (tmp_path / "talk.pdf").write_bytes(source)
+    interpreter = _interpreter_under(tmp_path)
+    monkeypatch.setattr(sys, "executable", os.fspath(interpreter))
+
+    probe = pdf_evidence.probe_pdf_artifact("talk.pdf", trusted_root=tmp_path)
+
+    assert probe.page_count == 3
+    assert probe.source_sha256 == hashlib.sha256(source).hexdigest()
+    assert probe.availability.state == "local"
