@@ -466,11 +466,12 @@ them from the preclaim artifacts and rejects false bounds or source claims.
 Return exactly the shape in [schemas-db.md](schemas-db.md). `status`,
 `slide_source`, all five catalog-feedback lanes, and the complete pattern score
 object are mandatory. Match `return_schema_version` to the active claim:
-fresh claim-schema v5 with `required_return_schema_version: 5` emits return v5.
+fresh claim-schema v6 with `required_return_schema_version: 6` emits return v6.
 Saved claim schemas v1/v2 authorize only saved return schemas v1/v2; claim
-schema v3 authorizes only return schema v3, and claim schema v4 authorizes only
-archival return schema v4.
-Recover a live legacy lease and issue a fresh v5 generation; never mutate its
+schema v3 authorizes only return schema v3, claim schema v4 authorizes only
+archival return schema v4, and claim schema v5 authorizes only return schema
+v5 — a saved legacy replay generation, never a fresh one.
+Recover a live legacy lease and issue a fresh v6 generation; never mutate its
 claim or attach a newer return to it.
 Snapshot versions 2–5 require `rhetoric_notes` and `areas_for_improvement` to
 contain substantive non-whitespace analysis. Empty strings remain valid for
@@ -484,7 +485,7 @@ never emit JSON `null`.
 Omit `processed_date`; the persistence writer owns one normalized timestamp for
 the complete queue batch and the analysis writer renders that stored value.
 
-For return v5, always return `"adherence_assessment": ""` exactly and omit
+For return v5 and v6, always return `"adherence_assessment": ""` exactly and omit
 `adherence_comparison`. The worker cannot know the canonical, engine-owned talk
 `opportunity_coverage_identity`. Only an owner-side consumer after persistence
 may compare a talk against a schema-v2 baseline, and only when the identities
@@ -523,7 +524,7 @@ nested dictionary union. Put genuinely additive experimental data under
 `structured_data.extensions.<producer_namespace>`; an undeclared top-level object
 is rejected until its replacement policy is documented and registered.
 
-Minimal processed structure for a fresh v5 claim:
+Minimal processed structure for a fresh v6 claim:
 
 ```json
 {
@@ -611,9 +612,10 @@ The array is duplicate-free, excludes the `source_comparison` marker, and must
 exactly match one qualifying catalog group.
 
 Fresh work arrives only under a claim-v5 payload that explicitly requires return
-v5. Saved claims v1/v2 remain replayable only with saved returns v1/v2; claim v3
-requires return v3 and claim v4 requires archival return v4. Recover a live
-legacy lease without rewriting it; otherwise issue a new v5 claim. Never alter a
+v6. Saved claims v1/v2 remain replayable only with saved returns v1/v2; claim v3
+requires return v3, claim v4 requires archival return v4, and claim v5 requires
+return v5. Recover a live legacy lease without rewriting it; otherwise issue a
+new v6 claim. Never alter a
 saved claim payload, invent a schema, or attach a newer return to a legacy claim.
 
 In raw v4/v5 citations, return only `source`, `channel`, and the locator you

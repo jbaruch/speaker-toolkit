@@ -262,7 +262,7 @@ customization, not the owner default. See the
       "claimed_at": "2026-07-31T18:00:00+00:00",
       "previous_status": "needs-reprocessing",
       "reprocess_generation": 1,
-      "required_return_schema_version": 5,
+      "required_return_schema_version": 6,
       "adherence_baseline": {
         "schema_version": 2,
         "as_of": "2026-07-31T18:00:00+00:00",
@@ -721,7 +721,7 @@ mutually exclusive shape and omits both `pattern_scoring_schema_version` and
 }
 ```
 
-A fresh v5 worker uses the exact empty adherence sentinel and does not author a
+A fresh v6 worker uses the exact empty adherence sentinel and does not author a
 raw-score comparison. Only an owner-side consumer that sees the canonical talk
 outcomes may compare against a baseline carrying the same
 `opportunity_coverage_identity`. Baseline schema v2 keeps all fresh-v5 talks in
@@ -753,7 +753,7 @@ manual` is provenance only and does not prove an artifact exists. Legacy
 no-video/no-transcript statuses normalize to `skipped_no_sources` only when the
 shared verified-local plus remote-acquisition capability list is empty.
 
-Every fresh queue claim is schema v5 and carries exactly the
+Every fresh queue claim is schema v6 and carries exactly the
 `required_return_schema_version` and `adherence_baseline` fields shown above.
 The queue owner builds one baseline before mutating any selected talk, copies it
 unchanged to every batch member, and requires `adherence_baseline.as_of` to equal

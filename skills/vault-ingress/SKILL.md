@@ -207,7 +207,7 @@ If `{vault_root}/speaker-profile.json` exists, invoke `Skill(skill: "vault-profi
 with the updated tracking database plus the resolved `{vault_root}` and exact
 database-configured `{python_path}` as handoff context. The profile skill re-reads
 the database and rejects a missing or mismatched interpreter; never let the handoff
-fall back to `python3` on `PATH`. It writes schema v5 by classifying the existing raw
+fall back to `python3` on `PATH`. It writes speaker-profile schema v5 — a different axis from the return/claim/talk generations — by classifying the existing raw
 outcomes; this does not reparse talks. Report the diff of changes (added fields,
 changed values) so the speaker can verify.
 

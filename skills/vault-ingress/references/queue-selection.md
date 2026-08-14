@@ -6,7 +6,7 @@ and recovery rule below.
 
 Fresh queue work uses claim schema v6. Before changing any talk status,
 `queue-state.py claim` snapshots one immutable `adherence_baseline` for the
-entire selected batch, stamps `required_return_schema_version: 5`, and copies
+entire selected batch, stamps `required_return_schema_version: 6`, and copies
 that exact snapshot into every member claim. The snapshot uses the current
 catalog fingerprint and pattern-scoring schema, includes only current
 `processed`/`processed_partial` talks, and excludes every active-batch filename
@@ -43,7 +43,7 @@ before inspecting its prior score. Its `as_of` equals the claim's canonical
   --batch-id <stable-batch> --now <timezone-aware-ISO>`. The command selects
   `pending`, `needs-reprocessing`, and retryable download failures, writes an
   atomic lease, increments `reprocess_generation`, and returns the claimed talk
-  list. Every fresh claim is schema v5 and requires return schema v5. Never
+  list. Every fresh claim is schema v6 and requires return schema v6. Never
   change a record to `reprocessing-inflight` by hand.
 - Before claiming a non-YouTube talk whose transcript will be used as evidence,
   acquire the transcript and register its canonical vault-relative

@@ -29,23 +29,24 @@ when state changed.
 
 Claim schema (owned by this script; stored in ``talk._queue_claim``):
     {
-      "schema_version": 5,
+      "schema_version": 6,
       "run_id": "reparse-2026-07",
       "batch_id": "25",
       "claimed_at": "2026-07-31T18:00:00+00:00",
       "previous_status": "needs-reprocessing",
       "reprocess_generation": 2,
       "state": "claimed",
-      "required_return_schema_version": 5,
+      "required_return_schema_version": 6,
       "adherence_baseline": {"schema_version": 2, "...": "..."}
     }
 
-Fresh claims always use schema v5 and require return v5. The queue snapshots one
-baseline before mutating the selected talks, excludes the exact active batch,
-and copies the same immutable payload to every member. Schema-v1/v2 claims are
-accepted only for compatibility and authorize return v1/v2; schema-v3 claims
-authorize only return v3, and schema-v4 claims authorize only archival return
-v4. None of them authorizes v5 or is newly issued.
+Fresh claims always use schema v6 and require return v6 — the weighted scoring
+generation. The queue snapshots one baseline before mutating the selected talks,
+excludes the exact active batch, and copies the same immutable payload to every
+member. Schema-v1/v2 claims are accepted only for compatibility and authorize
+return v1/v2; schema-v3 claims authorize only return v3, schema-v4 claims
+authorize only archival return v4, and schema-v5 claims authorize only return
+v5. None of them authorizes v6 or is newly issued.
 
 Stale recovery adds ``released_at`` and ``release_reason`` and changes ``state``
 to ``stale_recovered``. A later generation moves the prior claim to
