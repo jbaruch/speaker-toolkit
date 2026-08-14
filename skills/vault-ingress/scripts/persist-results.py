@@ -77,6 +77,7 @@ Example:
 
 import copy
 import json
+import math
 import sys
 from datetime import datetime, timezone
 
@@ -104,6 +105,8 @@ from return_validation import (
     ANALYSIS_STATUSES,
     CURRENT_PATTERN_SCORING_GENERATION_STATUS,
     EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS,
+    WEIGHTED_SCORE_RETURN_SCHEMA_VERSIONS,
+    expected_weighted_score,
     IMAGE_SOURCE_GROUP,
     LEGACY_QUEUE_CLAIM_SCHEMA_VERSION,
     LEGACY_RETURN_SCHEMA_VERSION,
@@ -462,7 +465,7 @@ def require_detections(observations, field):
     return value
 
 
-def resolve_pattern_score(observations, patterns, antipatterns):
+def resolve_pattern_score(observations, patterns, antipatterns, *, weighted=False):
     """Single source of truth for the talk's `pattern_score`.
 
     Returns (score, coerced); `score` is None when the return carries none.
@@ -485,8 +488,11 @@ def resolve_pattern_score(observations, patterns, antipatterns):
     by construction. `True` satisfies `isinstance(x, int)` in Python and a float
     looks numeric; neither is a score.
 
-    A weighted v6 return never reaches here: it does not canonicalize, so it does
-    not persist. Weighted arithmetic arrives with the activation change.
+    A weighted return DOES reach here as of the activation (#299). Its aggregate
+    is a sum of 1.0/0.5/0.25 terms, so it is fractional by construction, and the
+    count difference is not its arithmetic. `weighted` selects which contract
+    applies; the flat one still refuses a float, because a float there means
+    some other arithmetic produced it.
     """
     if "pattern_score" not in observations or observations["pattern_score"] is None:
         return None, False
@@ -507,7 +513,16 @@ def resolve_pattern_score(observations, patterns, antipatterns):
         )
 
     label = "pattern_score" if coerced else "pattern_score.score"
-    if isinstance(nested, bool) or not isinstance(nested, int):
+    if weighted:
+        if isinstance(nested, bool) or not isinstance(nested, (int, float)):
+            raise ValueError(
+                f"{label} is {nested!r} ({type(nested).__name__}). A weighted "
+                "score is a number — the confidence-weighted sum of the "
+                "detection arrays."
+            )
+        if not math.isfinite(nested):
+            raise ValueError(f"{label} must be a finite number, got {nested!r}")
+    elif isinstance(nested, bool) or not isinstance(nested, int):
         raise ValueError(
             f"{label} is {nested!r} ({type(nested).__name__}). It must be an "
             "integer — the score is count(patterns) minus count(antipatterns), "
@@ -519,13 +534,26 @@ def resolve_pattern_score(observations, patterns, antipatterns):
     # without its accompanying counts, so the arrays are the only evidence that
     # the number is right.
     if coerced:
-        used, against = len(patterns or []), len(antipatterns or [])
-        if used - against != nested:
-            raise ValueError(
-                f"pattern_score is the bare int {nested}, but patterns_detected "
-                f"({used}) minus antipatterns_detected ({against}) is "
-                f"{used - against}. Refusing to guess which is right."
-            )
+        if weighted:
+            # The weighted arithmetic, not the count difference. Compared
+            # exactly: `expected_weighted_score` is already canonical to two
+            # decimals, so rounding the untrusted value first would admit a
+            # score no declared arithmetic produces.
+            expected = expected_weighted_score(patterns or [], antipatterns or [])
+            if nested != expected:
+                raise ValueError(
+                    f"pattern_score is the bare number {nested}, but the "
+                    f"weighted detection arrays require {expected}. Refusing to "
+                    "guess which is right."
+                )
+        else:
+            used, against = len(patterns or []), len(antipatterns or [])
+            if used - against != nested:
+                raise ValueError(
+                    f"pattern_score is the bare int {nested}, but patterns_detected "
+                    f"({used}) minus antipatterns_detected ({against}) is "
+                    f"{used - against}. Refusing to guess which is right."
+                )
     return nested, coerced
 
 
@@ -666,7 +694,10 @@ def merge_talk(
     patterns = scoring_assessment.patterns_detected
     antipatterns = scoring_assessment.antipatterns_detected
     score, coerced_score = resolve_pattern_score(
-        observation_values, patterns, antipatterns
+        observation_values,
+        patterns,
+        antipatterns,
+        weighted=return_schema_version in WEIGHTED_SCORE_RETURN_SCHEMA_VERSIONS,
     )
 
     if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:

@@ -1,5 +1,40 @@
 # Changelog
 
+### fix(vault-ingress) — a weighted score can now be stored and read back (#299)
+
+#293 defined the weighted return and #308 got one through canonicalization. It
+still could not land: every writer that touched a persisted `pattern_score`
+demanded an integer, and a weighted aggregate is a sum of 1.0/0.5/0.25 terms.
+A worker's return validated clean, canonicalized clean, and died at the merge.
+
+`resolve_pattern_score` now takes the contract its generation declares.
+`merge_talk` selects it from the return schema version, so a v6 return persists
+its fraction. The cross-check moves with it: a bare weighted number is compared
+against `expected_weighted_score`, not against count-minus-count, which for a
+strong pattern and a weak antipattern is 0.75 rather than 0. The flat generation
+still refuses a float — a float there means arithmetic other than the count
+difference produced it.
+
+The same split reaches the adherence baseline, and this is where it got
+interesting. Converting only the cohort selector left `build_adherence_baseline`
+admitting a fractional score into the cohort on one line and raising on it a few
+lines later, in the same function. Every weighted baseline would have been
+unbuildable, and the symptom is a population reported as too small rather than
+a contract mismatch — the same half-converted path as #308, found this time by
+pyright rather than by a reparse. The sum, the average, and
+`validate_adherence_baseline` all key on the generation now.
+
+`_require_number` returns its value rather than widening it to float. A weighted
+score that happens to be whole is still that number, and coercing restated it as
+`5.0` in divergence messages and stored `12.0` where the flat generation stores
+`12`.
+
+Coverage in `tests/test_weighted_score_persistence.py`: the writer-side
+contract, the cohort and baseline read-back, and an end-to-end validate →
+canonicalize → `merge_talk` pass, since the last two fixes each got a different
+link in that chain wrong. Every test admitting a fraction at the weighted
+generation has a sibling proving the flat generation still refuses one.
+
 ## 0.20.77 — 2026-08-14
 
 ### fix(catalog) — an entry evaluable from a transcript can now cite one
