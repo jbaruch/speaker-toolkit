@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.74 — 2026-08-14
+
 ### fix(vault-ingress) — an invalid legacy manifest is warned about, not deadlocked on
 
 `_validate_video_extraction_provenance` took a `severity` from its caller and
