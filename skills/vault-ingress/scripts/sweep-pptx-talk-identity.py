@@ -417,7 +417,11 @@ def sever_mutations(
             # A talk that never carried the field expects the missing marker,
             # which is a different precondition from expecting null.
             expect_talk_pptx_path = MISSING_MARKER
-        cleared_talks.add(stored_talk)
+        # Only the sever whose deck the talk actually names will clear the talk
+        # side, so only that one makes the field missing for the severs after
+        # it. A talk pointing at some other deck keeps pointing there.
+        if expect_talk_pptx_path == pptx_path:
+            cleared_talks.add(stored_talk)
         mutations.append(
             {
                 "kind": "sever_pptx_talk_binding",

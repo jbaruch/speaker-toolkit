@@ -1160,6 +1160,13 @@ def _apply_sever_pptx_talk_binding(
         after=replacement,
     )
 
+    # The talk side is cleared ONLY when it names this deck. A talk can carry a
+    # `pptx_path` pointing at a different, correctly-bound deck while some other
+    # catalog row wrongly claims it — severing that wrong row must not destroy
+    # the right binding. The precondition above still pins whatever was there;
+    # this decides whether it belongs to the deck being severed.
+    if talk.get("pptx_path") != pptx_path:
+        return
     talk_before = talk.get("pptx_path", MISSING_MARKER)
     talk.pop("pptx_path", None)
     _record_change(

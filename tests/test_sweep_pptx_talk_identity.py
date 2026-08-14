@@ -1005,3 +1005,61 @@ class TestThePlanEnvelopesAreApplyableAsIs:
         for name in ("mutation_plan", "proof_plan"):
             assert set(report[name]) == {"schema_version", "mutations"}, name
         assert "unseverable" in report
+
+
+class TestOneTalkClaimedByAWrongAndARightDeck:
+    def test_severing_the_wrong_deck_spares_the_right_binding(
+        self, tmp_path: Path, source_root: Path
+    ) -> None:
+        """One contradicted row and one confirmed row on the same talk: the
+        sever must not clear a talk-side binding that names the confirmed deck.
+        """
+        wrong = deck(source_root, "Devoxx Belgium/2024/DevOps for Developers.pptx")
+        right = deck(source_root, "Voxxed Days Ticino/2025/DevOps for Developers.pptx")
+        bound = {**VOXXED_TALK, "pptx_path": right}
+        payload = database(
+            [
+                catalog_row(wrong, VOXXED_TALK["filename"]),
+                catalog_row(right, VOXXED_TALK["filename"]),
+            ],
+            [bound, DEVOXX_TALK],
+            source_root,
+        )
+        path = tmp_path / "tracking-database.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        report = sweep.execute(path, emit_mutations=True)
+        severs = report["mutation_plan"]["mutations"]
+
+        assert [m["pptx_path"] for m in severs] == [wrong]
+        # The precondition pins what is there; the writer then leaves it,
+        # because it names a different deck.
+        assert severs[0]["expect_talk_pptx_path"] == right
+
+    def test_the_writer_leaves_that_binding_in_place(
+        self, tmp_path: Path, source_root: Path
+    ) -> None:
+        mutate = _load_script("mutate_tracking_database", "mutate-tracking-database.py")
+        wrong = deck(source_root, "Devoxx Belgium/2024/DevOps for Developers.pptx")
+        right = deck(source_root, "Voxxed Days Ticino/2025/DevOps for Developers.pptx")
+        bound = {**VOXXED_TALK, "pptx_path": right}
+        payload = database(
+            [
+                catalog_row(wrong, VOXXED_TALK["filename"]),
+                catalog_row(right, VOXXED_TALK["filename"]),
+            ],
+            [bound, DEVOXX_TALK],
+            source_root,
+        )
+        path = tmp_path / "tracking-database.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        severs = sweep.execute(path, emit_mutations=True)["mutation_plan"]["mutations"]
+
+        candidate, _changes = mutate.build_candidate(payload, severs)
+
+        talk = next(
+            t for t in candidate["talks"] if t["filename"] == VOXXED_TALK["filename"]
+        )
+        assert talk["pptx_path"] == right
+        assert candidate["pptx_catalog"][0]["talk_filename"] is None
+        assert candidate["pptx_catalog"][1]["talk_filename"] == VOXXED_TALK["filename"]

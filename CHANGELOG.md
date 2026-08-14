@@ -34,6 +34,12 @@ cannot see:
   assert what the other disproves, so the plan proves neither and both stay
   blocking for owner review.
 
+The talk side is cleared only when it names the deck being severed. A talk can
+carry a `pptx_path` pointing at a correctly-bound deck while some other catalog
+row wrongly claims it; clearing unconditionally destroyed that right binding
+while removing the wrong one. On the live catalog this is five talk-side clears
+that should never have happened.
+
 Each plan is exactly the `{schema_version, mutations}` envelope
 `mutate-tracking-database.py`'s `load_plan` accepts — it validates a CLOSED key
 set, so a reporting key inside the envelope makes an otherwise healthy plan

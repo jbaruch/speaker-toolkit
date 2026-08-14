@@ -1594,3 +1594,24 @@ def test_severing_a_v1_row_does_not_invent_an_assessment_field(
     )
 
     assert "identity_assessment" not in candidate["pptx_catalog"][0]
+
+
+def test_severing_a_wrong_row_spares_a_talks_binding_to_another_deck(
+    mutate_tracking_database,
+) -> None:
+    """A talk can name a correctly-bound deck while some other catalog row
+    wrongly claims it. Severing the wrong row must not destroy the right
+    binding — the talk side is cleared only when it names THIS deck.
+    """
+    database = _bound_catalog_database()
+    # The talk's own binding points at the deck it really belongs to.
+    database["talks"][0]["pptx_path"] = "Conference/Correct.pptx"
+    plan = _sever(expect_talk_pptx_path="Conference/Correct.pptx")
+
+    candidate, changes = mutate_tracking_database.build_candidate(
+        database, plan["mutations"]
+    )
+
+    assert candidate["pptx_catalog"][0]["talk_filename"] is None
+    assert candidate["talks"][0]["pptx_path"] == "Conference/Correct.pptx"
+    assert [change["kind"] for change in changes] == ["sever_pptx_talk_binding"]
