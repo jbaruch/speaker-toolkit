@@ -1,5 +1,22 @@
 # Changelog
 
+### fix(vault-ingress) — a v6 return canonicalizes like a v5 one (#299)
+
+The activation admitted v6 to `CANONICALIZABLE_RETURN_SCHEMA_VERSIONS` and left
+three `== EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION` tests inside
+`canonicalize_return_evidence`. A v6 return therefore reached canonicalization
+and was read as pre-v5, which rejects the `applicability_assessments` its own
+contract REQUIRES: `return schema v4 cannot carry applicability_assessments`.
+
+v6 validated on the way in and died on the way to the database. Nothing caught
+it because every canonicalization test built a v5 return — the equality tests
+were only ever exercised at the one version that satisfied them.
+
+`pattern_evidence` now carries `EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS`,
+mirroring the set of the same name in `return_validation`, and the three sites
+test membership. Found by running the reparse: the first worker produced a
+return that validated clean and could not be persisted.
+
 ## 0.20.74 — 2026-08-14
 
 ### fix(vault-ingress) — an invalid legacy manifest is warned about, not deadlocked on
