@@ -611,7 +611,7 @@ example, `"evidence_sources_used": ["static_slides", "native_deck"]`.
 The array is duplicate-free, excludes the `source_comparison` marker, and must
 exactly match one qualifying catalog group.
 
-Fresh work arrives only under a claim-v5 payload that explicitly requires return
+Fresh work arrives only under a claim-v6 payload that explicitly requires return
 v6. Saved claims v1/v2 remain replayable only with saved returns v1/v2; claim v3
 requires return v3, claim v4 requires archival return v4, and claim v5 requires
 return v5. Recover a live legacy lease without rewriting it; otherwise issue a
