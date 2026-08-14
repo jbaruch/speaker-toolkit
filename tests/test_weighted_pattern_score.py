@@ -85,16 +85,35 @@ class TestBasis:
 
 
 class TestSchemaBoundary:
-    def test_the_scoring_generation_holds_until_a_return_emits_a_weighted_score(
-        self, rv
-    ) -> None:
-        """Bumping it early would strand every persisted talk on a generation
-        nothing has produced."""
-        assert rv.PATTERN_SCORING_SCHEMA_VERSION == 5
+    def test_the_current_scoring_generation_is_the_weighted_one(self, rv) -> None:
+        """Activated in #299: returns emit a weighted score, so the generation
+        persisted talks are stamped with is the weighted one."""
+        assert rv.PATTERN_SCORING_SCHEMA_VERSION == 6
         assert rv.WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION == 6
+        assert rv.FLAT_PATTERN_SCORING_SCHEMA_VERSION == 5
 
-    def test_weighting_starts_above_the_current_return_schema(self, rv) -> None:
-        assert rv.WEIGHTED_SCORE_RETURN_SCHEMA_VERSION > rv.RETURN_SCHEMA_VERSION
+    def test_the_current_return_schema_is_the_weighted_one(self, rv) -> None:
+        assert rv.WEIGHTED_SCORE_RETURN_SCHEMA_VERSION == rv.RETURN_SCHEMA_VERSION
+
+    def test_the_flat_generation_keeps_its_own_name(self, rv) -> None:
+        """The trap this exists to stop: the generation sets named v5 through
+        `RETURN_SCHEMA_VERSION`, so advancing that pointer would have dropped v5
+        from every one of them — a validator that silently stops accepting the
+        generation it accepted yesterday."""
+        assert (
+            rv.EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION
+            in rv.SUPPORTED_RETURN_SCHEMA_VERSIONS
+        )
+        assert (
+            rv.EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION
+            in rv.EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS
+        )
+        assert (
+            rv.scoring_schema_version_for_return(
+                rv.EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION
+            )
+            == rv.FLAT_PATTERN_SCORING_SCHEMA_VERSION
+        )
 
 
 class TestV6IsReachable:

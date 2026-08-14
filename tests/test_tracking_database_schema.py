@@ -4,10 +4,22 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import importlib
 import json
 import os
+import sys
+from pathlib import Path
 
 import pytest
+
+
+_SCRIPTS = Path(__file__).resolve().parents[1] / "skills" / "vault-ingress" / "scripts"
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
+# Imported at module scope for the version CONSTANTS only — parametrize
+# decorators are evaluated at collection time, where the fixture does not
+# exist. The fixture remains the way tests reach the module's behaviour.
+_tracking_database = importlib.import_module("tracking_database")
 
 
 DEFAULT_DIRECTORY_EXCLUSIONS = [
@@ -87,7 +99,7 @@ def _legacy_talk(*, filename: str = "one.md") -> dict:
 
 def _baseline_for_claim(version: int, *, filename: str = "one.md") -> dict:
     baseline = {
-        "schema_version": 2 if version == 5 else 1,
+        "schema_version": 2 if version >= 5 else 1,
         "as_of": "2026-07-31T12:00:00+00:00",
         "scope": "global",
         "active_batch_excluded": True,
@@ -96,12 +108,12 @@ def _baseline_for_claim(version: int, *, filename: str = "one.md") -> dict:
         "pattern_scoring_generation_status": "current",
         "pattern_scoring_generation_reasons": [],
         "pattern_catalog_fingerprint": "a" * 64,
-        "pattern_scoring_schema_version": 5 if version == 5 else 4,
+        "pattern_scoring_schema_version": 5 if version >= 5 else 4,
         "scored_talk_count": 0,
         "pattern_score_sum": 0,
         "average_pattern_score": None,
     }
-    if version == 5:
+    if version >= 5:
         baseline.update(
             {
                 "eligible_talk_count": 0,
@@ -148,6 +160,18 @@ def _claim_for_version(
             }
         )
     return claim
+
+
+def _future_claim_version() -> int:
+    """One above the current claim schema, so the sentinel stays in the future.
+
+    A literal here silently stops testing anything the moment the claim schema
+    reaches it — the test keeps passing while asserting that a CURRENT claim is
+    unreadable, which is the opposite of its name.
+    """
+    import queue_claim_contract
+
+    return queue_claim_contract.CURRENT_QUEUE_CLAIM_SCHEMA_VERSION + 1
 
 
 def _legacy_database() -> dict:
@@ -289,7 +313,7 @@ def test_explicit_root_zero_is_not_implicit_legacy_state(tracking_database):
         (
             "talks",
             {
-                "schema_version": 6,
+                "schema_version": _tracking_database.TALK_RECORD_SCHEMA_VERSION + 1,
                 "talk_id": "future-talk",
                 "pattern_observations": ["future-shape"],
             },
@@ -547,7 +571,7 @@ def test_future_source_identity_receipt_does_not_poison_root_migration(
 
 
 @pytest.mark.parametrize("current_root", [False, True])
-@pytest.mark.parametrize("claim_version", [1, 2, 3, 4, 5])
+@pytest.mark.parametrize("claim_version", [1, 2, 3, 4, 5, 6])
 def test_legacy_and_current_roots_accept_supported_claim_version_boundaries(
     tracking_database,
     current_root,
@@ -632,10 +656,12 @@ def test_future_claim_is_no_usable_state_before_old_nested_validation(
     database = _legacy_database()
     if current_root:
         database = tracking_database.migrate_tracking_database(database).database
-    database["talks"][0]["schema_version"] = 5
+    database["talks"][0]["schema_version"] = (
+        _tracking_database.TALK_RECORD_SCHEMA_VERSION
+    )
     database["talks"][0]["pattern_observations"] = ["future-owned-shape"]
     future_claim = {
-        "schema_version": 6,
+        "schema_version": _future_claim_version(),
         "future_identity": "not-an-old-run-id",
         "state": {"future": True},
     }
@@ -739,7 +765,14 @@ def test_owner_migration_preserves_mixed_historical_talk_versions(
 
     migrated = tracking_database.migrate_tracking_database(database).database
 
-    assert [talk["schema_version"] for talk in migrated["talks"]] == [1, 4, 5, 1]
+    # v5 restamps to the weighted record shape (#299); the versions below it
+    # stay preserved, which is what "mixed historical" has always meant.
+    assert [talk["schema_version"] for talk in migrated["talks"]] == [
+        1,
+        4,
+        _tracking_database.TALK_RECORD_SCHEMA_VERSION,
+        1,
+    ]
 
 
 @pytest.mark.parametrize(

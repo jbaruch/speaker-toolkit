@@ -797,7 +797,11 @@ def test_opportunity_identity_binds_scoring_generation_independently(
     )
 
     assert v5 != v6
-    assert return_validation.RETURN_SCHEMA_VERSION == 5
+    # The identity is bound to the generation it was built at, not to
+    # whichever generation happens to be current.
+    assert return_validation.RETURN_SCHEMA_VERSION == (
+        return_validation.WEIGHTED_SCORE_RETURN_SCHEMA_VERSION
+    )
 
 
 def test_v4_source_locations_survive_root_migration_without_v5_outcomes(
@@ -835,7 +839,18 @@ def _scored_talk(
     score: int = 1,
     *,
     outcome: str = "undetected",
+    scoring_schema_version: int | None = None,
 ):
+    """Build a talk stamped at the ACTIVE scoring generation by default.
+
+    Pinning the literal 5 here made every such talk fall out of the cohort the
+    moment the generation advanced, which reads downstream as "the baseline
+    population is too small" rather than "this fixture is stale".
+    """
+    import return_validation
+
+    if scoring_schema_version is None:
+        scoring_schema_version = return_validation.PATTERN_SCORING_SCHEMA_VERSION
     return {
         "filename": filename,
         "status": "processed",
@@ -843,7 +858,7 @@ def _scored_talk(
         "pattern_scoring_generation_status": "current",
         "pattern_scoring_generation_reasons": [],
         "pattern_catalog_fingerprint": "a" * 64,
-        "pattern_scoring_schema_version": 5,
+        "pattern_scoring_schema_version": scoring_schema_version,
         "pattern_observations": {
             "pattern_score": score,
             "opportunity_coverage_identity": identity,
@@ -859,8 +874,8 @@ def test_mixed_opportunity_baseline_preserves_eligible_cohort_but_suppresses_sco
 
     baseline = adherence_baseline.build_current_cohort_baseline(
         [
-            _scored_talk("one.md", "1" * 64),
-            _scored_talk("two.md", "2" * 64),
+            _scored_talk("one.md", "1" * 64, scoring_schema_version=5),
+            _scored_talk("two.md", "2" * 64, scoring_schema_version=5),
         ],
         as_of="2026-07-31T12:00:00+00:00",
         pattern_catalog_fingerprint="a" * 64,
@@ -875,7 +890,9 @@ def test_mixed_opportunity_baseline_preserves_eligible_cohort_but_suppresses_sco
     assert baseline["opportunity_coverage_identity"] is None
     assert baseline["raw_score_comparison_status"] == "unavailable"
     assert baseline["raw_score_comparison_reason"] == "mixed_opportunity_coverage"
-    assert return_validation.PATTERN_SCORING_SCHEMA_VERSION == 5
+    assert return_validation.PATTERN_SCORING_SCHEMA_VERSION == (
+        return_validation.WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
+    )
 
 
 def test_all_unknown_opportunity_baseline_suppresses_zero_raw_score(
@@ -890,12 +907,14 @@ def test_all_unknown_opportunity_baseline_suppresses_zero_raw_score(
                 "1" * 64,
                 score=0,
                 outcome="not_evaluable",
+                scoring_schema_version=5,
             ),
             _scored_talk(
                 "two.md",
                 "1" * 64,
                 score=0,
                 outcome="not_evaluable",
+                scoring_schema_version=5,
             ),
         ],
         as_of="2026-07-31T12:00:00+00:00",
@@ -914,7 +933,9 @@ def test_all_unknown_opportunity_baseline_suppresses_zero_raw_score(
     assert baseline["raw_score_comparison_reason"] == (
         adherence_baseline.NO_EVALUABLE_PATTERN_OPPORTUNITIES_REASON
     )
-    assert return_validation.PATTERN_SCORING_SCHEMA_VERSION == 5
+    assert return_validation.PATTERN_SCORING_SCHEMA_VERSION == (
+        return_validation.WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
+    )
 
 
 def test_adherence_comparison_is_suppressed_when_opportunity_identity_differs(
@@ -923,7 +944,10 @@ def test_adherence_comparison_is_suppressed_when_opportunity_identity_differs(
     import adherence_baseline
 
     baseline = adherence_baseline.build_adherence_baseline(
-        [_scored_talk(f"talk-{index}.md", "1" * 64) for index in range(10)],
+        [
+            _scored_talk(f"talk-{index}.md", "1" * 64, scoring_schema_version=5)
+            for index in range(10)
+        ],
         selected_filenames=[],
         as_of="2026-07-31T12:00:00+00:00",
         pattern_catalog_fingerprint="a" * 64,

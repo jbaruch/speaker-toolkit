@@ -2637,7 +2637,7 @@ def test_clear_fields_is_confined_to_analysis_owned_leaves(return_validation, pa
     assert "clear_fields" in _error(return_validation, value)
 
 
-def test_validator_cli_emits_structured_report(tmp_path):
+def test_validator_cli_emits_structured_report(tmp_path, return_validation):
     batch = tmp_path / "returns.json"
     batch.write_text(json.dumps([_return()]))
     result = subprocess.run(
@@ -2649,7 +2649,9 @@ def test_validator_cli_emits_structured_report(tmp_path):
     assert report["returns"] == 1
     assert report["catalog_entries"] == 111
     assert report["return_schema_versions"] == {"2": 1}
-    assert report["pattern_scoring_schema_version"] == 5
+    assert report["pattern_scoring_schema_version"] == (
+        return_validation.PATTERN_SCORING_SCHEMA_VERSION
+    )
     assert report["pattern_scoring_generations"] == [
         {
             "filename": "talk.md",

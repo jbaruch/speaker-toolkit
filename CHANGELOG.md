@@ -1,5 +1,55 @@
 # Changelog
 
+### feat(vault-ingress) — activate weighted scoring (#299)
+
+#293 defined the weighted return contract and stopped: v6 validated but could
+not reach the database. This is the activation, and it moves as one change
+because `queue-state.py` asserts the claim, queue-claim, and return schema
+versions equal at import time — staged separately, the module does not load.
+
+Advanced together: `RETURN_SCHEMA_VERSION`, `QUEUE_CLAIM_SCHEMA_VERSION`,
+`CURRENT_QUEUE_CLAIM_SCHEMA_VERSION`, `PATTERN_SCORING_SCHEMA_VERSION`,
+`CURRENT_PATTERN_SCORING_SCHEMA_VERSION`, and `TALK_RECORD_SCHEMA_VERSION`,
+plus v6 joining `CANONICALIZABLE_RETURN_SCHEMA_VERSIONS`.
+
+**The current-version pointers are derived, not written.** `RETURN_SCHEMA_VERSION`
+is now `WEIGHTED_SCORE_RETURN_SCHEMA_VERSION` and `PATTERN_SCORING_SCHEMA_VERSION`
+is `WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION`, with
+`EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION` and
+`FLAT_PATTERN_SCORING_SCHEMA_VERSION` naming v5 for the sets that mean v5. The
+four generation sets named v5 *through the current-version pointer*, so bumping
+it would have dropped v5 out of `SUPPORTED_RETURN_SCHEMA_VERSIONS`,
+`SNAPSHOT_*`, `OUTCOME_GATE_*` and `SOURCE_LOCATED_*` — a validator that
+silently stops accepting the generation it accepted yesterday.
+
+**A production defect the bump exposed.** `queue_claim_contract` chose the
+expected adherence-baseline schema with
+`version == CURRENT_QUEUE_CLAIM_SCHEMA_VERSION`. Advancing the claim schema
+therefore demanded the *legacy* baseline of every already-stored v5 claim and
+rejected the lot. The rule now keys on
+`OPPORTUNITY_QUEUE_CLAIM_SCHEMA_VERSION`, the generation that introduced
+baseline v2, so it belongs to that generation and every later one.
+
+**The migration restamps; it never rescores.** `_restamp_talk_records` moves a
+v5 record to the v6 shape and leaves `pattern_scoring_schema_version` alone.
+Computing a basis from stored detections would recompute a score under
+arithmetic its worker never used — the reinterpretation `_validate_score`
+refuses on the way in. The talk keeps the truth about its own number, the
+cohort selector excludes it as a generation mismatch, and it requeues. That is
+the reparse, made mechanical rather than remembered. Without the restamp the
+bump alone would lock the database: the owner writer requires the exact current
+talk schema before any mutation.
+
+Measured on the live vault: 6 talks restamp v5→v6; the other 209 are schema v1
+and stay v1, as they already did. No talk carries a scoring-generation stamp at
+all, so the whole corpus requeues on generation grounds regardless.
+
+Test fixtures that pinned version literals now derive them. Several had gone
+silently wrong rather than loudly stale — `_write_db` in the queue tests
+enriched only talks stamped at the literal 5, so at any other generation it
+skipped them and they failed a later opportunity-identity check as though the
+fixture had never been valid.
+
 ## 0.20.71 — 2026-08-14
 
 ### feat(vault-ingress) — a score is only as current as the block it came from (#167)

@@ -19,6 +19,17 @@ SCRIPT = REPO_ROOT / "skills" / "vault-ingress" / "scripts" / "scan-shownotes.py
 SCRIPT_DIRECTORY = SCRIPT.parent
 if str(SCRIPT_DIRECTORY) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIRECTORY))
+
+# Talk-record fixtures track the current schema rather than pinning a literal:
+# a pin makes every fixture in this module unmutatable the moment the talk
+# record shape advances, which surfaces as "must be exact current talk schema"
+# on tests that are about something else entirely.
+CURRENT_TALK_SCHEMA = importlib.import_module(
+    "tracking_database"
+).TALK_RECORD_SCHEMA_VERSION
+
+if str(SCRIPT_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIRECTORY))
 SPEC = importlib.util.spec_from_file_location("scan_shownotes", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 scan_shownotes = importlib.util.module_from_spec(SPEC)
@@ -57,7 +68,7 @@ def _database_path(
     else:
         current_talks = []
         for talk in talks or []:
-            current_talk = {**talk, "schema_version": 5}
+            current_talk = {**talk, "schema_version": CURRENT_TALK_SCHEMA}
             current_talk["source_rejections"] = [
                 {**rejection, "schema_version": 1}
                 for rejection in current_talk.get("source_rejections", [])
@@ -191,7 +202,7 @@ def test_apply_adds_only_complete_proposal_and_preserves_file_mode(
             "title": "Deterministic Ingress",
             "conference": "TestConf",
             "date": "2026-08-01",
-            "schema_version": 5,
+            "schema_version": CURRENT_TALK_SCHEMA,
             "status": "pending",
         }
     ]
@@ -217,7 +228,7 @@ def test_exact_filename_update_fills_only_empty_fields(tmp_path: Path) -> None:
         "title": "Deterministic Ingress",
         "conference": "TestConf",
         "date": "2026-08-01",
-        "schema_version": 5,
+        "schema_version": CURRENT_TALK_SCHEMA,
         "status": "processed",
     }
     database_path = _database_path(
@@ -231,7 +242,7 @@ def test_exact_filename_update_fills_only_empty_fields(tmp_path: Path) -> None:
     talk = json.loads(database_path.read_text(encoding="utf-8"))["talks"][0]
     assert talk["video_url"] == video_url
     assert talk["youtube_id"] == YOUTUBE_ID
-    assert talk["schema_version"] == 5
+    assert talk["schema_version"] == CURRENT_TALK_SCHEMA
     assert talk["status"] == "processed"
     assert report["entries"][0]["changes"] == {
         "video_url": video_url,
@@ -249,7 +260,7 @@ def test_existing_metadata_conflict_stays_a_non_mutating_review_proposal(
         "title": "Authoritative Title",
         "conference": "TestConf",
         "date": "2026-08-01",
-        "schema_version": 5,
+        "schema_version": CURRENT_TALK_SCHEMA,
         "status": "processed",
     }
     database_path = _database_path(
@@ -291,7 +302,7 @@ def test_event_qualified_shownotes_title_preserves_authored_title(
         "title": authored_title,
         "conference": conference,
         "date": talk_date,
-        "schema_version": 5,
+        "schema_version": CURRENT_TALK_SCHEMA,
         "status": "processed",
     }
     database_path = _database_path(
@@ -339,7 +350,7 @@ def test_event_qualified_title_requires_stored_conference_and_date(
     existing = {
         "filename": filename,
         "title": authored_title,
-        "schema_version": 5,
+        "schema_version": CURRENT_TALK_SCHEMA,
         "status": "processed",
         **stored_context,
     }
@@ -378,7 +389,7 @@ def test_exact_title_still_fills_missing_stored_conference_and_date(
     existing = {
         "filename": filename,
         "title": authored_title,
-        "schema_version": 5,
+        "schema_version": CURRENT_TALK_SCHEMA,
         "status": "processed",
     }
     database_path = _database_path(
@@ -432,7 +443,7 @@ def test_event_qualified_title_preserves_event_type_identity(
         "title": authored_title,
         "conference": catalog_conference,
         "date": talk_date,
-        "schema_version": 5,
+        "schema_version": CURRENT_TALK_SCHEMA,
         "status": "processed",
     }
     database_path = _database_path(
@@ -490,7 +501,7 @@ def test_event_qualified_title_rejects_wrong_identity_and_shared_prefixes(
         "title": authored_title,
         "conference": conference,
         "date": talk_date,
-        "schema_version": 5,
+        "schema_version": CURRENT_TALK_SCHEMA,
         "status": "processed",
     }
     database_path = _database_path(
@@ -538,7 +549,7 @@ def test_presentation_only_metadata_differences_are_comparison_only(
         "title": "Deterministic Ingress",
         "conference": "TestConf",
         "date": "2026-08-01",
-        "schema_version": 5,
+        "schema_version": CURRENT_TALK_SCHEMA,
         "status": "processed",
     }
     existing[field] = stored_value
@@ -583,7 +594,7 @@ def test_comparison_equivalence_does_not_rewrite_during_an_unrelated_update(
         "title": stored_title,
         "conference": "TestConf",
         "date": "2026-08-01",
-        "schema_version": 5,
+        "schema_version": CURRENT_TALK_SCHEMA,
         "status": "processed",
     }
     database_path = _database_path(
@@ -627,7 +638,7 @@ def test_presentation_comparison_stays_narrow(
         "title": "Deterministic Ingress",
         "conference": "TestConf",
         "date": "2026-08-01",
-        "schema_version": 5,
+        "schema_version": CURRENT_TALK_SCHEMA,
         "status": "processed",
     }
     existing[field] = stored_value
@@ -696,7 +707,7 @@ def test_rejected_source_identity_cannot_reappear_in_another_url_form(
         "title": "Deterministic Ingress",
         "conference": "TestConf",
         "date": "2026-08-01",
-        "schema_version": 5,
+        "schema_version": CURRENT_TALK_SCHEMA,
         "status": "pending",
         "source_rejections": [
             {
@@ -767,7 +778,7 @@ def test_normalized_filename_collision_stays_a_review_proposal(
     )
     existing = {
         "filename": "Talk.md",
-        "schema_version": 5,
+        "schema_version": CURRENT_TALK_SCHEMA,
         "status": "pending",
     }
     database_path = _database_path(
@@ -1029,7 +1040,7 @@ def _talk_with_rejections(rejections: list[object]) -> dict[str, object]:
         "title": "Deterministic Ingress",
         "conference": "TestConf",
         "date": "2026-08-01",
-        "schema_version": 5,
+        "schema_version": CURRENT_TALK_SCHEMA,
         "status": "pending",
         "source_rejections": rejections,
     }
@@ -1162,7 +1173,7 @@ def test_an_approved_repair_makes_the_scan_report_the_entry_unchanged(
         "title": "Authoritative Title",
         "conference": "TestConf",
         "date": "2026-08-01",
-        "schema_version": 5,
+        "schema_version": CURRENT_TALK_SCHEMA,
         "status": "processed",
     }
     database_path = _database_path(tmp_path, _local_config(site), talks=[existing])

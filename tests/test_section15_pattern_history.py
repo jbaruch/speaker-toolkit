@@ -29,6 +29,7 @@ section15 = importlib.import_module("section15_pattern_history")
 cooperative_lock = importlib.import_module("cooperative_lock")
 pattern_history_status = importlib.import_module("pattern_history_status")
 provenance = importlib.import_module("profile_pattern_provenance")
+return_validation = importlib.import_module("return_validation")
 classification_runtime = importlib.import_module("pattern_classification_runtime")
 opportunities = importlib.import_module("pattern_opportunities")
 pattern_evidence = importlib.import_module("pattern_evidence")
@@ -91,7 +92,10 @@ def _transcript_projection() -> tuple[list[dict], list[dict], list[dict]]:
 
 def _pattern_profile(*, note: str = "Current exact cohort.") -> dict[str, Any]:
     fingerprint, scoring_schema = provenance.active_pattern_generation_identity()
-    assert scoring_schema == 5
+    # The fixture tracks the active generation rather than pinning a literal;
+    # a pin here fails the whole module on every scoring bump without telling
+    # the reader which behaviour actually changed.
+    assert scoring_schema == return_validation.PATTERN_SCORING_SCHEMA_VERSION
     filenames = ["example-a.md", "example-b.md"]
     outcome_talks = _outcome_talks(filenames)
     rows = opportunities.build_pattern_opportunity_rows(outcome_talks)
@@ -484,7 +488,9 @@ def test_exact_current_block_accepts_complete_scoring_v5_cohort():
         }
     )
     assert assessment.pattern_profile == profile
-    assert profile["pattern_baseline"]["pattern_scoring_schema_version"] == 5
+    assert profile["pattern_baseline"]["pattern_scoring_schema_version"] == (
+        return_validation.PATTERN_SCORING_SCHEMA_VERSION
+    )
 
 
 def test_v2_block_remains_readable_as_occurrence_only():

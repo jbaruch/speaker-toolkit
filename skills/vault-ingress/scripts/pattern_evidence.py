@@ -60,14 +60,17 @@ LEGACY_PATTERN_EVIDENCE_SCHEMA_VERSION = 1
 PATTERN_EVIDENCE_SCHEMA_VERSION = 2
 SOURCE_LOCATED_RETURN_SCHEMA_VERSION = 4
 EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION = 5
-# v6 validates as a return contract but does not persist yet: admitting it here
-# would store a new record shape under talk schema v5. Persistence, the talk
-# schema bump, the claim contract, and the migration advance together in the
-# activation change, not piecemeal.
+WEIGHTED_SCORE_RETURN_SCHEMA_VERSION = 6
+# v6 canonicalizes as of the activation (#299): persistence, the talk schema
+# bump, the claim contract, and the migration moved together.
 CANONICALIZABLE_RETURN_SCHEMA_VERSIONS = frozenset(
-    {SOURCE_LOCATED_RETURN_SCHEMA_VERSION, EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION}
+    {
+        SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
+        EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION,
+        WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
+    }
 )
-CURRENT_PATTERN_SCORING_SCHEMA_VERSION = 5
+CURRENT_PATTERN_SCORING_SCHEMA_VERSION = 6
 PATTERN_OUTCOMES = frozenset(
     {"detected", "undetected", "not_evaluable", "not_applicable"}
 )

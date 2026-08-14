@@ -250,7 +250,7 @@ LANGUAGE_RE = re.compile(r"^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$")
 CONDITION_ID_RE = re.compile(r"^[a-z0-9]+(?:[-_][a-z0-9]+)*$")
 VIDEO_SOURCE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 VIDEO_EXTRACTION_SCHEMA_VERSION = 3
-QUEUE_CLAIM_SCHEMA_VERSION = 5
+QUEUE_CLAIM_SCHEMA_VERSION = 6
 SOURCE_LOCATED_QUEUE_CLAIM_SCHEMA_VERSION = 4
 BASELINE_QUEUE_CLAIM_SCHEMA_VERSION = 3
 PREVIOUS_QUEUE_CLAIM_SCHEMA_VERSION = 2
@@ -259,18 +259,24 @@ LEGACY_RETURN_SCHEMA_VERSION = 1
 PREVIOUS_RETURN_SCHEMA_VERSION = 2
 BASELINE_RETURN_SCHEMA_VERSION = 3
 SOURCE_LOCATED_RETURN_SCHEMA_VERSION = 4
-RETURN_SCHEMA_VERSION = 5
+EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION = 5
 # The first return schema whose aggregate is weighted. Below it the flat +1/-1
 # contract stands, because that is the arithmetic its worker used. v6 keeps
 # every v5 semantic and adds weighting, so it joins each set v5 belongs to.
 WEIGHTED_SCORE_RETURN_SCHEMA_VERSION = 6
+# The generation a fresh claim issues, derived rather than written. Every set
+# below names the generation it means; if they named THIS pointer instead,
+# advancing it would silently drop the generation it used to point at from
+# each of those sets — a validation set that quietly stops accepting v5 the
+# moment v6 becomes current.
+RETURN_SCHEMA_VERSION = WEIGHTED_SCORE_RETURN_SCHEMA_VERSION
 SUPPORTED_RETURN_SCHEMA_VERSIONS = frozenset(
     {
         LEGACY_RETURN_SCHEMA_VERSION,
         PREVIOUS_RETURN_SCHEMA_VERSION,
         BASELINE_RETURN_SCHEMA_VERSION,
         SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
-        RETURN_SCHEMA_VERSION,
+        EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION,
         WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
     }
 )
@@ -279,7 +285,7 @@ SNAPSHOT_RETURN_SCHEMA_VERSIONS = frozenset(
         PREVIOUS_RETURN_SCHEMA_VERSION,
         BASELINE_RETURN_SCHEMA_VERSION,
         SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
-        RETURN_SCHEMA_VERSION,
+        EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION,
         WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
     }
 )
@@ -287,19 +293,19 @@ OUTCOME_GATE_RETURN_SCHEMA_VERSIONS = frozenset(
     {
         BASELINE_RETURN_SCHEMA_VERSION,
         SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
-        RETURN_SCHEMA_VERSION,
+        EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION,
         WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
     }
 )
 SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS = frozenset(
     {
         SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
-        RETURN_SCHEMA_VERSION,
+        EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION,
         WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
     }
 )
 EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS = frozenset(
-    {RETURN_SCHEMA_VERSION, WEIGHTED_SCORE_RETURN_SCHEMA_VERSION}
+    {EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION, WEIGHTED_SCORE_RETURN_SCHEMA_VERSION}
 )
 # The returns whose aggregate is weighted, and which therefore carry a
 # `pattern_score_basis`. Separate from the exhaustive-outcome set because the two
@@ -309,12 +315,14 @@ WEIGHTED_SCORE_RETURN_SCHEMA_VERSIONS = frozenset(
     {WEIGHTED_SCORE_RETURN_SCHEMA_VERSION}
 )
 
-# Stays at 5 until a return actually emits a weighted score. The weight table
-# below is part of the NEXT scoring generation; bumping this constant now would
-# strand every persisted talk on a generation nothing has produced yet, forcing
-# a reparse to adopt arithmetic no worker is using.
-PATTERN_SCORING_SCHEMA_VERSION = 5
+FLAT_PATTERN_SCORING_SCHEMA_VERSION = 5
 WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION = 6
+# Advanced with the activation (#299): returns now emit a weighted score, so
+# the generation persisted talks are stamped with is the weighted one. Derived
+# from the weighted constant rather than written as a literal, for the same
+# reason `RETURN_SCHEMA_VERSION` is — a reader that wants "the flat
+# generation" must name it, not reach for whatever is current.
+PATTERN_SCORING_SCHEMA_VERSION = WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
 
 
 def _persisted_scoring_schema_version(talk: Mapping[str, object]) -> int | None:
@@ -344,7 +352,7 @@ def scoring_schema_version_for_return(return_schema_version: int) -> int:
     """
     if return_schema_version in WEIGHTED_SCORE_RETURN_SCHEMA_VERSIONS:
         return WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
-    return PATTERN_SCORING_SCHEMA_VERSION
+    return FLAT_PATTERN_SCORING_SCHEMA_VERSION
 
 
 # Owner decision (#153): the aggregate stays one number, but a strong detection

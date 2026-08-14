@@ -17,6 +17,7 @@ disagree about which decks need regeneration.
 from __future__ import annotations
 
 import copy
+import importlib
 import hashlib
 import json
 import pathlib
@@ -1156,9 +1157,17 @@ def test_migration_is_idempotent(tracking_database) -> None:
 
 
 def _claimed_talk() -> dict:
-    """A talk whose queue claim is live."""
+    """A talk whose queue claim is live.
+
+    Stamped at the CURRENT record schema so the migration this fixture feeds is
+    genuinely a no-op. A stale stamp makes the migration a real restamp, and the
+    active-writer guard then fires — which would read as "the no-op path broke"
+    rather than "this fixture went out of date".
+    """
     return {
-        "schema_version": 5,
+        "schema_version": importlib.import_module(
+            "tracking_database"
+        ).TALK_RECORD_SCHEMA_VERSION,
         "filename": "2024-04-10-talk.md",
         "status": "reprocessing-inflight",
         "reprocess_generation": 1,
