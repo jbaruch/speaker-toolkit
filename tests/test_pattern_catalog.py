@@ -1666,20 +1666,35 @@ def test_every_transcript_evaluable_entry_can_cite_a_transcript():
     citation, and canonicalization still demanded an assessment because the
     applicability gate read as complete. The contradiction is only visible
     across the two fields, which is why nothing caught it.
+
+    Every gate field counts, not just `evaluable_from`: an entry that admits a
+    transcript for its STRONG tier, its absence proof, or its applicability
+    determination needs a transcript channel just as much, and checking one
+    field would let the same defect return through the other three.
     """
+    gate_fields = (
+        "evaluable_from",
+        "strong_evaluable_from",
+        "absence_evaluable_from",
+        "applicability_evaluable_from",
+    )
     offenders = []
     for path in ENTRY_FILES:
         metadata = _metadata(path)
         if not metadata.get("observable", True):
             continue
-        sources = {
-            source
-            for group in (metadata.get("evaluable_from") or [])
-            for source in ([group] if isinstance(group, str) else group)
-        }
-        if "transcript" not in sources:
+        admits_transcript = any(
+            "transcript"
+            in {
+                source
+                for group in (metadata.get(field) or [])
+                for source in ([group] if isinstance(group, str) else group)
+            }
+            for field in gate_fields
+        )
+        if not admits_transcript:
             continue
         if "transcript" not in set(metadata.get("evidence_channels") or ()):
-            offenders.append(metadata.get("id"))
+            offenders.append((metadata.get("id"), path))
 
-    assert offenders == []
+    assert offenders == [], [entry for entry, _ in offenders]
