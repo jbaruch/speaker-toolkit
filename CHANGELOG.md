@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.78 — 2026-08-14
+
 ### fix(vault-ingress) — a weighted score can now be stored and read back (#299)
 
 #293 defined the weighted return and #308 got one through canonicalization. It
