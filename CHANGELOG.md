@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.71 — 2026-08-14
+
 ### feat(vault-ingress) — a score is only as current as the block it came from (#167)
 
 #285 classified persisted pattern observations, #286 made preflight block on
