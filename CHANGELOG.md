@@ -39,6 +39,14 @@ strongest form of "not proven", and leaving those bound while the plan reads as
 complete is the failure the plan exists to prevent. Rows the plan cannot address
 are named in `unseverable[]` rather than skipped.
 
+Every writer precondition is checked while BUILDING the plan — a nonempty
+trimmed `pptx_path`, a talk some record actually carries — so a row that
+survives is a row `mutate-tracking-database.py` accepts. A plan is a file a
+human reviews and then runs; one that looks actionable and dies partway through
+on a precondition the builder could have seen is worse than one that says up
+front what it cannot address. `proof_plan` applies the same checks, because a
+proof the owner writer would refuse is not a proof.
+
 Rows resolve to their catalog record by INDEX, never by path. A row's
 `pptx_path` is the deck-facts reading's normalized text — whitespace collapsed,
 length-capped — so a stored path with internal double spaces would not match a

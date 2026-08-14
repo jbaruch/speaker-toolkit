@@ -904,3 +904,78 @@ class TestNothingIsSilentlyLeftBound:
 
         assert len(plan["mutations"]) == 1
         assert plan["unseverable"] == []
+
+
+class TestThePlanOnlyEmitsWhatTheWriterAccepts:
+    """A plan is a file a human reviews and then runs. One that looks
+    actionable and dies partway through on a precondition the builder could
+    have seen is worse than one that says up front what it cannot address.
+    """
+
+    def _row(self, **overrides: Any) -> dict[str, Any]:
+        row: dict[str, Any] = {
+            "index": 0,
+            "pptx_path": "Deck.pptx",
+            "stored_talk_filename": VOXXED_TALK["filename"],
+            "disposition": sweep.DISPOSITION_CONTRADICTED,
+        }
+        row.update(overrides)
+        return row
+
+    @pytest.mark.parametrize("bad_path", [None, "", "   ", " Deck.pptx", 17])
+    def test_a_row_with_no_usable_path_is_named_not_emitted(
+        self, source_root: Path, bad_path: object
+    ) -> None:
+        payload = database(
+            [catalog_row("Deck.pptx", VOXXED_TALK["filename"])],
+            [VOXXED_TALK],
+            source_root,
+        )
+        payload["pptx_catalog"][0]["pptx_path"] = bad_path
+
+        mutations, unseverable = sweep.sever_mutations(payload, [self._row()])
+
+        assert mutations == []
+        assert unseverable[0]["reason"] == "catalog row has no usable pptx_path"
+
+    def test_a_dangling_talk_filename_is_named_not_emitted(
+        self, source_root: Path
+    ) -> None:
+        """`_talk_by_filename` raises on a talk no record carries, so a plan
+        naming one dies at apply with nothing said about it beforehand."""
+        payload = database(
+            [catalog_row("Deck.pptx", "ghost.md")],
+            [VOXXED_TALK],
+            source_root,
+        )
+
+        mutations, unseverable = sweep.sever_mutations(
+            payload, [self._row(stored_talk_filename="ghost.md")]
+        )
+
+        assert mutations == []
+        assert "binds a talk no record carries" in unseverable[0]["reason"]
+
+    def test_a_row_pointing_past_the_catalog_is_named(self, source_root: Path) -> None:
+        payload = database([], [VOXXED_TALK], source_root)
+
+        mutations, unseverable = sweep.sever_mutations(payload, [self._row(index=9)])
+
+        assert mutations == []
+        assert unseverable[0]["reason"] == "no catalog row at this index"
+
+    def test_the_proof_plan_applies_the_same_preconditions(
+        self, source_root: Path
+    ) -> None:
+        payload = database(
+            [catalog_row("Deck.pptx", "ghost.md")],
+            [VOXXED_TALK],
+            source_root,
+        )
+        row = self._row(
+            stored_talk_filename="ghost.md",
+            disposition=sweep.DISPOSITION_CONFIRMED,
+            assessment={"verdict": "matched"},
+        )
+
+        assert sweep.proof_mutations(payload, [row]) == []

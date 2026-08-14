@@ -318,6 +318,35 @@ def _catalog_record(
     return record if isinstance(record, Mapping) else None
 
 
+def _writer_refusal(
+    record: Mapping[str, Any],
+    stored_talk: object,
+    talks: Mapping[Any, Any],
+) -> str | None:
+    """Say why the owner writer would refuse this row, or None if it would not.
+
+    Checked while BUILDING the plan, not left to the apply. A plan is a file a
+    human reviews and then runs; one that looks actionable and dies partway
+    through on a precondition the builder could have seen is worse than one that
+    says up front which rows it cannot address.
+
+    Mirrors the writer's own guards — `_nonempty` on the path, `_talk_by_filename`
+    on the talk — so a row that survives here is a row the writer accepts.
+    """
+    pptx_path = record.get("pptx_path")
+    if (
+        not isinstance(pptx_path, str)
+        or not pptx_path.strip()
+        or pptx_path != pptx_path.strip()
+    ):
+        return "catalog row has no usable pptx_path"
+    if not isinstance(stored_talk, str) or not stored_talk.strip():
+        return "no stored binding this plan can address"
+    if stored_talk not in talks:
+        return f"binds a talk no record carries ({stored_talk})"
+    return None
+
+
 def sever_mutations(
     database: Mapping[str, Any],
     rows: Sequence[Mapping[str, Any]],
@@ -359,18 +388,26 @@ def sever_mutations(
             continue
         record = _catalog_record(catalog, row)
         stored_talk = row.get("stored_talk_filename")
-        pptx_path = record.get("pptx_path") if isinstance(record, Mapping) else None
-        if not isinstance(record, Mapping) or not isinstance(stored_talk, str):
+        refusal = (
+            "no catalog row at this index"
+            if record is None
+            else _writer_refusal(record, stored_talk, talks)
+        )
+        if record is None or refusal is not None:
             unseverable.append(
                 {
                     "index": row.get("index"),
-                    "pptx_path": pptx_path,
+                    "pptx_path": (
+                        record.get("pptx_path") if isinstance(record, Mapping) else None
+                    ),
                     "stored_talk_filename": stored_talk,
                     "disposition": row.get("disposition"),
-                    "reason": "no stored binding this plan can address",
+                    "reason": refusal,
                 }
             )
             continue
+        pptx_path = record["pptx_path"]
+        assert isinstance(stored_talk, str)  # guaranteed by _writer_refusal
         talk = talks.get(stored_talk)
         if stored_talk in cleared_talks:
             expect_talk_pptx_path: Any = MISSING_MARKER
@@ -432,13 +469,17 @@ def proof_mutations(
     mutations: list[dict[str, Any]] = []
     for row in confirmed:
         record = _catalog_record(catalog, row)
-        pptx_path = record.get("pptx_path") if isinstance(record, Mapping) else None
         assessment = row.get("assessment")
-        if not isinstance(record, Mapping) or not isinstance(assessment, Mapping):
-            continue
         talk_filename = row.get("stored_talk_filename")
+        if record is None or not isinstance(assessment, Mapping):
+            continue
+        # The same writer preconditions the sever plan checks. A proof the owner
+        # writer would refuse is not a proof, and `record_pptx` reads both.
+        if _writer_refusal(record, talk_filename, talks) is not None:
+            continue
         if claims[talk_filename] != 1:
             continue
+        pptx_path = record["pptx_path"]
         talk = talks.get(talk_filename)
         # `candidates_assessed` is this report's own reading aid. The owner gate
         # validates a closed key set, so carrying it would fail the write.
