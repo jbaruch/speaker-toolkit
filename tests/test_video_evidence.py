@@ -1433,6 +1433,14 @@ def _interpreter_inside(root: Path) -> Path:
     return link / "bin" / Path(sys.executable).name
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason=(
+        "reproduction needs an interpreter path under the trusted root: Windows "
+        "gates symlink creation behind privilege and lays venvs out under "
+        "Scripts/, so the condition cannot be staged faithfully here"
+    ),
+)
 def test_a_video_probe_runs_under_an_interpreter_inside_the_trusted_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
