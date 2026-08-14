@@ -829,3 +829,78 @@ class TestProofPlan:
             "candidates_assessed"
             not in (proof["mutations"][0]["record"]["identity_assessment"])
         )
+
+
+class TestNothingIsSilentlyLeftBound:
+    def test_an_unassessable_row_is_severed_like_any_unproven_one(
+        self, tmp_path: Path, source_root: Path
+    ) -> None:
+        """ "The assessment could not run" is the strongest form of "not
+        proven", and the plan claims to sever every binding it could not."""
+        assert sweep.DISPOSITION_UNASSESSABLE in sweep.SEVERABLE_DISPOSITIONS
+
+    def test_a_row_the_plan_cannot_address_is_named_not_dropped(
+        self, source_root: Path
+    ) -> None:
+        """A plan that quietly drops what it cannot handle reads as complete
+        while leaving a binding in place.
+
+        Exercised at the builder, because a catalog the owner reader would
+        reject never reaches `execute` — which is the right upstream behaviour
+        and the reason this safety net needs its own test.
+        """
+        payload = database([], [VOXXED_TALK], source_root)
+        orphan = {
+            "index": 7,
+            "pptx_path": "Gone.pptx",
+            "stored_talk_filename": VOXXED_TALK["filename"],
+            "disposition": sweep.DISPOSITION_UNASSESSABLE,
+        }
+
+        mutations, unseverable = sweep.sever_mutations(payload, [orphan])
+
+        assert mutations == []
+        assert len(unseverable) == 1
+        assert unseverable[0]["index"] == 7
+
+    def test_a_row_resolves_by_index_not_by_its_normalized_path(
+        self, source_root: Path
+    ) -> None:
+        """A row's `pptx_path` is the deck-facts reading's normalized text, so
+        a stored path with internal double spaces would not match a
+        path-keyed lookup and would drop out of the plan silently."""
+        stored = "Voxxed  Days/2025/Two  Spaces.pptx"
+        payload = database(
+            [catalog_row(stored, VOXXED_TALK["filename"])],
+            [VOXXED_TALK],
+            source_root,
+        )
+        row = {
+            "index": 0,
+            # Collapsed exactly as `_text` would produce it.
+            "pptx_path": "Voxxed Days/2025/Two Spaces.pptx",
+            "stored_talk_filename": VOXXED_TALK["filename"],
+            "disposition": sweep.DISPOSITION_CONTRADICTED,
+        }
+
+        mutations, unseverable = sweep.sever_mutations(payload, [row])
+
+        assert unseverable == []
+        assert mutations[0]["pptx_path"] == stored
+
+    def test_a_healthy_plan_reports_nothing_unseverable(
+        self, tmp_path: Path, source_root: Path
+    ) -> None:
+        bad = deck(source_root, "Devoxx Belgium/2024/DevOps for Developers.pptx")
+        payload = database(
+            [catalog_row(bad, VOXXED_TALK["filename"])],
+            [VOXXED_TALK, DEVOXX_TALK],
+            source_root,
+        )
+        path = tmp_path / "tracking-database.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        plan = sweep.execute(path, emit_mutations=True)["mutation_plan"]
+
+        assert len(plan["mutations"]) == 1
+        assert plan["unseverable"] == []

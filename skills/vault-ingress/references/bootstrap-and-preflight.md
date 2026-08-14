@@ -271,8 +271,9 @@ rows without changing the counts.
 never from the `--dispositions` view. `mutation_plan` severs every binding the
 sweep could not prove, through the `sever_pptx_talk_binding` mutation, which
 clears the catalog row's `talk_filename` and the talk's own `pptx_path`
-together. `proof_plan` stores the assessment behind every confirmed binding
-through `record_pptx`.
+together; its `unseverable[]` names every row it could not address, so a
+complete-looking plan cannot hide a binding it left in place. `proof_plan`
+stores the assessment behind every confirmed binding through `record_pptx`.
 
 Apply one plan, re-run the sweep, then apply the next. Both plans carry
 exact-old-value preconditions on both sides of each binding, so a plan built

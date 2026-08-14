@@ -284,15 +284,44 @@ def sweep_catalog(
     return rows
 
 
+# Every disposition that leaves a talk bound to a deck nothing proved.
+# `binding_unassessable` belongs here too: "the assessment could not run" is the
+# strongest form of "not proven", and leaving those bound while the plan reads
+# as complete is the failure the plan exists to prevent.
 SEVERABLE_DISPOSITIONS = frozenset(
-    {DISPOSITION_CONTRADICTED, DISPOSITION_REVIEW_REQUIRED, DISPOSITION_UNPROVEN}
+    {
+        DISPOSITION_CONTRADICTED,
+        DISPOSITION_REVIEW_REQUIRED,
+        DISPOSITION_UNPROVEN,
+        DISPOSITION_UNASSESSABLE,
+    }
 )
+
+
+def _catalog_record(
+    catalog: Sequence[Any],
+    row: Mapping[str, Any],
+) -> Mapping[str, Any] | None:
+    """Resolve a report row back to the exact catalog record it describes.
+
+    By INDEX, never by path. A row's `pptx_path` is the deck-facts reading's
+    normalized text — whitespace collapsed, length-capped — so a stored path
+    carrying internal double spaces would not match the catalog key, and the
+    binding would drop out of the plan without a word.
+    """
+    index = row.get("index")
+    if not isinstance(index, int) or isinstance(index, bool):
+        return None
+    if index < 0 or index >= len(catalog):
+        return None
+    record = catalog[index]
+    return record if isinstance(record, Mapping) else None
 
 
 def sever_mutations(
     database: Mapping[str, Any],
     rows: Sequence[Mapping[str, Any]],
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Build the owner plan that breaks every binding this sweep could not prove.
 
     One mutation per unproven binding, each carrying the exact prior catalog row
@@ -304,17 +333,18 @@ def sever_mutations(
     Confirmed bindings are absent by construction. Proving a binding is
     `record_pptx`'s job — it writes the assessment alongside the receipt — and a
     sever plan that also carried proofs would be two decisions in one file.
+
+    Returns `(mutations, unseverable)`. A row whose binding cannot be turned
+    into a mutation — a malformed catalog entry, a path no stored row carries —
+    is reported rather than skipped: a plan that quietly drops what it cannot
+    handle reads as complete while leaving a binding in place.
     """
     talks = {
         talk.get("filename"): talk
         for talk in (database.get("talks") or [])
         if isinstance(talk, Mapping)
     }
-    catalog = {
-        record.get("pptx_path"): record
-        for record in (database.get("pptx_catalog") or [])
-        if isinstance(record, Mapping)
-    }
+    catalog = list(database.get("pptx_catalog") or [])
     mutations: list[dict[str, Any]] = []
     # Several unproven rows can name ONE talk — the live catalog has exactly
     # that, two UberConf 2024 decks bound to the same delivery. The talk's
@@ -323,16 +353,26 @@ def sever_mutations(
     # value for all of them makes the second mutation fail a precondition the
     # first one made false, and the whole plan aborts.
     cleared_talks: set[str] = set()
+    unseverable: list[dict[str, Any]] = []
     for row in rows:
         if row.get("disposition") not in SEVERABLE_DISPOSITIONS:
             continue
-        pptx_path = row.get("pptx_path")
-        record = catalog.get(pptx_path)
-        if not isinstance(record, Mapping):
-            continue
+        record = _catalog_record(catalog, row)
         stored_talk = row.get("stored_talk_filename")
+        pptx_path = record.get("pptx_path") if isinstance(record, Mapping) else None
+        if not isinstance(record, Mapping) or not isinstance(stored_talk, str):
+            unseverable.append(
+                {
+                    "index": row.get("index"),
+                    "pptx_path": pptx_path,
+                    "stored_talk_filename": stored_talk,
+                    "disposition": row.get("disposition"),
+                    "reason": "no stored binding this plan can address",
+                }
+            )
+            continue
         talk = talks.get(stored_talk)
-        if isinstance(stored_talk, str) and stored_talk in cleared_talks:
+        if stored_talk in cleared_talks:
             expect_talk_pptx_path: Any = MISSING_MARKER
         elif isinstance(talk, Mapping) and "pptx_path" in talk:
             expect_talk_pptx_path = talk["pptx_path"]
@@ -340,8 +380,7 @@ def sever_mutations(
             # A talk that never carried the field expects the missing marker,
             # which is a different precondition from expecting null.
             expect_talk_pptx_path = MISSING_MARKER
-        if isinstance(stored_talk, str):
-            cleared_talks.add(stored_talk)
+        cleared_talks.add(stored_talk)
         mutations.append(
             {
                 "kind": "sever_pptx_talk_binding",
@@ -350,7 +389,7 @@ def sever_mutations(
                 "expect_talk_pptx_path": expect_talk_pptx_path,
             }
         )
-    return mutations
+    return mutations, unseverable
 
 
 def proof_mutations(
@@ -378,11 +417,7 @@ def proof_mutations(
         for talk in (database.get("talks") or [])
         if isinstance(talk, Mapping)
     }
-    catalog = {
-        record.get("pptx_path"): record
-        for record in (database.get("pptx_catalog") or [])
-        if isinstance(record, Mapping)
-    }
+    catalog = list(database.get("pptx_catalog") or [])
     confirmed = [row for row in rows if row.get("disposition") == DISPOSITION_CONFIRMED]
     # Two decks cannot both be one talk's delivery deck, and the live catalog
     # has exactly that pair. The per-deck assessment cannot see it — each deck
@@ -396,8 +431,8 @@ def proof_mutations(
     )
     mutations: list[dict[str, Any]] = []
     for row in confirmed:
-        pptx_path = row.get("pptx_path")
-        record = catalog.get(pptx_path)
+        record = _catalog_record(catalog, row)
+        pptx_path = record.get("pptx_path") if isinstance(record, Mapping) else None
         assessment = row.get("assessment")
         if not isinstance(record, Mapping) or not isinstance(assessment, Mapping):
             continue
@@ -490,9 +525,13 @@ def execute(
         # Built from every row, never from the filtered view: a plan that
         # inherited `--dispositions` would silently sever only what the operator
         # happened to be reading.
+        severs, unseverable = sever_mutations(database, rows)
         report["mutation_plan"] = {
             "schema_version": MUTATION_PLAN_SCHEMA_VERSION,
-            "mutations": sever_mutations(database, rows),
+            "mutations": severs,
+            # Never empty-by-omission: a row this plan cannot address is named
+            # here so a complete-looking plan cannot hide a binding it left.
+            "unseverable": unseverable,
         }
         report["proof_plan"] = {
             "schema_version": MUTATION_PLAN_SCHEMA_VERSION,

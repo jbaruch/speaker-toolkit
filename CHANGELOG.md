@@ -34,6 +34,16 @@ cannot see:
   assert what the other disproves, so the plan proves neither and both stay
   blocking for owner review.
 
+`binding_unassessable` is severable too: "the assessment could not run" is the
+strongest form of "not proven", and leaving those bound while the plan reads as
+complete is the failure the plan exists to prevent. Rows the plan cannot address
+are named in `unseverable[]` rather than skipped.
+
+Rows resolve to their catalog record by INDEX, never by path. A row's
+`pptx_path` is the deck-facts reading's normalized text — whitespace collapsed,
+length-capped — so a stored path with internal double spaces would not match a
+path-keyed lookup and would drop out of the plan without a word.
+
 Measured end to end on a copy of the live database — sever, re-sweep, prove,
 migrate — blocking preflight findings go **1550 → 4**: the two decks contesting
 one talk, and two unrelated `video_extraction_provenance_invalid` findings.
