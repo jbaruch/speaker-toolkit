@@ -1,5 +1,33 @@
 # Changelog
 
+### fix(catalog) — an entry evaluable from a transcript can now cite one
+
+Eleven observable entries declared `transcript` in `evaluable_from` — ten of
+them in `strong_evaluable_from` as well — while omitting `transcript` from
+`evidence_channels`. `call-to-action` names a transcript as an evaluable source
+three times and its `evidence_requirements` says "the spoken source must cover
+the complete closing zone", then offers only `timed_transcript` and `video` to
+cite one through.
+
+A worker holding a plain transcript therefore had no legal citation, while
+canonicalization still demanded an assessment because the applicability gate
+read as complete. The two fields contradict each other, and the contradiction is
+only visible across both, which is why nothing caught it.
+
+Affected: `call-to-action`, `call-to-adventure`, `concrete-before-abstract`,
+`delayed-self-introduction`, `guess-first`, `new-bliss`, `opening-punch`,
+`retrieval-beat`, `shortchanged`, `sparkline`, `talklet`.
+
+Only 3 of 215 talks carry a timing sidecar, so these entries were effectively
+unscorable corpus-wide — recorded as "the speaker does not do this" rather than
+"the catalog cannot see it". `guess-first` is the sharpest case: a twelve-round
+commit-then-reveal quiz recorded as not evaluable.
+
+A new catalog guard fails when any observable entry admits a transcript source
+without a transcript channel, so the pairing cannot drift apart again.
+
+Found by running the reparse (#309).
+
 ## 0.20.76 — 2026-08-14
 
 ### fix(vault-ingress) — a probe may run the interpreter the vault configures

@@ -8,7 +8,7 @@ phase_relevance:
   - content
   - slides
 vault_dimensions: [4, 12]
-evidence_channels: [timed_transcript, video]
+evidence_channels: [transcript, timed_transcript, video]
 detection_signals:
   - "audience asked to recall earlier material from memory"
   - "speaker withholds a restatement and makes the room supply it"

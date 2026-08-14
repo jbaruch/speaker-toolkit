@@ -7,7 +7,7 @@ phase_relevance:
   - architecture
   - content
 vault_dimensions: [1, 2, 9]
-evidence_channels: [timed_transcript, video]
+evidence_channels: [transcript, timed_transcript, video]
 detection_signals:
   - "explicit gap-reveal moment between current reality and proposed future"
   - "Big Idea stated at the structural transition from setup to body"

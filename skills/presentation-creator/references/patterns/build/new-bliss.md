@@ -6,7 +6,7 @@ part: build
 phase_relevance:
   - content
 vault_dimensions: [2, 6, 9]
-evidence_channels: [timed_transcript, video]
+evidence_channels: [transcript, timed_transcript, video]
 detection_signals:
   - "vivid future-state description in the closing zone"
   - "talk ends on a higher emotional plane than it started"
