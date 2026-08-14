@@ -1107,6 +1107,7 @@ def test_a_v6_return_canonicalizes_on_the_same_exhaustive_path_as_v5(
     )
 
     observations = canonical["pattern_observations"]
+    assert isinstance(observations, dict)
     assert observations["applicability_assessments"]
     assert observations["pattern_outcomes"]
     assert observations["evidence_schema_version"] == 2
