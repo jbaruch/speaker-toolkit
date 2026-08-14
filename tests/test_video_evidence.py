@@ -1416,31 +1416,42 @@ def test_empty_container_rejects_before_probe_worker(
     assert caught.value.reason_code == "video_invalid_container"
 
 
-def _interpreter_inside(root: Path) -> Path:
-    """A working interpreter whose path sits under `root`.
+def _venv_root_link(root: Path) -> Path:
+    """Link the running venv to a path under `root`, on either platform.
 
-    Mirrors the live vault, where `config.python_path` is
-    `<vault>/.venv/bin/python3`. Symlinking the running venv keeps the child
-    fully functional — a hand-built stub resolves to a prefix with no
-    site-packages and fails on its own dependencies, which would test the
-    fixture instead of the supervisor.
+    The condition under test is that the interpreter's own path contains the
+    trusted root — the live vault's `<vault>/.venv/bin/python3`. Reproducing it
+    needs a link, not a copy: a copied interpreter loses the venv and fails on
+    its own dependencies, which would test the fixture instead of the
+    supervisor.
+
+    POSIX gets a symlink. Windows gets a directory junction, which needs no
+    privilege where `os.symlink` does. The link is deliberately UNRESOLVED —
+    resolving follows through to the base installation and drops the venv's
+    site-packages.
     """
     link = root / ".venv"
-    if not link.exists():
-        # Deliberately unresolved: resolving follows through to the base
-        # installation and loses the venv's own site-packages.
-        link.symlink_to(Path(sys.executable).parent.parent)
-    return link / "bin" / Path(sys.executable).name
+    if link.exists():
+        return link
+    source = Path(sys.executable).parent.parent
+    if os.name == "nt":
+        created = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", os.fspath(link), os.fspath(source)],
+            capture_output=True,
+            check=False,
+        )
+        assert created.returncode == 0, created.stderr.decode("utf-8", errors="replace")
+    else:
+        link.symlink_to(source)
+    return link
 
 
-@pytest.mark.skipif(
-    os.name == "nt",
-    reason=(
-        "reproduction needs an interpreter path under the trusted root: Windows "
-        "gates symlink creation behind privilege and lays venvs out under "
-        "Scripts/, so the condition cannot be staged faithfully here"
-    ),
-)
+def _interpreter_under(root: Path) -> Path:
+    """The linked venv's interpreter, named as this platform names it."""
+    executable = Path(sys.executable)
+    return _venv_root_link(root) / executable.parent.name / executable.name
+
+
 def test_a_video_probe_runs_under_an_interpreter_inside_the_trusted_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1478,7 +1489,7 @@ def test_a_video_probe_runs_under_an_interpreter_inside_the_trusted_root(
         check=False,
     )
     assert created.returncode == 0, created.stderr.decode("utf-8", errors="replace")
-    monkeypatch.setattr(sys, "executable", os.fspath(_interpreter_inside(tmp_path)))
+    monkeypatch.setattr(sys, "executable", os.fspath(_interpreter_under(tmp_path)))
 
     probe = video_evidence.VideoEvidenceAssessment().probe(
         artifact.name,
