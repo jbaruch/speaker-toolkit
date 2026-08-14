@@ -34,6 +34,12 @@ cannot see:
   assert what the other disproves, so the plan proves neither and both stay
   blocking for owner review.
 
+Each plan is exactly the `{schema_version, mutations}` envelope
+`mutate-tracking-database.py`'s `load_plan` accepts — it validates a CLOSED key
+set, so a reporting key inside the envelope makes an otherwise healthy plan
+un-applyable. `unseverable[]` sits beside the plans in the report, never inside
+one.
+
 `binding_unassessable` is severable too: "the assessment could not run" is the
 strongest form of "not proven", and leaving those bound while the plan reads as
 complete is the failure the plan exists to prevent. Rows the plan cannot address

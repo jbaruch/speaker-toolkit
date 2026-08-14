@@ -900,10 +900,10 @@ class TestNothingIsSilentlyLeftBound:
         path = tmp_path / "tracking-database.json"
         path.write_text(json.dumps(payload), encoding="utf-8")
 
-        plan = sweep.execute(path, emit_mutations=True)["mutation_plan"]
+        report = sweep.execute(path, emit_mutations=True)
 
-        assert len(plan["mutations"]) == 1
-        assert plan["unseverable"] == []
+        assert len(report["mutation_plan"]["mutations"]) == 1
+        assert report["unseverable"] == []
 
 
 class TestThePlanOnlyEmitsWhatTheWriterAccepts:
@@ -979,3 +979,29 @@ class TestThePlanOnlyEmitsWhatTheWriterAccepts:
         )
 
         assert sweep.proof_mutations(payload, [row]) == []
+
+
+class TestThePlanEnvelopesAreApplyableAsIs:
+    def test_each_plan_carries_only_what_load_plan_accepts(
+        self, tmp_path: Path, source_root: Path
+    ) -> None:
+        """`load_plan` validates a CLOSED envelope, so an extra reporting key
+        makes an otherwise healthy plan un-applyable."""
+        bad = deck(source_root, "Devoxx Belgium/2024/DevOps for Developers.pptx")
+        good = deck(source_root, "Voxxed Days Ticino/2025/DevOps for Developers.pptx")
+        payload = database(
+            [
+                catalog_row(bad, DEVOXX_TALK["filename"]),
+                catalog_row(good, VOXXED_TALK["filename"]),
+            ],
+            [VOXXED_TALK, DEVOXX_TALK, KUBECON_TALK],
+            source_root,
+        )
+        path = tmp_path / "tracking-database.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        report = sweep.execute(path, emit_mutations=True)
+
+        for name in ("mutation_plan", "proof_plan"):
+            assert set(report[name]) == {"schema_version", "mutations"}, name
+        assert "unseverable" in report

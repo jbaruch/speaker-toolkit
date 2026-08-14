@@ -567,13 +567,17 @@ def execute(
         # inherited `--dispositions` would silently sever only what the operator
         # happened to be reading.
         severs, unseverable = sever_mutations(database, rows)
+        # The plan envelopes stay exactly what `mutate-tracking-database.py`'s
+        # `load_plan` accepts — `{schema_version, mutations}`, closed — so a
+        # plan can be lifted out of this report and applied as-is. Anything
+        # else the operator needs to know sits BESIDE them, not inside.
         report["mutation_plan"] = {
             "schema_version": MUTATION_PLAN_SCHEMA_VERSION,
             "mutations": severs,
-            # Never empty-by-omission: a row this plan cannot address is named
-            # here so a complete-looking plan cannot hide a binding it left.
-            "unseverable": unseverable,
         }
+        # Never empty-by-omission: a row no plan can address is named here so a
+        # complete-looking plan cannot hide a binding it left in place.
+        report["unseverable"] = unseverable
         report["proof_plan"] = {
             "schema_version": MUTATION_PLAN_SCHEMA_VERSION,
             "mutations": proof_mutations(database, rows),

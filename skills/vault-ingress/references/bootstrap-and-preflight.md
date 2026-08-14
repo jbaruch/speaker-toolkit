@@ -271,9 +271,15 @@ rows without changing the counts.
 never from the `--dispositions` view. `mutation_plan` severs every binding the
 sweep could not prove, through the `sever_pptx_talk_binding` mutation, which
 clears the catalog row's `talk_filename` and the talk's own `pptx_path`
-together; its `unseverable[]` names every row it could not address, so a
-complete-looking plan cannot hide a binding it left in place. `proof_plan`
-stores the assessment behind every confirmed binding through `record_pptx`.
+together. `proof_plan` stores the assessment behind every confirmed binding
+through `record_pptx`.
+
+Each plan is exactly the `{schema_version, mutations}` envelope
+`mutate-tracking-database.py` accepts, so lift one out of the report and apply
+it as-is. The report's own `unseverable[]` sits beside them, never inside:
+it names every row no plan could address, so a complete-looking plan cannot
+hide a binding it left in place. A nonempty `unseverable[]` is owner work
+before the reparse, not something to apply.
 
 Apply one plan, re-run the sweep, then apply the next. Both plans carry
 exact-old-value preconditions on both sides of each binding, so a plan built
