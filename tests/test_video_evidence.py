@@ -1416,41 +1416,66 @@ def test_empty_container_rejects_before_probe_worker(
     assert caught.value.reason_code == "video_invalid_container"
 
 
-def test_the_probe_admits_an_interpreter_inside_the_trusted_root(monkeypatch):
-    """A vault whose configured interpreter lives INSIDE the trusted root is the
-    layout `check-runtime` recommends, and it made every video probe fail.
+def _interpreter_inside(root: Path) -> Path:
+    """A working interpreter whose path sits under `root`.
 
-    `sys.executable` then contains the trusted root, so the supervisor's
-    sensitive-metadata guard flags the worker's own argv[0] and refuses to start
-    it — `unsafe_worker_process_metadata`. The interpreter and this module's
-    path are fixed process identity, not leaked secrets, and every PPTX worker
-    already declared them. These did not.
+    Mirrors the live vault, where `config.python_path` is
+    `<vault>/.venv/bin/python3`. Symlinking the running venv keeps the child
+    fully functional — a hand-built stub resolves to a prefix with no
+    site-packages and fails on its own dependencies, which would test the
+    fixture instead of the supervisor.
     """
-    import artifact_supervisor
-    import video_evidence
+    link = root / ".venv"
+    if not link.exists():
+        # Deliberately unresolved: resolving follows through to the base
+        # installation and loses the venv's own site-packages.
+        link.symlink_to(Path(sys.executable).parent.parent)
+    return link / "bin" / Path(sys.executable).name
 
-    seen: dict[str, object] = {}
 
-    def capture(command, operation, generations, payload, limits, **kwargs):
-        seen["command"] = list(command)
-        seen["identity"] = list(kwargs.get("immutable_process_identity") or ())
-        raise AssertionError("stop after argument capture")
+def test_a_video_probe_runs_under_an_interpreter_inside_the_trusted_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The supervisor must not flag the worker's own interpreter as a secret.
 
-    monkeypatch.setattr(video_evidence, "run_authenticated_worker", capture)
-
-    with pytest.raises(AssertionError):
-        video_evidence._invoke_metadata_worker(
-            video_evidence._worker_command(),
-            {"video_path": "x", "trusted_root": None},
-            (),
-            video_evidence.VIDEO_METADATA_LIMITS,
-        )
-
-    # The interpreter and the module path — exactly what the PPTX workers pass.
-    assert seen["identity"] == seen["command"][:2]
-    # And the guard accepts that pairing even when the root is a path prefix.
-    artifact_supervisor._reject_sensitive_process_metadata(
-        seen["command"],
-        [str(Path(seen["command"][0]).parent)],
-        immutable_process_identity=seen["command"][:2],
+    With `config.python_path` inside the vault, `sys.executable` contains the
+    trusted root, and without an `immutable_process_identity` declaration the
+    guard refuses to start the worker — every video probe failed
+    `video_probe_start_failure`.
+    """
+    artifact = tmp_path / "talk.mp4"
+    created = subprocess.run(
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=160x90:r=2",
+            "-t",
+            "1",
+            "-an",
+            "-c:v",
+            "mpeg4",
+            "-pix_fmt",
+            "yuv420p",
+            "-y",
+            os.fspath(artifact),
+        ],
+        capture_output=True,
+        check=False,
     )
+    assert created.returncode == 0, created.stderr.decode("utf-8", errors="replace")
+    monkeypatch.setattr(sys, "executable", os.fspath(_interpreter_inside(tmp_path)))
+
+    probe = video_evidence.VideoEvidenceAssessment().probe(
+        artifact.name,
+        trusted_root=tmp_path,
+    )
+
+    assert probe.duration_seconds == pytest.approx(1.0, abs=0.1)
+    assert probe.video_stream_count == 1

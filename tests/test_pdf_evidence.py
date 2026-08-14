@@ -1353,3 +1353,48 @@ def test_deadline_is_validated_and_clamps_worker_profile(
     with pytest.raises(pdf_evidence.PdfEvidenceError) as caught:
         pdf_evidence._limits_before_deadline(pdf_evidence.PDF_PROBE_LIMITS, True)
     assert caught.value.reason_code == "pdf_evidence_invalid"
+
+
+def _venv_interpreter_inside(root: Path) -> Path:
+    """A working interpreter whose path sits under `root`.
+
+    Mirrors the live vault, where `config.python_path` is
+    `<vault>/.venv/bin/python3`. Symlinking the running venv keeps the child
+    fully functional — a hand-built stub resolves to a prefix with no
+    site-packages and fails on its own dependencies, which would test the
+    fixture instead of the supervisor.
+    """
+    link = root / ".venv"
+    if not link.exists():
+        # Deliberately unresolved: resolving follows through to the base
+        # installation and loses the venv's own site-packages.
+        link.symlink_to(Path(sys.executable).parent.parent)
+    return link / "bin" / Path(sys.executable).name
+
+
+def test_a_pdf_probe_runs_under_an_interpreter_inside_the_trusted_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same defect as the video probe, same shape, both PDF worker paths.
+
+    With `config.python_path` inside the vault — the layout `check-runtime`
+    recommends and the live vault uses — `sys.executable` contains the trusted
+    root. Without an `immutable_process_identity` declaration the supervisor
+    reads the worker's own interpreter as leaked metadata and refuses to start
+    it, so every PDF admission failed `pdf_probe_start_failure`.
+
+    Exercised through `probe_pdf_artifact`, which drives the metadata worker and
+    the probe worker in turn, so both changed call sites are covered by the
+    outcome rather than by their wiring.
+    """
+    source = _synthetic_pdf(3)
+    (tmp_path / "talk.pdf").write_bytes(source)
+    interpreter = _venv_interpreter_inside(tmp_path)
+    monkeypatch.setattr(sys, "executable", os.fspath(interpreter))
+
+    probe = pdf_evidence.probe_pdf_artifact("talk.pdf", trusted_root=tmp_path)
+
+    assert probe.page_count == 3
+    assert probe.source_sha256 == hashlib.sha256(source).hexdigest()
+    assert probe.availability.state == "local"
