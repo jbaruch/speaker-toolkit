@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.72 — 2026-08-14
+
 ### feat(vault-ingress) — activate weighted scoring (#299)
 
 #293 defined the weighted return contract and stopped: v6 validated but could
