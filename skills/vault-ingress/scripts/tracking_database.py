@@ -1565,7 +1565,11 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
         require_current_tracking_database(candidate)
         return TrackingDatabaseMigration(
             database=candidate,
-            changed=bool(counts["config"] or counts["pptx_catalog"]),
+            # Every record count, never a hand-listed subset: a flag that names
+            # the collections it knows about goes stale the moment a migration
+            # touches one it does not, and reports no-change over mutated
+            # records.
+            changed=any(counts.values()),
             from_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
             to_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
             record_counts=counts,

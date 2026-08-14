@@ -2366,6 +2366,18 @@ def canonical_persisted_pattern_observations(
         persisted["opportunity_coverage_identity"] = observations.get(
             "opportunity_coverage_identity"
         )
+    if return_version in WEIGHTED_SCORE_RETURN_SCHEMA_VERSIONS:
+        # Recomputed from the canonical detection lanes, not copied from the
+        # return. The return's own basis was already checked against those
+        # lanes by `_validate_score`; recomputing here keeps the PERSISTED
+        # basis bound to the arrays actually being persisted, which is what
+        # `validate_persisted_pattern_score_basis` will check it against.
+        #
+        # Omitting it would persist a weighted return under the v5 field set,
+        # and the fractional score it carries is rejected at that shape.
+        persisted["pattern_score_basis"] = pattern_score_basis(
+            patterns_detected, antipatterns_detected, not_evaluable
+        )
     return persisted
 
 

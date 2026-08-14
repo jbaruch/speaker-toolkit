@@ -282,13 +282,14 @@ def test_claim_return_talk_and_scoring_axes_preserve_archival_v4() -> None:
         "| v4 | v4 only | archival source-located v4 | never current v5 |"
         in docs["schemas"]
     )
+    assert "| v5 | v5 only | v5 | never current v6 |" in docs["schemas"]
     assert (
-        "| v5 | v5 only | v5 | v5 when canonical evidence/outcomes are fresh |"
+        "| v6 | v6 only | v6 | v6 when canonical evidence/outcomes are fresh |"
         in docs["schemas"]
     )
-    assert "Fresh queue work uses claim schema v5" in docs["selection"]
+    assert "Fresh queue work uses claim schema v6" in docs["selection"]
     assert (
-        "only return generation eligible for pattern-scoring schema v5"
+        "only return generation eligible for pattern-scoring schema v6"
         in docs["worker"]
     )
 

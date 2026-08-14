@@ -28,8 +28,6 @@ CURRENT_TALK_SCHEMA = importlib.import_module(
     "tracking_database"
 ).TALK_RECORD_SCHEMA_VERSION
 
-if str(SCRIPT_DIRECTORY) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIRECTORY))
 SPEC = importlib.util.spec_from_file_location("scan_shownotes", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 scan_shownotes = importlib.util.module_from_spec(SPEC)

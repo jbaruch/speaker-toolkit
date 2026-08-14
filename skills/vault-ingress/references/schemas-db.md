@@ -324,7 +324,7 @@ customization, not the owner default. See the
       "not_evaluable": []
     }
   }],
-  "_comment_schema_version": "Database schema v1 is owner-migrated by vault-ingress. A missing talk record version is the historical implicit-v1 lineage. v2 makes transcript_source optional. Two incompatible v3 lineages were emitted; v4 is their source-located union and remains archival with evidence ledger v1. V5 adds applicability assessments, exhaustive outcomes, opportunity-coverage identity, evidence ledger v2, and current scoring schema v5. Root migration preserves all historical evidence and never synthesizes v5 outcomes.",
+  "_comment_schema_version": "Database schema v1 is owner-migrated by vault-ingress. A missing talk record version is the historical implicit-v1 lineage. v2 makes transcript_source optional. Two incompatible v3 lineages were emitted; v4 is their source-located union and remains archival with evidence ledger v1. V5 adds applicability assessments, exhaustive outcomes, opportunity-coverage identity, and evidence ledger v2. V6 adds `pattern_score_basis` and a possibly-fractional `pattern_score` at the weighted scoring generation; migration restamps a v5 record to v6 without rescoring it, because recomputing a score under arithmetic its worker never used would restate what the worker meant. Root migration preserves all historical evidence and never synthesizes v5 outcomes.",
   "_comment_absent_transcript_source": "Absent transcript_source: the key may be MISSING on a talk, and missing is meaningful — it means provenance is unknown, not that no transcript exists (that is the explicit value `none`). It arises on one path: fetch-transcript.py returning method `existing`, where a valid transcript was already on disk and no fetch ran, so nothing was learned about where it came from. Writers MUST NOT backfill a guess; `manual` in particular asserts a human produced it. Readers gauging transcript reliability MUST treat absent as unknown and MUST NOT default it to any value.",
   "pptx_catalog": [{
     "schema_version": 3,
@@ -784,12 +784,16 @@ The four version axes are deliberately explicit:
 | v1 or v2 | saved v1 or v2 only | migrated legacy record | never current v5 |
 | v3 | v3 only | migrated union-safe record | never current v5 |
 | v4 | v4 only | archival source-located v4 | never current v5 |
-| v5 | v5 only | v5 | v5 when canonical evidence/outcomes are fresh |
+| v5 | v5 only | v5 | never current v6 |
+| v6 | v6 only | v6 | v6 when canonical evidence/outcomes are fresh |
 
 Claim/return compatibility authorizes replay; it does not grant current scoring
-status. Only a v5 return canonicalized from current source artifacts can produce
-talk schema v5 with `pattern_scoring_schema_version: 5`, evidence ledger v2,
-exhaustive outcomes, and `pattern_scoring_generation_status: "current"`.
+status. Only a v6 return canonicalized from current source artifacts can produce
+talk schema v6 with `pattern_scoring_schema_version: 6`, evidence ledger v2,
+exhaustive outcomes, `pattern_score_basis`, and
+`pattern_scoring_generation_status: "current"`. A v5 return still validates and
+still persists, at the flat scoring generation; weighted and flat scores are not
+comparable and never share a cohort.
 V1–v3 detections retain the explicit empty-citation legacy sentinel. V4 keeps
 its source locations and evidence ledger v1 but migration never fabricates v5
 applicability assessments, outcomes, or opportunity identity.
@@ -1044,12 +1048,12 @@ classification rule including how a dominant class is selected, the provenance
 evidence used, and how unverified origins are counted as `unknown`. Both fields
 are authored-slide evidence and cannot be supplied from untrusted video context.
 
-The worker matches the active claim contract. Every fresh claim is schema v5
-with `required_return_schema_version: 5`, and only that exact claim authorizes a
-v5 return. Saved claim schemas v1/v2 authorize only return schemas v1/v2;
-schema v3 authorizes only v3; schema v4 authorizes only archival v4. Recover a
-live legacy lease and issue a new v5 generation; never mutate its claim to make
-a newer return appear compatible.
+The worker matches the active claim contract. Every fresh claim is schema v6
+with `required_return_schema_version: 6`, and only that exact claim authorizes a
+v6 return. Saved claim schemas v1/v2 authorize only return schemas v1/v2;
+schema v3 authorizes only v3; schema v4 authorizes only archival v4; schema v5
+authorizes only v5. Recover a live legacy lease and issue a new v6 generation;
+never mutate its claim to make a newer return appear compatible.
 
 For newly emitted work, `validate-returns.py` must report the processed talk's
 scoring-generation status as `current`; a valid but
@@ -1074,25 +1078,32 @@ table would restate what that worker meant rather than validate what it said. A
 v5 return carrying `pattern_score_basis` is rejected outright — the field cannot
 exist under its contract.
 
-**Writer.** No worker emits v6 yet. Every fresh claim is schema v5 with
-`required_return_schema_version: 5`, so v6 is accepted-but-unissued until the
-claim contract advances. `PATTERN_SCORING_SCHEMA_VERSION` stays at 5 for the same
-reason: bumping it before a return emits a weighted score would strand every
-persisted talk on a generation nothing has produced.
+**Writer.** Every fresh claim is schema v6 with
+`required_return_schema_version: 6`, so a worker is issued a v6 return.
+`PATTERN_SCORING_SCHEMA_VERSION` is 6; `FLAT_PATTERN_SCORING_SCHEMA_VERSION`
+names the flat generation, and `scoring_schema_version_for_return` maps a return
+to the generation its score belongs to. Weighted and flat scores are not
+comparable and never share a cohort.
 
-**Not yet persisted.** v6 validates as a return contract and nothing further: it
-is absent from `CANONICALIZABLE_RETURN_SCHEMA_VERSIONS`, so a v6 return cannot be
-canonicalized and therefore cannot reach the database. A persisted `pattern_score`
-stays an integer, and no stored `pattern_observations` carries a basis.
+**Persisted shape.** A canonicalized v6 block carries
+`pattern_score_basis` and its `pattern_score` may be fractional. The accepted
+field sets are distinct, not v5-plus-an-optional-field: a v5 record carrying a
+basis and a v6 record missing one are both malformed. The basis is recomputed
+from the persisted detection lanes on the way out of the database as well as on
+the way in — a stored basis that agrees with a stored score proves only that
+whoever wrote them agreed with themselves.
 
-Persisting a weighted score is a new talk-record shape, and
-`mutate-tracking-database` requires the exact current talk schema before any
-mutation — so admitting it alone would leave every stored talk unmutatable until
-a migration restamped it. That shape, its schema bump, the claim contract, and
-the migration advance together in one activation change.
+**Migration.** `_restamp_talk_records` moves a v5 talk record to v6 and leaves
+`pattern_scoring_schema_version` alone. It restamps; it never rescores.
+Computing a basis from stored detections would recompute a score under
+arithmetic its worker never used, which is the reinterpretation validation
+refuses on the way in. The record's shape advances, its score does not, and the
+cohort selector then excludes it as a generation mismatch and requeues it.
+Without the restamp the schema bump alone would leave every stored talk
+unmutatable, since the owner writer requires the exact current talk schema.
 
-**Migration.** None. Weights are part of the scoring schema version, so changing
-one is a scoring-generation bump, never a tuning knob.
+Weights are part of the scoring schema version, so changing one is a
+scoring-generation bump, never a tuning knob.
 
 The basis a v6 return carries has this shape:
 

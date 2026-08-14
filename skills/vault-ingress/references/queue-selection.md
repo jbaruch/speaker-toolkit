@@ -4,7 +4,7 @@ This is the complete normative Step 2 contract for `vault-ingress`. Execute
 normalization before claiming, and preserve every generation, freshness, replay,
 and recovery rule below.
 
-Fresh queue work uses claim schema v5. Before changing any talk status,
+Fresh queue work uses claim schema v6. Before changing any talk status,
 `queue-state.py claim` snapshots one immutable `adherence_baseline` for the
 entire selected batch, stamps `required_return_schema_version: 5`, and copies
 that exact snapshot into every member claim. The snapshot uses the current

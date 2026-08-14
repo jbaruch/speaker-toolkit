@@ -44,6 +44,22 @@ Measured on the live vault: 6 talks restamp v5→v6; the other 209 are schema v1
 and stay v1, as they already did. No talk carries a scoring-generation stamp at
 all, so the whole corpus requeues on generation grounds regardless.
 
+The canonicalizer emits `pattern_score_basis` for a weighted return,
+recomputed from the canonical detection lanes rather than copied from the
+return. Without it a v6 return canonicalized to the v5 field set, and the
+fractional score it carries is rejected at that shape — v6 that validates and
+cannot be stored.
+
+`migrate_tracking_database`'s root-v1 branch derives `changed` from every record
+count instead of a hand-listed subset. A flag that names the collections it
+knows about goes stale the moment a migration touches one it does not, and a
+caller trusting it skips persisting a migration that already rewrote the records
+it was handed.
+
+`SKILL.md`, `schemas-db.md`, `queue-selection.md`, and
+`subagent-instructions.md` describe v6: a contract the docs still call v5 sends
+workers to emit returns that fresh v6 claims reject.
+
 Test fixtures that pinned version literals now derive them. Several had gone
 silently wrong rather than loudly stale — `_write_db` in the queue tests
 enriched only talks stamped at the literal 5, so at any other generation it

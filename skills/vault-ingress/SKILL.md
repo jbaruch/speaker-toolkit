@@ -122,7 +122,7 @@ Then claim each exact batch:
   --batch-id <stable-batch> --now <timezone-aware-ISO>
 ```
 
-Fresh claims are schema v5 and require return v5. Use the stored claim on replay;
+Fresh claims are schema v6 and require return v6 — the weighted scoring generation (#299). A v6 return carries `pattern_score_basis` and may carry a fractional `pattern_score`. Use the stored claim on replay;
 recover a stranded lease and issue a new generation. Set the best verified slide
 source, use `skipped_no_sources` only when every source is unavailable, and honor
 an explicit filename/title argument as a one-talk selection.

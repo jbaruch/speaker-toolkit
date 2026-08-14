@@ -1677,3 +1677,37 @@ def test_qr_v2_requires_qr_png_rel_path_to_mirror_first_artifact(tracking_databa
         match="must mirror artifacts\\[0\\].path",
     ):
         _validate_qr(tracking_database, record)
+
+
+def test_a_root_v1_database_with_only_stale_talks_reports_changed(tracking_database):
+    """The migration returns mutated records, so it must say it changed them.
+
+    A `changed` flag that names the collections it knows about goes stale the
+    moment a migration touches one it does not — and a caller that trusts it
+    skips persisting a migration that already rewrote the records it was handed.
+    """
+    database = _legacy_database()
+    database = tracking_database.migrate_tracking_database(database).database
+    database["talks"][0]["schema_version"] = (
+        _tracking_database.FLAT_SCORE_TALK_RECORD_SCHEMA_VERSION
+    )
+
+    migration = tracking_database.migrate_tracking_database(database)
+
+    assert migration.record_counts["talks"] == 1
+    assert migration.changed is True
+    assert migration.database["talks"][0]["schema_version"] == (
+        _tracking_database.TALK_RECORD_SCHEMA_VERSION
+    )
+
+
+def test_a_database_with_nothing_stale_still_reports_no_change(tracking_database):
+    """The other half of the flag: a genuine no-op must stay a no-op, or every
+    Step 1 run writes the database for nothing."""
+    database = _legacy_database()
+    database = tracking_database.migrate_tracking_database(database).database
+
+    migration = tracking_database.migrate_tracking_database(database)
+
+    assert migration.changed is False
+    assert not any(migration.record_counts.values())
