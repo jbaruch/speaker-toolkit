@@ -1576,8 +1576,8 @@ def test_metadata_channel_declares_the_fields_it_can_use():
 @pytest.mark.parametrize(
     "pattern_id,channels",
     [
-        ("opening-punch", {"timed_transcript", "slides", "video"}),
-        ("call-to-adventure", {"timed_transcript", "video"}),
+        ("opening-punch", {"transcript", "timed_transcript", "slides", "video"}),
+        ("call-to-adventure", {"transcript", "timed_transcript", "video"}),
         ("progressive-reveal", {"slide_sequence", "video"}),
         ("composite-animation", {"slides", "video"}),
         ("crawling-credits", {"slides", "video"}),
@@ -1655,3 +1655,31 @@ def test_stable_ids_retain_their_distinguishing_source_meaning(pattern_id, ancho
         assert anchor.casefold() in text, (
             f"{pattern_id}: missing source-meaning anchor {anchor!r}"
         )
+
+
+def test_every_transcript_evaluable_entry_can_cite_a_transcript():
+    """An entry evaluable from a source it cannot cite is unusable via it.
+
+    Eleven observable entries declared `transcript` in `evaluable_from` — ten of
+    them in `strong_evaluable_from` too — while omitting `transcript` from
+    `evidence_channels`. A worker with a plain transcript then had no legal
+    citation, and canonicalization still demanded an assessment because the
+    applicability gate read as complete. The contradiction is only visible
+    across the two fields, which is why nothing caught it.
+    """
+    offenders = []
+    for path in ENTRY_FILES:
+        metadata = _metadata(path)
+        if not metadata.get("observable", True):
+            continue
+        sources = {
+            source
+            for group in (metadata.get("evaluable_from") or [])
+            for source in ([group] if isinstance(group, str) else group)
+        }
+        if "transcript" not in sources:
+            continue
+        if "transcript" not in set(metadata.get("evidence_channels") or ()):
+            offenders.append(metadata.get("id"))
+
+    assert offenders == []
