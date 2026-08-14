@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.73 — 2026-08-14
+
 ### feat(vault-ingress) — sever a binding nothing proved (#176)
 
 The sweep could prove a binding wrong and nothing could act on the proof. A
