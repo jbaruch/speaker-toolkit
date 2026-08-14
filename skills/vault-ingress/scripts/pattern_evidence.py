@@ -70,6 +70,17 @@ CANONICALIZABLE_RETURN_SCHEMA_VERSIONS = frozenset(
         WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
     }
 )
+# Every generation carrying exhaustive outcomes and applicability assessments.
+# v6 keeps every v5 semantic and adds weighting, so canonicalization treats them
+# alike — an `== EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION` test reads a v6
+# return as pre-v5 and rejects the applicability_assessments its own contract
+# REQUIRES. Mirrors the set of the same name in `return_validation`.
+EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS = frozenset(
+    {
+        EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION,
+        WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
+    }
+)
 CURRENT_PATTERN_SCORING_SCHEMA_VERSION = 6
 PATTERN_OUTCOMES = frozenset(
     {"detected", "undetected", "not_evaluable", "not_applicable"}
@@ -3477,7 +3488,7 @@ def canonicalize_return_evidence(
     raw_assessments = observations.get("applicability_assessments")
     assessment_entries = raw_assessments if isinstance(raw_assessments, list) else []
     assessments_by_id: dict[str, Mapping[str, object]] = {}
-    if return_schema_version == EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION:
+    if return_schema_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
         for index, raw_assessment in enumerate(assessment_entries):
             if not isinstance(raw_assessment, Mapping):
                 raise PatternEvidenceError(
@@ -3507,7 +3518,7 @@ def canonicalize_return_evidence(
         assessment = assessments_by_id.get(pattern_id)
         applicability_gate = getattr(entry, "applicability_evaluable_from", None)
         conditions = getattr(entry, "not_applicable_when", None)
-        if return_schema_version == EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION and (
+        if return_schema_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS and (
             applicability_gate is not None or conditions is not None
         ):
             if applicability_gate is None or conditions is None:
@@ -3665,7 +3676,7 @@ def canonicalize_return_evidence(
         }
         for pattern_id in sorted(expected_ids)
     ]
-    if return_schema_version == EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION:
+    if return_schema_version in EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS:
         observations["applicability_assessments"] = sorted(
             canonical_assessments,
             key=lambda item: cast(str, item["pattern_id"]),

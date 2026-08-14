@@ -1048,3 +1048,65 @@ def test_a_correctly_stamped_record_still_replays_clean(
     )
 
     assert "pattern_scoring_schema_version_unusable" not in reasons
+
+
+def test_a_v6_return_canonicalizes_on_the_same_exhaustive_path_as_v5(
+    return_validation, transcript_timing, tmp_path
+):
+    """v6 keeps every v5 semantic and adds weighting, so canonicalization must
+    treat them alike.
+
+    An `== EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION` test reads a v6 return as
+    pre-v5 and rejects the `applicability_assessments` its own contract
+    REQUIRES — so a v6 return validated on the way in, then died on the way to
+    the database. Nothing caught it because every canonicalization test built a
+    v5 return.
+    """
+    import pattern_evidence
+
+    catalog = _catalog(
+        return_validation,
+        _entry(return_validation, "detected"),
+        _entry(return_validation, "conditional", applicability=True),
+        _entry(return_validation, "undetected"),
+        _entry(return_validation, "positive-only", absence_gate=None),
+    )
+    raw = _raw_return(
+        detections=[_detection()],
+        assessments=[_assessment()],
+        not_evaluable=[
+            {
+                "pattern_id": "positive-only",
+                "reason_code": "absence_not_authorized_by_catalog",
+            }
+        ],
+    )
+    raw["return_schema_version"] = (
+        return_validation.WEIGHTED_SCORE_RETURN_SCHEMA_VERSION
+    )
+    block = raw["pattern_observations"]
+    patterns = block["patterns_detected"]
+    antipatterns = block["antipatterns_detected"]
+    block["pattern_score"] = return_validation.expected_weighted_score(
+        patterns, antipatterns
+    )
+    block["pattern_score_basis"] = return_validation.pattern_score_basis(
+        patterns, antipatterns, block["not_evaluable"]
+    )
+    return_validation.validate_return(raw, catalog)
+    vault, owner = _artifact(tmp_path, transcript_timing)
+
+    canonical = pattern_evidence.canonicalize_return_evidence(
+        raw,
+        owner,
+        vault,
+        catalog,
+        pattern_scoring_schema_version=(
+            return_validation.WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
+        ),
+    )
+
+    observations = canonical["pattern_observations"]
+    assert observations["applicability_assessments"]
+    assert observations["pattern_outcomes"]
+    assert observations["evidence_schema_version"] == 2
