@@ -1414,3 +1414,43 @@ def test_empty_container_rejects_before_probe_worker(
         video_evidence.probe_video_artifact("empty.mp4", trusted_root=tmp_path)
 
     assert caught.value.reason_code == "video_invalid_container"
+
+
+def test_the_probe_admits_an_interpreter_inside_the_trusted_root(monkeypatch):
+    """A vault whose configured interpreter lives INSIDE the trusted root is the
+    layout `check-runtime` recommends, and it made every video probe fail.
+
+    `sys.executable` then contains the trusted root, so the supervisor's
+    sensitive-metadata guard flags the worker's own argv[0] and refuses to start
+    it — `unsafe_worker_process_metadata`. The interpreter and this module's
+    path are fixed process identity, not leaked secrets, and every PPTX worker
+    already declared them. These did not.
+    """
+    import artifact_supervisor
+    import video_evidence
+
+    seen: dict[str, object] = {}
+
+    def capture(command, operation, generations, payload, limits, **kwargs):
+        seen["command"] = list(command)
+        seen["identity"] = list(kwargs.get("immutable_process_identity") or ())
+        raise AssertionError("stop after argument capture")
+
+    monkeypatch.setattr(video_evidence, "run_authenticated_worker", capture)
+
+    with pytest.raises(AssertionError):
+        video_evidence._invoke_metadata_worker(
+            video_evidence._worker_command(),
+            {"video_path": "x", "trusted_root": None},
+            (),
+            video_evidence.VIDEO_METADATA_LIMITS,
+        )
+
+    # The interpreter and the module path — exactly what the PPTX workers pass.
+    assert seen["identity"] == seen["command"][:2]
+    # And the guard accepts that pairing even when the root is a path prefix.
+    artifact_supervisor._reject_sensitive_process_metadata(
+        seen["command"],
+        [str(Path(seen["command"][0]).parent)],
+        immutable_process_identity=seen["command"][:2],
+    )

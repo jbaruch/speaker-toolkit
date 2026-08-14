@@ -1,5 +1,22 @@
 # Changelog
 
+### fix(vault-ingress) — a probe may run the interpreter the vault configures
+
+`video_evidence` and `pdf_evidence` invoked their bounded workers without
+`immutable_process_identity`, so the supervisor's sensitive-metadata guard saw
+the trusted root inside the worker's own `argv[0]` and refused to start it:
+`unsafe_worker_process_metadata` → `video_probe_start_failure` /
+`pdf_probe_start_failure`.
+
+The interpreter and the module's own path are fixed process identity, not
+leaked secrets. Every PPTX worker already declared them as `command[:2]`; these
+four call sites did not.
+
+It fires whenever `config.python_path` lives inside the vault — the layout
+`check-runtime` recommends and the live vault uses — which made every
+`video_extracted` talk unpersistable. Found by running the reparse: batch 1
+failed at persistence on the first talk.
+
 ## 0.20.75 — 2026-08-14
 
 ### fix(vault-ingress) — a v6 return canonicalizes like a v5 one (#299)

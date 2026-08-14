@@ -631,6 +631,13 @@ def _invoke_metadata_worker(
         {},
         cast(Any, payload),
         limits,
+        # The interpreter and this module's own path are fixed process
+        # identity, not leaked secrets. Without saying so, a vault whose
+        # configured interpreter lives INSIDE the trusted root — the layout
+        # `check-runtime` recommends — has its own argv[0] flagged as sensitive
+        # metadata and every video probe fails `unsafe_worker_process_metadata`.
+        # Every PPTX worker already passes this; the video workers did not.
+        immutable_process_identity=command[:2],
         sensitive_values=sensitive_values,
         schema_generation=VIDEO_PROBE_SCHEMA_VERSION,
         pipeline_generation=VIDEO_PROBE_PIPELINE_VERSION,
@@ -823,6 +830,13 @@ def _invoke_probe_worker(
         expected_generations,
         cast(Any, payload),
         limits,
+        # The interpreter and this module's own path are fixed process
+        # identity, not leaked secrets. Without saying so, a vault whose
+        # configured interpreter lives INSIDE the trusted root — the layout
+        # `check-runtime` recommends — has its own argv[0] flagged as sensitive
+        # metadata and every video probe fails `unsafe_worker_process_metadata`.
+        # Every PPTX worker already passes this; the video workers did not.
+        immutable_process_identity=command[:2],
         sensitive_values=sensitive_values,
         schema_generation=VIDEO_PROBE_SCHEMA_VERSION,
         pipeline_generation=VIDEO_PROBE_PIPELINE_VERSION,
