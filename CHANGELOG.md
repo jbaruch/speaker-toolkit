@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.75 — 2026-08-14
+
 ### fix(vault-ingress) — a v6 return canonicalizes like a v5 one (#299)
 
 The activation admitted v6 to `CANONICALIZABLE_RETURN_SCHEMA_VERSIONS` and left
