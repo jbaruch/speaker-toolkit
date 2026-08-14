@@ -1,5 +1,73 @@
 # Changelog
 
+### feat(vault-ingress) — sever a binding nothing proved (#176)
+
+The sweep could prove a binding wrong and nothing could act on the proof. A
+binding is a pair — the catalog row's `talk_filename` and the talk's own
+`pptx_path` — and `record_pptx` writes the talk side on a match and never
+clears it.
+
+`sever_pptx_talk_binding` is that writer. Both sides move together because
+severing one is worse than severing neither: clearing only the catalog row
+leaves the talk still naming the deck, and every reader that resolves slides
+through `talks[].pptx_path` keeps drawing evidence from it, now with an audit
+trail saying it was handled.
+
+`sweep-pptx-talk-identity.py --emit-mutations` writes two plans. `mutation_plan`
+severs the unproven bindings; `proof_plan` stores the assessment behind the
+confirmed ones through `record_pptx`. Separate because keeping a binding and
+breaking one are different owner decisions, and one file carrying both invites
+applying half of what was reviewed.
+
+Both plans carry exact-old-value preconditions on both sides, and those
+preconditions found two defects in the live catalog that per-deck assessment
+cannot see:
+
+- **Two unproven rows naming one talk.** Two UberConf 2024 decks bind the same
+  delivery, so the second sever would fail a precondition the first made false.
+  The plan expects the missing marker for every sever after the first on a
+  given talk.
+- **Two confirmed rows claiming one talk.** `IJ Conference/2025/PDD.pptx` and
+  `PDD for GS.pptx` both confirm `2025-03-20-ij-2025-prompt-driven.md`. Two
+  decks cannot both be one talk's delivery deck; each is assessed alone and each
+  agrees, so the contradiction is only visible across rows. Proving either would
+  assert what the other disproves, so the plan proves neither and both stay
+  blocking for owner review.
+
+The talk side is cleared only when it names the deck being severed. A talk can
+carry a `pptx_path` pointing at a correctly-bound deck while some other catalog
+row wrongly claims it; clearing unconditionally destroyed that right binding
+while removing the wrong one. On the live catalog this is five talk-side clears
+that should never have happened.
+
+Each plan is exactly the `{schema_version, mutations}` envelope
+`mutate-tracking-database.py`'s `load_plan` accepts — it validates a CLOSED key
+set, so a reporting key inside the envelope makes an otherwise healthy plan
+un-applyable. `unseverable[]` sits beside the plans in the report, never inside
+one.
+
+`binding_unassessable` is severable too: "the assessment could not run" is the
+strongest form of "not proven", and leaving those bound while the plan reads as
+complete is the failure the plan exists to prevent. Rows the plan cannot address
+are named in `unseverable[]` rather than skipped.
+
+Every writer precondition is checked while BUILDING the plan — a nonempty
+trimmed `pptx_path`, a talk some record actually carries — so a row that
+survives is a row `mutate-tracking-database.py` accepts. A plan is a file a
+human reviews and then runs; one that looks actionable and dies partway through
+on a precondition the builder could have seen is worse than one that says up
+front what it cannot address. `proof_plan` applies the same checks, because a
+proof the owner writer would refuse is not a proof.
+
+Rows resolve to their catalog record by INDEX, never by path. A row's
+`pptx_path` is the deck-facts reading's normalized text — whitespace collapsed,
+length-capped — so a stored path with internal double spaces would not match a
+path-keyed lookup and would drop out of the plan without a word.
+
+Measured end to end on a copy of the live database — sever, re-sweep, prove,
+migrate — blocking preflight findings go **1550 → 4**: the two decks contesting
+one talk, and two unrelated `video_extraction_provenance_invalid` findings.
+
 ## 0.20.72 — 2026-08-14
 
 ### feat(vault-ingress) — activate weighted scoring (#299)

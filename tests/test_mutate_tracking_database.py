@@ -1436,3 +1436,182 @@ def test_every_writable_metadata_field_is_classified(mutate_tracking_database) -
         | mutate_tracking_database.ANALYSIS_INVALIDATING_METADATA_FIELDS
     )
     assert mutate_tracking_database.METADATA_TALK_FIELDS <= classified
+
+
+def _bound_catalog_database() -> dict[str, Any]:
+    """A stored binding, both sides written, as the live vault carries them."""
+    database = _base_database()
+    database["talks"][0]["pptx_path"] = "Conference/Talk.pptx"
+    database["pptx_catalog"] = [
+        {
+            "schema_version": 1,
+            "pptx_path": "Conference/Talk.pptx",
+            "talk_filename": "talk.md",
+            "matched": True,
+            "slide_count": 10,
+            "visual_extracted": True,
+        }
+    ]
+    return database
+
+
+def _sever(**overrides: Any) -> dict[str, Any]:
+    mutation: dict[str, Any] = {
+        "kind": "sever_pptx_talk_binding",
+        "pptx_path": "Conference/Talk.pptx",
+        "expect": {
+            "schema_version": 1,
+            "pptx_path": "Conference/Talk.pptx",
+            "talk_filename": "talk.md",
+            "matched": True,
+            "slide_count": 10,
+            "visual_extracted": True,
+        },
+        "expect_talk_pptx_path": "Conference/Talk.pptx",
+    }
+    mutation.update(overrides)
+    return {"schema_version": 1, "mutations": [mutation]}
+
+
+def test_severing_clears_both_sides_of_the_binding(
+    tmp_path: Path, mutate_tracking_database
+) -> None:
+    """Clearing only the catalog row leaves the talk still naming the deck, and
+    every reader that resolves slides through `talks[].pptx_path` keeps drawing
+    evidence from it."""
+    database = _bound_catalog_database()
+    candidate, _changes = mutate_tracking_database.build_candidate(
+        database, _sever()["mutations"]
+    )
+
+    record = candidate["pptx_catalog"][0]
+    assert record["talk_filename"] is None
+    assert record["matched"] is False
+    assert "pptx_path" not in candidate["talks"][0]
+    # The deck still exists and the catalog still knows about it.
+    assert record["pptx_path"] == "Conference/Talk.pptx"
+
+
+def test_severing_records_a_change_for_each_side(
+    tmp_path: Path, mutate_tracking_database
+) -> None:
+    _candidate, changes = mutate_tracking_database.build_candidate(
+        _bound_catalog_database(), _sever()["mutations"]
+    )
+
+    assert [change["kind"] for change in changes] == [
+        "sever_pptx_talk_binding",
+        "clear_talk_pptx_path",
+    ]
+
+
+def test_a_stale_catalog_expectation_refuses_the_sever(
+    mutate_tracking_database,
+) -> None:
+    """Assessed at one moment, applied at another."""
+    database = _bound_catalog_database()
+    plan = _sever()
+    plan["mutations"][0]["expect"]["slide_count"] = 11
+
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(database, plan["mutations"])
+
+
+def test_a_stale_talk_expectation_refuses_the_sever(mutate_tracking_database) -> None:
+    database = _bound_catalog_database()
+    plan = _sever(expect_talk_pptx_path="Conference/Moved.pptx")
+
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(database, plan["mutations"])
+
+
+def test_severing_an_unbound_row_is_refused(mutate_tracking_database) -> None:
+    """Reporting work that did not happen is worse than refusing it."""
+    database = _bound_catalog_database()
+    database["pptx_catalog"][0]["talk_filename"] = None
+    database["pptx_catalog"][0]["matched"] = False
+    plan = _sever()
+    plan["mutations"][0]["expect"]["talk_filename"] = None
+    plan["mutations"][0]["expect"]["matched"] = False
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="binds no talk",
+    ):
+        mutate_tracking_database.build_candidate(database, plan["mutations"])
+
+
+def test_severing_a_row_that_does_not_exist_is_refused(
+    mutate_tracking_database,
+) -> None:
+    database = _bound_catalog_database()
+    plan = _sever(pptx_path="Conference/Absent.pptx")
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="does not exist",
+    ):
+        mutate_tracking_database.build_candidate(database, plan["mutations"])
+
+
+def test_severing_a_v3_row_nulls_its_identity_assessment(
+    mutate_tracking_database,
+) -> None:
+    """An unbound row's assessment is null by the shape's own rule."""
+    database = _bound_catalog_database()
+    record = database["pptx_catalog"][0]
+    record.update(
+        {
+            "schema_version": 3,
+            "visual_extracted": False,
+            "visual_evidence": None,
+            "identity_assessment": {
+                "schema_version": 1,
+                "pptx_path": "Conference/Talk.pptx",
+                "verdict": "review_required",
+                "artifact_role": "delivery",
+                "selected_talk_filename": None,
+                "reason_codes": ["identity_unassessed_legacy_binding"],
+                "candidates": [],
+            },
+        }
+    )
+    plan = _sever(expect=copy.deepcopy(record))
+
+    candidate, _changes = mutate_tracking_database.build_candidate(
+        database, plan["mutations"]
+    )
+
+    assert candidate["pptx_catalog"][0]["identity_assessment"] is None
+
+
+def test_severing_a_v1_row_does_not_invent_an_assessment_field(
+    mutate_tracking_database,
+) -> None:
+    """Only a v3 row carries the field; adding it would be a shape v1 lacks."""
+    candidate, _changes = mutate_tracking_database.build_candidate(
+        _bound_catalog_database(), _sever()["mutations"]
+    )
+
+    assert "identity_assessment" not in candidate["pptx_catalog"][0]
+
+
+def test_severing_a_wrong_row_spares_a_talks_binding_to_another_deck(
+    mutate_tracking_database,
+) -> None:
+    """A talk can name a correctly-bound deck while some other catalog row
+    wrongly claims it. Severing the wrong row must not destroy the right
+    binding — the talk side is cleared only when it names THIS deck.
+    """
+    database = _bound_catalog_database()
+    # The talk's own binding points at the deck it really belongs to.
+    database["talks"][0]["pptx_path"] = "Conference/Correct.pptx"
+    plan = _sever(expect_talk_pptx_path="Conference/Correct.pptx")
+
+    candidate, changes = mutate_tracking_database.build_candidate(
+        database, plan["mutations"]
+    )
+
+    assert candidate["pptx_catalog"][0]["talk_filename"] is None
+    assert candidate["talks"][0]["pptx_path"] == "Conference/Correct.pptx"
+    assert [change["kind"] for change in changes] == ["sever_pptx_talk_binding"]

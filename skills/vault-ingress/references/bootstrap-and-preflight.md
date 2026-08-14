@@ -266,6 +266,26 @@ are in the script's module docstring.
 is owner-review work before any reparse; `binding_confirmed` supplies the
 assessment a `record_pptx` write carries. `--dispositions` narrows the reported
 rows without changing the counts.
+
+`--emit-mutations` adds two owner plans, each built from the whole catalog and
+never from the `--dispositions` view. `mutation_plan` severs every binding the
+sweep could not prove, through the `sever_pptx_talk_binding` mutation, which
+clears the catalog row's `talk_filename` and the talk's own `pptx_path`
+together. `proof_plan` stores the assessment behind every confirmed binding
+through `record_pptx`.
+
+Each plan is exactly the `{schema_version, mutations}` envelope
+`mutate-tracking-database.py` accepts, so lift one out of the report and apply
+it as-is. The report's own `unseverable[]` sits beside them, never inside:
+it names every row no plan could address, so a complete-looking plan cannot
+hide a binding it left in place. A nonempty `unseverable[]` is owner work
+before the reparse, not something to apply.
+
+Apply one plan, re-run the sweep, then apply the next. Both plans carry
+exact-old-value preconditions on both sides of each binding, so a plan built
+before the other was applied fails loudly rather than severing a binding nobody
+assessed. Review each plan before applying it: severing is how a wrong binding
+stops feeding a talk, and the sweep decides nothing.
 Never decide from
 `visual_extracted` alone whether a deck needs extraction. Run:
 

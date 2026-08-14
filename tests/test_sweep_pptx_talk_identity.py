@@ -606,3 +606,460 @@ class TestCli:
         assert exit_code == 0
         report = json.loads(capsys.readouterr().out)
         assert report["disposition_counts"][sweep.DISPOSITION_CONTRADICTED] == 1
+
+
+class TestSeverPlan:
+    def _plan(self, tmp_path: Path, source_root: Path, rows, talks):
+        payload = database(rows, talks, source_root)
+        path = tmp_path / "tracking-database.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return sweep.execute(path, emit_mutations=True)["mutation_plan"]
+
+    def test_a_contradicted_binding_is_severed(
+        self, tmp_path: Path, source_root: Path
+    ) -> None:
+        bad = deck(source_root, "Devoxx Belgium/2024/DevOps for Developers.pptx")
+        plan = self._plan(
+            tmp_path,
+            source_root,
+            [catalog_row(bad, VOXXED_TALK["filename"])],
+            [VOXXED_TALK, DEVOXX_TALK],
+        )
+
+        assert [m["kind"] for m in plan["mutations"]] == ["sever_pptx_talk_binding"]
+        assert plan["mutations"][0]["pptx_path"] == bad
+
+    def test_a_confirmed_binding_is_absent_from_the_plan(
+        self, tmp_path: Path, source_root: Path
+    ) -> None:
+        """Proving a binding is `record_pptx`'s job; a sever plan that also
+        carried proofs would be two decisions in one file."""
+        good = deck(source_root, "Voxxed Days Ticino/2025/DevOps for Developers.pptx")
+        plan = self._plan(
+            tmp_path,
+            source_root,
+            [catalog_row(good, VOXXED_TALK["filename"])],
+            [VOXXED_TALK, DEVOXX_TALK],
+        )
+
+        assert plan["mutations"] == []
+
+    def test_an_unbound_row_is_never_severed(
+        self, tmp_path: Path, source_root: Path
+    ) -> None:
+        loose = deck(source_root, "Decks/Loose.pptx", title="Loose")
+        plan = self._plan(
+            tmp_path, source_root, [catalog_row(loose, None)], [VOXXED_TALK]
+        )
+
+        assert plan["mutations"] == []
+
+    def test_the_plan_carries_both_exact_preconditions(
+        self, tmp_path: Path, source_root: Path
+    ) -> None:
+        """Assessed at one moment, applied at another: anything that moved in
+        between must fail the apply rather than sever silently."""
+        bad = deck(source_root, "Devoxx Belgium/2024/DevOps for Developers.pptx")
+        row = catalog_row(bad, VOXXED_TALK["filename"])
+        bound_talk = {**VOXXED_TALK, "pptx_path": bad}
+        plan = self._plan(tmp_path, source_root, [row], [bound_talk, DEVOXX_TALK])
+
+        mutation = plan["mutations"][0]
+        assert mutation["expect"] == row
+        assert mutation["expect_talk_pptx_path"] == bad
+
+    def test_a_talk_that_never_named_a_deck_expects_the_missing_marker(
+        self, tmp_path: Path, source_root: Path
+    ) -> None:
+        """Expecting null and expecting absent are different preconditions."""
+        bad = deck(source_root, "Devoxx Belgium/2024/DevOps for Developers.pptx")
+        plan = self._plan(
+            tmp_path,
+            source_root,
+            [catalog_row(bad, VOXXED_TALK["filename"])],
+            [VOXXED_TALK, DEVOXX_TALK],
+        )
+
+        assert plan["mutations"][0]["expect_talk_pptx_path"] == {"$missing": True}
+
+    def test_the_plan_ignores_the_disposition_filter(
+        self, tmp_path: Path, source_root: Path
+    ) -> None:
+        """A plan that inherited `--dispositions` would sever only what the
+        operator happened to be reading."""
+        bad = deck(source_root, "Devoxx Belgium/2024/DevOps for Developers.pptx")
+        payload = database(
+            [catalog_row(bad, VOXXED_TALK["filename"])],
+            [VOXXED_TALK, DEVOXX_TALK],
+            source_root,
+        )
+        path = tmp_path / "tracking-database.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        report = sweep.execute(
+            path,
+            dispositions=[sweep.DISPOSITION_CONFIRMED],
+            emit_mutations=True,
+        )
+
+        assert report["rows"] == []
+        assert len(report["mutation_plan"]["mutations"]) == 1
+
+    def test_no_plan_without_the_flag(self, tmp_path: Path, source_root: Path) -> None:
+        bad = deck(source_root, "Devoxx Belgium/2024/DevOps for Developers.pptx")
+        payload = database(
+            [catalog_row(bad, VOXXED_TALK["filename"])],
+            [VOXXED_TALK, DEVOXX_TALK],
+            source_root,
+        )
+        path = tmp_path / "tracking-database.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        assert "mutation_plan" not in sweep.execute(path)
+
+    def test_two_severs_naming_one_talk_clear_its_path_once(
+        self, tmp_path: Path, source_root: Path
+    ) -> None:
+        """The live catalog has exactly this: two UberConf 2024 decks bound to
+        one delivery. Snapshotting the stored value for both makes the second
+        mutation fail a precondition the first one made false."""
+        first = deck(source_root, "Devoxx Belgium/2024/DevOps for Developers.pptx")
+        second = deck(source_root, "Devoxx Belgium/2024/Another Deck.pptx")
+        bound = {**VOXXED_TALK, "pptx_path": first}
+        plan = self._plan(
+            tmp_path,
+            source_root,
+            [
+                catalog_row(first, VOXXED_TALK["filename"]),
+                catalog_row(second, VOXXED_TALK["filename"]),
+            ],
+            [bound, DEVOXX_TALK],
+        )
+
+        assert len(plan["mutations"]) == 2
+        assert plan["mutations"][0]["expect_talk_pptx_path"] == first
+        assert plan["mutations"][1]["expect_talk_pptx_path"] == {"$missing": True}
+
+
+class TestProofPlan:
+    def _plans(self, tmp_path: Path, source_root: Path, rows, talks):
+        payload = database(rows, talks, source_root)
+        path = tmp_path / "tracking-database.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        report = sweep.execute(path, emit_mutations=True)
+        return report["mutation_plan"], report["proof_plan"]
+
+    def test_a_confirmed_binding_gets_its_proof_written(
+        self, tmp_path: Path, source_root: Path
+    ) -> None:
+        """A confirmed binding is not yet a proven one — preflight blocks a row
+        that names a talk without an assessment."""
+        good = deck(source_root, "Voxxed Days Ticino/2025/DevOps for Developers.pptx")
+        _sever, proof = self._plans(
+            tmp_path,
+            source_root,
+            [catalog_row(good, VOXXED_TALK["filename"])],
+            [VOXXED_TALK, DEVOXX_TALK],
+        )
+
+        assert [m["kind"] for m in proof["mutations"]] == ["record_pptx"]
+        record = proof["mutations"][0]["record"]
+        assert record["talk_filename"] == VOXXED_TALK["filename"]
+        assert record["identity_assessment"]["verdict"] == "matched"
+
+    def test_the_written_proof_satisfies_the_owner_gate(
+        self, tmp_path: Path, source_root: Path
+    ) -> None:
+        """What the plan writes must be what `record_pptx` would accept."""
+        identity = _load_script("pptx_talk_identity", "pptx_talk_identity.py")
+        good = deck(source_root, "Voxxed Days Ticino/2025/DevOps for Developers.pptx")
+        _sever, proof = self._plans(
+            tmp_path,
+            source_root,
+            [catalog_row(good, VOXXED_TALK["filename"])],
+            [VOXXED_TALK, DEVOXX_TALK],
+        )
+        record = proof["mutations"][0]["record"]
+
+        assert (
+            identity.binding_refusal(
+                record["identity_assessment"],
+                pptx_path=record["pptx_path"],
+                talk_filename=record["talk_filename"],
+            )
+            is None
+        )
+
+    def test_two_decks_confirming_one_talk_prove_neither(
+        self, tmp_path: Path, source_root: Path
+    ) -> None:
+        """Two decks cannot both be one talk's delivery deck. Each is assessed
+        alone and each agrees, so the contradiction is only visible across rows
+        — and proving either would assert what the other disproves."""
+        first = deck(source_root, "Voxxed Days Ticino/2025/DevOps for Developers.pptx")
+        second = deck(
+            source_root, "Voxxed Days Ticino/2025/DevOps for Developers 2.pptx"
+        )
+        _sever, proof = self._plans(
+            tmp_path,
+            source_root,
+            [
+                catalog_row(first, VOXXED_TALK["filename"]),
+                catalog_row(second, VOXXED_TALK["filename"]),
+            ],
+            [VOXXED_TALK, DEVOXX_TALK],
+        )
+
+        assert proof["mutations"] == []
+
+    def test_the_proof_record_drops_the_reports_own_reading_aid(
+        self, tmp_path: Path, source_root: Path
+    ) -> None:
+        """`candidates_assessed` is this report's field; the owner gate
+        validates a closed key set and would refuse the write."""
+        good = deck(source_root, "Voxxed Days Ticino/2025/DevOps for Developers.pptx")
+        _sever, proof = self._plans(
+            tmp_path,
+            source_root,
+            [catalog_row(good, VOXXED_TALK["filename"])],
+            [VOXXED_TALK],
+        )
+
+        assert (
+            "candidates_assessed"
+            not in (proof["mutations"][0]["record"]["identity_assessment"])
+        )
+
+
+class TestNothingIsSilentlyLeftBound:
+    def test_an_unassessable_row_is_severed_like_any_unproven_one(
+        self, tmp_path: Path, source_root: Path
+    ) -> None:
+        """ "The assessment could not run" is the strongest form of "not
+        proven", and the plan claims to sever every binding it could not."""
+        assert sweep.DISPOSITION_UNASSESSABLE in sweep.SEVERABLE_DISPOSITIONS
+
+    def test_a_row_the_plan_cannot_address_is_named_not_dropped(
+        self, source_root: Path
+    ) -> None:
+        """A plan that quietly drops what it cannot handle reads as complete
+        while leaving a binding in place.
+
+        Exercised at the builder, because a catalog the owner reader would
+        reject never reaches `execute` — which is the right upstream behaviour
+        and the reason this safety net needs its own test.
+        """
+        payload = database([], [VOXXED_TALK], source_root)
+        orphan = {
+            "index": 7,
+            "pptx_path": "Gone.pptx",
+            "stored_talk_filename": VOXXED_TALK["filename"],
+            "disposition": sweep.DISPOSITION_UNASSESSABLE,
+        }
+
+        mutations, unseverable = sweep.sever_mutations(payload, [orphan])
+
+        assert mutations == []
+        assert len(unseverable) == 1
+        assert unseverable[0]["index"] == 7
+
+    def test_a_row_resolves_by_index_not_by_its_normalized_path(
+        self, source_root: Path
+    ) -> None:
+        """A row's `pptx_path` is the deck-facts reading's normalized text, so
+        a stored path with internal double spaces would not match a
+        path-keyed lookup and would drop out of the plan silently."""
+        stored = "Voxxed  Days/2025/Two  Spaces.pptx"
+        payload = database(
+            [catalog_row(stored, VOXXED_TALK["filename"])],
+            [VOXXED_TALK],
+            source_root,
+        )
+        row = {
+            "index": 0,
+            # Collapsed exactly as `_text` would produce it.
+            "pptx_path": "Voxxed Days/2025/Two Spaces.pptx",
+            "stored_talk_filename": VOXXED_TALK["filename"],
+            "disposition": sweep.DISPOSITION_CONTRADICTED,
+        }
+
+        mutations, unseverable = sweep.sever_mutations(payload, [row])
+
+        assert unseverable == []
+        assert mutations[0]["pptx_path"] == stored
+
+    def test_a_healthy_plan_reports_nothing_unseverable(
+        self, tmp_path: Path, source_root: Path
+    ) -> None:
+        bad = deck(source_root, "Devoxx Belgium/2024/DevOps for Developers.pptx")
+        payload = database(
+            [catalog_row(bad, VOXXED_TALK["filename"])],
+            [VOXXED_TALK, DEVOXX_TALK],
+            source_root,
+        )
+        path = tmp_path / "tracking-database.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        report = sweep.execute(path, emit_mutations=True)
+
+        assert len(report["mutation_plan"]["mutations"]) == 1
+        assert report["unseverable"] == []
+
+
+class TestThePlanOnlyEmitsWhatTheWriterAccepts:
+    """A plan is a file a human reviews and then runs. One that looks
+    actionable and dies partway through on a precondition the builder could
+    have seen is worse than one that says up front what it cannot address.
+    """
+
+    def _row(self, **overrides: Any) -> dict[str, Any]:
+        row: dict[str, Any] = {
+            "index": 0,
+            "pptx_path": "Deck.pptx",
+            "stored_talk_filename": VOXXED_TALK["filename"],
+            "disposition": sweep.DISPOSITION_CONTRADICTED,
+        }
+        row.update(overrides)
+        return row
+
+    @pytest.mark.parametrize("bad_path", [None, "", "   ", " Deck.pptx", 17])
+    def test_a_row_with_no_usable_path_is_named_not_emitted(
+        self, source_root: Path, bad_path: object
+    ) -> None:
+        payload = database(
+            [catalog_row("Deck.pptx", VOXXED_TALK["filename"])],
+            [VOXXED_TALK],
+            source_root,
+        )
+        payload["pptx_catalog"][0]["pptx_path"] = bad_path
+
+        mutations, unseverable = sweep.sever_mutations(payload, [self._row()])
+
+        assert mutations == []
+        assert unseverable[0]["reason"] == "catalog row has no usable pptx_path"
+
+    def test_a_dangling_talk_filename_is_named_not_emitted(
+        self, source_root: Path
+    ) -> None:
+        """`_talk_by_filename` raises on a talk no record carries, so a plan
+        naming one dies at apply with nothing said about it beforehand."""
+        payload = database(
+            [catalog_row("Deck.pptx", "ghost.md")],
+            [VOXXED_TALK],
+            source_root,
+        )
+
+        mutations, unseverable = sweep.sever_mutations(
+            payload, [self._row(stored_talk_filename="ghost.md")]
+        )
+
+        assert mutations == []
+        assert "binds a talk no record carries" in unseverable[0]["reason"]
+
+    def test_a_row_pointing_past_the_catalog_is_named(self, source_root: Path) -> None:
+        payload = database([], [VOXXED_TALK], source_root)
+
+        mutations, unseverable = sweep.sever_mutations(payload, [self._row(index=9)])
+
+        assert mutations == []
+        assert unseverable[0]["reason"] == "no catalog row at this index"
+
+    def test_the_proof_plan_applies_the_same_preconditions(
+        self, source_root: Path
+    ) -> None:
+        payload = database(
+            [catalog_row("Deck.pptx", "ghost.md")],
+            [VOXXED_TALK],
+            source_root,
+        )
+        row = self._row(
+            stored_talk_filename="ghost.md",
+            disposition=sweep.DISPOSITION_CONFIRMED,
+            assessment={"verdict": "matched"},
+        )
+
+        assert sweep.proof_mutations(payload, [row]) == []
+
+
+class TestThePlanEnvelopesAreApplyableAsIs:
+    def test_each_plan_carries_only_what_load_plan_accepts(
+        self, tmp_path: Path, source_root: Path
+    ) -> None:
+        """`load_plan` validates a CLOSED envelope, so an extra reporting key
+        makes an otherwise healthy plan un-applyable."""
+        bad = deck(source_root, "Devoxx Belgium/2024/DevOps for Developers.pptx")
+        good = deck(source_root, "Voxxed Days Ticino/2025/DevOps for Developers.pptx")
+        payload = database(
+            [
+                catalog_row(bad, DEVOXX_TALK["filename"]),
+                catalog_row(good, VOXXED_TALK["filename"]),
+            ],
+            [VOXXED_TALK, DEVOXX_TALK, KUBECON_TALK],
+            source_root,
+        )
+        path = tmp_path / "tracking-database.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        report = sweep.execute(path, emit_mutations=True)
+
+        for name in ("mutation_plan", "proof_plan"):
+            assert set(report[name]) == {"schema_version", "mutations"}, name
+        assert "unseverable" in report
+
+
+class TestOneTalkClaimedByAWrongAndARightDeck:
+    def test_severing_the_wrong_deck_spares_the_right_binding(
+        self, tmp_path: Path, source_root: Path
+    ) -> None:
+        """One contradicted row and one confirmed row on the same talk: the
+        sever must not clear a talk-side binding that names the confirmed deck.
+        """
+        wrong = deck(source_root, "Devoxx Belgium/2024/DevOps for Developers.pptx")
+        right = deck(source_root, "Voxxed Days Ticino/2025/DevOps for Developers.pptx")
+        bound = {**VOXXED_TALK, "pptx_path": right}
+        payload = database(
+            [
+                catalog_row(wrong, VOXXED_TALK["filename"]),
+                catalog_row(right, VOXXED_TALK["filename"]),
+            ],
+            [bound, DEVOXX_TALK],
+            source_root,
+        )
+        path = tmp_path / "tracking-database.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        report = sweep.execute(path, emit_mutations=True)
+        severs = report["mutation_plan"]["mutations"]
+
+        assert [m["pptx_path"] for m in severs] == [wrong]
+        # The precondition pins what is there; the writer then leaves it,
+        # because it names a different deck.
+        assert severs[0]["expect_talk_pptx_path"] == right
+
+    def test_the_writer_leaves_that_binding_in_place(
+        self, tmp_path: Path, source_root: Path
+    ) -> None:
+        mutate = _load_script("mutate_tracking_database", "mutate-tracking-database.py")
+        wrong = deck(source_root, "Devoxx Belgium/2024/DevOps for Developers.pptx")
+        right = deck(source_root, "Voxxed Days Ticino/2025/DevOps for Developers.pptx")
+        bound = {**VOXXED_TALK, "pptx_path": right}
+        payload = database(
+            [
+                catalog_row(wrong, VOXXED_TALK["filename"]),
+                catalog_row(right, VOXXED_TALK["filename"]),
+            ],
+            [bound, DEVOXX_TALK],
+            source_root,
+        )
+        path = tmp_path / "tracking-database.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        severs = sweep.execute(path, emit_mutations=True)["mutation_plan"]["mutations"]
+
+        candidate, _changes = mutate.build_candidate(payload, severs)
+
+        talk = next(
+            t for t in candidate["talks"] if t["filename"] == VOXXED_TALK["filename"]
+        )
+        assert talk["pptx_path"] == right
+        assert candidate["pptx_catalog"][0]["talk_filename"] is None
+        assert candidate["pptx_catalog"][1]["talk_filename"] == VOXXED_TALK["filename"]
