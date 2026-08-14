@@ -1,5 +1,20 @@
 # Changelog
 
+### fix(vault-ingress) — an invalid legacy manifest is warned about, not deadlocked on
+
+`_validate_video_extraction_provenance` took a `severity` from its caller and
+used it for an ABSENT manifest, then hardcoded `blocking` for an INVALID one.
+Those are the same situation on a legacy record: `_artifact_severity` already
+decides that a completed record with a usable repair lane reports actionable
+work rather than deadlocking the repair that would fix it.
+
+The asymmetry held the whole vault's reparse hostage to two pre-contract
+(`schema_version: 0`) video manifests on talks already queued for reprocessing —
+state the reparse itself regenerates. The invalid branch now uses the caller's
+severity, like the absent branch beside it.
+
+Live vault: blocking preflight findings 2 → 0.
+
 ## 0.20.73 — 2026-08-14
 
 ### feat(vault-ingress) — sever a binding nothing proved (#176)
