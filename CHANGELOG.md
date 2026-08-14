@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.76 — 2026-08-14
+
 ### fix(vault-ingress) — a probe may run the interpreter the vault configures
 
 `video_evidence` and `pdf_evidence` invoked their bounded workers without
