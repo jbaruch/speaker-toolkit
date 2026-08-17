@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.81 — 2026-08-17
+
 ### fix(vault-ingress) — a persisted weighted score is no longer read as drift (#317)
 
 The #299 activation let a v6 return reach the database. Every consumer that
