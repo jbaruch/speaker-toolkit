@@ -57,6 +57,7 @@ from pattern_opportunities import (  # noqa: E402
 
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
 from return_validation import (  # noqa: E402  # pyright: ignore[reportMissingImports]
+    WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION,
     load_catalog,
 )
 from profile_pattern_provenance import absence_provability  # noqa: E402
@@ -1056,12 +1057,66 @@ def _talk_filename(talk: Mapping[str, object]) -> str:
     return filename
 
 
-def _talk_score(talk: Mapping[str, object]) -> int:
+def _exact_average(values: Sequence[float]) -> Fraction:
+    """Average the window without float dust, at either generation's arithmetic.
+
+    `Fraction(numerator, denominator)` takes integers only, so a weighted window
+    cannot go through it. Reading each value from its decimal literal is exact
+    for both: every weighted score is canonical to two decimals, and an integer
+    count difference reads back as itself.
+    """
+    total = sum((Fraction(str(value)) for value in values), Fraction(0))
+    return total / len(values)
+
+
+def _is_weighted_score(value: object) -> TypeGuard[float]:
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and math.isfinite(value)
+    )
+
+
+def _weighted_generation(talk: Mapping[str, object]) -> bool:
+    """Whether the talk's own stamp names the generation whose score is weighted.
+
+    An absent or malformed stamp reads as the flat generation, which refuses a
+    fraction. That is a refusal, never a coincidence match: the alternative —
+    admitting a weighted number on a record that does not say it was scored
+    that way — files an aggregate under arithmetic nothing proved it used.
+    """
+    stamped = talk.get("pattern_scoring_schema_version")
+    if isinstance(stamped, bool) or not isinstance(stamped, int):
+        return False
+    return stamped >= WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
+
+
+def _talk_score(talk: Mapping[str, object]) -> float:
+    """The talk's score, admitted under the arithmetic its generation declares.
+
+    A weighted aggregate sums 1.0/0.5/0.25 terms and is fractional by
+    construction, so demanding an integer here refuses every talk the weighted
+    generation produces (#317). A flat record still gets the integer contract:
+    its score is a count difference, and a float there means some other
+    arithmetic produced it.
+    """
     score = talk.get("pattern_score")
     observations = talk.get("pattern_observations")
     observed_score = (
         observations.get("pattern_score") if isinstance(observations, Mapping) else None
     )
+    if _weighted_generation(talk):
+        if not _is_weighted_score(score):
+            raise PatternClassificationError(
+                f"{_talk_filename(talk)}: weighted pattern_score must be a "
+                "finite number"
+            )
+        if not _is_weighted_score(observed_score) or observed_score != score:
+            raise PatternClassificationError(
+                f"{_talk_filename(talk)}: flattened and observed pattern_score "
+                "must match"
+            )
+        return score
     if not _is_integer(score):
         raise PatternClassificationError(
             f"{_talk_filename(talk)}: pattern_score must be an integer"
@@ -1262,14 +1317,14 @@ def _trend_analysis(
     ]
 
     def metric(
-        values_prior: Sequence[int],
-        values_recent: Sequence[int],
+        values_prior: Sequence[float],
+        values_recent: Sequence[float],
         threshold: float,
         improving: str,
         declining: str,
     ) -> dict[str, object]:
-        exact_prior = Fraction(sum(values_prior), len(values_prior))
-        exact_recent = Fraction(sum(values_recent), len(values_recent))
+        exact_prior = _exact_average(values_prior)
+        exact_recent = _exact_average(values_recent)
         exact_delta = exact_recent - exact_prior
         exact_threshold = Fraction(str(threshold))
         prior_average = float(exact_prior)

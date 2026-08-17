@@ -44,6 +44,19 @@ the same reason `adherence_baseline` restates the scoring version. A test pins
 the two tables to each other, so a weight change landing in one file and not
 the other fails CI instead of splitting the arithmetic in half.
 
+### fix(vault-profile) — pattern trends accept a weighted cohort (#317)
+
+Unblocking the cohort exposed the next consumer to demand an integer:
+`classify-pattern-profile._talk_score` raised `pattern_score must be an
+integer` on the first weighted talk, and `Fraction(sum(values), len(values))`
+would not have averaged them anyway — the two-argument form takes integers
+only. The classifier now reads the score under the generation its talk is
+stamped with, and averages the trend window through `Fraction(str(value))`,
+which is exact for a two-decimal weighted score and for a count difference
+alike. An absent or malformed stamp still gets the flat contract: that refuses
+a fraction rather than admitting one, so nothing is filed under arithmetic it
+was not scored with.
+
 ## 0.20.80 — 2026-08-17
 
 ### fix(packaging) — the dimension registry now reaches consumers (#316)
