@@ -5,6 +5,10 @@ __pycache__/
 *.egg-info/
 .venv/
 
+# OS metadata. `tessl plugin pack` reads the working tree, not the git index, so
+# an unignored .DS_Store under skills/ ships to consumers.
+.DS_Store
+
 # Per-developer agent / IDE state
 .agents/
 .gemini/

@@ -1,5 +1,46 @@
 # Changelog
 
+### fix(packaging) — the dimension registry now reaches consumers (#316)
+
+`tessl install` materializes only `.md/.py/.sh/.txt/.json` and drops every
+other extension in silence. Nothing in the toolchain says so: `tessl plugin
+pack` includes the file, `tessl plugin publish` reports success, and `tessl
+install --verbose` logs not one word about what it threw away.
+
+So `_dimensions.yaml`, authored in #290, was never on a consumer's disk.
+`audit-pattern-catalog.py` exited 1 with `dimension_registry_invalid` on every
+clean install from 0.20.57 on — a hard stop in vault-ingress Step 1, which
+meant no talk could be processed or reprocessed on the released plugin.
+
+The registry now ships a byte-identical `_dimensions.yaml.txt` mirror and
+`registry_path` reads it when the real file is absent. The real file still
+wins when both exist, so a stale mirror can never shadow a dev-tree edit.
+
+The diagnosis corrects the issue's premise twice over. The drop is not at
+publish — the pack contains the file — it is at install. And it is not a
+`.yaml` rule but an extension allowlist, which is the same mechanism that ate
+`RunDeckOps.bas` and the eight `*.applescript` drivers in #85. That fix worked,
+but `sync-deck-drivers.py` only ever guarded two extensions in one directory,
+so a third extension in a different directory walked straight past it.
+
+`scripts/check_shipped_extensions.py` is the repo-wide guard that closes the
+class: every tracked file under the manifest's declared content whose extension
+is outside the allowlist must carry a current mirror. It reports missing
+mirrors, drifted mirrors, orphan mirrors whose source was deleted, and mirrors
+not declared generated in `.gitattributes`, and runs in both `tests.yml` and
+`pre-publish-checks.sh`. `check_package_contents.py` could not have caught this
+— it tests `.tesslignore` stripping, which is a pack-stage concern, and the
+loss happens a stage later.
+
+The `.gitattributes` marking is enforced per file rather than trusted to a
+glob, because a directory-scoped pattern is precisely what covered the deck
+mirrors and missed `_dimensions.yaml.txt` beside them. Its patterns are now
+path-globs across `skills/**` rather than one skill's `scripts/` directory.
+
+Also `.DS_Store` is now ignored in both `.gitignore` and `.tesslignore`. Pack
+reads the working tree rather than the git index, so five untracked ones were
+riding along into the published package.
+
 ## 0.20.78 — 2026-08-14
 
 ### fix(vault-ingress) — a weighted score can now be stored and read back (#299)
