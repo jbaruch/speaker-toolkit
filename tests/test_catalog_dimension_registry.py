@@ -272,7 +272,12 @@ def test_the_auditor_reports_unparseable_yaml(audit_pattern_catalog, tmp_path) -
 
 
 class TestTheInstallSurvivingMirror:
-    """`tessl install` drops `.yaml`, so the registry ships a `.txt` mirror too.
+    """`tessl install` ships an extension allowlist, so the registry mirrors to `.txt`.
+
+    Install materializes only .md/.py/.sh/.txt/.json and drops every other
+    extension. Reading that as "it drops .yaml" is how the deck-driver fix came
+    to guard two extensions in one directory and miss this file entirely, so
+    the general shape is worth stating even in a test about one `.yaml`.
 
     Before this, the registry was simply absent on every consumer machine and
     the auditor exited 1 on a clean install — a hard stop in vault-ingress
