@@ -29,6 +29,14 @@ DIMENSION_REGISTRY_SCHEMA_VERSION = 1
 DIMENSION_COUNT = 14
 REGISTRY_FILENAME = "_dimensions.yaml"
 
+# `tessl install` materializes only .md/.py/.sh/.txt/.json and silently drops
+# everything else, so the registry never reached an installed plugin and the
+# auditor exited 1 on every consumer machine. A byte-identical `.txt` mirror
+# rides along and is read when the real file is absent. Same device as the
+# deck-ops drivers (skills/presentation-creator/scripts/sync-deck-drivers.py);
+# scripts/check_shipped_extensions.py keeps every such mirror in sync.
+MIRROR_SUFFIX = ".txt"
+
 # `Dimension 4 (Audience Engagement)` and `Vault Dimension 13 (Slide Design)`
 # are the two shapes the catalog uses.
 DIMENSION_CLAIM_RE = re.compile(r"(?:Vault )?Dimension (\d+) \(([^)]+)\)")
@@ -83,9 +91,23 @@ def _require_text(value: object, label: str) -> str:
     return value
 
 
+def registry_path(catalog_dir: Path | str) -> Path:
+    """The registry to read: the real `.yaml`, else its install-surviving mirror.
+
+    The real file wins whenever it exists, so a dev-tree edit is never shadowed
+    by a stale mirror. When neither exists the real path is returned, keeping
+    the error message pointed at the file an author is expected to create.
+    """
+    real = Path(catalog_dir) / REGISTRY_FILENAME
+    if real.exists():
+        return real
+    mirror = real.with_name(real.name + MIRROR_SUFFIX)
+    return mirror if mirror.exists() else real
+
+
 def load_dimension_registry(catalog_dir: Path | str) -> DimensionRegistry:
     """Load and validate the registry beside the catalog entries."""
-    path = Path(catalog_dir) / REGISTRY_FILENAME
+    path = registry_path(catalog_dir)
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:

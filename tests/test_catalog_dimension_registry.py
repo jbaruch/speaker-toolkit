@@ -269,3 +269,61 @@ def test_the_auditor_reports_unparseable_yaml(audit_pattern_catalog, tmp_path) -
     report = audit_pattern_catalog.audit_catalog(catalog_dir=tmp_path)
 
     assert "dimension_registry_invalid" in [i["code"] for i in report["errors"]]
+
+
+class TestTheInstallSurvivingMirror:
+    """`tessl install` drops `.yaml`, so the registry ships a `.txt` mirror too.
+
+    Before this, the registry was simply absent on every consumer machine and
+    the auditor exited 1 on a clean install — a hard stop in vault-ingress
+    Step 1, so no talk could be processed on the released plugin (#316).
+    """
+
+    def test_the_mirror_is_read_when_the_real_file_is_absent(
+        self, tmp_path: Path
+    ) -> None:
+        """The install shape: only the `.txt` survived."""
+        (tmp_path / "_dimensions.yaml.txt").write_text(
+            (CATALOG / "_dimensions.yaml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+
+        loaded = registry_module.load_dimension_registry(tmp_path)
+
+        assert len(loaded.dimensions) == registry_module.DIMENSION_COUNT
+
+    def test_the_real_file_wins_when_both_exist(self, tmp_path: Path) -> None:
+        """A stale mirror must never shadow an edit in the dev tree."""
+        (tmp_path / "_dimensions.yaml").write_text(
+            (CATALOG / "_dimensions.yaml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        (tmp_path / "_dimensions.yaml.txt").write_text(
+            "schema_version: 1\ndimensions: []\n", encoding="utf-8"
+        )
+
+        assert registry_module.registry_path(tmp_path).name == "_dimensions.yaml"
+        loaded = registry_module.load_dimension_registry(tmp_path)
+        assert len(loaded.dimensions) == registry_module.DIMENSION_COUNT
+
+    def test_neither_present_names_the_real_file(self, tmp_path: Path) -> None:
+        """The author is expected to create the `.yaml`, so the error names it."""
+        with pytest.raises(
+            registry_module.CatalogDimensionRegistryError, match="_dimensions.yaml:"
+        ):
+            registry_module.load_dimension_registry(tmp_path)
+
+    def test_the_auditor_accepts_an_install_shaped_catalog(
+        self, audit_pattern_catalog, tmp_path: Path
+    ) -> None:
+        """The #316 regression: mirror-only must not read as a missing registry."""
+        (tmp_path / "_dimensions.yaml.txt").write_text(
+            (CATALOG / "_dimensions.yaml").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+
+        report = audit_pattern_catalog.audit_catalog(catalog_dir=tmp_path)
+
+        assert "dimension_registry_invalid" not in [
+            issue["code"] for issue in report["errors"]
+        ]
