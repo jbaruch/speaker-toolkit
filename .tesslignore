@@ -35,3 +35,7 @@ package-lock.json
 # VCS metadata
 /.gitignore
 /.gitattributes
+
+# OS metadata. Deliberately UNANCHORED: pack reads the working tree, so a
+# .DS_Store must be stripped at every depth, not just the repo root.
+.DS_Store
