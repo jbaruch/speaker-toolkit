@@ -14,6 +14,7 @@ weighted generation has a sibling proving the flat generation still refuses one.
 from __future__ import annotations
 
 import copy
+import importlib
 import math
 from typing import Any
 
@@ -406,6 +407,81 @@ class TestTheWeightedBaselineCanBeBuilt:
             adherence_baseline.validate_adherence_baseline(snapshot)
 
 
+def _weighted_catalog(return_validation):
+    return _catalog(
+        return_validation,
+        _entry(return_validation, "detected"),
+        _entry(return_validation, "conditional", applicability=True),
+        _entry(return_validation, "undetected"),
+        _entry(return_validation, "positive-only", absence_gate=None),
+    )
+
+
+def _v6_return(return_validation, catalog, *, bare: bool):
+    raw = _raw_return(
+        detections=[_detection()],
+        assessments=[_assessment()],
+        not_evaluable=[
+            {
+                "pattern_id": "positive-only",
+                "reason_code": "absence_not_authorized_by_catalog",
+            }
+        ],
+    )
+    raw["return_schema_version"] = (
+        return_validation.WEIGHTED_SCORE_RETURN_SCHEMA_VERSION
+    )
+    block = raw["pattern_observations"]
+    patterns = block["patterns_detected"]
+    antipatterns = block["antipatterns_detected"]
+    expected = return_validation.expected_weighted_score(patterns, antipatterns)
+    assert not float(expected).is_integer(), (
+        "fixture must exercise a fractional score, or it proves nothing"
+    )
+    block["pattern_score"] = (
+        expected
+        if bare
+        else {
+            "patterns_used": len(patterns),
+            "antipatterns_detected": len(antipatterns),
+            "score": expected,
+        }
+    )
+    block["pattern_score_basis"] = return_validation.pattern_score_basis(
+        patterns, antipatterns, block["not_evaluable"]
+    )
+    return_validation.validate_return(raw, catalog)
+    return raw, expected
+
+
+def _merge_v6(
+    persist_results,
+    return_validation,
+    transcript_timing,
+    tmp_path,
+    catalog,
+    raw,
+):
+    """Merge a validated v6 return, returning the stored talk and its vault."""
+    import pattern_evidence
+
+    vault, owner = _artifact(tmp_path, transcript_timing)
+    canonical: dict[str, Any] = pattern_evidence.canonicalize_return_evidence(
+        raw,
+        owner,
+        vault,
+        catalog,
+        pattern_scoring_schema_version=(
+            return_validation.WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
+        ),
+    )
+    talk = copy.deepcopy(owner)
+    talk["schema_version"] = persist_results.TALK_SCHEMA_VERSION
+    talk["status"] = "reprocessing-inflight"
+    persist_results.merge_talk(talk, raw, catalog=catalog, canonical_ret=canonical)
+    return talk, vault
+
+
 class TestAWeightedReturnReachesTheDatabase:
     """End to end: validate, canonicalize, merge — the path #308 died on.
 
@@ -416,49 +492,10 @@ class TestAWeightedReturnReachesTheDatabase:
 
     @pytest.fixture
     def catalog(self, return_validation):
-        return _catalog(
-            return_validation,
-            _entry(return_validation, "detected"),
-            _entry(return_validation, "conditional", applicability=True),
-            _entry(return_validation, "undetected"),
-            _entry(return_validation, "positive-only", absence_gate=None),
-        )
+        return _weighted_catalog(return_validation)
 
     def _v6(self, return_validation, catalog, *, bare: bool):
-        raw = _raw_return(
-            detections=[_detection()],
-            assessments=[_assessment()],
-            not_evaluable=[
-                {
-                    "pattern_id": "positive-only",
-                    "reason_code": "absence_not_authorized_by_catalog",
-                }
-            ],
-        )
-        raw["return_schema_version"] = (
-            return_validation.WEIGHTED_SCORE_RETURN_SCHEMA_VERSION
-        )
-        block = raw["pattern_observations"]
-        patterns = block["patterns_detected"]
-        antipatterns = block["antipatterns_detected"]
-        expected = return_validation.expected_weighted_score(patterns, antipatterns)
-        assert not float(expected).is_integer(), (
-            "fixture must exercise a fractional score, or it proves nothing"
-        )
-        block["pattern_score"] = (
-            expected
-            if bare
-            else {
-                "patterns_used": len(patterns),
-                "antipatterns_detected": len(antipatterns),
-                "score": expected,
-            }
-        )
-        block["pattern_score_basis"] = return_validation.pattern_score_basis(
-            patterns, antipatterns, block["not_evaluable"]
-        )
-        return_validation.validate_return(raw, catalog)
-        return raw, expected
+        return _v6_return(return_validation, catalog, bare=bare)
 
     def _merge(
         self,
@@ -469,22 +506,14 @@ class TestAWeightedReturnReachesTheDatabase:
         catalog,
         raw,
     ):
-        import pattern_evidence
-
-        vault, owner = _artifact(tmp_path, transcript_timing)
-        canonical: dict[str, Any] = pattern_evidence.canonicalize_return_evidence(
-            raw,
-            owner,
-            vault,
+        talk, _ = _merge_v6(
+            persist_results,
+            return_validation,
+            transcript_timing,
+            tmp_path,
             catalog,
-            pattern_scoring_schema_version=(
-                return_validation.WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
-            ),
+            raw,
         )
-        talk = copy.deepcopy(owner)
-        talk["schema_version"] = persist_results.TALK_SCHEMA_VERSION
-        talk["status"] = "reprocessing-inflight"
-        persist_results.merge_talk(talk, raw, catalog=catalog, canonical_ret=canonical)
         return talk
 
     @pytest.mark.parametrize("bare", [True, False])
@@ -562,3 +591,254 @@ class TestAWeightedReturnReachesTheDatabase:
                 catalog,
                 raw,
             )
+
+
+class TestTheWeightedRecordReadsBackFresh:
+    """#317: the record persisted, and then every consumer refused it.
+
+    Freshness is the gate on the renderer, the scoring cohort, the queue
+    normalizer and the post-batch baseline. Its projection replay cross-checked
+    every persisted score against the count difference, so a correct weighted
+    score — fractional by construction — read as drift on a record the writer
+    had just merged. Nothing was corrupt and nothing could converge: the queue
+    requeued the talks it had just processed.
+
+    This is the step that passes in isolation and failed in sequence, so it runs
+    the real merge first rather than hand-building a persisted block.
+    """
+
+    @pytest.fixture
+    def catalog(self, return_validation):
+        return _weighted_catalog(return_validation)
+
+    @pytest.fixture
+    def stored(
+        self,
+        persist_results,
+        return_validation,
+        transcript_timing,
+        tmp_path,
+        catalog,
+    ):
+        raw, expected = _v6_return(return_validation, catalog, bare=True)
+        talk, vault = _merge_v6(
+            persist_results,
+            return_validation,
+            transcript_timing,
+            tmp_path,
+            catalog,
+            raw,
+        )
+        return talk, vault, expected
+
+    @staticmethod
+    def _reasons(return_validation, talk, vault, catalog):
+        return return_validation.assess_current_persisted_pattern_evidence_freshness(
+            talk,
+            vault_root=vault,
+            catalog=catalog,
+        )
+
+    def test_a_merged_weighted_record_is_fresh(
+        self, return_validation, catalog, stored
+    ):
+        talk, vault, expected = stored
+
+        assert not float(expected).is_integer()
+        assert talk["pattern_score"] == expected
+        assert self._reasons(return_validation, talk, vault, catalog) == ()
+
+    def test_a_weighted_score_its_own_lanes_contradict_is_drift(
+        self, return_validation, catalog, stored
+    ):
+        """The replay still checks the arithmetic; it checks the right one."""
+        talk, vault, expected = stored
+        talk["pattern_score"] = expected + 0.25
+        talk["pattern_observations"]["pattern_score"] = expected + 0.25
+
+        assert self._reasons(return_validation, talk, vault, catalog) == (
+            "pattern_score_projection_drift",
+            "promoted_pattern_score_drift",
+        )
+
+    def test_the_count_difference_is_no_longer_the_weighted_cross_check(
+        self, return_validation, catalog, stored
+    ):
+        """The exact #317 shape, inverted: the count difference is now the drift."""
+        talk, vault, _ = stored
+        observations = talk["pattern_observations"]
+        flat = len(observations["patterns_detected"]) - len(
+            observations["antipatterns_detected"]
+        )
+        talk["pattern_score"] = flat
+        observations["pattern_score"] = flat
+
+        assert "pattern_score_projection_drift" in self._reasons(
+            return_validation, talk, vault, catalog
+        )
+
+    def test_a_weighted_record_without_its_basis_is_drift(
+        self, return_validation, catalog, stored
+    ):
+        """A fractional number with no evidence composition behind it."""
+        talk, vault, _ = stored
+        talk["pattern_observations"].pop("pattern_score_basis")
+
+        assert self._reasons(return_validation, talk, vault, catalog) == (
+            "pattern_score_basis_projection_drift",
+        )
+
+    def test_a_basis_its_lanes_do_not_produce_is_drift(
+        self, return_validation, catalog, stored
+    ):
+        """The basis is recomputed from the lanes, never trusted as stored."""
+        talk, vault, _ = stored
+        basis = talk["pattern_observations"]["pattern_score_basis"]
+        basis["not_evaluable_count"] += 1
+
+        assert self._reasons(return_validation, talk, vault, catalog) == (
+            "pattern_score_basis_projection_drift",
+        )
+
+    def test_a_boolean_count_does_not_pass_as_the_one_it_equals(
+        self, return_validation, catalog, stored
+    ):
+        """`True == 1` in Python, so value equality alone verifies nothing."""
+        talk, vault, _ = stored
+        counts = talk["pattern_observations"]["pattern_score_basis"]["patterns"]
+        level = next(level for level, count in counts.items() if count == 1)
+        counts[level] = True
+
+        assert self._reasons(return_validation, talk, vault, catalog) == (
+            "pattern_score_basis_projection_drift",
+        )
+
+    def test_an_unstamped_record_is_replayed_under_no_arithmetic_at_all(
+        self, return_validation, catalog, stored
+    ):
+        """Guessing the generation lets a record match by coincidence."""
+        talk, vault, _ = stored
+        talk.pop("pattern_scoring_schema_version")
+
+        assert "pattern_scoring_schema_version_unusable" in self._reasons(
+            return_validation, talk, vault, catalog
+        )
+
+    def test_a_detection_with_no_usable_confidence_names_that_defect(
+        self, return_validation, catalog, stored
+    ):
+        """No confidence, no weight, no aggregate to compare the score against."""
+        talk, vault, _ = stored
+        talk["pattern_observations"]["patterns_detected"][0]["confidence"] = "certain"
+
+        reasons = self._reasons(return_validation, talk, vault, catalog)
+        assert "pattern_detection_confidence_invalid" in reasons
+        assert "pattern_score_projection_drift" not in reasons
+
+
+class TestTheFlatGenerationKeepsItsArithmetic:
+    """The weighted allowance is an addition, not a replacement.
+
+    A record stamped at the flat generation was written by a worker counting
+    +1/-1. Replaying it under the weight table would restate what that worker
+    meant, which is the reinterpretation the migration refuses to do — and it is
+    why the v5→v6 migration restamps the record shape while leaving
+    `pattern_scoring_schema_version: 5` on the score.
+    """
+
+    @pytest.fixture
+    def catalog(self, return_validation):
+        return _weighted_catalog(return_validation)
+
+    @pytest.fixture
+    def flat(
+        self,
+        persist_results,
+        return_validation,
+        transcript_timing,
+        tmp_path,
+        catalog,
+    ):
+        raw, _ = _v6_return(return_validation, catalog, bare=True)
+        talk, vault = _merge_v6(
+            persist_results,
+            return_validation,
+            transcript_timing,
+            tmp_path,
+            catalog,
+            raw,
+        )
+        observations = talk["pattern_observations"]
+        flat_score = len(observations["patterns_detected"]) - len(
+            observations["antipatterns_detected"]
+        )
+        talk["pattern_scoring_schema_version"] = (
+            return_validation.FLAT_PATTERN_SCORING_SCHEMA_VERSION
+        )
+        talk["pattern_score"] = flat_score
+        observations["pattern_score"] = flat_score
+        observations["opportunity_coverage_identity"] = importlib.import_module(
+            "pattern_evidence"
+        ).opportunity_coverage_identity(
+            observations["pattern_outcomes"],
+            pattern_catalog_fingerprint=talk["pattern_catalog_fingerprint"],
+            pattern_scoring_schema_version=(
+                return_validation.FLAT_PATTERN_SCORING_SCHEMA_VERSION
+            ),
+        )
+        return talk, vault
+
+    @staticmethod
+    def _reasons(return_validation, talk, vault, catalog):
+        return return_validation.assess_current_persisted_pattern_evidence_freshness(
+            talk,
+            vault_root=vault,
+            catalog=catalog,
+        )
+
+    def test_a_flat_record_carrying_a_weighted_basis_is_drift(
+        self, return_validation, catalog, flat
+    ):
+        """The basis is a weighted-generation field; a flat record cannot hold one."""
+        talk, vault = flat
+
+        assert "pattern_score_basis_projection_drift" in self._reasons(
+            return_validation, talk, vault, catalog
+        )
+
+    def test_a_flat_record_is_still_checked_against_the_count_difference(
+        self, return_validation, catalog, flat
+    ):
+        talk, vault = flat
+        talk["pattern_observations"].pop("pattern_score_basis")
+
+        assert self._reasons(return_validation, talk, vault, catalog) == ()
+
+    def test_a_fraction_at_the_flat_generation_is_still_drift(
+        self, return_validation, catalog, flat
+    ):
+        """A float there means some other arithmetic produced the number."""
+        talk, vault = flat
+        talk["pattern_observations"].pop("pattern_score_basis")
+        talk["pattern_score"] = 0.75
+        talk["pattern_observations"]["pattern_score"] = 0.75
+
+        assert self._reasons(return_validation, talk, vault, catalog) == (
+            "pattern_score_projection_drift",
+            "promoted_pattern_score_drift",
+        )
+
+
+def test_the_mirrored_weight_table_matches_its_source(return_validation):
+    """`pattern_evidence` restates the table because it sits below its consumer.
+
+    A weight change that lands in one file and not the other splits the
+    arithmetic in half: the writer stores one number and the freshness replay
+    demands another, which is #317 with a different root cause.
+    """
+    pattern_evidence = importlib.import_module("pattern_evidence")
+
+    assert pattern_evidence.DETECTION_WEIGHTS == return_validation.DETECTION_WEIGHTS
+    assert pattern_evidence.WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION == (
+        return_validation.WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
+    )

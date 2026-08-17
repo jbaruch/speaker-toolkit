@@ -379,6 +379,12 @@ def _add_fresh_transcript_evidence(
         talk["pattern_observations"].update(
             {
                 "evidence_schema_version": 2,
+                # The talks are stamped at the active generation, which is the
+                # weighted one, so their block carries the basis behind the
+                # score.
+                "pattern_score_basis": return_validation.pattern_score_basis(
+                    [], [], talk["pattern_observations"]["not_evaluable"]
+                ),
                 "evidence_sources": ["transcript"],
                 "source_inspection": [
                     {

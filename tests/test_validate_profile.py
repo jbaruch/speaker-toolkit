@@ -81,7 +81,18 @@ def _catalog_projection(source: str | None = "transcript"):
 
 def _set_projection(talk, source: str | None) -> None:
     _, outcomes, not_evaluable, assessments = _catalog_projection(source)
+    return_validation = importlib.import_module("return_validation")
     observations = talk["pattern_observations"]
+    if talk["pattern_scoring_schema_version"] >= (
+        return_validation.WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
+    ):
+        # A talk stamped at the weighted generation carries the basis its score
+        # was computed from; one stamped earlier cannot carry it at all.
+        observations["pattern_score_basis"] = return_validation.pattern_score_basis(
+            observations["patterns_detected"],
+            observations["antipatterns_detected"],
+            not_evaluable,
+        )
     observations.update(
         {
             "pattern_outcomes": outcomes,
@@ -544,6 +555,16 @@ def _write_vault(vault_root, talks, *, config=None):
         )
         observations.setdefault("patterns_detected", [])
         observations.setdefault("antipatterns_detected", [])
+        if scoring_version >= 6:
+            return_validation = importlib.import_module("return_validation")
+            observations.setdefault(
+                "pattern_score_basis",
+                return_validation.pattern_score_basis(
+                    observations["patterns_detected"],
+                    observations["antipatterns_detected"],
+                    observations["not_evaluable"],
+                ),
+            )
         if scoring_version >= 5:
             observations.setdefault("applicability_assessments", [])
             inspection = observations.get("source_inspection")

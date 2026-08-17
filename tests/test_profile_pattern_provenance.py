@@ -344,6 +344,7 @@ def _run(validate_profile, profile, tmp_path, capsys, *, extra_talks=None):
     fingerprint, scoring_schema = validate_profile.active_pattern_generation_identity()
     opportunities = importlib.import_module("pattern_opportunities")
     pattern_evidence = importlib.import_module("pattern_evidence")
+    freshness = importlib.import_module("return_validation")
     transcript_timing = importlib.import_module("transcript_timing")
     catalog = opportunities.load_catalog()
     pattern_outcomes, not_evaluable, assessments = _transcript_projection(catalog)
@@ -436,6 +437,11 @@ def _run(validate_profile, profile, tmp_path, capsys, *, extra_talks=None):
                 },
                 "pattern_observations": {
                     "pattern_score": score,
+                    # The active generation is the weighted one, so the record
+                    # carries the basis its score cannot travel without.
+                    "pattern_score_basis": freshness.pattern_score_basis(
+                        [], [], not_evaluable
+                    ),
                     "patterns_detected": [],
                     "antipatterns_detected": [],
                     "not_evaluable": copy.deepcopy(not_evaluable),
@@ -472,7 +478,6 @@ def _run(validate_profile, profile, tmp_path, capsys, *, extra_talks=None):
                 },
             }
         )
-    freshness = importlib.import_module("return_validation")
     for talk in talks:
         reasons = freshness.assess_current_persisted_pattern_evidence_freshness(
             talk,

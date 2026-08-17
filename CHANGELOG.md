@@ -1,5 +1,49 @@
 # Changelog
 
+### fix(vault-ingress) — a persisted weighted score is no longer read as drift (#317)
+
+The #299 activation let a v6 return reach the database. Every consumer that
+read it back then rejected it, because the freshness replay in
+`pattern_evidence._v5_projection_freshness_reasons` cross-checked every
+persisted `pattern_score` against `len(patterns) - len(antipatterns)` and
+demanded an `int`. A weighted aggregate is a sum of 1.0/0.5/0.25 terms, so five
+talks reprocessed under a fresh v6 claim validated, canonicalized, persisted
+with `pattern_scoring_generation_status: "current"` — and came back
+`pattern_score_projection_drift` plus `promoted_pattern_score_drift`, with
+every other artifact, citation, coverage and outcome check passing.
+
+That is worse than v6 never persisting. The four consumers gated on freshness
+are the renderer, the scoring cohort, `queue-state normalize`, and the
+post-batch baseline, so a full reparse wrote talks the profile could not read
+and the normalizer requeued the talks it had just processed. The database was
+never corrupt — the scores were arithmetically right under their own
+`pattern_score_basis` — and nothing downstream would take them.
+
+The replay now picks its arithmetic from the record's own
+`pattern_scoring_schema_version`, exactly as `adherence_baseline` and
+`opportunity_coverage_identity` already do. At the weighted generation it
+recomputes the aggregate from the detection lanes' confidences, admits the
+fraction, and recomputes `pattern_score_basis` from those same lanes rather
+than trusting the stored one — a stored basis agreeing with a stored score
+proves only that whoever wrote them agreed with themselves. A flat record keeps
+the count difference and the integer requirement. A record whose stamp is
+missing or malformed is replayed under neither: guessing the generation lets a
+record match by coincidence and report as fresh.
+
+Three reason codes join the set: `pattern_score_basis_projection_drift` (a
+weighted record without its basis, a basis its lanes do not produce, or a flat
+record carrying one — a v5 record with a basis and a v6 record without one are
+both malformed), `pattern_detection_confidence_invalid` (no confidence, no
+weight, no aggregate to compare against, so calling it score drift would name
+the wrong defect), and `pattern_scoring_schema_version_unusable`, reusing the
+code the wrapper already emits for the same condition.
+
+`pattern_evidence` restates `DETECTION_WEIGHTS` because it sits below
+`return_validation` in the import graph and cannot import its own consumer —
+the same reason `adherence_baseline` restates the scoring version. A test pins
+the two tables to each other, so a weight change landing in one file and not
+the other fails CI instead of splitting the arithmetic in half.
+
 ## 0.20.80 — 2026-08-17
 
 ### fix(packaging) — the dimension registry now reaches consumers (#316)
