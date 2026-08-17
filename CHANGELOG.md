@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.80 — 2026-08-17
+
 ### fix(packaging) — the dimension registry now reaches consumers (#316)
 
 `tessl install` materializes only `.md/.py/.sh/.txt/.json` and drops every
