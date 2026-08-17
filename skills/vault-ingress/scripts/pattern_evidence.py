@@ -81,7 +81,22 @@ EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS = frozenset(
         WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
     }
 )
-CURRENT_PATTERN_SCORING_SCHEMA_VERSION = 6
+# The scoring generation whose aggregate is confidence-weighted, and therefore
+# fractional. `CURRENT` is derived from it rather than written as a literal: a
+# reader that wants the weighted generation must name it, exactly as
+# `return_validation` requires a reader wanting the flat one to name that.
+WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION = 6
+CURRENT_PATTERN_SCORING_SCHEMA_VERSION = WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
+# Mirrors `return_validation.DETECTION_WEIGHTS`, restated because this module
+# sits BELOW that one in the import graph — the projection replay below cannot
+# import its own consumer. `tests/test_weighted_score_persistence.py` pins the
+# two tables to each other, so a weight change that lands in one file and not
+# the other fails CI rather than splitting the arithmetic in half.
+DETECTION_WEIGHTS: dict[str, float] = {
+    "strong": 1.0,
+    "moderate": 0.5,
+    "weak": 0.25,
+}
 PATTERN_OUTCOMES = frozenset(
     {"detected", "undetected", "not_evaluable", "not_applicable"}
 )
@@ -3737,6 +3752,162 @@ def detection_claim(detection: object) -> object:
     return claim
 
 
+def _persisted_generation_is_weighted(talk: Mapping[str, object]) -> bool | None:
+    """Whether the talk's own stamp names the weighted scoring generation.
+
+    None when the record carries no usable stamp. Substituting the current
+    generation for a missing one would check a flat record with weighted
+    arithmetic, or the reverse, and let it match by coincidence; the caller
+    emits a reason instead of guessing.
+    """
+    stamped = talk.get("pattern_scoring_schema_version")
+    if isinstance(stamped, bool) or not isinstance(stamped, int) or stamped < 1:
+        return None
+    return stamped >= WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
+
+
+def _weighted_lane_projection(
+    detections: object,
+) -> tuple[float, dict[str, int]] | None:
+    """One lane's weighted total and its counts by confidence, or None.
+
+    None means some detection carries no usable confidence, so the lane has no
+    weight the table can produce and no aggregate to compare a stored score
+    against.
+    """
+    if not isinstance(detections, list):
+        return None
+    total = 0.0
+    counts = {level: 0 for level in sorted(DETECTION_WEIGHTS)}
+    for detection in detections:
+        confidence = (
+            detection.get("confidence") if isinstance(detection, Mapping) else None
+        )
+        if not isinstance(confidence, str) or confidence not in DETECTION_WEIGHTS:
+            return None
+        total += DETECTION_WEIGHTS[confidence]
+        counts[confidence] += 1
+    return total, counts
+
+
+def _basis_count_typed(value: object) -> bool:
+    """A count is a non-negative int. `True` is an int in Python; a count is not."""
+    return not isinstance(value, bool) and isinstance(value, int) and value >= 0
+
+
+def _basis_projection_drifted(basis: object, wanted: Mapping[str, object]) -> bool:
+    """Whether a persisted basis fails to project its own detection lanes.
+
+    Value equality alone does not settle it: Python makes `True == 1` and
+    `6.0 == 6`, so a basis carrying boolean counts or a float schema version
+    compares equal to the object the lanes require and passes every later
+    reader as verified.
+    """
+    if not isinstance(basis, Mapping) or basis != wanted:
+        return True
+    if not _basis_count_typed(basis.get("schema_version")):
+        return True
+    if not _basis_count_typed(basis.get("not_evaluable_count")):
+        return True
+    for lane in ("patterns", "antipatterns"):
+        counts = basis.get(lane)
+        if not isinstance(counts, Mapping) or not all(
+            _basis_count_typed(count) for count in counts.values()
+        ):
+            return True
+    return False
+
+
+def _score_projection_freshness_reasons(
+    talk: Mapping[str, object],
+    observations: Mapping[str, object],
+    *,
+    pattern_count: int,
+    antipattern_count: int,
+    not_evaluable_valid: bool,
+) -> set[str]:
+    """Replay the persisted score under the arithmetic its own generation declares.
+
+    A weighted aggregate sums 1.0/0.5/0.25 terms and is fractional by
+    construction; a flat one is the count difference and is an integer. They are
+    not one number computed two ways, so checking a weighted record against the
+    count difference reports every arithmetically correct score as drift — the
+    record persists and then every freshness-gated consumer refuses it (#317).
+    """
+    reasons: set[str] = set()
+    weighted = _persisted_generation_is_weighted(talk)
+    if weighted is None:
+        reasons.add("pattern_scoring_schema_version_unusable")
+        return reasons
+
+    nested_score = observations.get("pattern_score")
+    promoted_score = talk.get("pattern_score")
+    if not weighted:
+        if "pattern_score_basis" in observations:
+            # The basis is a weighted-generation field. A flat record carrying
+            # one is malformed, not a flat record with a spare field.
+            reasons.add("pattern_score_basis_projection_drift")
+        flat_expected = pattern_count - antipattern_count
+        if (
+            isinstance(nested_score, bool)
+            or not isinstance(nested_score, int)
+            or nested_score != flat_expected
+        ):
+            reasons.add("pattern_score_projection_drift")
+        if (
+            isinstance(promoted_score, bool)
+            or not isinstance(promoted_score, int)
+            or promoted_score != flat_expected
+            or promoted_score != nested_score
+        ):
+            reasons.add("promoted_pattern_score_drift")
+        return reasons
+
+    patterns = _weighted_lane_projection(observations.get("patterns_detected"))
+    antipatterns = _weighted_lane_projection(observations.get("antipatterns_detected"))
+    if patterns is None or antipatterns is None:
+        # No confidence, no weight, no expected aggregate. The score cannot be
+        # replayed at all here, so calling it drift would name the wrong defect.
+        reasons.add("pattern_detection_confidence_invalid")
+        return reasons
+    # Rounded to two places for the same reason the writer rounds: every weight
+    # is a multiple of 0.25, so every reachable total is exactly representable
+    # there, and a raw float sum emits 0.30000000000000004 for a total the
+    # arithmetic makes 0.3.
+    expected = round(patterns[0] - antipatterns[0], 2)
+    if not_evaluable_valid:
+        wanted_basis = {
+            "schema_version": WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION,
+            "weights": dict(sorted(DETECTION_WEIGHTS.items())),
+            "patterns": patterns[1],
+            "antipatterns": antipatterns[1],
+            "not_evaluable_count": len(cast(list, observations["not_evaluable"])),
+        }
+        if _basis_projection_drifted(
+            observations.get("pattern_score_basis"), wanted_basis
+        ):
+            reasons.add("pattern_score_basis_projection_drift")
+    # Compared exactly, never rounded: `expected` is already canonical to two
+    # decimals, so rounding the stored value first would accept anything within
+    # half a hundredth of a score no declared arithmetic produces.
+    if (
+        isinstance(nested_score, bool)
+        or not isinstance(nested_score, (int, float))
+        or not math.isfinite(nested_score)
+        or nested_score != expected
+    ):
+        reasons.add("pattern_score_projection_drift")
+    if (
+        isinstance(promoted_score, bool)
+        or not isinstance(promoted_score, (int, float))
+        or not math.isfinite(promoted_score)
+        or promoted_score != expected
+        or promoted_score != nested_score
+    ):
+        reasons.add("promoted_pattern_score_drift")
+    return reasons
+
+
 def _v5_projection_freshness_reasons(
     talk: Mapping[str, object],
     observations: Mapping[str, object],
@@ -3846,22 +4017,15 @@ def _v5_projection_freshness_reasons(
             reasons.add("pattern_outcomes_not_applicable_projection_drift")
 
     if patterns_valid and antipatterns_valid:
-        expected_score = len(pattern_ids) - len(antipattern_ids)
-        nested_score = observations.get("pattern_score")
-        if (
-            isinstance(nested_score, bool)
-            or not isinstance(nested_score, int)
-            or nested_score != expected_score
-        ):
-            reasons.add("pattern_score_projection_drift")
-        promoted_score = talk.get("pattern_score")
-        if (
-            isinstance(promoted_score, bool)
-            or not isinstance(promoted_score, int)
-            or promoted_score != expected_score
-            or promoted_score != nested_score
-        ):
-            reasons.add("promoted_pattern_score_drift")
+        reasons.update(
+            _score_projection_freshness_reasons(
+                talk,
+                observations,
+                pattern_count=len(pattern_ids),
+                antipattern_count=len(antipattern_ids),
+                not_evaluable_valid=not_evaluable_valid,
+            )
+        )
     return reasons
 
 

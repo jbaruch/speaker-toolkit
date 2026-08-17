@@ -842,3 +842,130 @@ def test_override_rejects_unknown_semantic_fields(classify_pattern_profile, tmp_
         match="fields are noncanonical",
     ):
         _policy(classify_pattern_profile, tmp_path)
+
+
+def _weighted_talk(index, *, p1, score, scoring_schema=6):
+    """A talk stamped at the weighted generation, carrying a fractional score."""
+    talk = _talk(index, p1=p1)
+    talk["pattern_scoring_schema_version"] = scoring_schema
+    talk["pattern_score"] = score
+    talk["pattern_observations"]["pattern_score"] = score
+    return talk
+
+
+def test_a_weighted_cohort_trends_on_its_fractional_scores(
+    classify_pattern_profile, tmp_path
+):
+    """#317's sibling: the classifier demanded an integer of every talk.
+
+    A weighted score is a sum of 1.0/0.5/0.25 terms, so the cohort that #317
+    unblocked reached this arithmetic and raised on the first talk.
+    """
+    talks = [
+        *[_weighted_talk(index, p1="undetected", score=0.25) for index in range(5)],
+        *[_weighted_talk(index, p1="detected", score=1.75) for index in range(5, 10)],
+    ]
+
+    result = classify_pattern_profile.classify_pattern_profile(
+        talks,
+        _policy(classify_pattern_profile, tmp_path),
+        catalog=_catalog(),
+    )
+
+    trend = result["trend_analysis"]
+    assert trend["status"] == "available"
+    assert trend["score"] == {
+        "status": "improving",
+        "prior_average": 0.25,
+        "recent_average": 1.75,
+        "delta": 1.5,
+    }
+
+
+def test_the_weighted_average_carries_no_float_dust(classify_pattern_profile, tmp_path):
+    """0.1 + 0.2 is 0.30000000000000004 in floats; the window average is exact."""
+    scores = [0.1, 0.2, 0.25, 0.25, 0.2]
+    talks = [
+        *[
+            _weighted_talk(index, p1="undetected", score=scores[index])
+            for index in range(5)
+        ],
+        *[_weighted_talk(index, p1="detected", score=0.5) for index in range(5, 10)],
+    ]
+
+    result = classify_pattern_profile.classify_pattern_profile(
+        talks,
+        _policy(classify_pattern_profile, tmp_path),
+        catalog=_catalog(),
+    )
+
+    assert result["trend_analysis"]["score"]["prior_average"] == 0.2
+
+
+def test_a_fraction_at_the_flat_generation_is_still_refused(
+    classify_pattern_profile, tmp_path
+):
+    """The weighted allowance is bound to the stamp, not to the value's shape."""
+    talks = [
+        *[
+            _weighted_talk(index, p1="undetected", score=0.25, scoring_schema=5)
+            for index in range(5)
+        ],
+        *[
+            _weighted_talk(index, p1="detected", score=1.75, scoring_schema=5)
+            for index in range(5, 10)
+        ],
+    ]
+
+    with pytest.raises(
+        classify_pattern_profile.PatternClassificationError,
+        match="pattern_score must be an integer",
+    ):
+        classify_pattern_profile.classify_pattern_profile(
+            talks,
+            _policy(classify_pattern_profile, tmp_path),
+            catalog=_catalog(),
+        )
+
+
+def test_an_unstamped_talk_keeps_the_flat_contract(classify_pattern_profile, tmp_path):
+    """A record that does not say it was scored weighted is not read as weighted."""
+    talks = [
+        *[_talk(index, p1="undetected") for index in range(5)],
+        *[_talk(index, p1="detected") for index in range(5, 10)],
+    ]
+    talks[0]["pattern_score"] = 0.25
+    talks[0]["pattern_observations"]["pattern_score"] = 0.25
+
+    with pytest.raises(
+        classify_pattern_profile.PatternClassificationError,
+        match="pattern_score must be an integer",
+    ):
+        classify_pattern_profile.classify_pattern_profile(
+            talks,
+            _policy(classify_pattern_profile, tmp_path),
+            catalog=_catalog(),
+        )
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf")])
+def test_a_non_finite_weighted_score_is_refused(
+    classify_pattern_profile, tmp_path, value
+):
+    """NaN defeats every comparison downstream by never equalling anything."""
+    talks = [
+        *[_weighted_talk(index, p1="undetected", score=0.25) for index in range(5)],
+        *[_weighted_talk(index, p1="detected", score=1.75) for index in range(5, 10)],
+    ]
+    talks[0]["pattern_score"] = value
+    talks[0]["pattern_observations"]["pattern_score"] = value
+
+    with pytest.raises(
+        classify_pattern_profile.PatternClassificationError,
+        match="weighted pattern_score must be a finite number",
+    ):
+        classify_pattern_profile.classify_pattern_profile(
+            talks,
+            _policy(classify_pattern_profile, tmp_path),
+            catalog=_catalog(),
+        )
