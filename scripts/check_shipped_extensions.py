@@ -41,6 +41,7 @@ from pathlib import Path
 
 from check_package_contents import (
     GateError,
+    _run_git,
     declared_content_entries,
     tracked_content,
 )
@@ -53,6 +54,13 @@ from check_package_contents import (
 SHIPPED_SUFFIXES = frozenset({".md", ".py", ".sh", ".txt", ".json"})
 
 MIRROR_SUFFIX = ".txt"
+
+# A mirror is a generated file committed only because the platform cannot
+# materialize its source extension, so file-hygiene's generated-artifact
+# exception requires it be marked in .gitattributes. Checked per file rather
+# than trusted to a glob: a directory-scoped pattern is what left
+# _dimensions.yaml.txt unmarked while the deck mirrors beside it were covered.
+GENERATED_ATTRS = {"linguist-generated": "true", "merge": "ours"}
 
 
 def mirror_of(path: str) -> str:
@@ -94,13 +102,64 @@ def needs_mirror(path: str) -> bool:
     return _is_dropped(path)
 
 
+def _read(repo_root: Path, relative: str) -> bytes:
+    """Read a tracked file, turning an unreadable one into an actionable error.
+
+    `git ls-files` lists what the index holds, which is not a promise about the
+    working tree: a file can be deleted or made unreadable between the listing
+    and the compare. Letting that OSError escape would abandon the stdout
+    contract mid-run — a traceback and no JSON, which reads to a caller as the
+    gate crashing rather than the gate refusing.
+    """
+    try:
+        return (repo_root / relative).read_bytes()
+    except OSError as error:
+        raise GateError(
+            f"ERROR: could not read tracked file {relative} to compare it with"
+            f" its mirror — {error}.\n"
+            f"  Restore the file or fix its permissions, then re-run."
+        ) from error
+
+
+def unmarked_mirrors(repo_root: Path, mirrors: list[str]) -> list[str]:
+    """Mirrors missing either generated-file attribute, sorted.
+
+    Asks git rather than parsing .gitattributes, so precedence, negation and
+    later-pattern-wins are resolved the way git itself resolves them.
+    """
+    if not mirrors:
+        return []
+    attributes = sorted(GENERATED_ATTRS)
+    result = _run_git(
+        ["-C", str(repo_root), "check-attr", *attributes, "--", *mirrors],
+        purpose="read the generated-file attributes of the .txt mirrors",
+    )
+    if result.returncode != 0:
+        raise GateError(
+            f"ERROR: git check-attr failed (exit {result.returncode}) while"
+            f" reading mirror attributes.\n  {result.stderr.strip()}"
+        )
+
+    # Each line is "<path>: <attribute>: <value>"; a path unmatched by any
+    # pattern reports "unspecified".
+    seen: dict[str, set[str]] = {path: set() for path in mirrors}
+    for line in result.stdout.splitlines():
+        path, _, rest = line.partition(": ")
+        attribute, _, value = rest.partition(": ")
+        if path in seen and GENERATED_ATTRS.get(attribute) == value:
+            seen[path].add(attribute)
+    return sorted(path for path in mirrors if seen[path] != set(attributes))
+
+
 def find_problems(repo_root: Path, tracked: list[str]) -> list[dict[str, str]]:
     """Mirror problems among the tracked content files, in report order.
 
-    Three shapes, each a distinct way a consumer ends up reading something the
+    Four shapes, each a distinct way a consumer ends up reading something the
     repo does not say: no mirror at all (the file never arrives), a mirror that
-    has drifted from its source (the consumer reads a stale copy), and a mirror
-    whose source is gone (the consumer reads a file the repo deleted).
+    has drifted from its source (the consumer reads a stale copy), a mirror
+    whose source is gone (the consumer reads a file the repo deleted), and a
+    mirror not declared generated (its diff and its merges lie about which file
+    is the source of truth).
     """
     present = set(tracked)
     problems: list[dict[str, str]] = []
@@ -112,12 +171,16 @@ def find_problems(repo_root: Path, tracked: list[str]) -> list[dict[str, str]]:
         if mirror not in present:
             problems.append({"kind": "missing", "path": path, "mirror": mirror})
             continue
-        if (repo_root / mirror).read_bytes() != (repo_root / path).read_bytes():
+        if _read(repo_root, mirror) != _read(repo_root, path):
             problems.append({"kind": "stale", "path": path, "mirror": mirror})
 
-    for path in tracked:
-        if is_mirror(path) and source_of(path) not in present:
+    mirrors = [path for path in tracked if is_mirror(path)]
+    for path in mirrors:
+        if source_of(path) not in present:
             problems.append({"kind": "orphan", "path": source_of(path), "mirror": path})
+
+    for path in unmarked_mirrors(repo_root, mirrors):
+        problems.append({"kind": "unmarked", "path": source_of(path), "mirror": path})
 
     return problems
 
@@ -141,6 +204,14 @@ def _diagnose(problems: list[dict[str, str]]) -> list[str]:
             diagnostics.append(
                 f"  stale mirror: {mirror} differs from {path}, so consumers"
                 f" read the old content — run: cp {path} {mirror}"
+            )
+        elif problem["kind"] == "unmarked":
+            attributes = " ".join(
+                f"{k}={v}" for k, v in sorted(GENERATED_ATTRS.items())
+            )
+            diagnostics.append(
+                f"  unmarked mirror: {mirror} is a generated file — add a"
+                f" .gitattributes pattern matching it with: {attributes}"
             )
         else:
             diagnostics.append(

@@ -1,9 +1,15 @@
 .github/workflows/*.lock.yml linguist-generated=true merge=ours
 
-# Deck-driver .txt mirrors: byte-identical copies of the .bas/.applescript
-# drivers, committed so they survive tessl install's extension filter (which
-# strips .bas/.applescript). Generated from the real files by
-# skills/presentation-creator/scripts/sync-deck-drivers.py mirror — collapse the
-# diff in review; the real driver is the source of truth.
-skills/presentation-creator/scripts/*.bas.txt linguist-generated=true merge=ours
-skills/presentation-creator/scripts/*.applescript.txt linguist-generated=true merge=ours
+# Install-surviving .txt mirrors: byte-identical copies of files whose real
+# extension `tessl install` drops (it ships only .md/.py/.sh/.txt/.json).
+# Committed because the platform cannot materialize the source extension —
+# the generated-artifact exception in coding-policy: file-hygiene. The real
+# file is the source of truth; collapse the diff in review.
+#
+# Path-glob, not directory-scoped: scoping these to one skill's scripts/ dir is
+# exactly how _dimensions.yaml shipped unmarked (#316). Enforced per-file by
+# scripts/check_shipped_extensions.py, which fails when a mirror lacks both
+# attributes — so a new mirror extension cannot silently miss this list.
+skills/**/*.bas.txt linguist-generated=true merge=ours
+skills/**/*.applescript.txt linguist-generated=true merge=ours
+skills/**/*.yaml.txt linguist-generated=true merge=ours

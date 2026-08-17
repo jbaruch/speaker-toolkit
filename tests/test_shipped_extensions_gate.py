@@ -79,6 +79,13 @@ def plugin(tmp_path: Path) -> Path:
     _write(repo, "skills/builder/scripts/wrap.sh", "echo wrap\n")
     _write(repo, "skills/builder/references/data.json", "{}\n")
     _write(repo, "rules/house-style.md", "# House Style\n")
+    # Covers .yaml mirrors only, so a mirror of any other extension is
+    # unmarked — the shape that lets the attribute test below stay honest.
+    _write(
+        repo,
+        ".gitattributes",
+        "skills/**/*.yaml.txt linguist-generated=true merge=ours\n",
+    )
     _commit(repo)
     return repo
 
@@ -91,7 +98,8 @@ def test_all_shipped_extensions_pass(plugin: Path) -> None:
     assert report["needing_mirror"] == []
 
 
-def test_a_mirrored_file_passes(plugin: Path) -> None:
+def test_a_current_and_declared_mirror_passes(plugin: Path) -> None:
+    """The fixture's .gitattributes pattern covers .yaml mirrors."""
     _write(plugin, "skills/builder/references/dims.yaml", "a: 1\n")
     _write(plugin, "skills/builder/references/dims.yaml.txt", "a: 1\n")
     _commit(plugin)
@@ -100,6 +108,7 @@ def test_a_mirrored_file_passes(plugin: Path) -> None:
     assert result.returncode == 0, result.stderr
     report = _report(result)
     assert report["ok"] is True
+    assert report["problems"] == []
     assert report["needing_mirror"] == ["skills/builder/references/dims.yaml"]
 
 
@@ -194,6 +203,40 @@ def test_every_extension_outside_the_allowlist_needs_a_mirror(plugin: Path) -> N
         ".bas",
         ".csv",
     }
+
+
+def test_a_mirror_not_declared_generated_fails(plugin: Path) -> None:
+    """A directory-scoped .gitattributes is how _dimensions.yaml.txt went unmarked."""
+    _write(plugin, "skills/builder/scripts/driver.applescript", "beep\n")
+    _write(plugin, "skills/builder/scripts/driver.applescript.txt", "beep\n")
+    _commit(plugin)
+
+    result = _run(plugin)
+    assert result.returncode == 1
+    problems = _report(result)["problems"]
+    assert [p["kind"] for p in problems] == ["unmarked"]
+    assert "linguist-generated=true merge=ours" in result.stderr
+
+
+def test_an_unreadable_tracked_file_still_emits_the_json_verdict(
+    plugin: Path,
+) -> None:
+    """`git ls-files` reports the index, which is no promise about the tree.
+
+    A traceback here would abandon the stdout contract mid-run, reading to a
+    caller as the gate crashing rather than the gate refusing.
+    """
+    _write(plugin, "skills/builder/references/dims.yaml", "a: 1\n")
+    _write(plugin, "skills/builder/references/dims.yaml.txt", "a: 1\n")
+    _commit(plugin)
+    (plugin / "skills/builder/references/dims.yaml.txt").unlink()
+
+    result = _run(plugin)
+    assert result.returncode == 2
+    report = _report(result)
+    assert report["ok"] is False
+    assert "could not read tracked file" in report["error"]
+    assert "Traceback" not in result.stderr
 
 
 def test_this_repo_ships_every_file_it_declares() -> None:

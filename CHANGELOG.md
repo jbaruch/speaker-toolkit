@@ -26,10 +26,16 @@ so a third extension in a different directory walked straight past it.
 `scripts/check_shipped_extensions.py` is the repo-wide guard that closes the
 class: every tracked file under the manifest's declared content whose extension
 is outside the allowlist must carry a current mirror. It reports missing
-mirrors, drifted mirrors, and orphan mirrors whose source was deleted, and runs
-in both `tests.yml` and `pre-publish-checks.sh`. `check_package_contents.py`
-could not have caught this — it tests `.tesslignore` stripping, which is a
-pack-stage concern, and the loss happens a stage later.
+mirrors, drifted mirrors, orphan mirrors whose source was deleted, and mirrors
+not declared generated in `.gitattributes`, and runs in both `tests.yml` and
+`pre-publish-checks.sh`. `check_package_contents.py` could not have caught this
+— it tests `.tesslignore` stripping, which is a pack-stage concern, and the
+loss happens a stage later.
+
+The `.gitattributes` marking is enforced per file rather than trusted to a
+glob, because a directory-scoped pattern is precisely what covered the deck
+mirrors and missed `_dimensions.yaml.txt` beside them. Its patterns are now
+path-globs across `skills/**` rather than one skill's `scripts/` directory.
 
 Also `.DS_Store` is now ignored in both `.gitignore` and `.tesslignore`. Pack
 reads the working tree rather than the git index, so five untracked ones were
