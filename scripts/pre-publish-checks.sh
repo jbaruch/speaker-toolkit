@@ -16,6 +16,7 @@ main() {
 
   python3 "$repo_root/scripts/check_tessl_pins.py" > /dev/null
   python3 "$repo_root/scripts/check_package_contents.py" > /dev/null
+  python3 "$repo_root/scripts/check_shipped_extensions.py" > /dev/null
   python3 "$repo_root/scripts/check_skill_entrypoints.py" > /dev/null
   python3 "$repo_root/scripts/check_conflict_markers.py" > /dev/null
 }

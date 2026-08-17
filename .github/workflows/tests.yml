@@ -94,6 +94,13 @@ jobs:
         # unanchored "scripts/" silently stripped all 59 skills/*/scripts/
         # files from 0.18.43 through 0.18.61 while publish reported success.
         run: python3 scripts/check_package_contents.py > /dev/null
+      - name: Verify every shipped file survives the install extension filter
+        # Fails the build when a file the manifest ships carries an extension
+        # `tessl install` drops (anything outside .md/.py/.sh/.txt/.json) and
+        # has no byte-identical .txt mirror. The drop is silent at pack,
+        # publish and install, so _dimensions.yaml was absent from every clean
+        # install from 0.20.57 on and the catalog audit exited 1 (issue #316).
+        run: python3 scripts/check_shipped_extensions.py > /dev/null
       - name: Cache apt package downloads
         # Cache the downloaded .deb archives (kept in a runner-writable dir via
         # Dir::Cache::Archives below), so the slow libreoffice fetch only hits
