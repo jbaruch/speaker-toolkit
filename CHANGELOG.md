@@ -25,10 +25,11 @@ The extractor probes before sampling a frame and again after the last PDF lands,
 sharing one assessment so the closing probe costs a stat when the generation held
 and a full re-probe exactly when it did not. Drift removes every PDF the run
 produced and exits non-zero with a closed reason: a half-bound result is worse
-than none. Derivatives stay staged until the closing probe passes, so no exit
-path leaves a half-bound PDF behind and a failed re-extraction leaves a previous
-run's artifacts exactly as it found them — `combine_to_pdf` gained a `commit`
-flag and `commit_pdf_stage` publishes one held stage. An unprobeable source — missing, corrupt, or a dataless cloud
+than none. Derivatives stay staged until the closing probe passes, then publish
+as a set: each destination's prior version moves aside first, and a failure
+part-way puts every already-replaced destination back. A failed run — for any
+reason, not only drift — leaves the destination PDFs exactly as it found them,
+and a prior version stranded by a killed publish is restored on the next run. An unprobeable source — missing, corrupt, or a dataless cloud
 placeholder — produces no record at all rather than one bound to a stub.
 
 Readers compare the receipt's content fields against a fresh probe;

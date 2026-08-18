@@ -181,27 +181,29 @@ catalog evidence gate and mark it `not_evaluable` when no inspected source quali
 
 ## Source Binding — the Run Fails Rather Than Guess
 
-The extractor probes the source MP4 through the bounded `video_evidence` probe
-before it samples a single frame, and again after the last PDF lands. Both probes
-share one assessment, so the closing probe costs a stat when the file generation
-held and a full re-probe exactly when it did not.
+A run produces a record only when it can bind every derivative to the exact
+source-video content it came from. What the script guarantees, as observable
+outcomes:
 
 - **Source unprobeable** (missing, dataless/offline placeholder, corrupt
-  container, no video stream, ffprobe unavailable): no frames are sampled, no
-  record is produced, exit 1 with a closed reason on stderr. A cloud placeholder
-  stays unavailable until it is hydrated — the extractor never substitutes a
-  stub.
-- **Source replaced mid-run**: this run's staged derivatives are dropped and the
-  run exits 1 with `video_source_replaced_during_extraction`. Half-bound
-  derivatives never survive.
+  container, no video stream, ffprobe unavailable): exit 1 with a closed
+  `reason_code` as JSON on stderr, empty stdout, no frames sampled, no record,
+  no derivative written. A cloud placeholder stays unavailable until it is
+  hydrated — the extractor never substitutes a stub.
+- **Source replaced while the run was producing derivatives**: exit 1 with
+  `reason_code` `video_source_replaced_during_extraction`, and no record.
+- **Any failed run, for any reason**: the destination PDFs hold exactly what
+  they held before the run started. A failed re-extraction never destroys or
+  half-replaces what an earlier bound run published.
+- **Success**: stdout carries the schema-4 record, and the source receipt
+  appears on the manifest head and byte-identically on every `artifacts[]`
+  entry.
 
-Derivatives stay in their per-destination stage until the closing probe passes,
-then publish together. A failed run — for any reason, not only drift — therefore
-leaves whatever a previous bound run published exactly as it found it.
-- **Success**: the receipt is stamped on the manifest head and on every
-  `artifacts[]` entry, byte-identically.
-
-The receipt's shape and the reader-side comparison rules live in
+Sequencing, staging, and recovery mechanics belong to the script — see
+`extract_slides_from_video`, `_commit_bound_artifacts`, and
+`_restore_stale_pdf_backup` in
+`skills/vault-ingress/scripts/video-slide-extraction.py`. The receipt's shape
+and the reader-side comparison rules are in
 `skills/vault-ingress/references/schemas-db.md` ("Video Extraction Output
 Schema"); the builder and field lists are in
 `skills/vault-ingress/scripts/video_evidence.py`.

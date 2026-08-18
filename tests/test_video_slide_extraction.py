@@ -1933,3 +1933,105 @@ def test_failed_re_extraction_leaves_the_prior_derivatives_intact(
         if name.endswith(video_slide_extraction._PDF_STAGE_SUFFIX)
     ]
     assert stages == []
+
+
+def test_a_failed_second_publish_rolls_the_first_one_back(
+    video_slide_extraction, tmp_path, monkeypatch
+):
+    """Never one run's slide-region PDF beside another run's context PDF."""
+    frame = _prepared_frame(tmp_path)
+    video = write_tiny_video(tmp_path / "source.mp4")
+    outdir = tmp_path / "output"
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames", _extract_one_frame(frame)
+    )
+
+    first = video_slide_extraction.extract_slides_from_video(
+        str(video),
+        str(outdir),
+        YOUTUBE_ID,
+        slide_region=(0.2, 0.1, 0.9, 0.8),
+        slide_region_verified=True,
+    )
+    prior = {
+        artifact["path"]: open(artifact["path"], "rb").read()
+        for artifact in first["artifacts"]
+    }
+    assert len(prior) == 2
+
+    original_commit = video_slide_extraction.commit_pdf_stage
+    committed = []
+
+    def commit(path):
+        if committed:
+            raise OSError("synthetic publish failure on the second derivative")
+        committed.append(path)
+        original_commit(path)
+
+    monkeypatch.setattr(video_slide_extraction, "commit_pdf_stage", commit)
+    # Different pages, so a surviving replacement would be visible as a diff.
+    other_frame = tmp_path / "other-frame.png"
+    Image.new("RGB", (320, 180), (10, 200, 30)).save(other_frame)
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames", _extract_one_frame(other_frame)
+    )
+
+    with pytest.raises(OSError, match="synthetic publish failure"):
+        video_slide_extraction.extract_slides_from_video(
+            str(video),
+            str(outdir),
+            YOUTUBE_ID,
+            slide_region=(0.2, 0.1, 0.9, 0.8),
+            slide_region_verified=True,
+        )
+
+    assert committed
+    for path, content in prior.items():
+        assert open(path, "rb").read() == content
+    leftovers = [
+        name
+        for name in os.listdir(outdir)
+        if name.endswith(
+            (
+                video_slide_extraction._PDF_STAGE_SUFFIX,
+                video_slide_extraction._PDF_BACKUP_SUFFIX,
+            )
+        )
+    ]
+    assert leftovers == []
+
+
+def test_a_backup_left_by_a_killed_publish_is_restored_next_run(
+    video_slide_extraction, tmp_path, monkeypatch
+):
+    """The window between a destination's two renames is recoverable."""
+    frame = _prepared_frame(tmp_path)
+    video = write_tiny_video(tmp_path / "source.mp4")
+    outdir = tmp_path / "output"
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames", _extract_one_frame(frame)
+    )
+
+    first = video_slide_extraction.extract_slides_from_video(
+        str(video), str(outdir), YOUTUBE_ID, slide_region="none"
+    )
+    context_pdf = first["artifacts"][0]["path"]
+    prior = open(context_pdf, "rb").read()
+    # Exactly the state a kill between the two renames leaves behind.
+    os.replace(context_pdf, video_slide_extraction._pdf_backup_path(context_pdf))
+    assert not os.path.exists(context_pdf)
+
+    # Fail the next run after recovery so the restore stays observable rather
+    # than being immediately overwritten by a fresh derivative.
+    monkeypatch.setattr(
+        video_slide_extraction,
+        "extract_frames",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("later")),
+    )
+    with pytest.raises(RuntimeError, match="later"):
+        video_slide_extraction.extract_slides_from_video(
+            str(video), str(outdir), YOUTUBE_ID, slide_region="none"
+        )
+
+    assert open(context_pdf, "rb").read() == prior
+    assert not os.path.exists(video_slide_extraction._pdf_backup_path(context_pdf))

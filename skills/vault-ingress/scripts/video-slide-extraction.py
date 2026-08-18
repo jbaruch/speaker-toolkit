@@ -158,13 +158,37 @@ def _discard_unbound_artifacts(staged):
 def _commit_bound_artifacts(staged):
     """Publish this run's staged derivatives once the binding is proven.
 
-    Multi-file replacement is not one portable atomic rename, so a host failure
-    between the two renames can leave one derivative published. Both name the
-    same source receipt, so the readers reject the pair rather than trusting a
-    mixed set; the manifest is only written after this returns.
+    Several destinations cannot be replaced in one portable atomic rename, so
+    each publish moves the prior version aside first and a failure part-way
+    puts every already-replaced destination back. Callers see the whole set
+    published or none of it — never one run's slide-region PDF beside another
+    run's context PDF.
     """
-    for path in staged:
-        commit_pdf_stage(path)
+    replaced: list[tuple[str, str | None]] = []
+    try:
+        for path in staged:
+            backup = _pdf_backup_path(path)
+            _remove_regular_file(backup)
+            try:
+                os.replace(path, backup)
+            except FileNotFoundError:
+                # Nothing to put back: this destination had no prior version.
+                backup = None
+            # Recorded before the publish, not after: the prior version is
+            # already moved aside, so a failure in the publish itself still has
+            # to put it back.
+            replaced.append((path, backup))
+            commit_pdf_stage(path)
+    except OSError:
+        for path, backup in reversed(replaced):
+            if backup is None:
+                _remove_regular_file(path)
+                continue
+            os.replace(backup, path)
+        raise
+    for _path, backup in replaced:
+        if backup is not None:
+            _remove_regular_file(backup)
 
 
 def _confined_output_path(output_root: str, filename: str) -> str:
@@ -614,6 +638,7 @@ def review_reason_for_region(region, provenance):
 
 
 _PDF_STAGE_SUFFIX = ".speaker-toolkit-stage.tmp"
+_PDF_BACKUP_SUFFIX = ".speaker-toolkit-prior.tmp"
 
 
 def _pdf_stage_path(output_pdf: str) -> str:
@@ -624,6 +649,22 @@ def _pdf_stage_path(output_pdf: str) -> str:
     )
 
 
+def _pdf_backup_path(output_pdf: str) -> str:
+    """Return the deterministic prior-version slot for one PDF destination."""
+    return os.path.join(
+        os.path.dirname(output_pdf),
+        f".{os.path.basename(output_pdf)}{_PDF_BACKUP_SUFFIX}",
+    )
+
+
+def _remove_regular_file(path: str) -> None:
+    """Unlink one file this run owns, tolerating an already-absent leaf."""
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+
+
 def _remove_stale_pdf_stage(output_pdf: str) -> None:
     """Reclaim the exact stage left by an interrupted prior run."""
     try:
@@ -632,6 +673,22 @@ def _remove_stale_pdf_stage(output_pdf: str) -> None:
         pass
     except IsADirectoryError:
         raise ValueError("video_pdf_stage_invalid") from None
+
+
+def _restore_stale_pdf_backup(output_pdf: str) -> None:
+    """Put back a prior version a run left behind when the host died mid-publish.
+
+    The backup exists only between one destination's two renames, so finding
+    one means that window never closed. The destination holds either the prior
+    version or the new one, and the prior version is the one a persisted
+    manifest still describes.
+    """
+    backup = _pdf_backup_path(output_pdf)
+    if not os.path.exists(backup):
+        return
+    if not stat.S_ISREG(os.lstat(backup).st_mode):
+        raise ValueError("video_pdf_backup_invalid")
+    os.replace(backup, output_pdf)
 
 
 def _open_pdf_stage(output_pdf: str):
@@ -1034,7 +1091,9 @@ def extract_slides_from_video(
             f"{youtube_id}.slide-region.pdf",
             f"{youtube_id}.context.pdf",
         ):
-            _remove_stale_pdf_stage(_confined_output_path(output_dir, filename))
+            destination = _confined_output_path(output_dir, filename)
+            _restore_stale_pdf_backup(destination)
+            _remove_stale_pdf_stage(destination)
         published: list[str] = []
         bound = False
         try:
