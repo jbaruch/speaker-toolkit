@@ -40,9 +40,10 @@ Every script named below lives in `skills/vault-ingress/scripts/`.
 | `validate-returns.py` | one JSON report | 2 | `validate_returns_unexpected_failure` | — read-only |
 | `audit-pattern-catalog.py` | one JSON report | 3 | `catalog_audit_unexpected_failure` | — read-only |
 | `aggregate-catalog-feedback.py` | one JSON report | 3 | `catalog_feedback_unexpected_failure` | — read-only |
+| `audit-persisted-pattern-observations.py` | one JSON report | 3 | `persisted_observation_audit_unexpected_failure` | — read-only |
 
-The two catalog gates use exit 3 because argparse already owns exit 2 there; a
-caller can still tell a malformed invocation from a broken tool.
+The three read-only audits use exit 3 because argparse already owns exit 2
+there; a caller can still tell a malformed invocation from a broken tool.
 
 `preflight-vault.py` is the one entrypoint whose failure lands on **stdout**: a
 caller gates claiming on its report, and a missing report reads as "preflight
