@@ -1106,7 +1106,7 @@ def test_success_cli_emits_only_result_json_on_stdout(
     assert payload["artifacts"][0]["artifact_scope"] == "full_frame_context"
     assert "Extracting video artifacts" in captured.err
     assert "Deduplicated: 1 frames -> 1 unique frames" in captured.err
-    assert "Saved full_frame_context PDF" in captured.err
+    assert "Staged full_frame_context PDF" in captured.err
     assert "Done: 1 unique frames retained" in captured.err
 
 
@@ -1878,3 +1878,58 @@ def test_failure_between_derivatives_leaves_no_published_pdf_behind(
     assert published
     assert [path for path in published if os.path.exists(path)] == []
     assert video.exists()
+
+
+def test_failed_re_extraction_leaves_the_prior_derivatives_intact(
+    video_slide_extraction, tmp_path, monkeypatch
+):
+    """A run that cannot bind must not destroy what a bound run published."""
+    frame = _prepared_frame(tmp_path)
+    video = write_tiny_video(tmp_path / "source.mp4")
+    outdir = tmp_path / "output"
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames", _extract_one_frame(frame)
+    )
+
+    first = video_slide_extraction.extract_slides_from_video(
+        str(video),
+        str(outdir),
+        YOUTUBE_ID,
+        slide_region=(0.2, 0.1, 0.9, 0.8),
+        slide_region_verified=True,
+    )
+    prior = {
+        artifact["path"]: open(artifact["path"], "rb").read()
+        for artifact in first["artifacts"]
+    }
+    assert len(prior) == 2
+
+    original_combine = video_slide_extraction.combine_to_pdf
+    staged = []
+
+    def combine(*args, **kwargs):
+        if staged:
+            raise RuntimeError("synthetic failure after the first derivative")
+        path = original_combine(*args, **kwargs)
+        staged.append(path)
+        return path
+
+    monkeypatch.setattr(video_slide_extraction, "combine_to_pdf", combine)
+
+    with pytest.raises(RuntimeError, match="synthetic failure"):
+        video_slide_extraction.extract_slides_from_video(
+            str(video),
+            str(outdir),
+            YOUTUBE_ID,
+            slide_region=(0.2, 0.1, 0.9, 0.8),
+            slide_region_verified=True,
+        )
+
+    for path, content in prior.items():
+        assert open(path, "rb").read() == content
+    stages = [
+        name
+        for name in os.listdir(outdir)
+        if name.endswith(video_slide_extraction._PDF_STAGE_SUFFIX)
+    ]
+    assert stages == []

@@ -191,9 +191,13 @@ held and a full re-probe exactly when it did not.
   record is produced, exit 1 with a closed reason on stderr. A cloud placeholder
   stays unavailable until it is hydrated — the extractor never substitutes a
   stub.
-- **Source replaced mid-run**: every PDF this run produced is removed and the run
-  exits 1 with `video_source_replaced_during_extraction`. Half-bound derivatives
-  never survive.
+- **Source replaced mid-run**: this run's staged derivatives are dropped and the
+  run exits 1 with `video_source_replaced_during_extraction`. Half-bound
+  derivatives never survive.
+
+Derivatives stay in their per-destination stage until the closing probe passes,
+then publish together. A failed run — for any reason, not only drift — therefore
+leaves whatever a previous bound run published exactly as it found it.
 - **Success**: the receipt is stamped on the manifest head and on every
   `artifacts[]` entry, byte-identically.
 

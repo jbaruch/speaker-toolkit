@@ -149,13 +149,22 @@ def _require_stable_source(assessment, source_video_path, source_receipt):
         )
 
 
-def _discard_unbound_artifacts(published):
-    """Remove every derivative this run published but could not bind."""
-    for path in published:
-        try:
-            os.unlink(path)
-        except FileNotFoundError:
-            continue
+def _discard_unbound_artifacts(staged):
+    """Drop every stage this run wrote, leaving prior derivatives untouched."""
+    for path in staged:
+        _remove_stale_pdf_stage(path)
+
+
+def _commit_bound_artifacts(staged):
+    """Publish this run's staged derivatives once the binding is proven.
+
+    Multi-file replacement is not one portable atomic rename, so a host failure
+    between the two renames can leave one derivative published. Both name the
+    same source receipt, so the readers reject the pair rather than trusting a
+    mixed set; the manifest is only written after this returns.
+    """
+    for path in staged:
+        commit_pdf_stage(path)
 
 
 def _confined_output_path(output_root: str, filename: str) -> str:
@@ -650,6 +659,11 @@ def _open_pdf_stage(output_pdf: str):
     return staged_path, staged
 
 
+def commit_pdf_stage(output_pdf: str) -> None:
+    """Publish one staged derivative over its destination."""
+    os.replace(_pdf_stage_path(output_pdf), output_pdf)
+
+
 def combine_to_pdf(
     unique_frames,
     output_pdf,
@@ -658,6 +672,7 @@ def combine_to_pdf(
     source_video_id=None,
     crop_method="none",
     crop_verified=False,
+    commit=True,
 ):
     """Write retained video frames as one explicitly scoped PDF artifact.
 
@@ -665,6 +680,12 @@ def combine_to_pdf(
     Callers write a separate ``full_frame_context`` artifact when room or PiP
     context is useful. PDF metadata names the scope so a context artifact can
     never masquerade as an authored deck after it is separated from the JSON.
+
+    ``commit=False`` leaves the finished pages in this destination's stage and
+    returns the path they are staged for. A caller running several derivatives
+    under one source binding uses it to hold every replacement until the whole
+    run is proven, so a failed re-extraction cannot destroy the artifacts a
+    previous run published. ``commit_pdf_stage`` publishes one such stage.
     """
     if artifact_scope is None:
         artifact_scope = (
@@ -729,11 +750,13 @@ def combine_to_pdf(
             )
             staged.flush()
 
-        os.replace(staged_path, output_pdf)
+        size_mb = os.path.getsize(staged_path) / (1024 * 1024)
+        if commit:
+            os.replace(staged_path, output_pdf)
         staged_path = None
-        size_mb = os.path.getsize(output_pdf) / (1024 * 1024)
+        state = "Saved" if commit else "Staged"
         print(
-            f"  Saved {artifact_scope} PDF: {output_pdf} "
+            f"  {state} {artifact_scope} PDF: {output_pdf} "
             f"({len(images)} pages, {size_mb:.1f} MB)",
             file=sys.stderr,
         )
@@ -828,9 +851,10 @@ def _extract_slides_in_workspace(
         youtube_id: YouTube video ID (used for naming)
         source_receipt: Engine-owned receipt for the exact source generation,
                         stamped onto the manifest and every derivative record.
-        published: Caller-owned list this appends each published PDF path to the
-                   moment it lands, so a caller can remove them when the run
-                   fails partway through.
+        published: Caller-owned list this appends each staged PDF path to the
+                   moment its pages land. The caller publishes them once the
+                   source binding holds, and drops the stages otherwise, so a
+                   failed run never disturbs a prior run's artifacts.
         fps: Frames per second to extract (0.5 = 1 frame per 2 seconds)
         hash_threshold: Largest hash distance treated as the same slide. Higher
                         values merge more and keep fewer frames.
@@ -905,6 +929,7 @@ def _extract_slides_in_workspace(
             source_video_id=youtube_id,
             crop_method=region_provenance["slide_region_method"],
             crop_verified=region_provenance["slide_region_verified"],
+            commit=False,
         )
         if slide_pdf_path:
             published.append(slide_pdf_path)
@@ -931,6 +956,7 @@ def _extract_slides_in_workspace(
             context_pdf,
             artifact_scope="full_frame_context",
             source_video_id=youtube_id,
+            commit=False,
         )
         if context_pdf_path:
             published.append(context_pdf_path)
@@ -989,8 +1015,9 @@ def extract_slides_from_video(
     when it did not. Any drift discards the derivatives and fails the run —
     a manifest is never written against bytes it did not come from.
 
-    Cleanup covers every exit, not only drift: a run that publishes one PDF and
-    then raises while producing the next leaves no half-bound derivative behind.
+    Derivatives stay staged until the closing probe passes, so no exit path can
+    leave a half-bound PDF behind and a failed re-extraction leaves the previous
+    run's artifacts exactly as it found them.
     """
     youtube_id = validate_youtube_id(youtube_id)
     if fps <= 0:
@@ -1028,6 +1055,7 @@ def extract_slides_from_video(
                     include_context_pdf=include_context_pdf,
                 )
             _require_stable_source(assessment, source_video_path, source_receipt)
+            _commit_bound_artifacts(published)
             bound = True
         finally:
             if not bound:
