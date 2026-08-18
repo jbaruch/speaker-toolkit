@@ -172,8 +172,9 @@ def _commit_bound_artifacts(staged):
             try:
                 os.replace(path, backup)
             except FileNotFoundError:
-                # Nothing to put back: this destination had no prior version.
+                # Nothing to put back, which is itself state worth recording.
                 backup = None
+                _mark_pdf_absent(path)
             # Recorded before the publish, not after: the prior version is
             # already moved aside, so a failure in the publish itself still has
             # to put it back.
@@ -183,11 +184,14 @@ def _commit_bound_artifacts(staged):
         for path, backup in reversed(replaced):
             if backup is None:
                 _remove_regular_file(path)
+                _clear_pdf_absent_marker(path)
                 continue
             os.replace(backup, path)
         raise
-    for _path, backup in replaced:
-        if backup is not None:
+    for path, backup in replaced:
+        if backup is None:
+            _clear_pdf_absent_marker(path)
+        else:
             _remove_regular_file(backup)
 
 
@@ -639,6 +643,7 @@ def review_reason_for_region(region, provenance):
 
 _PDF_STAGE_SUFFIX = ".speaker-toolkit-stage.tmp"
 _PDF_BACKUP_SUFFIX = ".speaker-toolkit-prior.tmp"
+_PDF_ABSENT_SUFFIX = ".speaker-toolkit-absent.tmp"
 
 
 def _pdf_stage_path(output_pdf: str) -> str:
@@ -665,6 +670,36 @@ def _remove_regular_file(path: str) -> None:
         pass
 
 
+def _pdf_absent_marker_path(output_pdf: str) -> str:
+    """Return the deterministic "held nothing" marker for one destination."""
+    return os.path.join(
+        os.path.dirname(output_pdf),
+        f".{os.path.basename(output_pdf)}{_PDF_ABSENT_SUFFIX}",
+    )
+
+
+def _require_regular_recovery_leaf(path: str) -> None:
+    if not stat.S_ISREG(os.lstat(path).st_mode):
+        raise ValueError("video_pdf_recovery_leaf_invalid")
+
+
+def _mark_pdf_absent(output_pdf: str) -> None:
+    """Record that this destination held nothing before the publish.
+
+    Without it, a process killed after this destination publishes and before
+    the run completes leaves a PDF the next run cannot tell from a prior
+    version worth keeping.
+    """
+    marker = _pdf_absent_marker_path(output_pdf)
+    with open(marker, "wb") as handle:
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _clear_pdf_absent_marker(output_pdf: str) -> None:
+    _remove_regular_file(_pdf_absent_marker_path(output_pdf))
+
+
 def _remove_stale_pdf_stage(output_pdf: str) -> None:
     """Reclaim the exact stage left by an interrupted prior run."""
     try:
@@ -675,19 +710,24 @@ def _remove_stale_pdf_stage(output_pdf: str) -> None:
         raise ValueError("video_pdf_stage_invalid") from None
 
 
-def _restore_stale_pdf_backup(output_pdf: str) -> None:
-    """Put back a prior version a run left behind when the host died mid-publish.
+def _recover_stale_pdf_publish(output_pdf: str) -> None:
+    """Undo a publish a killed process left half-applied at this destination.
 
-    The backup exists only between one destination's two renames, so finding
-    one means that window never closed. The destination holds either the prior
-    version or the new one, and the prior version is the one a persisted
-    manifest still describes.
+    Both markers exist only inside one run's publish, so finding either means
+    that run never completed and never wrote a manifest. The destination is
+    put back to what a completed run last left there: the prior version, or
+    nothing at all.
     """
+    marker = _pdf_absent_marker_path(output_pdf)
+    if os.path.exists(marker):
+        _require_regular_recovery_leaf(marker)
+        _remove_regular_file(output_pdf)
+        _remove_regular_file(marker)
+        return
     backup = _pdf_backup_path(output_pdf)
     if not os.path.exists(backup):
         return
-    if not stat.S_ISREG(os.lstat(backup).st_mode):
-        raise ValueError("video_pdf_backup_invalid")
+    _require_regular_recovery_leaf(backup)
     os.replace(backup, output_pdf)
 
 
@@ -1092,7 +1132,7 @@ def extract_slides_from_video(
             f"{youtube_id}.context.pdf",
         ):
             destination = _confined_output_path(output_dir, filename)
-            _restore_stale_pdf_backup(destination)
+            _recover_stale_pdf_publish(destination)
             _remove_stale_pdf_stage(destination)
         published: list[str] = []
         bound = False

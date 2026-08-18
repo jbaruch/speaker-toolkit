@@ -201,7 +201,7 @@ outcomes:
 
 Sequencing, staging, and recovery mechanics belong to the script — see
 `extract_slides_from_video`, `_commit_bound_artifacts`, and
-`_restore_stale_pdf_backup` in
+`_recover_stale_pdf_publish` in
 `skills/vault-ingress/scripts/video-slide-extraction.py`. The receipt's shape
 and the reader-side comparison rules are in
 `skills/vault-ingress/references/schemas-db.md` ("Video Extraction Output
