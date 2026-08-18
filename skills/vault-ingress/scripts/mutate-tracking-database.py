@@ -1181,10 +1181,12 @@ def _apply_sever_pptx_talk_binding(
 def _record_source_fingerprint(record: Mapping[str, Any]) -> Mapping[str, Any] | None:
     """The deck generation this record's own extraction evidence names.
 
-    `None` when the record carries no visual evidence yet, which is a real
-    state for a freshly catalogued deck and not a defect. It makes the
-    cross-check unavailable, and an unavailable cross-check refuses rather than
-    passes.
+    `None` when the record carries no visual evidence yet, which is a real state
+    for a freshly catalogued deck and not a defect: identity is verified BEFORE
+    extraction, so a row bound at that point has no receipt to cross-check
+    against. `None` SKIPS the comparison rather than failing it. What still
+    holds is the requirement that the assessment carry a valid
+    `source_identity` of its own, which is what refuses every v1 assessment.
     """
     evidence = record.get("visual_evidence")
     if not isinstance(evidence, Mapping):
