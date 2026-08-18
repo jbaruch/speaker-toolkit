@@ -27,6 +27,13 @@ a malformed record is not the one entry the report cannot identify.
 Reports are byte-identical across runs over one database, so a diff between two
 runs is a real change rather than dict ordering.
 
+Wired into `bootstrap-and-preflight.md` AHEAD of the migration command rather
+than beside the other preflight audits. That reference executes in order, so an
+audit placed with its siblings would run after `migrate-tracking-database.py`
+had already restamped and possibly repaired the observations it is meant to
+describe — a report about the repaired corpus, not the one the reparse decision
+is about.
+
 ## 0.20.86 — 2026-08-18
 
 ### feat(vault-ingress) — admit `markdown` as a slide source (#318)

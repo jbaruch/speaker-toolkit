@@ -26,7 +26,29 @@ for the interpreter path without writing the database when that field is absent.
 Immediately re-read the same canonical path with that configured interpreter and
 require the same SHA-256; restart discovery if the generation changed. Use the
 configured interpreter for migration, queue commands, and every later toolkit
-command. Run the owner migration before any other database mutation:
+command.
+
+Before that migration runs, and only when this run is a migration or a reparse,
+capture the corpus-wide persisted-observation audit against a COPY of the
+database:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/audit-persisted-pattern-observations.py" \
+  "{path_to_database_copy}"
+```
+
+It runs here, before the migration, because migration restamps and may repair
+the very observations the report is meant to describe — the same audit run
+afterwards describes the repaired corpus, not the one the reparse decision is
+about. Read-only, which is what makes a copy safe to point it at.
+
+Stdout is stable JSON carrying per-reason-code counts and the filenames behind
+each. Exit 1 means at least one talk's persisted observations are unusable: a
+finding about the corpus, not a failure of the audit, and the report is still on
+stdout. Exit 3 is a broken audit with empty stdout. Attach the counts to the
+repair/reparse report.
+
+Run the owner migration before any other database mutation:
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/migrate-tracking-database.py" \
@@ -329,24 +351,6 @@ scoring. Exit 0 may include `semantic_debts`; present those for human review and
 do not auto-edit names, aliases, definitions, or graph relationships. The input,
 report, and no-write contracts are defined in
 [pattern-catalog-contract.md](pattern-catalog-contract.md).
-
-**Persisted pattern-observation audit:** Before a migration or a reparse, run the
-corpus-wide audit against a COPY of the database:
-
-```bash
-"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/audit-persisted-pattern-observations.py" \
-  "{path_to_database_copy}"
-```
-
-Stdout is stable JSON carrying per-reason-code counts and the filenames behind
-each. Exit 1 means at least one talk's persisted observations are unusable —
-that is a finding about the corpus, not a failure of the audit, and the report is
-still on stdout. Exit 3 is a broken audit with empty stdout.
-
-Read-only, which is why it may be pointed at a copy. Point it at a copy: the
-reparse decision wants the counts BEFORE the migration restamps anything, and the
-same assessor runs in-flow afterwards regardless. Attach the counts to the
-repair/reparse report.
 
 **Conditional source-video runtime gate:** Use only the strict owner-read database
 payload to determine whether the upcoming source preflight may inspect any
