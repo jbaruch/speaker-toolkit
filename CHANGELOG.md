@@ -1,5 +1,65 @@
 # Changelog
 
+### fix(vault-ingress) — a boolean weight no longer passes the freshness replay (#322)
+
+`_basis_projection_drifted` type-checked the persisted basis's `schema_version`,
+its `not_evaluable_count`, and both lane count maps, then settled the `weights`
+map on value equality alone. `True == 1.0` in Python, so a basis carrying
+`{"strong": true, "moderate": 0.5, "weak": 0.25}` compared equal to the weight
+table the lanes require and the record reported fresh — and every reader
+afterwards believed the shape had been verified.
+
+The write side already refused it: `return_validation._validate_score_basis_types`
+loops the same map rejecting bools. This is the read-side half of that guard,
+which is the half that matters for a record already in the database, since a
+persisted record is a hint and not authority. Raised by Copilot on #321.
+
+### docs(vault-ingress) — six comments describing the flat contract as universal (#313)
+
+Two comments were reported; four more of the same shape turned up in the same
+audit. Both claims had been true of the flat generation and were left
+unqualified when the weighted split landed:
+
+- "the score is count(patterns) minus count(antipatterns), so it is an INTEGER
+  by construction" now names the flat generation, in `persist-results.py`.
+- "confidence-weighted, and therefore fractional" now reads "MAY be
+  fractional", in `adherence_baseline.py` (twice), `pattern_evidence.py`
+  (twice), `persist-results.py`, and `return_validation.py`.
+
+A weighted aggregate may be whole — two strong patterns against one strong
+antipattern is exactly `1.0`, and
+`test_weighted_score_persistence.py::TestResolveAWeightedScore::test_a_whole_weighted_score_stays_valid`
+pins that case, so the comments contradicted a test shipped in the same change.
+
+### test(vault-ingress) — name the branch that accepts a persisted weighted record (#299)
+
+The activation's last open bullet asked for integration coverage through
+`validate_persisted_v2_analysis_state`. That chain was already running:
+`merge_talk` calls `validate_effective_v2_state` before it returns, so every
+existing v6 merge test reached the validator transitively.
+
+What no test said is WHICH of its four accepted field sets took the record. The
+v6 set is the v5 set plus `pattern_score_basis`, so a weighted record that lost
+its basis validates cleanly as a v5 one and the merge still passes. The new
+class pins the persisted observation field set to v6, proves the v6 branch is a
+closed set rather than "v5 plus whatever else arrived", and runs the production
+gate `validate_effective_v2_state` directly. Removing the v6 branch from the
+validator fails all four.
+
+### chore(release) — resync the manifest to the registry (#324)
+
+Registry `0.20.82`, manifest `0.20.81`. The out-of-credits publish exits
+non-zero after the artifact lands, so `smart-publish.sh` returns on the tolerated
+credit signature before its commit-back runs and `main` keeps the old version.
+The next auto-bump then resolves a version the registry already has and the
+publish dies.
+
+The resync rides on this PR's own diff rather than getting a PR of its own: a
+bump-only PR is itself a release, so it re-arms the condition it repaired —
+which is what #325 demonstrated. Whoever opens the next PR here checks
+`capture-registry-baseline.sh` against `.tessl-plugin/plugin.json` first, until
+the upstream commit-back runs on the tolerated path or the org's credits reset.
+
 ## 0.20.81 — 2026-08-17
 
 ### fix(vault-ingress) — a persisted weighted score is no longer read as drift (#317)
