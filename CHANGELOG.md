@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.84 — 2026-08-18
+
 ### chore(ci) — pin the publish workflow to the registry-aware bump (#324)
 
 The publish pin was `af116eb` (2026-08-16). `smart-publish.sh` became
