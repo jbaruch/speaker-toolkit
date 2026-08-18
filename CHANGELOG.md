@@ -40,7 +40,11 @@ source, re-extract) beats calling correct history corrupt. Nothing migrates a v3
 record in place.
 
 The manifest schema version moves to `ingress_contract.py` so the producer and
-every reader gate on one number instead of three literals.
+every reader gate on one number instead of three literals. Every surface that
+told an agent a completed video return needs a schema-v3 manifest — the return
+validator's messages, `schemas-db.md`, `processing-rules.md`,
+`source-identity-preflight.md`, `subagent-instructions.md` — now says v4, with v3
+wording kept only where it describes the archival path.
 
 `PIPELINE_VERSION` 0.12.0 → 0.13.0: a run now requires a probeable source, which
 is an extraction-behavior change, not only a record-shape one.

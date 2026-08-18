@@ -1135,7 +1135,7 @@ def _validate_slide_region(value) -> tuple[float, float, float, float] | None:
 
 
 def validate_video_extraction_manifest(structured: dict) -> VideoExtractionState:
-    """Validate a complete schema-v3 manifest and derive authored-slide trust.
+    """Validate a complete schema-v4 manifest and derive authored-slide trust.
 
     Trust is recomputed from mutually consistent top-level crop provenance and
     the scoped artifact record. A model cannot make context frames look like an
@@ -1145,7 +1145,7 @@ def validate_video_extraction_manifest(structured: dict) -> VideoExtractionState
     if not isinstance(manifest, dict):
         raise ReturnValidationError(
             "slide_source video_extracted requires a complete "
-            "structured_data.video_extraction schema-v3 manifest"
+            "structured_data.video_extraction schema-v4 manifest"
         )
     if manifest.get("schema_version") != VIDEO_EXTRACTION_SCHEMA_VERSION:
         # An archival record is separable from a malformed one: it was valid
@@ -1416,7 +1416,7 @@ def _validate_video_return(
     if ret["status"] == "processed" and not trusted_and_promoted:
         raise ReturnValidationError(
             "status processed with slide_source video_extracted requires a trusted "
-            "schema-v3 slide_region manifest and promoted slides_local_path"
+            "schema-v4 slide_region manifest and promoted slides_local_path"
         )
     if slides_local_path is None:
         clear_fields = set(ret.get("clear_fields") or [])
@@ -2492,7 +2492,7 @@ def _validate_available_sources(
     ):
         raise ReturnValidationError(
             "evidence_sources includes static_slides, but the video extraction has "
-            "no trusted schema-v3 slide_region artifact"
+            "no trusted schema-v4 slide_region artifact"
         )
     if slide_source not in {"pptx", "both"} and "native_deck" in available:
         raise ReturnValidationError(

@@ -1298,7 +1298,7 @@ portable canonical form `slides/<artifact>.pdf`; persistence copies it to the ta
 record and the analysis writer renders it in the provenance header. For
 `slide_source: "video_extracted"`, the filename must be
 `slides/{structured_data.video_extraction.source_video_id}.pdf`. `status: "processed"`
-requires that path plus a complete schema-v3 manifest whose top-level crop provenance
+requires that path plus a complete schema-v4 manifest whose top-level crop provenance
 and `slide_region` artifact independently agree on a verified manual crop. The return's
 manifest identity is also matched against the claimed talk's `youtube_id` before either
 writer changes state.
