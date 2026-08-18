@@ -484,15 +484,16 @@ def resolve_pattern_score(observations, patterns, antipatterns, *, weighted=Fals
     the requirement in the brief has not moved the rate across four batches, so
     the tooling absorbs the variant — and recomputes rather than trusting it.
 
-    The score is count(patterns) minus count(antipatterns), so it is an INTEGER
-    by construction. `True` satisfies `isinstance(x, int)` in Python and a float
-    looks numeric; neither is a score.
+    At the FLAT generation the score is count(patterns) minus
+    count(antipatterns), so it is an INTEGER by construction. `True` satisfies
+    `isinstance(x, int)` in Python and a float looks numeric; neither is a score.
 
     A weighted return DOES reach here as of the activation (#299). Its aggregate
-    is a sum of 1.0/0.5/0.25 terms, so it is fractional by construction, and the
-    count difference is not its arithmetic. `weighted` selects which contract
-    applies; the flat one still refuses a float, because a float there means
-    some other arithmetic produced it.
+    is a sum of 1.0/0.5/0.25 terms, so it MAY be fractional and the count
+    difference is not its arithmetic — two strong patterns against one strong
+    antipattern is exactly `1.0`. `weighted` selects which contract applies; the
+    flat one still refuses a float, because a float there means some other
+    arithmetic produced it.
     """
     if "pattern_score" not in observations or observations["pattern_score"] is None:
         return None, False

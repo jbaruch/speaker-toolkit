@@ -81,8 +81,10 @@ EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS = frozenset(
         WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
     }
 )
-# The scoring generation whose aggregate is confidence-weighted, and therefore
-# fractional. `CURRENT` is derived from it rather than written as a literal: a
+# The scoring generation whose aggregate is confidence-weighted, and so MAY be
+# fractional — a whole weighted score is valid (two strong patterns against one
+# strong antipattern is `1.0`). `CURRENT` is derived from it rather than written
+# as a literal: a
 # reader that wants the weighted generation must name it, exactly as
 # `return_validation` requires a reader wanting the flat one to name that.
 WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION = 6
@@ -3842,11 +3844,11 @@ def _score_projection_freshness_reasons(
 ) -> set[str]:
     """Replay the persisted score under the arithmetic its own generation declares.
 
-    A weighted aggregate sums 1.0/0.5/0.25 terms and is fractional by
-    construction; a flat one is the count difference and is an integer. They are
-    not one number computed two ways, so checking a weighted record against the
-    count difference reports every arithmetically correct score as drift — the
-    record persists and then every freshness-gated consumer refuses it (#317).
+    A weighted aggregate sums 1.0/0.5/0.25 terms and may land on a fraction; a
+    flat one is the count difference and is an integer. They are not one number
+    computed two ways, so checking a weighted record against the count
+    difference reports every arithmetically correct score as drift — the record
+    persists and then every freshness-gated consumer refuses it (#317).
     """
     reasons: set[str] = set()
     weighted = _persisted_generation_is_weighted(talk)
