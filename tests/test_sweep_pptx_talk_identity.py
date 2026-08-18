@@ -458,6 +458,7 @@ class TestCandidateTable:
                 assessment,
                 pptx_path=path,
                 talk_filename=VOXXED_TALK["filename"],
+                observed_source_identity=None,
             )
             is None
         )
@@ -786,6 +787,7 @@ class TestProofPlan:
                 record["identity_assessment"],
                 pptx_path=record["pptx_path"],
                 talk_filename=record["talk_filename"],
+                observed_source_identity=None,
             )
             is None
         )

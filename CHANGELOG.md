@@ -1,5 +1,44 @@
 # Changelog
 
+### fix(vault-ingress) — bind a deck's identity assessment to the bytes it read (#176)
+
+`binding_refusal` pinned an assessment to its deck by `pptx_path` — a path
+string. Replace the file at that path and the stored `matched` verdict still
+stood, so the new deck's slide counts, OCR and pattern observations became that
+talk's evidence under a proof made about different bytes. That is the exact
+failure this issue exists to stop, surviving its own fix.
+
+`PPTX_TALK_IDENTITY_SCHEMA_VERSION` is 2, and an assessment now records the
+`source_identity` it was reached against, in the same
+`{algorithm, digest, size_bytes}` shape `visual_evidence.source_fingerprint`
+already uses. A v1 assessment cannot be upgraded — nothing recorded which bytes
+it read — so it refuses as `identity_assessment_schema_unsupported` and reads as
+unproven, the position `unassessed_legacy_binding` already takes for the same
+reason: a proof that was not witnessed cannot be manufactured.
+
+The observation is a REQUIRED argument, never defaulted, so a caller states
+which case it is in:
+
+- `preflight-vault.py` digests the deck and compares, catching the swap. A deck
+  it cannot read is its own blocking finding,
+  `pptx_talk_binding_source_unobservable` — passing `None` there would read as
+  "no observation available" and fall through.
+- `mutate-tracking-database.py` takes a database and a plan and never touches
+  the vault, so it passes `None`. That still requires the assessment to name a
+  generation, and cross-checks it against the record's own extraction
+  fingerprint when the record has one — two independent producers disagreeing
+  about which deck a row is means one describes a different file.
+
+Identity is still verified BEFORE extraction: a freshly catalogued row carries
+no `visual_evidence`, so there is nothing to cross-check and the requirement
+narrows to the assessment naming a generation at all. Requiring the extraction
+fingerprint would have inverted the order this issue establishes.
+
+The generation check runs last in the refusal order. Everything above it asks
+whether the assessment is a coherent proof; this asks whether it is a proof
+about the bytes that are there now, and running it earlier would mask a
+malformed assessment behind a generation complaint.
+
 ## 0.20.84 — 2026-08-18
 
 ### chore(ci) — pin the publish workflow to the registry-aware bump (#324)

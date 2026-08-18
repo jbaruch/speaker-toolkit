@@ -409,6 +409,7 @@ class TestSerialization:
             "artifact_role",
             "selected_talk_filename",
             "reason_codes",
+            "source_identity",
             "candidates",
         }
         assert payload["schema_version"] == (
@@ -490,6 +491,7 @@ def test_the_documented_matched_example_authorizes_its_binding(
         assessment,
         pptx_path=assessment["pptx_path"],
         talk_filename=assessment["selected_talk_filename"],
+        observed_source_identity=assessment["source_identity"],
     )
 
     assert refusal is None, refusal

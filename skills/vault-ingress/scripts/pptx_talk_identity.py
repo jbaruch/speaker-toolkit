@@ -31,7 +31,7 @@ from __future__ import annotations
 import posixpath
 import re
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence, TypeGuard
 
 from source_identity_matching import (
     AMBIGUOUS_EVENT_ALIASES,
@@ -45,7 +45,16 @@ from source_identity_matching import (
 )
 
 
-PPTX_TALK_IDENTITY_SCHEMA_VERSION = 1
+# v2 binds the assessment to the deck GENERATION it was made against, not just
+# to the deck's path. v1 compared `assessment["pptx_path"]` to the row's path,
+# so replacing the file at that path left the `matched` verdict standing and the
+# new deck's slides, OCR and pattern observations became that talk's evidence
+# under a proof made about different bytes — the #176 failure surviving its own
+# fix. A v1 assessment cannot be upgraded in place: nothing recorded which bytes
+# it read, so it falls to `identity_assessment_schema_unsupported` and reads as
+# unproven, the same position `unassessed_legacy_binding` takes for the same
+# reason (a proof not witnessed cannot be manufactured).
+PPTX_TALK_IDENTITY_SCHEMA_VERSION = 2
 
 # Signal verdicts. `unknown` is the honest default: a fact the deck does not
 # carry is not evidence for or against any candidate.
@@ -107,6 +116,13 @@ REASON_NON_DELIVERY_ARTIFACT = "identity_non_delivery_artifact"
 # existed. The binding is not declared wrong — it is declared unproven, which is
 # the honest reading and the one that routes it to review instead of trusting it.
 REASON_UNASSESSED_LEGACY_BINDING = "identity_unassessed_legacy_binding"
+# The deck could not be observed at refusal time, so the stored generation could
+# not be compared to anything. Distinct from a mismatch: "we looked and it
+# differs" and "we could not look" are different findings, and collapsing them
+# would let an unreadable deck read as a passing comparison.
+REASON_SOURCE_UNOBSERVABLE = "identity_source_unobservable"
+# The assessment names a different generation of this deck than the one on disk.
+REASON_GENERATION_STALE = "identity_generation_stale"
 
 REASON_CODES = frozenset(
     {
@@ -247,6 +263,11 @@ class TalkIdentityAssessment:
     artifact_role: str
     selected_talk_filename: str | None
     reason_codes: tuple[str, ...]
+    # The deck generation this verdict was reached against. `None` means the
+    # deck could not be digested at assessment time; the verdict still records
+    # what the facts showed, and `binding_refusal` refuses to authorize a
+    # binding it cannot pin to bytes.
+    source_identity: Mapping[str, Any] | None = None
     candidates: tuple[CandidateAssessment, ...] = field(default=())
 
     @property
@@ -265,6 +286,9 @@ class TalkIdentityAssessment:
             "artifact_role": self.artifact_role,
             "selected_talk_filename": self.selected_talk_filename,
             "reason_codes": list(self.reason_codes),
+            "source_identity": (
+                dict(self.source_identity) if self.source_identity is not None else None
+            ),
             "candidates": [candidate.as_json() for candidate in self.candidates],
         }
 
@@ -576,6 +600,8 @@ def assess_candidate(
 def assess_pptx_talk_identity(
     deck: Mapping[str, Any] | DeckIdentityFacts,
     candidates: Iterable[Mapping[str, Any]],
+    *,
+    source_identity: Mapping[str, Any] | None = None,
 ) -> TalkIdentityAssessment:
     """Decide which talk a deck belongs to, or refuse to decide.
 
@@ -618,6 +644,7 @@ def assess_pptx_talk_identity(
             artifact_role=artifact_role,
             selected_talk_filename=selected if verdict == VERDICT_MATCHED else None,
             reason_codes=tuple(dict.fromkeys(codes)),
+            source_identity=source_identity,
             candidates=assessments,
         )
 
@@ -663,10 +690,47 @@ def unassessed_legacy_binding(pptx_path: str) -> dict[str, Any]:
         "artifact_role": ROLE_DELIVERY,
         "selected_talk_filename": None,
         "reason_codes": [REASON_UNASSESSED_LEGACY_BINDING],
+        # Null rather than absent, for the same reason the candidates list is
+        # empty rather than absent: migration read no bytes, and saying so is a
+        # different statement from the field never having existed.
+        "source_identity": None,
         # Empty rather than absent: migration assessed no candidates, which is
         # a different statement from having assessed some and reported none.
         "candidates": [],
     }
+
+
+_SOURCE_IDENTITY_FIELDS = ("algorithm", "digest", "size_bytes")
+
+
+def _source_identity_comparable(value: object) -> TypeGuard[Mapping[str, Any]]:
+    """Whether a source identity is complete enough to compare at all.
+
+    A partial identity is not a weak match, it is an unusable one: comparing on
+    whichever fields happen to be present would let a record missing `digest`
+    agree with anything that shares its size.
+    """
+    if not isinstance(value, Mapping):
+        return False
+    if set(value) != set(_SOURCE_IDENTITY_FIELDS):
+        return False
+    if not isinstance(value["algorithm"], str) or not value["algorithm"]:
+        return False
+    if not isinstance(value["digest"], str) or not value["digest"]:
+        return False
+    size = value["size_bytes"]
+    return not isinstance(size, bool) and isinstance(size, int) and size >= 0
+
+
+def _same_source_generation(
+    stored: Mapping[str, Any], observed: Mapping[str, Any]
+) -> bool:
+    """Exact agreement on every field, never a subset.
+
+    The algorithm is compared too: the same digest string under two algorithms
+    is a coincidence of encoding, not the same bytes.
+    """
+    return all(stored[field] == observed[field] for field in _SOURCE_IDENTITY_FIELDS)
 
 
 def binding_refusal(
@@ -674,6 +738,7 @@ def binding_refusal(
     *,
     pptx_path: str,
     talk_filename: str,
+    observed_source_identity: Mapping[str, Any] | None,
 ) -> str | None:
     """Say why an assessment fails to authorize a binding, or None if it does.
 
@@ -687,6 +752,28 @@ def binding_refusal(
     AND a talk, so one that proves a different pair proves nothing about this
     row. Reason codes are checked because every code but the matched one
     explains a refusal.
+
+    Two separate things are checked about the deck generation, and they are not
+    the same requirement:
+
+    * The assessment must NAME the generation it read. Always. A path is not a
+      deck: v1 pinned an assessment to `pptx_path` alone, so replacing the file
+      at that path kept the `matched` verdict and handed the new deck's contents
+      to the talk under a proof about different bytes.
+    * It must AGREE with an independent observation, when the caller has one.
+
+    `observed_source_identity` is REQUIRED, never defaulted, so a caller states
+    which case it is in rather than falling into one. `None` says "I have no
+    independent observation" — true of `mutate-tracking-database.py`, which
+    takes a database and a plan and never touches the vault. That is not a pass:
+    the assessment must still carry a comparable generation, so every v1
+    assessment and every unwitnessed migration stamp still refuses. It is
+    `preflight-vault.py` that observes the deck and makes the comparison real.
+
+    A caller holding an observation must not pass `None` to skip the
+    comparison — that is the fail-open shape the observation gate was made
+    required to avoid. Preflight treats an unobservable deck as its own finding
+    rather than as an absent observation.
     """
     if not isinstance(assessment, Mapping):
         return "identity_assessment_missing"
@@ -697,6 +784,7 @@ def binding_refusal(
         "artifact_role",
         "selected_talk_filename",
         "reason_codes",
+        "source_identity",
         "candidates",
     } - set(assessment)
     if missing:
@@ -716,7 +804,22 @@ def binding_refusal(
         return "identity_reason_codes_invalid"
     if sorted(set(codes)) != sorted(MATCHED_REASON_CODES):
         return "identity_reason_codes_contradict_verdict"
-    return _candidate_table_refusal(assessment["candidates"], talk_filename)
+    table_refusal = _candidate_table_refusal(assessment["candidates"], talk_filename)
+    if table_refusal is not None:
+        return table_refusal
+    # Last, deliberately. Everything above asks whether the assessment is a
+    # coherent proof at all; this asks whether it is a proof about the bytes
+    # that are there now. Running it earlier would mask a malformed assessment
+    # behind a generation complaint and change which defect the operator sees
+    # first.
+    stored_identity = assessment["source_identity"]
+    if not _source_identity_comparable(stored_identity):
+        return REASON_SOURCE_UNOBSERVABLE
+    if observed_source_identity is not None and not _same_source_generation(
+        stored_identity, observed_source_identity
+    ):
+        return REASON_GENERATION_STALE
+    return None
 
 
 def _candidate_table_refusal(candidates: object, talk_filename: str) -> str | None:

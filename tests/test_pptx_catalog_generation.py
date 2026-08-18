@@ -29,6 +29,7 @@ import pytest
 CURRENT_EXTRACTOR_SCHEMA = 4
 CURRENT_PIPELINE = "1.5.0"
 
+DECK_PATH = "Conference/2024/Talk.pptx"
 SOURCE_FINGERPRINT = {
     "algorithm": "sha256",
     "digest": "a" * 64,
@@ -92,12 +93,15 @@ def _signals(*, agree=(), conflict=()) -> dict:
 def _identity_assessment(**overrides) -> dict:
     """A v3 record's proof that this deck belongs to the talk it names (#176)."""
     assessment = {
-        "schema_version": 1,
+        "schema_version": 2,
         "pptx_path": "Conference/2024/Talk.pptx",
         "verdict": "matched",
         "artifact_role": "delivery",
         "selected_talk_filename": "2024-04-10-talk.md",
         "reason_codes": ["identity_matched"],
+        # v2 binds the verdict to the bytes it read, so a deck swapped at the
+        # same path no longer inherits the proof (#176).
+        "source_identity": copy.deepcopy(SOURCE_FINGERPRINT),
         "candidates": [
             {
                 "talk_filename": "2024-04-10-talk.md",
@@ -964,7 +968,7 @@ def test_a_non_delivery_artifact_cannot_bind_a_talk(
 def test_an_assessment_from_a_future_schema_is_refused(
     mutate_tracking_database,
 ) -> None:
-    record = _current_record(identity_assessment=_identity_assessment(schema_version=2))
+    record = _current_record(identity_assessment=_identity_assessment(schema_version=3))
 
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
@@ -1050,6 +1054,12 @@ def test_an_assessment_the_assessor_produced_satisfies_the_writer(
     assessment = pptx_talk_identity.assess_pptx_talk_identity(
         {"pptx_path": "Voxxed Days Ticino/2024/A Talk About Things.pptx"},
         [talk],
+        # The assessor records the generation it read; the writer refuses a
+        # verdict that names none, so the end-to-end path has to carry one.
+        # The record's own extraction fingerprint. They must agree: the writer
+        # cross-checks the sweep's generation against the extractor's, and two
+        # independent producers naming different decks is what that catches.
+        source_identity=copy.deepcopy(SOURCE_FINGERPRINT),
     )
     assert assessment.verdict == pptx_talk_identity.VERDICT_MATCHED
 
@@ -1278,22 +1288,53 @@ def test_a_legacy_config_does_not_skip_the_record_migration(
 # The catalog-wide sweep: preflight consumes the assessment (#176).
 
 
+def _materialize_deck(
+    pptx_catalog_selection,
+    tmp_path,
+    database,
+    *,
+    pptx_path=DECK_PATH,
+    body=b"deck bytes",
+):
+    """Put a real file where the catalog says the deck is, and report its truth.
+
+    Preflight digests the deck rather than trusting the row, so a row pointing
+    at nothing is now its own blocking finding. Tests that are about some OTHER
+    refusal need the deck to exist so they reach the check they are about, and
+    the one test about agreement needs the fingerprint the file actually has —
+    an invented digest cannot be the sha256 of real bytes.
+    """
+    source = tmp_path / "decks"
+    deck = source / pptx_path
+    deck.parent.mkdir(parents=True, exist_ok=True)
+    deck.write_bytes(body)
+    database["config"]["pptx_source_dir"] = str(source)
+    return pptx_catalog_selection.observed_source_fingerprint(pptx_path, source)
+
+
 def _preflight_codes(preflight_vault, database, tmp_path):
     """Run only the identity sweep; the rest of preflight needs a real vault."""
     validator = preflight_vault.VaultPreflight(
         database, tmp_path, tmp_path / "tracking-database.json"
     )
+    # `run()` loads config before reaching this check (it digests the deck
+    # through `config.pptx_source_dir`), and calling the check in isolation
+    # skips that. Without it every row reads as an unreadable deck.
+    config = database.get("config")
+    if isinstance(config, dict):
+        validator.config = config
     validator._check_pptx_talk_identity()
     return {(finding["code"], finding["severity"]) for finding in validator.findings}
 
 
 def test_preflight_blocks_on_a_migrated_legacy_binding(
-    preflight_vault, tracking_database, tmp_path
+    preflight_vault, tracking_database, pptx_catalog_selection, tmp_path
 ) -> None:
     """A warning would let Step 1's blocking-only gate proceed on state the
     database itself marks unproven."""
     database = _database([_evidence_bound_record()])
     migrated = tracking_database.migrate_tracking_database(database).database
+    _materialize_deck(pptx_catalog_selection, tmp_path, migrated)
 
     codes = _preflight_codes(preflight_vault, migrated, tmp_path)
 
@@ -1301,7 +1342,7 @@ def test_preflight_blocks_on_a_migrated_legacy_binding(
 
 
 def test_preflight_blocks_on_an_assessment_that_actually_refused(
-    preflight_vault, tmp_path
+    preflight_vault, pptx_catalog_selection, tmp_path
 ) -> None:
     """An assessor that looked and refused is a specific, actionable finding."""
     record = _current_record(
@@ -1312,15 +1353,74 @@ def test_preflight_blocks_on_an_assessment_that_actually_refused(
         )
     )
 
-    codes = _preflight_codes(preflight_vault, _database([record]), tmp_path)
+    database = _database([record])
+    _materialize_deck(pptx_catalog_selection, tmp_path, database)
+
+    codes = _preflight_codes(preflight_vault, database, tmp_path)
 
     assert ("pptx_talk_binding_unproven", "blocking") in codes
 
 
-def test_preflight_is_silent_on_a_proven_binding(preflight_vault, tmp_path) -> None:
-    codes = _preflight_codes(preflight_vault, _database([_current_record()]), tmp_path)
+def test_preflight_is_silent_on_a_proven_binding(
+    preflight_vault, pptx_catalog_selection, tmp_path
+) -> None:
+    """The one case where the generation actually has to agree.
+
+    The other preflight tests reach an earlier refusal, so their fingerprint
+    never matters. Here nothing else refuses, so the assessment is built from
+    the digest the file on disk really has — an invented constant cannot be the
+    sha256 of real bytes, and pinning one would test the fixture, not the gate.
+    """
+    database = _database([])
+    observed = _materialize_deck(pptx_catalog_selection, tmp_path, database)
+    database["pptx_catalog"] = [
+        _current_record(
+            identity_assessment=_identity_assessment(source_identity=observed)
+        )
+    ]
+
+    codes = _preflight_codes(preflight_vault, database, tmp_path)
 
     assert not any(code.startswith("pptx_talk_binding") for code, _ in codes)
+
+
+def test_preflight_blocks_a_deck_swapped_since_it_was_assessed(
+    preflight_vault, pptx_catalog_selection, tmp_path
+) -> None:
+    """The defect this whole change exists for (#176).
+
+    v1 pinned an assessment to `pptx_path`, so replacing the file at that path
+    left the `matched` verdict standing and the new deck's slides, OCR and
+    pattern observations became that talk's evidence under a proof about
+    different bytes. The row is untouched; only the file changed.
+    """
+    database = _database([])
+    observed = _materialize_deck(pptx_catalog_selection, tmp_path, database)
+    database["pptx_catalog"] = [
+        _current_record(
+            identity_assessment=_identity_assessment(source_identity=observed)
+        )
+    ]
+    _materialize_deck(
+        pptx_catalog_selection, tmp_path, database, body=b"a completely different deck"
+    )
+
+    codes = _preflight_codes(preflight_vault, database, tmp_path)
+
+    assert ("pptx_talk_binding_unproven", "blocking") in codes
+
+
+def test_preflight_blocks_a_binding_whose_deck_cannot_be_read(
+    preflight_vault, tmp_path
+) -> None:
+    """Distinct from "no observation available", which is the writer's case.
+
+    Preflight looked. Finding nothing is a finding, not a reason to fall through
+    to the plan-only path where the comparison is simply unavailable.
+    """
+    codes = _preflight_codes(preflight_vault, _database([_current_record()]), tmp_path)
+
+    assert ("pptx_talk_binding_source_unobservable", "blocking") in codes
 
 
 def test_preflight_ignores_an_unmatched_row(preflight_vault, tmp_path) -> None:
@@ -1345,7 +1445,7 @@ def test_preflight_blocks_a_row_migration_will_never_reach(
 
 
 def test_preflight_refuses_an_assessment_that_proves_another_pair(
-    preflight_vault, tmp_path
+    preflight_vault, pptx_catalog_selection, tmp_path
 ) -> None:
     """Hints, Not Authority: a persisted `matched` verdict for a different deck
     must not read as proof of this row."""
@@ -1355,13 +1455,16 @@ def test_preflight_refuses_an_assessment_that_proves_another_pair(
         )
     )
 
-    codes = _preflight_codes(preflight_vault, _database([record]), tmp_path)
+    database = _database([record])
+    _materialize_deck(pptx_catalog_selection, tmp_path, database)
+
+    codes = _preflight_codes(preflight_vault, database, tmp_path)
 
     assert ("pptx_talk_binding_unproven", "blocking") in codes
 
 
 def test_preflight_refuses_a_matched_verdict_naming_another_talk(
-    preflight_vault, tmp_path
+    preflight_vault, pptx_catalog_selection, tmp_path
 ) -> None:
     record = _current_record(
         identity_assessment=_identity_assessment(
@@ -1369,7 +1472,10 @@ def test_preflight_refuses_a_matched_verdict_naming_another_talk(
         )
     )
 
-    codes = _preflight_codes(preflight_vault, _database([record]), tmp_path)
+    database = _database([record])
+    _materialize_deck(pptx_catalog_selection, tmp_path, database)
+
+    codes = _preflight_codes(preflight_vault, database, tmp_path)
 
     assert ("pptx_talk_binding_unproven", "blocking") in codes
 

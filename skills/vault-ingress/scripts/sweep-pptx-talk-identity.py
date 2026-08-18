@@ -53,6 +53,7 @@ from pathlib import Path
 import sys
 from typing import Any, Mapping, Sequence
 
+from pptx_catalog_selection import observed_source_fingerprint
 from pptx_deck_facts import (
     DECK_FACTS_SCHEMA_VERSION,
     read_deck_identity_facts,
@@ -239,8 +240,17 @@ def sweep_catalog(
         stored_talk = record.get("talk_filename")
         stored_talk = stored_talk if isinstance(stored_talk, str) else None
         reading = read_deck_identity_facts(record.get("pptx_path"), pptx_source_dir)
+        # Digested from the same deck the facts were read from, in the same
+        # pass, so the verdict names the generation it actually saw. Reading the
+        # facts and fingerprinting in two separate passes would let a deck
+        # change between them and stamp a verdict onto bytes it never read.
+        observed_identity = observed_source_fingerprint(
+            record.get("pptx_path"), pptx_source_dir
+        )
         try:
-            assessment = assess_pptx_talk_identity(reading.facts, candidates)
+            assessment = assess_pptx_talk_identity(
+                reading.facts, candidates, source_identity=observed_identity
+            )
         except PptxTalkIdentityError as exc:
             # The prose names the rejected value, which came out of the
             # database (`no-secrets` -> Logging). Report the closed code.

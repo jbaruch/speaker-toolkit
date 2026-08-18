@@ -80,6 +80,20 @@ v2, and v3.
   selecting signals reach `agreeing` — the example's agreeing `delivery_year`
   and `filename_similarity` report without electing, which is why they appear in
   `signals` and not in `agreeing`.
+- v2 of the assessment adds `source_identity`: the deck generation the verdict
+  was reached against, in the same `{algorithm, digest, size_bytes}` shape as
+  `visual_evidence.source_fingerprint`. v1 pinned an assessment to `pptx_path`
+  alone, so replacing the file at that path left the `matched` verdict standing
+  and the new deck's contents became that talk's evidence. A v1 assessment
+  cannot be upgraded — nothing recorded which bytes it read — so it refuses as
+  `identity_assessment_schema_unsupported` and reads as unproven.
+- `binding_refusal` takes the caller's own observation as a required argument.
+  `preflight-vault.py` digests the deck and passes what it saw, so a swapped
+  deck is caught; `mutate-tracking-database.py` never touches the vault and
+  passes `None`, which still requires the assessment to name a generation but
+  makes no comparison. `None` from a caller that COULD look would be fail-open,
+  so preflight reports an unreadable deck as its own blocking finding
+  (`pptx_talk_binding_source_unobservable`) instead.
 - Readers validate v3 shape only — that the field is null exactly when
   `talk_filename` is null, and an object otherwise. The binding's semantics are
   the writer's gate, matching how `visual_evidence` is handled.
@@ -348,12 +362,17 @@ customization, not the owner default. See the
       }
     },
     "identity_assessment": {
-      "schema_version": 1,
+      "schema_version": 2,
       "pptx_path": "Conference/Year/Talk Name.pptx",
       "verdict": "matched",
       "artifact_role": "delivery",
       "selected_talk_filename": "2024-04-10-talk-slug.md",
       "reason_codes": ["identity_matched"],
+      "source_identity": {
+        "algorithm": "sha256",
+        "digest": "3b1f...  (64 lowercase hex characters)",
+        "size_bytes": 4096
+      },
       "candidates": [
         {
           "talk_filename": "2024-04-10-talk-slug.md",
