@@ -20,6 +20,19 @@ inverse-schema field swap — is losslessly repairable. Everything else is an
 owner decision, and semantic dimension mappings belong to the catalog review in
 #156, never here.
 
+Where citations and source inspection are checked, and why not here: a
+persisted `evidence_citations` entry is the worker's citation plus what the
+engine resolved onto it — `line_start`, `artifact_root`, `artifact_sha256` —
+and `source_inspection` gains `line_count`, artifact identity, and
+`coverage_complete` the same way. `validate_evidence_citations` and
+`validate_source_inspection` enforce the WORKER-side field sets, so pointing
+either at a stored block reports every correctly persisted talk as corrupt.
+`assess_persisted_pattern_evidence_freshness` owns the persisted contract, and
+owns it more strictly: citations present, each falling within the recorded
+inspection, each bound to the artifact identity it was read from. It is
+required at scoring v4 and later. Shape and catalog agreement are this
+module's; source location and artifact binding are that one's.
+
 Pure function of (talk, catalog): no filesystem, no clock, no network.
 """
 

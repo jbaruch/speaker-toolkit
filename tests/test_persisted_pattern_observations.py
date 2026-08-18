@@ -705,3 +705,44 @@ def test_a_malformed_detection_lane_forfeits_the_legacy_reading(
         not in assessment.reason_codes
     )
     assert persisted_pattern_observations.COLLECTION_INVALID in assessment.reason_codes
+
+
+def test_source_location_defects_belong_to_the_freshness_assessor(
+    persisted_pattern_observations,
+    return_validation,
+    catalog,
+    observable_entry,
+    tmp_path,
+) -> None:
+    """The boundary between the two persisted assessors, pinned.
+
+    A stored citation is the worker's plus what the engine resolved onto it, so
+    the worker-side contract reads every correctly persisted talk as corrupt.
+    `assess_persisted_pattern_evidence_freshness` owns citations and source
+    inspection, and owns them more strictly — within-inspection and bound to
+    artifact identity. A second contract here is the drift #167 exists to stop,
+    and this test fails when one is added.
+    """
+    detection = _detection(observable_entry)
+    detection["evidence_citations"] = "not even a list"
+    detection["evidence_source"] = "a source nobody inspected"
+    talk = _talk(observable_entry, detection)
+    talk["pattern_observations"].update(
+        {
+            "evidence_schema_version": 2,
+            "evidence_sources": ["transcript"],
+            "source_inspection": "not even a list",
+        }
+    )
+
+    assessment = persisted_pattern_observations.assess_persisted_pattern_observations(
+        talk, catalog
+    )
+
+    assert assessment.findings == ()
+    assert assessment.usable is True
+    # Refused, and by the assessor that owns the persisted shape. Asserting the
+    # silence above without this would pin a hole rather than a boundary.
+    assert "source_inspection_missing" in return_validation.assess_artifact_freshness(
+        talk, vault_root=tmp_path
+    )

@@ -1,5 +1,48 @@
 # Changelog
 
+### docs(vault-ingress) — record which assessor owns persisted citations (#167)
+
+`persisted_pattern_observations.py` audits container shape, detection shape,
+catalog identity, confidence, evidence text, and dimensions, and stops there.
+#167's second acceptance criterion also names evidence citations and source
+inspection, so the module reads as if it forgot two checks, and the obvious fix
+is to reuse the return path's `validate_evidence_citations` and
+`validate_source_inspection` — one implementation cannot drift from itself.
+
+That fix is wrong, and wrong in a way the reader only discovers by shipping it.
+Those validators enforce the worker-side field sets. A canonically persisted
+citation is the worker's citation plus what the engine resolved onto it:
+
+```
+{"source": "transcript", "channel": "transcript", "quote": "...",
+ "line_start": 1, "line_end": 1, "artifact_root": "vault",
+ "artifact_path": "transcripts/talk.txt", "artifact_sha256": "aaaa..."}
+```
+
+Everything after `quote` is an unknown field to `EVIDENCE_CITATION_FIELDS`, and
+persisted `source_inspection` gains `line_count`, artifact identity, and
+`coverage_complete` the same way. The check would have reported
+`detection_evidence_citations_invalid` on every correctly persisted talk in the
+vault, and #294's fail-closed writer would then have refused to render any of
+them. `tests/test_write_analysis.py::test_cli_renders_persisted_locations_not_model_locations`
+is what caught it.
+
+The persisted contract already exists in `_v5_projection_freshness_reasons`
+inside `assess_persisted_pattern_evidence_freshness`, and is stricter than the
+duplicate would have been: citations present and non-empty, each falling within
+the recorded `source_inspection`, each bound to the artifact identity it was
+read from, and an `evidence_sources` that disagrees with the inspection
+rejected. It is required at `EVIDENCE_BOUND_SCORING_SCHEMA_VERSION` — a caller
+that omits it raises rather than silently passing, the fail-open shape #304
+recorded.
+
+The split is now in the module docstring and pinned by
+`test_source_location_defects_belong_to_the_freshness_assessor`, which asserts
+both halves: the structural classifier stays silent on a source-location
+defect, and the freshness assessor reports `source_inspection_missing` for the
+same talk. Asserting only the silence would pin a hole rather than a boundary.
+
+
 ## 0.20.88 — 2026-08-18
 
 ### feat(vault-ingress) — bind video derivatives to the exact source bytes (#216)
