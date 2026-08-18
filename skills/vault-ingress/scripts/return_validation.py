@@ -3018,9 +3018,9 @@ def _validate_adherence_comparison(
         )
     comparison_score = comparison.get("talk_pattern_score")
     # The comparison restates the score the block already carries, so it takes
-    # that generation's type: fractional under weighted arithmetic, integer under
-    # a count difference. Requiring an integer of both would reject every valid
-    # weighted return that reports an adherence comparison.
+    # that generation's type: any number under weighted arithmetic, integer
+    # under a count difference. Requiring an integer of both would reject every
+    # valid weighted return that reports an adherence comparison.
     weighted = return_schema_version in WEIGHTED_SCORE_RETURN_SCHEMA_VERSIONS
     if isinstance(comparison_score, bool):
         numeric = False
@@ -3737,10 +3737,11 @@ def validate_persisted_v2_analysis_state(talk: dict) -> None:
             )
     score = observations["pattern_score"]
     if weighted:
-        # A weighted aggregate is a sum of 1.0/0.5/0.25 terms, so it is
-        # fractional by construction. It is admitted ONLY at this generation:
-        # a flat score is count(patterns) minus count(antipatterns) and a float
-        # there means a different arithmetic produced it.
+        # A weighted aggregate is a sum of 1.0/0.5/0.25 terms, so it MAY be
+        # fractional — a whole one is valid, and `test_a_whole_weighted_score_
+        # stays_valid` pins that. A fraction is admitted ONLY at this
+        # generation: a flat score is count(patterns) minus count(antipatterns)
+        # and a float there means a different arithmetic produced it.
         if isinstance(score, bool) or not isinstance(score, (int, float)):
             raise ReturnValidationError(
                 "weighted persisted pattern snapshot pattern_score must be a number"

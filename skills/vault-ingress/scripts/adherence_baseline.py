@@ -32,9 +32,11 @@ LEGACY_GENERATION_REASON = "legacy_generation"
 CATALOG_FINGERPRINT_MISMATCH_REASON = "catalog_fingerprint_mismatch"
 SCORING_SCHEMA_VERSION_MISMATCH_REASON = "scoring_schema_version_mismatch"
 PERSISTED_EVIDENCE_STALE_REASON = "persisted_evidence_stale"
-# The scoring generation whose aggregate is confidence-weighted, and therefore
-# fractional. Mirrors `return_validation`; restated rather than imported so this
-# module keeps performing no I/O and importing nothing that loads a catalog.
+# The scoring generation whose aggregate is confidence-weighted, and so MAY be
+# fractional — a whole weighted score is valid (two strong patterns against one
+# strong antipattern is `1.0`). Mirrors `return_validation`; restated rather than
+# imported so this module keeps performing no I/O and importing nothing that
+# loads a catalog.
 WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION = 6
 PERSISTED_OBSERVATIONS_INVALID_REASON = "persisted_observations_invalid"
 EVIDENCE_BOUND_SCORING_SCHEMA_VERSION = 4
@@ -270,9 +272,10 @@ def _resolved_pattern_score(
             "nested pattern_observations.pattern_score"
         )
 
-    # A weighted aggregate is a sum of 1.0/0.5/0.25 terms, so it is fractional
-    # by construction. The flat generation still requires an integer: a float
-    # there means arithmetic other than count-minus-count produced it.
+    # A weighted aggregate is a sum of 1.0/0.5/0.25 terms, so it MAY be
+    # fractional and is admitted as any number. The flat generation still
+    # requires an integer: a float there means arithmetic other than
+    # count-minus-count produced it.
     require = _require_number if weighted else _require_integer
     validated_top = require(top_score, f"{filename}.pattern_score")
     validated_nested = require(

@@ -593,6 +593,129 @@ class TestAWeightedReturnReachesTheDatabase:
             )
 
 
+class TestTheMergedWeightedRecordValidatesAsPersistedState:
+    """#299's last bullet: the chain runs to `validate_persisted_v2_analysis_state`.
+
+    `TestAWeightedReturnReachesTheDatabase` stops at `merge_talk`, so the
+    weighted shape was never put to the validator that gates publication —
+    `persist-results.validate_effective_v2_state` and `write-analysis` both
+    call it, and it accepts a snapshot only when the observation field set is
+    one of four exact sets. A v6 record reaching it while only the v5 branch
+    was wired would read as "noncanonical fields" at the first real persist.
+    """
+
+    @pytest.fixture
+    def catalog(self, return_validation):
+        return _weighted_catalog(return_validation)
+
+    @pytest.fixture
+    def stored(
+        self,
+        persist_results,
+        return_validation,
+        transcript_timing,
+        tmp_path,
+        catalog,
+    ):
+        raw, _ = _v6_return(return_validation, catalog, bare=True)
+        talk, _ = _merge_v6(
+            persist_results,
+            return_validation,
+            transcript_timing,
+            tmp_path,
+            catalog,
+            raw,
+        )
+        return talk
+
+    def test_a_merged_weighted_record_validates_as_persisted_state(
+        self, return_validation, stored
+    ):
+        return_validation.validate_persisted_v2_analysis_state(stored)
+
+    def test_it_validated_on_the_weighted_branch_and_not_a_laxer_one(self, stored):
+        """Four field sets are accepted, so "it validated" names no branch.
+
+        The v6 set is v5 plus the basis, so a record that lost its basis
+        validates cleanly as a v5 one. Pinning the set is what distinguishes
+        the weighted shape reaching its own branch from it falling through.
+
+        Spelled out rather than compared against
+        `V6_PERSISTED_PATTERN_OBSERVATION_FIELDS`: that constant is what the
+        validator itself reads, so comparing the record to it passes whenever
+        the record and the validator agree — including when both drop
+        `pattern_score_basis` and the weighted contract quietly stops being
+        required. The literal is the independent statement of the shape;
+        `test_the_declared_v6_shape_is_the_one_the_validator_enforces` pins the
+        constant to it, so moving the constant fails here rather than silently
+        redefining what v6 means.
+        """
+        assert set(stored["pattern_observations"]) == {
+            "antipattern_ids",
+            "antipatterns_detected",
+            "applicability_assessments",
+            "evidence_schema_version",
+            "evidence_sources",
+            "not_evaluable",
+            "not_evaluable_ids",
+            "opportunity_coverage_identity",
+            "pattern_ids",
+            "pattern_outcomes",
+            "pattern_score",
+            "pattern_score_basis",
+            "patterns_detected",
+            "source_inspection",
+        }
+
+    def test_the_declared_v6_shape_is_the_one_the_validator_enforces(
+        self, return_validation, stored
+    ):
+        """Ties the literal above to the constant without either defining the other."""
+        assert set(return_validation.V6_PERSISTED_PATTERN_OBSERVATION_FIELDS) == set(
+            stored["pattern_observations"]
+        )
+
+    def test_a_weighted_record_that_loses_its_basis_is_refused(
+        self, return_validation, stored
+    ):
+        """The basis is not decoration on a v6 record; it is what makes it v6.
+
+        Dropping it leaves exactly the v5 field set, so the validator applies
+        the FLAT contract — and the flat contract's score is
+        count(patterns) minus count(antipatterns), an integer. The weighted
+        fraction the record still carries is what fails. A weighted number with
+        no arithmetic behind it never reaches a reader.
+        """
+        stored["pattern_observations"].pop("pattern_score_basis")
+
+        with pytest.raises(
+            return_validation.ReturnValidationError,
+            match="pattern_score must be an integer",
+        ):
+            return_validation.validate_persisted_v2_analysis_state(stored)
+
+    def test_the_weighted_shape_is_a_closed_set_at_this_validator(
+        self, return_validation, stored
+    ):
+        """Otherwise the v6 branch reads as "v5 plus whatever else you sent"."""
+        stored["pattern_observations"]["pattern_score_provenance"] = "worker"
+
+        with pytest.raises(
+            return_validation.ReturnValidationError, match="noncanonical fields"
+        ):
+            return_validation.validate_persisted_v2_analysis_state(stored)
+
+    def test_the_production_gate_accepts_it_through_the_same_call(
+        self, persist_results, return_validation, stored
+    ):
+        """`validate_effective_v2_state` is what persist-results actually runs."""
+        persist_results.validate_effective_v2_state(
+            stored,
+            stored["structured_data"],
+            pattern_snapshot_replaced=True,
+        )
+
+
 class TestTheWeightedRecordReadsBackFresh:
     """#317: the record persisted, and then every consumer refused it.
 
@@ -708,6 +831,24 @@ class TestTheWeightedRecordReadsBackFresh:
         counts = talk["pattern_observations"]["pattern_score_basis"]["patterns"]
         level = next(level for level, count in counts.items() if count == 1)
         counts[level] = True
+
+        assert self._reasons(return_validation, talk, vault, catalog) == (
+            "pattern_score_basis_projection_drift",
+        )
+
+    def test_a_boolean_weight_does_not_pass_as_the_one_it_equals(
+        self, return_validation, catalog, stored
+    ):
+        """`True == 1.0`, so the weight table needs the same type gate as the counts.
+
+        #322: the counts and the schema version were type-checked on the way
+        back out; the weights got value equality alone, so a basis claiming
+        `strong: true` replayed as the table the lanes require.
+        """
+        talk, vault, _ = stored
+        weights = talk["pattern_observations"]["pattern_score_basis"]["weights"]
+        level = next(level for level, weight in weights.items() if weight == 1.0)
+        weights[level] = True
 
         assert self._reasons(return_validation, talk, vault, catalog) == (
             "pattern_score_basis_projection_drift",
