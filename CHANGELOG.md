@@ -42,16 +42,26 @@ would have let an assessment claim a generation the database itself refuses;
 could have read. `tracking_database` imports this module, so the contract is
 mirrored rather than imported, and a test pins the two together.
 
-`read_deck_identity_facts` digests the descriptor it already holds and returns
-that generation with the facts, so the two are the same bytes by construction.
-Collecting them separately does not work, and the policy reviewer caught both
-ways of getting it wrong: fingerprinting the path in a second open lets a deck
-replaced between the opens hand generation B's digest to facts read from A, and
-bracketing the read with a fingerprint on each side is walked straight through
-by an A→B→A replacement, where `before == after` while the facts came from B.
-Two opens of one path are not two views of one file. A descriptor keeps pointing
-at the inode it was opened on, which is what removes the window rather than
-narrowing it.
+`read_deck_identity_facts` copies the deck into a private spool once, digesting
+as it copies, and parses that snapshot. The digest and the facts are then the
+same bytes by construction.
+
+Three weaker versions were tried and each was defeated, all three caught by the
+policy reviewer:
+
+- fingerprinting the path in a second open — a deck replaced between the opens
+  hands generation B's digest to facts parsed from A;
+- bracketing the read with a fingerprint on each side — an A→B→A replacement
+  walks straight through it, since `before == after` while the facts came
+  from B;
+- digest-then-seek-then-parse on one descriptor — survives the path being
+  repointed, but a descriptor does not freeze the inode, so a writer that
+  truncates and overwrites the same file between the two reads still yields an
+  identity describing different bytes from the facts.
+
+The window is not narrowable by comparing more, because every version above
+reads the live file twice. Copying once removes the second read instead of
+racing it.
 
 The generation check runs last in the refusal order. Everything above it asks
 whether the assessment is a coherent proof; this asks whether it is a proof

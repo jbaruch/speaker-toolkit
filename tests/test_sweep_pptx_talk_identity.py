@@ -39,6 +39,7 @@ def _load_script(module_name: str, filename: str):
 
 
 sweep = _load_script("sweep_pptx_talk_identity", "sweep-pptx-talk-identity.py")
+import pptx_deck_facts  # noqa: E402  (SCRIPTS joins sys.path above)
 
 
 VOXXED_TALK = {
@@ -177,6 +178,43 @@ class TestTheGenerationComesFromTheBytesThatWereRead:
             sweep.read_deck_identity_facts(relative, source_root).source_identity
             != recorded
         )
+
+    def test_the_generation_survives_the_file_being_rewritten_in_place(
+        self, source_root: Path, monkeypatch
+    ) -> None:
+        """The case a descriptor alone does NOT cover.
+
+        A descriptor survives the path being repointed, but it does not freeze
+        the inode: a writer that truncates and overwrites the same file between
+        a digest pass and a parse pass still produces an identity describing
+        different bytes from the facts. The deck is copied into a private spool
+        before anything parses it, so the mutation lands on a file nothing is
+        reading any more.
+        """
+        relative = deck(source_root, "Conference/2024/DevOps for Developers.pptx")
+        target = source_root / relative
+        original_bytes = target.read_bytes()
+        real_read = pptx_deck_facts._read_from_stream
+
+        def mutate_then_parse(handle, pptx_path, facts):
+            # Rewrite the LIVE file in place, keeping the same inode, at the
+            # moment the parse begins.
+            with open(target, "r+b") as live:
+                live.seek(0)
+                live.write(b"\x00" * 512)
+                live.truncate(512)
+            return real_read(handle, pptx_path, facts)
+
+        monkeypatch.setattr(pptx_deck_facts, "_read_from_stream", mutate_then_parse)
+
+        reading = sweep.read_deck_identity_facts(relative, source_root)
+
+        assert reading.package_read, "the parse read the snapshot, not the corpse"
+        assert reading.source_identity == {
+            "algorithm": "sha256",
+            "digest": hashlib.sha256(original_bytes).hexdigest(),
+            "size_bytes": len(original_bytes),
+        }
 
     def test_a_deck_that_holds_still_is_assessed_normally(
         self, source_root: Path
