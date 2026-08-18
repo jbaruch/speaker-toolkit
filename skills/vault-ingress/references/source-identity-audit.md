@@ -154,14 +154,18 @@ Stable finding codes:
 | `provider_title_mismatch` | Provider title lacks material full-title or explicit base-title agreement |
 | `provider_event_mismatch` | Provider title explicitly names a known event different from the catalog conference |
 | `provider_duration_mismatch` | Provider duration exceeds the audit's deterministic catalog tolerance |
-| `provider_upload_predates_catalog` | Upload date predates the cataloged delivery date |
+| `provider_upload_predates_catalog` | Upload date predates the cataloged delivery, compared at the catalog record's own precision |
 | `stored_source_identity_differs` | Fresh stable facts differ from an existing evidence block |
 | `likely_non_delivery_clip` | Conservative title/duration signals suggest a demo, teaser, excerpt, or other non-delivery artifact |
 | `same_id_cross_talk_collision` | One ID is active on records with materially different titles or delivery dates |
 
 Title and explicit-event comparison are separate: an abbreviated title cannot
 waive a delivery's event identity. Their matching contract is owned by
-`skills/vault-ingress/scripts/source_identity_matching.py`. The non-delivery
+`skills/vault-ingress/scripts/source_identity_matching.py`, which also owns the
+catalog-date reading and the upload comparison this audit and preflight share —
+see `parse_catalog_date` and `upload_predates_catalog`. A catalog record dated
+`YYYY` is compared at year precision, never skipped, so this audit and the
+preflight gate return the same verdict on the same record. The non-delivery
 finding is a review signal, never an automatic rejection. Its conservative
 signal combination is owned by
 `skills/vault-ingress/scripts/audit-source-identities.py` in
