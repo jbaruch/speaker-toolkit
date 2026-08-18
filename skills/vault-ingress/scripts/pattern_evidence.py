@@ -3795,19 +3795,33 @@ def _basis_count_typed(value: object) -> bool:
     return not isinstance(value, bool) and isinstance(value, int) and value >= 0
 
 
+def _basis_weight_typed(value: object) -> bool:
+    """A weight is a number. `True == 1.0`, so a bool is not one.
+
+    Mirrors the write-side check in `return_validation._validate_score_basis_types`
+    over the same `weights` map.
+    """
+    return not isinstance(value, bool) and isinstance(value, (int, float))
+
+
 def _basis_projection_drifted(basis: object, wanted: Mapping[str, object]) -> bool:
     """Whether a persisted basis fails to project its own detection lanes.
 
-    Value equality alone does not settle it: Python makes `True == 1` and
-    `6.0 == 6`, so a basis carrying boolean counts or a float schema version
-    compares equal to the object the lanes require and passes every later
-    reader as verified.
+    Value equality alone does not settle it: Python makes `True == 1`,
+    `True == 1.0` and `6.0 == 6`, so a basis carrying boolean counts, boolean
+    weights, or a float schema version compares equal to the object the lanes
+    require and passes every later reader as verified.
     """
     if not isinstance(basis, Mapping) or basis != wanted:
         return True
     if not _basis_count_typed(basis.get("schema_version")):
         return True
     if not _basis_count_typed(basis.get("not_evaluable_count")):
+        return True
+    weights = basis.get("weights")
+    if not isinstance(weights, Mapping) or not all(
+        _basis_weight_typed(weight) for weight in weights.values()
+    ):
         return True
     for lane in ("patterns", "antipatterns"):
         counts = basis.get(lane)

@@ -713,6 +713,24 @@ class TestTheWeightedRecordReadsBackFresh:
             "pattern_score_basis_projection_drift",
         )
 
+    def test_a_boolean_weight_does_not_pass_as_the_one_it_equals(
+        self, return_validation, catalog, stored
+    ):
+        """`True == 1.0`, so the weight table needs the same type gate as the counts.
+
+        #322: the counts and the schema version were type-checked on the way
+        back out; the weights got value equality alone, so a basis claiming
+        `strong: true` replayed as the table the lanes require.
+        """
+        talk, vault, _ = stored
+        weights = talk["pattern_observations"]["pattern_score_basis"]["weights"]
+        level = next(level for level, weight in weights.items() if weight == 1.0)
+        weights[level] = True
+
+        assert self._reasons(return_validation, talk, vault, catalog) == (
+            "pattern_score_basis_projection_drift",
+        )
+
     def test_an_unstamped_record_is_replayed_under_no_arithmetic_at_all(
         self, return_validation, catalog, stored
     ):
