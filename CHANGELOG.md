@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.89 — 2026-08-18
+
 ### docs(vault-ingress) — record which assessor owns persisted citations (#167)
 
 `persisted_pattern_observations.py` audits container shape, detection shape,
