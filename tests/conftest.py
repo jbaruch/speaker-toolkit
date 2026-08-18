@@ -2,6 +2,9 @@
 
 import importlib.util
 import os
+import pathlib
+import shutil
+import subprocess
 import sys
 
 import pytest
@@ -164,6 +167,126 @@ def video_evidence():
     return _import_script(
         os.path.join(SCRIPTS_VI, "video_evidence.py"),
         "video_evidence",
+    )
+
+
+_TINY_VIDEO_BYTES: bytes | None = None
+
+
+def write_tiny_video(path):
+    """Materialize one valid MP4 while keeping ffmpeg local to video tests."""
+    global _TINY_VIDEO_BYTES
+    path = pathlib.Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if _TINY_VIDEO_BYTES is not None:
+        path.write_bytes(_TINY_VIDEO_BYTES)
+        return path
+
+    ffmpeg = shutil.which("ffmpeg")
+    assert ffmpeg is not None, "source-video tests require ffmpeg"
+    assert shutil.which("ffprobe") is not None, "source-video tests require ffprobe"
+    created = subprocess.run(
+        [
+            ffmpeg,
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=160x90:r=1",
+            "-t",
+            "1",
+            "-an",
+            "-c:v",
+            "mpeg4",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            "-y",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert created.returncode == 0, created.stderr
+    _TINY_VIDEO_BYTES = path.read_bytes()
+    return path
+
+
+def synthetic_video_source_receipt(
+    *,
+    size_bytes: int = 4096,
+    digest: str = "0" * 64,
+    duration_seconds: float = 8.0,
+):
+    """Build a receipt for manifest fixtures that never touch a real video.
+
+    Routed through the shipped builder so a producer-side shape change breaks
+    these fixtures instead of letting them drift into a shape the readers no
+    longer accept. Every field is fixed; nothing here reads the clock.
+    """
+    video_evidence = _import_script(
+        os.path.join(SCRIPTS_VI, "video_evidence.py"),
+        "video_evidence",
+    )
+    artifact_supervisor = _import_script(
+        os.path.join(SCRIPTS_VI, "artifact_supervisor.py"),
+        "artifact_supervisor",
+    )
+    artifact_metadata = _import_script(
+        os.path.join(SCRIPTS_VI, "artifact_metadata.py"),
+        "artifact_metadata",
+    )
+    generation = artifact_supervisor.FileGeneration(
+        size=size_bytes,
+        mtime_ns=1,
+        ctime_ns=1,
+        device=1,
+        inode=1,
+        mode=0o100644,
+        flags=0,
+        file_attributes=None,
+    )
+    return video_evidence.build_video_source_receipt(
+        video_evidence.VideoArtifactProbe(
+            generation=generation,
+            root_generation=None,
+            availability=artifact_metadata.ArtifactAvailability.from_generation(
+                generation
+            ),
+            source_sha256=digest,
+            source_size_bytes=size_bytes,
+            duration_seconds=duration_seconds,
+            duration_source="format",
+            container_family="iso_bmff",
+            stream_count=2,
+            video_stream_count=1,
+            audio_stream_count=1,
+            attached_picture_count=0,
+            other_stream_count=0,
+            parser_diagnostics=artifact_supervisor.DiagnosticReceipt.empty(),
+        )
+    )
+
+
+def video_source_receipt_for(path):
+    """Return the receipt a real bounded probe yields for one source video.
+
+    Manifest fixtures stamp this exactly as the extractor does, so the tests
+    exercise the shipped receipt contract rather than a hand-written shape that
+    could drift away from it. The probe cache keys on the file generation, so
+    repeated calls for one fixture video cost a stat.
+    """
+    video_evidence = _import_script(
+        os.path.join(SCRIPTS_VI, "video_evidence.py"),
+        "video_evidence",
+    )
+    return video_evidence.build_video_source_receipt(
+        video_evidence.VideoEvidenceAssessment().probe(str(path))
     )
 
 

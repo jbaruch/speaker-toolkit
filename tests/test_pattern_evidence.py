@@ -25,21 +25,39 @@ SCRIPTS = Path(__file__).parents[1] / "skills" / "vault-ingress" / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+artifact_supervisor = importlib.import_module("artifact_supervisor")
+artifact_metadata = importlib.import_module("artifact_metadata")
 pattern_evidence = importlib.import_module("pattern_evidence")
 pdf_evidence = importlib.import_module("pdf_evidence")
 pptx_evidence = importlib.import_module("pptx_evidence")
 return_validation = importlib.import_module("return_validation")
 transcript_timing = importlib.import_module("transcript_timing")
+video_evidence = importlib.import_module("video_evidence")
 SYNTHETIC_VIDEO_ID = "abcdefghijk"
 SYNTHETIC_DURATION = 600.0
 
 
+def _video_generation(size: int) -> Any:
+    """Fixed, local-availability generation; nothing here reads the clock."""
+    return artifact_supervisor.FileGeneration(
+        size=size,
+        mtime_ns=1,
+        ctime_ns=1,
+        device=1,
+        inode=1,
+        mode=0o100644,
+        flags=0,
+        file_attributes=None,
+    )
+
+
 def _video_probe(path: Path, *, duration: float = SYNTHETIC_DURATION) -> Any:
     raw = path.read_bytes()
+    generation = _video_generation(len(raw))
     return pattern_evidence.VideoArtifactProbe(
-        generation=SimpleNamespace(),
+        generation=generation,
         root_generation=None,
-        availability=SimpleNamespace(state="local"),
+        availability=artifact_metadata.ArtifactAvailability.from_generation(generation),
         source_sha256=hashlib.sha256(raw).hexdigest(),
         source_size_bytes=len(raw),
         duration_seconds=duration,
@@ -73,14 +91,23 @@ class _TestVideoAssessment:
         return _video_probe(video_path, duration=self.duration)
 
 
+def _source_receipt(source_video: Path, *, duration: float = SYNTHETIC_DURATION):
+    """Stamp the receipt the synthetic probe of this exact file would yield."""
+    return video_evidence.build_video_source_receipt(
+        _video_probe(source_video, duration=duration)
+    )
+
+
 def _untrusted_video_manifest(vault: Path, source_video: Path) -> dict[str, Any]:
     context_pdf = source_video.with_suffix(".context.pdf")
     _write_pdf(context_pdf, page_count=1)
     source_path = source_video.relative_to(vault).as_posix()
+    receipt = _source_receipt(source_video)
     return {
-        "schema_version": 3,
+        "schema_version": return_validation.VIDEO_EXTRACTION_SCHEMA_VERSION,
         "source_video_id": SYNTHETIC_VIDEO_ID,
         "source_video_path": source_path,
+        "source_receipt": receipt,
         "unique_frame_count": 1,
         "slide_region_method": "none",
         "slide_region_applied": False,
@@ -94,6 +121,7 @@ def _untrusted_video_manifest(vault: Path, source_video: Path) -> dict[str, Any]
                 "page_count": 1,
                 "source_video_id": SYNTHETIC_VIDEO_ID,
                 "source_video_path": source_path,
+                "source_receipt": copy.deepcopy(receipt),
                 "crop_verified": False,
                 "trusted_for_authored_slide_analysis": False,
             }
@@ -919,14 +947,20 @@ def test_foreign_video_manifest_pdf_never_reaches_current_context_probe(
         "probe_pdf_artifact",
         lambda *_args, **_kwargs: pytest.fail("foreign manifest PDF reached probe"),
     )
+    source_video = tmp_path / "vault" / f"{SYNTHETIC_VIDEO_ID}.mp4"
+    source_video.parent.mkdir(parents=True, exist_ok=True)
+    source_video.write_bytes(b"source bytes")
+    receipt = _source_receipt(source_video)
     manifest = {
         "unique_frame_count": 1,
+        "source_receipt": receipt,
         "artifacts": [
             {
                 "artifact_scope": "slide_region",
                 "source_video_id": SYNTHETIC_VIDEO_ID,
                 "page_count": 1,
                 "path": foreign_pdf,
+                "source_receipt": copy.deepcopy(receipt),
             }
         ],
     }
@@ -944,7 +978,7 @@ def test_foreign_video_manifest_pdf_never_reaches_current_context_probe(
     assert foreign_pdf not in str(caught.value)
 
 
-def test_schema_v3_manifest_source_takes_precedence_over_top_level_video_path(
+def test_current_manifest_source_takes_precedence_over_top_level_video_path(
     tmp_path: Path,
 ) -> None:
     vault = tmp_path / "vault"
@@ -965,7 +999,9 @@ def test_schema_v3_manifest_source_takes_precedence_over_top_level_video_path(
             "video_local_path": legacy_video.relative_to(vault).as_posix(),
             "structured_data": {
                 "video_extraction": {
-                    "schema_version": 3,
+                    "schema_version": (
+                        return_validation.VIDEO_EXTRACTION_SCHEMA_VERSION
+                    ),
                     "source_video_id": SYNTHETIC_VIDEO_ID,
                     "source_video_path": manifest_video.relative_to(vault).as_posix(),
                 }
@@ -982,7 +1018,7 @@ def test_schema_v3_manifest_source_takes_precedence_over_top_level_video_path(
     assert assessment.calls == [manifest_video]
 
 
-def test_schema_v3_video_identity_stays_fresh_through_a_symlinked_vault_root(
+def test_current_video_identity_stays_fresh_through_a_symlinked_vault_root(
     tmp_path: Path,
 ) -> None:
     storage = tmp_path / "vault-storage"
@@ -998,7 +1034,7 @@ def test_schema_v3_video_identity_stays_fresh_through_a_symlinked_vault_root(
     source_video.parent.mkdir(parents=True)
     source_video.write_bytes(b"canonical storage video bytes")
     manifest = {
-        "schema_version": 3,
+        "schema_version": return_validation.VIDEO_EXTRACTION_SCHEMA_VERSION,
         "source_video_id": SYNTHETIC_VIDEO_ID,
         "source_video_path": os.fspath(source_video),
     }
@@ -1434,13 +1470,16 @@ def test_current_video_manifest_bounds_bad_second_context_pdf_before_persistence
     _write_pdf(slide_region, page_count=1)
     source_video = rebuild / f"{SYNTHETIC_VIDEO_ID}.mp4"
     source_video.write_bytes(b"synthetic video")
+    receipt = _source_receipt(source_video)
     shared = {
         "page_count": 1,
         "source_video_id": SYNTHETIC_VIDEO_ID,
         "source_video_path": os.fspath(source_video),
+        "source_receipt": receipt,
     }
     manifest = {
-        "schema_version": 3,
+        "schema_version": return_validation.VIDEO_EXTRACTION_SCHEMA_VERSION,
+        "source_receipt": receipt,
         "source_video_id": SYNTHETIC_VIDEO_ID,
         "source_video_path": os.fspath(source_video),
         "unique_frame_count": 1,
@@ -1502,10 +1541,12 @@ def test_promoted_video_pdf_must_match_trusted_slide_region_digest(
     with promoted.open("wb") as stream:
         writer.write(stream)
     source_path = source_video.relative_to(vault).as_posix()
+    receipt = _source_receipt(source_video)
     manifest = {
-        "schema_version": 3,
+        "schema_version": return_validation.VIDEO_EXTRACTION_SCHEMA_VERSION,
         "source_video_id": SYNTHETIC_VIDEO_ID,
         "source_video_path": source_path,
+        "source_receipt": receipt,
         "unique_frame_count": 1,
         "slide_region_method": "manual",
         "slide_region_applied": True,
@@ -1519,6 +1560,7 @@ def test_promoted_video_pdf_must_match_trusted_slide_region_digest(
                 "page_count": 1,
                 "source_video_id": SYNTHETIC_VIDEO_ID,
                 "source_video_path": source_path,
+                "source_receipt": copy.deepcopy(receipt),
                 "crop_verified": True,
                 "trusted_for_authored_slide_analysis": True,
             }
@@ -1574,10 +1616,12 @@ def test_persisted_context_manifest_reanalysis_never_touches_pdf_in_owner(
     _write_pdf(context, page_count=1)
     source_video = rebuild / f"{SYNTHETIC_VIDEO_ID}.mp4"
     source_video.write_bytes(b"synthetic video")
+    receipt = _source_receipt(source_video)
     manifest = {
-        "schema_version": 3,
+        "schema_version": return_validation.VIDEO_EXTRACTION_SCHEMA_VERSION,
         "source_video_id": SYNTHETIC_VIDEO_ID,
         "source_video_path": os.fspath(source_video),
+        "source_receipt": receipt,
         "unique_frame_count": 1,
         "slide_region_method": "none",
         "slide_region_applied": False,
@@ -1591,6 +1635,7 @@ def test_persisted_context_manifest_reanalysis_never_touches_pdf_in_owner(
                 "page_count": 1,
                 "source_video_id": SYNTHETIC_VIDEO_ID,
                 "source_video_path": os.fspath(source_video),
+                "source_receipt": copy.deepcopy(receipt),
                 "crop_verified": False,
                 "trusted_for_authored_slide_analysis": False,
             }
@@ -3758,4 +3803,104 @@ def test_verified_local_artifact_still_validates_slide_evidence(
             evidence_channels=frozenset({"slides"}),
             evidence_metadata_fields=frozenset(),
             context=context,
+        )
+
+
+def test_replaced_source_video_withdraws_authored_slide_trust(
+    tmp_path: Path,
+) -> None:
+    """The crop stayed verified; the bytes it was cropped from did not."""
+    vault = tmp_path / "vault"
+    rebuild = vault / "slides-rebuild" / SYNTHETIC_VIDEO_ID
+    rebuild.mkdir(parents=True)
+    source_video = rebuild / f"{SYNTHETIC_VIDEO_ID}.mp4"
+    source_video.write_bytes(b"the bytes the crop came from")
+    slide_region = rebuild / f"{SYNTHETIC_VIDEO_ID}.slide-region.pdf"
+    _write_pdf(slide_region, page_count=1)
+    receipt = _source_receipt(source_video)
+    source_path = source_video.relative_to(vault).as_posix()
+    manifest = {
+        "schema_version": return_validation.VIDEO_EXTRACTION_SCHEMA_VERSION,
+        "source_video_id": SYNTHETIC_VIDEO_ID,
+        "source_video_path": source_path,
+        "source_receipt": receipt,
+        "unique_frame_count": 1,
+        "slide_region_method": "manual",
+        "slide_region_applied": True,
+        "slide_region_verified": True,
+        "review_required": False,
+        "review_reason": None,
+        "artifacts": [
+            {
+                "path": slide_region.relative_to(vault).as_posix(),
+                "artifact_scope": "slide_region",
+                "page_count": 1,
+                "source_video_id": SYNTHETIC_VIDEO_ID,
+                "source_video_path": source_path,
+                "source_receipt": copy.deepcopy(receipt),
+                "crop_verified": True,
+                "trusted_for_authored_slide_analysis": True,
+            }
+        ],
+    }
+    owner = {"structured_data": {"video_extraction": manifest}}
+
+    probe, reason, path = pattern_evidence._trusted_video_slide_probe(
+        vault,
+        owner,
+        SYNTHETIC_VIDEO_ID,
+        video_evidence_assessment=_TestVideoAssessment(),
+    )
+    assert probe is not None
+    assert path is not None
+
+    source_video.write_bytes(b"a different recording at the same path")
+
+    probe, reason, path = pattern_evidence._trusted_video_slide_probe(
+        vault,
+        owner,
+        SYNTHETIC_VIDEO_ID,
+        video_evidence_assessment=_TestVideoAssessment(),
+    )
+
+    assert probe is None
+    assert path is None
+    assert "not the content the trusted slide-region PDF was extracted from" in reason
+    assert "source_sha256" in reason
+
+
+def test_derivatives_from_two_runs_are_rejected_before_persistence(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    rebuild = vault / "slides-rebuild" / SYNTHETIC_VIDEO_ID
+    rebuild.mkdir(parents=True)
+    source_video = rebuild / f"{SYNTHETIC_VIDEO_ID}.mp4"
+    source_video.write_bytes(b"this run's source")
+    other_source = rebuild / "other.mp4"
+    other_source.write_bytes(b"another run's source")
+    context = rebuild / f"{SYNTHETIC_VIDEO_ID}.context.pdf"
+    _write_pdf(context, page_count=1)
+    manifest = {
+        "unique_frame_count": 1,
+        "source_receipt": _source_receipt(source_video),
+        "artifacts": [
+            {
+                "path": context.relative_to(vault).as_posix(),
+                "artifact_scope": "full_frame_context",
+                "page_count": 1,
+                "source_video_id": SYNTHETIC_VIDEO_ID,
+                "source_receipt": _source_receipt(other_source),
+            }
+        ],
+    }
+
+    with pytest.raises(
+        pattern_evidence.PatternEvidenceError,
+        match="not bound to the manifest source receipt",
+    ):
+        pattern_evidence._probe_video_manifest_artifacts(
+            vault,
+            manifest,
+            SYNTHETIC_VIDEO_ID,
         )

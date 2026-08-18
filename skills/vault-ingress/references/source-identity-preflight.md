@@ -364,7 +364,7 @@ completeness and must be rerun before an absence conclusion.
   `processed_partial` may intentionally retain only manifest-declared source and
   derivative artifacts.
 - A present video-extracted PDF is not sufficient deck evidence by itself. A
-  completed record also requires a complete schema-v3
+  completed record also requires a complete schema-v4
   `structured_data.video_extraction` manifest, preserved source video and
   artifact paths, and internally consistent frame/page, scope, crop, and trust
   provenance. That manifest is valid only when `slide_source` is
@@ -372,7 +372,7 @@ completeness and must be rerun before an absence conclusion.
   before inspecting any of its paths. Every manifest PDF is independently
   probed and its bounded page count must match the manifest before either
   preflight or current-return persistence accepts the referential unit. Manifest
-  paths reject NUL/dot ambiguity. The schema-v3 source is exactly
+  paths reject NUL/dot ambiguity. The schema-v4 source is exactly
   `<youtube_id>.mp4`; it takes precedence over legacy top-level video path
   fields and must pass the bounded `source-video` evidence probe as a
   root-confined regular ISO-BMFF recording with a usable video stream and
@@ -401,10 +401,20 @@ independently verified transcript, rendered PDF, or native PPTX. A locator,
 root-containment, symlink/reparse, manifest-ID, or exact-basename mismatch
 remains `video_extraction_provenance_invalid`. For a completed record that
 claims the source, an unavailable source is blocking until repaired or the
-record is requeued; independent evidence remains valid. Introducing this probe
-does not itself change schema v3 or force a reparse. Requeue or reparse only when
-a current persisted claim depends on source-video evidence that can no longer be
-verified.
+record is requeued; independent evidence remains valid. Requeue or reparse only
+when a current persisted claim depends on source-video evidence that can no
+longer be verified.
+
+Source-to-derivative lineage is a separate question from source availability. A
+schema-v4 manifest carries the engine-owned `source_receipt` the extraction run
+captured, and preflight compares it against a fresh bounded probe of the same
+path. A source that reads but disagrees is
+`video_extraction_source_lineage_mismatch`, blocking: the saved PDFs describe
+bytes that are no longer there. A schema-v3 record predates the receipt and
+reports `video_extraction_source_receipt_missing` at the caller's severity —
+archival, not corrupt, and repaired only by reacquiring the source video and
+re-extracting. Preflight never stamps a receipt onto a v3 record; a digest
+observed now cannot prove what produced pages saved earlier.
 
 The thirteen stable slide-contract fault classes are:
 

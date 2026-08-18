@@ -179,13 +179,13 @@ explicitly authorizes full transcript/receipt replacement.
      copied to `slides/{youtube_id}.pdf`, recorded as `slides_local_path`, and analyzed
      like an authored PDF deck.
 
-  The return validator recomputes that trust from the complete schema-v3 manifest; it
+  The return validator recomputes that trust from the complete schema-v4 manifest; it
   does not trust `slide_source: "video_extracted"` or an isolated artifact boolean.
   `status: "processed"` requires both the trusted manifest and the promoted top-level
   `slides_local_path: "slides/{youtube_id}.pdf"`. A trusted artifact may still finish
   `processed_partial` when another channel fails, and its verified `slide_region` may
   supply positive `static_slides` evidence even before promotion. It does not
-  authorize an undetected or applicability outcome: extraction schema v3 proves
+  authorize an undetected or applicability outcome: extraction schema v4 proves
   crop/artifact identity, not that sampling, transition filtering, and deduplication
   preserved every delivered visual state. Any return without a promoted
   artifact must omit `slides_local_path` and put `slides_local_path` in `clear_fields`.

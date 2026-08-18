@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 import pytest
+from conftest import synthetic_video_source_receipt
 from pypdf import PdfWriter
 
 
@@ -160,10 +161,12 @@ def _return_with_canonical_visuals():
 def _video_manifest(*, trusted=True, source_video_id="abcDEF12345"):
     root = f"/vault/slides-rebuild/{source_video_id}"
     source_path = f"{root}/{source_video_id}.mp4"
+    receipt = synthetic_video_source_receipt()
     shared = {
         "page_count": 2,
         "source_video_id": source_video_id,
         "source_video_path": source_path,
+        "source_receipt": copy.deepcopy(receipt),
     }
     if trusted:
         region = [0.05, 0.02, 0.78, 0.98]
@@ -199,10 +202,11 @@ def _video_manifest(*, trusted=True, source_video_id="abcDEF12345"):
         review_reason = "No verified slide region is available."
     return {
         "slide_source": "video_extracted",
-        "schema_version": 3,
+        "schema_version": 4,
         "pipeline_version": "0.10.0",
         "source_video_id": source_video_id,
         "source_video_path": source_path,
+        "source_receipt": receipt,
         "total_frames_extracted": 4,
         "unique_frame_count": 2,
         "authored_slide_count": None,
@@ -703,7 +707,7 @@ def test_trusted_video_return_requires_complete_manifest_and_promoted_path(
 
     missing_path = _video_return()
     del missing_path["slides_local_path"]
-    assert "requires a trusted schema-v3" in _error(return_validation, missing_path)
+    assert "requires a trusted schema-v4" in _error(return_validation, missing_path)
 
 
 @pytest.mark.parametrize("version", [None, 1, 2, 3, 4, 5])
@@ -740,7 +744,7 @@ def test_context_video_cannot_promote_or_cite_static_slides(return_validation):
 
     cited = _video_return(trusted=False, promoted=False)
     cited["pattern_observations"]["evidence_sources"].append("static_slides")
-    assert "no trusted schema-v3 slide_region" in _error(return_validation, cited)
+    assert "no trusted schema-v4 slide_region" in _error(return_validation, cited)
 
 
 def test_trusted_unpromoted_video_can_support_partial_static_analysis(
@@ -947,6 +951,32 @@ def test_unavailable_source_gates_must_be_explicitly_not_evaluable(return_valida
                 timestamp_seconds=5.0
             ),
             "must equal frame_index / fps_used",
+        ),
+        (
+            lambda manifest: manifest.pop("source_receipt"),
+            "source_receipt must be a complete engine-owned source-video receipt",
+        ),
+        (
+            lambda manifest: manifest["source_receipt"].update(source_sha256="beef"),
+            "source_receipt.source_sha256 must be a complete engine-owned",
+        ),
+        (
+            lambda manifest: manifest["source_receipt"].update(
+                source_generation=dict(
+                    manifest["source_receipt"]["source_generation"], size=9
+                )
+            ),
+            "source_receipt.source_generation must be a complete engine-owned",
+        ),
+        (
+            lambda manifest: manifest["artifacts"][0].pop("source_receipt"),
+            "artifacts[0].source_receipt must be a complete engine-owned",
+        ),
+        (
+            lambda manifest: manifest["artifacts"][0]["source_receipt"].update(
+                source_sha256="f" * 64
+            ),
+            "artifacts[0].source_receipt must match the manifest source_receipt",
         ),
     ],
 )
@@ -2840,3 +2870,34 @@ def test_validator_cli_reports_every_invalid_return(tmp_path):
     assert "a.md" in result.stderr
     assert "b.md" in result.stderr
     assert "2 validation error(s) across 2 return(s)" in result.stderr
+
+
+def test_archival_v3_manifest_is_rejected_with_its_own_reason(return_validation):
+    """v3 is readable history, never a current claim, and never auto-upgraded."""
+    value = _video_return(trusted=False, promoted=False)
+    manifest = value["structured_data"]["video_extraction"]
+    manifest["schema_version"] = 3
+    manifest.pop("source_receipt")
+    for artifact in manifest["artifacts"]:
+        artifact.pop("source_receipt")
+
+    with pytest.raises(return_validation.ReturnValidationError) as caught:
+        return_validation.validate_video_extraction_manifest(
+            {"video_extraction": manifest}
+        )
+
+    assert caught.value.reason_code == "video_extraction.schema_version_archival"
+    # Rejection is the whole response: nothing stamps a receipt after the fact.
+    assert "source_receipt" not in manifest
+
+
+def test_manifest_state_carries_the_canonical_receipt_for_lineage_readers(
+    return_validation,
+):
+    manifest = _video_manifest(trusted=True)
+
+    state = return_validation.validate_video_extraction_manifest(
+        {"video_extraction": manifest}
+    )
+
+    assert state.source_receipt == manifest["source_receipt"]

@@ -58,6 +58,7 @@ from artifact_supervisor import (
 
 VIDEO_PROBE_SCHEMA_VERSION: Final = 1
 VIDEO_PROBE_PIPELINE_VERSION: Final = "1.0.0"
+VIDEO_SOURCE_RECEIPT_SCHEMA_VERSION: Final = 1
 VIDEO_SUPERVISED_WORKER_FLAG: Final = "--supervised-worker"
 VIDEO_METADATA_OPERATION: Final = "video_metadata"
 VIDEO_PROBE_OPERATION: Final = "video_probe"
@@ -105,6 +106,35 @@ _ISO_BMFF_FORMAT_NAMES: Final = frozenset({"mov", "mp4", "m4a", "3gp", "3g2", "m
 _MATROSKA_FORMAT_NAMES: Final = frozenset({"matroska", "webm"})
 _VIDEO_GENERATION_NAMES: Final = frozenset({"video", "video_root"})
 _SHA256_RE: Final = re.compile(r"^[0-9a-f]{64}$")
+_VERSION_TOKEN_RE: Final = re.compile(r"^[0-9A-Za-z._+-]{1,64}$")
+
+# Content-bound receipt facts a later reader compares against a fresh probe of
+# the same path. `source_generation` is deliberately absent: device/inode/mtime
+# are host-local and change on a byte-identical vault move, while the digest
+# already proves the bytes. The generation is bound inside one extraction run
+# (see `video_source_receipt_generation_drift`), never across runs.
+VIDEO_SOURCE_RECEIPT_LINEAGE_FIELDS: Final = (
+    "probe_schema_version",
+    "probe_pipeline_version",
+    "source_sha256",
+    "source_size_bytes",
+    "duration_seconds",
+    "duration_source",
+    "container_family",
+    "stream_count",
+    "video_stream_count",
+    "audio_stream_count",
+    "attached_picture_count",
+    "other_stream_count",
+)
+VIDEO_SOURCE_RECEIPT_FIELDS: Final = (
+    "schema_version",
+    *VIDEO_SOURCE_RECEIPT_LINEAGE_FIELDS,
+    "source_generation",
+)
+# ffprobe reports container duration at the precision the container stores; a
+# parser upgrade may round the final digit differently over identical bytes.
+VIDEO_SOURCE_RECEIPT_DURATION_TOLERANCE_SECONDS: Final = 0.001
 _EXCEPTION_TYPE_RE: Final = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 
 _CHILD_FAILURE_REASONS: Final = frozenset(
@@ -1899,6 +1929,176 @@ def probe_video_artifact(
     )
 
 
+def build_video_source_receipt(probe: VideoArtifactProbe) -> dict[str, JsonValue]:
+    """Return the durable, path-neutral receipt for one exact source generation.
+
+    Every field comes from the bounded probe. No path, no raw ffprobe document,
+    and no parser stderr crosses into the persisted record.
+    """
+    if not isinstance(probe, VideoArtifactProbe):
+        raise _failure("video_source_receipt_invalid", details={"field": "probe"})
+    return {
+        "schema_version": VIDEO_SOURCE_RECEIPT_SCHEMA_VERSION,
+        "probe_schema_version": VIDEO_PROBE_SCHEMA_VERSION,
+        "probe_pipeline_version": VIDEO_PROBE_PIPELINE_VERSION,
+        "source_sha256": probe.source_sha256,
+        "source_size_bytes": probe.source_size_bytes,
+        "duration_seconds": probe.duration_seconds,
+        "duration_source": probe.duration_source,
+        "container_family": probe.container_family,
+        "stream_count": probe.stream_count,
+        "video_stream_count": probe.video_stream_count,
+        "audio_stream_count": probe.audio_stream_count,
+        "attached_picture_count": probe.attached_picture_count,
+        "other_stream_count": probe.other_stream_count,
+        "source_generation": probe.generation.to_dict(),
+    }
+
+
+def _receipt_failure(field: str) -> VideoEvidenceError:
+    return _failure("video_source_receipt_invalid", details={"field": field})
+
+
+def _receipt_int(value: object, field: str, *, minimum: int) -> int:
+    if type(value) is not int or value < minimum:
+        raise _receipt_failure(field)
+    return value
+
+
+def validate_video_source_receipt(value: object) -> dict[str, JsonValue]:
+    """Return one canonical receipt, or reject with a closed, path-free reason.
+
+    The field set is closed: an unknown key is a rejection, never a field a
+    later reader silently drops. Stream counts must partition ``stream_count``
+    exactly as the probe contract requires, and the bound file generation's
+    size must agree with the probed byte count.
+    """
+    if not isinstance(value, Mapping):
+        raise _receipt_failure("source_receipt")
+    if set(value) != set(VIDEO_SOURCE_RECEIPT_FIELDS):
+        raise _receipt_failure("source_receipt")
+    if (
+        type(value.get("schema_version")) is not int
+        or value.get("schema_version") != VIDEO_SOURCE_RECEIPT_SCHEMA_VERSION
+    ):
+        raise _receipt_failure("schema_version")
+    if (
+        type(value.get("probe_schema_version")) is not int
+        or value.get("probe_schema_version") != VIDEO_PROBE_SCHEMA_VERSION
+    ):
+        raise _receipt_failure("probe_schema_version")
+    pipeline = value.get("probe_pipeline_version")
+    if not isinstance(pipeline, str) or _VERSION_TOKEN_RE.fullmatch(pipeline) is None:
+        raise _receipt_failure("probe_pipeline_version")
+    digest = value.get("source_sha256")
+    if not isinstance(digest, str) or _SHA256_RE.fullmatch(digest) is None:
+        raise _receipt_failure("source_sha256")
+    size = _receipt_int(value.get("source_size_bytes"), "source_size_bytes", minimum=1)
+    if size > VIDEO_MAX_INPUT_BYTES:
+        raise _receipt_failure("source_size_bytes")
+    duration = value.get("duration_seconds")
+    if (
+        isinstance(duration, bool)
+        or not isinstance(duration, (int, float))
+        or not math.isfinite(float(duration))
+        or float(duration) <= 0
+    ):
+        raise _receipt_failure("duration_seconds")
+    if value.get("duration_source") not in {"format", "stream"}:
+        raise _receipt_failure("duration_source")
+    if value.get("container_family") not in _CONTAINER_FAMILY_BY_SUFFIX.values():
+        raise _receipt_failure("container_family")
+    stream_count = _receipt_int(value.get("stream_count"), "stream_count", minimum=1)
+    if stream_count > VIDEO_MAX_STREAMS:
+        raise _receipt_failure("stream_count")
+    video_count = _receipt_int(
+        value.get("video_stream_count"), "video_stream_count", minimum=1
+    )
+    audio_count = _receipt_int(
+        value.get("audio_stream_count"), "audio_stream_count", minimum=0
+    )
+    attached_count = _receipt_int(
+        value.get("attached_picture_count"), "attached_picture_count", minimum=0
+    )
+    other_count = _receipt_int(
+        value.get("other_stream_count"), "other_stream_count", minimum=0
+    )
+    if video_count + audio_count + attached_count + other_count != stream_count:
+        raise _receipt_failure("stream_count")
+    raw_generation = value.get("source_generation")
+    if not isinstance(raw_generation, Mapping):
+        raise _receipt_failure("source_generation")
+    try:
+        generation = FileGeneration.from_dict(raw_generation)
+    except ValueError as exc:
+        raise _receipt_failure("source_generation") from exc
+    if generation.size != size:
+        raise _receipt_failure("source_generation")
+    if _availability(generation).state != "local":
+        raise _receipt_failure("source_generation")
+    return {
+        "schema_version": VIDEO_SOURCE_RECEIPT_SCHEMA_VERSION,
+        "probe_schema_version": VIDEO_PROBE_SCHEMA_VERSION,
+        "probe_pipeline_version": pipeline,
+        "source_sha256": digest,
+        "source_size_bytes": size,
+        "duration_seconds": float(duration),
+        "duration_source": cast(str, value.get("duration_source")),
+        "container_family": cast(str, value.get("container_family")),
+        "stream_count": stream_count,
+        "video_stream_count": video_count,
+        "audio_stream_count": audio_count,
+        "attached_picture_count": attached_count,
+        "other_stream_count": other_count,
+        "source_generation": generation.to_dict(),
+    }
+
+
+def video_source_receipt_lineage_drift(
+    receipt: Mapping[str, object],
+    probe: VideoArtifactProbe,
+) -> tuple[str, ...]:
+    """Return the receipt fields a fresh probe of the same path contradicts."""
+    current = build_video_source_receipt(probe)
+    drift = []
+    for name in VIDEO_SOURCE_RECEIPT_LINEAGE_FIELDS:
+        stored = receipt.get(name)
+        live = current[name]
+        if name == "duration_seconds":
+            if (
+                isinstance(stored, bool)
+                or not isinstance(stored, (int, float))
+                or not math.isfinite(float(stored))
+                or not math.isclose(
+                    float(stored),
+                    cast(float, live),
+                    abs_tol=VIDEO_SOURCE_RECEIPT_DURATION_TOLERANCE_SECONDS,
+                )
+            ):
+                drift.append(name)
+            continue
+        if stored != live:
+            drift.append(name)
+    return tuple(drift)
+
+
+def video_source_receipt_generation_drift(
+    receipt: Mapping[str, object],
+    probe: VideoArtifactProbe,
+) -> tuple[str, ...]:
+    """Return every receipt field one extraction run must hold exactly stable.
+
+    The producer calls this after writing its derivatives. Unlike the cross-run
+    lineage check, the bound file generation is included: a same-path
+    replacement inside one run is a replaced source even when the new bytes
+    happen to probe alike.
+    """
+    drift = list(video_source_receipt_lineage_drift(receipt, probe))
+    if receipt.get("source_generation") != probe.generation.to_dict():
+        drift.append("source_generation")
+    return tuple(drift)
+
+
 def _run_supervised_worker_child() -> int:
     request = read_worker_request(max_input_bytes=VIDEO_METADATA_LIMITS.max_input_bytes)
     protocol_output = isolate_protocol_output()
@@ -1963,10 +2163,18 @@ __all__ = [
     "VIDEO_PROBE_LIMITS",
     "VIDEO_PROBE_PIPELINE_VERSION",
     "VIDEO_PROBE_SCHEMA_VERSION",
+    "VIDEO_SOURCE_RECEIPT_DURATION_TOLERANCE_SECONDS",
+    "VIDEO_SOURCE_RECEIPT_FIELDS",
+    "VIDEO_SOURCE_RECEIPT_LINEAGE_FIELDS",
+    "VIDEO_SOURCE_RECEIPT_SCHEMA_VERSION",
     "VIDEO_SUPERVISED_WORKER_FLAG",
     "VideoArtifactProbe",
     "VideoEvidenceAssessment",
     "VideoEvidenceError",
+    "build_video_source_receipt",
     "clear_video_artifact_probe_cache",
     "probe_video_artifact",
+    "validate_video_source_receipt",
+    "video_source_receipt_generation_drift",
+    "video_source_receipt_lineage_drift",
 ]

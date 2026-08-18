@@ -31,6 +31,7 @@ Examples:
 """
 
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -41,6 +42,12 @@ import tempfile
 
 from artifact_locator import ArtifactLocatorError, materialize_native_root
 from ingress_contract import YOUTUBE_ID_RE
+from video_evidence import (
+    VideoEvidenceAssessment,
+    VideoEvidenceError,
+    build_video_source_receipt,
+    video_source_receipt_generation_drift,
+)
 
 # Pipeline version — stamped into every video-extracted vault entry (DB row +
 # PDF metadata) so artifacts record which extraction iteration produced them.
@@ -48,14 +55,14 @@ from ingress_contract import YOUTUBE_ID_RE
 # the download tier, region-detection logic, dedup hashing, or PDF assembly.
 # See skills/vault-ingress/references/video-slide-extraction.md ("Pipeline
 # Versioning") for the policy.
-PIPELINE_VERSION = "0.12.0"
+PIPELINE_VERSION = "0.13.0"
 
 # Shape version of the structured_data.video_extraction record (distinct from
 # PIPELINE_VERSION, which tracks extractor behavior — this tracks the record's
 # field shape). Bump on any field add/remove/rename. Records written before this
 # field existed have no schema_version and are read as the legacy shape (0).
 # See skills/vault-ingress/references/schemas-db.md ("Video Extraction Output Schema").
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 VIDEO_DEPENDENCY_INSTALL = (
     'pip install "ImageHash==4.3.2" "numpy==2.2.6" "Pillow==12.3.0" "filelock==3.32.2"'
@@ -88,6 +95,113 @@ def validate_youtube_id(value: object) -> str:
     if not isinstance(value, str) or YOUTUBE_ID_RE.fullmatch(value) is None:
         raise ValueError("youtube_id_invalid")
     return value
+
+
+class VideoSourceLineageError(RuntimeError):
+    """No derivative could be bound to one exact source-video generation.
+
+    Raised instead of returning a manifest. A schema-4 record exists only when
+    the engine-owned receipt was captured around the same extraction run, so a
+    run that cannot prove that produces no record at all.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason_code: str,
+        details: dict[str, object] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+        self.details = dict(details or {})
+
+
+def _capture_source_receipt(assessment, source_video_path):
+    """Return the engine-owned receipt for the exact source generation."""
+    try:
+        probe = assessment.probe(source_video_path)
+    except VideoEvidenceError as exc:
+        raise VideoSourceLineageError(
+            "source video did not pass bounded evidence inspection — hydrate a "
+            "cloud placeholder, or reacquire the MP4 with "
+            "batch-download-videos.sh, then rerun extraction",
+            reason_code=exc.reason_code,
+            details=dict(exc.details),
+        ) from exc
+    return build_video_source_receipt(probe)
+
+
+def _require_stable_source(assessment, source_video_path, source_receipt):
+    """Fail the run when the source changed while derivatives were produced."""
+    try:
+        probe = assessment.probe(source_video_path)
+    except VideoEvidenceError as exc:
+        raise VideoSourceLineageError(
+            "source video became uninspectable during extraction — restore the "
+            "MP4 at its recorded path and rerun extraction with nothing else "
+            "writing to it",
+            reason_code=exc.reason_code,
+            details=dict(exc.details),
+        ) from exc
+    drift = video_source_receipt_generation_drift(source_receipt, probe)
+    if drift:
+        raise VideoSourceLineageError(
+            "source video was replaced during extraction — no derivatives were "
+            "kept; rerun extraction once the MP4 will stay unchanged for the "
+            "whole run",
+            reason_code="video_source_replaced_during_extraction",
+            details={"drift": list(drift)},
+        )
+
+
+def _discard_unbound_artifacts(staged):
+    """Drop every stage this run wrote, leaving prior derivatives untouched."""
+    for path in staged:
+        _remove_stale_pdf_stage(path)
+
+
+def _commit_bound_artifacts(staged):
+    """Publish this run's staged derivatives once the binding is proven.
+
+    Several destinations cannot be replaced in one portable atomic rename, so
+    each publish moves the prior version aside first and any exit part-way —
+    interrupts included — puts every already-replaced destination back. Callers
+    see the whole set published or none of it, never one run's slide-region PDF
+    beside another run's context PDF. A process the host kills outright cannot
+    run this; `_recover_stale_pdf_publish` repairs that at the next run.
+    """
+    replaced: list[tuple[str, str | None]] = []
+    published = False
+    try:
+        for path in staged:
+            backup = _pdf_backup_path(path)
+            _remove_regular_file(backup)
+            try:
+                os.replace(path, backup)
+            except FileNotFoundError:
+                # Nothing to put back, which is itself state worth recording.
+                backup = None
+                _mark_pdf_absent(path)
+            # Recorded before the publish, not after: the prior version is
+            # already moved aside, so a failure in the publish itself still has
+            # to put it back.
+            replaced.append((path, backup))
+            commit_pdf_stage(path)
+        published = True
+    finally:
+        if not published:
+            for path, backup in reversed(replaced):
+                if backup is None:
+                    _remove_regular_file(path)
+                    _clear_pdf_absent_marker(path)
+                    continue
+                os.replace(backup, path)
+    for path, backup in replaced:
+        if backup is None:
+            _clear_pdf_absent_marker(path)
+        else:
+            _remove_regular_file(backup)
 
 
 def _confined_output_path(output_root: str, filename: str) -> str:
@@ -537,6 +651,8 @@ def review_reason_for_region(region, provenance):
 
 
 _PDF_STAGE_SUFFIX = ".speaker-toolkit-stage.tmp"
+_PDF_BACKUP_SUFFIX = ".speaker-toolkit-prior.tmp"
+_PDF_ABSENT_SUFFIX = ".speaker-toolkit-absent.tmp"
 
 
 def _pdf_stage_path(output_pdf: str) -> str:
@@ -547,6 +663,58 @@ def _pdf_stage_path(output_pdf: str) -> str:
     )
 
 
+def _pdf_backup_path(output_pdf: str) -> str:
+    """Return the deterministic prior-version slot for one PDF destination."""
+    return os.path.join(
+        os.path.dirname(output_pdf),
+        f".{os.path.basename(output_pdf)}{_PDF_BACKUP_SUFFIX}",
+    )
+
+
+def _remove_regular_file(path: str) -> None:
+    """Unlink one file this run owns, tolerating an already-absent leaf."""
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+
+
+def _pdf_absent_marker_path(output_pdf: str) -> str:
+    """Return the deterministic "held nothing" marker for one destination."""
+    return os.path.join(
+        os.path.dirname(output_pdf),
+        f".{os.path.basename(output_pdf)}{_PDF_ABSENT_SUFFIX}",
+    )
+
+
+def _require_regular_recovery_leaf(path: str) -> None:
+    if not stat.S_ISREG(os.lstat(path).st_mode):
+        raise ValueError("video_pdf_recovery_leaf_invalid")
+
+
+def _mark_pdf_absent(output_pdf: str) -> None:
+    """Record that this destination held nothing before the publish.
+
+    Without it, a process killed after this destination publishes and before
+    the run completes leaves a PDF the next run cannot tell from a prior
+    version worth keeping.
+    """
+    marker = _pdf_absent_marker_path(output_pdf)
+    try:
+        # Exclusive create, like the stage: O_CREAT|O_EXCL never follows a
+        # symlink, so a planted link cannot redirect this write.
+        handle = open(marker, "xb")
+    except FileExistsError:
+        raise ValueError("video_pdf_absent_marker_invalid") from None
+    with handle:
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _clear_pdf_absent_marker(output_pdf: str) -> None:
+    _remove_regular_file(_pdf_absent_marker_path(output_pdf))
+
+
 def _remove_stale_pdf_stage(output_pdf: str) -> None:
     """Reclaim the exact stage left by an interrupted prior run."""
     try:
@@ -555,6 +723,27 @@ def _remove_stale_pdf_stage(output_pdf: str) -> None:
         pass
     except IsADirectoryError:
         raise ValueError("video_pdf_stage_invalid") from None
+
+
+def _recover_stale_pdf_publish(output_pdf: str) -> None:
+    """Undo a publish a killed process left half-applied at this destination.
+
+    Both markers exist only inside one run's publish, so finding either means
+    that run never completed and never wrote a manifest. The destination is
+    put back to what a completed run last left there: the prior version, or
+    nothing at all.
+    """
+    marker = _pdf_absent_marker_path(output_pdf)
+    if os.path.exists(marker):
+        _require_regular_recovery_leaf(marker)
+        _remove_regular_file(output_pdf)
+        _remove_regular_file(marker)
+        return
+    backup = _pdf_backup_path(output_pdf)
+    if not os.path.exists(backup):
+        return
+    _require_regular_recovery_leaf(backup)
+    os.replace(backup, output_pdf)
 
 
 def _open_pdf_stage(output_pdf: str):
@@ -582,6 +771,11 @@ def _open_pdf_stage(output_pdf: str):
     return staged_path, staged
 
 
+def commit_pdf_stage(output_pdf: str) -> None:
+    """Publish one staged derivative over its destination."""
+    os.replace(_pdf_stage_path(output_pdf), output_pdf)
+
+
 def combine_to_pdf(
     unique_frames,
     output_pdf,
@@ -590,6 +784,7 @@ def combine_to_pdf(
     source_video_id=None,
     crop_method="none",
     crop_verified=False,
+    commit=True,
 ):
     """Write retained video frames as one explicitly scoped PDF artifact.
 
@@ -597,6 +792,12 @@ def combine_to_pdf(
     Callers write a separate ``full_frame_context`` artifact when room or PiP
     context is useful. PDF metadata names the scope so a context artifact can
     never masquerade as an authored deck after it is separated from the JSON.
+
+    ``commit=False`` leaves the finished pages in this destination's stage and
+    returns the path they are staged for. A caller running several derivatives
+    under one source binding uses it to hold every replacement until the whole
+    run is proven, so a failed re-extraction cannot destroy the artifacts a
+    previous run published. ``commit_pdf_stage`` publishes one such stage.
     """
     if artifact_scope is None:
         artifact_scope = (
@@ -661,11 +862,13 @@ def combine_to_pdf(
             )
             staged.flush()
 
-        os.replace(staged_path, output_pdf)
+        size_mb = os.path.getsize(staged_path) / (1024 * 1024)
+        if commit:
+            os.replace(staged_path, output_pdf)
         staged_path = None
-        size_mb = os.path.getsize(output_pdf) / (1024 * 1024)
+        state = "Saved" if commit else "Staged"
         print(
-            f"  Saved {artifact_scope} PDF: {output_pdf} "
+            f"  {state} {artifact_scope} PDF: {output_pdf} "
             f"({len(images)} pages, {size_mb:.1f} MB)",
             file=sys.stderr,
         )
@@ -700,11 +903,17 @@ def artifact_record(
     page_count,
     source_video_id,
     source_video_path,
+    source_receipt,
     crop_method="none",
     crop_verified=False,
     trusted_for_authored_slide_analysis=False,
 ):
-    """Build a self-describing PDF artifact record for the extraction result."""
+    """Build a self-describing PDF artifact record for the extraction result.
+
+    ``source_receipt`` is the run's engine-owned source receipt. Every
+    derivative carries it, so a PDF separated from the manifest still names the
+    exact source bytes it came from.
+    """
     if artifact_scope not in ("slide_region", "full_frame_context"):
         raise ValueError(f"unknown artifact scope: {artifact_scope!r}")
     if artifact_scope == "full_frame_context" and (
@@ -724,6 +933,7 @@ def artifact_record(
         "page_count": page_count,
         "source_video_id": source_video_id,
         "source_video_path": canonical_path(source_video_path),
+        "source_receipt": copy.deepcopy(source_receipt),
         "crop_method": crop_method,
         "crop_verified": bool(crop_verified),
         "trusted_for_authored_slide_analysis": bool(
@@ -737,6 +947,8 @@ def _extract_slides_in_workspace(
     output_dir,
     youtube_id,
     frames_dir,
+    source_receipt,
+    published,
     fps=0.5,
     hash_threshold=8,
     slide_region: str | NormalizedSlideRegion = "auto",
@@ -749,6 +961,12 @@ def _extract_slides_in_workspace(
         video_path: Path to downloaded MP4
         output_dir: Directory for intermediate files and output PDF
         youtube_id: YouTube video ID (used for naming)
+        source_receipt: Engine-owned receipt for the exact source generation,
+                        stamped onto the manifest and every derivative record.
+        published: Caller-owned list this appends each staged PDF path to the
+                   moment its pages land. The caller publishes them once the
+                   source binding holds, and drops the stages otherwise, so a
+                   failed run never disturbs a prior run's artifacts.
         fps: Frames per second to extract (0.5 = 1 frame per 2 seconds)
         hash_threshold: Largest hash distance treated as the same slide. Higher
                         values merge more and keep fewer frames.
@@ -784,6 +1002,7 @@ def _extract_slides_in_workspace(
             "pipeline_version": PIPELINE_VERSION,
             "source_video_id": youtube_id,
             "source_video_path": source_video_path,
+            "source_receipt": copy.deepcopy(source_receipt),
             "total_frames_extracted": 0,
             "unique_frame_count": 0,
             "authored_slide_count": None,
@@ -822,8 +1041,10 @@ def _extract_slides_in_workspace(
             source_video_id=youtube_id,
             crop_method=region_provenance["slide_region_method"],
             crop_verified=region_provenance["slide_region_verified"],
+            commit=False,
         )
         if slide_pdf_path:
+            published.append(slide_pdf_path)
             artifacts.append(
                 artifact_record(
                     slide_pdf_path,
@@ -831,6 +1052,7 @@ def _extract_slides_in_workspace(
                     len(unique_frames),
                     youtube_id,
                     source_video_path,
+                    source_receipt,
                     crop_method=region_provenance["slide_region_method"],
                     crop_verified=region_provenance["slide_region_verified"],
                     trusted_for_authored_slide_analysis=trusted_slide_evidence,
@@ -846,8 +1068,10 @@ def _extract_slides_in_workspace(
             context_pdf,
             artifact_scope="full_frame_context",
             source_video_id=youtube_id,
+            commit=False,
         )
         if context_pdf_path:
+            published.append(context_pdf_path)
             artifacts.append(
                 artifact_record(
                     context_pdf_path,
@@ -855,6 +1079,7 @@ def _extract_slides_in_workspace(
                     len(unique_frames),
                     youtube_id,
                     source_video_path,
+                    source_receipt,
                 )
             )
 
@@ -864,6 +1089,7 @@ def _extract_slides_in_workspace(
         "pipeline_version": PIPELINE_VERSION,
         "source_video_id": youtube_id,
         "source_video_path": source_video_path,
+        "source_receipt": copy.deepcopy(source_receipt),
         "total_frames_extracted": len(frames),
         "unique_frame_count": len(unique_frames),
         # Frame/page count is not an authored slide count: animations, camera
@@ -893,7 +1119,18 @@ def extract_slides_from_video(
     slide_region_verified=False,
     include_context_pdf=True,
 ):
-    """Run one extraction in a fresh frame workspace that is always removed."""
+    """Run one extraction bound end to end to one exact source generation.
+
+    The source is probed before any frame is sampled and again after every
+    derivative is written. One assessment owns both probes, so the closing
+    probe costs a stat when the generation held and a full re-probe exactly
+    when it did not. Any drift discards the derivatives and fails the run —
+    a manifest is never written against bytes it did not come from.
+
+    Derivatives stay staged until the closing probe passes, so no exit path can
+    leave a half-bound PDF behind and a failed re-extraction leaves the previous
+    run's artifacts exactly as it found them.
+    """
     youtube_id = validate_youtube_id(youtube_id)
     if fps <= 0:
         raise ValueError("fps must be greater than zero")
@@ -903,25 +1140,41 @@ def extract_slides_from_video(
     run_lock = _video_run_lock_path(output_dir, youtube_id)
 
     with _video_run_lock(run_lock):
+        assessment = VideoEvidenceAssessment()
+        source_receipt = _capture_source_receipt(assessment, source_video_path)
         for filename in (
             f"{youtube_id}.slide-region.pdf",
             f"{youtube_id}.context.pdf",
         ):
-            _remove_stale_pdf_stage(_confined_output_path(output_dir, filename))
-        with tempfile.TemporaryDirectory(
-            prefix="speaker-toolkit-video-frames-"
-        ) as frames_dir:
-            return _extract_slides_in_workspace(
-                source_video_path,
-                output_dir,
-                youtube_id,
-                frames_dir,
-                fps=fps,
-                hash_threshold=hash_threshold,
-                slide_region=slide_region,
-                slide_region_verified=slide_region_verified,
-                include_context_pdf=include_context_pdf,
-            )
+            destination = _confined_output_path(output_dir, filename)
+            _recover_stale_pdf_publish(destination)
+            _remove_stale_pdf_stage(destination)
+        published: list[str] = []
+        bound = False
+        try:
+            with tempfile.TemporaryDirectory(
+                prefix="speaker-toolkit-video-frames-"
+            ) as frames_dir:
+                result = _extract_slides_in_workspace(
+                    source_video_path,
+                    output_dir,
+                    youtube_id,
+                    frames_dir,
+                    source_receipt,
+                    published,
+                    fps=fps,
+                    hash_threshold=hash_threshold,
+                    slide_region=slide_region,
+                    slide_region_verified=slide_region_verified,
+                    include_context_pdf=include_context_pdf,
+                )
+            _require_stable_source(assessment, source_video_path, source_receipt)
+            _commit_bound_artifacts(published)
+            bound = True
+        finally:
+            if not bound:
+                _discard_unbound_artifacts(published)
+        return result
 
 
 def main():
@@ -997,16 +1250,29 @@ def main():
         )
         sys.exit(1)
 
-    result = extract_slides_from_video(
-        args.video,
-        args.outdir,
-        youtube_id,
-        fps=args.fps,
-        hash_threshold=args.threshold,
-        slide_region=args.region,
-        slide_region_verified=args.region_verified,
-        include_context_pdf=args.include_context_pdf,
-    )
+    try:
+        result = extract_slides_from_video(
+            args.video,
+            args.outdir,
+            youtube_id,
+            fps=args.fps,
+            hash_threshold=args.threshold,
+            slide_region=args.region,
+            slide_region_verified=args.region_verified,
+            include_context_pdf=args.include_context_pdf,
+        )
+    except VideoSourceLineageError as exc:
+        print(
+            json.dumps(
+                {
+                    "error": str(exc),
+                    "reason_code": exc.reason_code,
+                    "details": exc.details,
+                }
+            ),
+            file=sys.stderr,
+        )
+        sys.exit(1)
     print(json.dumps(result, indent=2))
 
 

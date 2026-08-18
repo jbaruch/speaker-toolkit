@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import json
 import os
 import subprocess
 import sys
@@ -1498,3 +1499,180 @@ def test_a_video_probe_runs_under_an_interpreter_inside_the_trusted_root(
 
     assert probe.duration_seconds == pytest.approx(1.0, abs=0.1)
     assert probe.video_stream_count == 1
+
+
+def test_source_receipt_round_trips_and_agrees_with_its_own_probe() -> None:
+    probe = _probe(_generation())
+    receipt = video_evidence.build_video_source_receipt(probe)
+
+    assert video_evidence.validate_video_source_receipt(receipt) == receipt
+    assert video_evidence.video_source_receipt_lineage_drift(receipt, probe) == ()
+    assert video_evidence.video_source_receipt_generation_drift(receipt, probe) == ()
+    assert receipt["probe_schema_version"] == (
+        video_evidence.VIDEO_PROBE_SCHEMA_VERSION
+    )
+    assert receipt["probe_pipeline_version"] == (
+        video_evidence.VIDEO_PROBE_PIPELINE_VERSION
+    )
+
+
+def test_source_receipt_is_path_neutral_and_carries_no_parser_output() -> None:
+    generation = _generation()
+    probe = video_evidence.VideoArtifactProbe(
+        generation=generation,
+        root_generation=_root_generation(),
+        availability=video_evidence.ArtifactAvailability.from_generation(generation),
+        source_sha256="b" * 64,
+        source_size_bytes=generation.size,
+        duration_seconds=1.0,
+        duration_source="format",
+        container_family="iso_bmff",
+        stream_count=1,
+        video_stream_count=1,
+        audio_stream_count=0,
+        attached_picture_count=0,
+        other_stream_count=0,
+        parser_diagnostics=video_evidence.DiagnosticReceipt(
+            byte_count=512,
+            sha256="c" * 64,
+            truncated=True,
+        ),
+    )
+
+    receipt = video_evidence.build_video_source_receipt(probe)
+
+    assert set(receipt) == set(video_evidence.VIDEO_SOURCE_RECEIPT_FIELDS)
+    assert "parser_diagnostics" not in receipt
+    assert "c" * 64 not in json.dumps(receipt)
+    assert "/" not in json.dumps(receipt)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "field"),
+    [
+        (lambda receipt: receipt.pop("container_family"), "source_receipt"),
+        (
+            lambda receipt: receipt.update(artifact_path="/vault/talk.mp4"),
+            ("source_receipt"),
+        ),
+        (lambda receipt: receipt.update(schema_version=2), "schema_version"),
+        (
+            lambda receipt: receipt.update(probe_schema_version=99),
+            ("probe_schema_version"),
+        ),
+        (
+            lambda receipt: receipt.update(source_sha256="not-a-digest"),
+            ("source_sha256"),
+        ),
+        (lambda receipt: receipt.update(source_size_bytes=0), "source_size_bytes"),
+        (lambda receipt: receipt.update(duration_seconds=0), "duration_seconds"),
+        (lambda receipt: receipt.update(duration_source="guess"), "duration_source"),
+        (lambda receipt: receipt.update(container_family="ogg"), "container_family"),
+        (lambda receipt: receipt.update(audio_stream_count=7), "stream_count"),
+        (lambda receipt: receipt.update(video_stream_count=0), "video_stream_count"),
+        (
+            lambda receipt: receipt.update(source_generation={"size": 1}),
+            ("source_generation"),
+        ),
+    ],
+)
+def test_source_receipt_rejects_a_shape_no_probe_could_have_produced(
+    mutate: Any,
+    field: str,
+) -> None:
+    receipt = video_evidence.build_video_source_receipt(_probe(_generation()))
+    mutate(receipt)
+
+    with pytest.raises(video_evidence.VideoEvidenceError) as caught:
+        video_evidence.validate_video_source_receipt(receipt)
+
+    assert caught.value.reason_code == "video_source_receipt_invalid"
+    assert caught.value.details == {"field": field}
+
+
+def test_source_receipt_generation_must_agree_with_the_probed_byte_count() -> None:
+    receipt = video_evidence.build_video_source_receipt(_probe(_generation(size=1_024)))
+    receipt["source_generation"] = dict(receipt["source_generation"], size=2_048)
+
+    with pytest.raises(video_evidence.VideoEvidenceError) as caught:
+        video_evidence.validate_video_source_receipt(receipt)
+
+    assert caught.value.details == {"field": "source_generation"}
+
+
+@pytest.mark.parametrize("field", ["flags", "file_attributes"])
+def test_dataless_placeholder_generation_can_never_back_a_receipt(field: str) -> None:
+    """A cloud stub stays unavailable; hydration is the only way forward."""
+    # SF_DATALESS is 0 off Darwin, so that marker only carries meaning there;
+    # the Windows cloud attributes are plain constants on every platform.
+    marker = {
+        "flags": video_evidence.VIDEO_MACOS_DATALESS_FLAG,
+        "file_attributes": video_evidence.VIDEO_WINDOWS_CLOUD_FILE_ATTRIBUTES,
+    }[field]
+    if not marker:
+        pytest.skip(f"no {field} placeholder marker is defined on this platform")
+    receipt = video_evidence.build_video_source_receipt(_probe(_generation()))
+    receipt["source_generation"] = dict(receipt["source_generation"], **{field: marker})
+
+    with pytest.raises(video_evidence.VideoEvidenceError) as caught:
+        video_evidence.validate_video_source_receipt(receipt)
+
+    assert caught.value.details == {"field": "source_generation"}
+
+
+def test_replacement_at_the_same_path_is_lineage_drift_not_a_fresh_source() -> None:
+    original = _probe(_generation(inode=31), digest="a" * 64)
+    replacement = _probe(_generation(inode=77), digest="d" * 64)
+    receipt = video_evidence.build_video_source_receipt(original)
+
+    assert video_evidence.video_source_receipt_lineage_drift(receipt, replacement) == (
+        ("source_sha256",)
+    )
+
+
+def test_generation_drift_is_bound_inside_a_run_but_not_across_hosts() -> None:
+    """Same bytes, moved vault: content holds, the host-local generation does not."""
+    original = _probe(_generation(inode=31))
+    moved = _probe(_generation(inode=77))
+    receipt = video_evidence.build_video_source_receipt(original)
+
+    assert video_evidence.video_source_receipt_lineage_drift(receipt, moved) == ()
+    assert video_evidence.video_source_receipt_generation_drift(receipt, moved) == (
+        ("source_generation",)
+    )
+
+
+def test_duration_reparse_within_tolerance_is_not_drift() -> None:
+    receipt = video_evidence.build_video_source_receipt(_probe(_generation()))
+    tolerance = video_evidence.VIDEO_SOURCE_RECEIPT_DURATION_TOLERANCE_SECONDS
+    probe = _probe(_generation())
+
+    receipt["duration_seconds"] = probe.duration_seconds + tolerance / 2
+    assert video_evidence.video_source_receipt_lineage_drift(receipt, probe) == ()
+
+    receipt["duration_seconds"] = probe.duration_seconds + tolerance * 10
+    assert video_evidence.video_source_receipt_lineage_drift(receipt, probe) == (
+        ("duration_seconds",)
+    )
+
+
+def test_probe_contract_version_is_part_of_the_lineage_claim() -> None:
+    probe = _probe(_generation())
+    receipt = video_evidence.build_video_source_receipt(probe)
+    receipt["probe_pipeline_version"] = "0.9.0"
+
+    assert video_evidence.video_source_receipt_lineage_drift(receipt, probe) == (
+        ("probe_pipeline_version",)
+    )
+
+
+@pytest.mark.parametrize("field", ["schema_version", "probe_schema_version"])
+def test_receipt_version_fields_reject_booleans(field: str) -> None:
+    """`True == 1`, so a version gate on equality alone admits a bool."""
+    receipt = video_evidence.build_video_source_receipt(_probe(_generation()))
+    receipt[field] = True
+
+    with pytest.raises(video_evidence.VideoEvidenceError) as caught:
+        video_evidence.validate_video_source_receipt(receipt)
+
+    assert caught.value.details == {"field": field}

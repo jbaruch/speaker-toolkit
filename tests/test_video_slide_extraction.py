@@ -2,8 +2,10 @@
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
 import json
 import os
+import pathlib
 import shutil
 import stat
 import subprocess
@@ -11,6 +13,7 @@ import sys
 import threading
 
 import pytest
+from conftest import synthetic_video_source_receipt, write_tiny_video
 from filelock import FileLock, Timeout
 from PIL import Image
 from pypdf import PdfReader
@@ -406,7 +409,7 @@ def test_video_pipeline_rejects_existing_output_symlink_escape_before_ffmpeg(
 
     with pytest.raises(ValueError, match="video_output_path_escape"):
         video_slide_extraction.extract_slides_from_video(
-            tmp_path / "source.mp4",
+            write_tiny_video(tmp_path / "source.mp4"),
             output,
             YOUTUBE_ID,
         )
@@ -428,7 +431,7 @@ def test_video_pipeline_rejects_a_directory_at_a_pdf_destination_before_ffmpeg(
 
     with pytest.raises(ValueError, match="video_output_leaf_invalid"):
         video_slide_extraction.extract_slides_from_video(
-            tmp_path / "source.mp4",
+            write_tiny_video(tmp_path / "source.mp4"),
             output,
             YOUTUBE_ID,
         )
@@ -449,8 +452,7 @@ def test_pipeline_ignores_and_preserves_legacy_stale_frames(
     )
     with open(stale_pdf_stage, "wb") as staged:
         staged.write(b"partial prior PDF")
-    video = tmp_path / "source.mp4"
-    video.write_bytes(b"source")
+    video = write_tiny_video(tmp_path / "source.mp4")
     workspaces = []
     consumed = []
 
@@ -502,8 +504,7 @@ def test_pipeline_removes_its_private_workspace_after_failure(
     legacy_workspace.mkdir(parents=True)
     stale = legacy_workspace / "frame_99999.jpg"
     stale.write_bytes(b"older extraction")
-    video = tmp_path / "source.mp4"
-    video.write_bytes(b"source")
+    video = write_tiny_video(tmp_path / "source.mp4")
     workspaces = []
 
     def extract(_video_path, frames_dir, fps):
@@ -542,8 +543,7 @@ def test_pipeline_closes_an_open_frame_before_failure_cleanup(
     tmp_path,
 ):
     output = tmp_path / "output"
-    video = tmp_path / "source.mp4"
-    video.write_bytes(b"source")
+    video = write_tiny_video(tmp_path / "source.mp4")
     workspaces = []
 
     def extract(_video_path, frames_dir, fps):
@@ -584,8 +584,7 @@ def test_existing_unlocked_run_lock_file_does_not_block_a_rerun(
     )
     with open(run_lock, "wb") as lock_file:
         lock_file.write(b"left by an interrupted process")
-    video = tmp_path / "source.mp4"
-    video.write_bytes(b"source")
+    video = write_tiny_video(tmp_path / "source.mp4")
 
     def extract(_video_path, frames_dir, fps):
         del fps
@@ -644,8 +643,7 @@ def test_parallel_pipeline_runs_use_distinct_workspaces_and_publish_complete_pdf
     tmp_path,
 ):
     output = tmp_path / "output"
-    video = tmp_path / "source.mp4"
-    video.write_bytes(b"source")
+    video = write_tiny_video(tmp_path / "source.mp4")
     barrier = threading.Barrier(2)
     workspaces = []
     workspaces_lock = threading.Lock()
@@ -1034,6 +1032,7 @@ def test_artifact_manifest_rejects_unverified_authored_slide_trust(
             1,
             YOUTUBE_ID,
             tmp_path / "source.mp4",
+            synthetic_video_source_receipt(),
             crop_method="auto",
             crop_verified=False,
             trusted_for_authored_slide_analysis=True,
@@ -1080,8 +1079,7 @@ def test_success_cli_emits_only_result_json_on_stdout(
     """Progress stays on stderr so stdout remains one parseable payload."""
     frame = tmp_path / "frame.png"
     Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
-    video = tmp_path / "source.mp4"
-    video.write_bytes(b"synthetic source")
+    video = write_tiny_video(tmp_path / "source.mp4")
     outdir = tmp_path / "output"
     monkeypatch.setattr(
         video_slide_extraction,
@@ -1109,7 +1107,7 @@ def test_success_cli_emits_only_result_json_on_stdout(
     assert payload["artifacts"][0]["artifact_scope"] == "full_frame_context"
     assert "Extracting video artifacts" in captured.err
     assert "Deduplicated: 1 frames -> 1 unique frames" in captured.err
-    assert "Saved full_frame_context PDF" in captured.err
+    assert "Staged full_frame_context PDF" in captured.err
     assert "Done: 1 unique frames retained" in captured.err
 
 
@@ -1322,8 +1320,7 @@ def test_no_region_emits_context_only_even_when_extra_context_is_disabled(
 ):
     frame = tmp_path / "full-frame.png"
     Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
-    video = tmp_path / "source.mp4"
-    video.write_bytes(b"source-video")
+    video = write_tiny_video(tmp_path / "source.mp4")
     outdir = tmp_path / "output"
     monkeypatch.setattr(
         video_slide_extraction,
@@ -1358,8 +1355,7 @@ def test_unverified_auto_crop_is_a_review_required_candidate(
 ):
     frame = tmp_path / "broadcast-frame.png"
     Image.new("RGB", (1000, 500), (80, 40, 20)).save(frame)
-    video = tmp_path / "source.mp4"
-    video.write_bytes(b"source-video")
+    video = write_tiny_video(tmp_path / "source.mp4")
     outdir = tmp_path / "output"
     region = (0.25, 0.25, 0.75, 0.75)
     monkeypatch.setattr(
@@ -1404,7 +1400,7 @@ def test_manual_region_bypasses_detection_and_records_verified_provenance(
 ):
     frame = tmp_path / "manual-region-frame.png"
     Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
-    video = tmp_path / "source.mp4"
+    video = write_tiny_video(tmp_path / "source.mp4")
     outdir = tmp_path / "output"
     outdir.mkdir()
 
@@ -1450,8 +1446,7 @@ def test_verified_crop_can_omit_extra_context_without_deleting_source(
 ):
     frame = tmp_path / "manual-region-frame.png"
     Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
-    video = tmp_path / "source.mp4"
-    video.write_bytes(b"source-video")
+    video = write_tiny_video(tmp_path / "source.mp4")
     outdir = tmp_path / "output"
     monkeypatch.setattr(
         video_slide_extraction,
@@ -1652,3 +1647,450 @@ def test_a_plausible_screen_of_the_same_area_is_accepted(video_slide_extraction)
     m[40:150, 60:260] = True  # 110x200 -> aspect 1.82, 38% of frame
     got = video_slide_extraction._largest_rectangular_component(m)
     assert got == (40, 149, 60, 259)
+
+
+def _extract_one_frame(frame):
+    """Return an extract_frames stand-in that yields one prepared frame."""
+
+    def extract(_video_path, _frames_dir, fps):
+        del fps
+        return [str(frame)]
+
+    return extract
+
+
+def _prepared_frame(tmp_path):
+    frame = tmp_path / "frame.png"
+    Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
+    return frame
+
+
+def test_run_records_the_source_receipt_on_the_manifest_and_every_derivative(
+    video_slide_extraction, tmp_path, monkeypatch, video_evidence
+):
+    frame = _prepared_frame(tmp_path)
+    video = write_tiny_video(tmp_path / "source.mp4")
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames", _extract_one_frame(frame)
+    )
+
+    result = video_slide_extraction.extract_slides_from_video(
+        str(video),
+        str(tmp_path / "output"),
+        YOUTUBE_ID,
+        slide_region=(0.2, 0.1, 0.9, 0.8),
+        slide_region_verified=True,
+    )
+
+    receipt = result["source_receipt"]
+    assert video_evidence.validate_video_source_receipt(receipt) == receipt
+    assert receipt["source_sha256"] == hashlib.sha256(video.read_bytes()).hexdigest()
+    assert receipt["source_size_bytes"] == video.stat().st_size
+    assert len(result["artifacts"]) == 2
+    for artifact in result["artifacts"]:
+        assert artifact["source_receipt"] == receipt
+    # Separate objects, so a later in-place edit of one cannot silently
+    # rewrite the claim the others make.
+    assert all(
+        artifact["source_receipt"] is not receipt for artifact in result["artifacts"]
+    )
+
+
+def test_source_replaced_during_extraction_discards_every_derivative(
+    video_slide_extraction, tmp_path, monkeypatch
+):
+    """Half-bound PDFs never survive a source swap mid-run."""
+    frame = _prepared_frame(tmp_path)
+    video = write_tiny_video(tmp_path / "source.mp4")
+    outdir = tmp_path / "output"
+    replacement = write_tiny_video(tmp_path / "replacement.mp4")
+    produced = []
+
+    original_combine = video_slide_extraction.combine_to_pdf
+
+    def combine(*args, **kwargs):
+        path = original_combine(*args, **kwargs)
+        if path is not None:
+            produced.append(path)
+        # Swap the source between the two derivative writes: the run is now
+        # producing pages from bytes the receipt no longer describes.
+        video.write_bytes(replacement.read_bytes() + b"\x00")
+        return path
+
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames", _extract_one_frame(frame)
+    )
+    monkeypatch.setattr(video_slide_extraction, "combine_to_pdf", combine)
+
+    with pytest.raises(video_slide_extraction.VideoSourceLineageError) as caught:
+        video_slide_extraction.extract_slides_from_video(
+            str(video),
+            str(outdir),
+            YOUTUBE_ID,
+            slide_region=(0.2, 0.1, 0.9, 0.8),
+            slide_region_verified=True,
+        )
+
+    assert caught.value.reason_code == "video_source_replaced_during_extraction"
+    assert produced
+    assert [path for path in produced if os.path.exists(path)] == []
+    assert video.exists()
+
+
+def test_same_path_different_content_replay_rebinds_instead_of_reusing(
+    video_slide_extraction, tmp_path, monkeypatch
+):
+    """A second run over replaced bytes must not inherit the first receipt."""
+    frame = _prepared_frame(tmp_path)
+    video = write_tiny_video(tmp_path / "source.mp4")
+    outdir = tmp_path / "output"
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames", _extract_one_frame(frame)
+    )
+
+    first = video_slide_extraction.extract_slides_from_video(
+        str(video), str(outdir), YOUTUBE_ID, slide_region="none"
+    )
+    video.write_bytes(video.read_bytes() + b"\x00")
+    second = video_slide_extraction.extract_slides_from_video(
+        str(video), str(outdir), YOUTUBE_ID, slide_region="none"
+    )
+
+    assert first["source_video_path"] == second["source_video_path"]
+    assert (
+        first["source_receipt"]["source_sha256"]
+        != second["source_receipt"]["source_sha256"]
+    )
+    assert second["artifacts"][0]["source_receipt"] == second["source_receipt"]
+
+
+@pytest.mark.parametrize(
+    ("prepare", "reason_code"),
+    [
+        (lambda path: None, "video_artifact_unavailable"),
+        (lambda path: path.write_bytes(b"not a container"), "video_parser_rejected"),
+    ],
+)
+def test_unprobeable_source_produces_no_record_and_no_frames(
+    video_slide_extraction, tmp_path, monkeypatch, prepare, reason_code
+):
+    video = tmp_path / "source.mp4"
+    prepare(video)
+    monkeypatch.setattr(
+        video_slide_extraction,
+        "extract_frames",
+        lambda *_args, **_kwargs: pytest.fail("unbound source reached ffmpeg"),
+    )
+
+    with pytest.raises(video_slide_extraction.VideoSourceLineageError) as caught:
+        video_slide_extraction.extract_slides_from_video(
+            str(video), str(tmp_path / "output"), YOUTUBE_ID, slide_region="none"
+        )
+
+    assert caught.value.reason_code == reason_code
+
+
+def test_cli_reports_an_unbound_source_as_json_on_stderr_and_exits_nonzero(
+    tmp_path,
+):
+    outdir = tmp_path / "output"
+    outdir.mkdir()
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            SCRIPT_PATH,
+            str(tmp_path / "absent.mp4"),
+            str(outdir),
+            YOUTUBE_ID,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert proc.returncode == 1
+    assert proc.stdout == ""
+    payload = json.loads(proc.stderr.strip().splitlines()[-1])
+    assert payload["reason_code"] == "video_artifact_unavailable"
+    assert str(tmp_path) not in proc.stderr
+
+
+def test_interrupted_prior_run_leaves_no_stage_inside_the_new_binding(
+    video_slide_extraction, tmp_path, monkeypatch, video_evidence
+):
+    """A reclaimed stage must not smuggle a prior run's pages into this receipt."""
+    frame = _prepared_frame(tmp_path)
+    video = write_tiny_video(tmp_path / "source.mp4")
+    outdir = tmp_path / "output"
+    outdir.mkdir()
+    context_pdf = outdir / f"{YOUTUBE_ID}.context.pdf"
+    orphan_stage = video_slide_extraction._pdf_stage_path(str(context_pdf))
+    with open(orphan_stage, "wb") as stream:
+        stream.write(b"%PDF-1.4 interrupted prior run")
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames", _extract_one_frame(frame)
+    )
+
+    result = video_slide_extraction.extract_slides_from_video(
+        str(video), str(outdir), YOUTUBE_ID, slide_region="none"
+    )
+
+    assert not os.path.exists(orphan_stage)
+    receipt = result["source_receipt"]
+    assert video_evidence.validate_video_source_receipt(receipt) == receipt
+    assert result["artifacts"][0]["source_receipt"] == receipt
+    assert context_pdf.read_bytes()[:4] == b"%PDF"
+    assert b"interrupted prior run" not in context_pdf.read_bytes()
+
+
+def test_failure_between_derivatives_leaves_no_published_pdf_behind(
+    video_slide_extraction, tmp_path, monkeypatch
+):
+    """A run that dies after publishing one PDF must not leave it orphaned."""
+    frame = _prepared_frame(tmp_path)
+    video = write_tiny_video(tmp_path / "source.mp4")
+    outdir = tmp_path / "output"
+    published = []
+
+    original_combine = video_slide_extraction.combine_to_pdf
+
+    def combine(*args, **kwargs):
+        if published:
+            raise RuntimeError("synthetic failure after the first derivative")
+        path = original_combine(*args, **kwargs)
+        published.append(path)
+        return path
+
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames", _extract_one_frame(frame)
+    )
+    monkeypatch.setattr(video_slide_extraction, "combine_to_pdf", combine)
+
+    with pytest.raises(RuntimeError, match="synthetic failure"):
+        video_slide_extraction.extract_slides_from_video(
+            str(video),
+            str(outdir),
+            YOUTUBE_ID,
+            slide_region=(0.2, 0.1, 0.9, 0.8),
+            slide_region_verified=True,
+        )
+
+    assert published
+    assert [path for path in published if os.path.exists(path)] == []
+    assert video.exists()
+
+
+def test_failed_re_extraction_leaves_the_prior_derivatives_intact(
+    video_slide_extraction, tmp_path, monkeypatch
+):
+    """A run that cannot bind must not destroy what a bound run published."""
+    frame = _prepared_frame(tmp_path)
+    video = write_tiny_video(tmp_path / "source.mp4")
+    outdir = tmp_path / "output"
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames", _extract_one_frame(frame)
+    )
+
+    first = video_slide_extraction.extract_slides_from_video(
+        str(video),
+        str(outdir),
+        YOUTUBE_ID,
+        slide_region=(0.2, 0.1, 0.9, 0.8),
+        slide_region_verified=True,
+    )
+    prior = {
+        artifact["path"]: open(artifact["path"], "rb").read()
+        for artifact in first["artifacts"]
+    }
+    assert len(prior) == 2
+
+    original_combine = video_slide_extraction.combine_to_pdf
+    staged = []
+
+    def combine(*args, **kwargs):
+        if staged:
+            raise RuntimeError("synthetic failure after the first derivative")
+        path = original_combine(*args, **kwargs)
+        staged.append(path)
+        return path
+
+    monkeypatch.setattr(video_slide_extraction, "combine_to_pdf", combine)
+
+    with pytest.raises(RuntimeError, match="synthetic failure"):
+        video_slide_extraction.extract_slides_from_video(
+            str(video),
+            str(outdir),
+            YOUTUBE_ID,
+            slide_region=(0.2, 0.1, 0.9, 0.8),
+            slide_region_verified=True,
+        )
+
+    for path, content in prior.items():
+        assert open(path, "rb").read() == content
+    stages = [
+        name
+        for name in os.listdir(outdir)
+        if name.endswith(video_slide_extraction._PDF_STAGE_SUFFIX)
+    ]
+    assert stages == []
+
+
+def test_a_failed_second_publish_rolls_the_first_one_back(
+    video_slide_extraction, tmp_path, monkeypatch
+):
+    """Never one run's slide-region PDF beside another run's context PDF."""
+    frame = _prepared_frame(tmp_path)
+    video = write_tiny_video(tmp_path / "source.mp4")
+    outdir = tmp_path / "output"
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames", _extract_one_frame(frame)
+    )
+
+    first = video_slide_extraction.extract_slides_from_video(
+        str(video),
+        str(outdir),
+        YOUTUBE_ID,
+        slide_region=(0.2, 0.1, 0.9, 0.8),
+        slide_region_verified=True,
+    )
+    prior = {
+        artifact["path"]: open(artifact["path"], "rb").read()
+        for artifact in first["artifacts"]
+    }
+    assert len(prior) == 2
+
+    original_commit = video_slide_extraction.commit_pdf_stage
+    committed = []
+
+    def commit(path):
+        if committed:
+            raise OSError("synthetic publish failure on the second derivative")
+        committed.append(path)
+        original_commit(path)
+
+    monkeypatch.setattr(video_slide_extraction, "commit_pdf_stage", commit)
+    # Different pages, so a surviving replacement would be visible as a diff.
+    other_frame = tmp_path / "other-frame.png"
+    Image.new("RGB", (320, 180), (10, 200, 30)).save(other_frame)
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames", _extract_one_frame(other_frame)
+    )
+
+    with pytest.raises(OSError, match="synthetic publish failure"):
+        video_slide_extraction.extract_slides_from_video(
+            str(video),
+            str(outdir),
+            YOUTUBE_ID,
+            slide_region=(0.2, 0.1, 0.9, 0.8),
+            slide_region_verified=True,
+        )
+
+    assert committed
+    for path, content in prior.items():
+        assert open(path, "rb").read() == content
+    leftovers = [
+        name
+        for name in os.listdir(outdir)
+        if name.endswith(
+            (
+                video_slide_extraction._PDF_STAGE_SUFFIX,
+                video_slide_extraction._PDF_BACKUP_SUFFIX,
+            )
+        )
+    ]
+    assert leftovers == []
+
+
+def test_an_interrupt_during_publish_still_rolls_back_in_process(
+    video_slide_extraction, tmp_path, monkeypatch
+):
+    """An interrupt is an exit, not an excuse to leave a partial publish."""
+    frame = _prepared_frame(tmp_path)
+    video = write_tiny_video(tmp_path / "source.mp4")
+    outdir = tmp_path / "output"
+    outdir.mkdir()
+    context_pdf = str(outdir / f"{YOUTUBE_ID}.context.pdf")
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames", _extract_one_frame(frame)
+    )
+    original_commit = video_slide_extraction.commit_pdf_stage
+
+    def commit(path):
+        original_commit(path)
+        raise KeyboardInterrupt("operator interrupted the run mid-publish")
+
+    monkeypatch.setattr(video_slide_extraction, "commit_pdf_stage", commit)
+
+    with pytest.raises(KeyboardInterrupt):
+        video_slide_extraction.extract_slides_from_video(
+            str(video), str(outdir), YOUTUBE_ID, slide_region="none"
+        )
+
+    assert not os.path.exists(context_pdf)
+    assert os.listdir(outdir) == []
+
+
+def test_an_orphan_left_by_a_killed_first_publish_is_removed_next_run(
+    video_slide_extraction, tmp_path, monkeypatch
+):
+    """A destination that held nothing must not inherit a killed run's PDF."""
+    video = write_tiny_video(tmp_path / "source.mp4")
+    outdir = tmp_path / "output"
+    outdir.mkdir()
+    context_pdf = str(outdir / f"{YOUTUBE_ID}.context.pdf")
+    # SIGKILL runs no handler, so the state is constructed rather than raised:
+    # a published PDF at a destination that held nothing, plus its marker.
+    pathlib.Path(context_pdf).write_bytes(b"%PDF-1.4 orphan from a killed run")
+    pathlib.Path(video_slide_extraction._pdf_absent_marker_path(context_pdf)).touch()
+    monkeypatch.setattr(
+        video_slide_extraction,
+        "extract_frames",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("later")),
+    )
+
+    with pytest.raises(RuntimeError, match="later"):
+        video_slide_extraction.extract_slides_from_video(
+            str(video), str(outdir), YOUTUBE_ID, slide_region="none"
+        )
+
+    assert not os.path.exists(context_pdf)
+    assert not os.path.exists(
+        video_slide_extraction._pdf_absent_marker_path(context_pdf)
+    )
+
+
+def test_a_backup_left_by_a_killed_publish_is_restored_next_run(
+    video_slide_extraction, tmp_path, monkeypatch
+):
+    """The window between a destination's two renames is recoverable."""
+    frame = _prepared_frame(tmp_path)
+    video = write_tiny_video(tmp_path / "source.mp4")
+    outdir = tmp_path / "output"
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames", _extract_one_frame(frame)
+    )
+
+    first = video_slide_extraction.extract_slides_from_video(
+        str(video), str(outdir), YOUTUBE_ID, slide_region="none"
+    )
+    context_pdf = first["artifacts"][0]["path"]
+    prior = open(context_pdf, "rb").read()
+    # Exactly the state a kill between the two renames leaves behind.
+    os.replace(context_pdf, video_slide_extraction._pdf_backup_path(context_pdf))
+    assert not os.path.exists(context_pdf)
+
+    # Fail the next run after recovery so the restore stays observable rather
+    # than being immediately overwritten by a fresh derivative.
+    monkeypatch.setattr(
+        video_slide_extraction,
+        "extract_frames",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("later")),
+    )
+    with pytest.raises(RuntimeError, match="later"):
+        video_slide_extraction.extract_slides_from_video(
+            str(video), str(outdir), YOUTUBE_ID, slide_region="none"
+        )
+
+    assert open(context_pdf, "rb").read() == prior
+    assert not os.path.exists(video_slide_extraction._pdf_backup_path(context_pdf))

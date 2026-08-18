@@ -26,6 +26,7 @@ from artifact_locator import (
     materialize_native_root,
 )
 from ingress_contract import (
+    VIDEO_EXTRACTION_SCHEMA_VERSION,
     has_remote_slide_acquisition,
     has_remote_video_acquisition,
 )
@@ -53,6 +54,8 @@ from video_evidence import (
     VideoArtifactProbe,
     VideoEvidenceAssessment,
     VideoEvidenceError,
+    validate_video_source_receipt,
+    video_source_receipt_lineage_drift,
 )
 
 
@@ -702,7 +705,7 @@ def _local_video_binding(
         if youtube_id is None:
             return None, "video_extraction manifest has no claimed video id"
         if (
-            manifest.get("schema_version") != 3
+            manifest.get("schema_version") != VIDEO_EXTRACTION_SCHEMA_VERSION
             or manifest.get("source_video_id") != youtube_id
         ):
             return (
@@ -772,6 +775,12 @@ def _probe_video_manifest_artifacts(
         raise PatternEvidenceError(
             "video_extraction artifacts have no valid shared page count"
         )
+    try:
+        source_receipt = validate_video_source_receipt(manifest.get("source_receipt"))
+    except VideoEvidenceError as exc:
+        raise PatternEvidenceError(
+            f"video_extraction source_receipt is invalid ({exc.reason_code})"
+        ) from exc
     artifact_root = _canonical_pdf_root(vault_root)
     probes: dict[str, tuple[PdfArtifactProbe, Path]] = {}
     for index, artifact in enumerate(artifacts):
@@ -790,6 +799,22 @@ def _probe_video_manifest_artifacts(
         ):
             raise PatternEvidenceError(
                 f"video_extraction {scope} artifact is not identity/count bound"
+            )
+        # Derivative mixing is exactly the case a shared top-level receipt
+        # cannot catch: two PDFs from two extraction runs under one manifest.
+        try:
+            artifact_receipt = validate_video_source_receipt(
+                artifact.get("source_receipt")
+            )
+        except VideoEvidenceError as exc:
+            raise PatternEvidenceError(
+                f"video_extraction {scope} artifact source_receipt is invalid "
+                f"({exc.reason_code})"
+            ) from exc
+        if artifact_receipt != source_receipt:
+            raise PatternEvidenceError(
+                f"video_extraction {scope} artifact is not bound to the manifest "
+                "source receipt"
             )
         artifact_path = _resolve_local_pdf_artifact(
             vault_root,
@@ -839,7 +864,7 @@ def _trusted_video_slide_probe(
         except PatternEvidenceError as exc:
             return None, str(exc), None
     trusted = (
-        manifest.get("schema_version") == 3
+        manifest.get("schema_version") == VIDEO_EXTRACTION_SCHEMA_VERSION
         and manifest.get("source_video_id") == youtube_id
         and manifest.get("slide_region_method") == "manual"
         and manifest.get("slide_region_applied") is True
@@ -865,6 +890,20 @@ def _trusted_video_slide_probe(
             )
         except VideoEvidenceError as exc:
             return None, _video_failure_reason(exc), None
+    try:
+        source_receipt = validate_video_source_receipt(manifest.get("source_receipt"))
+    except VideoEvidenceError as exc:
+        return None, f"video_extraction source_receipt is invalid: {exc}", None
+    lineage_drift = video_source_receipt_lineage_drift(
+        source_receipt, source_video_probe
+    )
+    if lineage_drift:
+        return (
+            None,
+            "preserved source video is not the content the trusted slide-region "
+            f"PDF was extracted from: {sorted(lineage_drift)}",
+            None,
+        )
     artifacts = manifest.get("artifacts")
     if not isinstance(artifacts, list):
         return None, "video_extraction artifacts must be an array", None
@@ -885,6 +924,16 @@ def _trusted_video_slide_probe(
         or artifact.get("page_count") != count
     ):
         return None, "slide_region artifact is not identity/count bound", None
+    try:
+        artifact_receipt = validate_video_source_receipt(artifact.get("source_receipt"))
+    except VideoEvidenceError as exc:
+        return None, f"slide_region artifact source_receipt is invalid: {exc}", None
+    if artifact_receipt != source_receipt:
+        return (
+            None,
+            "slide_region artifact is not bound to the manifest source receipt",
+            None,
+        )
     artifact_root = _canonical_pdf_root(vault_root)
     if artifact_probes is not None:
         admitted = artifact_probes.get("slide_region")

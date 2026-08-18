@@ -43,6 +43,8 @@ from catalog_io import (
     qualifying_evidence_groups,
 )
 from ingress_contract import (
+    ARCHIVAL_VIDEO_EXTRACTION_SCHEMA_VERSION,
+    VIDEO_EXTRACTION_SCHEMA_VERSION,
     IngressContractError,
     has_local_source_artifact,
     has_pdf_source,
@@ -76,7 +78,11 @@ from pptx_evidence import (
     ranges_cover_pages,
     validate_native_deck_audit,
 )
-from video_evidence import VideoEvidenceAssessment
+from video_evidence import (
+    VideoEvidenceAssessment,
+    VideoEvidenceError,
+    validate_video_source_receipt,
+)
 
 
 ANALYSIS_STATUSES = frozenset({"processed", "processed_partial"})
@@ -269,7 +275,6 @@ SUBSTANTIVE_PROSE_FIELDS = frozenset(
 LANGUAGE_RE = re.compile(r"^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$")
 CONDITION_ID_RE = re.compile(r"^[a-z0-9]+(?:[-_][a-z0-9]+)*$")
 VIDEO_SOURCE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-VIDEO_EXTRACTION_SCHEMA_VERSION = 3
 QUEUE_CLAIM_SCHEMA_VERSION = 6
 SOURCE_LOCATED_QUEUE_CLAIM_SCHEMA_VERSION = 4
 BASELINE_QUEUE_CLAIM_SCHEMA_VERSION = 3
@@ -630,6 +635,7 @@ class ScoringGenerationAssessment:
 class VideoExtractionState:
     source_video_id: str
     trusted_slide_region: bool
+    source_receipt: dict
 
 
 def canonical_return_sha256(ret: dict) -> str:
@@ -1085,6 +1091,26 @@ def _validate_absolute_manifest_path(value, field: str) -> str:
     return value
 
 
+def _validate_manifest_source_receipt(value, field: str) -> dict:
+    """Return the canonical engine-owned source receipt for one manifest field."""
+    try:
+        return validate_video_source_receipt(value)
+    except VideoEvidenceError as exc:
+        # The receipt boundary reports "source_receipt" for a whole-object
+        # rejection and a leaf name otherwise. Only a leaf earns a suffix.
+        detail = exc.details.get("field")
+        suffix = (
+            f".{detail}"
+            if isinstance(detail, str) and detail != "source_receipt"
+            else ""
+        )
+        _manifest_error(
+            f"{field}{suffix}",
+            "must be a complete engine-owned source-video receipt",
+            reason=exc.reason_code,
+        )
+
+
 def _validate_slide_region(value) -> tuple[float, float, float, float] | None:
     if value is None:
         return None
@@ -1109,7 +1135,7 @@ def _validate_slide_region(value) -> tuple[float, float, float, float] | None:
 
 
 def validate_video_extraction_manifest(structured: dict) -> VideoExtractionState:
-    """Validate a complete schema-v3 manifest and derive authored-slide trust.
+    """Validate a complete schema-v4 manifest and derive authored-slide trust.
 
     Trust is recomputed from mutually consistent top-level crop provenance and
     the scoped artifact record. A model cannot make context frames look like an
@@ -1119,10 +1145,23 @@ def validate_video_extraction_manifest(structured: dict) -> VideoExtractionState
     if not isinstance(manifest, dict):
         raise ReturnValidationError(
             "slide_source video_extracted requires a complete "
-            "structured_data.video_extraction schema-v3 manifest"
+            "structured_data.video_extraction schema-v4 manifest"
         )
     if manifest.get("schema_version") != VIDEO_EXTRACTION_SCHEMA_VERSION:
-        _manifest_error("schema_version", f"must be {VIDEO_EXTRACTION_SCHEMA_VERSION}")
+        # An archival record is separable from a malformed one: it was valid
+        # under its own contract and names the exact repair (reacquire the
+        # source, re-extract), so readers surface it as work rather than rot.
+        reason = (
+            "video_extraction.schema_version_archival"
+            if manifest.get("schema_version")
+            == ARCHIVAL_VIDEO_EXTRACTION_SCHEMA_VERSION
+            else None
+        )
+        _manifest_error(
+            "schema_version",
+            f"must be {VIDEO_EXTRACTION_SCHEMA_VERSION}",
+            reason=reason,
+        )
     if manifest.get("slide_source") != "video_extracted":
         _manifest_error("slide_source", "must be 'video_extracted'")
     pipeline_version = manifest.get("pipeline_version")
@@ -1149,6 +1188,9 @@ def validate_video_extraction_manifest(structured: dict) -> VideoExtractionState
             "source_video_path",
             f"must end in {source_video_id}.mp4",
         )
+    source_receipt = _validate_manifest_source_receipt(
+        manifest.get("source_receipt"), "source_receipt"
+    )
     total_frames = _manifest_nonnegative_int(
         manifest, "total_frames_extracted", positive=True
     )
@@ -1298,6 +1340,14 @@ def validate_video_extraction_manifest(structured: dict) -> VideoExtractionState
             _manifest_error(
                 f"{label}.source_video_path", "must match source_video_path"
             )
+        artifact_receipt = _validate_manifest_source_receipt(
+            artifact.get("source_receipt"), f"{label}.source_receipt"
+        )
+        if artifact_receipt != source_receipt:
+            _manifest_error(
+                f"{label}.source_receipt",
+                "must match the manifest source_receipt exactly",
+            )
         crop_method = artifact.get("crop_method")
         crop_verified = artifact.get("crop_verified")
         artifact_trusted = artifact.get("trusted_for_authored_slide_analysis")
@@ -1340,6 +1390,7 @@ def validate_video_extraction_manifest(structured: dict) -> VideoExtractionState
     return VideoExtractionState(
         source_video_id=source_video_id,
         trusted_slide_region=trusted,
+        source_receipt=source_receipt,
     )
 
 
@@ -1365,7 +1416,7 @@ def _validate_video_return(
     if ret["status"] == "processed" and not trusted_and_promoted:
         raise ReturnValidationError(
             "status processed with slide_source video_extracted requires a trusted "
-            "schema-v3 slide_region manifest and promoted slides_local_path"
+            "schema-v4 slide_region manifest and promoted slides_local_path"
         )
     if slides_local_path is None:
         clear_fields = set(ret.get("clear_fields") or [])
@@ -2441,7 +2492,7 @@ def _validate_available_sources(
     ):
         raise ReturnValidationError(
             "evidence_sources includes static_slides, but the video extraction has "
-            "no trusted schema-v3 slide_region artifact"
+            "no trusted schema-v4 slide_region artifact"
         )
     if slide_source not in {"pptx", "both"} and "native_deck" in available:
         raise ReturnValidationError(

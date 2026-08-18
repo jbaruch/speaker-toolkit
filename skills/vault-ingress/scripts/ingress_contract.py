@@ -29,6 +29,13 @@ LOCAL_ARTIFACT_FIELDS = (
     "video_local_path",
     "video_path",
 )
+# Shape version of the structured_data.video_extraction record. Owned by
+# skills/vault-ingress/scripts/video-slide-extraction.py and shared here so the
+# producer and every reader gate on one number. v4 binds each derivative to the
+# engine-owned source receipt; v3 stays readable as an archival/reprocessing
+# input and is never upgraded in place.
+VIDEO_EXTRACTION_SCHEMA_VERSION = 4
+ARCHIVAL_VIDEO_EXTRACTION_SCHEMA_VERSION = 3
 YOUTUBE_ID_RE = re.compile(r"[A-Za-z0-9_-]{11}")
 GOOGLE_DRIVE_ID_RE = re.compile(r"[A-Za-z0-9_-]{3,}")
 

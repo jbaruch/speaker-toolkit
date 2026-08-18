@@ -7,7 +7,6 @@ import json
 import os
 from pathlib import Path
 import pathlib
-import shutil
 import struct
 import subprocess
 import sys
@@ -15,6 +14,7 @@ from typing import Any
 import zipfile
 
 import pytest
+from conftest import video_source_receipt_for, write_tiny_video
 from PIL import Image
 from pypdf import PdfWriter
 from pptx import Presentation
@@ -46,7 +46,6 @@ QUEUE_STATE_SCRIPT = (
     / "scripts"
     / "queue-state.py"
 )
-_TINY_VIDEO_BYTES: bytes | None = None
 
 
 def foreign_absolute_locator(name: str) -> str:
@@ -189,51 +188,6 @@ def write_pdf(path: Path, *, page_count: int = 1) -> Path:
     return path
 
 
-def write_tiny_video(path: Path) -> Path:
-    """Materialize one valid MP4 while keeping ffmpeg local to video tests."""
-    global _TINY_VIDEO_BYTES
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if _TINY_VIDEO_BYTES is not None:
-        path.write_bytes(_TINY_VIDEO_BYTES)
-        return path
-
-    ffmpeg = shutil.which("ffmpeg")
-    assert ffmpeg is not None, "source-video manifest tests require ffmpeg"
-    assert shutil.which("ffprobe") is not None, (
-        "source-video manifest tests require ffprobe"
-    )
-    created = subprocess.run(
-        [
-            ffmpeg,
-            "-nostdin",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            "color=c=black:s=160x90:r=1",
-            "-t",
-            "1",
-            "-an",
-            "-c:v",
-            "mpeg4",
-            "-pix_fmt",
-            "yuv420p",
-            "-movflags",
-            "+faststart",
-            "-y",
-            str(path),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert created.returncode == 0, created.stderr
-    _TINY_VIDEO_BYTES = path.read_bytes()
-    return path
-
-
 def materialize_crc_damaged_pptx(fixture):
     """Create a deck with one CRC-damaged media member under the source root."""
     image_path = fixture["pptx_source"] / "asset.png"
@@ -302,12 +256,14 @@ def trusted_video_manifest(fixture, page_count=1):
         }
         for page in range(1, page_count + 1)
     ]
+    receipt = video_source_receipt_for(source_video)
     return {
         "slide_source": "video_extracted",
-        "schema_version": 3,
+        "schema_version": 4,
         "pipeline_version": "0.10.0",
         "source_video_id": VIDEO_ID,
         "source_video_path": str(source_video),
+        "source_receipt": receipt,
         "total_frames_extracted": page_count,
         "unique_frame_count": page_count,
         "authored_slide_count": None,
@@ -328,6 +284,7 @@ def trusted_video_manifest(fixture, page_count=1):
                 "page_count": page_count,
                 "source_video_id": VIDEO_ID,
                 "source_video_path": str(source_video),
+                "source_receipt": deepcopy(receipt),
                 "crop_method": "manual",
                 "crop_verified": True,
                 "trusted_for_authored_slide_analysis": True,
@@ -358,6 +315,7 @@ def context_video_manifest(fixture, page_count=1):
                     "page_count": page_count,
                     "source_video_id": VIDEO_ID,
                     "source_video_path": source_video,
+                    "source_receipt": deepcopy(manifest["source_receipt"]),
                     "crop_method": "none",
                     "crop_verified": False,
                     "trusted_for_authored_slide_analysis": False,
@@ -2938,6 +2896,7 @@ def test_unverified_video_crop_cannot_support_completed_deck_analysis(
             "page_count": manifest["unique_frame_count"],
             "source_video_id": VIDEO_ID,
             "source_video_path": manifest["source_video_path"],
+            "source_receipt": deepcopy(manifest["source_receipt"]),
             "crop_method": "none",
             "crop_verified": False,
             "trusted_for_authored_slide_analysis": False,
@@ -4242,3 +4201,149 @@ def test_an_invalid_legacy_video_manifest_on_a_requeued_talk_is_a_warning(
 
     assert report["blocking_count"] == 0
     assert "video_extraction_provenance_invalid" in finding_codes(report, "warning")
+
+
+def test_replaced_source_video_blocks_the_saved_derivatives(
+    preflight_vault,
+    vault_fixture,
+):
+    """Same path, different bytes: the PDFs no longer describe what is on disk."""
+    materialize_transcript(vault_fixture)
+    manifest = trusted_video_manifest(vault_fixture)
+    source_video = Path(manifest["source_video_path"])
+    source_video.write_bytes(source_video.read_bytes() + b"\x00")
+    write_database(
+        vault_fixture,
+        [
+            base_talk(
+                status="processed_partial",
+                slide_source="video_extracted",
+                structured_data={"video_extraction": manifest},
+            )
+        ],
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "video_extraction_source_lineage_mismatch" in finding_codes(
+        report, "blocking"
+    )
+    finding = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "video_extraction_source_lineage_mismatch"
+    )
+    assert finding["field"] == "structured_data.video_extraction.source_receipt"
+    assert "source_sha256" in finding["actual"]
+
+
+def test_archival_v3_manifest_asks_for_re_extraction_not_a_stamped_digest(
+    preflight_vault,
+    vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    manifest = trusted_video_manifest(vault_fixture)
+    # The shape a pre-receipt vault actually holds: no receipt anywhere.
+    manifest["schema_version"] = 3
+    manifest.pop("source_receipt")
+    for artifact in manifest["artifacts"]:
+        artifact.pop("source_receipt")
+    write_database(
+        vault_fixture,
+        [
+            base_talk(
+                status="processed_partial",
+                slide_source="video_extracted",
+                structured_data={"video_extraction": manifest},
+            )
+        ],
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    codes = finding_codes(report)
+    assert "video_extraction_source_receipt_missing" in codes
+    assert "video_extraction_provenance_invalid" not in codes
+    finding = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "video_extraction_source_receipt_missing"
+    )
+    assert finding["expected"] == 4
+    assert finding["actual"] == 3
+    # Preflight reports the gap; it never writes a receipt of its own.
+    stored = json.loads(vault_fixture["database"].read_text())["talks"][0]
+    assert "source_receipt" not in stored["structured_data"]["video_extraction"]
+
+
+def test_derivatives_from_two_runs_cannot_share_one_manifest(
+    preflight_vault,
+    vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    manifest = context_video_manifest(vault_fixture)
+    other_source = vault_fixture["root"] / "slides-rebuild" / VIDEO_ID / "other.mp4"
+    write_tiny_video(other_source)
+    other_source.write_bytes(other_source.read_bytes() + b"\x00")
+    manifest["artifacts"][0]["source_receipt"] = video_source_receipt_for(other_source)
+    write_database(
+        vault_fixture,
+        [
+            base_talk(
+                status="processed_partial",
+                slide_source="video_extracted",
+                structured_data={"video_extraction": manifest},
+            )
+        ],
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    finding = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "video_extraction_provenance_invalid"
+    )
+    assert finding["actual"] == "video_extraction.artifacts[0].source_receipt"
+
+
+def test_replaced_source_video_leaves_an_unrelated_talk_current(
+    preflight_vault,
+    vault_fixture,
+):
+    """One talk's broken lineage never demotes a lane that shares nothing."""
+    materialize_transcript(vault_fixture)
+    manifest = trusted_video_manifest(vault_fixture)
+    source_video = Path(manifest["source_video_path"])
+    source_video.write_bytes(source_video.read_bytes() + b"\x00")
+    healthy = base_talk(
+        filename="2026-07-31-transcript-only.md",
+        title="Transcript Only",
+        date="2026-07-31",
+        video_url=f"https://www.youtube.com/watch?v={OTHER_VIDEO_ID}",
+        youtube_id=OTHER_VIDEO_ID,
+        slide_source="none",
+        status="processed",
+    )
+    materialize_transcript(vault_fixture, video_id=OTHER_VIDEO_ID)
+    write_database(
+        vault_fixture,
+        [
+            base_talk(
+                status="processed_partial",
+                slide_source="video_extracted",
+                structured_data={"video_extraction": manifest},
+            ),
+            healthy,
+        ],
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    lineage = [
+        item
+        for item in report["findings"]
+        if item["code"] == "video_extraction_source_lineage_mismatch"
+    ]
+    assert len(lineage) == 1
+    assert lineage[0]["filename"] == "2026-07-30-perfect-ingress.md"
