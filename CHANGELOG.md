@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.86 — 2026-08-18
+
 ### feat(vault-ingress) — admit `markdown` as a slide source (#318)
 
 `slide_source` accepted binary artifacts only — `pptx|pdf|both|video_extracted|none`
