@@ -27,6 +27,8 @@ a malformed record is not the one entry the report cannot identify.
 Reports are byte-identical across runs over one database, so a diff between two
 runs is a real change rather than dict ordering.
 
+## 0.20.86 — 2026-08-18
+
 ### feat(vault-ingress) — admit `markdown` as a slide source (#318)
 
 `slide_source` accepted binary artifacts only — `pptx|pdf|both|video_extracted|none`
