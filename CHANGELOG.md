@@ -14,10 +14,10 @@ function:
 
 ```python
 # audit-source-identities.py — ISO days only
-date.fromisoformat(value.strip())          # "2014" -> ValueError -> None
+date.fromisoformat(value.strip())  # "2014" -> ValueError -> None
 
 # preflight-vault.py — year-aware
-if re.fullmatch(r"\d{4}", value):           # "2014" -> (None, 2014)
+if re.fullmatch(r"\d{4}", value):  # "2014" -> (None, 2014)
     return None, int(value)
 ```
 
