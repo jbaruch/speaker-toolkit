@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.87 — 2026-08-18
+
 ### feat(vault-ingress) — a standalone persisted-observation audit (#167)
 
 `assess_persisted_pattern_observations` was reachable only in-flow. Seven
