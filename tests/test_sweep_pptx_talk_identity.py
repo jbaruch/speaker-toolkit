@@ -119,6 +119,71 @@ def deck(
     return relative
 
 
+class TestTheDeckMustHoldStillAcrossTheRead:
+    """The facts and the digest come from two separate opens (#176 review).
+
+    `read_deck_identity_facts` opens the deck, then `observed_source_fingerprint`
+    opens it again. A deck replaced in that window would hand generation B's
+    digest to a verdict derived from generation A's facts — and a later check
+    against B would then accept it. The whole point of binding an assessment to
+    bytes is defeated if the bytes it names are not the bytes it read.
+    """
+
+    def test_a_deck_replaced_mid_read_is_unassessable(
+        self, source_root: Path, monkeypatch
+    ) -> None:
+        relative = deck(source_root, "Conference/2024/DevOps for Developers.pptx")
+        talk = {
+            "filename": "2024-04-10-talk.md",
+            "title": "DevOps for Developers",
+            "conference": "Conference",
+            "date": "2024-04-10",
+        }
+        original = sweep.read_deck_identity_facts
+
+        def swap_then_read(pptx_path, pptx_source_dir):
+            """Replace the deck at the exact moment its facts are read."""
+            result = original(pptx_path, pptx_source_dir)
+            write_deck(
+                source_root,
+                relative,
+                full_deck_members(
+                    slide_titles=["A Totally Different Talk"],
+                    runs=["A Totally Different Talk"],
+                    slides=7,
+                ),
+            )
+            return result
+
+        monkeypatch.setattr(sweep, "read_deck_identity_facts", swap_then_read)
+
+        rows = sweep_rows(
+            [catalog_row(relative, talk["filename"])], [talk], source_root
+        )
+
+        assert rows[0]["disposition"] == sweep.DISPOSITION_UNASSESSABLE
+        assert rows[0]["reason_codes"] == [sweep.REASON_SOURCE_UNSTABLE]
+
+    def test_a_deck_that_holds_still_is_assessed_normally(
+        self, source_root: Path
+    ) -> None:
+        """The bracket must not make every ordinary read unassessable."""
+        relative = deck(source_root, "Conference/2024/DevOps for Developers.pptx")
+        talk = {
+            "filename": "2024-04-10-talk.md",
+            "title": "DevOps for Developers",
+            "conference": "Conference",
+            "date": "2024-04-10",
+        }
+
+        rows = sweep_rows(
+            [catalog_row(relative, talk["filename"])], [talk], source_root
+        )
+
+        assert rows[0]["disposition"] == sweep.DISPOSITION_CONFIRMED
+        assert rows[0]["verdict"] == sweep.VERDICT_MATCHED
+
+
 class TestDispositions:
     def test_a_binding_the_assessment_selects_is_confirmed(
         self, source_root: Path

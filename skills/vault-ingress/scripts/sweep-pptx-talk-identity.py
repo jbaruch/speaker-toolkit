@@ -92,6 +92,10 @@ DISPOSITION_REVIEW_REQUIRED = "binding_review_required"
 DISPOSITION_UNPROVEN = "binding_unproven"
 DISPOSITION_UNBOUND = "unbound_row"
 DISPOSITION_UNASSESSABLE = "binding_unassessable"
+# The deck did not hold still across the read. Its facts and its digest would
+# describe different generations, so the row gets no verdict at all rather than
+# one stamped with a generation it cannot vouch for.
+REASON_SOURCE_UNSTABLE = "identity_source_unstable_during_read"
 
 DISPOSITIONS = (
     DISPOSITION_CONFIRMED,
@@ -239,14 +243,30 @@ def sweep_catalog(
             continue
         stored_talk = record.get("talk_filename")
         stored_talk = stored_talk if isinstance(stored_talk, str) else None
+        # Fingerprint, read, fingerprint. The facts and the digest come from
+        # two separate opens of the same path, so a deck replaced between them
+        # would stamp the SECOND generation's digest onto facts derived from the
+        # first — a verdict about bytes it never read, which is precisely the
+        # confusion this whole contract exists to refuse. Bracketing the read
+        # makes that window observable: if the deck is not byte-identical on
+        # both sides, no generation can honestly be attached and the row is
+        # unassessable rather than assessed against a guess.
+        before = observed_source_fingerprint(record.get("pptx_path"), pptx_source_dir)
         reading = read_deck_identity_facts(record.get("pptx_path"), pptx_source_dir)
-        # Digested from the same deck the facts were read from, in the same
-        # pass, so the verdict names the generation it actually saw. Reading the
-        # facts and fingerprinting in two separate passes would let a deck
-        # change between them and stamp a verdict onto bytes it never read.
-        observed_identity = observed_source_fingerprint(
-            record.get("pptx_path"), pptx_source_dir
-        )
+        after = observed_source_fingerprint(record.get("pptx_path"), pptx_source_dir)
+        if before is None or after is None or before != after:
+            rows.append(
+                {
+                    "index": index,
+                    "pptx_path": reading.pptx_path or None,
+                    "stored_talk_filename": stored_talk,
+                    "disposition": DISPOSITION_UNASSESSABLE,
+                    "reason_codes": [REASON_SOURCE_UNSTABLE],
+                    "deck_facts_reason_code": reading.reason_code,
+                }
+            )
+            continue
+        observed_identity = before
         try:
             assessment = assess_pptx_talk_identity(
                 reading.facts, candidates, source_identity=observed_identity

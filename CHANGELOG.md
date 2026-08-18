@@ -34,6 +34,16 @@ no `visual_evidence`, so there is nothing to cross-check and the requirement
 narrows to the assessment naming a generation at all. Requiring the extraction
 fingerprint would have inverted the order this issue establishes.
 
+The sweep brackets the fact read with a fingerprint on each side. The facts and
+the digest come from two separate opens of the same path, so a deck replaced in
+that window would hand generation B's digest to a verdict derived from
+generation A's facts — and a later check against B would then accept it,
+defeating the byte-binding entirely. A deck that is not byte-identical on both
+sides yields no verdict: the row reports `binding_unassessable` with
+`identity_source_unstable_during_read` rather than an assessment stamped with a
+generation it cannot vouch for. Raised by the policy reviewer on #329, against a
+comment that claimed the single-pass property the code did not have.
+
 The generation check runs last in the refusal order. Everything above it asks
 whether the assessment is a coherent proof; this asks whether it is a proof
 about the bytes that are there now, and running it earlier would mask a
