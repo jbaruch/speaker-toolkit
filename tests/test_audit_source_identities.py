@@ -1048,3 +1048,55 @@ def test_a_candidate_failure_leaves_the_cli_exit_status_clean(
 
     assert "candidate_metadata_fetch_failed" in finding_codes(result)
     assert result["complete"] is True
+
+
+def test_bare_year_catalog_date_is_compared_not_skipped(audit_source_identities):
+    """A `YYYY` catalog date gates on its year instead of dropping the check.
+
+    The auditor used to parse ISO days only, so every bare-year record read as
+    "no catalog date" and its upload comparison was silently skipped — the gate
+    that preflight applied to the same record was invisible in the pre-check.
+    """
+    database = {"talks": [talk("playlist-HVy2GzbI1II.md", date="2014")]}
+
+    report = audit_source_identities.audit_database(
+        database,
+        database_path="/vault/tracking-database.json",
+        metadata_fetcher=lambda video_id: metadata(
+            video_id,
+            title="Perfect Vault Ingress — ExampleConf",
+            upload_date="20131128",
+        ),
+        captured_at=CAPTURED_AT,
+    )
+
+    assert "provider_upload_predates_catalog" in finding_codes(report)
+    comparison = report["talks"][0]["comparison"]
+    assert comparison["upload_predates_catalog_date"] is True
+    finding = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "provider_upload_predates_catalog"
+    )
+    assert finding["evidence"]["catalog_date"] == "2014"
+
+
+def test_bare_year_catalog_date_accepts_an_upload_within_that_year(
+    audit_source_identities,
+):
+    """Comparing at year precision must not turn same-year uploads into faults."""
+    database = {"talks": [talk("playlist-HVy2GzbI1II.md", date="2014")]}
+
+    report = audit_source_identities.audit_database(
+        database,
+        database_path="/vault/tracking-database.json",
+        metadata_fetcher=lambda video_id: metadata(
+            video_id,
+            title="Perfect Vault Ingress — ExampleConf",
+            upload_date="20140103",
+        ),
+        captured_at=CAPTURED_AT,
+    )
+
+    assert "provider_upload_predates_catalog" not in finding_codes(report)
+    assert report["talks"][0]["comparison"]["upload_predates_catalog_date"] is False

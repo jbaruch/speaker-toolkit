@@ -240,7 +240,11 @@ Offline comparison rules are intentionally deterministic:
   value, falling back to `config.speaker_name`. A full name and that same
   surname-only form agree; unrelated names do not.
 - `recorded_date` must be in the catalog year; a different day in that year is
-  a warning. `upload_date` must not precede the catalog delivery date/year.
+  a warning. `upload_date` must not precede the catalog delivery date/year. The
+  catalog reading and the upload comparison are owned by `parse_catalog_date`
+  and `upload_predates_catalog` in
+  `skills/vault-ingress/scripts/source_identity_matching.py`, so the live audit
+  reaches the same verdict this gate does.
 - When the talk has numeric `duration_seconds`, `video_duration_seconds`, or
   `talk_duration_seconds` (top-level or the documented structured variants),
   source duration may differ by at most the greater of 60 seconds or 5%.

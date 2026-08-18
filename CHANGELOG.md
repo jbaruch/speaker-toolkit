@@ -1,5 +1,47 @@
 # Changelog
 
+### fix(vault-ingress) — one owner for the catalog-date comparison (#333)
+
+Registering source identities across the live vault surfaced a number that made
+no sense: `audit-source-identities.py` reported **1** `provider_upload_predates_catalog`,
+and preflight — reading the same records, minutes later — reported **11**
+`source_identity_upload_predates_talk`. Same comparison, same facts, two
+answers, and only the preflight number gates. The operator ran the pre-check,
+read it as clean, and met the other ten at the gate.
+
+Both scripts had a function named `parse_catalog_date`. They were not the same
+function:
+
+```python
+# audit-source-identities.py — ISO days only
+date.fromisoformat(value.strip())  # "2014" -> ValueError -> None
+
+# preflight-vault.py — year-aware
+if re.fullmatch(r"\d{4}", value):  # "2014" -> (None, 2014)
+    return None, int(value)
+```
+
+Nine of the eleven withheld talks are `playlist-*` records whose `date` is a
+bare year. To the auditor every one of them read as "no catalog date", so the
+upload comparison was not failed — it was never attempted. A record too coarse
+to compare precisely is still a record that names a year, and an upload from
+the year before is still evidence of the wrong delivery.
+
+`parse_catalog_date` and `upload_predates_catalog` now live in
+`source_identity_matching.py`, alongside the `titles_agree` contract both
+scripts already shared, and both callers compare at whichever precision the
+catalog record actually carries.
+
+Worth recording, because #333 assumed otherwise: the title predicate never
+diverged. The auditor's 4 `provider_title_mismatch` against preflight's 2 is a
+population difference, not a predicate one — the two "Battle of Agents" videos
+were withheld before registration, so preflight had no stored title to compare
+and never evaluated them. Both scripts call the same `titles_agree`.
+
+`expected_duration_seconds` was also copied into both scripts. The copies agree
+today, which is precisely where the date predicate started; it moved to the
+shared module too, unchanged.
+
 ## 0.20.89 — 2026-08-18
 
 ### docs(vault-ingress) — record which assessor owns persisted citations (#167)
