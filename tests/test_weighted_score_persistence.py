@@ -633,18 +633,66 @@ class TestTheMergedWeightedRecordValidatesAsPersistedState:
     ):
         return_validation.validate_persisted_v2_analysis_state(stored)
 
-    def test_it_validated_on_the_weighted_branch_and_not_a_laxer_one(
-        self, return_validation, stored
-    ):
+    def test_it_validated_on_the_weighted_branch_and_not_a_laxer_one(self, stored):
         """Four field sets are accepted, so "it validated" names no branch.
 
         The v6 set is v5 plus the basis, so a record that lost its basis
         validates cleanly as a v5 one. Pinning the set is what distinguishes
         the weighted shape reaching its own branch from it falling through.
+
+        Spelled out rather than compared against
+        `V6_PERSISTED_PATTERN_OBSERVATION_FIELDS`: that constant is what the
+        validator itself reads, so comparing the record to it passes whenever
+        the record and the validator agree — including when both drop
+        `pattern_score_basis` and the weighted contract quietly stops being
+        required. The literal is the independent statement of the shape;
+        `test_the_declared_v6_shape_is_the_one_the_validator_enforces` pins the
+        constant to it, so moving the constant fails here rather than silently
+        redefining what v6 means.
         """
-        assert set(stored["pattern_observations"]) == set(
-            return_validation.V6_PERSISTED_PATTERN_OBSERVATION_FIELDS
+        assert set(stored["pattern_observations"]) == {
+            "antipattern_ids",
+            "antipatterns_detected",
+            "applicability_assessments",
+            "evidence_schema_version",
+            "evidence_sources",
+            "not_evaluable",
+            "not_evaluable_ids",
+            "opportunity_coverage_identity",
+            "pattern_ids",
+            "pattern_outcomes",
+            "pattern_score",
+            "pattern_score_basis",
+            "patterns_detected",
+            "source_inspection",
+        }
+
+    def test_the_declared_v6_shape_is_the_one_the_validator_enforces(
+        self, return_validation, stored
+    ):
+        """Ties the literal above to the constant without either defining the other."""
+        assert set(return_validation.V6_PERSISTED_PATTERN_OBSERVATION_FIELDS) == set(
+            stored["pattern_observations"]
         )
+
+    def test_a_weighted_record_that_loses_its_basis_is_refused(
+        self, return_validation, stored
+    ):
+        """The basis is not decoration on a v6 record; it is what makes it v6.
+
+        Dropping it leaves exactly the v5 field set, so the validator applies
+        the FLAT contract — and the flat contract's score is
+        count(patterns) minus count(antipatterns), an integer. The weighted
+        fraction the record still carries is what fails. A weighted number with
+        no arithmetic behind it never reaches a reader.
+        """
+        stored["pattern_observations"].pop("pattern_score_basis")
+
+        with pytest.raises(
+            return_validation.ReturnValidationError,
+            match="pattern_score must be an integer",
+        ):
+            return_validation.validate_persisted_v2_analysis_state(stored)
 
     def test_the_weighted_shape_is_a_closed_set_at_this_validator(
         self, return_validation, stored

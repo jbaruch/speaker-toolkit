@@ -40,11 +40,21 @@ existing v6 merge test reached the validator transitively.
 
 What no test said is WHICH of its four accepted field sets took the record. The
 v6 set is the v5 set plus `pattern_score_basis`, so a weighted record that lost
-its basis validates cleanly as a v5 one and the merge still passes. The new
-class pins the persisted observation field set to v6, proves the v6 branch is a
-closed set rather than "v5 plus whatever else arrived", and runs the production
-gate `validate_effective_v2_state` directly. Removing the v6 branch from the
-validator fails all four.
+its basis validates cleanly as a v5 one and the merge still passes.
+
+The new class states the v6 observation field set as a literal — not as a
+comparison against `V6_PERSISTED_PATTERN_OBSERVATION_FIELDS`, which is what the
+validator itself reads, so that comparison passes whenever the record and the
+validator agree, including when both drop the basis and the weighted contract
+quietly stops being required. A second test pins the constant to the literal, so
+moving it fails loudly instead of redefining what v6 means.
+
+It also proves the v6 branch is a closed set rather than "v5 plus whatever else
+arrived", runs the production gate `validate_effective_v2_state` directly, and
+pins what a basis-less v6 record actually hits: losing the basis leaves exactly
+the v5 field set, so the FLAT contract applies and the weighted fraction the
+record still carries is refused as a non-integer. Removing the basis from the v6
+constant fails the class; so does removing the v6 branch from the validator.
 
 ### chore(release) — resync the manifest to the registry (#324)
 
