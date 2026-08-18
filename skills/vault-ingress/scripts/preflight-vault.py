@@ -48,6 +48,7 @@ from persisted_pattern_observations import (
 )
 from return_validation import (
     ANALYSIS_STATUSES,
+    ARCHIVAL_VIDEO_EXTRACTION_SCHEMA_VERSION,
     PATTERN_SCORING_SCHEMA_VERSION,
     PatternCatalog,
     ReturnValidationError,
@@ -64,7 +65,11 @@ from pattern_evidence import (
     validate_transcript_quality_for_owner,
 )
 from pdf_evidence import PdfArtifactProbe, PdfEvidenceError, probe_pdf_artifact
-from video_evidence import VideoEvidenceAssessment, VideoEvidenceError
+from video_evidence import (
+    VideoEvidenceAssessment,
+    VideoEvidenceError,
+    video_source_receipt_lineage_drift,
+)
 from source_identity_matching import (
     EventAlias,
     event_agreement,
@@ -165,6 +170,15 @@ SOURCE_VIDEO_CONTRACT_CODES = frozenset(
         "source_video_artifact_missing",
         "source_video_artifact_unavailable",
         "source_video_artifact_unreadable",
+    }
+)
+# Lineage is a third class, distinct from a malformed manifest and from an
+# unreadable artifact: the record parses and the source reads, but the bytes on
+# disk are not the bytes the saved PDFs came from.
+VIDEO_SOURCE_LINEAGE_CODES = frozenset(
+    {
+        "video_extraction_source_receipt_missing",
+        "video_extraction_source_lineage_mismatch",
     }
 )
 
@@ -1563,7 +1577,7 @@ class VaultPreflight:
         *,
         require_trusted: bool,
     ) -> None:
-        """Validate schema-v3 provenance and any claimed authored-deck trust."""
+        """Validate schema-v4 lineage and any claimed authored-deck trust."""
         talk = self.talks[index]
         structured = talk.get("structured_data")
         extraction = (
@@ -1582,6 +1596,25 @@ class VaultPreflight:
             )
             return
 
+        if extraction.get("schema_version") == (
+            ARCHIVAL_VIDEO_EXTRACTION_SCHEMA_VERSION
+        ):
+            # Archival, not corrupt. The saved PDFs carry no receipt proving
+            # which source bytes produced them, and no digest observed now can
+            # supply one after the fact.
+            self.talk_add(
+                index,
+                severity,
+                "video_extraction_source_receipt_missing",
+                "video extraction predates source-receipt binding; reacquire the "
+                "source video and re-extract",
+                field="structured_data.video_extraction.schema_version",
+                expected=VIDEO_EXTRACTION_SCHEMA_VERSION,
+                actual=ARCHIVAL_VIDEO_EXTRACTION_SCHEMA_VERSION,
+                artifact_path=promoted_pdf,
+            )
+            return
+
         try:
             state = validate_video_extraction_manifest({"video_extraction": extraction})
         except ReturnValidationError as exc:
@@ -1596,9 +1629,9 @@ class VaultPreflight:
                 index,
                 severity,
                 "video_extraction_provenance_invalid",
-                "video extraction manifest violates the schema-v3 artifact contract",
+                "video extraction manifest violates the schema-v4 artifact contract",
                 field="structured_data.video_extraction",
-                expected="complete, internally consistent schema-v3 manifest",
+                expected="complete, internally consistent schema-v4 manifest",
                 # ReturnValidationError text can echo the malformed input value
                 # it rejected, so only its typed reason crosses the boundary.
                 actual=getattr(exc, "reason_code", None) or type(exc).__name__,
@@ -1625,7 +1658,7 @@ class VaultPreflight:
                 )
             else:
                 try:
-                    self.video_evidence_assessment.probe(
+                    source_video_probe = self.video_evidence_assessment.probe(
                         source_video_path,
                         trusted_root=self.artifact_root(),
                     )
@@ -1666,6 +1699,24 @@ class VaultPreflight:
                                 "structured_data.video_extraction.source_video_path"
                             ),
                             actual=failure,
+                            artifact_path=source_video_path,
+                            capability_fact=self._capabilities(index),
+                        )
+                else:
+                    drift = video_source_receipt_lineage_drift(
+                        state.source_receipt,
+                        source_video_probe,
+                    )
+                    if drift:
+                        self.talk_add(
+                            index,
+                            "blocking",
+                            "video_extraction_source_lineage_mismatch",
+                            "preserved source video is not the content the saved "
+                            "derivatives were extracted from",
+                            field=("structured_data.video_extraction.source_receipt"),
+                            expected="receipt agrees with a fresh bounded probe",
+                            actual=sorted(drift),
                             artifact_path=source_video_path,
                             capability_fact=self._capabilities(index),
                         )
@@ -1743,7 +1794,7 @@ class VaultPreflight:
                 "video_extraction_provenance_invalid",
                 "video extraction manifest is structurally or referentially invalid",
                 field="structured_data.video_extraction",
-                expected="complete schema-v3 manifest with existing source/artifacts",
+                expected="complete schema-v4 manifest with existing source/artifacts",
                 actual=errors,
                 artifact_path=promoted_pdf,
             )

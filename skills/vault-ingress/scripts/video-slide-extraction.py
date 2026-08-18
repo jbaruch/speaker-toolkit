@@ -31,6 +31,7 @@ Examples:
 """
 
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -41,6 +42,12 @@ import tempfile
 
 from artifact_locator import ArtifactLocatorError, materialize_native_root
 from ingress_contract import YOUTUBE_ID_RE
+from video_evidence import (
+    VideoEvidenceAssessment,
+    VideoEvidenceError,
+    build_video_source_receipt,
+    video_source_receipt_generation_drift,
+)
 
 # Pipeline version — stamped into every video-extracted vault entry (DB row +
 # PDF metadata) so artifacts record which extraction iteration produced them.
@@ -48,14 +55,14 @@ from ingress_contract import YOUTUBE_ID_RE
 # the download tier, region-detection logic, dedup hashing, or PDF assembly.
 # See skills/vault-ingress/references/video-slide-extraction.md ("Pipeline
 # Versioning") for the policy.
-PIPELINE_VERSION = "0.12.0"
+PIPELINE_VERSION = "0.13.0"
 
 # Shape version of the structured_data.video_extraction record (distinct from
 # PIPELINE_VERSION, which tracks extractor behavior — this tracks the record's
 # field shape). Bump on any field add/remove/rename. Records written before this
 # field existed have no schema_version and are read as the legacy shape (0).
 # See skills/vault-ingress/references/schemas-db.md ("Video Extraction Output Schema").
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 VIDEO_DEPENDENCY_INSTALL = (
     'pip install "ImageHash==4.3.2" "numpy==2.2.6" "Pillow==12.3.0" "filelock==3.32.2"'
@@ -88,6 +95,71 @@ def validate_youtube_id(value: object) -> str:
     if not isinstance(value, str) or YOUTUBE_ID_RE.fullmatch(value) is None:
         raise ValueError("youtube_id_invalid")
     return value
+
+
+class VideoSourceLineageError(RuntimeError):
+    """No derivative could be bound to one exact source-video generation.
+
+    Raised instead of returning a manifest. A schema-4 record exists only when
+    the engine-owned receipt was captured around the same extraction run, so a
+    run that cannot prove that produces no record at all.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason_code: str,
+        details: dict[str, object] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+        self.details = dict(details or {})
+
+
+def _capture_source_receipt(assessment, source_video_path):
+    """Return the engine-owned receipt for the exact source generation."""
+    try:
+        probe = assessment.probe(source_video_path)
+    except VideoEvidenceError as exc:
+        raise VideoSourceLineageError(
+            "source video did not pass bounded evidence inspection",
+            reason_code=exc.reason_code,
+            details=dict(exc.details),
+        ) from exc
+    return build_video_source_receipt(probe)
+
+
+def _require_stable_source(assessment, source_video_path, source_receipt):
+    """Fail the run when the source changed while derivatives were produced."""
+    try:
+        probe = assessment.probe(source_video_path)
+    except VideoEvidenceError as exc:
+        raise VideoSourceLineageError(
+            "source video became uninspectable during extraction",
+            reason_code=exc.reason_code,
+            details=dict(exc.details),
+        ) from exc
+    drift = video_source_receipt_generation_drift(source_receipt, probe)
+    if drift:
+        raise VideoSourceLineageError(
+            "source video was replaced during extraction",
+            reason_code="video_source_replaced_during_extraction",
+            details={"drift": list(drift)},
+        )
+
+
+def _discard_unbound_artifacts(result):
+    """Remove derivatives that cannot be bound to the recorded source."""
+    artifacts = result.get("artifacts") if isinstance(result, dict) else None
+    for artifact in artifacts or []:
+        path = artifact.get("path")
+        if not isinstance(path, str):
+            continue
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            continue
 
 
 def _confined_output_path(output_root: str, filename: str) -> str:
@@ -700,11 +772,17 @@ def artifact_record(
     page_count,
     source_video_id,
     source_video_path,
+    source_receipt,
     crop_method="none",
     crop_verified=False,
     trusted_for_authored_slide_analysis=False,
 ):
-    """Build a self-describing PDF artifact record for the extraction result."""
+    """Build a self-describing PDF artifact record for the extraction result.
+
+    ``source_receipt`` is the run's engine-owned source receipt. Every
+    derivative carries it, so a PDF separated from the manifest still names the
+    exact source bytes it came from.
+    """
     if artifact_scope not in ("slide_region", "full_frame_context"):
         raise ValueError(f"unknown artifact scope: {artifact_scope!r}")
     if artifact_scope == "full_frame_context" and (
@@ -724,6 +802,7 @@ def artifact_record(
         "page_count": page_count,
         "source_video_id": source_video_id,
         "source_video_path": canonical_path(source_video_path),
+        "source_receipt": copy.deepcopy(source_receipt),
         "crop_method": crop_method,
         "crop_verified": bool(crop_verified),
         "trusted_for_authored_slide_analysis": bool(
@@ -737,6 +816,7 @@ def _extract_slides_in_workspace(
     output_dir,
     youtube_id,
     frames_dir,
+    source_receipt,
     fps=0.5,
     hash_threshold=8,
     slide_region: str | NormalizedSlideRegion = "auto",
@@ -749,6 +829,8 @@ def _extract_slides_in_workspace(
         video_path: Path to downloaded MP4
         output_dir: Directory for intermediate files and output PDF
         youtube_id: YouTube video ID (used for naming)
+        source_receipt: Engine-owned receipt for the exact source generation,
+                        stamped onto the manifest and every derivative record.
         fps: Frames per second to extract (0.5 = 1 frame per 2 seconds)
         hash_threshold: Largest hash distance treated as the same slide. Higher
                         values merge more and keep fewer frames.
@@ -784,6 +866,7 @@ def _extract_slides_in_workspace(
             "pipeline_version": PIPELINE_VERSION,
             "source_video_id": youtube_id,
             "source_video_path": source_video_path,
+            "source_receipt": copy.deepcopy(source_receipt),
             "total_frames_extracted": 0,
             "unique_frame_count": 0,
             "authored_slide_count": None,
@@ -831,6 +914,7 @@ def _extract_slides_in_workspace(
                     len(unique_frames),
                     youtube_id,
                     source_video_path,
+                    source_receipt,
                     crop_method=region_provenance["slide_region_method"],
                     crop_verified=region_provenance["slide_region_verified"],
                     trusted_for_authored_slide_analysis=trusted_slide_evidence,
@@ -855,6 +939,7 @@ def _extract_slides_in_workspace(
                     len(unique_frames),
                     youtube_id,
                     source_video_path,
+                    source_receipt,
                 )
             )
 
@@ -864,6 +949,7 @@ def _extract_slides_in_workspace(
         "pipeline_version": PIPELINE_VERSION,
         "source_video_id": youtube_id,
         "source_video_path": source_video_path,
+        "source_receipt": copy.deepcopy(source_receipt),
         "total_frames_extracted": len(frames),
         "unique_frame_count": len(unique_frames),
         # Frame/page count is not an authored slide count: animations, camera
@@ -893,7 +979,14 @@ def extract_slides_from_video(
     slide_region_verified=False,
     include_context_pdf=True,
 ):
-    """Run one extraction in a fresh frame workspace that is always removed."""
+    """Run one extraction bound end to end to one exact source generation.
+
+    The source is probed before any frame is sampled and again after every
+    derivative is written. One assessment owns both probes, so the closing
+    probe costs a stat when the generation held and a full re-probe exactly
+    when it did not. Any drift discards the derivatives and fails the run —
+    a manifest is never written against bytes it did not come from.
+    """
     youtube_id = validate_youtube_id(youtube_id)
     if fps <= 0:
         raise ValueError("fps must be greater than zero")
@@ -903,6 +996,8 @@ def extract_slides_from_video(
     run_lock = _video_run_lock_path(output_dir, youtube_id)
 
     with _video_run_lock(run_lock):
+        assessment = VideoEvidenceAssessment()
+        source_receipt = _capture_source_receipt(assessment, source_video_path)
         for filename in (
             f"{youtube_id}.slide-region.pdf",
             f"{youtube_id}.context.pdf",
@@ -911,17 +1006,24 @@ def extract_slides_from_video(
         with tempfile.TemporaryDirectory(
             prefix="speaker-toolkit-video-frames-"
         ) as frames_dir:
-            return _extract_slides_in_workspace(
+            result = _extract_slides_in_workspace(
                 source_video_path,
                 output_dir,
                 youtube_id,
                 frames_dir,
+                source_receipt,
                 fps=fps,
                 hash_threshold=hash_threshold,
                 slide_region=slide_region,
                 slide_region_verified=slide_region_verified,
                 include_context_pdf=include_context_pdf,
             )
+        try:
+            _require_stable_source(assessment, source_video_path, source_receipt)
+        except VideoSourceLineageError:
+            _discard_unbound_artifacts(result)
+            raise
+        return result
 
 
 def main():
@@ -997,16 +1099,29 @@ def main():
         )
         sys.exit(1)
 
-    result = extract_slides_from_video(
-        args.video,
-        args.outdir,
-        youtube_id,
-        fps=args.fps,
-        hash_threshold=args.threshold,
-        slide_region=args.region,
-        slide_region_verified=args.region_verified,
-        include_context_pdf=args.include_context_pdf,
-    )
+    try:
+        result = extract_slides_from_video(
+            args.video,
+            args.outdir,
+            youtube_id,
+            fps=args.fps,
+            hash_threshold=args.threshold,
+            slide_region=args.region,
+            slide_region_verified=args.region_verified,
+            include_context_pdf=args.include_context_pdf,
+        )
+    except VideoSourceLineageError as exc:
+        print(
+            json.dumps(
+                {
+                    "error": str(exc),
+                    "reason_code": exc.reason_code,
+                    "details": exc.details,
+                }
+            ),
+            file=sys.stderr,
+        )
+        sys.exit(1)
     print(json.dumps(result, indent=2))
 
 
