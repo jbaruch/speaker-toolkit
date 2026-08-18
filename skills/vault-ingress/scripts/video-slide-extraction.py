@@ -123,7 +123,9 @@ def _capture_source_receipt(assessment, source_video_path):
         probe = assessment.probe(source_video_path)
     except VideoEvidenceError as exc:
         raise VideoSourceLineageError(
-            "source video did not pass bounded evidence inspection",
+            "source video did not pass bounded evidence inspection — hydrate a "
+            "cloud placeholder, or reacquire the MP4 with "
+            "batch-download-videos.sh, then rerun extraction",
             reason_code=exc.reason_code,
             details=dict(exc.details),
         ) from exc
@@ -136,14 +138,18 @@ def _require_stable_source(assessment, source_video_path, source_receipt):
         probe = assessment.probe(source_video_path)
     except VideoEvidenceError as exc:
         raise VideoSourceLineageError(
-            "source video became uninspectable during extraction",
+            "source video became uninspectable during extraction — restore the "
+            "MP4 at its recorded path and rerun extraction with nothing else "
+            "writing to it",
             reason_code=exc.reason_code,
             details=dict(exc.details),
         ) from exc
     drift = video_source_receipt_generation_drift(source_receipt, probe)
     if drift:
         raise VideoSourceLineageError(
-            "source video was replaced during extraction",
+            "source video was replaced during extraction — no derivatives were "
+            "kept; rerun extraction once the MP4 will stay unchanged for the "
+            "whole run",
             reason_code="video_source_replaced_during_extraction",
             details={"drift": list(drift)},
         )

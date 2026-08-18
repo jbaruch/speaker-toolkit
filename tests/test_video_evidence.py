@@ -1600,13 +1600,19 @@ def test_source_receipt_generation_must_agree_with_the_probed_byte_count() -> No
     assert caught.value.details == {"field": "source_generation"}
 
 
-def test_dataless_placeholder_generation_can_never_back_a_receipt() -> None:
+@pytest.mark.parametrize("field", ["flags", "file_attributes"])
+def test_dataless_placeholder_generation_can_never_back_a_receipt(field: str) -> None:
     """A cloud stub stays unavailable; hydration is the only way forward."""
+    # SF_DATALESS is 0 off Darwin, so that marker only carries meaning there;
+    # the Windows cloud attributes are plain constants on every platform.
+    marker = {
+        "flags": video_evidence.VIDEO_MACOS_DATALESS_FLAG,
+        "file_attributes": video_evidence.VIDEO_WINDOWS_CLOUD_FILE_ATTRIBUTES,
+    }[field]
+    if not marker:
+        pytest.skip(f"no {field} placeholder marker is defined on this platform")
     receipt = video_evidence.build_video_source_receipt(_probe(_generation()))
-    receipt["source_generation"] = dict(
-        receipt["source_generation"],
-        flags=video_evidence.VIDEO_MACOS_DATALESS_FLAG,
-    )
+    receipt["source_generation"] = dict(receipt["source_generation"], **{field: marker})
 
     with pytest.raises(video_evidence.VideoEvidenceError) as caught:
         video_evidence.validate_video_source_receipt(receipt)
