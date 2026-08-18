@@ -1658,3 +1658,15 @@ def test_probe_contract_version_is_part_of_the_lineage_claim() -> None:
     assert video_evidence.video_source_receipt_lineage_drift(receipt, probe) == (
         ("probe_pipeline_version",)
     )
+
+
+@pytest.mark.parametrize("field", ["schema_version", "probe_schema_version"])
+def test_receipt_version_fields_reject_booleans(field: str) -> None:
+    """`True == 1`, so a version gate on equality alone admits a bool."""
+    receipt = video_evidence.build_video_source_receipt(_probe(_generation()))
+    receipt[field] = True
+
+    with pytest.raises(video_evidence.VideoEvidenceError) as caught:
+        video_evidence.validate_video_source_receipt(receipt)
+
+    assert caught.value.details == {"field": field}

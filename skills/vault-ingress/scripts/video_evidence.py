@@ -1977,9 +1977,15 @@ def validate_video_source_receipt(value: object) -> dict[str, JsonValue]:
         raise _receipt_failure("source_receipt")
     if set(value) != set(VIDEO_SOURCE_RECEIPT_FIELDS):
         raise _receipt_failure("source_receipt")
-    if value.get("schema_version") != VIDEO_SOURCE_RECEIPT_SCHEMA_VERSION:
+    if (
+        type(value.get("schema_version")) is not int
+        or value.get("schema_version") != VIDEO_SOURCE_RECEIPT_SCHEMA_VERSION
+    ):
         raise _receipt_failure("schema_version")
-    if value.get("probe_schema_version") != VIDEO_PROBE_SCHEMA_VERSION:
+    if (
+        type(value.get("probe_schema_version")) is not int
+        or value.get("probe_schema_version") != VIDEO_PROBE_SCHEMA_VERSION
+    ):
         raise _receipt_failure("probe_schema_version")
     pipeline = value.get("probe_pipeline_version")
     if not isinstance(pipeline, str) or _VERSION_TOKEN_RE.fullmatch(pipeline) is None:

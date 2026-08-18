@@ -1841,3 +1841,40 @@ def test_interrupted_prior_run_leaves_no_stage_inside_the_new_binding(
     assert result["artifacts"][0]["source_receipt"] == receipt
     assert context_pdf.read_bytes()[:4] == b"%PDF"
     assert b"interrupted prior run" not in context_pdf.read_bytes()
+
+
+def test_failure_between_derivatives_leaves_no_published_pdf_behind(
+    video_slide_extraction, tmp_path, monkeypatch
+):
+    """A run that dies after publishing one PDF must not leave it orphaned."""
+    frame = _prepared_frame(tmp_path)
+    video = write_tiny_video(tmp_path / "source.mp4")
+    outdir = tmp_path / "output"
+    published = []
+
+    original_combine = video_slide_extraction.combine_to_pdf
+
+    def combine(*args, **kwargs):
+        if published:
+            raise RuntimeError("synthetic failure after the first derivative")
+        path = original_combine(*args, **kwargs)
+        published.append(path)
+        return path
+
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames", _extract_one_frame(frame)
+    )
+    monkeypatch.setattr(video_slide_extraction, "combine_to_pdf", combine)
+
+    with pytest.raises(RuntimeError, match="synthetic failure"):
+        video_slide_extraction.extract_slides_from_video(
+            str(video),
+            str(outdir),
+            YOUTUBE_ID,
+            slide_region=(0.2, 0.1, 0.9, 0.8),
+            slide_region_verified=True,
+        )
+
+    assert published
+    assert [path for path in published if os.path.exists(path)] == []
+    assert video.exists()

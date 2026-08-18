@@ -149,13 +149,9 @@ def _require_stable_source(assessment, source_video_path, source_receipt):
         )
 
 
-def _discard_unbound_artifacts(result):
-    """Remove derivatives that cannot be bound to the recorded source."""
-    artifacts = result.get("artifacts") if isinstance(result, dict) else None
-    for artifact in artifacts or []:
-        path = artifact.get("path")
-        if not isinstance(path, str):
-            continue
+def _discard_unbound_artifacts(published):
+    """Remove every derivative this run published but could not bind."""
+    for path in published:
         try:
             os.unlink(path)
         except FileNotFoundError:
@@ -817,6 +813,7 @@ def _extract_slides_in_workspace(
     youtube_id,
     frames_dir,
     source_receipt,
+    published,
     fps=0.5,
     hash_threshold=8,
     slide_region: str | NormalizedSlideRegion = "auto",
@@ -831,6 +828,9 @@ def _extract_slides_in_workspace(
         youtube_id: YouTube video ID (used for naming)
         source_receipt: Engine-owned receipt for the exact source generation,
                         stamped onto the manifest and every derivative record.
+        published: Caller-owned list this appends each published PDF path to the
+                   moment it lands, so a caller can remove them when the run
+                   fails partway through.
         fps: Frames per second to extract (0.5 = 1 frame per 2 seconds)
         hash_threshold: Largest hash distance treated as the same slide. Higher
                         values merge more and keep fewer frames.
@@ -907,6 +907,7 @@ def _extract_slides_in_workspace(
             crop_verified=region_provenance["slide_region_verified"],
         )
         if slide_pdf_path:
+            published.append(slide_pdf_path)
             artifacts.append(
                 artifact_record(
                     slide_pdf_path,
@@ -932,6 +933,7 @@ def _extract_slides_in_workspace(
             source_video_id=youtube_id,
         )
         if context_pdf_path:
+            published.append(context_pdf_path)
             artifacts.append(
                 artifact_record(
                     context_pdf_path,
@@ -986,6 +988,9 @@ def extract_slides_from_video(
     probe costs a stat when the generation held and a full re-probe exactly
     when it did not. Any drift discards the derivatives and fails the run —
     a manifest is never written against bytes it did not come from.
+
+    Cleanup covers every exit, not only drift: a run that publishes one PDF and
+    then raises while producing the next leaves no half-bound derivative behind.
     """
     youtube_id = validate_youtube_id(youtube_id)
     if fps <= 0:
@@ -1003,26 +1008,30 @@ def extract_slides_from_video(
             f"{youtube_id}.context.pdf",
         ):
             _remove_stale_pdf_stage(_confined_output_path(output_dir, filename))
-        with tempfile.TemporaryDirectory(
-            prefix="speaker-toolkit-video-frames-"
-        ) as frames_dir:
-            result = _extract_slides_in_workspace(
-                source_video_path,
-                output_dir,
-                youtube_id,
-                frames_dir,
-                source_receipt,
-                fps=fps,
-                hash_threshold=hash_threshold,
-                slide_region=slide_region,
-                slide_region_verified=slide_region_verified,
-                include_context_pdf=include_context_pdf,
-            )
+        published: list[str] = []
+        bound = False
         try:
+            with tempfile.TemporaryDirectory(
+                prefix="speaker-toolkit-video-frames-"
+            ) as frames_dir:
+                result = _extract_slides_in_workspace(
+                    source_video_path,
+                    output_dir,
+                    youtube_id,
+                    frames_dir,
+                    source_receipt,
+                    published,
+                    fps=fps,
+                    hash_threshold=hash_threshold,
+                    slide_region=slide_region,
+                    slide_region_verified=slide_region_verified,
+                    include_context_pdf=include_context_pdf,
+                )
             _require_stable_source(assessment, source_video_path, source_receipt)
-        except VideoSourceLineageError:
-            _discard_unbound_artifacts(result)
-            raise
+            bound = True
+        finally:
+            if not bound:
+                _discard_unbound_artifacts(published)
         return result
 
 

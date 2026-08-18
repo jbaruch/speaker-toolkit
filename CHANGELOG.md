@@ -25,7 +25,9 @@ The extractor probes before sampling a frame and again after the last PDF lands,
 sharing one assessment so the closing probe costs a stat when the generation held
 and a full re-probe exactly when it did not. Drift removes every PDF the run
 produced and exits non-zero with a closed reason: a half-bound result is worse
-than none. An unprobeable source — missing, corrupt, or a dataless cloud
+than none. Cleanup covers every exit, not only drift — a run that publishes the
+slide-region PDF and then raises while producing the context PDF leaves nothing
+orphaned. An unprobeable source — missing, corrupt, or a dataless cloud
 placeholder — produces no record at all rather than one bound to a stub.
 
 Readers compare the receipt's content fields against a fresh probe;
