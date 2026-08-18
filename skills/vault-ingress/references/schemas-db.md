@@ -274,7 +274,7 @@ customization, not the owner default. See the
     "schema_version": 5,
     "transcript_source": "youtube_auto|whisper|manual|none  (how the transcript was obtained; MAY BE ABSENT — see below)",
     "transcript_path": "transcripts/{id}.txt  (optional vault-relative path; required for non-YouTube transcript evidence)",
-    "slide_source": "pptx|pdf|both|video_extracted|none  (set in Step 2 per slide source hierarchy)",
+    "slide_source": "pptx|pdf|both|video_extracted|markdown|none  (set in Step 2 per slide source hierarchy)",
     "slides_local_path": "slides/<artifact>.pdf  (optional explicit local PDF; legacy readers also accept slides_pdf_path/pdf_path)",
     "pptx_visual_status": "pending|extracted|no_pptx",
     "status": "pending|needs-reprocessing|reprocessing-inflight|processed|processed_partial|skipped_no_sources|skipped_download_failed|skipped_duplicate",
@@ -850,7 +850,7 @@ Each subagent returns this JSON after processing one talk:
     "reprocess_generation": 1
   },
   "status": "processed|processed_partial|skipped_no_sources|skipped_download_failed|skipped_duplicate",
-  "slide_source": "pptx|pdf|both|video_extracted|none",
+  "slide_source": "pptx|pdf|both|video_extracted|markdown|none",
   "slides_local_path": "slides/<artifact>.pdf  (optional; required for processed video_extracted)",
   "clear_fields": [
     "analysis-owned dotted paths disproved by this re-analysis; omit when none"

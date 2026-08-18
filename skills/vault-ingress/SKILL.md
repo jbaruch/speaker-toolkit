@@ -83,7 +83,9 @@ in order of preference:
 4. none — transcript-only analysis (`processed_partial`)
 
 The `slide_source` field tracks which path: `"pptx"`, `"pdf"`, `"both"`,
-`"video_extracted"`, or `"none"`. The `pptx_catalog` array fuzzy-matches `.pptx`
+`"video_extracted"`, `"markdown"` (a Slidev/presenterm/Marp deck — provenance
+only, it yields no slide evidence until exported to PDF and re-registered as
+`"pdf"`), or `"none"`. The `pptx_catalog` array fuzzy-matches `.pptx`
 files to shownotes entries.
 
 ## Step 1 — Bootstrap Vault State

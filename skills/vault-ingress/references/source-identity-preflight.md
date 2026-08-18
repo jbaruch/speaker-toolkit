@@ -329,7 +329,12 @@ completeness and must be rerun before an absence conclusion.
   remains valid “unknown provenance.” Unless the value is `none`, the expected
   file is `transcripts/{youtube_id}.txt`; an explicit relative
   `transcript_path` is resolved from the vault root.
-- Slide source enum: `pptx`, `pdf`, `both`, `video_extracted`, `none`.
+- Slide source enum: `pptx`, `pdf`, `both`, `video_extracted`, `markdown`, `none`.
+- `markdown` records a deck authored in Slidev, presenterm, Marp, reveal-md or
+  remark. It is provenance, not evidence: nothing renders markdown here, so the
+  talk supplies no slide evidence until the deck is exported to PDF and
+  re-registered as `pdf`. It requires no binary artifact and is absent from
+  `USABLE_SLIDE_SOURCES`.
   `transcript_only` is unsupported; represent that state as `none`.
 - Persisted local-artifact locators are classified before host path
   normalization. Relative locators use canonical `/` separators beneath their

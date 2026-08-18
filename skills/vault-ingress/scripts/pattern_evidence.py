@@ -186,6 +186,10 @@ TALK_METADATA_FIELDS = frozenset(
         "delivery_language",
     }
 )
+# Slide sources that actually yield readable slide evidence. `markdown` is a
+# supported `slide_source` and is deliberately NOT here: an unrendered markdown
+# deck is a deck nothing can read, so admitting it would gate slide-evidence
+# entries on an artifact no reader can open.
 USABLE_SLIDE_SOURCES = frozenset({"pptx", "pdf", "both", "video_extracted"})
 MIN_TRANSCRIPT_QUOTE_WORDS = 4
 TRANSCRIPT_BUNDLE_SNAPSHOT_ATTEMPTS = 3

@@ -1755,6 +1755,55 @@ def test_legacy_duplicate_relation_only_waives_the_same_recording(
     assert report["blocking_count"] == 0
 
 
+def test_a_markdown_authored_deck_is_not_a_contract_fault(
+    preflight_vault, vault_fixture
+):
+    """#318: a Slidev/presenterm/Marp deck is a real deck, not an invalid record.
+
+    The enum used to admit binary artifacts only, so a vault that honestly
+    recorded `slide_source: "markdown"` had every such talk blocked until it was
+    rewritten to `none` — which discards the fact that an authored deck exists
+    and makes the resulting transcript-only reading look like a speaker with no
+    slides. 24 of 34 talks in one real vault were rewritten that way.
+    """
+    materialize_transcript(vault_fixture)
+    talk = base_talk()
+    talk["slide_source"] = "markdown"
+
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "slide_source_unsupported" not in finding_codes(report, "blocking")
+
+
+def test_a_markdown_deck_requires_no_binary_artifact(preflight_vault, vault_fixture):
+    """It names a deck the toolkit cannot open, so demanding a pptx or pdf for it
+    would trade one wrong blocking finding for another."""
+    materialize_transcript(vault_fixture)
+    talk = base_talk()
+    talk["slide_source"] = "markdown"
+
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    raised = finding_codes(report, "blocking") | finding_codes(report, "warning")
+    assert not {code for code in raised if code.startswith("slide_")}
+
+
+def test_markdown_yields_no_slide_evidence(preflight_vault):
+    """Admitted as provenance, absent from the usable set.
+
+    Recording that a deck exists must not claim its contents are readable —
+    nothing here renders markdown, so gating slide-evidence entries on it would
+    promise an artifact no reader can open."""
+    import pattern_evidence
+
+    assert "markdown" in preflight_vault.SLIDE_SOURCES
+    assert "markdown" not in pattern_evidence.USABLE_SLIDE_SOURCES
+
+
 @pytest.mark.parametrize(
     ("fault_code", "severity"),
     [

@@ -120,7 +120,18 @@ _DATABASE_READ_FALLBACK = DATABASE_READ_FALLBACK
 
 SOURCE_IDENTITY_SCHEMA_VERSION = 1
 TRANSCRIPT_SOURCES = frozenset({"youtube_auto", "whisper", "manual", "none"})
-SLIDE_SOURCES = frozenset({"pptx", "pdf", "both", "video_extracted", "none"})
+# A markdown-authored deck (Slidev, presenterm, Marp, reveal-md, remark).
+# Admitted as PROVENANCE, deliberately absent from USABLE_SLIDE_SOURCES: the
+# deck exists and the record says so, but nothing here renders markdown, so it
+# supplies no slide evidence until it is exported and registered as `pdf`.
+#
+# The alternative was forcing these talks to `none`, which is what the enum used
+# to require and what a real vault did to 24 of its talks — discarding the fact
+# that an authored deck exists at all and making a transcript-only reading look
+# like a speaker with no slides rather than a deck the toolkit cannot read.
+SLIDE_SOURCES = frozenset(
+    {"pptx", "pdf", "both", "video_extracted", "markdown", "none"}
+)
 # What a binding check needs of the deck itself: that it can be read and
 # digested. Reported as the `expected` of the unobservable-source finding so the
 # receipt says what was wanted, not just what was missing.
