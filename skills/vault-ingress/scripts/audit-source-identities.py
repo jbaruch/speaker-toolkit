@@ -26,7 +26,9 @@ from source_identity_matching import (
     event_agreement,
     known_event_aliases,
     normalized_words,
+    parse_catalog_date,
     titles_agree,
+    upload_predates_catalog,
 )
 from tracking_database import (
     TrackingDatabaseError,
@@ -192,15 +194,6 @@ def expected_duration_seconds(talk: dict[str, Any]) -> float | None:
         ):
             return float(value)
     return None
-
-
-def parse_catalog_date(value: Any) -> date | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        return date.fromisoformat(value.strip())
-    except ValueError:
-        return None
 
 
 def normalize_captured_at(value: str | datetime | None = None) -> str:
@@ -1019,10 +1012,9 @@ def audit_database(
                 )
             catalog_date = parse_catalog_date(talk.get("date"))
             upload_date = _provider_date(proposal.get("upload_date"))
-            upload_predates = (
-                date.fromisoformat(upload_date) < catalog_date
-                if catalog_date is not None and upload_date is not None
-                else None
+            upload_predates = upload_predates_catalog(
+                date.fromisoformat(upload_date) if upload_date is not None else None,
+                catalog_date,
             )
             differences = _stored_identity_differences(talk, proposal)
             event_agrees, catalog_event, provider_events = event_agreement(
@@ -1101,7 +1093,7 @@ def audit_database(
                         [filename],
                         "provider upload date predates the cataloged delivery date",
                         {
-                            "catalog_date": catalog_date.isoformat(),
+                            "catalog_date": talk.get("date"),
                             "provider_upload_date": upload_date,
                         },
                     )

@@ -22,6 +22,7 @@ AT_RE = re.compile(r"\bat\b", re.IGNORECASE)
 YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
 EXPLICIT_YEAR_RE = re.compile(r"(?<!\d)\d{4}(?!\d)")
 ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
+CATALOG_YEAR_RE = re.compile(r"\d{4}")
 SHOWNOTES_EVENT_QUALIFIER_RE = re.compile(
     r"\s+at\s+(?P<event>\S(?:.*\S)?)\Z",
     re.IGNORECASE,
@@ -365,3 +366,42 @@ def event_agreement(
         return None, catalog_alias, mentions
     agrees = any(_aliases_compatible(catalog_alias, mention) for mention in mentions)
     return agrees, catalog_alias, mentions
+
+
+def parse_catalog_date(value: Any) -> tuple[date | None, int] | None:
+    """Return a catalog date as its exact day (when known) and its year.
+
+    A catalog record carries either a full ISO-8601 day or a bare `YYYY`, and a
+    bare year is a real delivery whose day was never recorded — not an absent
+    date. Returning the day and the year separately lets a caller compare at
+    whichever precision the record actually supports, so a coarse record stays
+    comparable instead of dropping out of the comparison entirely.
+    """
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if CATALOG_YEAR_RE.fullmatch(value):
+        return None, int(value)
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed, parsed.year
+
+
+def upload_predates_catalog(
+    upload: date | None,
+    catalog: tuple[date | None, int] | None,
+) -> bool | None:
+    """Return whether provider upload evidence precedes the cataloged delivery.
+
+    Compares at the catalog record's own precision: against the exact day when
+    the record carries one, and against the year otherwise. `None` means the
+    comparison could not be made, which is distinct from `False`.
+    """
+    if upload is None or catalog is None:
+        return None
+    catalog_day, catalog_year = catalog
+    if catalog_day is not None:
+        return upload < catalog_day
+    return upload.year < catalog_year

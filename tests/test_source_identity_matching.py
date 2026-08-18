@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 import importlib.util
 from pathlib import Path
 
@@ -152,3 +153,46 @@ def test_shownotes_event_qualifier_requires_exact_base_event_and_year(
         )
         is expected
     )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("2014", (None, 2014)),
+        (" 2014 ", (None, 2014)),
+        ("2013-11-28", (date(2013, 11, 28), 2013)),
+        ("November 2014", None),
+        ("", None),
+        (2014, None),
+        (None, None),
+    ],
+)
+def test_parse_catalog_date_keeps_a_bare_year_comparable(
+    value: object,
+    expected: tuple[date | None, int] | None,
+) -> None:
+    """A bare `YYYY` is a coarse delivery date, never an absent one."""
+    assert source_identity_matching.parse_catalog_date(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("upload", "catalog", "expected"),
+    [
+        # A bare-year catalog record still gates on the year it names.
+        (date(2013, 11, 28), (None, 2014), True),
+        (date(2014, 11, 28), (None, 2014), False),
+        (date(2015, 1, 1), (None, 2014), False),
+        # An exact catalog day gates at day precision.
+        (date(2025, 11, 1), (date(2025, 11, 2), 2025), True),
+        (date(2025, 11, 2), (date(2025, 11, 2), 2025), False),
+        # An uncomparable side is unknown, never "does not predate".
+        (None, (None, 2014), None),
+        (date(2013, 11, 28), None, None),
+    ],
+)
+def test_upload_predates_catalog_compares_at_the_records_own_precision(
+    upload: date | None,
+    catalog: tuple[date | None, int] | None,
+    expected: bool | None,
+) -> None:
+    assert source_identity_matching.upload_predates_catalog(upload, catalog) is expected

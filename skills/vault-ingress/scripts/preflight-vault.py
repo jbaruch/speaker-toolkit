@@ -74,7 +74,9 @@ from source_identity_matching import (
     EventAlias,
     event_agreement,
     known_event_aliases,
+    parse_catalog_date,
     titles_agree,
+    upload_predates_catalog,
 )
 from pptx_catalog_selection import classify_catalog, observed_source_fingerprint
 from pptx_talk_identity import (
@@ -2240,12 +2242,7 @@ class VaultPreflight:
                     actual=recorded.isoformat(),
                 )
         if upload is not None:
-            predates = (
-                upload < catalog_day
-                if catalog_day is not None
-                else upload.year < catalog_year
-            )
-            if predates:
+            if upload_predates_catalog(upload, talk_date):
                 self.talk_add(
                     index,
                     "blocking",
@@ -2481,19 +2478,6 @@ def expected_speakers(talk: dict[str, Any], config: dict[str, Any]) -> list[str]
                 return [name]
     config_name = _nonempty_string(config.get("speaker_name"))
     return [config_name] if config_name else []
-
-
-def parse_catalog_date(value: Any) -> tuple[date | None, int] | None:
-    if not isinstance(value, str):
-        return None
-    value = value.strip()
-    if re.fullmatch(r"\d{4}", value):
-        return None, int(value)
-    try:
-        parsed = date.fromisoformat(value)
-    except ValueError:
-        return None
-    return parsed, parsed.year
 
 
 def expected_duration_seconds(talk: dict[str, Any]) -> float | None:
