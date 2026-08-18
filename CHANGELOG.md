@@ -1,5 +1,50 @@
 # Changelog
 
+### feat(vault-ingress) — bind video derivatives to the exact source bytes (#216)
+
+A schema-v3 video-extraction manifest named its source by id and path. Both
+survive a replacement at that path, so a vault whose `AbCdEfGhI_1.mp4` was
+re-downloaded, re-encoded, or swapped for a different recording kept PDFs that
+passed every structural owner check while describing bytes that were no longer
+there. The record could not tell a re-acquisition from a substitution, and #190's
+runtime probe cannot close it after the fact: the strong claim is historical
+("these pages came from these bytes"), and no digest observed today can supply it
+retroactively.
+
+Schema v4 advances the manifest only when the producer can stamp an engine-owned
+source receipt captured around the same extraction run. The receipt is built by
+`build_video_source_receipt` in `skills/vault-ingress/scripts/video_evidence.py`
+from the bounded #190 probe, and carries the source digest, size,
+duration/container/stream evidence, the bound file generation, and the probe
+contract version. It is path-neutral and bounded — no locator, no raw ffprobe
+document, no parser stderr. It rides on the manifest head AND byte-identically on
+every `artifacts[]` entry, so a PDF separated from its manifest still names its
+source, and two derivatives from two runs cannot be merged under one head.
+
+The extractor probes before sampling a frame and again after the last PDF lands,
+sharing one assessment so the closing probe costs a stat when the generation held
+and a full re-probe exactly when it did not. Drift removes every PDF the run
+produced and exits non-zero with a closed reason: a half-bound result is worse
+than none. An unprobeable source — missing, corrupt, or a dataless cloud
+placeholder — produces no record at all rather than one bound to a stub.
+
+Readers compare the receipt's content fields against a fresh probe;
+`source_generation` is deliberately outside that comparison, because device,
+inode, and mtime are host-local and change on a byte-identical vault move while
+the digest already proves the bytes. Preflight gained two findings:
+`video_extraction_source_lineage_mismatch` (blocking — the source reads but is not
+what the PDFs came from) and `video_extraction_source_receipt_missing` for
+archival v3 records. The second is deliberately not `provenance_invalid`: a v3
+record was valid under its own contract, and naming the repair (reacquire the
+source, re-extract) beats calling correct history corrupt. Nothing migrates a v3
+record in place.
+
+The manifest schema version moves to `ingress_contract.py` so the producer and
+every reader gate on one number instead of three literals.
+
+`PIPELINE_VERSION` 0.12.0 → 0.13.0: a run now requires a probeable source, which
+is an extraction-behavior change, not only a record-shape one.
+
 ## 0.20.87 — 2026-08-18
 
 ### feat(vault-ingress) — a standalone persisted-observation audit (#167)

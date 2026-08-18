@@ -1096,8 +1096,14 @@ def _validate_manifest_source_receipt(value, field: str) -> dict:
     try:
         return validate_video_source_receipt(value)
     except VideoEvidenceError as exc:
+        # The receipt boundary reports "source_receipt" for a whole-object
+        # rejection and a leaf name otherwise. Only a leaf earns a suffix.
         detail = exc.details.get("field")
-        suffix = f".{detail}" if isinstance(detail, str) and detail != field else ""
+        suffix = (
+            f".{detail}"
+            if isinstance(detail, str) and detail != "source_receipt"
+            else ""
+        )
         _manifest_error(
             f"{field}{suffix}",
             "must be a complete engine-owned source-video receipt",

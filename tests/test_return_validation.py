@@ -952,6 +952,32 @@ def test_unavailable_source_gates_must_be_explicitly_not_evaluable(return_valida
             ),
             "must equal frame_index / fps_used",
         ),
+        (
+            lambda manifest: manifest.pop("source_receipt"),
+            "source_receipt must be a complete engine-owned source-video receipt",
+        ),
+        (
+            lambda manifest: manifest["source_receipt"].update(source_sha256="beef"),
+            "source_receipt.source_sha256 must be a complete engine-owned",
+        ),
+        (
+            lambda manifest: manifest["source_receipt"].update(
+                source_generation=dict(
+                    manifest["source_receipt"]["source_generation"], size=9
+                )
+            ),
+            "source_receipt.source_generation must be a complete engine-owned",
+        ),
+        (
+            lambda manifest: manifest["artifacts"][0].pop("source_receipt"),
+            "artifacts[0].source_receipt must be a complete engine-owned",
+        ),
+        (
+            lambda manifest: manifest["artifacts"][0]["source_receipt"].update(
+                source_sha256="f" * 64
+            ),
+            "artifacts[0].source_receipt must match the manifest source_receipt",
+        ),
     ],
 )
 def test_video_manifest_rejects_spoofed_or_inconsistent_provenance(
@@ -2844,3 +2870,34 @@ def test_validator_cli_reports_every_invalid_return(tmp_path):
     assert "a.md" in result.stderr
     assert "b.md" in result.stderr
     assert "2 validation error(s) across 2 return(s)" in result.stderr
+
+
+def test_archival_v3_manifest_is_rejected_with_its_own_reason(return_validation):
+    """v3 is readable history, never a current claim, and never auto-upgraded."""
+    value = _video_return(trusted=False, promoted=False)
+    manifest = value["structured_data"]["video_extraction"]
+    manifest["schema_version"] = 3
+    manifest.pop("source_receipt")
+    for artifact in manifest["artifacts"]:
+        artifact.pop("source_receipt")
+
+    with pytest.raises(return_validation.ReturnValidationError) as caught:
+        return_validation.validate_video_extraction_manifest(
+            {"video_extraction": manifest}
+        )
+
+    assert caught.value.reason_code == "video_extraction.schema_version_archival"
+    # Rejection is the whole response: nothing stamps a receipt after the fact.
+    assert "source_receipt" not in manifest
+
+
+def test_manifest_state_carries_the_canonical_receipt_for_lineage_readers(
+    return_validation,
+):
+    manifest = _video_manifest(trusted=True)
+
+    state = return_validation.validate_video_extraction_manifest(
+        {"video_extraction": manifest}
+    )
+
+    assert state.source_receipt == manifest["source_receipt"]

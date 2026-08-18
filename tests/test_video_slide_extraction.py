@@ -2,6 +2,7 @@
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
 import json
 import os
 import shutil
@@ -1645,3 +1646,198 @@ def test_a_plausible_screen_of_the_same_area_is_accepted(video_slide_extraction)
     m[40:150, 60:260] = True  # 110x200 -> aspect 1.82, 38% of frame
     got = video_slide_extraction._largest_rectangular_component(m)
     assert got == (40, 149, 60, 259)
+
+
+def _extract_one_frame(frame):
+    """Return an extract_frames stand-in that yields one prepared frame."""
+
+    def extract(_video_path, _frames_dir, fps):
+        del fps
+        return [str(frame)]
+
+    return extract
+
+
+def _prepared_frame(tmp_path):
+    frame = tmp_path / "frame.png"
+    Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
+    return frame
+
+
+def test_run_records_the_source_receipt_on_the_manifest_and_every_derivative(
+    video_slide_extraction, tmp_path, monkeypatch, video_evidence
+):
+    frame = _prepared_frame(tmp_path)
+    video = write_tiny_video(tmp_path / "source.mp4")
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames", _extract_one_frame(frame)
+    )
+
+    result = video_slide_extraction.extract_slides_from_video(
+        str(video),
+        str(tmp_path / "output"),
+        YOUTUBE_ID,
+        slide_region=(0.2, 0.1, 0.9, 0.8),
+        slide_region_verified=True,
+    )
+
+    receipt = result["source_receipt"]
+    assert video_evidence.validate_video_source_receipt(receipt) == receipt
+    assert receipt["source_sha256"] == hashlib.sha256(video.read_bytes()).hexdigest()
+    assert receipt["source_size_bytes"] == video.stat().st_size
+    assert len(result["artifacts"]) == 2
+    for artifact in result["artifacts"]:
+        assert artifact["source_receipt"] == receipt
+    # Separate objects, so a later in-place edit of one cannot silently
+    # rewrite the claim the others make.
+    assert all(
+        artifact["source_receipt"] is not receipt for artifact in result["artifacts"]
+    )
+
+
+def test_source_replaced_during_extraction_discards_every_derivative(
+    video_slide_extraction, tmp_path, monkeypatch
+):
+    """Half-bound PDFs never survive a source swap mid-run."""
+    frame = _prepared_frame(tmp_path)
+    video = write_tiny_video(tmp_path / "source.mp4")
+    outdir = tmp_path / "output"
+    replacement = write_tiny_video(tmp_path / "replacement.mp4")
+    produced = []
+
+    original_combine = video_slide_extraction.combine_to_pdf
+
+    def combine(*args, **kwargs):
+        path = original_combine(*args, **kwargs)
+        if path is not None:
+            produced.append(path)
+        # Swap the source between the two derivative writes: the run is now
+        # producing pages from bytes the receipt no longer describes.
+        video.write_bytes(replacement.read_bytes() + b"\x00")
+        return path
+
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames", _extract_one_frame(frame)
+    )
+    monkeypatch.setattr(video_slide_extraction, "combine_to_pdf", combine)
+
+    with pytest.raises(video_slide_extraction.VideoSourceLineageError) as caught:
+        video_slide_extraction.extract_slides_from_video(
+            str(video),
+            str(outdir),
+            YOUTUBE_ID,
+            slide_region=(0.2, 0.1, 0.9, 0.8),
+            slide_region_verified=True,
+        )
+
+    assert caught.value.reason_code == "video_source_replaced_during_extraction"
+    assert produced
+    assert [path for path in produced if os.path.exists(path)] == []
+    assert video.exists()
+
+
+def test_same_path_different_content_replay_rebinds_instead_of_reusing(
+    video_slide_extraction, tmp_path, monkeypatch
+):
+    """A second run over replaced bytes must not inherit the first receipt."""
+    frame = _prepared_frame(tmp_path)
+    video = write_tiny_video(tmp_path / "source.mp4")
+    outdir = tmp_path / "output"
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames", _extract_one_frame(frame)
+    )
+
+    first = video_slide_extraction.extract_slides_from_video(
+        str(video), str(outdir), YOUTUBE_ID, slide_region="none"
+    )
+    video.write_bytes(video.read_bytes() + b"\x00")
+    second = video_slide_extraction.extract_slides_from_video(
+        str(video), str(outdir), YOUTUBE_ID, slide_region="none"
+    )
+
+    assert first["source_video_path"] == second["source_video_path"]
+    assert (
+        first["source_receipt"]["source_sha256"]
+        != second["source_receipt"]["source_sha256"]
+    )
+    assert second["artifacts"][0]["source_receipt"] == second["source_receipt"]
+
+
+@pytest.mark.parametrize(
+    ("prepare", "reason_code"),
+    [
+        (lambda path: None, "video_artifact_unavailable"),
+        (lambda path: path.write_bytes(b"not a container"), "video_parser_rejected"),
+    ],
+)
+def test_unprobeable_source_produces_no_record_and_no_frames(
+    video_slide_extraction, tmp_path, monkeypatch, prepare, reason_code
+):
+    video = tmp_path / "source.mp4"
+    prepare(video)
+    monkeypatch.setattr(
+        video_slide_extraction,
+        "extract_frames",
+        lambda *_args, **_kwargs: pytest.fail("unbound source reached ffmpeg"),
+    )
+
+    with pytest.raises(video_slide_extraction.VideoSourceLineageError) as caught:
+        video_slide_extraction.extract_slides_from_video(
+            str(video), str(tmp_path / "output"), YOUTUBE_ID, slide_region="none"
+        )
+
+    assert caught.value.reason_code == reason_code
+
+
+def test_cli_reports_an_unbound_source_as_json_on_stderr_and_exits_nonzero(
+    tmp_path,
+):
+    outdir = tmp_path / "output"
+    outdir.mkdir()
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            SCRIPT_PATH,
+            str(tmp_path / "absent.mp4"),
+            str(outdir),
+            YOUTUBE_ID,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert proc.returncode == 1
+    assert proc.stdout == ""
+    payload = json.loads(proc.stderr.strip().splitlines()[-1])
+    assert payload["reason_code"] == "video_artifact_unavailable"
+    assert str(tmp_path) not in proc.stderr
+
+
+def test_interrupted_prior_run_leaves_no_stage_inside_the_new_binding(
+    video_slide_extraction, tmp_path, monkeypatch, video_evidence
+):
+    """A reclaimed stage must not smuggle a prior run's pages into this receipt."""
+    frame = _prepared_frame(tmp_path)
+    video = write_tiny_video(tmp_path / "source.mp4")
+    outdir = tmp_path / "output"
+    outdir.mkdir()
+    context_pdf = outdir / f"{YOUTUBE_ID}.context.pdf"
+    orphan_stage = video_slide_extraction._pdf_stage_path(str(context_pdf))
+    with open(orphan_stage, "wb") as stream:
+        stream.write(b"%PDF-1.4 interrupted prior run")
+    monkeypatch.setattr(
+        video_slide_extraction, "extract_frames", _extract_one_frame(frame)
+    )
+
+    result = video_slide_extraction.extract_slides_from_video(
+        str(video), str(outdir), YOUTUBE_ID, slide_region="none"
+    )
+
+    assert not os.path.exists(orphan_stage)
+    receipt = result["source_receipt"]
+    assert video_evidence.validate_video_source_receipt(receipt) == receipt
+    assert result["artifacts"][0]["source_receipt"] == receipt
+    assert context_pdf.read_bytes()[:4] == b"%PDF"
+    assert b"interrupted prior run" not in context_pdf.read_bytes()
