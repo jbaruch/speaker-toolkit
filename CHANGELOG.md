@@ -1,5 +1,39 @@
 # Changelog
 
+### feat(vault-ingress) — admit `markdown` as a slide source (#318)
+
+`slide_source` accepted binary artifacts only — `pptx|pdf|both|video_extracted|none`
+— so a speaker who authors decks in Slidev, presenterm, Marp, reveal-md or
+remark had no honest value to record. A real vault recorded
+`slide_source: "markdown"` on 24 talks and preflight blocked every one as
+`slide_source_unsupported`, forcing a rewrite to `none`. Those records were
+right and the enum was wrong: `none` discards the fact that an authored deck
+exists, and the resulting transcript-only reading then looks like a speaker with
+no slides rather than a deck the toolkit cannot read.
+
+`markdown` is provenance, deliberately absent from `USABLE_SLIDE_SOURCES`.
+Nothing here renders markdown, so the talk supplies no slide evidence until the
+deck is exported to PDF and re-registered as `pdf` — the manual path that
+already works. Admitting it to the usable set would gate slide-evidence entries
+on an artifact no reader can open, trading a wrong blocking finding for a wrong
+passing one. It requires no binary artifact, so it raises no
+`slide_pptx_*` / `slide_pdf_*` / `slide_video_*` fault either.
+
+Every rule that treated `none` as "no readable slides" now keys on
+`SLIDE_SOURCES_WITHOUT_READABLE_SLIDES` instead: rejecting authored-slide
+evidence in `structured_data`, rejecting `static_slides` / `native_deck` in
+`evidence_sources`, and refusing `processed` status. Adding the enum value
+without those would have been worse than leaving it out — a markdown return
+could have claimed slide evidence and a `processed` terminal state while the
+contract says it supplies none, replacing a wrong blocking finding with a wrong
+passing one. Raised by the policy reviewer on #330. The set is pinned by test to
+the complement of `pattern_evidence.USABLE_SLIDE_SOURCES`, so the two modules
+cannot drift into a source claiming evidence it cannot produce.
+
+This is item (1) of the issue. Auto-rendering (a `markdown-deck` runtime lane,
+build-run collapsing for `slide_count`) is not attempted here, and the issue
+stays open for it.
+
 ## 0.20.85 — 2026-08-18
 
 ### fix(vault-ingress) — bind a deck's identity assessment to the bytes it read (#176)

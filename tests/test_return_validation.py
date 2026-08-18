@@ -2030,6 +2030,80 @@ def test_slide_source_none_rejects_authored_slide_fields(
     assert "cannot return authored-slide evidence" in _error(return_validation, ret)
 
 
+class TestMarkdownSuppliesNoSlideEvidence:
+    """#318: `markdown` names a deck nothing here can render.
+
+    Admitting it to the enum without extending these rules would have been worse
+    than leaving it out: every rule below keyed on `none` alone, so a markdown
+    return could have claimed authored-slide evidence and `processed` status
+    while the contract says it supplies none — a wrong PASSING result in place of
+    a wrong blocking one, and the passing one is silent.
+    """
+
+    def test_it_rejects_authored_slide_evidence(self, return_validation) -> None:
+        ret = _return(status="processed_partial", slide_source="markdown")
+        ret["structured_data"]["slide_count"] = 42
+
+        assert "cannot return authored-slide evidence" in _error(return_validation, ret)
+
+    @pytest.mark.parametrize("source", ["static_slides", "native_deck"])
+    def test_it_rejects_static_and_native_slide_evidence_sources(
+        self, return_validation, source
+    ) -> None:
+        """Through the public validator, not the private helper: what matters is
+        that such a return does not validate, by whatever path."""
+        ret = _return(status="processed_partial", slide_source="markdown")
+        ret["pattern_observations"]["evidence_sources"] = [source]
+
+        assert "cannot support static/native slide" in _error(return_validation, ret)
+
+    def test_it_cannot_claim_processed(self, return_validation) -> None:
+        """`processed` asserts slide evidence was used. An unrendered deck is not
+        evidence, so the honest terminal state is `processed_partial`."""
+        ret = _return(status="processed", slide_source="markdown")
+
+        assert "use processed_partial" in _error(return_validation, ret)
+
+    def test_it_is_valid_as_provenance_on_a_partial(self, return_validation) -> None:
+        """The whole point: the record says a deck exists without claiming to
+        have read it. Asserted through the public validator, since what matters
+        is that such a return is accepted, not which helper let it through."""
+        ret = _return(status="processed_partial", slide_source="markdown")
+        # A markdown-deck talk is transcript-evidenced: the deck exists and is
+        # recorded, and nothing was read from it.
+        ret["pattern_observations"]["evidence_sources"] = ["transcript"]
+        _complete_unavailable_source_gates(return_validation, ret)
+
+        return_validation.validate_batch([ret], None)
+
+    @pytest.mark.parametrize(
+        "slide_source", ["none", "markdown", "pptx", "pdf", "both", "video_extracted"]
+    )
+    def test_only_the_unreadable_sources_refuse_static_slide_evidence(
+        self, return_validation, slide_source
+    ) -> None:
+        """The split, stated as behaviour over every supported value.
+
+        `none` and `markdown` are the two that cannot produce a readable slide
+        artifact, and they are exactly the two that refuse a `static_slides`
+        claim. The readable ones may still fail for their own reasons — a
+        missing artifact, an untrusted extraction — so this asserts only that
+        THIS refusal is not the one they hit.
+        """
+        ret = _return(status="processed_partial", slide_source=slide_source)
+        ret["pattern_observations"]["evidence_sources"] = ["static_slides"]
+        refusal = "cannot support static/native slide"
+
+        try:
+            return_validation.validate_batch([ret], None)
+        except return_validation.ReturnValidationError as exc:
+            refused_here = refusal in str(exc)
+        else:
+            refused_here = False
+
+        assert refused_here == (slide_source in {"none", "markdown"})
+
+
 def test_transcript_only_partial_remains_valid_without_slide_fields(
     return_validation,
 ):

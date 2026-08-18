@@ -88,7 +88,27 @@ SKIPPED_STATUSES = frozenset(
     }
 )
 RETURN_STATUSES = ANALYSIS_STATUSES | SKIPPED_STATUSES
-SLIDE_SOURCES = frozenset({"pptx", "pdf", "both", "video_extracted", "none"})
+# A markdown-authored deck (Slidev, presenterm, Marp, reveal-md, remark).
+# Admitted as PROVENANCE, deliberately absent from USABLE_SLIDE_SOURCES: the
+# deck exists and the record says so, but nothing here renders markdown, so it
+# supplies no slide evidence until it is exported and registered as `pdf`.
+#
+# The alternative was forcing these talks to `none`, which is what the enum used
+# to require and what a real vault did to 24 of its talks — discarding the fact
+# that an authored deck exists at all and making a transcript-only reading look
+# like a speaker with no slides rather than a deck the toolkit cannot read.
+SLIDE_SOURCES = frozenset(
+    {"pptx", "pdf", "both", "video_extracted", "markdown", "none"}
+)
+# Slide sources that yield NO readable slide artifact, so nothing may claim
+# slide evidence from them. `none` says there is no deck; `markdown` says there
+# is one nothing here can render. The consequences are identical, and every rule
+# below keys on this set rather than on `none` alone — a rule that named `none`
+# only would let a markdown return claim authored-slide evidence and `processed`
+# status while the contract says it supplies none.
+# The complement of `pattern_evidence.USABLE_SLIDE_SOURCES` within
+# SLIDE_SOURCES, pinned by a test so the two cannot drift apart.
+SLIDE_SOURCES_WITHOUT_READABLE_SLIDES = frozenset({"none", "markdown"})
 TRANSCRIPT_SOURCES = frozenset({"youtube_auto", "whisper", "manual", "none"})
 CONFIDENCE_LEVELS = frozenset({"strong", "moderate", "weak"})
 EVIDENCE_SOURCE_ORDER = (
@@ -1373,15 +1393,15 @@ def validate_authored_slide_fields_against_source(
     slide_source: str,
 ) -> None:
     """Reject model-authored slide evidence when no slide lane was used."""
-    if slide_source != "none":
+    if slide_source not in SLIDE_SOURCES_WITHOUT_READABLE_SLIDES:
         return
     contaminated = sorted(
         field for field in AUTHORED_SLIDE_FIELDS if _is_nonempty(structured.get(field))
     )
     if contaminated:
         raise ReturnValidationError(
-            "slide_source none cannot return authored-slide evidence in "
-            f"structured_data: {contaminated}"
+            f"slide_source {slide_source} cannot return authored-slide evidence "
+            f"in structured_data: {contaminated}"
         )
 
 
@@ -2407,11 +2427,12 @@ def _validate_available_sources(
         raise ReturnValidationError(
             "evidence_sources includes transcript but transcript_source is none"
         )
-    if slide_source == "none" and available.intersection(
+    if slide_source in SLIDE_SOURCES_WITHOUT_READABLE_SLIDES and available.intersection(
         {"static_slides", "native_deck"}
     ):
         raise ReturnValidationError(
-            "slide_source none cannot support static/native slide evidence_sources"
+            f"slide_source {slide_source} cannot support static/native slide "
+            "evidence_sources"
         )
     if (
         slide_source == "video_extracted"
@@ -4837,9 +4858,10 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
             f"slide_source is required for {status} and must be one of "
             f"{sorted(SLIDE_SOURCES)}, got {slide_source!r}"
         )
-    if status == "processed" and slide_source == "none":
+    if status == "processed" and slide_source in SLIDE_SOURCES_WITHOUT_READABLE_SLIDES:
         raise ReturnValidationError(
-            "status processed requires slide evidence; use processed_partial for slide_source none"
+            "status processed requires slide evidence; use processed_partial for "
+            f"slide_source {slide_source}"
         )
 
     for field in PROSE_FIELDS:
