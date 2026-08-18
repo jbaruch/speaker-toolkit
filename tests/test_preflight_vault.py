@@ -1792,18 +1792,6 @@ def test_a_markdown_deck_requires_no_binary_artifact(preflight_vault, vault_fixt
     assert not {code for code in raised if code.startswith("slide_")}
 
 
-def test_markdown_yields_no_slide_evidence(preflight_vault):
-    """Admitted as provenance, absent from the usable set.
-
-    Recording that a deck exists must not claim its contents are readable —
-    nothing here renders markdown, so gating slide-evidence entries on it would
-    promise an artifact no reader can open."""
-    import pattern_evidence
-
-    assert "markdown" in preflight_vault.SLIDE_SOURCES
-    assert "markdown" not in pattern_evidence.USABLE_SLIDE_SOURCES
-
-
 @pytest.mark.parametrize(
     ("fault_code", "severity"),
     [

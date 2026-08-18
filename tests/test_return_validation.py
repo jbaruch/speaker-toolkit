@@ -2030,6 +2030,61 @@ def test_slide_source_none_rejects_authored_slide_fields(
     assert "cannot return authored-slide evidence" in _error(return_validation, ret)
 
 
+class TestMarkdownSuppliesNoSlideEvidence:
+    """#318: `markdown` names a deck nothing here can render.
+
+    Admitting it to the enum without extending these rules would have been worse
+    than leaving it out: every rule below keyed on `none` alone, so a markdown
+    return could have claimed authored-slide evidence and `processed` status
+    while the contract says it supplies none — a wrong PASSING result in place of
+    a wrong blocking one, and the passing one is silent.
+    """
+
+    def test_it_rejects_authored_slide_evidence(self, return_validation) -> None:
+        ret = _return(status="processed_partial", slide_source="markdown")
+        ret["structured_data"]["slide_count"] = 42
+
+        assert "cannot return authored-slide evidence" in _error(return_validation, ret)
+
+    @pytest.mark.parametrize("source", ["static_slides", "native_deck"])
+    def test_it_rejects_static_and_native_slide_evidence_sources(
+        self, return_validation, source
+    ) -> None:
+        """Through the public validator, not the private helper: what matters is
+        that such a return does not validate, by whatever path."""
+        ret = _return(status="processed_partial", slide_source="markdown")
+        ret["pattern_observations"]["evidence_sources"] = [source]
+
+        assert "cannot support static/native slide" in _error(return_validation, ret)
+
+    def test_it_cannot_claim_processed(self, return_validation) -> None:
+        """`processed` asserts slide evidence was used. An unrendered deck is not
+        evidence, so the honest terminal state is `processed_partial`."""
+        ret = _return(status="processed", slide_source="markdown")
+
+        assert "use processed_partial" in _error(return_validation, ret)
+
+    def test_it_is_valid_as_provenance_on_a_partial(self, return_validation) -> None:
+        """The whole point: the record says a deck exists without claiming to
+        have read it."""
+        return_validation.validate_authored_slide_fields_against_source(
+            {"delivery_language": "en", "co_presenter": False},
+            "markdown",
+        )
+
+    def test_the_no_readable_slides_set_is_the_complement_of_the_usable_one(
+        self, return_validation
+    ) -> None:
+        """Two modules name the same split. Restated constants drift, and the
+        direction they drift is a source claiming evidence it cannot produce."""
+        import pattern_evidence
+
+        assert (
+            return_validation.SLIDE_SOURCES_WITHOUT_READABLE_SLIDES
+            == return_validation.SLIDE_SOURCES - pattern_evidence.USABLE_SLIDE_SOURCES
+        )
+
+
 def test_transcript_only_partial_remains_valid_without_slide_fields(
     return_validation,
 ):

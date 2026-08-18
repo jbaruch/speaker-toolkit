@@ -19,6 +19,17 @@ on an artifact no reader can open, trading a wrong blocking finding for a wrong
 passing one. It requires no binary artifact, so it raises no
 `slide_pptx_*` / `slide_pdf_*` / `slide_video_*` fault either.
 
+Every rule that treated `none` as "no readable slides" now keys on
+`SLIDE_SOURCES_WITHOUT_READABLE_SLIDES` instead: rejecting authored-slide
+evidence in `structured_data`, rejecting `static_slides` / `native_deck` in
+`evidence_sources`, and refusing `processed` status. Adding the enum value
+without those would have been worse than leaving it out — a markdown return
+could have claimed slide evidence and a `processed` terminal state while the
+contract says it supplies none, replacing a wrong blocking finding with a wrong
+passing one. Raised by the policy reviewer on #330. The set is pinned by test to
+the complement of `pattern_evidence.USABLE_SLIDE_SOURCES`, so the two modules
+cannot drift into a source claiming evidence it cannot produce.
+
 This is item (1) of the issue. Auto-rendering (a `markdown-deck` runtime lane,
 build-run collapsing for `slide_count`) is not attempted here, and the issue
 stays open for it.
