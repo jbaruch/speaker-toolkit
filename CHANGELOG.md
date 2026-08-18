@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.83 — 2026-08-18
+
 ### fix(vault-ingress) — a boolean weight no longer passes the freshness replay (#322)
 
 `_basis_projection_drifted` type-checked the persisted basis's `schema_version`,
