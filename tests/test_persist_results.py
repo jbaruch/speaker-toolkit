@@ -17,7 +17,7 @@ import pytest
 from pypdf import PdfWriter
 from pptx import Presentation
 
-from conftest import current_tracking_config
+from conftest import current_tracking_config, video_source_receipt_for
 
 
 def test_atomic_json_write_cleans_stage_and_propagates_interrupt(
@@ -639,17 +639,20 @@ def test_legacy_video_return_bounds_every_manifest_artifact_before_merge(
         writer.add_blank_page(width=96, height=54)
         with missing_context.open("wb") as stream:
             writer.write(stream)
+    receipt = video_source_receipt_for(source_video)
     shared = {
         "page_count": 1,
         "source_video_id": video_id,
         "source_video_path": str(source_video),
+        "source_receipt": copy.deepcopy(receipt),
     }
     manifest = {
         "slide_source": "video_extracted",
-        "schema_version": 3,
+        "schema_version": 4,
         "pipeline_version": "0.10.0",
         "source_video_id": video_id,
         "source_video_path": str(source_video),
+        "source_receipt": receipt,
         "total_frames_extracted": 1,
         "unique_frame_count": 1,
         "authored_slide_count": None,

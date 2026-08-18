@@ -11,6 +11,7 @@ import sys
 import threading
 
 import pytest
+from conftest import synthetic_video_source_receipt, write_tiny_video
 from filelock import FileLock, Timeout
 from PIL import Image
 from pypdf import PdfReader
@@ -406,7 +407,7 @@ def test_video_pipeline_rejects_existing_output_symlink_escape_before_ffmpeg(
 
     with pytest.raises(ValueError, match="video_output_path_escape"):
         video_slide_extraction.extract_slides_from_video(
-            tmp_path / "source.mp4",
+            write_tiny_video(tmp_path / "source.mp4"),
             output,
             YOUTUBE_ID,
         )
@@ -428,7 +429,7 @@ def test_video_pipeline_rejects_a_directory_at_a_pdf_destination_before_ffmpeg(
 
     with pytest.raises(ValueError, match="video_output_leaf_invalid"):
         video_slide_extraction.extract_slides_from_video(
-            tmp_path / "source.mp4",
+            write_tiny_video(tmp_path / "source.mp4"),
             output,
             YOUTUBE_ID,
         )
@@ -449,8 +450,7 @@ def test_pipeline_ignores_and_preserves_legacy_stale_frames(
     )
     with open(stale_pdf_stage, "wb") as staged:
         staged.write(b"partial prior PDF")
-    video = tmp_path / "source.mp4"
-    video.write_bytes(b"source")
+    video = write_tiny_video(tmp_path / "source.mp4")
     workspaces = []
     consumed = []
 
@@ -502,8 +502,7 @@ def test_pipeline_removes_its_private_workspace_after_failure(
     legacy_workspace.mkdir(parents=True)
     stale = legacy_workspace / "frame_99999.jpg"
     stale.write_bytes(b"older extraction")
-    video = tmp_path / "source.mp4"
-    video.write_bytes(b"source")
+    video = write_tiny_video(tmp_path / "source.mp4")
     workspaces = []
 
     def extract(_video_path, frames_dir, fps):
@@ -542,8 +541,7 @@ def test_pipeline_closes_an_open_frame_before_failure_cleanup(
     tmp_path,
 ):
     output = tmp_path / "output"
-    video = tmp_path / "source.mp4"
-    video.write_bytes(b"source")
+    video = write_tiny_video(tmp_path / "source.mp4")
     workspaces = []
 
     def extract(_video_path, frames_dir, fps):
@@ -584,8 +582,7 @@ def test_existing_unlocked_run_lock_file_does_not_block_a_rerun(
     )
     with open(run_lock, "wb") as lock_file:
         lock_file.write(b"left by an interrupted process")
-    video = tmp_path / "source.mp4"
-    video.write_bytes(b"source")
+    video = write_tiny_video(tmp_path / "source.mp4")
 
     def extract(_video_path, frames_dir, fps):
         del fps
@@ -644,8 +641,7 @@ def test_parallel_pipeline_runs_use_distinct_workspaces_and_publish_complete_pdf
     tmp_path,
 ):
     output = tmp_path / "output"
-    video = tmp_path / "source.mp4"
-    video.write_bytes(b"source")
+    video = write_tiny_video(tmp_path / "source.mp4")
     barrier = threading.Barrier(2)
     workspaces = []
     workspaces_lock = threading.Lock()
@@ -1034,6 +1030,7 @@ def test_artifact_manifest_rejects_unverified_authored_slide_trust(
             1,
             YOUTUBE_ID,
             tmp_path / "source.mp4",
+            synthetic_video_source_receipt(),
             crop_method="auto",
             crop_verified=False,
             trusted_for_authored_slide_analysis=True,
@@ -1080,8 +1077,7 @@ def test_success_cli_emits_only_result_json_on_stdout(
     """Progress stays on stderr so stdout remains one parseable payload."""
     frame = tmp_path / "frame.png"
     Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
-    video = tmp_path / "source.mp4"
-    video.write_bytes(b"synthetic source")
+    video = write_tiny_video(tmp_path / "source.mp4")
     outdir = tmp_path / "output"
     monkeypatch.setattr(
         video_slide_extraction,
@@ -1322,8 +1318,7 @@ def test_no_region_emits_context_only_even_when_extra_context_is_disabled(
 ):
     frame = tmp_path / "full-frame.png"
     Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
-    video = tmp_path / "source.mp4"
-    video.write_bytes(b"source-video")
+    video = write_tiny_video(tmp_path / "source.mp4")
     outdir = tmp_path / "output"
     monkeypatch.setattr(
         video_slide_extraction,
@@ -1358,8 +1353,7 @@ def test_unverified_auto_crop_is_a_review_required_candidate(
 ):
     frame = tmp_path / "broadcast-frame.png"
     Image.new("RGB", (1000, 500), (80, 40, 20)).save(frame)
-    video = tmp_path / "source.mp4"
-    video.write_bytes(b"source-video")
+    video = write_tiny_video(tmp_path / "source.mp4")
     outdir = tmp_path / "output"
     region = (0.25, 0.25, 0.75, 0.75)
     monkeypatch.setattr(
@@ -1404,7 +1398,7 @@ def test_manual_region_bypasses_detection_and_records_verified_provenance(
 ):
     frame = tmp_path / "manual-region-frame.png"
     Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
-    video = tmp_path / "source.mp4"
+    video = write_tiny_video(tmp_path / "source.mp4")
     outdir = tmp_path / "output"
     outdir.mkdir()
 
@@ -1450,8 +1444,7 @@ def test_verified_crop_can_omit_extra_context_without_deleting_source(
 ):
     frame = tmp_path / "manual-region-frame.png"
     Image.new("RGB", (320, 180), (80, 40, 20)).save(frame)
-    video = tmp_path / "source.mp4"
-    video.write_bytes(b"source-video")
+    video = write_tiny_video(tmp_path / "source.mp4")
     outdir = tmp_path / "output"
     monkeypatch.setattr(
         video_slide_extraction,

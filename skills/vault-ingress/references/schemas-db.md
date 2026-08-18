@@ -1632,10 +1632,35 @@ Stored in `structured_data.video_extraction` on the talk entry:
 ```json
 {
   "slide_source": "video_extracted",
-  "schema_version": 3,
-  "pipeline_version": "0.12.0",
+  "schema_version": 4,
+  "pipeline_version": "0.13.0",
   "source_video_id": "AbCdEfGhI_1",
   "source_video_path": "/vault/slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.mp4",
+  "source_receipt": {
+    "schema_version": 1,
+    "probe_schema_version": 1,
+    "probe_pipeline_version": "1.0.0",
+    "source_sha256": "3b2f...c91a",
+    "source_size_bytes": 734003200,
+    "duration_seconds": 2998.4,
+    "duration_source": "format",
+    "container_family": "iso_bmff",
+    "stream_count": 2,
+    "video_stream_count": 1,
+    "audio_stream_count": 1,
+    "attached_picture_count": 0,
+    "other_stream_count": 0,
+    "source_generation": {
+      "size": 734003200,
+      "mtime_ns": 1767225600000000000,
+      "ctime_ns": 1767225600000000000,
+      "device": 16777232,
+      "inode": 84215045,
+      "mode": 33188,
+      "flags": 0,
+      "file_attributes": null
+    }
+  },
   "total_frames_extracted": 1500,
   "unique_frame_count": 85,
   "authored_slide_count": null,
@@ -1657,6 +1682,7 @@ Stored in `structured_data.video_extraction` on the talk entry:
       "page_count": 85,
       "source_video_id": "AbCdEfGhI_1",
       "source_video_path": "/vault/slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.mp4",
+      "source_receipt": { "...": "byte-identical to the manifest source_receipt" },
       "crop_method": "manual",
       "crop_verified": true,
       "trusted_for_authored_slide_analysis": true
@@ -1667,6 +1693,7 @@ Stored in `structured_data.video_extraction` on the talk entry:
       "page_count": 85,
       "source_video_id": "AbCdEfGhI_1",
       "source_video_path": "/vault/slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.mp4",
+      "source_receipt": { "...": "byte-identical to the manifest source_receipt" },
       "crop_method": "none",
       "crop_verified": false,
       "trusted_for_authored_slide_analysis": false
@@ -1680,7 +1707,7 @@ Stored in `structured_data.video_extraction` on the talk entry:
 The owner of this record's shape is `skills/vault-ingress/scripts/video-slide-extraction.py`.
 Two version fields track two independent axes:
 
-- `schema_version` (integer) — the record's **field shape**. Current value: `3`. The
+- `schema_version` (integer) — the record's **field shape**. Current value: `4`. The
   script bumps it on any field add/remove/rename. **Reader contract:** a record with no
   `schema_version` is the legacy pre-versioning shape — treat it as `schema_version 0`
   and read the fields that are present; a record with a `schema_version` higher than the
@@ -1701,6 +1728,36 @@ auto-detector returned a region; it is false for a manual region.
 crop as visually checked. For a version-1 record, readers may infer method `auto`,
 applied from whether `slide_region` is present, and verified `false`; re-extraction
 is still required before treating an old crop as verified.
+
+Version 4 binds every derivative to the exact source-video content it came from.
+`source_receipt` is engine-owned: the extractor captures it from the bounded
+`video_evidence` probe (`skills/vault-ingress/scripts/video_evidence.py` —
+`build_video_source_receipt`) before sampling frames, re-probes after the last PDF
+lands, and fails the run without writing a record when anything drifted. The same
+receipt is stamped on the manifest head and byte-identically on every
+`artifacts[]` entry, so a PDF separated from its manifest still names its source
+bytes and two derivatives from two different runs cannot be merged under one
+manifest. The receipt is path-neutral and bounded — a digest, duration/container/
+stream evidence, the bound file generation, and the probe contract version. Raw
+ffprobe output and parser stderr never reach it.
+
+Readers compare the receipt's content fields against a fresh probe of the same
+path: `probe_schema_version`, `probe_pipeline_version`, `source_sha256`,
+`source_size_bytes`, `duration_seconds`, `duration_source`, `container_family`,
+and the four stream counts (the authoritative list is
+`VIDEO_SOURCE_RECEIPT_LINEAGE_FIELDS` in `video_evidence.py`). `source_generation`
+is deliberately excluded from that comparison: device, inode, and mtime are
+host-local and change on a byte-identical vault move, while the digest already
+proves the bytes. The generation is what the extractor holds stable inside one
+run.
+
+A schema-3 record stays readable as an archival/reprocessing input and is never
+upgraded in place — a digest observed today cannot prove which bytes produced
+yesterday's pages. Preflight reports it as `video_extraction_source_receipt_missing`,
+naming the repair: reacquire the source video and re-extract. A source that reads
+but disagrees with the receipt is `video_extraction_source_lineage_mismatch`,
+blocking. A dataless or offline placeholder fails the bounded probe outright and
+stays unavailable until it is hydrated.
 
 Version 3 separates derived artifacts by provenance and scope. `artifacts[].path` and
 `source_video_path` are native absolute, symlink-resolved paths at extraction
@@ -1727,14 +1784,15 @@ mapped to its storage target; descendant symlinks remain forbidden.
   authored slide count, or slide-pattern claims.
 
 Ingress validates the manifest as one referential unit before trusting it: schema and
-pipeline versions are present; source and artifact identities agree; normalized region
+pipeline versions are present; the source receipt is complete and every artifact
+carries the same one; source and artifact identities agree; normalized region
 geometry agrees with `slide_region_method`, `slide_region_applied`,
 `slide_region_detected`, and `slide_region_verified`; retained-frame and artifact page
 counts agree with `unique_frame_count`; and artifact scope, crop method, verification,
 and trust flags are mutually consistent. `review_required: false` is accepted only for
 a verified manual `slide_region`; setting one optimistic flag cannot turn a context PDF
 into a deck. Persistence replaces this complete owner-versioned manifest rather than
-deep-merging it, so obsolete v1/v2 fields cannot survive inside a schema-v3 record.
+deep-merging it, so obsolete v1/v2/v3 fields cannot survive inside a schema-v4 record.
 
 `retained_frames` maps each PDF page to the zero-based index in the sampled frame
 sequence and its approximate video timestamp (`frame_index / fps_used`). Both artifacts

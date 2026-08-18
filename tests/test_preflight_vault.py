@@ -7,7 +7,6 @@ import json
 import os
 from pathlib import Path
 import pathlib
-import shutil
 import struct
 import subprocess
 import sys
@@ -15,6 +14,7 @@ from typing import Any
 import zipfile
 
 import pytest
+from conftest import video_source_receipt_for, write_tiny_video
 from PIL import Image
 from pypdf import PdfWriter
 from pptx import Presentation
@@ -46,7 +46,6 @@ QUEUE_STATE_SCRIPT = (
     / "scripts"
     / "queue-state.py"
 )
-_TINY_VIDEO_BYTES: bytes | None = None
 
 
 def foreign_absolute_locator(name: str) -> str:
@@ -189,51 +188,6 @@ def write_pdf(path: Path, *, page_count: int = 1) -> Path:
     return path
 
 
-def write_tiny_video(path: Path) -> Path:
-    """Materialize one valid MP4 while keeping ffmpeg local to video tests."""
-    global _TINY_VIDEO_BYTES
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if _TINY_VIDEO_BYTES is not None:
-        path.write_bytes(_TINY_VIDEO_BYTES)
-        return path
-
-    ffmpeg = shutil.which("ffmpeg")
-    assert ffmpeg is not None, "source-video manifest tests require ffmpeg"
-    assert shutil.which("ffprobe") is not None, (
-        "source-video manifest tests require ffprobe"
-    )
-    created = subprocess.run(
-        [
-            ffmpeg,
-            "-nostdin",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            "color=c=black:s=160x90:r=1",
-            "-t",
-            "1",
-            "-an",
-            "-c:v",
-            "mpeg4",
-            "-pix_fmt",
-            "yuv420p",
-            "-movflags",
-            "+faststart",
-            "-y",
-            str(path),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert created.returncode == 0, created.stderr
-    _TINY_VIDEO_BYTES = path.read_bytes()
-    return path
-
-
 def materialize_crc_damaged_pptx(fixture):
     """Create a deck with one CRC-damaged media member under the source root."""
     image_path = fixture["pptx_source"] / "asset.png"
@@ -302,12 +256,14 @@ def trusted_video_manifest(fixture, page_count=1):
         }
         for page in range(1, page_count + 1)
     ]
+    receipt = video_source_receipt_for(source_video)
     return {
         "slide_source": "video_extracted",
-        "schema_version": 3,
+        "schema_version": 4,
         "pipeline_version": "0.10.0",
         "source_video_id": VIDEO_ID,
         "source_video_path": str(source_video),
+        "source_receipt": receipt,
         "total_frames_extracted": page_count,
         "unique_frame_count": page_count,
         "authored_slide_count": None,
@@ -328,6 +284,7 @@ def trusted_video_manifest(fixture, page_count=1):
                 "page_count": page_count,
                 "source_video_id": VIDEO_ID,
                 "source_video_path": str(source_video),
+                "source_receipt": deepcopy(receipt),
                 "crop_method": "manual",
                 "crop_verified": True,
                 "trusted_for_authored_slide_analysis": True,
@@ -358,6 +315,7 @@ def context_video_manifest(fixture, page_count=1):
                     "page_count": page_count,
                     "source_video_id": VIDEO_ID,
                     "source_video_path": source_video,
+                    "source_receipt": deepcopy(manifest["source_receipt"]),
                     "crop_method": "none",
                     "crop_verified": False,
                     "trusted_for_authored_slide_analysis": False,
@@ -2938,6 +2896,7 @@ def test_unverified_video_crop_cannot_support_completed_deck_analysis(
             "page_count": manifest["unique_frame_count"],
             "source_video_id": VIDEO_ID,
             "source_video_path": manifest["source_video_path"],
+            "source_receipt": deepcopy(manifest["source_receipt"]),
             "crop_method": "none",
             "crop_verified": False,
             "trusted_for_authored_slide_analysis": False,

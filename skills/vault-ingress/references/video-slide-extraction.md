@@ -156,7 +156,7 @@ Always store the full script result in `structured_data.video_extraction` and ke
 `slides_local_path: "slides/{youtube_id}.pdf"` only after promoting a trusted
 `slide_region` artifact. Keep the source MP4 and context artifact in
 `slides-rebuild/{youtube_id}/`; they are provenance, not disposable scratch.
-The per-talk return validator recomputes trust from the complete schema-v3 manifest
+The per-talk return validator recomputes trust from the complete schema-v4 manifest
 and binds `source_video_id` to the claimed talk. Promotion is an exact-content
 operation: the bounded SHA-256 digest of `slides/{youtube_id}.pdf` must match the
 trusted manifest `slide_region` artifact. `status: "processed"` requires both that
@@ -178,6 +178,33 @@ catalog evidence gate and mark it `not_evaluable` when no inspected source quali
 | Source video | `slides-rebuild/{youtube_id}/{youtube_id}.mp4` | Durable source for crop review and re-extraction |
 | Extraction metadata | `structured_data.video_extraction` | Canonical paths, artifact scopes, crop trust, retained-frame/page mapping, thresholds, versions |
 | Intermediate JPEG frames | Deleted after PDF generation | Reproducible cache; source video and context remain |
+
+## Source Binding — the Run Fails Rather Than Guess
+
+The extractor probes the source MP4 through the bounded `video_evidence` probe
+before it samples a single frame, and again after the last PDF lands. Both probes
+share one assessment, so the closing probe costs a stat when the file generation
+held and a full re-probe exactly when it did not.
+
+- **Source unprobeable** (missing, dataless/offline placeholder, corrupt
+  container, no video stream, ffprobe unavailable): no frames are sampled, no
+  record is produced, exit 1 with a closed reason on stderr. A cloud placeholder
+  stays unavailable until it is hydrated — the extractor never substitutes a
+  stub.
+- **Source replaced mid-run**: every PDF this run produced is removed and the run
+  exits 1 with `video_source_replaced_during_extraction`. Half-bound derivatives
+  never survive.
+- **Success**: the receipt is stamped on the manifest head and on every
+  `artifacts[]` entry, byte-identically.
+
+The receipt's shape and the reader-side comparison rules live in
+`skills/vault-ingress/references/schemas-db.md` ("Video Extraction Output
+Schema"); the builder and field lists are in
+`skills/vault-ingress/scripts/video_evidence.py`.
+
+Schema-v3 records predate this binding. They stay readable for reprocessing and
+are never upgraded by stamping a digest observed later: reacquire the source
+video and re-extract to make a talk current.
 
 ## Slide-Region Detection — Contract and Limit
 
@@ -239,7 +266,8 @@ extraction dependencies installed).
 
 **Bump policy:** increment `PIPELINE_VERSION` in the same change that alters
 extraction *behavior* — the default `--fps` or `--threshold`, the 720p download
-tier, region-detection logic, the dedup hashing, or PDF assembly. A bump pairs
+tier, region-detection logic, the dedup hashing, PDF assembly, or the source
+binding a run requires. A bump pairs
 with the behavior change so re-ingested vaults are comparable across iterations.
 Pure refactors, comments, and doc edits that don't change output do not bump.
 

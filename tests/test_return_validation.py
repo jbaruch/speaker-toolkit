@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 import pytest
+from conftest import synthetic_video_source_receipt
 from pypdf import PdfWriter
 
 
@@ -160,10 +161,12 @@ def _return_with_canonical_visuals():
 def _video_manifest(*, trusted=True, source_video_id="abcDEF12345"):
     root = f"/vault/slides-rebuild/{source_video_id}"
     source_path = f"{root}/{source_video_id}.mp4"
+    receipt = synthetic_video_source_receipt()
     shared = {
         "page_count": 2,
         "source_video_id": source_video_id,
         "source_video_path": source_path,
+        "source_receipt": copy.deepcopy(receipt),
     }
     if trusted:
         region = [0.05, 0.02, 0.78, 0.98]
@@ -199,10 +202,11 @@ def _video_manifest(*, trusted=True, source_video_id="abcDEF12345"):
         review_reason = "No verified slide region is available."
     return {
         "slide_source": "video_extracted",
-        "schema_version": 3,
+        "schema_version": 4,
         "pipeline_version": "0.10.0",
         "source_video_id": source_video_id,
         "source_video_path": source_path,
+        "source_receipt": receipt,
         "total_frames_extracted": 4,
         "unique_frame_count": 2,
         "authored_slide_count": None,
