@@ -593,6 +593,81 @@ class TestAWeightedReturnReachesTheDatabase:
             )
 
 
+class TestTheMergedWeightedRecordValidatesAsPersistedState:
+    """#299's last bullet: the chain runs to `validate_persisted_v2_analysis_state`.
+
+    `TestAWeightedReturnReachesTheDatabase` stops at `merge_talk`, so the
+    weighted shape was never put to the validator that gates publication —
+    `persist-results.validate_effective_v2_state` and `write-analysis` both
+    call it, and it accepts a snapshot only when the observation field set is
+    one of four exact sets. A v6 record reaching it while only the v5 branch
+    was wired would read as "noncanonical fields" at the first real persist.
+    """
+
+    @pytest.fixture
+    def catalog(self, return_validation):
+        return _weighted_catalog(return_validation)
+
+    @pytest.fixture
+    def stored(
+        self,
+        persist_results,
+        return_validation,
+        transcript_timing,
+        tmp_path,
+        catalog,
+    ):
+        raw, _ = _v6_return(return_validation, catalog, bare=True)
+        talk, _ = _merge_v6(
+            persist_results,
+            return_validation,
+            transcript_timing,
+            tmp_path,
+            catalog,
+            raw,
+        )
+        return talk
+
+    def test_a_merged_weighted_record_validates_as_persisted_state(
+        self, return_validation, stored
+    ):
+        return_validation.validate_persisted_v2_analysis_state(stored)
+
+    def test_it_validated_on_the_weighted_branch_and_not_a_laxer_one(
+        self, return_validation, stored
+    ):
+        """Four field sets are accepted, so "it validated" names no branch.
+
+        The v6 set is v5 plus the basis, so a record that lost its basis
+        validates cleanly as a v5 one. Pinning the set is what distinguishes
+        the weighted shape reaching its own branch from it falling through.
+        """
+        assert set(stored["pattern_observations"]) == set(
+            return_validation.V6_PERSISTED_PATTERN_OBSERVATION_FIELDS
+        )
+
+    def test_the_weighted_shape_is_a_closed_set_at_this_validator(
+        self, return_validation, stored
+    ):
+        """Otherwise the v6 branch reads as "v5 plus whatever else you sent"."""
+        stored["pattern_observations"]["pattern_score_provenance"] = "worker"
+
+        with pytest.raises(
+            return_validation.ReturnValidationError, match="noncanonical fields"
+        ):
+            return_validation.validate_persisted_v2_analysis_state(stored)
+
+    def test_the_production_gate_accepts_it_through_the_same_call(
+        self, persist_results, return_validation, stored
+    ):
+        """`validate_effective_v2_state` is what persist-results actually runs."""
+        persist_results.validate_effective_v2_state(
+            stored,
+            stored["structured_data"],
+            pattern_snapshot_replaced=True,
+        )
+
+
 class TestTheWeightedRecordReadsBackFresh:
     """#317: the record persisted, and then every consumer refused it.
 
