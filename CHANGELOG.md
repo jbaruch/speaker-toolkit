@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.88 — 2026-08-18
+
 ### feat(vault-ingress) — bind video derivatives to the exact source bytes (#216)
 
 A schema-v3 video-extraction manifest named its source by id and path. Both
