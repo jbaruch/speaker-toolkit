@@ -48,7 +48,8 @@ import os
 import posixpath
 import re
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+import hashlib
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
@@ -135,6 +136,10 @@ class DeckFactsReading:
     reason_code: str
     slide_count: int | None = None
     parts_read: tuple[str, ...] = field(default=())
+    # The generation these exact facts were read from, digested from the SAME
+    # open descriptor that produced them. `None` when the package could not be
+    # opened at all.
+    source_identity: dict[str, Any] | None = None
 
     @property
     def package_read(self) -> bool:
@@ -342,13 +347,40 @@ def read_deck_identity_facts(
         )
     try:
         with os.fdopen(descriptor, "rb", closefd=True) as handle:
-            return _read_from_stream(handle, path_text, facts)
+            # Digest and parse from ONE descriptor, then rewind. Digesting by
+            # path in a second open is what let an A->B->A replacement hand
+            # generation A's digest to facts read from B: two opens of one path
+            # are not two views of one file. A descriptor keeps pointing at the
+            # inode it was opened on, so bytes hashed here and bytes parsed
+            # below are provably the same generation, and no before/after
+            # bracket can substitute for that.
+            identity = _digest_stream(handle)
+            handle.seek(0)
+            reading = _read_from_stream(handle, path_text, facts)
+            return replace(reading, source_identity=identity)
     except (OSError, ValueError):
         return DeckFactsReading(
             pptx_path=path_text,
             facts=facts,
             reason_code=DECK_FACTS_UNREADABLE,
         )
+
+
+_DIGEST_CHUNK_BYTES = 1024 * 1024
+
+
+def _digest_stream(handle: Any) -> dict[str, Any]:
+    """SHA-256 and byte length of an already-open deck, in the fingerprint shape.
+
+    Deliberately takes a handle, never a path: the point is that the caller
+    already holds the descriptor whose bytes become the facts.
+    """
+    digest = hashlib.sha256()
+    size = 0
+    for chunk in iter(lambda: handle.read(_DIGEST_CHUNK_BYTES), b""):
+        digest.update(chunk)
+        size += len(chunk)
+    return {"algorithm": "sha256", "digest": digest.hexdigest(), "size_bytes": size}
 
 
 def _read_from_stream(

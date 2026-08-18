@@ -42,15 +42,16 @@ would have let an assessment claim a generation the database itself refuses;
 could have read. `tracking_database` imports this module, so the contract is
 mirrored rather than imported, and a test pins the two together.
 
-The sweep brackets the fact read with a fingerprint on each side. The facts and
-the digest come from two separate opens of the same path, so a deck replaced in
-that window would hand generation B's digest to a verdict derived from
-generation A's facts — and a later check against B would then accept it,
-defeating the byte-binding entirely. A deck that is not byte-identical on both
-sides yields no verdict: the row reports `binding_unassessable` with
-`identity_source_unstable_during_read` rather than an assessment stamped with a
-generation it cannot vouch for. Raised by the policy reviewer on #329, against a
-comment that claimed the single-pass property the code did not have.
+`read_deck_identity_facts` digests the descriptor it already holds and returns
+that generation with the facts, so the two are the same bytes by construction.
+Collecting them separately does not work, and the policy reviewer caught both
+ways of getting it wrong: fingerprinting the path in a second open lets a deck
+replaced between the opens hand generation B's digest to facts read from A, and
+bracketing the read with a fingerprint on each side is walked straight through
+by an A→B→A replacement, where `before == after` while the facts came from B.
+Two opens of one path are not two views of one file. A descriptor keeps pointing
+at the inode it was opened on, which is what removes the window rather than
+narrowing it.
 
 The generation check runs last in the refusal order. Everything above it asks
 whether the assessment is a coherent proof; this asks whether it is a proof

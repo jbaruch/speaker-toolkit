@@ -53,7 +53,6 @@ from pathlib import Path
 import sys
 from typing import Any, Mapping, Sequence
 
-from pptx_catalog_selection import observed_source_fingerprint
 from pptx_deck_facts import (
     DECK_FACTS_SCHEMA_VERSION,
     read_deck_identity_facts,
@@ -92,10 +91,6 @@ DISPOSITION_REVIEW_REQUIRED = "binding_review_required"
 DISPOSITION_UNPROVEN = "binding_unproven"
 DISPOSITION_UNBOUND = "unbound_row"
 DISPOSITION_UNASSESSABLE = "binding_unassessable"
-# The deck did not hold still across the read. Its facts and its digest would
-# describe different generations, so the row gets no verdict at all rather than
-# one stamped with a generation it cannot vouch for.
-REASON_SOURCE_UNSTABLE = "identity_source_unstable_during_read"
 
 DISPOSITIONS = (
     DISPOSITION_CONFIRMED,
@@ -243,30 +238,13 @@ def sweep_catalog(
             continue
         stored_talk = record.get("talk_filename")
         stored_talk = stored_talk if isinstance(stored_talk, str) else None
-        # Fingerprint, read, fingerprint. The facts and the digest come from
-        # two separate opens of the same path, so a deck replaced between them
-        # would stamp the SECOND generation's digest onto facts derived from the
-        # first — a verdict about bytes it never read, which is precisely the
-        # confusion this whole contract exists to refuse. Bracketing the read
-        # makes that window observable: if the deck is not byte-identical on
-        # both sides, no generation can honestly be attached and the row is
-        # unassessable rather than assessed against a guess.
-        before = observed_source_fingerprint(record.get("pptx_path"), pptx_source_dir)
         reading = read_deck_identity_facts(record.get("pptx_path"), pptx_source_dir)
-        after = observed_source_fingerprint(record.get("pptx_path"), pptx_source_dir)
-        if before is None or after is None or before != after:
-            rows.append(
-                {
-                    "index": index,
-                    "pptx_path": reading.pptx_path or None,
-                    "stored_talk_filename": stored_talk,
-                    "disposition": DISPOSITION_UNASSESSABLE,
-                    "reason_codes": [REASON_SOURCE_UNSTABLE],
-                    "deck_facts_reason_code": reading.reason_code,
-                }
-            )
-            continue
-        observed_identity = before
+        # The reading digests its own descriptor, so the generation and the
+        # facts are the same bytes by construction. Fingerprinting the path
+        # separately here would reintroduce the window it closes: two opens of
+        # one path are not two views of one file, and an A->B->A replacement
+        # defeats any before/after comparison built on them.
+        observed_identity = reading.source_identity
         try:
             assessment = assess_pptx_talk_identity(
                 reading.facts, candidates, source_identity=observed_identity

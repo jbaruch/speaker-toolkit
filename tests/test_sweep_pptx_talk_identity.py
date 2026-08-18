@@ -13,6 +13,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -119,55 +120,68 @@ def deck(
     return relative
 
 
-class TestTheDeckMustHoldStillAcrossTheRead:
-    """The facts and the digest come from two separate opens (#176 review).
+class TestTheGenerationComesFromTheBytesThatWereRead:
+    """One descriptor, not two opens of one path (#176 review, twice over).
 
-    `read_deck_identity_facts` opens the deck, then `observed_source_fingerprint`
-    opens it again. A deck replaced in that window would hand generation B's
-    digest to a verdict derived from generation A's facts — and a later check
-    against B would then accept it. The whole point of binding an assessment to
-    bytes is defeated if the bytes it names are not the bytes it read.
+    First attempt fingerprinted the path in a second open, so a deck replaced
+    between the two handed generation B's digest to facts read from A. Second
+    attempt bracketed the read with a fingerprint on each side, which an
+    A->B->A replacement walks straight through: `before == after` while the
+    facts came from B.
+
+    Neither is fixable by comparing more. The reading digests the descriptor it
+    already holds, so the digest and the facts are the same bytes by
+    construction and there is no window to lose a race in.
     """
 
-    def test_a_deck_replaced_mid_read_is_unassessable(
-        self, source_root: Path, monkeypatch
+    def test_the_reading_reports_the_digest_of_the_bytes_it_parsed(
+        self, source_root: Path
     ) -> None:
         relative = deck(source_root, "Conference/2024/DevOps for Developers.pptx")
-        talk = {
-            "filename": "2024-04-10-talk.md",
-            "title": "DevOps for Developers",
-            "conference": "Conference",
-            "date": "2024-04-10",
+
+        reading = sweep.read_deck_identity_facts(relative, source_root)
+
+        assert reading.package_read
+        expected = hashlib.sha256((source_root / relative).read_bytes())
+        assert reading.source_identity == {
+            "algorithm": "sha256",
+            "digest": expected.hexdigest(),
+            "size_bytes": (source_root / relative).stat().st_size,
         }
-        original = sweep.read_deck_identity_facts
 
-        def swap_then_read(pptx_path, pptx_source_dir):
-            """Replace the deck at the exact moment its facts are read."""
-            result = original(pptx_path, pptx_source_dir)
-            write_deck(
-                source_root,
-                relative,
-                full_deck_members(
-                    slide_titles=["A Totally Different Talk"],
-                    runs=["A Totally Different Talk"],
-                    slides=7,
-                ),
-            )
-            return result
+    def test_replacing_the_deck_after_the_read_cannot_change_the_recorded_generation(
+        self, source_root: Path
+    ) -> None:
+        """The recorded generation describes what was parsed, not what is there now.
 
-        monkeypatch.setattr(sweep, "read_deck_identity_facts", swap_then_read)
+        This is the A->B->A shape reduced to its essence: whatever happens to
+        the path afterwards, the reading already carries the digest of the bytes
+        its facts came from.
+        """
+        relative = deck(source_root, "Conference/2024/DevOps for Developers.pptx")
 
-        rows = sweep_rows(
-            [catalog_row(relative, talk["filename"])], [talk], source_root
+        reading = sweep.read_deck_identity_facts(relative, source_root)
+        recorded = dict(reading.source_identity)
+        write_deck(
+            source_root,
+            relative,
+            full_deck_members(
+                slide_titles=["A Totally Different Talk"],
+                runs=["A Totally Different Talk"],
+                slides=7,
+            ),
         )
 
-        assert rows[0]["disposition"] == sweep.DISPOSITION_UNASSESSABLE
-        assert rows[0]["reason_codes"] == [sweep.REASON_SOURCE_UNSTABLE]
+        assert reading.source_identity == recorded
+        assert (
+            sweep.read_deck_identity_facts(relative, source_root).source_identity
+            != recorded
+        )
 
     def test_a_deck_that_holds_still_is_assessed_normally(
         self, source_root: Path
     ) -> None:
-        """The bracket must not make every ordinary read unassessable."""
+        """The generation must not make every ordinary read unassessable."""
         relative = deck(source_root, "Conference/2024/DevOps for Developers.pptx")
         talk = {
             "filename": "2024-04-10-talk.md",
