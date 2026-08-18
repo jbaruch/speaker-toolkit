@@ -13,6 +13,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,7 @@ def _load_script(module_name: str, filename: str):
 
 
 sweep = _load_script("sweep_pptx_talk_identity", "sweep-pptx-talk-identity.py")
+import pptx_deck_facts  # noqa: E402  (SCRIPTS joins sys.path above)
 
 
 VOXXED_TALK = {
@@ -117,6 +119,121 @@ def deck(
         full_deck_members(slide_titles=[title], runs=[title], slides=slides),
     )
     return relative
+
+
+class TestTheGenerationComesFromTheBytesThatWereRead:
+    """One descriptor, not two opens of one path (#176 review, twice over).
+
+    First attempt fingerprinted the path in a second open, so a deck replaced
+    between the two handed generation B's digest to facts read from A. Second
+    attempt bracketed the read with a fingerprint on each side, which an
+    A->B->A replacement walks straight through: `before == after` while the
+    facts came from B.
+
+    Neither is fixable by comparing more. The reading digests the descriptor it
+    already holds, so the digest and the facts are the same bytes by
+    construction and there is no window to lose a race in.
+    """
+
+    def test_the_reading_reports_the_digest_of_the_bytes_it_parsed(
+        self, source_root: Path
+    ) -> None:
+        relative = deck(source_root, "Conference/2024/DevOps for Developers.pptx")
+
+        reading = sweep.read_deck_identity_facts(relative, source_root)
+
+        assert reading.package_read
+        expected = hashlib.sha256((source_root / relative).read_bytes())
+        assert reading.source_identity == {
+            "algorithm": "sha256",
+            "digest": expected.hexdigest(),
+            "size_bytes": (source_root / relative).stat().st_size,
+        }
+
+    def test_replacing_the_deck_after_the_read_cannot_change_the_recorded_generation(
+        self, source_root: Path
+    ) -> None:
+        """The recorded generation describes what was parsed, not what is there now.
+
+        This is the A->B->A shape reduced to its essence: whatever happens to
+        the path afterwards, the reading already carries the digest of the bytes
+        its facts came from.
+        """
+        relative = deck(source_root, "Conference/2024/DevOps for Developers.pptx")
+
+        reading = sweep.read_deck_identity_facts(relative, source_root)
+        recorded = dict(reading.source_identity)
+        write_deck(
+            source_root,
+            relative,
+            full_deck_members(
+                slide_titles=["A Totally Different Talk"],
+                runs=["A Totally Different Talk"],
+                slides=7,
+            ),
+        )
+
+        assert reading.source_identity == recorded
+        assert (
+            sweep.read_deck_identity_facts(relative, source_root).source_identity
+            != recorded
+        )
+
+    def test_the_generation_survives_the_file_being_rewritten_in_place(
+        self, source_root: Path, monkeypatch
+    ) -> None:
+        """The case a descriptor alone does NOT cover.
+
+        A descriptor survives the path being repointed, but it does not freeze
+        the inode: a writer that truncates and overwrites the same file between
+        a digest pass and a parse pass still produces an identity describing
+        different bytes from the facts. The deck is copied into a private spool
+        before anything parses it, so the mutation lands on a file nothing is
+        reading any more.
+        """
+        relative = deck(source_root, "Conference/2024/DevOps for Developers.pptx")
+        target = source_root / relative
+        original_bytes = target.read_bytes()
+        real_read = pptx_deck_facts._read_from_stream
+
+        def mutate_then_parse(handle, pptx_path, facts):
+            # Rewrite the LIVE file in place, keeping the same inode, at the
+            # moment the parse begins.
+            with open(target, "r+b") as live:
+                live.seek(0)
+                live.write(b"\x00" * 512)
+                live.truncate(512)
+            return real_read(handle, pptx_path, facts)
+
+        monkeypatch.setattr(pptx_deck_facts, "_read_from_stream", mutate_then_parse)
+
+        reading = sweep.read_deck_identity_facts(relative, source_root)
+
+        assert reading.package_read, "the parse read the snapshot, not the corpse"
+        assert reading.source_identity == {
+            "algorithm": "sha256",
+            "digest": hashlib.sha256(original_bytes).hexdigest(),
+            "size_bytes": len(original_bytes),
+        }
+
+    def test_a_deck_that_holds_still_is_assessed_normally(
+        self, source_root: Path
+    ) -> None:
+        """The generation must not make every ordinary read unassessable."""
+        relative = deck(source_root, "Conference/2024/DevOps for Developers.pptx")
+        talk = {
+            "filename": "2024-04-10-talk.md",
+            "title": "DevOps for Developers",
+            "conference": "Conference",
+            "date": "2024-04-10",
+        }
+
+        rows = sweep_rows(
+            [catalog_row(relative, talk["filename"])], [talk], source_root
+        )
+
+        assert rows[0]["disposition"] == sweep.DISPOSITION_CONFIRMED
+        assert rows[0]["verdict"] == sweep.VERDICT_MATCHED
 
 
 class TestDispositions:
@@ -458,6 +575,7 @@ class TestCandidateTable:
                 assessment,
                 pptx_path=path,
                 talk_filename=VOXXED_TALK["filename"],
+                observed_source_identity=None,
             )
             is None
         )
@@ -786,6 +904,7 @@ class TestProofPlan:
                 record["identity_assessment"],
                 pptx_path=record["pptx_path"],
                 talk_filename=record["talk_filename"],
+                observed_source_identity=None,
             )
             is None
         )

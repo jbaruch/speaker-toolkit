@@ -125,12 +125,21 @@ def _complete_plan() -> dict[str, Any]:
                     "visual_extracted": False,
                     "visual_evidence": None,
                     "identity_assessment": {
-                        "schema_version": 1,
+                        "schema_version": 2,
                         "pptx_path": "Conference/Talk.pptx",
                         "verdict": "matched",
                         "artifact_role": "delivery",
                         "selected_talk_filename": "talk.md",
                         "reason_codes": ["identity_matched"],
+                        # The row carries no extraction evidence yet, so there
+                        # is nothing to cross-check against — identity is
+                        # verified BEFORE extraction. The assessment still has
+                        # to name the generation it read.
+                        "source_identity": {
+                            "algorithm": "sha256",
+                            "digest": "e" * 64,
+                            "size_bytes": 2048,
+                        },
                         "candidates": [
                             {
                                 "talk_filename": "talk.md",

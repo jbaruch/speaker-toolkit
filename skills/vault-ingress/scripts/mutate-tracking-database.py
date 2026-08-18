@@ -18,7 +18,7 @@ import os
 from pathlib import Path
 import re
 import sys
-from typing import Any, NoReturn
+from typing import Any, Mapping, NoReturn
 
 from tracking_database import (
     CONFIG_RECORD_SCHEMA_VERSION,
@@ -1178,11 +1178,29 @@ def _apply_sever_pptx_talk_binding(
     )
 
 
+def _record_source_fingerprint(record: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    """The deck generation this record's own extraction evidence names.
+
+    `None` when the record carries no visual evidence yet, which is a real state
+    for a freshly catalogued deck and not a defect: identity is verified BEFORE
+    extraction, so a row bound at that point has no receipt to cross-check
+    against. `None` SKIPS the comparison rather than failing it. What still
+    holds is the requirement that the assessment carry a valid
+    `source_identity` of its own, which is what refuses every v1 assessment.
+    """
+    evidence = record.get("visual_evidence")
+    if not isinstance(evidence, Mapping):
+        return None
+    fingerprint = evidence.get("source_fingerprint")
+    return fingerprint if isinstance(fingerprint, Mapping) else None
+
+
 def _require_bound_identity_assessment(
     assessment: object,
     *,
     pptx_path: str,
     talk_filename: str | None,
+    observed_source_identity: Mapping[str, Any] | None,
     label: str,
 ) -> None:
     """Refuse a talk binding the assessment does not actually prove.
@@ -1196,6 +1214,21 @@ def _require_bound_identity_assessment(
     assessment must be a `matched` verdict, it must be ABOUT this record's deck,
     it must name THIS record's talk, and it must be for a delivery artifact.
 
+    A fifth now rides along: the assessment must name the deck GENERATION it
+    read, and that generation must agree with the record's own extraction
+    fingerprint. Be clear about how strong that is. This writer takes a database
+    and a plan and never touches the vault, so it CANNOT compare the assessment
+    against the bytes on disk — `preflight-vault.py` is the authority that does,
+    because it observes the deck. What this catches is an internally
+    inconsistent plan: the fingerprint is produced by the extractor and the
+    identity by the sweep, so two independent producers disagreeing about which
+    deck this row is means one of them is describing a different file. A record
+    carrying no extraction evidence yet has nothing to cross-check, so the
+    cross-check is SKIPPED, not failed — identity is verified before extraction,
+    and demanding a receipt here would invert that order. What still holds in
+    that case is that the assessment must carry a valid `source_identity` at
+    all, which is what refuses every v1 assessment, none of which recorded one.
+
     Both endpoints are checked because an assessment binds a pair. Verifying the
     talk alone leaves the deck free: a real, correctly-decided assessment for
     deck A pasted onto deck B's record would pass every other check and bind B's
@@ -1208,7 +1241,10 @@ def _require_bound_identity_assessment(
             )
         return
     refusal = binding_refusal(
-        assessment, pptx_path=pptx_path, talk_filename=talk_filename
+        assessment,
+        pptx_path=pptx_path,
+        talk_filename=talk_filename,
+        observed_source_identity=observed_source_identity,
     )
     if refusal is not None:
         raise TrackingDatabaseMutationError(
@@ -1292,6 +1328,7 @@ def _apply_record_pptx(
         record.get("identity_assessment"),
         pptx_path=pptx_path,
         talk_filename=talk_filename,
+        observed_source_identity=_record_source_fingerprint(record),
         label=f"{record_label}.identity_assessment",
     )
     records = _collection(database, "pptx_catalog")

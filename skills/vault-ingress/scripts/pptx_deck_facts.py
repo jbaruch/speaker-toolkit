@@ -48,7 +48,9 @@ import os
 import posixpath
 import re
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+import hashlib
+import tempfile
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
@@ -135,6 +137,10 @@ class DeckFactsReading:
     reason_code: str
     slide_count: int | None = None
     parts_read: tuple[str, ...] = field(default=())
+    # The generation these exact facts were read from, digested from the SAME
+    # open descriptor that produced them. `None` when the package could not be
+    # opened at all.
+    source_identity: dict[str, Any] | None = None
 
     @property
     def package_read(self) -> bool:
@@ -342,13 +348,56 @@ def read_deck_identity_facts(
         )
     try:
         with os.fdopen(descriptor, "rb", closefd=True) as handle:
-            return _read_from_stream(handle, path_text, facts)
+            # Copy the deck into a private spool ONCE, digesting as it goes, and
+            # do every later read against that copy. Nothing weaker holds:
+            #
+            #  * digesting by path in a second open lets an A->B->A replacement
+            #    hand generation A's digest to facts parsed from B;
+            #  * bracketing the read with a fingerprint on each side is walked
+            #    through by the same A->B->A shape, since before == after;
+            #  * digest-then-seek-then-parse on one descriptor survives path
+            #    replacement but NOT in-place mutation — a writer that truncates
+            #    or overwrites the inode between the two reads still yields an
+            #    identity describing different bytes from the facts.
+            #
+            # Only a copy the vault cannot reach is immune, because it removes
+            # the second read of the live file rather than racing it.
+            with tempfile.SpooledTemporaryFile(
+                max_size=_SPOOL_TO_DISK_BYTES, mode="w+b"
+            ) as snapshot:
+                identity = _copy_and_digest(handle, snapshot)
+                snapshot.seek(0)
+                reading = _read_from_stream(snapshot, path_text, facts)
+                return replace(reading, source_identity=identity)
     except (OSError, ValueError):
         return DeckFactsReading(
             pptx_path=path_text,
             facts=facts,
             reason_code=DECK_FACTS_UNREADABLE,
         )
+
+
+_DIGEST_CHUNK_BYTES = 1024 * 1024
+# Decks run to tens of megabytes, so the snapshot spills to disk past this
+# rather than being held whole in memory. Correctness does not depend on the
+# threshold — a spooled file is equally private either side of it.
+_SPOOL_TO_DISK_BYTES = 8 * 1024 * 1024
+
+
+def _copy_and_digest(source: Any, destination: Any) -> dict[str, Any]:
+    """Copy a deck into a private spool, returning the generation it copied.
+
+    One pass over the live file, which is the whole point: the digest describes
+    exactly the bytes that landed in the snapshot, and every later read is
+    against the snapshot, so no concurrent writer can put the two out of step.
+    """
+    digest = hashlib.sha256()
+    size = 0
+    for chunk in iter(lambda: source.read(_DIGEST_CHUNK_BYTES), b""):
+        digest.update(chunk)
+        size += len(chunk)
+        destination.write(chunk)
+    return {"algorithm": "sha256", "digest": digest.hexdigest(), "size_bytes": size}
 
 
 def _read_from_stream(

@@ -71,7 +71,7 @@ from source_identity_matching import (
     known_event_aliases,
     titles_agree,
 )
-from pptx_catalog_selection import classify_catalog
+from pptx_catalog_selection import classify_catalog, observed_source_fingerprint
 from pptx_talk_identity import (
     VERDICT_MATCHED,
     binding_refusal,
@@ -121,6 +121,10 @@ _DATABASE_READ_FALLBACK = DATABASE_READ_FALLBACK
 SOURCE_IDENTITY_SCHEMA_VERSION = 1
 TRANSCRIPT_SOURCES = frozenset({"youtube_auto", "whisper", "manual", "none"})
 SLIDE_SOURCES = frozenset({"pptx", "pdf", "both", "video_extracted", "none"})
+# What a binding check needs of the deck itself: that it can be read and
+# digested. Reported as the `expected` of the unobservable-source finding so the
+# receipt says what was wanted, not just what was missing.
+PPTX_SOURCE_OBSERVABLE = "readable_pptx_source"
 COMPLETED_STATUSES = frozenset({"processed", "processed_partial"})
 RELATION_TYPES = frozenset({"duplicate", "borrowed_recording"})
 REJECTABLE_SOURCE_TYPES = frozenset({"video", "slides"})
@@ -389,15 +393,41 @@ class VaultPreflight:
                 continue
             pptx_path = record.get("pptx_path")
             talk_filename = record.get("talk_filename")
-            refusal = (
-                binding_refusal(
+            if not isinstance(pptx_path, str) or not isinstance(talk_filename, str):
+                refusal = "identity_assessment_incomplete"
+            else:
+                # Observed here rather than read off the row: the row's own
+                # fingerprint is what a changed deck would have to update, so
+                # trusting it would compare the record against itself. The deck
+                # on disk is the only authority for which bytes exist now.
+                observed = observed_source_fingerprint(
+                    pptx_path, self.config.get("pptx_source_dir")
+                )
+                if observed is None:
+                    # Distinct from passing `None` down. `binding_refusal`
+                    # reads `None` as "this caller has no observation", which
+                    # is true of the plan-only writer and false here — preflight
+                    # looked and found nothing. A deck that cannot be read
+                    # cannot confirm any binding, and letting it fall through as
+                    # "no observation available" is exactly the fail-open this
+                    # gate exists to close.
+                    self.add(
+                        "blocking",
+                        "pptx_talk_binding_source_unobservable",
+                        "catalog row binds a talk but its deck cannot be read, "
+                        "so the identity assessment cannot be checked against "
+                        "the deck it claims to describe",
+                        field=f"pptx_catalog[{index}].pptx_path",
+                        expected=PPTX_SOURCE_OBSERVABLE,
+                        actual=None,
+                    )
+                    continue
+                refusal = binding_refusal(
                     assessment,
                     pptx_path=pptx_path,
                     talk_filename=talk_filename,
+                    observed_source_identity=observed,
                 )
-                if isinstance(pptx_path, str) and isinstance(talk_filename, str)
-                else "identity_assessment_incomplete"
-            )
             if refusal is None:
                 continue
             reason_codes = assessment.get("reason_codes")

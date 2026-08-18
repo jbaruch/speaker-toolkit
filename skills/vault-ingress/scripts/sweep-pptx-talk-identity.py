@@ -239,8 +239,16 @@ def sweep_catalog(
         stored_talk = record.get("talk_filename")
         stored_talk = stored_talk if isinstance(stored_talk, str) else None
         reading = read_deck_identity_facts(record.get("pptx_path"), pptx_source_dir)
+        # The reading digests its own descriptor, so the generation and the
+        # facts are the same bytes by construction. Fingerprinting the path
+        # separately here would reintroduce the window it closes: two opens of
+        # one path are not two views of one file, and an A->B->A replacement
+        # defeats any before/after comparison built on them.
+        observed_identity = reading.source_identity
         try:
-            assessment = assess_pptx_talk_identity(reading.facts, candidates)
+            assessment = assess_pptx_talk_identity(
+                reading.facts, candidates, source_identity=observed_identity
+            )
         except PptxTalkIdentityError as exc:
             # The prose names the rejected value, which came out of the
             # database (`no-secrets` -> Logging). Report the closed code.
