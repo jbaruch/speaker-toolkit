@@ -1,5 +1,22 @@
 # Changelog
 
+### chore(ci) — pin the publish workflow to the registry-aware bump (#324)
+
+The publish pin was `af116eb` (2026-08-16). `smart-publish.sh` became
+REGISTRY-aware in coding-policy#298 the following day, so this repo was still
+computing the next version from the manifest alone — which collides the moment a
+credit-outage run skips the manifest commit-back and `main` falls behind the
+registry.
+
+That is the whole of the #324 chore. The manual per-release resync was working
+around a stale pin, not an unfixable pipeline: the new bump reads
+registry-empty -> manifest, manifest-strictly-ahead -> manifest, otherwise
+registry latest + one patch, so a lagging manifest stops being able to collide.
+
+Inputs are backward compatible (the new revision only adds `node-version`, with
+a default), and coding-policy publishes itself on this revision. Manifest
+resynced to `0.20.83` in the same change so the state is honest either way.
+
 ## 0.20.83 — 2026-08-18
 
 ### fix(vault-ingress) — a boolean weight no longer passes the freshness replay (#322)

@@ -16,7 +16,11 @@ permissions:
 
 jobs:
   publish:
-    uses: jbaruch/coding-policy/.github/workflows/publish-plugin.yml@af116ebf18a7c46a672bf176064908736bc8ac28
+    # Pinned to a SHA carrying smart-publish's REGISTRY-aware auto-bump
+    # (coding-policy#298). The previous pin computed the next version from the
+    # manifest alone, which collides whenever a credit-outage run skips the
+    # manifest commit-back and main falls behind the registry — the #324 chore.
+    uses: jbaruch/coding-policy/.github/workflows/publish-plugin.yml@c7d8f6395d89cf206de1570c4d882ff3e2c22dca
     secrets:
       TESSL_TOKEN: ${{ secrets.TESSL_TOKEN }}
     with:
