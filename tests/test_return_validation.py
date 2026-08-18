@@ -2066,23 +2066,42 @@ class TestMarkdownSuppliesNoSlideEvidence:
 
     def test_it_is_valid_as_provenance_on_a_partial(self, return_validation) -> None:
         """The whole point: the record says a deck exists without claiming to
-        have read it."""
-        return_validation.validate_authored_slide_fields_against_source(
-            {"delivery_language": "en", "co_presenter": False},
-            "markdown",
-        )
+        have read it. Asserted through the public validator, since what matters
+        is that such a return is accepted, not which helper let it through."""
+        ret = _return(status="processed_partial", slide_source="markdown")
+        # A markdown-deck talk is transcript-evidenced: the deck exists and is
+        # recorded, and nothing was read from it.
+        ret["pattern_observations"]["evidence_sources"] = ["transcript"]
+        _complete_unavailable_source_gates(return_validation, ret)
 
-    def test_the_no_readable_slides_set_is_the_complement_of_the_usable_one(
-        self, return_validation
+        return_validation.validate_batch([ret], None)
+
+    @pytest.mark.parametrize(
+        "slide_source", ["none", "markdown", "pptx", "pdf", "both", "video_extracted"]
+    )
+    def test_only_the_unreadable_sources_refuse_static_slide_evidence(
+        self, return_validation, slide_source
     ) -> None:
-        """Two modules name the same split. Restated constants drift, and the
-        direction they drift is a source claiming evidence it cannot produce."""
-        import pattern_evidence
+        """The split, stated as behaviour over every supported value.
 
-        assert (
-            return_validation.SLIDE_SOURCES_WITHOUT_READABLE_SLIDES
-            == return_validation.SLIDE_SOURCES - pattern_evidence.USABLE_SLIDE_SOURCES
-        )
+        `none` and `markdown` are the two that cannot produce a readable slide
+        artifact, and they are exactly the two that refuse a `static_slides`
+        claim. The readable ones may still fail for their own reasons — a
+        missing artifact, an untrusted extraction — so this asserts only that
+        THIS refusal is not the one they hit.
+        """
+        ret = _return(status="processed_partial", slide_source=slide_source)
+        ret["pattern_observations"]["evidence_sources"] = ["static_slides"]
+        refusal = "cannot support static/native slide"
+
+        try:
+            return_validation.validate_batch([ret], None)
+        except return_validation.ReturnValidationError as exc:
+            refused_here = refusal in str(exc)
+        else:
+            refused_here = False
+
+        assert refused_here == (slide_source in {"none", "markdown"})
 
 
 def test_transcript_only_partial_remains_valid_without_slide_fields(
