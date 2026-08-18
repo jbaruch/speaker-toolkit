@@ -330,6 +330,24 @@ do not auto-edit names, aliases, definitions, or graph relationships. The input,
 report, and no-write contracts are defined in
 [pattern-catalog-contract.md](pattern-catalog-contract.md).
 
+**Persisted pattern-observation audit:** Before a migration or a reparse, run the
+corpus-wide audit against a COPY of the database:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/audit-persisted-pattern-observations.py" \
+  "{path_to_database_copy}"
+```
+
+Stdout is stable JSON carrying per-reason-code counts and the filenames behind
+each. Exit 1 means at least one talk's persisted observations are unusable —
+that is a finding about the corpus, not a failure of the audit, and the report is
+still on stdout. Exit 3 is a broken audit with empty stdout.
+
+Read-only, which is why it may be pointed at a copy. Point it at a copy: the
+reparse decision wants the counts BEFORE the migration restamps anything, and the
+same assessor runs in-flow afterwards regardless. Attach the counts to the
+repair/reparse report.
+
 **Conditional source-video runtime gate:** Use only the strict owner-read database
 payload to determine whether the upcoming source preflight may inspect any
 preserved local recording declared by

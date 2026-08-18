@@ -1,5 +1,32 @@
 # Changelog
 
+### feat(vault-ingress) — a standalone persisted-observation audit (#167)
+
+`assess_persisted_pattern_observations` was reachable only in-flow. Seven
+consumers call it — migration, preflight, analysis rendering, queue
+normalization, persistence, the adherence baseline, the cohort snapshot — and
+every one assesses a talk to decide something about that talk, then moves on.
+None could answer what is wrong with a corpus in total, which is this issue's
+last acceptance criterion: run the validator against a copy of the live database
+and attach the deterministic counts to the repair/reparse report.
+
+`skills/vault-ingress/scripts/audit-persisted-pattern-observations.py` is that
+entry point. It emits per-reason-code counts and the filenames behind each, so a
+count can be acted on rather than only reported.
+
+Read-only, and pointing it at a copy is the intended use: the reparse decision
+wants the counts BEFORE the migration restamps anything. Exit 1 means the corpus
+has defects and the report is still on stdout — a finding, not a failure. Exit 3
+is a broken audit with empty stdout, so the two can never be confused.
+
+A talk carrying no `pattern_observations` reports `observations_absent` rather
+than being skipped: 9 of 209 live talks had no block, and silence would have read
+as nine clean talks. A talk whose own filename is unusable is named by index, so
+a malformed record is not the one entry the report cannot identify.
+
+Reports are byte-identical across runs over one database, so a diff between two
+runs is a real change rather than dict ordering.
+
 ### feat(vault-ingress) — admit `markdown` as a slide source (#318)
 
 `slide_source` accepted binary artifacts only — `pptx|pdf|both|video_extracted|none`
