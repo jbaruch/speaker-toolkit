@@ -196,3 +196,27 @@ def test_upload_predates_catalog_compares_at_the_records_own_precision(
     expected: bool | None,
 ) -> None:
     assert source_identity_matching.upload_predates_catalog(upload, catalog) is expected
+
+
+@pytest.mark.parametrize(
+    ("talk", "expected"),
+    [
+        ({"duration_seconds": 2700}, 2700.0),
+        ({"video_duration_seconds": 1800}, 1800.0),
+        ({"structured_data": {"recording_duration_seconds": 900}}, 900.0),
+        # A later positive value is read past an unusable earlier one.
+        ({"duration_seconds": 0, "video_duration_seconds": 1800}, 1800.0),
+        ({"duration_seconds": -5, "talk_duration_seconds": 60}, 60.0),
+        # `bool` is an `int`; `True` must not read as a one-second talk.
+        ({"duration_seconds": True}, None),
+        ({"duration_seconds": float("inf")}, None),
+        ({"duration_seconds": "2700"}, None),
+        ({"structured_data": "not-a-mapping"}, None),
+        ({}, None),
+    ],
+)
+def test_expected_duration_seconds_reads_the_first_usable_catalog_duration(
+    talk: dict[str, object],
+    expected: float | None,
+) -> None:
+    assert source_identity_matching.expected_duration_seconds(talk) == expected

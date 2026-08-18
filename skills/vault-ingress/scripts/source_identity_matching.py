@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import date
+import math
 import re
 from typing import Any
 import unicodedata
@@ -405,3 +406,33 @@ def upload_predates_catalog(
     if catalog_day is not None:
         return upload < catalog_day
     return upload.year < catalog_year
+
+
+def expected_duration_seconds(talk: dict[str, Any]) -> float | None:
+    """Return the catalog's own duration for a talk, in seconds.
+
+    Reads the first positive, finite duration among the record's own fields and
+    its `structured_data` block. Booleans are rejected before the numeric test
+    because `bool` is an `int` in Python, and a `True` would otherwise read as a
+    one-second duration.
+    """
+    candidates = [
+        talk.get("duration_seconds"),
+        talk.get("video_duration_seconds"),
+        talk.get("talk_duration_seconds"),
+    ]
+    structured = talk.get("structured_data")
+    if isinstance(structured, dict):
+        candidates.extend(
+            [
+                structured.get("video_duration_seconds"),
+                structured.get("recording_duration_seconds"),
+                structured.get("duration_seconds"),
+            ]
+        )
+    for value in candidates:
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)) and math.isfinite(value) and value > 0:
+            return float(value)
+    return None

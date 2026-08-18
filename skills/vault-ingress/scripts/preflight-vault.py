@@ -73,6 +73,7 @@ from video_evidence import (
 from source_identity_matching import (
     EventAlias,
     event_agreement,
+    expected_duration_seconds,
     known_event_aliases,
     parse_catalog_date,
     titles_agree,
@@ -2478,29 +2479,6 @@ def expected_speakers(talk: dict[str, Any], config: dict[str, Any]) -> list[str]
                 return [name]
     config_name = _nonempty_string(config.get("speaker_name"))
     return [config_name] if config_name else []
-
-
-def expected_duration_seconds(talk: dict[str, Any]) -> float | None:
-    candidates = [
-        talk.get("duration_seconds"),
-        talk.get("video_duration_seconds"),
-        talk.get("talk_duration_seconds"),
-    ]
-    structured = talk.get("structured_data")
-    if isinstance(structured, dict):
-        candidates.extend(
-            [
-                structured.get("video_duration_seconds"),
-                structured.get("recording_duration_seconds"),
-                structured.get("duration_seconds"),
-            ]
-        )
-    for value in candidates:
-        if isinstance(value, bool):
-            continue
-        if isinstance(value, (int, float)) and math.isfinite(value) and value > 0:
-            return float(value)
-    return None
 
 
 def relation_from(talk: dict[str, Any]) -> tuple[Any, Any] | None:

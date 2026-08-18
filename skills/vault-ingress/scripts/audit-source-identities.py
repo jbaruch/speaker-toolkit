@@ -24,6 +24,7 @@ from urllib.parse import parse_qs, urlparse
 
 from source_identity_matching import (
     event_agreement,
+    expected_duration_seconds,
     known_event_aliases,
     normalized_words,
     parse_catalog_date,
@@ -168,32 +169,6 @@ def is_youtube_url(value: Any) -> bool:
         "youtube-nocookie.com",
         "www.youtube-nocookie.com",
     }
-
-
-def expected_duration_seconds(talk: dict[str, Any]) -> float | None:
-    candidates = [
-        talk.get("duration_seconds"),
-        talk.get("video_duration_seconds"),
-        talk.get("talk_duration_seconds"),
-    ]
-    structured = talk.get("structured_data")
-    if isinstance(structured, dict):
-        candidates.extend(
-            [
-                structured.get("video_duration_seconds"),
-                structured.get("recording_duration_seconds"),
-                structured.get("duration_seconds"),
-            ]
-        )
-    for value in candidates:
-        if (
-            not isinstance(value, bool)
-            and isinstance(value, (int, float))
-            and math.isfinite(value)
-            and value > 0
-        ):
-            return float(value)
-    return None
 
 
 def normalize_captured_at(value: str | datetime | None = None) -> str:
