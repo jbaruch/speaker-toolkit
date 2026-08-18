@@ -34,6 +34,14 @@ no `visual_evidence`, so there is nothing to cross-check and the requirement
 narrows to the assessment naming a generation at all. Requiring the extraction
 fingerprint would have inverted the order this issue establishes.
 
+A `source_identity` is held to the same contract as the extractor's
+fingerprint — algorithm `sha256`, a 64-character lowercase hex digest, a
+positive integer size. The two are compared to each other, so a looser reading
+would have let an assessment claim a generation the database itself refuses;
+`{"algorithm": "x", "digest": "x", "size_bytes": 0}` is not a deck anything
+could have read. `tracking_database` imports this module, so the contract is
+mirrored rather than imported, and a test pins the two together.
+
 The sweep brackets the fact read with a fingerprint on each side. The facts and
 the digest come from two separate opens of the same path, so a deck replaced in
 that window would hand generation B's digest to a verdict derived from

@@ -480,6 +480,89 @@ def _documented_identity_assessment() -> dict:
     raise AssertionError("unbalanced identity_assessment example in schemas-db.md")
 
 
+VALID_SOURCE_IDENTITY = {
+    "algorithm": "sha256",
+    "digest": "3b1f8c2d4e6a90b7c5d3e1f2a4b6c8d0e2f4a6b8c0d2e4f6a8b0c2d4e6f80a1b",
+    "size_bytes": 4096,
+}
+
+
+@pytest.mark.parametrize(
+    "identity",
+    [
+        pytest.param(None, id="absent"),
+        pytest.param(
+            {**VALID_SOURCE_IDENTITY, "algorithm": "md5"}, id="wrong_algorithm"
+        ),
+        pytest.param({**VALID_SOURCE_IDENTITY, "digest": "x"}, id="short_digest"),
+        pytest.param(
+            {**VALID_SOURCE_IDENTITY, "digest": "3B1F" + "0" * 60},
+            id="uppercase_digest",
+        ),
+        pytest.param(
+            {**VALID_SOURCE_IDENTITY, "digest": "z" * 64}, id="non_hex_digest"
+        ),
+        pytest.param({**VALID_SOURCE_IDENTITY, "size_bytes": 0}, id="empty_deck"),
+        pytest.param({**VALID_SOURCE_IDENTITY, "size_bytes": True}, id="boolean_size"),
+        pytest.param(
+            {**VALID_SOURCE_IDENTITY, "size_bytes": "4096"}, id="stringified_size"
+        ),
+        pytest.param(
+            {k: v for k, v in VALID_SOURCE_IDENTITY.items() if k != "digest"},
+            id="missing_digest",
+        ),
+        pytest.param({**VALID_SOURCE_IDENTITY, "extra": 1}, id="extra_field"),
+    ],
+)
+def test_a_source_identity_the_database_would_refuse_proves_nothing(
+    pptx_talk_identity, identity
+) -> None:
+    """The assessment's generation is compared against the extractor's, so it is
+    held to the extractor's contract. A looser reading here would let a binding
+    claim it was proven against bytes no deck could have."""
+    assessment = dict(_documented_identity_assessment())
+    assessment["source_identity"] = identity
+
+    refusal = pptx_talk_identity.binding_refusal(
+        assessment,
+        pptx_path=assessment["pptx_path"],
+        talk_filename=assessment["selected_talk_filename"],
+        observed_source_identity=None,
+    )
+
+    assert refusal == pptx_talk_identity.REASON_SOURCE_UNOBSERVABLE
+
+
+def test_the_mirrored_source_identity_contract_matches_its_source(
+    pptx_talk_identity, tracking_database
+) -> None:
+    """`tracking_database` imports this module, so the contract is restated here
+    rather than imported. Restated constants drift; this is what stops it."""
+    assert (
+        pptx_talk_identity._SOURCE_IDENTITY_ALGORITHMS
+        == tracking_database.PPTX_SOURCE_FINGERPRINT_ALGORITHMS
+    )
+    assert set(pptx_talk_identity._SOURCE_IDENTITY_FIELDS) == set(
+        tracking_database.PPTX_SOURCE_FINGERPRINT_REQUIRED_FIELDS
+    )
+
+
+def test_a_generation_that_differs_from_the_observed_one_is_stale(
+    pptx_talk_identity,
+) -> None:
+    """Both sides valid, and they name different decks."""
+    assessment = dict(_documented_identity_assessment())
+
+    refusal = pptx_talk_identity.binding_refusal(
+        assessment,
+        pptx_path=assessment["pptx_path"],
+        talk_filename=assessment["selected_talk_filename"],
+        observed_source_identity={**VALID_SOURCE_IDENTITY, "digest": "a" * 64},
+    )
+
+    assert refusal == pptx_talk_identity.REASON_GENERATION_STALE
+
+
 def test_the_documented_matched_example_authorizes_its_binding(
     pptx_talk_identity,
 ) -> None:

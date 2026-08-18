@@ -87,13 +87,24 @@ v2, and v3.
   and the new deck's contents became that talk's evidence. A v1 assessment
   cannot be upgraded — nothing recorded which bytes it read — so it refuses as
   `identity_assessment_schema_unsupported` and reads as unproven.
-- `binding_refusal` takes the caller's own observation as a required argument.
-  `preflight-vault.py` digests the deck and passes what it saw, so a swapped
-  deck is caught; `mutate-tracking-database.py` never touches the vault and
-  passes `None`, which still requires the assessment to name a generation but
-  makes no comparison. `None` from a caller that COULD look would be fail-open,
-  so preflight reports an unreadable deck as its own blocking finding
+- `binding_refusal` takes the caller's own observation as a required argument,
+  and the two callers supply different things. `preflight-vault.py` digests the
+  live deck, so a deck swapped at the same path is caught. The writer never
+  touches the vault, so it supplies the record's own
+  `visual_evidence.source_fingerprint` when the record has one and `None` when
+  it does not — see `_record_source_fingerprint` and the
+  `_require_bound_identity_assessment` docstring in
+  `skills/vault-ingress/scripts/mutate-tracking-database.py` for which case
+  applies. `None` never means "accepted": the assessment must still carry a
+  valid `source_identity`, which is what refuses every v1 assessment. A caller
+  that COULD look must not pass `None` to skip the comparison, so preflight
+  reports an unreadable deck as its own blocking finding
   (`pptx_talk_binding_source_unobservable`) instead.
+- A `source_identity` is held to the same contract as
+  `visual_evidence.source_fingerprint`: algorithm `sha256`, a 64-character
+  lowercase hex digest, and a positive integer `size_bytes`. The two are
+  compared to each other, so a looser reading would let an assessment claim a
+  generation the database itself would refuse.
 - Readers validate v3 shape only — that the field is null exactly when
   `talk_filename` is null, and an object otherwise. The binding's semantics are
   the writer's gate, matching how `visual_evidence` is handled.
@@ -370,7 +381,7 @@ customization, not the owner default. See the
       "reason_codes": ["identity_matched"],
       "source_identity": {
         "algorithm": "sha256",
-        "digest": "3b1f...  (64 lowercase hex characters)",
+        "digest": "3b1f8c2d4e6a90b7c5d3e1f2a4b6c8d0e2f4a6b8c0d2e4f6a8b0c2d4e6f80a1b",
         "size_bytes": 4096
       },
       "candidates": [

@@ -1221,9 +1221,11 @@ def _require_bound_identity_assessment(
     inconsistent plan: the fingerprint is produced by the extractor and the
     identity by the sweep, so two independent producers disagreeing about which
     deck this row is means one of them is describing a different file. A record
-    carrying no extraction evidence yet has nothing to cross-check, and there
-    the requirement narrows to the assessment naming a generation at all — which
-    is what refuses every v1 assessment, none of which recorded one.
+    carrying no extraction evidence yet has nothing to cross-check, so the
+    cross-check is SKIPPED, not failed — identity is verified before extraction,
+    and demanding a receipt here would invert that order. What still holds in
+    that case is that the assessment must carry a valid `source_identity` at
+    all, which is what refuses every v1 assessment, none of which recorded one.
 
     Both endpoints are checked because an assessment binds a pair. Verifying the
     talk alone leaves the deck free: a real, correctly-decided assessment for

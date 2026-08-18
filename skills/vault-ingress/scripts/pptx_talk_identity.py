@@ -701,10 +701,26 @@ def unassessed_legacy_binding(pptx_path: str) -> dict[str, Any]:
 
 
 _SOURCE_IDENTITY_FIELDS = ("algorithm", "digest", "size_bytes")
+# Mirrors `tracking_database`'s PPTX source-fingerprint contract, restated
+# rather than imported because that module imports THIS one
+# (`unassessed_legacy_binding`), so reaching back would cycle.
+# `tests/test_pptx_talk_identity.py` pins the two to each other, so a contract
+# change landing in one file and not the other fails CI instead of leaving the
+# assessment accepting generations the database would refuse.
+_SOURCE_IDENTITY_ALGORITHMS = frozenset({"sha256"})
+_SHA256_DIGEST_LENGTH = 64
+_LOWER_HEX = frozenset("0123456789abcdef")
 
 
 def _source_identity_comparable(value: object) -> TypeGuard[Mapping[str, Any]]:
-    """Whether a source identity is complete enough to compare at all.
+    """Whether a source identity is a valid generation, not merely present.
+
+    Held to the same contract the extractor's fingerprint is held to, because
+    the two are compared to each other. A looser reading here would accept a
+    generation the database would refuse — `{"algorithm": "x", "digest": "x",
+    "size_bytes": 0}` is not a deck anything could have read — and an
+    assessment carrying one would claim a binding proven against bytes that
+    cannot exist.
 
     A partial identity is not a weak match, it is an unusable one: comparing on
     whichever fields happen to be present would let a record missing `digest`
@@ -714,12 +730,19 @@ def _source_identity_comparable(value: object) -> TypeGuard[Mapping[str, Any]]:
         return False
     if set(value) != set(_SOURCE_IDENTITY_FIELDS):
         return False
-    if not isinstance(value["algorithm"], str) or not value["algorithm"]:
+    if value["algorithm"] not in _SOURCE_IDENTITY_ALGORITHMS:
         return False
-    if not isinstance(value["digest"], str) or not value["digest"]:
+    digest = value["digest"]
+    if (
+        not isinstance(digest, str)
+        or len(digest) != _SHA256_DIGEST_LENGTH
+        or not set(digest) <= _LOWER_HEX
+    ):
         return False
     size = value["size_bytes"]
-    return not isinstance(size, bool) and isinstance(size, int) and size >= 0
+    # A zero-byte deck is not a deck. `bool` is an `int` in Python, so it is
+    # excluded before the range check rather than sliding through as 0 or 1.
+    return not isinstance(size, bool) and isinstance(size, int) and size >= 1
 
 
 def _same_source_generation(
