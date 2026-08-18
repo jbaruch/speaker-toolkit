@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.85 — 2026-08-18
+
 ### fix(vault-ingress) — bind a deck's identity assessment to the bytes it read (#176)
 
 `binding_refusal` pinned an assessment to its deck by `pptx_path` — a path
