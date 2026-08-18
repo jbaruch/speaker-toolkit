@@ -1735,9 +1735,11 @@ Version 4 binds every derivative to the exact source-video content it came from.
 `build_video_source_receipt`) before sampling frames, re-probes after the last PDF
 lands, and fails the run without writing a record when anything drifted. The same
 receipt is stamped on the manifest head and byte-identically on every
-`artifacts[]` entry, so a PDF separated from its manifest still names its source
-bytes and two derivatives from two different runs cannot be merged under one
-manifest. The receipt is path-neutral and bounded — a digest, duration/container/
+`artifacts[]` entry, so each derivative's own record names the source bytes it
+came from and two derivatives from two different runs cannot be merged under one
+manifest. The receipt lives in the record, not in the PDF: a PDF file separated
+from the manifest carries only the scope and pipeline version its metadata
+already recorded. The receipt is path-neutral and bounded — a digest, duration/container/
 stream evidence, the bound file generation, and the probe contract version. Raw
 ffprobe output and parser stderr never reach it.
 

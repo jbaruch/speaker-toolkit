@@ -18,8 +18,9 @@ from the bounded #190 probe, and carries the source digest, size,
 duration/container/stream evidence, the bound file generation, and the probe
 contract version. It is path-neutral and bounded — no locator, no raw ffprobe
 document, no parser stderr. It rides on the manifest head AND byte-identically on
-every `artifacts[]` entry, so a PDF separated from its manifest still names its
-source, and two derivatives from two runs cannot be merged under one head.
+every `artifacts[]` entry, so each derivative's own record names its source and
+two derivatives from two runs cannot be merged under one head. The receipt lives
+in the record, not in the PDF file.
 
 The extractor probes before sampling a frame and again after the last PDF lands,
 sharing one assessment so the closing probe costs a stat when the generation held
@@ -29,10 +30,11 @@ than none. Derivatives stay staged until the closing probe passes, then publish
 as a set: each destination's prior version moves aside first, and a failure
 part-way puts every already-replaced destination back. A failed run — for any
 reason, not only drift — leaves the destination PDFs exactly as it found them.
-A publish a killed process left half-applied is undone on the next run: a
-stranded prior version is restored, and a destination that held nothing before
-the publish is recorded by an absence marker so its orphan can be told from an
-artifact worth keeping. An unprobeable source — missing, corrupt, or a dataless cloud
+Rollback covers interrupts, not only I/O errors. A publish a process the host
+killed outright left half-applied is undone on the next run: a stranded prior
+version is restored, and a destination that held nothing before the publish is
+recorded by an absence marker so its orphan can be told from an artifact worth
+keeping. An unprobeable source — missing, corrupt, or a dataless cloud
 placeholder — produces no record at all rather than one bound to a stub.
 
 Readers compare the receipt's content fields against a fresh probe;

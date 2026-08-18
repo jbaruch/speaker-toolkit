@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
+import pathlib
 import shutil
 import stat
 import subprocess
@@ -2001,10 +2002,10 @@ def test_a_failed_second_publish_rolls_the_first_one_back(
     assert leftovers == []
 
 
-def test_an_orphan_left_by_a_killed_first_publish_is_removed_next_run(
+def test_an_interrupt_during_publish_still_rolls_back_in_process(
     video_slide_extraction, tmp_path, monkeypatch
 ):
-    """A destination that held nothing must not inherit a killed run's PDF."""
+    """An interrupt is an exit, not an excuse to leave a partial publish."""
     frame = _prepared_frame(tmp_path)
     video = write_tiny_video(tmp_path / "source.mp4")
     outdir = tmp_path / "output"
@@ -2013,29 +2014,41 @@ def test_an_orphan_left_by_a_killed_first_publish_is_removed_next_run(
     monkeypatch.setattr(
         video_slide_extraction, "extract_frames", _extract_one_frame(frame)
     )
-
-    # Exactly the state a kill after the first publish leaves: an orphan PDF at
-    # a destination that held nothing, plus its absence marker.
     original_commit = video_slide_extraction.commit_pdf_stage
 
     def commit(path):
         original_commit(path)
-        raise KeyboardInterrupt("host killed the run mid-publish")
+        raise KeyboardInterrupt("operator interrupted the run mid-publish")
 
     monkeypatch.setattr(video_slide_extraction, "commit_pdf_stage", commit)
+
     with pytest.raises(KeyboardInterrupt):
         video_slide_extraction.extract_slides_from_video(
             str(video), str(outdir), YOUTUBE_ID, slide_region="none"
         )
-    assert os.path.exists(context_pdf)
-    assert os.path.exists(video_slide_extraction._pdf_absent_marker_path(context_pdf))
 
-    monkeypatch.setattr(video_slide_extraction, "commit_pdf_stage", original_commit)
+    assert not os.path.exists(context_pdf)
+    assert os.listdir(outdir) == []
+
+
+def test_an_orphan_left_by_a_killed_first_publish_is_removed_next_run(
+    video_slide_extraction, tmp_path, monkeypatch
+):
+    """A destination that held nothing must not inherit a killed run's PDF."""
+    video = write_tiny_video(tmp_path / "source.mp4")
+    outdir = tmp_path / "output"
+    outdir.mkdir()
+    context_pdf = str(outdir / f"{YOUTUBE_ID}.context.pdf")
+    # SIGKILL runs no handler, so the state is constructed rather than raised:
+    # a published PDF at a destination that held nothing, plus its marker.
+    pathlib.Path(context_pdf).write_bytes(b"%PDF-1.4 orphan from a killed run")
+    pathlib.Path(video_slide_extraction._pdf_absent_marker_path(context_pdf)).touch()
     monkeypatch.setattr(
         video_slide_extraction,
         "extract_frames",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("later")),
     )
+
     with pytest.raises(RuntimeError, match="later"):
         video_slide_extraction.extract_slides_from_video(
             str(video), str(outdir), YOUTUBE_ID, slide_region="none"

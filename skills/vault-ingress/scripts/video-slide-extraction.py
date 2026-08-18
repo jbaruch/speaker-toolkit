@@ -159,12 +159,14 @@ def _commit_bound_artifacts(staged):
     """Publish this run's staged derivatives once the binding is proven.
 
     Several destinations cannot be replaced in one portable atomic rename, so
-    each publish moves the prior version aside first and a failure part-way
-    puts every already-replaced destination back. Callers see the whole set
-    published or none of it — never one run's slide-region PDF beside another
-    run's context PDF.
+    each publish moves the prior version aside first and any exit part-way —
+    interrupts included — puts every already-replaced destination back. Callers
+    see the whole set published or none of it, never one run's slide-region PDF
+    beside another run's context PDF. A process the host kills outright cannot
+    run this; `_recover_stale_pdf_publish` repairs that at the next run.
     """
     replaced: list[tuple[str, str | None]] = []
+    published = False
     try:
         for path in staged:
             backup = _pdf_backup_path(path)
@@ -180,14 +182,15 @@ def _commit_bound_artifacts(staged):
             # to put it back.
             replaced.append((path, backup))
             commit_pdf_stage(path)
-    except OSError:
-        for path, backup in reversed(replaced):
-            if backup is None:
-                _remove_regular_file(path)
-                _clear_pdf_absent_marker(path)
-                continue
-            os.replace(backup, path)
-        raise
+        published = True
+    finally:
+        if not published:
+            for path, backup in reversed(replaced):
+                if backup is None:
+                    _remove_regular_file(path)
+                    _clear_pdf_absent_marker(path)
+                    continue
+                os.replace(backup, path)
     for path, backup in replaced:
         if backup is None:
             _clear_pdf_absent_marker(path)
@@ -691,7 +694,13 @@ def _mark_pdf_absent(output_pdf: str) -> None:
     version worth keeping.
     """
     marker = _pdf_absent_marker_path(output_pdf)
-    with open(marker, "wb") as handle:
+    try:
+        # Exclusive create, like the stage: O_CREAT|O_EXCL never follows a
+        # symlink, so a planted link cannot redirect this write.
+        handle = open(marker, "xb")
+    except FileExistsError:
+        raise ValueError("video_pdf_absent_marker_invalid") from None
+    with handle:
         handle.flush()
         os.fsync(handle.fileno())
 

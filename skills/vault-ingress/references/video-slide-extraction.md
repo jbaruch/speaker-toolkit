@@ -192,9 +192,14 @@ outcomes:
   hydrated — the extractor never substitutes a stub.
 - **Source replaced while the run was producing derivatives**: exit 1 with
   `reason_code` `video_source_replaced_during_extraction`, and no record.
-- **Any failed run, for any reason**: the destination PDFs hold exactly what
-  they held before the run started. A failed re-extraction never destroys or
-  half-replaces what an earlier bound run published.
+- **Any failed run, for any reason including an interrupt**: the destination
+  PDFs hold exactly what they held before the run started. A failed
+  re-extraction never destroys or half-replaces what an earlier bound run
+  published.
+- **A run the host kills outright** (SIGKILL, power loss) runs no handler, so
+  its publish can stay half-applied on disk until the next run for that video
+  ID repairs it. That repair is the first thing a run does; a killed run still
+  wrote no manifest, so nothing describes the half-applied state in between.
 - **Success**: stdout carries the schema-4 record, and the source receipt
   appears on the manifest head and byte-identically on every `artifacts[]`
   entry.
