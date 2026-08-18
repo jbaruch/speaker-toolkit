@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.90 — 2026-08-18
+
 ### fix(vault-ingress) — one owner for the catalog-date comparison (#333)
 
 Registering source identities across the live vault surfaced a number that made
