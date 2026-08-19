@@ -889,6 +889,34 @@ def _apply_record_title_equivalence(
     except TrackingDatabaseError as exc:
         raise TrackingDatabaseMutationError(str(exc)) from exc
 
+    # Bind the approval to what the talk actually holds right now. Without this
+    # a plan can pre-authorize an identity the talk does not have — a title it
+    # might be renamed to later, or another video's — and that record would sit
+    # dormant until the catalog drifted onto it, suppressing the wrong-delivery
+    # gate for a pair no owner ever compared.
+    identity = talk.get("source_identity")
+    if not isinstance(identity, dict):
+        raise TrackingDatabaseMutationError(
+            f"mutations[{index}] cannot approve a title for {filename!r}: the "
+            f"talk has no source_identity to compare against"
+        )
+    for field, observed, label in (
+        ("catalog_title", talk.get("title"), "catalog title"),
+        ("provider_title", identity.get("title"), "recorded provider title"),
+    ):
+        if not isinstance(observed, str) or pinned_provider_title(
+            observed
+        ) != pinned_provider_title(record[field]):
+            raise TrackingDatabaseMutationError(
+                f"mutations[{index}].equivalence.{field} does not match the "
+                f"talk's current {label} on {filename!r}"
+            )
+    if identity.get("video_id") != record["video_id"]:
+        raise TrackingDatabaseMutationError(
+            f"mutations[{index}].equivalence.video_id does not match the "
+            f"recorded source identity on {filename!r}"
+        )
+
     existing = talk.get("source_title_equivalence", [])
     if not isinstance(existing, list):
         raise TrackingDatabaseMutationError(

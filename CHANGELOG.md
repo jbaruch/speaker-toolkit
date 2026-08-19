@@ -44,6 +44,13 @@ current shape by being reanalysed, never by being stamped. On the live vault tha
 is 6 records restamped and 209 legacy records untouched. Migration never invents
 the field: absence means "no equivalences", which is the correct default.
 
+The writer binds each approval to what the talk actually holds when it is
+recorded: its current catalog title, its recorded provider title, and its video.
+Without that, a plan could pre-authorize an identity the talk does not have — a
+title it might be renamed to later, or another video's — and that record would
+sit dormant until the catalog drifted onto it, suppressing the gate for a pair
+no owner ever compared.
+
 When an equivalence applies the check passes silently. A warning on every run
 would be noise about a decision the owner already made and recorded, and the
 record itself carries the evidence and the timestamp.
