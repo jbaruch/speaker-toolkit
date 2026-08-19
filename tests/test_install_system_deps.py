@@ -18,6 +18,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import shutil
+import subprocess
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -58,6 +60,8 @@ class FakeSystem:
         root: Path,
         *,
         archive_cache: Path,
+        sources: Path,
+        sources_d: Path,
         reachable: Sequence[str] = ALL_ARCHIVES,
         update_fails: Sequence[str] = (),
         offline_satisfies: bool = True,
@@ -72,8 +76,10 @@ class FakeSystem:
         self.installed: list[str] = []
         self.probes: list[str] = []
         self.fetches: list[str] = []
+        self.sources = sources
+        self.sources_d = sources_d
         self.owners: dict[str, str] = {}
-        self.mirror: str | None = None
+        self.mirrors: set[str] = set()
 
     # --- filesystem ---------------------------------------------------------
 
@@ -95,7 +101,10 @@ class FakeSystem:
                 shutil.copytree(src, dst, dirs_exist_ok=True)
             return
         if src.is_dir():
-            shutil.copytree(src, dst / src.name, dirs_exist_ok=True)
+            # `cp -a A B`: B missing means B becomes the copy; B existing as a
+            # directory means the copy lands inside it.
+            landing = dst / src.name if dst.is_dir() else dst
+            shutil.copytree(src, landing, dirs_exist_ok=True)
             return
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst / src.name if dst.is_dir() else dst)
@@ -134,20 +143,52 @@ class FakeSystem:
         if program == "apt-get":
             return self._apt(args[1:])
         if program == "python3":
-            self.mirror = args[2]
+            # The real rewriter, against the real files. Trusting the argument is
+            # what let a rewrite that changed nothing look like a working
+            # fallback — every retry then hit the mirror that had just failed.
+            subprocess.run([sys.executable, *args[1:]], check=True, capture_output=True)
+            self.mirrors = self._archives_in_sources()
             return 0
         raise AssertionError(f"unmodelled command: {' '.join(command)}")
+
+    def _source_files(self) -> list[Path]:
+        present = [self.sources] if self.sources.exists() else []
+        return present + sorted(self.sources_d.glob("*"))
+
+    def _archives_in_sources(self) -> set[str]:
+        """Every archive host apt would fetch from, read off the source files.
+
+        A set, not one host: `apt-get update` fetches all of them and fails if
+        any fails. A rewrite that moved one file and missed another leaves the
+        dead mirror in the list, which is exactly the shape a single-host model
+        cannot see.
+        """
+        hosts: set[str] = set()
+        for path in self._source_files():
+            for line in path.read_text().splitlines():
+                if line.lower().startswith("uris:"):
+                    uri = line.split(":", 1)[1].strip().rstrip("/")
+                    if not uri.endswith("security.ubuntu.com/ubuntu"):
+                        hosts.add(uri)
+                elif line.startswith("deb "):
+                    hosts.add(line.split()[1].rstrip("/"))
+        return hosts
 
     def _probe(self, url: str) -> int:
         self.probes.append(url)
         return 0 if any(url.startswith(a) for a in self.reachable) else 7
 
+    def _reachable_everywhere(self) -> bool:
+        if not self.mirrors:
+            return False
+        if any(m in self.update_fails for m in self.mirrors):
+            return False
+        return all(m in self.reachable for m in self.mirrors)
+
     def _apt(self, args: Sequence[str]) -> int:
         if args[0] == "update":
-            self.fetches.append(str(self.mirror))
-            if self.mirror in self.update_fails:
-                return 1
-            return 0 if self.mirror in self.reachable else 1
+            self.fetches.extend(sorted(self.mirrors))
+            return 0 if self._reachable_everywhere() else 1
         packages = [a for a in args[1:] if not a.startswith("-")]
         if "--no-download" in args:
             indices = self.local(str(install_system_deps.APT_LISTS))
@@ -158,8 +199,8 @@ class FakeSystem:
                 return 100
             self.installed = packages
             return 0
-        self.fetches.append(str(self.mirror))
-        if self.mirror not in self.reachable:
+        self.fetches.extend(sorted(self.mirrors))
+        if not self._reachable_everywhere():
             return 1
         self.installed = packages
         return 0
@@ -180,8 +221,19 @@ def build(tmp_path: Path, **kwargs: object) -> tuple[FakeSystem, dict[str, Path]
         "root": root,
     }
     paths["sources_d"].mkdir()
-    (paths["sources_d"] / "ubuntu.sources").write_text("Types: deb\n")
-    system = FakeSystem(root, archive_cache=paths["archive_cache"], **kwargs)  # type: ignore[arg-type]
+    (paths["sources_d"] / "ubuntu.sources").write_text(
+        "Types: deb\n"
+        f"URIs: {AZURE}/\n"
+        "Suites: noble noble-updates\n"
+        "Components: main restricted\n"
+    )
+    system = FakeSystem(
+        root,
+        archive_cache=paths["archive_cache"],
+        sources=paths["sources"],
+        sources_d=paths["sources_d"],
+        **kwargs,  # type: ignore[arg-type]
+    )
     return system, paths
 
 
@@ -198,10 +250,10 @@ def run_install(
     system: FakeSystem, paths: dict[str, Path], *, legacy_sources_list: bool = True
 ) -> dict[str, object]:
     if legacy_sources_list:
-        paths["sources"].write_text("deb http://archive.ubuntu.com/ubuntu noble main\n")
+        paths["sources"].write_text(f"deb {AZURE} noble main\n")
     return install_system_deps.install(
         system,
-        workspace=paths["root"] / "workspace",
+        workspace=Path(__file__).parents[1],
         codename=CODENAME,
         staged_conf=paths["staged_conf"],
         archive_cache=paths["archive_cache"],
@@ -359,6 +411,22 @@ def test_the_probe_requests_an_index_file_every_mirror_must_serve(tmp_path: Path
     run_install(system, paths)
 
     assert system.probes[0] == f"{AZURE}/dists/{CODENAME}/InRelease"
+
+
+def test_the_fallback_repoints_a_deb822_only_runner(tmp_path: Path):
+    """The layout 24.04 actually ships, and the one a glob bug hides in.
+
+    With no `sources.list` beside it, `ubuntu.sources` is the only file naming a
+    mirror — if the rewrite misses it, every retry fetches from the host that
+    just failed and the fallback is decorative.
+    """
+    system, paths = build(tmp_path, reachable=ALL_ARCHIVES[1:])
+
+    report = run_install(system, paths, legacy_sources_list=False)
+
+    assert report["source"] == CANONICAL
+    assert system.installed == list(install_system_deps.PACKAGES)
+    assert AZURE not in system.fetches
 
 
 def test_a_deb822_only_runner_installs_like_any_other(tmp_path: Path):

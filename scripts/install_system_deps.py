@@ -305,6 +305,23 @@ def set_mirror(
             ["sudo", "cp", "-a", f"{SOURCES_BACKUP}/sources.list.d", str(sources_d)],
             60,
         )
+    # Enumerated here rather than passed as `*.list` / `*.sources`. The shell
+    # this replaced expanded those globs before apt_set_mirror.py ever saw them;
+    # a literal glob reaches it as a path that does not exist, which it skips —
+    # so every fallback rewrote nothing, silently, and each retry hit the same
+    # mirror that had just failed.
+    targets = [str(sources)] if sources.exists() else []
+    targets += [
+        str(path)
+        for pattern in ("*.list", "*.sources")
+        for path in sorted(sources_d.glob(pattern))
+    ]
+    if not targets:
+        raise SystemDepsError(
+            f"no apt source files found at {sources} or under {sources_d}; the "
+            "runner image is not the Ubuntu one this step expects and no mirror "
+            "fallback can work — re-run the job on a supported image"
+        )
     require(
         run,
         [
@@ -313,9 +330,7 @@ def set_mirror(
             str(workspace / "scripts" / "apt_set_mirror.py"),
             archive,
             security,
-            str(sources),
-            f"{sources_d}/*.list",
-            f"{sources_d}/*.sources",
+            *targets,
         ],
         120,
     )
@@ -447,10 +462,15 @@ def main(
             codename=read_codename(os_release),
             staged_conf=staged_conf,
         )
-    except SystemDepsError as error:
-        # Still one JSON object on stdout: a caller parsing the report should not
-        # have to tell "the install failed" from "the script died" by whether it
-        # got valid JSON.
+    # outer-boundary-process-contract: the workflow step reads stdout as the
+    # report and a non-zero exit as "the dependencies are not installed", so an
+    # unreadable /etc/os-release, an unwritable staged config or a subprocess
+    # that will not launch must come back as that report — not as a traceback
+    # with empty stdout, which reads to a parser as a malformed contract rather
+    # than a failed install. Emits the failure report and the exception text on
+    # stderr. KeyboardInterrupt and SystemExit are not caught, so the step stays
+    # killable.
+    except Exception as error:  # noqa: BLE001
         print(error, file=sys.stderr)
         report = {"installed": False, "source": None, "unreachable": []}
     print(json.dumps(report))

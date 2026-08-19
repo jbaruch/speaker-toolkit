@@ -45,6 +45,25 @@ file. Hashing the file invalidated 185 MiB of archives whenever a comment or the
 fallback order changed, and the thing a cache entry actually depends on is which
 package versions it holds.
 
+Moving the step out of shell nearly broke the fallback it exists for. The old
+form passed `/etc/apt/sources.list.d/*.list` to the mirror rewriter and the
+shell expanded it first; Python does not, so the rewriter received a path with
+an asterisk in it, found nothing there, and skipped it — silently, since a
+missing source file is a legitimate skip. Every retry would have repointed
+nothing and fetched from the mirror that had just failed. The caller enumerates
+the matching files now, and the tests run the real rewriter against real source
+files and read the mirror back out of them, because a fake that reports success
+for a rewrite that changed nothing is what let the bug pass in the first place.
+The deb822-only layout — what 24.04 actually ships, and where a missed rewrite
+leaves no other file to cover for it — has its own fallback test.
+
+`main` catches at the process boundary under the `error-handling` outer-boundary
+carve-out. The workflow step reads stdout as the report and a non-zero exit as
+"not installed", so an unreadable `/etc/os-release` or a subprocess that will not
+launch has to come back as that report rather than a traceback over empty
+stdout, which a parser reads as a malformed contract instead of a failed
+install. Interrupts still propagate.
+
 The step moved out of the workflow into `scripts/install_system_deps.py`, whose
 side effects all route through an injected runner — the command sequence is the
 whole behaviour, and it is now assertable without a runner, sudo, or a network.
