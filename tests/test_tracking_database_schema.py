@@ -491,6 +491,7 @@ def test_owner_migration_only_adds_owned_version_keys(tracking_database):
         "resources": 1,
         "thumbnails": 1,
         "confirmed_intents": 1,
+        "source_title_equivalences": 0,
         "improvement_goals": 1,
         "source_rejections": 1,
     }
@@ -830,6 +831,7 @@ def test_current_migration_is_idempotent_with_stable_counts(tracking_database):
         "thumbnails": 0,
         "confirmed_intents": 0,
         "improvement_goals": 0,
+        "source_title_equivalences": 0,
         "source_rejections": 0,
     }
 
@@ -1750,3 +1752,177 @@ def test_a_restamped_record_keeps_its_equivalence_ledger_absent(
     migrated = tracking_database.migrate_tracking_database(database).database
 
     assert "source_title_equivalence" not in migrated["talks"][0]
+
+
+def test_a_v1_nested_equivalence_is_lifted_into_the_collection(tracking_database):
+    """A database written by the release that shipped the nested ledger (#333).
+
+    Readers consult the top-level collection only, so a v1 entry left on the
+    talk would be ignored and its talk would re-gate on a title mismatch its
+    owner had already approved — the approval silently lost.
+    """
+    database = _legacy_database()
+    database["talks"][0]["schema_version"] = 1
+    database["talks"][0]["source_title_equivalence"] = [
+        {
+            "schema_version": 1,
+            "video_id": "QS-_4k7o7A4",
+            "catalog_title": "Spring config battle (Ru)",
+            "provider_title": "JavaDay Kiev 2014: Spring - битва конфигураций",
+            "reason": "cross_language_title",
+            "evidence": "owner-reviewed translation",
+            "verified_at": "2026-08-18T12:00:00Z",
+        }
+    ]
+
+    result = tracking_database.migrate_tracking_database(database)
+
+    lifted = result.database["source_title_equivalences"]
+    assert len(lifted) == 1
+    assert lifted[0]["schema_version"] == 2
+    assert lifted[0]["talk_filename"] == database["talks"][0]["filename"]
+    assert lifted[0]["video_id"] == "QS-_4k7o7A4"
+    # The nested copy is gone, so no reader can honor a stale shape.
+    assert "source_title_equivalence" not in result.database["talks"][0]
+    assert result.record_counts["source_title_equivalences"] == 1
+    # The input object is never mutated.
+    assert "source_title_equivalence" in database["talks"][0]
+
+
+def test_lifting_an_equivalence_is_idempotent(tracking_database):
+    database = _legacy_database()
+    database["talks"][0]["schema_version"] = 1
+    database["talks"][0]["source_title_equivalence"] = [
+        {
+            "schema_version": 1,
+            "video_id": "QS-_4k7o7A4",
+            "catalog_title": "Spring config battle (Ru)",
+            "provider_title": "JavaDay Kiev 2014: Spring - битва конфигураций",
+            "reason": "cross_language_title",
+            "evidence": "owner-reviewed translation",
+            "verified_at": "2026-08-18T12:00:00Z",
+        }
+    ]
+
+    once = tracking_database.migrate_tracking_database(database).database
+    twice = tracking_database.migrate_tracking_database(once)
+
+    assert twice.record_counts["source_title_equivalences"] == 0
+    assert len(twice.database["source_title_equivalences"]) == 1
+
+
+def _talk_with_nested_ledger(database, nested):
+    database["talks"][0]["schema_version"] = 1
+    database["talks"][0]["source_title_equivalence"] = nested
+    return database
+
+
+def test_an_empty_nested_ledger_is_removed_and_counted(tracking_database):
+    """Removing it changes the database, so it must not report no change.
+
+    A migration that alters bytes while counting zero breaks the no-op contract
+    the caller relies on to decide whether anything was written.
+    """
+    database = _talk_with_nested_ledger(_legacy_database(), [])
+
+    result = tracking_database.migrate_tracking_database(database)
+
+    assert "source_title_equivalence" not in result.database["talks"][0]
+    assert result.record_counts["source_title_equivalences"] == 1
+    assert result.changed is True
+
+
+@pytest.mark.parametrize(
+    "nested",
+    [
+        "not-an-array",
+        {"video_id": "QS-_4k7o7A4"},
+        42,
+    ],
+)
+def test_a_malformed_nested_ledger_is_refused_not_discarded(
+    tracking_database, nested: object
+):
+    """Assessment no longer inspects the nested shape, so discarding it here
+    would destroy owner state with nothing left to report it."""
+    database = _talk_with_nested_ledger(_legacy_database(), nested)
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="must be an array"
+    ):
+        tracking_database.migrate_tracking_database(database)
+
+
+def test_a_malformed_nested_entry_is_refused_not_skipped(tracking_database):
+    database = _talk_with_nested_ledger(_legacy_database(), ["not-an-object"])
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="must be a JSON object"
+    ):
+        tracking_database.migrate_tracking_database(database)
+
+
+def test_a_refused_ledger_leaves_the_input_untouched(tracking_database):
+    """Validation runs before any removal, so nothing is lost on refusal."""
+    database = _talk_with_nested_ledger(_legacy_database(), ["not-an-object"])
+
+    with pytest.raises(tracking_database.TrackingDatabaseError):
+        tracking_database.migrate_tracking_database(database)
+
+    assert database["talks"][0]["source_title_equivalence"] == ["not-an-object"]
+
+
+def _legacy_equivalence(**updates):
+    record = {
+        "schema_version": 1,
+        "video_id": "QS-_4k7o7A4",
+        "catalog_title": "Spring config battle (Ru)",
+        "provider_title": "JavaDay Kiev 2014: Spring - битва конфигураций",
+        "reason": "cross_language_title",
+        "evidence": "owner-reviewed translation",
+        "verified_at": "2026-08-18T12:00:00Z",
+    }
+    record.update(updates)
+    return record
+
+
+@pytest.mark.parametrize("version", [2, 3, 0, True, "1"])
+def test_a_foreign_generation_nested_entry_is_refused(tracking_database, version):
+    """A newer generation is unusable state, never something to coerce to v2."""
+    database = _talk_with_nested_ledger(
+        _legacy_database(), [_legacy_equivalence(schema_version=version)]
+    )
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="schema_version must be 1"
+    ):
+        tracking_database.migrate_tracking_database(database)
+
+
+@pytest.mark.parametrize(
+    "broken",
+    [
+        {"reason": "looked_close_enough"},
+        {"evidence": ""},
+        {"verified_at": "2026-08-18T12:00:00"},
+    ],
+)
+def test_a_malformed_v1_entry_is_refused_before_it_is_lifted(tracking_database, broken):
+    database = _talk_with_nested_ledger(
+        _legacy_database(), [_legacy_equivalence(**broken)]
+    )
+
+    with pytest.raises(tracking_database.TrackingDatabaseError):
+        tracking_database.migrate_tracking_database(database)
+
+    assert database["talks"][0]["source_title_equivalence"]
+
+
+def test_a_v1_entry_already_naming_a_talk_is_refused(tracking_database):
+    """v1 had no owning filename; carrying one means it is not a v1 record."""
+    database = _talk_with_nested_ledger(
+        _legacy_database(), [_legacy_equivalence(talk_filename="somewhere.md")]
+    )
+
+    with pytest.raises(tracking_database.TrackingDatabaseError, match="unknown fields"):
+        tracking_database.migrate_tracking_database(database)

@@ -182,7 +182,7 @@ no-op.
 | thumbnail | 1 |
 | confirmed intent | 1 |
 | source rejection | 1 |
-| source title equivalence | 1 |
+| source title equivalence | 2 (own top-level collection; v1 nested entries are migrated) |
 | improvement goal | 2 (schema 1 remains readable historical state) |
 
 | Component | Access | Contract |
@@ -271,15 +271,6 @@ customization, not the owner default. See the
       "evidence": "how the rejection was verified",
       "verified_at": "timezone-aware ISO-8601 timestamp"
     }],
-    "source_title_equivalence": [{
-      "schema_version": 1,
-      "video_id": "provider video the equivalence covers",
-      "catalog_title": "the exact reviewed catalog title",
-      "provider_title": "the exact reviewed provider title",
-      "reason": "cross_language_title|provider_retitled",
-      "evidence": "how the equivalence was reviewed",
-      "verified_at": "timezone-aware ISO-8601 timestamp"
-    }],
     "pptx_path": "Conference/Year/Talk Name.pptx  (optional — highest quality slide source when available)",
     "schema_version": 7,
     "transcript_source": "youtube_auto|whisper|manual|none  (how the transcript was obtained; MAY BE ABSENT — see below)",
@@ -359,7 +350,7 @@ customization, not the owner default. See the
       "not_evaluable": []
     }
   }],
-  "_comment_schema_version": "Database schema v1 is owner-migrated by vault-ingress. A missing talk record version is the historical implicit-v1 lineage. v2 makes transcript_source optional. Two incompatible v3 lineages were emitted; v4 is their source-located union and remains archival with evidence ledger v1. V5 adds applicability assessments, exhaustive outcomes, opportunity-coverage identity, and evidence ledger v2. V6 adds `pattern_score_basis` and a possibly-fractional `pattern_score` at the weighted scoring generation; migration restamps a v5 record to v6 without rescoring it, because recomputing a score under arithmetic its worker never used would restate what the worker meant. V7 adds the optional owner-reviewed `source_title_equivalence` ledger; migration restamps a v5 or v6 record to v7 and never invents the field, because an absent ledger already means no equivalences. Root migration preserves all historical evidence and never synthesizes v5 outcomes.",
+  "_comment_schema_version": "Database schema v1 is owner-migrated by vault-ingress. A missing talk record version is the historical implicit-v1 lineage. v2 makes transcript_source optional. Two incompatible v3 lineages were emitted; v4 is their source-located union and remains archival with evidence ledger v1. V5 adds applicability assessments, exhaustive outcomes, opportunity-coverage identity, and evidence ledger v2. V6 adds `pattern_score_basis` and a possibly-fractional `pattern_score` at the weighted scoring generation; migration restamps a v5 record to v6 without rescoring it, because recomputing a score under arithmetic its worker never used would restate what the worker meant. V7 was introduced for the owner-reviewed title-equivalence ledger, which now lives in the top-level `source_title_equivalences` collection at record v2, so v7 adds no field a v6 record lacks; migration restamps a v5 or v6 record to v7 untouched and lifts a nested v1 ledger out of the talk into that collection. Root migration preserves all historical evidence and never synthesizes v5 outcomes.",
   "_comment_absent_transcript_source": "Absent transcript_source: the key may be MISSING on a talk, and missing is meaningful — it means provenance is unknown, not that no transcript exists (that is the explicit value `none`). It arises on one path: fetch-transcript.py returning method `existing`, where a valid transcript was already on disk and no fetch ran, so nothing was learned about where it came from. Writers MUST NOT backfill a guess; `manual` in particular asserts a human produced it. Readers gauging transcript reliability MUST treat absent as unknown and MUST NOT default it to any value.",
   "pptx_catalog": [{
     "schema_version": 3,
@@ -571,7 +562,28 @@ exact-type rule. The supported mutation kinds are:
 | `update_talk_publishing` | Set supported publishing fields on one exact talk filename, with `expect` covering exactly the same fields |
 | `update_talk_clarification` | Set complete object/array `blind_spot_observations` or `humor_postmortem` values on one exact talk, with matching field expectations |
 
-`source_title_equivalence` records that an owner read one provider title and
+`source_title_equivalences` is a top-level collection, not a talk field:
+
+```json
+"source_title_equivalences": [{
+  "schema_version": 2,
+  "talk_filename": "playlist-QS-_4k7o7A4.md",
+  "video_id": "provider video the equivalence covers",
+  "catalog_title": "the exact reviewed catalog title",
+  "provider_title": "the exact reviewed provider title",
+  "reason": "cross_language_title|provider_retitled",
+  "evidence": "how the equivalence was reviewed",
+  "verified_at": "timezone-aware ISO-8601 timestamp"
+}]
+```
+
+It sits outside the talk record because a talk's `schema_version` tracks its
+analysis generation, which a legacy record cannot advance without fabricating
+analysis. Binding an owner judgment to that generation made the ledger
+unreachable for the records that needed it. The collection is optional: absent
+means no equivalences.
+
+The ledger records that an owner read one provider title and
 accepted it as naming the cataloged talk. The title comparator is deterministic
 and cannot cross languages or follow a provider rename, and the only alternative
 was rewriting the catalog title to whatever the provider published. Its closed

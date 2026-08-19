@@ -1,5 +1,53 @@
 # Changelog
 
+### fix(vault-ingress) — the equivalence ledger becomes its own collection (#333)
+
+The catalog repair was freed from the current-generation gate; the equivalence
+writer beside it was not. Registering the four talks the ledger exists for then
+failed on the first one:
+
+```
+talks['2026-02-02-jfokus-2026-robocoders-...'].schema_version must be
+exact current talk schema 7 before this mutation
+```
+
+All four are schema v1, like 209 of the 215 live records. The ledger was
+unreachable for every talk it was built to serve — the same gap as the catalog
+repair, one writer over, and only visible when the records were finally written.
+
+Relaxing the writer's gate would have written a v7-shape field onto a v1 record
+— the ledger cannot be both "the v7 shape addition" and reachable on v1. The
+contradiction is real, and it comes from `TALK_RECORD_SCHEMA_VERSION` carrying
+two meanings at once: the analysis generation, which is why a v1 record can
+never migrate forward, and the record shape, which is all an owner ledger needs.
+
+`source_title_equivalences` moves out to its own top-level versioned collection,
+keyed by `talk_filename`. The talk record's shape stops changing, so the
+generation question does not arise and no record carries a field it does not
+declare. The collection is optional — absent means no equivalences — so every
+database written before it existed stays valid.
+
+The equivalence record goes to **v2** and the owner migration lifts any v1 entry
+off its talk into the collection, stamped v2 and carrying the owning filename.
+It validates every legacy ledger before removing anything — assessment no longer
+inspects the nested shape, so a malformed one discarded there would be destroyed
+with nothing left to report it — and counts an empty ledger's removal as a
+change, because altering the database while reporting no change breaks the
+no-op contract callers rely on.
+
+Each nested record is validated as a v1 record before it is lifted, and the
+lifted collection is validated again in its new shape. Stamping the current
+generation onto an unchecked record would coerce a malformed one into apparent
+validity and silently rewrite a newer generation this reader cannot interpret —
+a newer generation is unusable state, not something to convert.
+The nested shape shipped in a release, so a consumer can hold one: readers now
+consult the collection only, and an unmigrated entry would be ignored — the talk
+re-gating on a mismatch its owner had already approved, with nothing to show the
+approval was lost.
+
+v7 was introduced for this ledger and no longer carries it. The bump is
+published and stays; the migration docstring now says what it actually does.
+
 ## 0.20.95 — 2026-08-19
 
 ### fix(vault-ingress) — the upload comparison respects the venue's timezone (#333)

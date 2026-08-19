@@ -1724,7 +1724,8 @@ def test_a_reviewed_date_repair_does_not_open_unrelated_talk_fields(
 
 def _equivalence(**updates: Any) -> dict[str, Any]:
     record = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "talk_filename": "talk.md",
         "video_id": "QS-_4k7o7A4",
         "catalog_title": "Spring config battle (Ru)",
         "provider_title": "JavaDay Kiev 2014: Spring - битва конфигураций",
@@ -1758,19 +1759,20 @@ def test_a_reviewed_title_equivalence_is_appended_with_a_stamped_version(
         database, [_record_equivalence(equivalence=unstamped)]
     )
 
-    recorded = candidate["talks"][0]["source_title_equivalence"]
+    recorded = candidate["source_title_equivalences"]
     assert len(recorded) == 1
-    assert recorded[0]["schema_version"] == 1
+    assert recorded[0]["schema_version"] == 2
     assert recorded[0]["reason"] == "cross_language_title"
     assert changes[0]["kind"] == "record_source_title_equivalence"
-    assert "source_title_equivalence" not in database["talks"][0]
+    assert "source_title_equivalences" not in database
 
 
 def test_a_second_equivalence_appends_rather_than_replacing(
     mutate_tracking_database,
 ) -> None:
     """A retitled talk keeps its old approval and gains the newly reviewed one."""
-    database = _equivalence_database(source_title_equivalence=[_equivalence()])
+    database = _equivalence_database()
+    database["source_title_equivalences"] = [_equivalence()]
     database["talks"][0]["title"] = "Spring Configuration Showdown"
 
     candidate, _ = mutate_tracking_database.build_candidate(
@@ -1782,11 +1784,12 @@ def test_a_second_equivalence_appends_rather_than_replacing(
         ],
     )
 
-    assert len(candidate["talks"][0]["source_title_equivalence"]) == 2
+    assert len(candidate["source_title_equivalences"]) == 2
 
 
 def test_a_duplicate_equivalence_is_refused(mutate_tracking_database) -> None:
-    database = _equivalence_database(source_title_equivalence=[_equivalence()])
+    database = _equivalence_database()
+    database["source_title_equivalences"] = [_equivalence()]
 
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError
@@ -1821,7 +1824,8 @@ def test_a_whitespace_variant_duplicate_equivalence_is_refused(
     mutate_tracking_database,
 ) -> None:
     """The reader treats these as one approval, so the writer must too."""
-    database = _equivalence_database(source_title_equivalence=[_equivalence()])
+    database = _equivalence_database()
+    database["source_title_equivalences"] = [_equivalence()]
     # Trimmed (the validator rejects untrimmed outright), but carrying an
     # internal whitespace run and NFD composition — both of which the reader
     # canonicalizes away, so both name the same approval.
@@ -1841,7 +1845,7 @@ def test_a_whitespace_variant_duplicate_equivalence_is_refused(
     assert "duplicates an equivalence" in str(excinfo.value)
 
 
-@pytest.mark.parametrize("version", [2, 0, True, "1"])
+@pytest.mark.parametrize("version", [1, 3, 0, True, "2"])
 def test_an_equivalence_with_a_foreign_generation_is_refused(
     mutate_tracking_database, version: object
 ) -> None:
@@ -1855,7 +1859,7 @@ def test_an_equivalence_with_a_foreign_generation_is_refused(
             [_record_equivalence(equivalence=_equivalence(schema_version=version))],
         )
 
-    assert "schema_version must be 1" in str(excinfo.value)
+    assert "schema_version must be 2" in str(excinfo.value)
 
 
 # Legacy-generation catalog repair (#333). 209 of the 215 live talk records are
@@ -1937,7 +1941,8 @@ def test_a_retitled_catalog_entry_can_be_approved_again(
     Matching duplicates on video and provider title alone would reject the newly
     reviewed approval, leaving the talk gated with no owner-supported recovery.
     """
-    database = _equivalence_database(source_title_equivalence=[_equivalence()])
+    database = _equivalence_database()
+    database["source_title_equivalences"] = [_equivalence()]
     # The retitle has happened: the reader already stopped honoring the old pair.
     database["talks"][0]["title"] = "Spring Configuration Showdown"
 
@@ -1950,7 +1955,7 @@ def test_a_retitled_catalog_entry_can_be_approved_again(
         ],
     )
 
-    recorded = candidate["talks"][0]["source_title_equivalence"]
+    recorded = candidate["source_title_equivalences"]
     assert len(recorded) == 2
     assert {entry["catalog_title"] for entry in recorded} == {
         "Spring config battle (Ru)",
@@ -1961,7 +1966,8 @@ def test_a_retitled_catalog_entry_can_be_approved_again(
 def test_an_exact_title_pair_duplicate_is_still_refused(
     mutate_tracking_database,
 ) -> None:
-    database = _equivalence_database(source_title_equivalence=[_equivalence()])
+    database = _equivalence_database()
+    database["source_title_equivalences"] = [_equivalence()]
 
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError
@@ -2022,3 +2028,24 @@ def test_an_equivalence_needs_a_recorded_identity_to_approve(
         mutate_tracking_database.build_candidate(database, [_record_equivalence()])
 
     assert "no source_identity" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("version", [1, 4, 7])
+def test_an_equivalence_reaches_every_readable_talk_generation(
+    mutate_tracking_database, version: int
+) -> None:
+    """The four talks this ledger was built for are all schema v1.
+
+    An equivalence is a judgment about two titles and reads no analysis field,
+    so holding it to the current generation locked it out of the records that
+    needed it — the same gap the catalog repair had.
+    """
+    database = _equivalence_database()
+    database["talks"][0]["schema_version"] = version
+
+    candidate, _ = mutate_tracking_database.build_candidate(
+        database, [_record_equivalence()]
+    )
+
+    assert len(candidate["source_title_equivalences"]) == 1
+    assert candidate["talks"][0]["schema_version"] == version

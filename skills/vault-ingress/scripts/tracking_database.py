@@ -48,7 +48,11 @@ RESOURCE_RECORD_SCHEMA_VERSION = 1
 THUMBNAIL_RECORD_SCHEMA_VERSION = 1
 CONFIRMED_INTENT_RECORD_SCHEMA_VERSION = 1
 SOURCE_REJECTION_RECORD_SCHEMA_VERSION = 1
-SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION = 1
+# v1 lived on the talk record and had no owning filename; v2 is the top-level
+# collection shape. Migration moves a v1 entry rather than dropping it, or a
+# previously approved talk would silently re-gate.
+LEGACY_SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION = 1
+SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION = 2
 LEGACY_IMPROVEMENT_GOAL_RECORD_SCHEMA_VERSION = 1
 IMPROVEMENT_GOAL_RECORD_SCHEMA_VERSION = 2
 
@@ -78,6 +82,7 @@ _RECORD_COUNT_KEYS = (
     "thumbnails",
     "confirmed_intents",
     "improvement_goals",
+    "source_title_equivalences",
     "source_rejections",
 )
 
@@ -193,8 +198,20 @@ CONFIRMED_INTENT_OPTIONAL_FIELDS = frozenset(
 SOURCE_REJECTION_REQUIRED_FIELDS = frozenset(
     {"source_type", "url", "reason", "evidence", "verified_at"}
 )
+# v1 lived on the talk record, so it carried no owning filename.
+LEGACY_SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS = frozenset(
+    {
+        "video_id",
+        "catalog_title",
+        "provider_title",
+        "reason",
+        "evidence",
+        "verified_at",
+    }
+)
 SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS = frozenset(
     {
+        "talk_filename",
         "video_id",
         "catalog_title",
         "provider_title",
@@ -1070,38 +1087,27 @@ def _validate_source_rejection(
         )
 
 
-def validate_source_title_equivalence(
+def _validate_title_equivalence_shape(
     equivalence: Mapping[str, object],
     *,
     label: str,
+    required: frozenset[str],
+    version: int,
 ) -> None:
-    """Validate one owner-reviewed title equivalence.
-
-    The record pins BOTH titles the owner read — the catalog title and the
-    provider title. An equivalence is a judgment about one specific pair, so
-    either side changing retires it: a provider that retitles the video, and a
-    catalog title edited after the review, both re-gate instead of riding a
-    stale approval.
-    """
-    _require_closed_shape(
-        equivalence,
-        required=SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS,
-        label=label,
-    )
+    """Validate one title equivalence against a named generation's shape."""
+    _require_closed_shape(equivalence, required=required, label=label)
     # `_require_closed_shape` ignores `schema_version` for every record, so this
     # ledger checks it explicitly. A record whose generation this reader cannot
-    # name must never be honored: what it suppresses is the wrong-delivery gate.
-    version = equivalence.get("schema_version")
+    # name must never be honored: what it suppresses is the wrong-delivery gate,
+    # and a newer generation is unusable state rather than something to coerce.
+    recorded = equivalence.get("schema_version")
     if (
-        isinstance(version, bool)
-        or not isinstance(version, int)
-        or version != SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION
+        isinstance(recorded, bool)
+        or not isinstance(recorded, int)
+        or recorded != version
     ):
-        raise TrackingDatabaseError(
-            f"{label}.schema_version must be "
-            f"{SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION}"
-        )
-    for field in ("video_id", "catalog_title", "provider_title", "evidence"):
+        raise TrackingDatabaseError(f"{label}.schema_version must be {version}")
+    for field in sorted(required - {"reason", "verified_at"}):
         _require_nonempty_string(equivalence[field], f"{label}.{field}")
     reason = _require_nonempty_string(equivalence["reason"], f"{label}.reason")
     if reason not in SOURCE_TITLE_EQUIVALENCE_REASONS:
@@ -1122,6 +1128,47 @@ def validate_source_title_equivalence(
         raise TrackingDatabaseError(
             f"{label}.verified_at must be a timezone-aware ISO-8601 timestamp"
         )
+
+
+def validate_source_title_equivalence(
+    equivalence: Mapping[str, object],
+    *,
+    label: str,
+) -> None:
+    """Validate one current-generation owner-reviewed title equivalence.
+
+    The record pins BOTH titles the owner read — the catalog title and the
+    provider title. An equivalence is a judgment about one specific pair, so
+    either side changing retires it: a provider that retitles the video, and a
+    catalog title edited after the review, both re-gate instead of riding a
+    stale approval.
+    """
+    _validate_title_equivalence_shape(
+        equivalence,
+        label=label,
+        required=SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS,
+        version=SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION,
+    )
+
+
+def validate_legacy_source_title_equivalence(
+    equivalence: Mapping[str, object],
+    *,
+    label: str,
+) -> None:
+    """Validate one v1 equivalence, which lived on the talk and named no talk.
+
+    Migration validates against this before lifting anything: stamping the
+    current generation onto an unchecked record would coerce a malformed one
+    into apparent validity, and silently rewrite a newer generation this reader
+    cannot interpret.
+    """
+    _validate_title_equivalence_shape(
+        equivalence,
+        label=label,
+        required=LEGACY_SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS,
+        version=LEGACY_SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION,
+    )
 
 
 def _validate_talk_observation_shape(
@@ -1399,22 +1446,31 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
                 rejection,
                 label=f"talks[{talk_index}].source_rejections[{rejection_index}]",
             )
-        equivalences = talk.get("source_title_equivalence", [])
-        if not isinstance(equivalences, list):
+
+    # Validated in the assessment rather than only at the writer: an equivalence
+    # suppresses the wrong-delivery title gate, so a hand-edited or malformed
+    # record must refuse the database instead of quietly passing a talk.
+    equivalences = database.get("source_title_equivalences", [])
+    if not isinstance(equivalences, list):
+        raise TrackingDatabaseError("source_title_equivalences must be an array")
+    known_filenames = {
+        talk.get("filename")
+        for talk in collections["talks"]
+        if isinstance(talk, Mapping)
+    }
+    for index, equivalence in enumerate(equivalences):
+        if not isinstance(equivalence, Mapping):
             raise TrackingDatabaseError(
-                f"talks[{talk_index}].source_title_equivalence must be an array"
+                f"source_title_equivalences[{index}] must be a JSON object"
             )
-        for equivalence_index, equivalence in enumerate(equivalences):
-            if not isinstance(equivalence, Mapping):
-                raise TrackingDatabaseError(
-                    f"talks[{talk_index}].source_title_equivalence"
-                    f"[{equivalence_index}] must be a JSON object"
-                )
-            validate_source_title_equivalence(
-                equivalence,
-                label=(
-                    f"talks[{talk_index}].source_title_equivalence[{equivalence_index}]"
-                ),
+        validate_source_title_equivalence(
+            equivalence,
+            label=f"source_title_equivalences[{index}]",
+        )
+        if equivalence["talk_filename"] not in known_filenames:
+            raise TrackingDatabaseError(
+                f"source_title_equivalences[{index}].talk_filename names no talk: "
+                f"{equivalence['talk_filename']!r}"
             )
 
     try:
@@ -1504,6 +1560,71 @@ _RESTAMPABLE_TALK_RECORD_SCHEMA_VERSIONS = frozenset(
 )
 
 
+def _migrate_title_equivalences(candidate: dict[str, Any]) -> int:
+    """Lift v1 nested equivalences into the v2 top-level collection (#333).
+
+    v1 recorded the ledger on the talk record, which bound an owner judgment to
+    the talk's analysis generation. Readers now consult the collection only, so
+    a v1 entry left in place would be ignored and its talk would re-gate on a
+    title mismatch its owner had already approved.
+
+    Every legacy ledger is validated before anything is removed: assessment no
+    longer inspects the nested shape, so a malformed one discarded here would be
+    destroyed with nothing left to report it. Returns the number of talks whose
+    field was removed, empty ledgers included — removing one changes the
+    database, and a migration that alters bytes while reporting no change breaks
+    the no-op contract callers rely on.
+    """
+    talks = candidate.get("talks")
+    if not isinstance(talks, list):
+        return 0
+
+    pending: list[tuple[dict[str, Any], list[Any]]] = []
+    for index, talk in enumerate(talks):
+        if not isinstance(talk, dict) or "source_title_equivalence" not in talk:
+            continue
+        nested = talk["source_title_equivalence"]
+        label = f"talks[{index}].source_title_equivalence"
+        if not isinstance(nested, list):
+            raise TrackingDatabaseError(f"{label} must be an array")
+        for entry_index, record in enumerate(nested):
+            if not isinstance(record, Mapping):
+                raise TrackingDatabaseError(
+                    f"{label}[{entry_index}] must be a JSON object"
+                )
+            # Checked as a v1 record before anything is removed. Stamping the
+            # current generation onto an unvalidated record would coerce a
+            # malformed one into apparent validity and silently rewrite a newer
+            # generation this reader cannot interpret.
+            validate_legacy_source_title_equivalence(
+                record,
+                label=f"{label}[{entry_index}]",
+            )
+        pending.append((talk, nested))
+    if not pending:
+        return 0
+
+    collection = candidate.get("source_title_equivalences")
+    if not isinstance(collection, list):
+        collection = []
+    for talk, nested in pending:
+        del talk["source_title_equivalence"]
+        for record in nested:
+            lifted = dict(record)
+            lifted.setdefault("talk_filename", talk.get("filename"))
+            lifted["schema_version"] = SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION
+            collection.append(lifted)
+    # The lifted records are what every reader will consult, so they are checked
+    # in their new shape rather than trusted because their inputs passed.
+    for index, record in enumerate(collection):
+        validate_source_title_equivalence(
+            record,
+            label=f"source_title_equivalences[{index}]",
+        )
+    candidate["source_title_equivalences"] = collection
+    return len(pending)
+
+
 def _restamp_talk_records(candidate: dict[str, Any]) -> int:
     """Restamp analysed talk records to the current record shape (#299, #333).
 
@@ -1523,12 +1644,12 @@ def _restamp_talk_records(candidate: dict[str, Any]) -> int:
     requires the exact current talk schema before any mutation, so the bump
     alone would lock the database until this ran.
 
-    v6 to v7 (#333) adds the optional `source_title_equivalence` ledger. That is
-    a pure shape addition — absence means "no equivalences", the correct default
-    — so the restamp carries a v6 record forward untouched. Only records already
-    holding the analysis v7 implies are restampable; an earlier generation
-    reaches the current shape by being reanalysed, never by being stamped, which
-    is why this set is not simply "every version below current".
+    v6 to v7 (#333) was introduced for an owner ledger that has since moved to
+    its own top-level collection, so v7 adds no field a v6 record lacks and the
+    restamp carries it forward untouched. Only records already holding the
+    analysis v7 implies are restampable; an earlier generation reaches the
+    current shape by being reanalysed, never by being stamped, which is why this
+    set is not simply "every version below current".
     """
     talks = candidate.get("talks")
     if not isinstance(talks, list):
@@ -1616,6 +1737,7 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
         require_current_tracking_database(candidate)
         counts = _empty_record_counts()
         counts["pptx_catalog"] = _migrate_pptx_catalog_records(candidate)
+        counts["source_title_equivalences"] = _migrate_title_equivalences(candidate)
         counts["talks"] = _restamp_talk_records(candidate)
         if any(counts.values()):
             # Guarded only once state would actually change. A no-op migration
@@ -1664,6 +1786,7 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
     # config takes that return, so a record migration placed after it would be
     # skipped for exactly the databases whose config still needed upgrading.
     counts["pptx_catalog"] += _migrate_pptx_catalog_records(candidate)
+    counts["source_title_equivalences"] += _migrate_title_equivalences(candidate)
     counts["talks"] += _restamp_talk_records(candidate)
 
     if root_version == TRACKING_DATABASE_SCHEMA_VERSION:
