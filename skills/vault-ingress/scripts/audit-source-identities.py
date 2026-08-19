@@ -978,6 +978,7 @@ def audit_database(
                 ) or title_equivalence_recorded(
                     talk.get("source_title_equivalence"),
                     video_id=video_id,
+                    catalog_title=catalog_title,
                     provider_title=provider_title,
                 )
             expected_duration = expected_duration_seconds(talk)

@@ -192,7 +192,14 @@ SOURCE_REJECTION_REQUIRED_FIELDS = frozenset(
     {"source_type", "url", "reason", "evidence", "verified_at"}
 )
 SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS = frozenset(
-    {"video_id", "provider_title", "reason", "evidence", "verified_at"}
+    {
+        "video_id",
+        "catalog_title",
+        "provider_title",
+        "reason",
+        "evidence",
+        "verified_at",
+    }
 )
 # Why an owner accepted a provider title the comparator cannot reach. Closed on
 # purpose: a free-text reason would turn the ledger into a place to wave through
@@ -1068,9 +1075,11 @@ def validate_source_title_equivalence(
 ) -> None:
     """Validate one owner-reviewed title equivalence.
 
-    The record pins the exact provider title an owner reviewed. A provider that
-    retitles the video again no longer matches the pinned string, so the talk
-    re-gates instead of riding a stale approval.
+    The record pins BOTH titles the owner read — the catalog title and the
+    provider title. An equivalence is a judgment about one specific pair, so
+    either side changing retires it: a provider that retitles the video, and a
+    catalog title edited after the review, both re-gate instead of riding a
+    stale approval.
     """
     _require_closed_shape(
         equivalence,
@@ -1090,7 +1099,7 @@ def validate_source_title_equivalence(
             f"{label}.schema_version must be "
             f"{SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION}"
         )
-    for field in ("video_id", "provider_title", "evidence"):
+    for field in ("video_id", "catalog_title", "provider_title", "evidence"):
         _require_nonempty_string(equivalence[field], f"{label}.{field}")
     reason = _require_nonempty_string(equivalence["reason"], f"{label}.reason")
     if reason not in SOURCE_TITLE_EQUIVALENCE_REASONS:

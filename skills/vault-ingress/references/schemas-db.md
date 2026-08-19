@@ -274,6 +274,7 @@ customization, not the owner default. See the
     "source_title_equivalence": [{
       "schema_version": 1,
       "video_id": "provider video the equivalence covers",
+      "catalog_title": "the exact reviewed catalog title",
       "provider_title": "the exact reviewed provider title",
       "reason": "cross_language_title|provider_retitled",
       "evidence": "how the equivalence was reviewed",
@@ -577,8 +578,9 @@ was rewriting the catalog title to whatever the provider published. Its closed
 reason set and matching contract live in
 `skills/vault-ingress/scripts/tracking_database.py::validate_source_title_equivalence`
 and `source_identity_matching.py::title_equivalence_recorded`. An equivalence
-covers one video and one exact title, so a later provider rename re-gates rather
-than inheriting the approval. Consulted only after the deterministic comparison
+covers one video and one exact title PAIR, so either side changing re-gates
+rather than inheriting the approval — a later provider rename, and a catalog
+title edited after the review. Consulted only after the deterministic comparison
 fails; when it applies, the check passes silently and the record is the audit
 trail.
 

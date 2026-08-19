@@ -2134,6 +2134,7 @@ class VaultPreflight:
             if not title_equivalence_recorded(
                 self.talks[index].get("source_title_equivalence"),
                 video_id=evidence.get("video_id"),
+                catalog_title=expected_title,
                 provider_title=observed_title,
             ):
                 self.talk_add(

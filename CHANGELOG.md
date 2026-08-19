@@ -18,11 +18,14 @@ published: Russian titles in an otherwise-English catalog, and two RoboCoders
 entries that stop matching the ten around them. That discards the speaker's own
 naming to satisfy a string comparison.
 
-`source_title_equivalence` records the judgment as data instead — the exact
-provider title reviewed, why it was accepted from a closed two-value reason set,
+`source_title_equivalence` records the judgment as data instead — both titles
+the owner read, why the pair was accepted from a closed two-value reason set,
 and when. It is consulted only after the deterministic comparison fails, and it
-pins the exact title that was read: a provider that retitles the video again no
-longer matches, and the talk re-gates rather than riding a stale approval. The
+pins BOTH sides of the pair. An approval says these two names name one talk; it
+says nothing about a name the owner never read. So a provider that retitles the
+video re-gates, and so does a catalog title edited after the review — pinning
+only the provider side would have left an edited catalog title riding an
+approval granted for a different one. The
 writer appends only and refuses a duplicate, so the ledger stays an audit trail
 rather than a mutable override.
 

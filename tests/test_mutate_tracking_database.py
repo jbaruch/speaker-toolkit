@@ -1700,6 +1700,7 @@ def _equivalence(**updates: Any) -> dict[str, Any]:
     record = {
         "schema_version": 1,
         "video_id": "QS-_4k7o7A4",
+        "catalog_title": "Spring config battle (Ru)",
         "provider_title": "JavaDay Kiev 2014: Spring - битва конфигураций",
         "reason": "cross_language_title",
         "evidence": "owner-reviewed translation of the catalog title",
@@ -1774,6 +1775,7 @@ def test_a_duplicate_equivalence_is_refused(mutate_tracking_database) -> None:
     "invalid",
     [
         {"reason": "looked_close_enough"},
+        {"catalog_title": ""},
         {"evidence": ""},
         {"verified_at": "2026-08-18T12:00:00"},
         {"video_id": ""},

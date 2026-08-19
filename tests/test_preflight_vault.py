@@ -4359,6 +4359,7 @@ def title_equivalence(**updates: Any) -> dict[str, Any]:
     record = {
         "schema_version": 1,
         "video_id": VIDEO_ID,
+        "catalog_title": "Perfect Vault Ingress",
         "provider_title": "Совершенно другое название",
         "reason": "cross_language_title",
         "evidence": "owner-reviewed translation of the catalog title",
@@ -4407,6 +4408,24 @@ def test_an_equivalence_for_another_title_does_not_clear_the_gate(
     talk = base_talk(
         duration_seconds=2700,
         source_identity=source_identity(title="Ещё одно новое название"),
+        source_title_equivalence=[title_equivalence()],
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["database"])
+
+    assert "source_identity_title_mismatch" in finding_codes(report, "blocking")
+
+
+def test_a_catalog_retitle_after_review_re_gates_the_talk(
+    preflight_vault, vault_fixture
+):
+    """The equivalence approved one title pair, not the catalog title's future."""
+    materialize_transcript(vault_fixture)
+    talk = base_talk(
+        title="Perfect Vault Ingress, Revised Edition",
+        duration_seconds=2700,
+        source_identity=source_identity(title="Совершенно другое название"),
         source_title_equivalence=[title_equivalence()],
     )
     write_database(vault_fixture, [talk])
