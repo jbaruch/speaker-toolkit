@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.93 — 2026-08-19
+
 ### feat(vault-ingress) — owner-reviewed provider-title equivalence (#333)
 
 Four talks in #333 could not register a source identity because `titles_agree`
