@@ -39,6 +39,8 @@ no mirror answered. The cache key carries the installer's hash and a week stamp,
 so the package set changing invalidates it and a stale set is renewed instead of
 pinned forever — the old hand-bumped `-v1` suffix did neither.
 
+## 0.20.96 — 2026-08-19
+
 ### fix(vault-ingress) — the equivalence ledger becomes its own collection (#333)
 
 The catalog repair was freed from the current-generation gate; the equivalence
