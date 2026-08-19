@@ -2022,3 +2022,24 @@ def test_an_equivalence_needs_a_recorded_identity_to_approve(
         mutate_tracking_database.build_candidate(database, [_record_equivalence()])
 
     assert "no source_identity" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("version", [1, 4, 7])
+def test_an_equivalence_reaches_every_readable_talk_generation(
+    mutate_tracking_database, version: int
+) -> None:
+    """The four talks this ledger was built for are all schema v1.
+
+    An equivalence is a judgment about two titles and reads no analysis field,
+    so holding it to the current generation locked it out of the records that
+    needed it — the same gap the catalog repair had.
+    """
+    database = _equivalence_database()
+    database["talks"][0]["schema_version"] = version
+
+    candidate, _ = mutate_tracking_database.build_candidate(
+        database, [_record_equivalence()]
+    )
+
+    assert len(candidate["talks"][0]["source_title_equivalence"]) == 1
+    assert candidate["talks"][0]["schema_version"] == version

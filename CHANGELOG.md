@@ -1,5 +1,25 @@
 # Changelog
 
+### fix(vault-ingress) — the equivalence ledger reaches legacy records too (#333)
+
+The catalog repair was freed from the current-generation gate; the equivalence
+writer beside it was not. Registering the four talks the ledger exists for then
+failed on the first one:
+
+```
+talks['2026-02-02-jfokus-2026-robocoders-...'].schema_version must be
+exact current talk schema 7 before this mutation
+```
+
+All four are schema v1, like 209 of the 215 live records. The ledger was
+unreachable for every talk it was built to serve — the same gap as the catalog
+repair, one writer over, and only visible when the records were finally written.
+
+An equivalence is a judgment about two titles. It reads no analysis field and
+asserts nothing about the record's generation, so it now accepts any generation
+the database assessment can read and leaves the version untouched. Every writer
+that does assume the current analysis shape keeps the strict gate.
+
 ### fix(vault-ingress) — the upload comparison respects the venue's timezone (#333)
 
 #333 listed `2025-11-01-churconf-...` among eleven talks whose recording appeared

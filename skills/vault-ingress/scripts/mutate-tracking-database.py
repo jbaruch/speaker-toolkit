@@ -904,7 +904,11 @@ def _apply_record_title_equivalence(
     )
     filename = _nonempty(mutation["filename"], f"mutations[{index}].filename")
     talk = _talk_by_filename(database, filename)
-    _require_current_talk_record(talk, filename=filename)
+    # Same reasoning as the catalog repair above: an equivalence is a judgment
+    # about two titles and reads no analysis field, so the current-generation
+    # gate does not apply. Requiring it here locked the ledger out of every
+    # legacy record — including all four talks it was built for, which are v1.
+    _require_readable_talk_record(talk, filename=filename)
     equivalence = mutation["equivalence"]
     if not isinstance(equivalence, dict):
         raise TrackingDatabaseMutationError(
