@@ -158,3 +158,60 @@ def test_a_legacy_file_keeps_its_trailing_newline(tmp_path: Path):
 
 def test_missing_arguments_report_usage_without_writing():
     assert apt_set_mirror.main([ARCHIVE]) == 2
+
+
+MIXED_DEB822 = """Types: deb
+URIs: http://azure.archive.ubuntu.com/ubuntu/
+Suites: noble noble-updates noble-security
+Components: main restricted
+"""
+
+
+def test_a_mixed_pocket_stanza_is_split_by_pocket():
+    """One `URIs:` cannot serve both pockets once they diverge.
+
+    security.ubuntu.com does not carry `noble` or `noble-updates`, so pointing
+    the whole stanza there fails `apt-get update` — the exact outage the
+    fallback exists to route around.
+    """
+    result = apt_set_mirror.rewrite_deb822(MIXED_DEB822, ARCHIVE, SECURITY)
+
+    stanzas = [s for s in result.split("\n\n") if s.strip()]
+    assert len(stanzas) == 2
+
+    archive_stanza = next(s for s in stanzas if ARCHIVE in s)
+    security_stanza = next(s for s in stanzas if SECURITY in s)
+    assert "Suites: noble noble-updates" in archive_stanza
+    assert "noble-security" not in archive_stanza
+    assert "Suites: noble-security" in security_stanza
+    assert "noble-updates" not in security_stanza
+    # Everything else about the stanza survives the split.
+    assert archive_stanza.count("Components: main restricted") == 1
+    assert security_stanza.count("Types: deb") == 1
+
+
+def test_a_mixed_stanza_is_not_split_when_both_pockets_share_a_host():
+    result = apt_set_mirror.rewrite_deb822(MIXED_DEB822, AZURE, AZURE)
+
+    stanzas = [s for s in result.split("\n\n") if s.strip()]
+    assert len(stanzas) == 2
+    assert all(AZURE in s for s in stanzas)
+
+
+def test_a_split_stanza_survives_a_second_pass(tmp_path: Path):
+    """After splitting, each stanza is single-pocket and must stay put."""
+    target = tmp_path / "ubuntu.sources"
+    target.write_text(MIXED_DEB822, encoding="utf-8")
+
+    apt_set_mirror.rewrite_file(target, ARCHIVE, SECURITY)
+    once = target.read_text(encoding="utf-8")
+    apt_set_mirror.rewrite_file(target, ARCHIVE, SECURITY)
+
+    assert target.read_text(encoding="utf-8") == once
+
+
+def test_a_split_stanza_leaves_exactly_one_blank_line_between_halves():
+    result = apt_set_mirror.rewrite_deb822(MIXED_DEB822, ARCHIVE, SECURITY)
+
+    assert "\n\n\n" not in result
+    assert result.endswith("\n")

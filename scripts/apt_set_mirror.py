@@ -35,6 +35,7 @@ OFFICIAL = re.compile(
     r"https?://(?:[a-z0-9.-]*\.)?(?:archive|security)\.ubuntu\.com/ubuntu/?"
 )
 LEGACY = re.compile(r"^\s*(?:deb|deb-src)\s+(?:\[[^\]]*\]\s+)?\S+\s+(?P<suite>\S+)")
+SUITES = re.compile(r"^(?P<key>suites:)(?P<value>.*)$", re.IGNORECASE | re.MULTILINE)
 
 
 def host_for(suites: str, archive: str, security: str) -> str:
@@ -42,17 +43,42 @@ def host_for(suites: str, archive: str, security: str) -> str:
     return security if any(s.endswith("-security") for s in suites.split()) else archive
 
 
+def _with_suites(stanza: str, suites: list[str]) -> str:
+    return SUITES.sub(
+        lambda match: f"{match.group('key')} {' '.join(suites)}",
+        stanza,
+        count=1,
+    )
+
+
 def rewrite_deb822(text: str, archive: str, security: str) -> str:
+    """Repoint each stanza, splitting one that mixes pockets.
+
+    A stanza may legitimately list `noble noble-updates noble-security` under a
+    single `URIs:`. Those pockets cannot share one host after a fallback —
+    security.ubuntu.com does not serve the archive suites, and sending them
+    there fails `apt-get update` outright — so a mixed stanza becomes two, each
+    naming only the suites its host actually serves.
+    """
     stanzas = []
     for stanza in text.split("\n\n"):
-        suites = ""
-        for line in stanza.splitlines():
-            if line.lower().startswith("suites:"):
-                suites = line.split(":", 1)[1]
-        if suites:
-            stanza = OFFICIAL.sub(host_for(suites, archive, security), stanza)
-        stanzas.append(stanza)
-    return "\n\n".join(stanzas)
+        match = SUITES.search(stanza)
+        if match is None:
+            stanzas.append(stanza)
+            continue
+        suites = match.group("value").split()
+        secure = [suite for suite in suites if suite.endswith("-security")]
+        plain = [suite for suite in suites if not suite.endswith("-security")]
+        if secure and plain:
+            stanzas.append(OFFICIAL.sub(archive, _with_suites(stanza, plain)))
+            stanzas.append(OFFICIAL.sub(security, _with_suites(stanza, secure)))
+        else:
+            stanzas.append(
+                OFFICIAL.sub(host_for(match.group("value"), archive, security), stanza)
+            )
+    # Splitting a stanza that ended in a newline would otherwise leave a doubled
+    # blank line between the halves.
+    return re.sub(r"\n{3,}", "\n\n", "\n\n".join(stanzas))
 
 
 def rewrite_legacy(text: str, archive: str, security: str) -> str:
