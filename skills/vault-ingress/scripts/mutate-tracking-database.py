@@ -34,6 +34,7 @@ from tracking_database import (
     RESOURCE_REQUIRED_FIELDS as OWNER_RESOURCE_REQUIRED_FIELDS,
     THUMBNAIL_RECORD_SCHEMA_VERSION,
     THUMBNAIL_REQUIRED_FIELDS as OWNER_THUMBNAIL_REQUIRED_FIELDS,
+    LEGACY_TALK_RECORD_SCHEMA_VERSION,
     SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION,
     TALK_RECORD_SCHEMA_VERSION,
     TRACKING_DATABASE_SCHEMA_VERSION,
@@ -818,6 +819,36 @@ def _require_current_talk_record(
         )
 
 
+def _require_readable_talk_record(
+    talk: dict[str, Any],
+    *,
+    filename: str,
+) -> None:
+    """Accept any talk generation the database assessment can read.
+
+    The current-generation gate exists for mutations that assume the current
+    record shape. A catalog-identity repair assumes nothing about it: it reads
+    and writes `title`, `conference`, or `date`, none of which any talk-record
+    version has changed. Holding those repairs to the current generation locks
+    the correction out of every legacy record — and a legacy record cannot be
+    migrated forward, because the generations between carry analysis a migration
+    is forbidden to fabricate. The record would have to be reanalyzed to earn a
+    date correction it already deserves.
+    """
+    version = talk.get("schema_version", LEGACY_TALK_RECORD_SCHEMA_VERSION)
+    if (
+        type(version) is not int
+        or not LEGACY_TALK_RECORD_SCHEMA_VERSION
+        <= version
+        <= TALK_RECORD_SCHEMA_VERSION
+    ):
+        raise TrackingDatabaseMutationError(
+            f"talks[{filename!r}].schema_version must be a readable talk schema "
+            f"between {LEGACY_TALK_RECORD_SCHEMA_VERSION} and "
+            f"{TALK_RECORD_SCHEMA_VERSION} before this mutation"
+        )
+
+
 def _apply_update_talk(
     database: dict[str, Any],
     mutation: dict[str, Any],
@@ -994,7 +1025,7 @@ def _apply_reviewed_metadata(
     )
     filename = _nonempty(mutation["filename"], f"mutations[{index}].filename")
     talk = _talk_by_filename(database, filename)
-    _require_current_talk_record(talk, filename=filename)
+    _require_readable_talk_record(talk, filename=filename)
     _validate_metadata_values(mutation["set"], f"mutations[{index}].set")
 
     set_values = mutation["set"]
