@@ -70,6 +70,13 @@ a cache path redirected nothing and the tests wrote `/tmp/apt-cache` on whatever
 machine ran them. The fake now refuses any path outside its sandbox, which turns
 that class of leak into a failing test rather than a directory left behind.
 
+The probe covers both hosts of a pair. Only Canonical's splits archive from
+security, and probing the archive alone let a pair with a dead security host
+through to the update that then burned its full timeout — the stall the probe
+exists to avoid. The suites differ with the host: security.ubuntu.com carries
+`<codename>-security` and does not serve the plain suite, so probing it for that
+would report a healthy host as unreachable and skip Canonical permanently.
+
 The step moved out of the workflow into `scripts/install_system_deps.py`, whose
 side effects all route through an injected runner — the command sequence is the
 whole behaviour, and it is now assertable without a runner, sudo, or a network.

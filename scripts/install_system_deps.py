@@ -250,9 +250,9 @@ def install_offline(run: Runner) -> bool:
     )
 
 
-def probe(run: Runner, archive: str, codename: str) -> bool:
-    """Report whether a mirror answers for one index file, in seconds not minutes."""
-    url = f"{archive}/dists/{codename}/InRelease"
+def probe(run: Runner, host: str, suite: str) -> bool:
+    """Report whether a host answers for one index file, in seconds not minutes."""
+    url = f"{host}/dists/{suite}/InRelease"
     return (
         run(
             [
@@ -402,11 +402,25 @@ def install(
 
     backup_sources(run, sources, sources_d)
     unreachable: list[str] = []
+    skipped = 0
     for archive, security in MIRRORS:
-        if not probe(run, archive, codename):
-            unreachable.append(archive)
+        # Both hosts of the pair, because apt fetches both and a pair whose
+        # security host is dead still burns the full update timeout. Only the
+        # Canonical pair has a distinct one; the others serve both pockets from
+        # one host and are probed once. The suites differ with the host —
+        # security.ubuntu.com carries `<codename>-security` and does not serve
+        # the plain suite, so probing it for that would report a healthy host as
+        # unreachable.
+        hosts = [(archive, codename)]
+        if security != archive:
+            hosts.append((security, f"{codename}-security"))
+        unresponsive = [host for host, suite in hosts if not probe(run, host, suite)]
+        if unresponsive:
+            unreachable.extend(unresponsive)
+            skipped += 1
             print(
-                f"{archive} did not answer a HEAD of its index; skipping",
+                f"{', '.join(unresponsive)} did not answer a HEAD of the index; "
+                "skipping this mirror",
                 file=sys.stderr,
             )
             continue
@@ -418,7 +432,7 @@ def install(
             file=sys.stderr,
         )
 
-    if len(unreachable) == len(MIRRORS):
+    if skipped == len(MIRRORS):
         print(
             "no configured Ubuntu mirror answered — Canonical, kernel.org and "
             "OSU OSL do not fail together, so this is the runner's network, not "

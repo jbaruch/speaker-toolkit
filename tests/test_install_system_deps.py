@@ -35,6 +35,18 @@ SPEC.loader.exec_module(install_system_deps)
 AZURE = "http://azure.archive.ubuntu.com/ubuntu"
 CANONICAL = "http://archive.ubuntu.com/ubuntu"
 ALL_ARCHIVES = tuple(m[0] for m in install_system_deps.MIRRORS)
+SECURITY = "http://security.ubuntu.com/ubuntu"
+KERNEL = "http://mirrors.edge.kernel.org/ubuntu"
+OSUOSL = "http://ubuntu.osuosl.org/ubuntu"
+# Every host apt is pointed at, archive and security alike. Only the Canonical
+# pair splits them; the rest serve both pockets from one host.
+ALL_HOSTS = (AZURE, CANONICAL, SECURITY, KERNEL, OSUOSL)
+
+
+def without(*dead: str) -> tuple[str, ...]:
+    return tuple(h for h in ALL_HOSTS if h not in dead)
+
+
 CODENAME = "noble"
 INDEX_NAME = "archive.ubuntu.com_ubuntu_dists_noble_main_binary-amd64_Packages"
 
@@ -63,7 +75,7 @@ class FakeSystem:
         sandbox: Path,
         sources: Path,
         sources_d: Path,
-        reachable: Sequence[str] = ALL_ARCHIVES,
+        reachable: Sequence[str] = ALL_HOSTS,
         update_fails: Sequence[str] = (),
         offline_satisfies: bool = True,
         failing: str | None = None,
@@ -347,15 +359,15 @@ def test_nothing_reachable_fails_without_ever_attempting_a_fetch(tmp_path: Path)
     report = run_install(system, paths)
 
     assert report["installed"] is False
-    assert report["unreachable"] == list(ALL_ARCHIVES)
+    assert report["unreachable"] == list(ALL_HOSTS)
     assert system.fetches == []
     assert system.installed == []
-    assert len(system.probes) == len(ALL_ARCHIVES)
+    assert len(system.probes) == len(ALL_HOSTS)
 
 
 def test_one_unreachable_archive_does_not_stop_the_install(tmp_path: Path):
     """One degraded archive is the case the mirror list was built for."""
-    system, paths = build(tmp_path, reachable=ALL_ARCHIVES[1:])
+    system, paths = build(tmp_path, reachable=without(AZURE))
 
     report = run_install(system, paths)
 
@@ -440,7 +452,7 @@ def test_the_fallback_repoints_a_deb822_only_runner(tmp_path: Path):
     mirror — if the rewrite misses it, every retry fetches from the host that
     just failed and the fallback is decorative.
     """
-    system, paths = build(tmp_path, reachable=ALL_ARCHIVES[1:])
+    system, paths = build(tmp_path, reachable=without(AZURE))
 
     report = run_install(system, paths, legacy_sources_list=False)
 
@@ -592,3 +604,38 @@ def test_the_cache_key_digest_tracks_the_pins_and_nothing_else(
     renewed = (*install_system_deps.PACKAGES[:-1], "tesseract-ocr=5.3.5-1")
     monkeypatch.setattr(install_system_deps, "PACKAGES", renewed)
     assert install_system_deps.package_digest() != printed
+
+
+def test_a_pair_whose_security_host_is_dead_is_skipped_before_the_timeout(
+    tmp_path: Path,
+):
+    """apt fetches the security pocket too, from a host of its own on one pair.
+
+    Probing only the archive lets a pair with a dead security host through to
+    `apt-get update`, which is the 300s stall the probe exists to avoid.
+    """
+    # Azure is dead too, or it would serve first and the Canonical pair would
+    # never be reached.
+    system, paths = build(tmp_path, reachable=without(AZURE, SECURITY))
+
+    report = run_install(system, paths)
+
+    assert report["source"] == KERNEL
+    assert report["unreachable"] == [AZURE, SECURITY]
+    assert CANONICAL not in system.fetches
+
+
+def test_the_security_host_is_probed_for_the_suite_it_actually_serves(
+    tmp_path: Path,
+):
+    """security.ubuntu.com carries `<codename>-security` and not the plain suite.
+
+    Probing it for `noble` would 404 and report a healthy host as unreachable,
+    permanently skipping Canonical's pair.
+    """
+    system, paths = build(tmp_path, reachable=())
+
+    run_install(system, paths)
+
+    assert f"{SECURITY}/dists/{CODENAME}-security/InRelease" in system.probes
+    assert f"{CANONICAL}/dists/{CODENAME}/InRelease" in system.probes
