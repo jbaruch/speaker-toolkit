@@ -562,7 +562,9 @@ exact-type rule. The supported mutation kinds are:
 
 `apply_reviewed_metadata` exists because `scan-shownotes.py --apply` refuses
 review-required entries by design: an approved catalog correction otherwise had
-no owner writer at all. It stays narrow — the writable field set, the
+no owner writer at all. The same writer carries an owner-reviewed delivery-date
+repair, so a cataloged date the source evidence disproves has a path that is not
+a hand edit. It stays narrow — the writable field set, the
 metadata-only versus analysis-invalidating classification, and the reprocessing
 transition it demands are named at the top of
 `skills/vault-ingress/scripts/mutate-tracking-database.py`. Deterministic scan

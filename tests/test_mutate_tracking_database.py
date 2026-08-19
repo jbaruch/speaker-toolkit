@@ -1238,7 +1238,7 @@ def test_a_reviewed_title_conflict_applies_without_opening_other_fields(
 
 @pytest.mark.parametrize(
     "field",
-    ["status", "video_url", "slides_url", "date", "transcript_source"],
+    ["status", "video_url", "slides_url", "transcript_source"],
 )
 def test_the_writer_refuses_every_field_outside_the_catalog_set(
     mutate_tracking_database, field
@@ -1624,3 +1624,68 @@ def test_severing_a_wrong_row_spares_a_talks_binding_to_another_deck(
     assert candidate["pptx_catalog"][0]["talk_filename"] is None
     assert candidate["talks"][0]["pptx_path"] == "Conference/Correct.pptx"
     assert [change["kind"] for change in changes] == ["sever_pptx_talk_binding"]
+
+
+# Reviewed delivery-date repair (#333). The identity-registration run found 11
+# talks whose cataloged year disagreed with the recording, and the reviewed
+# metadata writer covered `title` and `conference` but not `date` — so a proven
+# wrong delivery date had no owner writer at all.
+
+
+def test_a_reviewed_delivery_date_applies_with_an_exact_precondition(
+    mutate_tracking_database,
+) -> None:
+    database = _catalog_database(date="2014")
+
+    candidate, changes = mutate_tracking_database.build_candidate(
+        database,
+        [_repair({"date": "2013-10-19"}, {"date": "2014"})],
+    )
+
+    assert candidate["talks"][0]["date"] == "2013-10-19"
+    assert changes[0]["kind"] == "apply_reviewed_metadata"
+    assert changes[0]["before"] == {"date": "2014"}
+    assert database["talks"][0]["date"] == "2014"
+
+
+def test_a_reviewed_delivery_date_may_be_a_bare_year(
+    mutate_tracking_database,
+) -> None:
+    """A coarse record is a real delivery date, so the writer accepts `YYYY`."""
+    database = _catalog_database(date="2019")
+
+    candidate, _ = mutate_tracking_database.build_candidate(
+        database,
+        [_repair({"date": "2016"}, {"date": "2019"})],
+    )
+
+    assert candidate["talks"][0]["date"] == "2016"
+
+
+def test_a_reviewed_delivery_date_stays_readable_by_the_catalog_parser(
+    mutate_tracking_database,
+) -> None:
+    """An unparseable date would trade a wrong date for an uncheckable one."""
+    database = _catalog_database(date="2014")
+
+    for rejected in ("October 2013", "2013-13-01", "13-10-2013", "2013/10/19"):
+        with pytest.raises(
+            mutate_tracking_database.TrackingDatabaseMutationError
+        ) as excinfo:
+            mutate_tracking_database.build_candidate(
+                database,
+                [_repair({"date": rejected}, {"date": "2014"})],
+            )
+        assert "must be YYYY or an ISO-8601 calendar date" in str(excinfo.value)
+
+
+def test_a_reviewed_date_repair_does_not_open_unrelated_talk_fields(
+    mutate_tracking_database,
+) -> None:
+    database = _catalog_database(date="2014")
+
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(
+            database,
+            [_repair({"date": "2013", "status": "pending"}, {"date": "2014"})],
+        )

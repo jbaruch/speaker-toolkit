@@ -1,5 +1,27 @@
 # Changelog
 
+### feat(vault-ingress) — owner-reviewed delivery-date repair (#333)
+
+Correcting the eleven catalog dates #333 measured turned out to be impossible
+with the writers that existed. `apply-source-repairs.py` owns the source lanes
+and rejects a catalog field outright. `apply_reviewed_metadata` owns catalog
+identity, but its closed field set was `{title, conference}` — so a delivery
+date the provider evidence disproves had no owner path at all, and the SKILL
+forbids editing the database directly. The measurement landed with no way to act
+on it.
+
+`date` joins that closed set, classified metadata-only alongside `title` and
+`conference`: rhetoric analysis derives from transcript and slide content, so a
+corrected delivery date cannot stale it, and the writer proves that rather than
+assuming it.
+
+One extra condition rides on `date` that the other two do not carry — the value
+must be readable by `parse_catalog_date`. Writing `"October 2013"` would trade a
+wrong date for an uncheckable one: preflight would stop comparing source
+evidence against the record and report `source_identity_date_uncheckable`
+instead of gating. A repair that silently disables the gate it was meant to
+satisfy is worse than the wrong date it replaced.
+
 ## 0.20.90 — 2026-08-18
 
 ### fix(vault-ingress) — one owner for the catalog-date comparison (#333)
