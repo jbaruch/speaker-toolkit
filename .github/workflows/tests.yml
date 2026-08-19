@@ -144,9 +144,7 @@ jobs:
           stamp() { while IFS= read -r line; do printf '%s %s\n' "$(date -u +%H:%M:%S)" "$line"; done; }
 
           # Keep a pristine copy of the source lists. Each attempt restores it
-          # before rewriting: once the security pocket has been pointed at an
-          # archive host, its URL is indistinguishable from the archive pocket's,
-          # so rewriting mutated state would conflate the two.
+          # before rewriting, so no rewrite ever reads already-rewritten state.
           apt_src_backup=/tmp/apt-src-orig
           sudo rm -rf "$apt_src_backup"
           sudo mkdir -p "$apt_src_backup"
@@ -157,11 +155,71 @@ jobs:
             sudo cp -r /etc/apt/sources.list.d "$apt_src_backup/sources.list.d"
           fi
 
-          # Point the archive and security pockets at one mirror pair. noble
-          # ships deb822 (`ubuntu.sources`); the legacy `sources.list` is handled
-          # too so this keeps working if the runner image changes format.
+          # Suite-aware, because a line-based rewrite cannot do this correctly:
+          # Azure runners serve BOTH pockets from azure.archive.ubuntu.com, so
+          # matching on the URI alone rewrites the security stanza as an archive
+          # one and the security fallback never applies. deb822 is a stanza
+          # format — the `URIs:` belongs to the `Suites:` in its own stanza — so
+          # the association has to be parsed, not pattern-matched.
+          sudo tee /usr/local/bin/apt-set-mirror >/dev/null <<'PYEOF'
+          #!/usr/bin/env python3
+          """Point Ubuntu archive and security pockets at the given hosts.
+
+          Only official Ubuntu hosts are rewritten; a PPA or third-party repo on
+          the runner is left exactly as it was.
+          """
+          import re
+          import sys
+          from pathlib import Path
+
+          ARCHIVE, SECURITY = sys.argv[1], sys.argv[2]
+          OFFICIAL = re.compile(
+              r"https?://(?:[a-z0-9.-]*\.)?(?:archive|security)\.ubuntu\.com/ubuntu/?"
+          )
+
+
+          def host_for(suites: str) -> str:
+              return SECURITY if any(s.endswith("-security") for s in suites.split()) else ARCHIVE
+
+
+          def rewrite_deb822(text: str) -> str:
+              out = []
+              for stanza in text.split("\n\n"):
+                  suites = ""
+                  for line in stanza.splitlines():
+                      if line.lower().startswith("suites:"):
+                          suites = line.split(":", 1)[1]
+                  host = host_for(suites)
+                  out.append(OFFICIAL.sub(host, stanza) if suites else stanza)
+              return "\n\n".join(out)
+
+
+          def rewrite_legacy(text: str) -> str:
+              out = []
+              for line in text.splitlines():
+                  parts = line.split()
+                  if len(parts) >= 3 and parts[0] in ("deb", "deb-src"):
+                      suite = next((p for p in parts[2:] if not p.startswith("[")), "")
+                      out.append(OFFICIAL.sub(host_for(suite), line))
+                  else:
+                      out.append(line)
+              return "\n".join(out) + ("\n" if text.endswith("\n") else "")
+
+
+          for path in sys.argv[3:]:
+              target = Path(path)
+              if not target.is_file():
+                  continue
+              body = target.read_text()
+              rewritten = rewrite_deb822(body) if target.suffix == ".sources" else rewrite_legacy(body)
+              if rewritten != body:
+                  target.write_text(rewritten)
+                  print(f"rewrote {target}")
+          PYEOF
+          sudo chmod +x /usr/local/bin/apt-set-mirror
+
           set_mirror() {
-            local archive="$1" security="$2" f
+            local archive="$1" security="$2"
             if [ -f "$apt_src_backup/sources.list" ]; then
               sudo cp "$apt_src_backup/sources.list" /etc/apt/sources.list
             fi
@@ -169,20 +227,11 @@ jobs:
               sudo rm -rf /etc/apt/sources.list.d
               sudo cp -r "$apt_src_backup/sources.list.d" /etc/apt/sources.list.d
             fi
-            for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list \
-                     /etc/apt/sources.list.d/*.sources; do
-              if [ -f "$f" ]; then
-                sudo sed -i -E \
-                  -e "s#https?://[a-z0-9.-]*archive\.ubuntu\.com/ubuntu#${archive}#g" \
-                  -e "s#https?://security\.ubuntu\.com/ubuntu#${security}#g" \
-                  "$f"
-              fi
-            done
+            sudo /usr/local/bin/apt-set-mirror "$archive" "$security" \
+              /etc/apt/sources.list /etc/apt/sources.list.d/*.list \
+              /etc/apt/sources.list.d/*.sources
           }
 
-          # tesseract-ocr pin: Ubuntu noble package version. No Dependabot
-          # ecosystem for apt — renew quarterly, or when noble's package
-          # advances (bump version + apt cache key suffix above).
           # Called as an `if` condition, which disables errexit for the whole
           # function — so each pipeline is checked explicitly. Without this a
           # failed `apt-get update` would be swallowed whenever the install then
