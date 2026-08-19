@@ -11,6 +11,7 @@ whose bracketed options hide the suite.
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -117,13 +118,31 @@ def test_rewriting_is_idempotent(tmp_path: Path):
     assert apt_set_mirror.rewrite_file(target, ARCHIVE, SECURITY) is False
 
 
-def test_an_absent_path_is_skipped_rather_than_failing(tmp_path: Path):
+def test_an_absent_path_is_skipped_rather_than_failing(tmp_path: Path, capsys):
     """The caller passes globs that need not match on every runner image."""
     assert (
         apt_set_mirror.rewrite_file(tmp_path / "nope.sources", ARCHIVE, SECURITY)
         is False
     )
     assert apt_set_mirror.main([ARCHIVE, SECURITY, str(tmp_path / "nope.list")]) == 0
+
+    assert json.loads(capsys.readouterr().out)["rewritten"] == []
+
+
+def test_stdout_is_one_structured_report(tmp_path: Path, capsys):
+    """Deterministic scripts report data, not prose."""
+    target = tmp_path / "ubuntu.sources"
+    target.write_text(AZURE_DEB822, encoding="utf-8")
+
+    assert apt_set_mirror.main([ARCHIVE, SECURITY, str(target)]) == 0
+
+    report = json.loads(capsys.readouterr().out)
+    assert report == {
+        "schema_version": 1,
+        "archive": ARCHIVE,
+        "security": SECURITY,
+        "rewritten": [str(target)],
+    }
 
 
 def test_a_legacy_file_keeps_its_trailing_newline(tmp_path: Path):

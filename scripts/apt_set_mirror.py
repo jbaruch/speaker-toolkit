@@ -16,13 +16,15 @@ the URI useless as a discriminator, so the pocket is read from the SUITE:
   bracketed group that may contain spaces. The field after the URI is the
   suite; the first non-bracket token is the URI, not the suite.
 
-Stdout names each file actually changed. Exit 0 on success; a path that does not
-exist is skipped rather than treated as an error, since the caller passes globs
-that may not match on every runner image.
+Stdout is one JSON object naming the chosen hosts and the files actually
+changed. Exit 0 on success; a path that does not exist is skipped rather than
+treated as an error, since the caller passes globs that may not match on every
+runner image.
 """
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -84,10 +86,21 @@ def main(argv: list[str]) -> int:
         )
         return 2
     archive, security = argv[0], argv[1]
-    for raw in argv[2:]:
-        path = Path(raw)
-        if rewrite_file(path, archive, security):
-            print(f"rewrote {path}")
+    rewritten = [
+        str(path)
+        for path in (Path(raw) for raw in argv[2:])
+        if rewrite_file(path, archive, security)
+    ]
+    print(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "archive": archive,
+                "security": security,
+                "rewritten": rewritten,
+            }
+        )
+    )
     return 0
 
 
