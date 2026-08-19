@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.95 — 2026-08-19
+
 ### fix(vault-ingress) — the upload comparison respects the venue's timezone (#333)
 
 #333 listed `2025-11-01-churconf-...` among eleven talks whose recording appeared
