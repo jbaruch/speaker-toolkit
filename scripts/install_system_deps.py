@@ -20,9 +20,11 @@ unreachable mirror is skipped in seconds, and every mirror unreachable fails the
 step immediately naming that as the diagnosis rather than after 20 minutes of
 silence.
 
-Every side effect goes through an injected runner rather than direct filesystem
-calls, so the command sequence — which is the whole behaviour — is assertable
-without a runner, sudo, or a network.
+Every command goes through an injected runner, so the sequence that does the
+work is assertable without a runner, sudo, or a network. Reads of the machine's
+own state — whether a source file exists, what the cache holds, the release
+codename — and the staging write are direct, since they inspect rather than
+change the system.
 
 Stdout is one JSON object naming how the install was satisfied and which
 mirrors were skipped. Exit 0 on success, 1 when no path installed.

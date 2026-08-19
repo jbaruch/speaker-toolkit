@@ -215,7 +215,13 @@ class FakeSystem:
     def _apt(self, args: Sequence[str]) -> int:
         if args[0] == "update":
             self.fetches.extend(sorted(self.mirrors))
-            return 0 if self._reachable_everywhere() else 1
+            if not self._reachable_everywhere():
+                return 1
+            # What update is for: the indices land where apt reads them.
+            indices = self.local(str(install_system_deps.APT_LISTS))
+            indices.mkdir(parents=True, exist_ok=True)
+            (indices / INDEX_NAME).write_text("Package: ffmpeg\n")
+            return 0
         packages = [a for a in args[1:] if not a.startswith("-")]
         if "--no-download" in args:
             indices = self.local(str(install_system_deps.APT_LISTS))
@@ -234,11 +240,16 @@ class FakeSystem:
 
 
 def build(tmp_path: Path, **kwargs: object) -> tuple[FakeSystem, dict[str, Path]]:
-    """Lay out a runner: apt's own index dir populated, caches empty."""
+    """Lay out a runner: apt's index dir empty, caches empty.
+
+    Empty on purpose. Pre-populating it let the offline install succeed whether
+    or not the cached indices were ever copied into place — deleting the restore
+    outright kept every test green. The indices arrive the way they do on a real
+    runner: `apt-get update` writes them, or the restore copies them from cache.
+    """
     root = tmp_path / "system"
     lists = root / str(install_system_deps.APT_LISTS).lstrip("/")
     lists.mkdir(parents=True)
-    (lists / INDEX_NAME).write_text("Package: ffmpeg\n")
     paths = {
         "archive_cache": tmp_path / "apt-cache",
         "list_cache": tmp_path / "apt-lists",
