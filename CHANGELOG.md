@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.91 — 2026-08-19
+
 ### feat(vault-ingress) — owner-reviewed delivery-date repair (#333)
 
 Correcting the eleven catalog dates #333 measured turned out to be impossible
