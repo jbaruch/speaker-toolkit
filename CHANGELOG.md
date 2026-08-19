@@ -34,6 +34,12 @@ inspects the nested shape, so a malformed one discarded there would be destroyed
 with nothing left to report it — and counts an empty ledger's removal as a
 change, because altering the database while reporting no change breaks the
 no-op contract callers rely on.
+
+Each nested record is validated as a v1 record before it is lifted, and the
+lifted collection is validated again in its new shape. Stamping the current
+generation onto an unchecked record would coerce a malformed one into apparent
+validity and silently rewrite a newer generation this reader cannot interpret —
+a newer generation is unusable state, not something to convert.
 The nested shape shipped in a release, so a consumer can hold one: readers now
 consult the collection only, and an unmigrated entry would be ignored — the talk
 re-gating on a mismatch its owner had already approved, with nothing to show the

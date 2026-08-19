@@ -198,6 +198,17 @@ CONFIRMED_INTENT_OPTIONAL_FIELDS = frozenset(
 SOURCE_REJECTION_REQUIRED_FIELDS = frozenset(
     {"source_type", "url", "reason", "evidence", "verified_at"}
 )
+# v1 lived on the talk record, so it carried no owning filename.
+LEGACY_SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS = frozenset(
+    {
+        "video_id",
+        "catalog_title",
+        "provider_title",
+        "reason",
+        "evidence",
+        "verified_at",
+    }
+)
 SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS = frozenset(
     {
         "talk_filename",
@@ -1076,44 +1087,27 @@ def _validate_source_rejection(
         )
 
 
-def validate_source_title_equivalence(
+def _validate_title_equivalence_shape(
     equivalence: Mapping[str, object],
     *,
     label: str,
+    required: frozenset[str],
+    version: int,
 ) -> None:
-    """Validate one owner-reviewed title equivalence.
-
-    The record pins BOTH titles the owner read — the catalog title and the
-    provider title. An equivalence is a judgment about one specific pair, so
-    either side changing retires it: a provider that retitles the video, and a
-    catalog title edited after the review, both re-gate instead of riding a
-    stale approval.
-    """
-    _require_closed_shape(
-        equivalence,
-        required=SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS,
-        label=label,
-    )
+    """Validate one title equivalence against a named generation's shape."""
+    _require_closed_shape(equivalence, required=required, label=label)
     # `_require_closed_shape` ignores `schema_version` for every record, so this
     # ledger checks it explicitly. A record whose generation this reader cannot
-    # name must never be honored: what it suppresses is the wrong-delivery gate.
-    version = equivalence.get("schema_version")
+    # name must never be honored: what it suppresses is the wrong-delivery gate,
+    # and a newer generation is unusable state rather than something to coerce.
+    recorded = equivalence.get("schema_version")
     if (
-        isinstance(version, bool)
-        or not isinstance(version, int)
-        or version != SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION
+        isinstance(recorded, bool)
+        or not isinstance(recorded, int)
+        or recorded != version
     ):
-        raise TrackingDatabaseError(
-            f"{label}.schema_version must be "
-            f"{SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION}"
-        )
-    for field in (
-        "talk_filename",
-        "video_id",
-        "catalog_title",
-        "provider_title",
-        "evidence",
-    ):
+        raise TrackingDatabaseError(f"{label}.schema_version must be {version}")
+    for field in sorted(required - {"reason", "verified_at"}):
         _require_nonempty_string(equivalence[field], f"{label}.{field}")
     reason = _require_nonempty_string(equivalence["reason"], f"{label}.reason")
     if reason not in SOURCE_TITLE_EQUIVALENCE_REASONS:
@@ -1134,6 +1128,47 @@ def validate_source_title_equivalence(
         raise TrackingDatabaseError(
             f"{label}.verified_at must be a timezone-aware ISO-8601 timestamp"
         )
+
+
+def validate_source_title_equivalence(
+    equivalence: Mapping[str, object],
+    *,
+    label: str,
+) -> None:
+    """Validate one current-generation owner-reviewed title equivalence.
+
+    The record pins BOTH titles the owner read — the catalog title and the
+    provider title. An equivalence is a judgment about one specific pair, so
+    either side changing retires it: a provider that retitles the video, and a
+    catalog title edited after the review, both re-gate instead of riding a
+    stale approval.
+    """
+    _validate_title_equivalence_shape(
+        equivalence,
+        label=label,
+        required=SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS,
+        version=SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION,
+    )
+
+
+def validate_legacy_source_title_equivalence(
+    equivalence: Mapping[str, object],
+    *,
+    label: str,
+) -> None:
+    """Validate one v1 equivalence, which lived on the talk and named no talk.
+
+    Migration validates against this before lifting anything: stamping the
+    current generation onto an unchecked record would coerce a malformed one
+    into apparent validity, and silently rewrite a newer generation this reader
+    cannot interpret.
+    """
+    _validate_title_equivalence_shape(
+        equivalence,
+        label=label,
+        required=LEGACY_SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS,
+        version=LEGACY_SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION,
+    )
 
 
 def _validate_talk_observation_shape(
@@ -1557,6 +1592,14 @@ def _migrate_title_equivalences(candidate: dict[str, Any]) -> int:
                 raise TrackingDatabaseError(
                     f"{label}[{entry_index}] must be a JSON object"
                 )
+            # Checked as a v1 record before anything is removed. Stamping the
+            # current generation onto an unvalidated record would coerce a
+            # malformed one into apparent validity and silently rewrite a newer
+            # generation this reader cannot interpret.
+            validate_legacy_source_title_equivalence(
+                record,
+                label=f"{label}[{entry_index}]",
+            )
         pending.append((talk, nested))
     if not pending:
         return 0
@@ -1571,6 +1614,13 @@ def _migrate_title_equivalences(candidate: dict[str, Any]) -> int:
             lifted.setdefault("talk_filename", talk.get("filename"))
             lifted["schema_version"] = SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION
             collection.append(lifted)
+    # The lifted records are what every reader will consult, so they are checked
+    # in their new shape rather than trusted because their inputs passed.
+    for index, record in enumerate(collection):
+        validate_source_title_equivalence(
+            record,
+            label=f"source_title_equivalences[{index}]",
+        )
     candidate["source_title_equivalences"] = collection
     return len(pending)
 

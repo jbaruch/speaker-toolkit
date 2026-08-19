@@ -1870,3 +1870,59 @@ def test_a_refused_ledger_leaves_the_input_untouched(tracking_database):
         tracking_database.migrate_tracking_database(database)
 
     assert database["talks"][0]["source_title_equivalence"] == ["not-an-object"]
+
+
+def _legacy_equivalence(**updates):
+    record = {
+        "schema_version": 1,
+        "video_id": "QS-_4k7o7A4",
+        "catalog_title": "Spring config battle (Ru)",
+        "provider_title": "JavaDay Kiev 2014: Spring - битва конфигураций",
+        "reason": "cross_language_title",
+        "evidence": "owner-reviewed translation",
+        "verified_at": "2026-08-18T12:00:00Z",
+    }
+    record.update(updates)
+    return record
+
+
+@pytest.mark.parametrize("version", [2, 3, 0, True, "1"])
+def test_a_foreign_generation_nested_entry_is_refused(tracking_database, version):
+    """A newer generation is unusable state, never something to coerce to v2."""
+    database = _talk_with_nested_ledger(
+        _legacy_database(), [_legacy_equivalence(schema_version=version)]
+    )
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="schema_version must be 1"
+    ):
+        tracking_database.migrate_tracking_database(database)
+
+
+@pytest.mark.parametrize(
+    "broken",
+    [
+        {"reason": "looked_close_enough"},
+        {"evidence": ""},
+        {"verified_at": "2026-08-18T12:00:00"},
+    ],
+)
+def test_a_malformed_v1_entry_is_refused_before_it_is_lifted(tracking_database, broken):
+    database = _talk_with_nested_ledger(
+        _legacy_database(), [_legacy_equivalence(**broken)]
+    )
+
+    with pytest.raises(tracking_database.TrackingDatabaseError):
+        tracking_database.migrate_tracking_database(database)
+
+    assert database["talks"][0]["source_title_equivalence"]
+
+
+def test_a_v1_entry_already_naming_a_talk_is_refused(tracking_database):
+    """v1 had no owning filename; carrying one means it is not a v1 record."""
+    database = _talk_with_nested_ledger(
+        _legacy_database(), [_legacy_equivalence(talk_filename="somewhere.md")]
+    )
+
+    with pytest.raises(tracking_database.TrackingDatabaseError, match="unknown fields"):
+        tracking_database.migrate_tracking_database(database)
