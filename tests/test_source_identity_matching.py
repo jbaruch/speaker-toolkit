@@ -278,3 +278,31 @@ def test_title_equivalence_treats_an_unusable_ledger_as_no_approval(
         )
         is False
     )
+
+
+@pytest.mark.parametrize("version", [2, 0, None, True, "1", 1.0])
+def test_an_unrecognized_equivalence_generation_never_suppresses_the_gate(
+    version: object,
+) -> None:
+    """Unusable state is not an approval — what it would suppress is the gate."""
+    record = dict(EQUIVALENCE[0])
+    if version is None:
+        del record["schema_version"]
+    else:
+        record["schema_version"] = version
+
+    assert (
+        source_identity_matching.title_equivalence_recorded(
+            [record],
+            video_id="QS-_4k7o7A4",
+            provider_title=EQUIVALENCE[0]["provider_title"],
+        )
+        is False
+    )
+
+
+def test_pinned_provider_title_is_the_one_canonicalizer() -> None:
+    """Reader and writer must agree on which titles are the same approval."""
+    assert source_identity_matching.pinned_provider_title(
+        "  Spring -  битва   конфигураций \n"
+    ) == source_identity_matching.pinned_provider_title("Spring - битва конфигураций")

@@ -26,6 +26,13 @@ longer matches, and the talk re-gates rather than riding a stale approval. The
 writer appends only and refuses a duplicate, so the ledger stays an audit trail
 rather than a mutable override.
 
+The record's own `schema_version` is validated exactly, and both the reader and
+the writer refuse a generation they cannot name — `_require_closed_shape` ignores
+that field for every record, so a ledger whose whole purpose is suppressing a
+blocking finding checks it itself. Reader and writer canonicalize the pinned
+title through one shared normalizer, so two records the reader would treat as a
+single approval cannot be stored as two.
+
 When an equivalence applies the check passes silently. A warning on every run
 would be noise about a decision the owner already made and recorded, and the
 record itself carries the evidence and the timestamp.

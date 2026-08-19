@@ -182,6 +182,7 @@ no-op.
 | thumbnail | 1 |
 | confirmed intent | 1 |
 | source rejection | 1 |
+| source title equivalence | 1 |
 | improvement goal | 2 (schema 1 remains readable historical state) |
 
 | Component | Access | Contract |

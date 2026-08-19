@@ -57,7 +57,7 @@ from pptx_discovery_contract import (
     validate_pptx_directory_exclusions,
 )
 from pptx_talk_identity import binding_refusal
-from source_identity_matching import parse_catalog_date
+from source_identity_matching import parse_catalog_date, pinned_provider_title
 
 
 PLAN_SCHEMA_VERSION = 1
@@ -894,11 +894,15 @@ def _apply_record_title_equivalence(
         raise TrackingDatabaseMutationError(
             f"talks[{filename!r}].source_title_equivalence must be an array"
         )
+    # Canonicalized on both sides with the reader's own normalizer: two titles
+    # the reader treats as one approval must not be storable as two records.
+    pinned = pinned_provider_title(record["provider_title"])
     for recorded in existing:
         if (
             isinstance(recorded, dict)
             and recorded.get("video_id") == record["video_id"]
-            and recorded.get("provider_title") == record["provider_title"]
+            and isinstance(recorded.get("provider_title"), str)
+            and pinned_provider_title(recorded["provider_title"]) == pinned
         ):
             raise TrackingDatabaseMutationError(
                 f"mutations[{index}] duplicates an equivalence already recorded "

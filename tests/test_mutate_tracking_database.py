@@ -7,6 +7,8 @@ import json
 from typing import Any
 from pathlib import Path
 
+import unicodedata
+
 import pytest
 
 
@@ -1696,6 +1698,7 @@ def test_a_reviewed_date_repair_does_not_open_unrelated_talk_fields(
 
 def _equivalence(**updates: Any) -> dict[str, Any]:
     record = {
+        "schema_version": 1,
         "video_id": "QS-_4k7o7A4",
         "provider_title": "JavaDay Kiev 2014: Spring - битва конфигураций",
         "reason": "cross_language_title",
@@ -1721,8 +1724,11 @@ def test_a_reviewed_title_equivalence_is_appended_with_a_stamped_version(
 ) -> None:
     database = _catalog_database()
 
+    unstamped = _equivalence()
+    del unstamped["schema_version"]
+
     candidate, changes = mutate_tracking_database.build_candidate(
-        database, [_record_equivalence()]
+        database, [_record_equivalence(equivalence=unstamped)]
     )
 
     recorded = candidate["talks"][0]["source_title_equivalence"]
@@ -1782,3 +1788,44 @@ def test_an_unreviewable_equivalence_is_refused(
         mutate_tracking_database.build_candidate(
             database, [_record_equivalence(equivalence=_equivalence(**invalid))]
         )
+
+
+def test_a_whitespace_variant_duplicate_equivalence_is_refused(
+    mutate_tracking_database,
+) -> None:
+    """The reader treats these as one approval, so the writer must too."""
+    database = _catalog_database(source_title_equivalence=[_equivalence()])
+    # Trimmed (the validator rejects untrimmed outright), but carrying an
+    # internal whitespace run and NFD composition — both of which the reader
+    # canonicalizes away, so both name the same approval.
+    spaced = _equivalence(
+        provider_title=unicodedata.normalize(
+            "NFD", "JavaDay Kiev 2014: Spring -  битва конфигураций"
+        )
+    )
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError
+    ) as excinfo:
+        mutate_tracking_database.build_candidate(
+            database, [_record_equivalence(equivalence=spaced)]
+        )
+
+    assert "duplicates an equivalence" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("version", [2, 0, True, "1"])
+def test_an_equivalence_with_a_foreign_generation_is_refused(
+    mutate_tracking_database, version: object
+) -> None:
+    database = _catalog_database()
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError
+    ) as excinfo:
+        mutate_tracking_database.build_candidate(
+            database,
+            [_record_equivalence(equivalence=_equivalence(schema_version=version))],
+        )
+
+    assert "schema_version must be 1" in str(excinfo.value)

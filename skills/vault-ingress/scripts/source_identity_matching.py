@@ -438,7 +438,17 @@ def expected_duration_seconds(talk: dict[str, Any]) -> float | None:
     return None
 
 
-def _pinned_title(value: str) -> str:
+SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION = 1
+
+
+def pinned_provider_title(value: str) -> str:
+    """Canonicalize a provider title for pinned comparison.
+
+    Whitespace runs and Unicode composition vary without changing what an owner
+    read, so both are normalized. Every comparison of a pinned title — the
+    reader's match and the writer's duplicate check — goes through this, or the
+    two disagree about which records are the same approval.
+    """
     return " ".join(unicodedata.normalize("NFC", value).split())
 
 
@@ -460,16 +470,26 @@ def title_equivalence_recorded(
         return False
     if not isinstance(video_id, str) or not isinstance(provider_title, str):
         return False
-    pinned = _pinned_title(provider_title)
+    pinned = pinned_provider_title(provider_title)
     if not pinned:
         return False
     for equivalence in equivalences:
         if not isinstance(equivalence, dict):
             continue
+        # An unrecognized generation is unusable state, never an approval: a
+        # future record may mean something this reader cannot see, and the
+        # failure it would suppress is the wrong-delivery gate.
+        recorded_version = equivalence.get("schema_version")
+        if (
+            isinstance(recorded_version, bool)
+            or not isinstance(recorded_version, int)
+            or recorded_version != SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION
+        ):
+            continue
         recorded_id = equivalence.get("video_id")
         recorded_title = equivalence.get("provider_title")
         if not isinstance(recorded_id, str) or not isinstance(recorded_title, str):
             continue
-        if recorded_id == video_id and _pinned_title(recorded_title) == pinned:
+        if recorded_id == video_id and pinned_provider_title(recorded_title) == pinned:
             return True
     return False

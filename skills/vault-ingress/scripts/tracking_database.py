@@ -1077,6 +1077,19 @@ def validate_source_title_equivalence(
         required=SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS,
         label=label,
     )
+    # `_require_closed_shape` ignores `schema_version` for every record, so this
+    # ledger checks it explicitly. A record whose generation this reader cannot
+    # name must never be honored: what it suppresses is the wrong-delivery gate.
+    version = equivalence.get("schema_version")
+    if (
+        isinstance(version, bool)
+        or not isinstance(version, int)
+        or version != SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION
+    ):
+        raise TrackingDatabaseError(
+            f"{label}.schema_version must be "
+            f"{SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION}"
+        )
     for field in ("video_id", "provider_title", "evidence"):
         _require_nonempty_string(equivalence[field], f"{label}.{field}")
     reason = _require_nonempty_string(equivalence["reason"], f"{label}.reason")

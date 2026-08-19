@@ -971,16 +971,15 @@ def audit_database(
                 continue
             provider_title = _nonempty(proposal.get("title"))
             catalog_title = _nonempty(talk.get("title"))
-            title_agrees = (
-                titles_agree(catalog_title, provider_title)
-                or title_equivalence_recorded(
+            title_agrees: bool | None = None
+            if catalog_title and provider_title:
+                title_agrees = titles_agree(
+                    catalog_title, provider_title
+                ) or title_equivalence_recorded(
                     talk.get("source_title_equivalence"),
                     video_id=video_id,
                     provider_title=provider_title,
                 )
-                if catalog_title and provider_title
-                else None
-            )
             expected_duration = expected_duration_seconds(talk)
             provider_duration = proposal.get("duration_seconds")
             duration_within_tolerance: bool | None = None
