@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.94 — 2026-08-19
+
 ### fix(vault-ingress) — catalog repair reaches legacy talk records (#333)
 
 #336 gave the delivery date an owner writer. Applying #333's corrections against
