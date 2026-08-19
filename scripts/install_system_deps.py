@@ -42,7 +42,24 @@ from pathlib import Path
 # pptx-extraction. Source-video evidence tests require ffmpeg/ffprobe and fail if
 # either is absent. OCR unit tests inject a fake engine; integration tests skipif
 # tesseract is missing.
-PACKAGES = ("ffmpeg", "libreoffice-impress", "tesseract-ocr=5.3.4-1build5")
+#
+# Pinned exactly, per `dependency-management` Pinning. No scanner tracks an apt
+# version baked into a script, so the renewal mechanism is stated here rather
+# than delegated: ffmpeg and tesseract sit in the static `noble` pocket and move
+# only at a release rebuild, while libreoffice-impress ships from
+# `noble-updates` and is superseded on Ubuntu's security cadence — roughly
+# monthly. Ubuntu's archive serves only the current version of each, so a
+# superseded pin fails the install loudly rather than silently drifting. Renew by
+# reading the current versions and bumping the literals here:
+#
+#   https://people.canonical.com/~ubuntu-archive/madison.cgi
+#     ?package=ffmpeg+libreoffice-impress+tesseract-ocr
+#     &table=ubuntu&s=noble,noble-updates,noble-security&a=amd64&text=on
+PACKAGES = (
+    "ffmpeg=7:6.1.1-3ubuntu5",
+    "libreoffice-impress=4:24.2.7-0ubuntu0.24.04.6",
+    "tesseract-ocr=5.3.4-1build5",
+)
 
 # Ordered fastest-first, then genuinely independent. The first two are
 # Canonical's own infrastructure and fail together when Canonical is degraded —
@@ -94,6 +111,28 @@ Acquire::https::Timeout "30";
 Runner = Callable[[Sequence[str], int], int]
 
 
+class SystemDepsError(RuntimeError):
+    """A command with no recovery path failed."""
+
+
+def require(run: Runner, command: Sequence[str], timeout: int) -> None:
+    """Run a command whose failure leaves nothing sensible to continue into.
+
+    A failed mkdir, copy or mirror rewrite is not a fallback signal — the apt
+    call after it can still succeed against whatever state was already there and
+    report the step green, which is how a cache that saved nothing looked
+    identical to one that worked. Only the probe, the update and the install
+    carry a recoverable failure, and those read their own status.
+    """
+    code = run(command, timeout)
+    if code != 0:
+        raise SystemDepsError(
+            f"{' '.join(command)} exited {code}; the runner is not in the state "
+            "the install needs — re-run the job, and if it repeats, inspect the "
+            "step log for the failing command above this line"
+        )
+
+
 def run_command(command: Sequence[str], timeout: int) -> int:
     """Run one command, mapping a timeout to a non-zero code rather than a raise.
 
@@ -101,7 +140,9 @@ def run_command(command: Sequence[str], timeout: int) -> int:
     as an ordinary failed command — a raise here would abort the fallback chain
     the caller is walking.
     """
-    print(f"+ {' '.join(command)}", flush=True)
+    # Diagnostics go to stderr: stdout carries one JSON object and nothing else,
+    # so a caller can parse it without stripping a command trace out first.
+    print(f"+ {' '.join(command)}", file=sys.stderr, flush=True)
     try:
         return subprocess.run(command, timeout=timeout, check=False).returncode
     except subprocess.TimeoutExpired:
@@ -117,9 +158,11 @@ def configure_apt(run: Runner, staged_conf: Path) -> None:
     read back, and a heredoc into `sudo tee` is not inspectable.
     """
     staged_conf.write_text(APT_CONF_BODY)
-    run(["sudo", "mkdir", "-p", f"{ARCHIVE_CACHE}/partial", str(LIST_CACHE)], 60)
-    run(["sudo", "chmod", "-R", "777", str(ARCHIVE_CACHE)], 60)
-    run(["sudo", "cp", str(staged_conf), str(APT_CONF)], 60)
+    require(
+        run, ["sudo", "mkdir", "-p", f"{ARCHIVE_CACHE}/partial", str(LIST_CACHE)], 60
+    )
+    require(run, ["sudo", "chmod", "-R", "777", str(ARCHIVE_CACHE)], 60)
+    require(run, ["sudo", "cp", str(staged_conf), str(APT_CONF)], 60)
 
 
 def cache_is_usable(archive_cache: Path, list_cache: Path) -> bool:
@@ -137,11 +180,11 @@ def cache_is_usable(archive_cache: Path, list_cache: Path) -> bool:
 
 def restore_lists(run: Runner, list_cache: Path) -> None:
     """Put the cached package indices where apt reads them."""
-    run(["sudo", "mkdir", "-p", str(APT_LISTS)], 60)
-    run(["sudo", "cp", "-a", f"{list_cache}/.", f"{APT_LISTS}/"], 120)
+    require(run, ["sudo", "mkdir", "-p", str(APT_LISTS)], 60)
+    require(run, ["sudo", "cp", "-a", f"{list_cache}/.", f"{APT_LISTS}/"], 120)
 
 
-def save_lists(run: Runner, list_cache: Path) -> None:
+def save_lists(run: Runner, list_cache: Path, archive_cache: Path) -> None:
     """Stage the indices and archives for the cache save, owned by the runner.
 
     actions/cache tars as the runner user, and apt leaves behind a root-owned
@@ -149,12 +192,22 @@ def save_lists(run: Runner, list_cache: Path) -> None:
     a WARNING — so the step goes green having cached nothing, which is how the
     empty archive cache stayed invisible for so long.
     """
-    run(["sudo", "rm", "-rf", str(list_cache)], 60)
-    run(["sudo", "mkdir", "-p", str(list_cache)], 60)
-    run(["sudo", "cp", "-a", f"{APT_LISTS}/.", f"{list_cache}/"], 120)
-    run(["sudo", "rm", "-rf", f"{list_cache}/partial", f"{list_cache}/lock"], 60)
-    run(["sudo", "rm", "-rf", f"{ARCHIVE_CACHE}/partial", f"{ARCHIVE_CACHE}/lock"], 60)
-    run(["sudo", "chown", "-R", _owner(), str(list_cache), str(ARCHIVE_CACHE)], 120)
+    require(run, ["sudo", "rm", "-rf", str(list_cache)], 60)
+    require(run, ["sudo", "mkdir", "-p", str(list_cache)], 60)
+    require(run, ["sudo", "cp", "-a", f"{APT_LISTS}/.", f"{list_cache}/"], 120)
+    require(
+        run, ["sudo", "rm", "-rf", f"{list_cache}/partial", f"{list_cache}/lock"], 60
+    )
+    require(
+        run,
+        ["sudo", "rm", "-rf", f"{archive_cache}/partial", f"{archive_cache}/lock"],
+        60,
+    )
+    require(
+        run,
+        ["sudo", "chown", "-R", _owner(), str(list_cache), str(archive_cache)],
+        120,
+    )
 
 
 def _owner() -> str:
@@ -207,12 +260,12 @@ def backup_sources(run: Runner, sources: Path, sources_d: Path) -> None:
     `sources.list` at all, so each half is copied only when it exists — an
     unconditional copy would report a failure on a perfectly healthy runner.
     """
-    run(["sudo", "rm", "-rf", str(SOURCES_BACKUP)], 60)
-    run(["sudo", "mkdir", "-p", str(SOURCES_BACKUP)], 60)
+    require(run, ["sudo", "rm", "-rf", str(SOURCES_BACKUP)], 60)
+    require(run, ["sudo", "mkdir", "-p", str(SOURCES_BACKUP)], 60)
     if sources.exists():
-        run(["sudo", "cp", "-a", str(sources), str(SOURCES_BACKUP)], 60)
+        require(run, ["sudo", "cp", "-a", str(sources), str(SOURCES_BACKUP)], 60)
     if sources_d.exists():
-        run(["sudo", "cp", "-a", str(sources_d), str(SOURCES_BACKUP)], 60)
+        require(run, ["sudo", "cp", "-a", str(sources_d), str(SOURCES_BACKUP)], 60)
 
 
 def set_mirror(
@@ -232,14 +285,20 @@ def set_mirror(
     layouts pass the same argument list.
     """
     if sources.exists():
-        run(["sudo", "cp", "-a", f"{SOURCES_BACKUP}/sources.list", str(sources)], 60)
+        require(
+            run,
+            ["sudo", "cp", "-a", f"{SOURCES_BACKUP}/sources.list", str(sources)],
+            60,
+        )
     if sources_d.exists():
-        run(["sudo", "rm", "-rf", str(sources_d)], 60)
-        run(
+        require(run, ["sudo", "rm", "-rf", str(sources_d)], 60)
+        require(
+            run,
             ["sudo", "cp", "-a", f"{SOURCES_BACKUP}/sources.list.d", str(sources_d)],
             60,
         )
-    run(
+    require(
+        run,
         [
             "sudo",
             "python3",
@@ -318,7 +377,7 @@ def install(
             )
             continue
         if install_from_mirror(run, archive, security, workspace, sources, sources_d):
-            save_lists(run, list_cache)
+            save_lists(run, list_cache, archive_cache)
             return {"installed": True, "source": archive, "unreachable": unreachable}
         print(
             f"apt failed against {archive} / {security}; trying the next mirror",

@@ -4,15 +4,20 @@ Both failures this script exists for are invisible from inside a green run. A
 cache that restores but is never consulted looks exactly like a cache that
 works, and a runner that cannot reach any mirror looks exactly like four
 archives being slow — the first cost every run a mirror round-trip, the second
-cost twenty minutes before the job failed. What separates them is the command
-sequence, so that is what these pin: which commands are issued, and which are
-never issued at all.
+cost twenty minutes before the job failed.
+
+So the fake below runs the commands rather than recording them: it copies the
+files, tracks who owns them, and answers apt and curl the way a runner would.
+The assertions are what came out — which packages ended up installed, which
+requests left the machine, what the cache holds afterwards and who can read it —
+not which commands were issued to get there.
 """
 
 from __future__ import annotations
 
 import importlib.util
-from collections.abc import Callable, Sequence
+import shutil
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -26,210 +31,306 @@ SPEC.loader.exec_module(install_system_deps)
 
 AZURE = "http://azure.archive.ubuntu.com/ubuntu"
 CANONICAL = "http://archive.ubuntu.com/ubuntu"
+ALL_ARCHIVES = tuple(m[0] for m in install_system_deps.MIRRORS)
 CODENAME = "noble"
+INDEX_NAME = "archive.ubuntu.com_ubuntu_dists_noble_main_binary-amd64_Packages"
+
+# Absolute paths the script hardcodes. Anything else — the caches and sources a
+# test injects — is a real pytest temp path and passes through untouched.
+SYSTEM_ROOTS = (
+    str(install_system_deps.APT_LISTS),
+    str(install_system_deps.SOURCES_BACKUP),
+    "/etc/apt",
+)
 
 
-class FakeRunner:
-    """Record every command and answer from a caller-supplied verdict."""
+class FakeSystem:
+    """A runner that carries the commands out against a sandboxed filesystem.
 
-    def __init__(self, verdict: Callable[[Sequence[str]], int]) -> None:
-        self.commands: list[list[str]] = []
-        self._verdict = verdict
+    Only the paths the script hardcodes are redirected under `root`; an injected
+    cache or sources path is already a temp path and is used as given, so the
+    script's own `exists()` and `glob()` see what the commands did.
+    """
 
-    def __call__(self, command: Sequence[str], _timeout: int) -> int:
-        self.commands.append(list(command))
-        return self._verdict(command)
+    def __init__(
+        self,
+        root: Path,
+        *,
+        archive_cache: Path,
+        reachable: Sequence[str] = ALL_ARCHIVES,
+        update_fails: Sequence[str] = (),
+        offline_satisfies: bool = True,
+        failing: str | None = None,
+    ) -> None:
+        self.root = root
+        self.archive_cache = archive_cache
+        self.reachable = tuple(reachable)
+        self.update_fails = tuple(update_fails)
+        self.offline_satisfies = offline_satisfies
+        self.failing = failing
+        self.installed: list[str] = []
+        self.probes: list[str] = []
+        self.fetches: list[str] = []
+        self.owners: dict[str, str] = {}
+        self.mirror: str | None = None
 
-    def issued(self, *fragments: str) -> list[list[str]]:
-        """Commands containing every fragment, matched against the whole line.
+    # --- filesystem ---------------------------------------------------------
 
-        Membership on the argument list would miss a fragment that is part of an
-        argument rather than all of it — a script path carries its directory, so
-        an exact-element match silently answers "never issued" for a command that
-        ran on every attempt.
-        """
-        return [c for c in self.commands if all(f in " ".join(c) for f in fragments)]
+    def local(self, path: str) -> Path:
+        bare = path[:-2] if path.endswith("/.") else path.rstrip("/")
+        for system_root in SYSTEM_ROOTS:
+            if bare == system_root or bare.startswith(f"{system_root}/"):
+                return self.root / bare.lstrip("/")
+        return Path(bare)
+
+    def owner_of(self, path: Path) -> str:
+        return self.owners.get(str(path), "root")
+
+    def _copy(self, source: str, target: str) -> None:
+        src, dst = self.local(source), self.local(target)
+        if source.endswith("/."):
+            dst.mkdir(parents=True, exist_ok=True)
+            if src.is_dir():
+                shutil.copytree(src, dst, dirs_exist_ok=True)
+            return
+        if src.is_dir():
+            shutil.copytree(src, dst / src.name, dirs_exist_ok=True)
+            return
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst / src.name if dst.is_dir() else dst)
+
+    # --- commands -----------------------------------------------------------
+
+    def __call__(self, command: Sequence[str], timeout: int) -> int:
+        del timeout
+        if self.failing is not None and self.failing in " ".join(command):
+            return 1
+        args = [a for a in command if a not in ("sudo", "-E")]
+        program = Path(args[0]).name
+        if program == "mkdir":
+            for path in args[2:]:
+                self.local(path).mkdir(parents=True, exist_ok=True)
+            return 0
+        if program == "chmod":
+            return 0
+        if program == "chown":
+            for path in args[3:]:
+                self.owners[str(self.local(path))] = args[2]
+            return 0
+        if program == "rm":
+            for path in args[2:]:
+                target = self.local(path)
+                if target.is_dir():
+                    shutil.rmtree(target)
+                elif target.exists():
+                    target.unlink()
+            return 0
+        if program == "cp":
+            self._copy(args[-2], args[-1])
+            return 0
+        if program == "curl":
+            return self._probe(args[-1])
+        if program == "apt-get":
+            return self._apt(args[1:])
+        if program == "python3":
+            self.mirror = args[2]
+            return 0
+        raise AssertionError(f"unmodelled command: {' '.join(command)}")
+
+    def _probe(self, url: str) -> int:
+        self.probes.append(url)
+        return 0 if any(url.startswith(a) for a in self.reachable) else 7
+
+    def _apt(self, args: Sequence[str]) -> int:
+        if args[0] == "update":
+            self.fetches.append(str(self.mirror))
+            if self.mirror in self.update_fails:
+                return 1
+            return 0 if self.mirror in self.reachable else 1
+        packages = [a for a in args[1:] if not a.startswith("-")]
+        if "--no-download" in args:
+            indices = self.local(str(install_system_deps.APT_LISTS))
+            has_indices = indices.is_dir() and any(indices.glob("*Packages*"))
+            if not (self.offline_satisfies and has_indices):
+                return 100
+            if not any(self.archive_cache.glob("*.deb")):
+                return 100
+            self.installed = packages
+            return 0
+        self.fetches.append(str(self.mirror))
+        if self.mirror not in self.reachable:
+            return 1
+        self.installed = packages
+        return 0
 
 
-def all_succeed(command: Sequence[str]) -> int:
-    del command
-    return 0
+def build(tmp_path: Path, **kwargs: object) -> tuple[FakeSystem, dict[str, Path]]:
+    """Lay out a runner: apt's own index dir populated, caches empty."""
+    root = tmp_path / "system"
+    lists = root / str(install_system_deps.APT_LISTS).lstrip("/")
+    lists.mkdir(parents=True)
+    (lists / INDEX_NAME).write_text("Package: ffmpeg\n")
+    paths = {
+        "archive_cache": tmp_path / "apt-cache",
+        "list_cache": tmp_path / "apt-lists",
+        "sources": tmp_path / "sources.list",
+        "sources_d": tmp_path / "sources.list.d",
+        "staged_conf": tmp_path / "99ci",
+        "root": root,
+    }
+    paths["sources_d"].mkdir()
+    (paths["sources_d"] / "ubuntu.sources").write_text("Types: deb\n")
+    system = FakeSystem(root, archive_cache=paths["archive_cache"], **kwargs)  # type: ignore[arg-type]
+    return system, paths
 
 
-def seed_cache(archive_cache: Path, list_cache: Path, *, lists: bool) -> None:
-    archive_cache.mkdir(parents=True, exist_ok=True)
-    (archive_cache / "ffmpeg_7.0_amd64.deb").write_text("deb")
-    list_cache.mkdir(parents=True, exist_ok=True)
-    if lists:
-        (list_cache / "archive.ubuntu.com_ubuntu_dists_noble_main_Packages").write_text(
-            "Package: ffmpeg\n"
-        )
+def seed_cache(paths: dict[str, Path], *, indices: bool) -> None:
+    """Restore a cache entry the way actions/cache would have."""
+    paths["archive_cache"].mkdir(parents=True, exist_ok=True)
+    (paths["archive_cache"] / "ffmpeg_6.1.1_amd64.deb").write_text("deb")
+    paths["list_cache"].mkdir(parents=True, exist_ok=True)
+    if indices:
+        (paths["list_cache"] / INDEX_NAME).write_text("Package: ffmpeg\n")
 
 
 def run_install(
-    runner: FakeRunner, tmp_path: Path, *, legacy_sources_list: bool = True
+    system: FakeSystem, paths: dict[str, Path], *, legacy_sources_list: bool = True
 ) -> dict[str, object]:
-    """Drive the installer against a fabricated runner layout.
-
-    The source paths are passed explicitly rather than defaulted: the defaults
-    are real system paths, so a test that let them through would assert one thing
-    on a deb822 Linux runner and another on a developer's macOS checkout.
-    """
-    sources = tmp_path / "sources.list"
-    sources_d = tmp_path / "sources.list.d"
-    sources_d.mkdir(exist_ok=True)
-    (sources_d / "ubuntu.sources").write_text("Types: deb\n")
     if legacy_sources_list:
-        sources.write_text("deb http://archive.ubuntu.com/ubuntu noble main\n")
+        paths["sources"].write_text("deb http://archive.ubuntu.com/ubuntu noble main\n")
     return install_system_deps.install(
-        runner,
-        workspace=tmp_path / "workspace",
+        system,
+        workspace=paths["root"] / "workspace",
         codename=CODENAME,
-        staged_conf=tmp_path / "99ci",
-        archive_cache=tmp_path / "apt-cache",
-        list_cache=tmp_path / "apt-lists",
-        sources=sources,
-        sources_d=sources_d,
+        staged_conf=paths["staged_conf"],
+        archive_cache=paths["archive_cache"],
+        list_cache=paths["list_cache"],
+        sources=paths["sources"],
+        sources_d=paths["sources_d"],
     )
 
 
-def test_a_usable_cache_installs_without_contacting_any_mirror(tmp_path: Path):
+def test_a_usable_cache_installs_with_nothing_leaving_the_machine(tmp_path: Path):
     """The first failure: the cache hit, and the step fetched the index anyway.
 
     185 MiB of archives restored and `apt-get update` still ran, so every run
-    paid a mirror round-trip for an index it could have cached. A cache hit must
-    issue no probe, no update, and no mirror rewrite.
+    paid a mirror round-trip for an index it could have cached. The outcome that
+    matters is not which commands were skipped — it is that no request left the
+    runner and the packages are installed regardless.
     """
-    seed_cache(tmp_path / "apt-cache", tmp_path / "apt-lists", lists=True)
-    runner = FakeRunner(all_succeed)
+    system, paths = build(tmp_path)
+    seed_cache(paths, indices=True)
 
-    report = run_install(runner, tmp_path)
+    report = run_install(system, paths)
 
     assert report == {"installed": True, "source": "cache", "unreachable": []}
-    assert runner.issued("apt-get", "update") == []
-    assert runner.issued("curl") == []
-    assert runner.issued("apt_set_mirror.py") == []
-    assert runner.issued("apt-get", "--no-download")
+    assert system.installed == list(install_system_deps.PACKAGES)
+    assert system.probes == []
+    assert system.fetches == []
 
 
-def test_archives_without_indices_are_not_treated_as_a_usable_cache(tmp_path: Path):
+def test_archives_without_indices_cannot_satisfy_an_offline_install(tmp_path: Path):
     """A cache entry written before the indices were cached holds only archives.
 
     Offline resolution needs both halves, and the cache-hit flag cannot tell
-    which shape was restored — so the pair is what gets checked.
+    which shape was restored.
     """
-    seed_cache(tmp_path / "apt-cache", tmp_path / "apt-lists", lists=False)
-    runner = FakeRunner(all_succeed)
+    system, paths = build(tmp_path)
+    seed_cache(paths, indices=False)
 
-    report = run_install(runner, tmp_path)
+    report = run_install(system, paths)
 
     assert report["source"] == AZURE
-    assert runner.issued("apt-get", "--no-download") == []
-    assert runner.issued("apt-get", "update")
+    assert system.installed == list(install_system_deps.PACKAGES)
+    assert set(system.fetches) == {AZURE}
 
 
-def test_a_cache_that_cannot_satisfy_the_install_falls_back_to_a_mirror(
+def test_a_cache_that_cannot_satisfy_the_install_still_ends_up_installed(
     tmp_path: Path,
 ):
     """A runner image that changed leaves the cached set short a dependency.
 
-    `--no-download` fails rather than reaching for it, and that failure has to
-    reach the mirror path instead of failing the job.
+    The offline attempt fails rather than reaching for it, and the job must
+    still end with the packages present.
     """
-    seed_cache(tmp_path / "apt-cache", tmp_path / "apt-lists", lists=True)
-    runner = FakeRunner(lambda command: 100 if "--no-download" in command else 0)
+    system, paths = build(tmp_path, offline_satisfies=False)
+    seed_cache(paths, indices=True)
 
-    report = run_install(runner, tmp_path)
+    report = run_install(system, paths)
 
     assert report["installed"] is True
-    assert report["source"] == AZURE
-    assert runner.issued("apt-get", "update")
+    assert system.installed == list(install_system_deps.PACKAGES)
 
 
-def test_every_mirror_unreachable_fails_without_waiting_out_four_timeouts(
-    tmp_path: Path,
-):
+def test_nothing_reachable_fails_without_ever_attempting_a_fetch(tmp_path: Path):
     """The second failure: 4 mirrors x a 300s update timeout, 20 minutes wasted.
 
     Canonical, kernel.org and OSU OSL do not go dark together, so an unanswered
-    probe everywhere is the runner's network. Not one `apt-get update` may be
-    issued — issuing one is what bought the 20 minutes.
+    probe everywhere is the runner's network. Not one fetch may be attempted —
+    attempting them is what bought the 20 minutes.
     """
-    runner = FakeRunner(lambda command: 7 if "curl" in command else 0)
+    system, paths = build(tmp_path, reachable=())
 
-    report = run_install(runner, tmp_path)
+    report = run_install(system, paths)
 
     assert report["installed"] is False
-    assert report["unreachable"] == [m[0] for m in install_system_deps.MIRRORS]
-    assert runner.issued("apt-get", "update") == []
-    assert len(runner.issued("curl")) == len(install_system_deps.MIRRORS)
+    assert report["unreachable"] == list(ALL_ARCHIVES)
+    assert system.fetches == []
+    assert system.installed == []
+    assert len(system.probes) == len(ALL_ARCHIVES)
 
 
-def test_an_unreachable_mirror_is_skipped_and_the_next_one_serves(tmp_path: Path):
-    """One degraded archive is the case the mirror list was built for.
+def test_one_unreachable_archive_does_not_stop_the_install(tmp_path: Path):
+    """One degraded archive is the case the mirror list was built for."""
+    system, paths = build(tmp_path, reachable=ALL_ARCHIVES[1:])
 
-    It is skipped on the probe rather than on a 300s stall, and the next host
-    installs.
-    """
+    report = run_install(system, paths)
 
-    def verdict(command: Sequence[str]) -> int:
-        if "curl" in command:
-            return 7 if any(AZURE in arg for arg in command) else 0
-        return 0
-
-    runner = FakeRunner(verdict)
-
-    report = run_install(runner, tmp_path)
-
-    assert report["installed"] is True
     assert report["source"] == CANONICAL
     assert report["unreachable"] == [AZURE]
+    assert system.installed == list(install_system_deps.PACKAGES)
+    # Skipped on the probe, so no fetch was ever aimed at it.
+    assert AZURE not in system.fetches
 
 
-def test_a_reachable_mirror_whose_update_fails_moves_to_the_next(tmp_path: Path):
+def test_a_mirror_that_answers_and_then_fails_still_hands_off(tmp_path: Path):
     """Answering a HEAD is not the same as serving a full index.
 
-    A mirror that probes clean and then fails the update is a real failure the
-    probe cannot pre-empt, so the fallback chain still has to walk on.
+    A real mirror failure the probe cannot pre-empt still has to walk the
+    fallback chain, and it stays out of the unreachable list so the two failure
+    shapes remain distinguishable.
     """
-    seen: list[str] = []
+    system, paths = build(tmp_path, update_fails=(AZURE,))
 
-    def verdict(command: Sequence[str]) -> int:
-        if any(arg.endswith("apt_set_mirror.py") for arg in command):
-            seen.append(command[3])
-        if "update" in command and seen and seen[-1] == AZURE:
-            return 1
-        return 0
+    report = run_install(system, paths)
 
-    runner = FakeRunner(verdict)
-
-    report = run_install(runner, tmp_path)
-
-    assert report["installed"] is True
     assert report["source"] == CANONICAL
-    # Probed clean, so it is absent from the unreachable list — the two failure
-    # shapes stay distinguishable in the report.
     assert report["unreachable"] == []
+    assert system.installed == list(install_system_deps.PACKAGES)
 
 
-def test_a_successful_mirror_install_stages_both_halves_for_the_cache(
-    tmp_path: Path,
-):
+def test_after_a_mirror_install_the_cache_holds_a_usable_pair(tmp_path: Path):
     """Nothing seeds the offline path except the save after a mirror install.
 
-    The indices are copied out of apt's directory and both halves are handed to
-    the runner user, or actions/cache tars nothing and the step goes green having
-    cached exactly what it started with.
+    The next run's `cache_is_usable` is the real consumer, so that is the
+    assertion: the saved state is a pair it accepts, owned by the user
+    actions/cache tars as.
     """
-    runner = FakeRunner(all_succeed)
+    system, paths = build(tmp_path)
+    paths["archive_cache"].mkdir(parents=True)
+    (paths["archive_cache"] / "ffmpeg_6.1.1_amd64.deb").write_text("deb")
 
-    run_install(runner, tmp_path)
+    run_install(system, paths)
 
-    assert runner.issued("cp", "-a", "/var/lib/apt/lists/.")
-    assert runner.issued("chown", "-R")
+    assert install_system_deps.cache_is_usable(
+        paths["archive_cache"], paths["list_cache"]
+    )
+    runner = install_system_deps._owner()
+    assert system.owner_of(paths["list_cache"]) == runner
+    assert system.owner_of(paths["archive_cache"]) == runner
 
 
-def test_the_apt_config_points_the_archive_dir_at_the_cached_location(
+def test_apt_is_configured_to_keep_its_downloads_where_the_cache_looks(
     tmp_path: Path,
 ):
     """`Keep-Downloaded-Packages` is what makes the archive cache exist at all.
@@ -237,28 +338,85 @@ def test_the_apt_config_points_the_archive_dir_at_the_cached_location(
     apt discards downloaded .debs after a successful install, so without it the
     archive dir is empty when the cache save runs.
     """
-    runner = FakeRunner(all_succeed)
+    system, paths = build(tmp_path)
 
-    run_install(runner, tmp_path)
+    run_install(system, paths)
 
-    staged = (tmp_path / "99ci").read_text()
-    assert 'Dir::Cache::Archives "/tmp/apt-cache";' in staged
-    assert 'APT::Keep-Downloaded-Packages "true";' in staged
+    landed = system.local("/etc/apt/apt.conf.d/99ci").read_text()
+    assert 'Dir::Cache::Archives "/tmp/apt-cache";' in landed
+    assert 'APT::Keep-Downloaded-Packages "true";' in landed
 
 
-def test_the_probe_asks_each_mirror_for_an_index_file_it_must_serve(tmp_path: Path):
+def test_the_probe_requests_an_index_file_every_mirror_must_serve(tmp_path: Path):
     """A directory listing is optional on a mirror; InRelease is not.
 
-    Probing something a healthy mirror may legitimately 404 would report a
+    Requesting something a healthy mirror may legitimately 404 would report a
     working host as unreachable.
     """
-    runner = FakeRunner(lambda command: 7 if "curl" in command else 0)
+    system, paths = build(tmp_path, reachable=())
 
-    run_install(runner, tmp_path)
+    run_install(system, paths)
 
-    probed = runner.issued("curl")[0]
-    assert f"{AZURE}/dists/{CODENAME}/InRelease" in probed
-    assert "--head" in probed
+    assert system.probes[0] == f"{AZURE}/dists/{CODENAME}/InRelease"
+
+
+def test_a_deb822_only_runner_installs_like_any_other(tmp_path: Path):
+    """Ubuntu 24.04 images ship `ubuntu.sources` and no `sources.list`.
+
+    Copying the absent file fails on every healthy deb822 runner, and a required
+    command's failure now stops the run — so this layout has to be recognised
+    rather than attempted.
+    """
+    system, paths = build(tmp_path)
+
+    report = run_install(system, paths, legacy_sources_list=False)
+
+    assert report["installed"] is True
+    backup = system.local(str(install_system_deps.SOURCES_BACKUP))
+    assert not (backup / "sources.list").exists()
+    assert (backup / "sources.list.d").is_dir()
+
+
+def test_a_runner_carrying_both_layouts_preserves_each(tmp_path: Path):
+    """A legacy `sources.list` beside a deb822 directory is still a live layout.
+
+    Dropping either half silently loses a repository from the retry.
+    """
+    system, paths = build(tmp_path)
+
+    run_install(system, paths, legacy_sources_list=True)
+
+    backup = system.local(str(install_system_deps.SOURCES_BACKUP))
+    assert (backup / "sources.list").is_file()
+    assert (backup / "sources.list.d" / "ubuntu.sources").is_file()
+
+
+def test_a_failed_setup_command_stops_the_run_instead_of_reporting_success(
+    tmp_path: Path,
+):
+    """A failed copy leaves apt reading whatever was already there.
+
+    The install that follows can still succeed and the step still go green — the
+    exact shape that hid an empty cache for months — so a command with no
+    recovery path has to end the run.
+    """
+    system, paths = build(tmp_path, failing="cp -a")
+
+    with pytest.raises(install_system_deps.SystemDepsError, match="re-run the job"):
+        run_install(system, paths)
+
+    assert system.installed == []
+
+
+def test_every_package_carries_an_exact_version(tmp_path: Path):
+    """An unpinned apt package resolves to whatever the archive serves that day.
+
+    The pin is the reproducibility, and a bare name silently changes the tested
+    toolchain between two runs of the same commit.
+    """
+    del tmp_path
+    for package in install_system_deps.PACKAGES:
+        assert "=" in package, package
 
 
 def test_the_codename_comes_from_the_runner_image(tmp_path: Path):
@@ -276,37 +434,6 @@ def test_a_missing_codename_says_what_to_do_about_it(tmp_path: Path):
 
     with pytest.raises(ValueError, match="pin the suite explicitly"):
         install_system_deps.read_codename(os_release)
-
-
-def test_a_deb822_only_runner_is_not_asked_to_copy_a_sources_list_it_lacks(
-    tmp_path: Path,
-):
-    """Ubuntu 24.04 images ship `ubuntu.sources` and no `sources.list`.
-
-    Copying the absent file would fail on every healthy deb822 runner, and a
-    failure nobody reads is how a real one gets missed.
-    """
-    runner = FakeRunner(all_succeed)
-
-    report = run_install(runner, tmp_path, legacy_sources_list=False)
-
-    assert report["installed"] is True
-    assert runner.issued("cp", "sources.list ") == []
-    assert runner.issued("apt_set_mirror.py")
-
-
-def test_a_runner_carrying_both_layouts_backs_up_and_restores_each(tmp_path: Path):
-    """A legacy `sources.list` beside a deb822 directory is still a live layout.
-
-    Both halves are preserved, because the rewrite reads whichever the image
-    actually uses and a dropped one silently loses a repository.
-    """
-    runner = FakeRunner(all_succeed)
-
-    run_install(runner, tmp_path, legacy_sources_list=True)
-
-    assert runner.issued("cp", "-a", "sources.list", "apt-src-orig")
-    assert runner.issued("cp", "-a", "sources.list.d", "apt-src-orig")
 
 
 def test_the_entry_point_refuses_a_call_without_a_workspace_root():

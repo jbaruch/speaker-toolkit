@@ -30,6 +30,16 @@ diagnosis. A mirror that answers the probe and then fails the update is still a
 real mirror failure and still walks the fallback chain, so the two shapes stay
 distinguishable in the report.
 
+Every package now carries an exact version. `tesseract-ocr` was already pinned;
+`ffmpeg` and `libreoffice-impress` were not, so the tested toolchain could change
+between two runs of the same commit. No scanner tracks an apt version baked into
+a script, so the renewal mechanism is stated beside the pins: ffmpeg and
+tesseract sit in the static `noble` pocket, libreoffice-impress ships from
+`noble-updates` on Ubuntu's roughly monthly security cadence, and the archive
+serves only the current version of each — a superseded pin fails the install
+loudly rather than drifting quietly. The madison query that yields the current
+versions is recorded with them.
+
 The step moved out of the workflow into `scripts/install_system_deps.py`, whose
 side effects all route through an injected runner — the command sequence is the
 whole behaviour, and it is now assertable without a runner, sudo, or a network.
