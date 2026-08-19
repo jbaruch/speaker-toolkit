@@ -894,15 +894,22 @@ def _apply_record_title_equivalence(
         raise TrackingDatabaseMutationError(
             f"talks[{filename!r}].source_title_equivalence must be an array"
         )
-    # Canonicalized on both sides with the reader's own normalizer: two titles
-    # the reader treats as one approval must not be storable as two records.
+    # The duplicate predicate is the reader's identity, canonicalized the same
+    # way: video, catalog title, and provider title together. Matching on the
+    # video and provider title alone would reject a newly reviewed approval for
+    # a retitled catalog entry as a duplicate — the reader stopped honoring the
+    # old record at that point, so refusing the new one leaves the talk gated
+    # with no owner-supported way to restore it.
     pinned = pinned_provider_title(record["provider_title"])
+    pinned_catalog = pinned_provider_title(record["catalog_title"])
     for recorded in existing:
         if (
             isinstance(recorded, dict)
             and recorded.get("video_id") == record["video_id"]
             and isinstance(recorded.get("provider_title"), str)
+            and isinstance(recorded.get("catalog_title"), str)
             and pinned_provider_title(recorded["provider_title"]) == pinned
+            and pinned_provider_title(recorded["catalog_title"]) == pinned_catalog
         ):
             raise TrackingDatabaseMutationError(
                 f"mutations[{index}] duplicates an equivalence already recorded "

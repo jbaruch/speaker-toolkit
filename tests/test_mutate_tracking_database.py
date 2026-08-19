@@ -1831,3 +1831,54 @@ def test_an_equivalence_with_a_foreign_generation_is_refused(
         )
 
     assert "schema_version must be 1" in str(excinfo.value)
+
+
+def test_a_retitled_catalog_entry_can_be_approved_again(
+    mutate_tracking_database,
+) -> None:
+    """The reader stopped honoring the old pair, so the writer must accept a new one.
+
+    Matching duplicates on video and provider title alone would reject the newly
+    reviewed approval, leaving the talk gated with no owner-supported recovery.
+    """
+    database = _catalog_database(source_title_equivalence=[_equivalence()])
+
+    candidate, _ = mutate_tracking_database.build_candidate(
+        database,
+        [
+            _record_equivalence(
+                equivalence=_equivalence(catalog_title="Spring Configuration Showdown")
+            )
+        ],
+    )
+
+    recorded = candidate["talks"][0]["source_title_equivalence"]
+    assert len(recorded) == 2
+    assert {entry["catalog_title"] for entry in recorded} == {
+        "Spring config battle (Ru)",
+        "Spring Configuration Showdown",
+    }
+
+
+def test_an_exact_title_pair_duplicate_is_still_refused(
+    mutate_tracking_database,
+) -> None:
+    database = _catalog_database(source_title_equivalence=[_equivalence()])
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError
+    ) as excinfo:
+        mutate_tracking_database.build_candidate(
+            database,
+            [
+                _record_equivalence(
+                    equivalence=_equivalence(
+                        catalog_title=unicodedata.normalize(
+                            "NFD", "Spring config  battle (Ru)"
+                        )
+                    )
+                )
+            ],
+        )
+
+    assert "duplicates an equivalence" in str(excinfo.value)
