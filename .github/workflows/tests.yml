@@ -143,15 +143,39 @@ jobs:
           CONF
           stamp() { while IFS= read -r line; do printf '%s %s\n' "$(date -u +%H:%M:%S)" "$line"; done; }
 
-          # Rewrite every archive reference to one host. noble ships deb822
-          # (`ubuntu.sources`); the legacy `sources.list` is handled too so this
-          # keeps working if the runner image changes format.
+          # Keep a pristine copy of the source lists. Each attempt restores it
+          # before rewriting: once the security pocket has been pointed at an
+          # archive host, its URL is indistinguishable from the archive pocket's,
+          # so rewriting mutated state would conflate the two.
+          apt_src_backup=/tmp/apt-src-orig
+          sudo rm -rf "$apt_src_backup"
+          sudo mkdir -p "$apt_src_backup"
+          if [ -f /etc/apt/sources.list ]; then
+            sudo cp /etc/apt/sources.list "$apt_src_backup/sources.list"
+          fi
+          if [ -d /etc/apt/sources.list.d ]; then
+            sudo cp -r /etc/apt/sources.list.d "$apt_src_backup/sources.list.d"
+          fi
+
+          # Point the archive and security pockets at one mirror pair. noble
+          # ships deb822 (`ubuntu.sources`); the legacy `sources.list` is handled
+          # too so this keeps working if the runner image changes format.
           set_mirror() {
-            local host="$1" f
+            local archive="$1" security="$2" f
+            if [ -f "$apt_src_backup/sources.list" ]; then
+              sudo cp "$apt_src_backup/sources.list" /etc/apt/sources.list
+            fi
+            if [ -d "$apt_src_backup/sources.list.d" ]; then
+              sudo rm -rf /etc/apt/sources.list.d
+              sudo cp -r "$apt_src_backup/sources.list.d" /etc/apt/sources.list.d
+            fi
             for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list \
                      /etc/apt/sources.list.d/*.sources; do
               if [ -f "$f" ]; then
-                sudo sed -i -E "s#https?://[a-z0-9.-]*archive\.ubuntu\.com/ubuntu#${host}#g" "$f"
+                sudo sed -i -E \
+                  -e "s#https?://[a-z0-9.-]*archive\.ubuntu\.com/ubuntu#${archive}#g" \
+                  -e "s#https?://security\.ubuntu\.com/ubuntu#${security}#g" \
+                  "$f"
               fi
             done
           }
@@ -175,15 +199,21 @@ jobs:
             return 0
           }
 
+          # Each pair is a distinct set of hosts for BOTH pockets, so a stall in
+          # either one is retried somewhere genuinely different. Azure runners
+          # serve security from the archive host; the fallback splits them back
+          # onto Canonical's own.
           installed=""
-          for mirror in http://azure.archive.ubuntu.com/ubuntu \
-                        http://archive.ubuntu.com/ubuntu; do
-            set_mirror "$mirror"
+          for pair in "http://azure.archive.ubuntu.com/ubuntu|http://azure.archive.ubuntu.com/ubuntu" \
+                      "http://archive.ubuntu.com/ubuntu|http://security.ubuntu.com/ubuntu"; do
+            archive="${pair%%|*}"
+            security="${pair##*|}"
+            set_mirror "$archive" "$security"
             if fetch_deps; then
-              installed="$mirror"
+              installed="$archive"
               break
             fi
-            echo "apt failed against ${mirror}; trying the next official archive" >&2
+            echo "apt failed against ${archive} / ${security}; trying the next official pair" >&2
           done
           if [ -z "$installed" ]; then
             echo "every official Ubuntu archive failed; this is a mirror outage, not a build error — re-run the job" >&2
