@@ -1,5 +1,40 @@
 # Changelog
 
+### fix(vault-ingress) — catalog repair reaches legacy talk records (#333)
+
+#336 gave the delivery date an owner writer. Applying #333's corrections against
+the live vault then failed on all ten:
+
+```
+talks['2018-java-8-puzzlers.md'].schema_version must be exact current
+talk schema 6 before this mutation
+```
+
+**209 of the 215 live talk records are schema v1.** Six are v6. Every talk #333
+set out to correct is legacy, and so is 97% of the catalog.
+
+No migration lifts them. `_restamp_talk_records` promotes v5 to v6 and stops
+there, because the generations in between carry analysis a migration is
+forbidden to fabricate — recomputing a score under arithmetic its worker never
+used is the silent reinterpretation `stateful-artifacts` exists to prevent. A v1
+record reaches v6 by being reanalyzed, not by being restamped. That function's
+own docstring names the failure this produced:
+
+> Without the restamp every stored talk would be unmutatable: the owner writer
+> requires the exact current talk schema before any mutation, so the bump alone
+> would lock the database until this ran.
+
+Which is the state the v1 records were in: unmutatable through every sanctioned
+path, with the only route to a date correction being a full reanalysis of a talk
+whose transcript and slides were never in question.
+
+The current-generation gate is right for a writer that assumes the current
+record shape. `apply_reviewed_metadata` assumes nothing about it — it reads and
+writes `title`, `conference`, and `date`, none of which any talk-record
+generation has changed. It now accepts any generation the database assessment
+can read, and leaves the record's version alone: repairing a catalog fact must
+not claim the record was reanalyzed. Every other writer keeps the strict gate.
+
 ### feat(vault-ingress) — owner-reviewed provider-title equivalence (#333)
 
 Four talks in #333 could not register a source identity because `titles_agree`

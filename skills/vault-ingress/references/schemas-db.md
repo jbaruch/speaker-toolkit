@@ -586,7 +586,11 @@ trail.
 review-required entries by design: an approved catalog correction otherwise had
 no owner writer at all. The same writer carries an owner-reviewed delivery-date
 repair, so a cataloged date the source evidence disproves has a path that is not
-a hand edit. It stays narrow — the writable field set, the
+a hand edit. It is also the one talk writer that accepts any readable talk
+generation rather than the current one: a catalog-identity repair reads no
+analysis field, and a legacy record cannot be migrated forward to earn one — see
+`_require_readable_talk_record` in
+`skills/vault-ingress/scripts/mutate-tracking-database.py`. It stays narrow — the writable field set, the
 metadata-only versus analysis-invalidating classification, and the reprocessing
 transition it demands are named at the top of
 `skills/vault-ingress/scripts/mutate-tracking-database.py`. Deterministic scan

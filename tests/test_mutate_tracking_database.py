@@ -1303,20 +1303,31 @@ def test_a_duplicate_filename_installs_nothing(mutate_tracking_database) -> None
         )
 
 
-def test_a_legacy_talk_schema_installs_nothing(mutate_tracking_database) -> None:
+def test_a_legacy_talk_schema_still_takes_a_catalog_repair(
+    mutate_tracking_database,
+) -> None:
+    """Superseded by #333: this writer no longer requires the current generation.
+
+    It once refused a legacy record like every other writer. That locked catalog
+    corrections out of 209 of the 215 live talks, which no migration can lift —
+    the generations between carry analysis a migration must not fabricate. A
+    catalog repair reads no analysis field, so it does not need that gate.
+    """
     database = _catalog_database()
     database["talks"][0]["schema_version"] = 4
 
-    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
-        mutate_tracking_database.build_candidate(
-            database,
-            [
-                _repair(
-                    {"conference": "DevOps Days Nashville 2024"},
-                    {"conference": "DevOps Nashville 2024"},
-                )
-            ],
-        )
+    candidate, _ = mutate_tracking_database.build_candidate(
+        database,
+        [
+            _repair(
+                {"conference": "DevOps Days Nashville 2024"},
+                {"conference": "DevOps Nashville 2024"},
+            )
+        ],
+    )
+
+    assert candidate["talks"][0]["conference"] == "DevOps Days Nashville 2024"
+    assert candidate["talks"][0]["schema_version"] == 4
 
 
 def test_a_metadata_only_change_refuses_a_reprocess_transition(
@@ -1829,3 +1840,74 @@ def test_an_equivalence_with_a_foreign_generation_is_refused(
         )
 
     assert "schema_version must be 1" in str(excinfo.value)
+
+
+# Legacy-generation catalog repair (#333). 209 of the 215 live talk records are
+# schema v1, and no migration lifts them: the generations between carry analysis
+# a migration is forbidden to fabricate. Holding a date repair to the current
+# generation locked the correction out of the whole live catalog.
+
+
+@pytest.mark.parametrize("version", [1, 2, 3, 4, 5, 6])
+def test_a_catalog_repair_reaches_every_readable_talk_generation(
+    mutate_tracking_database, version: int
+) -> None:
+    database = _catalog_database(date="2014", schema_version=version)
+
+    candidate, _ = mutate_tracking_database.build_candidate(
+        database, [_repair({"date": "2013-10-19"}, {"date": "2014"})]
+    )
+
+    assert candidate["talks"][0]["date"] == "2013-10-19"
+
+
+def test_a_catalog_repair_leaves_the_records_generation_untouched(
+    mutate_tracking_database,
+) -> None:
+    """Repairing a catalog fact must not claim the record was reanalyzed."""
+    database = _catalog_database(date="2014", schema_version=1)
+
+    candidate, _ = mutate_tracking_database.build_candidate(
+        database, [_repair({"date": "2013"}, {"date": "2014"})]
+    )
+
+    assert candidate["talks"][0]["schema_version"] == 1
+
+
+@pytest.mark.parametrize("version", [0, 7, "6", True])
+def test_a_catalog_repair_still_refuses_an_unreadable_generation(
+    mutate_tracking_database, version: object
+) -> None:
+    """Out-of-range generations are refused; the database assessment gets there
+    first, so this asserts the refusal rather than which layer produced it."""
+    database = _catalog_database(date="2014")
+    database["talks"][0]["schema_version"] = version
+
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(
+            database, [_repair({"date": "2013"}, {"date": "2014"})]
+        )
+
+
+def test_other_writers_still_require_the_current_generation(
+    mutate_tracking_database,
+) -> None:
+    """The relaxation is scoped to catalog repair, not opened to every writer."""
+    database = _catalog_database(schema_version=1)
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError
+    ) as excinfo:
+        mutate_tracking_database.build_candidate(
+            database,
+            [
+                {
+                    "kind": "update_talk_publishing",
+                    "filename": "talk.md",
+                    "expect": {"shownotes_published": False},
+                    "set": {"shownotes_published": True},
+                }
+            ],
+        )
+
+    assert "exact current talk schema 6" in str(excinfo.value)
