@@ -16,7 +16,7 @@ Before ANY Phase 7 action, load these files. If any is missing, STOP and ask.
 
 Read the tracking database through the main presentation-creator compatibility
 gate. Thumbnail and shownotes lookup may read schema 0 or 1. Any database update
-in this phase requires current database schema 1 and talk schema 5 before the
+in this phase requires current database schema 1 and talk schema 7 before the
 thumbnail, shownotes, or video side effect paired with it. Route schema 0 through
 `Skill(skill: "vault-ingress")`; preserve all schema fields and apply the main
 skill's exact-generation atomic-write contract.
@@ -97,7 +97,7 @@ The `expect` object must cover exactly the fields being set with values from the
 latest strict read. Dry-run, review, apply against the reported input SHA, and
 re-read through the
 [owner mutation contract](../../vault-ingress/references/schemas-db.md#owner-read-and-mutation-contract).
-Keep that talk record at `schema_version: 5`; this workflow is an authorized
+Keep that talk record at `schema_version: 7`; this workflow is an authorized
 current writer, not a schema owner or migrator.
 
 ---
