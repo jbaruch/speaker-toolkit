@@ -4359,7 +4359,7 @@ def test_replaced_source_video_leaves_an_unrelated_talk_current(
 
 def title_equivalence(**updates: Any) -> dict[str, Any]:
     record = {
-        "schema_version": 1,
+        "schema_version": 2,
         "talk_filename": "2026-07-30-perfect-ingress.md",
         "video_id": VIDEO_ID,
         "catalog_title": "Perfect Vault Ingress",

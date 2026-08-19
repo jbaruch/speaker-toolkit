@@ -27,6 +27,13 @@ generation question does not arise and no record carries a field it does not
 declare. The collection is optional — absent means no equivalences — so every
 database written before it existed stays valid.
 
+The equivalence record goes to **v2** and the owner migration lifts any v1 entry
+off its talk into the collection, stamped v2 and carrying the owning filename.
+The nested shape shipped in a release, so a consumer can hold one: readers now
+consult the collection only, and an unmigrated entry would be ignored — the talk
+re-gating on a mismatch its owner had already approved, with nothing to show the
+approval was lost.
+
 v7 was introduced for this ledger and no longer carries it. The bump is
 published and stays; the migration docstring now says what it actually does.
 

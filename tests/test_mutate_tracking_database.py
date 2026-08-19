@@ -1724,7 +1724,7 @@ def test_a_reviewed_date_repair_does_not_open_unrelated_talk_fields(
 
 def _equivalence(**updates: Any) -> dict[str, Any]:
     record = {
-        "schema_version": 1,
+        "schema_version": 2,
         "talk_filename": "talk.md",
         "video_id": "QS-_4k7o7A4",
         "catalog_title": "Spring config battle (Ru)",
@@ -1761,7 +1761,7 @@ def test_a_reviewed_title_equivalence_is_appended_with_a_stamped_version(
 
     recorded = candidate["source_title_equivalences"]
     assert len(recorded) == 1
-    assert recorded[0]["schema_version"] == 1
+    assert recorded[0]["schema_version"] == 2
     assert recorded[0]["reason"] == "cross_language_title"
     assert changes[0]["kind"] == "record_source_title_equivalence"
     assert "source_title_equivalences" not in database
@@ -1845,7 +1845,7 @@ def test_a_whitespace_variant_duplicate_equivalence_is_refused(
     assert "duplicates an equivalence" in str(excinfo.value)
 
 
-@pytest.mark.parametrize("version", [2, 0, True, "1"])
+@pytest.mark.parametrize("version", [1, 3, 0, True, "2"])
 def test_an_equivalence_with_a_foreign_generation_is_refused(
     mutate_tracking_database, version: object
 ) -> None:
@@ -1859,7 +1859,7 @@ def test_an_equivalence_with_a_foreign_generation_is_refused(
             [_record_equivalence(equivalence=_equivalence(schema_version=version))],
         )
 
-    assert "schema_version must be 1" in str(excinfo.value)
+    assert "schema_version must be 2" in str(excinfo.value)
 
 
 # Legacy-generation catalog repair (#333). 209 of the 215 live talk records are

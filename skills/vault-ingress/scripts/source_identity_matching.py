@@ -454,7 +454,10 @@ def expected_duration_seconds(talk: dict[str, Any]) -> float | None:
     return None
 
 
-SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION = 1
+# Mirrors `tracking_database.SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION`.
+# Importing it directly is a circular import — tracking_database's own import
+# chain reaches this module — so the two are pinned equal by a test instead.
+SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION = 2
 
 
 def pinned_provider_title(value: str) -> str:

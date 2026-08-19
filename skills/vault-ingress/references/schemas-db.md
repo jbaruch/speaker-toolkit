@@ -182,7 +182,7 @@ no-op.
 | thumbnail | 1 |
 | confirmed intent | 1 |
 | source rejection | 1 |
-| source title equivalence | 1 (own top-level collection, not a talk field) |
+| source title equivalence | 2 (own top-level collection; v1 nested entries are migrated) |
 | improvement goal | 2 (schema 1 remains readable historical state) |
 
 | Component | Access | Contract |
@@ -566,7 +566,7 @@ exact-type rule. The supported mutation kinds are:
 
 ```json
 "source_title_equivalences": [{
-  "schema_version": 1,
+  "schema_version": 2,
   "talk_filename": "playlist-QS-_4k7o7A4.md",
   "video_id": "provider video the equivalence covers",
   "catalog_title": "the exact reviewed catalog title",

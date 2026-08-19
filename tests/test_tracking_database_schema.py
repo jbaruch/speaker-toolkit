@@ -491,6 +491,7 @@ def test_owner_migration_only_adds_owned_version_keys(tracking_database):
         "resources": 1,
         "thumbnails": 1,
         "confirmed_intents": 1,
+        "source_title_equivalences": 0,
         "improvement_goals": 1,
         "source_rejections": 1,
     }
@@ -830,6 +831,7 @@ def test_current_migration_is_idempotent_with_stable_counts(tracking_database):
         "thumbnails": 0,
         "confirmed_intents": 0,
         "improvement_goals": 0,
+        "source_title_equivalences": 0,
         "source_rejections": 0,
     }
 
@@ -1750,3 +1752,60 @@ def test_a_restamped_record_keeps_its_equivalence_ledger_absent(
     migrated = tracking_database.migrate_tracking_database(database).database
 
     assert "source_title_equivalence" not in migrated["talks"][0]
+
+
+def test_a_v1_nested_equivalence_is_lifted_into_the_collection(tracking_database):
+    """A database written by the release that shipped the nested ledger (#333).
+
+    Readers consult the top-level collection only, so a v1 entry left on the
+    talk would be ignored and its talk would re-gate on a title mismatch its
+    owner had already approved — the approval silently lost.
+    """
+    database = _legacy_database()
+    database["talks"][0]["schema_version"] = 1
+    database["talks"][0]["source_title_equivalence"] = [
+        {
+            "schema_version": 1,
+            "video_id": "QS-_4k7o7A4",
+            "catalog_title": "Spring config battle (Ru)",
+            "provider_title": "JavaDay Kiev 2014: Spring - битва конфигураций",
+            "reason": "cross_language_title",
+            "evidence": "owner-reviewed translation",
+            "verified_at": "2026-08-18T12:00:00Z",
+        }
+    ]
+
+    result = tracking_database.migrate_tracking_database(database)
+
+    lifted = result.database["source_title_equivalences"]
+    assert len(lifted) == 1
+    assert lifted[0]["schema_version"] == 2
+    assert lifted[0]["talk_filename"] == database["talks"][0]["filename"]
+    assert lifted[0]["video_id"] == "QS-_4k7o7A4"
+    # The nested copy is gone, so no reader can honor a stale shape.
+    assert "source_title_equivalence" not in result.database["talks"][0]
+    assert result.record_counts["source_title_equivalences"] == 1
+    # The input object is never mutated.
+    assert "source_title_equivalence" in database["talks"][0]
+
+
+def test_lifting_an_equivalence_is_idempotent(tracking_database):
+    database = _legacy_database()
+    database["talks"][0]["schema_version"] = 1
+    database["talks"][0]["source_title_equivalence"] = [
+        {
+            "schema_version": 1,
+            "video_id": "QS-_4k7o7A4",
+            "catalog_title": "Spring config battle (Ru)",
+            "provider_title": "JavaDay Kiev 2014: Spring - битва конфигураций",
+            "reason": "cross_language_title",
+            "evidence": "owner-reviewed translation",
+            "verified_at": "2026-08-18T12:00:00Z",
+        }
+    ]
+
+    once = tracking_database.migrate_tracking_database(database).database
+    twice = tracking_database.migrate_tracking_database(once)
+
+    assert twice.record_counts["source_title_equivalences"] == 0
+    assert len(twice.database["source_title_equivalences"]) == 1

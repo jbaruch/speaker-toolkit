@@ -4,15 +4,19 @@ from __future__ import annotations
 
 from datetime import date
 import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = (
-    REPO_ROOT / "skills" / "vault-ingress" / "scripts" / "source_identity_matching.py"
-)
+SCRIPTS = REPO_ROOT / "skills" / "vault-ingress" / "scripts"
+SCRIPT = SCRIPTS / "source_identity_matching.py"
+# The module imports its sibling for the ledger's schema version, so the script
+# directory has to be importable before it is executed.
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
 SPEC = importlib.util.spec_from_file_location("source_identity_matching", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 source_identity_matching = importlib.util.module_from_spec(SPEC)
@@ -226,7 +230,7 @@ def test_expected_duration_seconds_reads_the_first_usable_catalog_duration(
 
 EQUIVALENCE = [
     {
-        "schema_version": 1,
+        "schema_version": 2,
         "talk_filename": "playlist-QS-_4k7o7A4.md",
         "video_id": "QS-_4k7o7A4",
         "catalog_title": "Spring config battle (Ru)",
@@ -288,7 +292,7 @@ def test_title_equivalence_treats_an_unusable_ledger_as_no_approval(
     )
 
 
-@pytest.mark.parametrize("version", [2, 0, None, True, "1", 1.0])
+@pytest.mark.parametrize("version", [1, 3, 0, None, True, "2", 2.0])
 def test_an_unrecognized_equivalence_generation_never_suppresses_the_gate(
     version: object,
 ) -> None:
@@ -402,4 +406,19 @@ def test_an_equivalence_for_another_talk_is_not_this_talks_approval() -> None:
             provider_title=EQUIVALENCE[0]["provider_title"],
         )
         is False
+    )
+
+
+def test_the_ledger_generation_matches_its_owner() -> None:
+    """The matcher mirrors the constant; a circular import blocks sharing it.
+
+    Drift would let the reader honor a generation the validator rejects, or
+    ignore one it accepts — silently, since either way a talk simply gates or
+    does not.
+    """
+    tracking_database = importlib.import_module("tracking_database")
+
+    assert (
+        source_identity_matching.SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION
+        == tracking_database.SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION
     )

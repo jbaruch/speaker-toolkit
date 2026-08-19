@@ -48,7 +48,11 @@ RESOURCE_RECORD_SCHEMA_VERSION = 1
 THUMBNAIL_RECORD_SCHEMA_VERSION = 1
 CONFIRMED_INTENT_RECORD_SCHEMA_VERSION = 1
 SOURCE_REJECTION_RECORD_SCHEMA_VERSION = 1
-SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION = 1
+# v1 lived on the talk record and had no owning filename; v2 is the top-level
+# collection shape. Migration moves a v1 entry rather than dropping it, or a
+# previously approved talk would silently re-gate.
+LEGACY_SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION = 1
+SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION = 2
 LEGACY_IMPROVEMENT_GOAL_RECORD_SCHEMA_VERSION = 1
 IMPROVEMENT_GOAL_RECORD_SCHEMA_VERSION = 2
 
@@ -78,6 +82,7 @@ _RECORD_COUNT_KEYS = (
     "thumbnails",
     "confirmed_intents",
     "improvement_goals",
+    "source_title_equivalences",
     "source_rejections",
 )
 
@@ -1520,6 +1525,42 @@ _RESTAMPABLE_TALK_RECORD_SCHEMA_VERSIONS = frozenset(
 )
 
 
+def _migrate_title_equivalences(candidate: dict[str, Any]) -> int:
+    """Lift v1 nested equivalences into the v2 top-level collection (#333).
+
+    v1 recorded the ledger on the talk record, which bound an owner judgment to
+    the talk's analysis generation. Readers now consult the collection only, so
+    a v1 entry left in place would be ignored and its talk would re-gate on a
+    title mismatch its owner had already approved. The entry is moved, stamped
+    v2, and given the filename of the talk that carried it.
+    """
+    talks = candidate.get("talks")
+    if not isinstance(talks, list):
+        return 0
+    collection = candidate.get("source_title_equivalences")
+    if not isinstance(collection, list):
+        collection = []
+    migrated = 0
+    for talk in talks:
+        if not isinstance(talk, dict):
+            continue
+        nested = talk.pop("source_title_equivalence", None)
+        if not isinstance(nested, list):
+            continue
+        filename = talk.get("filename")
+        for record in nested:
+            if not isinstance(record, dict):
+                continue
+            lifted = dict(record)
+            lifted.setdefault("talk_filename", filename)
+            lifted["schema_version"] = SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION
+            collection.append(lifted)
+            migrated += 1
+    if migrated:
+        candidate["source_title_equivalences"] = collection
+    return migrated
+
+
 def _restamp_talk_records(candidate: dict[str, Any]) -> int:
     """Restamp analysed talk records to the current record shape (#299, #333).
 
@@ -1632,6 +1673,7 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
         require_current_tracking_database(candidate)
         counts = _empty_record_counts()
         counts["pptx_catalog"] = _migrate_pptx_catalog_records(candidate)
+        counts["source_title_equivalences"] = _migrate_title_equivalences(candidate)
         counts["talks"] = _restamp_talk_records(candidate)
         if any(counts.values()):
             # Guarded only once state would actually change. A no-op migration
@@ -1680,6 +1722,7 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
     # config takes that return, so a record migration placed after it would be
     # skipped for exactly the databases whose config still needed upgrading.
     counts["pptx_catalog"] += _migrate_pptx_catalog_records(candidate)
+    counts["source_title_equivalences"] += _migrate_title_equivalences(candidate)
     counts["talks"] += _restamp_talk_records(candidate)
 
     if root_version == TRACKING_DATABASE_SCHEMA_VERSION:
