@@ -395,7 +395,8 @@ def parse_catalog_date(value: Any) -> tuple[date | None, int] | None:
 # carries a UTC upload date of the previous day, which is not evidence of a
 # recording that predates its own delivery. One day absorbs every real offset —
 # the extremes are UTC-12 and UTC+14 — while a recording genuinely from an
-# earlier delivery is off by far more than a day.
+# earlier delivery is off by far more than a day. The same offset applies at a
+# bare-year record's boundary, where 31 December can be a 1 January delivery.
 UPLOAD_TIMEZONE_GRACE = timedelta(days=1)
 
 
@@ -409,17 +410,18 @@ def upload_predates_catalog(
     the record carries one, and against the year otherwise. `None` means the
     comparison could not be made, which is distinct from `False`.
 
-    Day-precision comparison allows `UPLOAD_TIMEZONE_GRACE`, because the two
-    dates are not measured in the same timezone. Year-precision comparison does
-    not: a bare-year record already spans the whole year, so an upload from the
-    previous year is a real disagreement, not a clock offset.
+    Both precisions allow `UPLOAD_TIMEZONE_GRACE`, because the two dates are not
+    measured in the same timezone. A bare-year record is compared against the
+    first day of that year, so the grace covers its boundary too: a talk
+    delivered on 1 January in a UTC+13 venue and uploaded immediately carries a
+    UTC upload date of 31 December, which is a clock offset rather than evidence
+    of an earlier delivery.
     """
     if upload is None or catalog is None:
         return None
     catalog_day, catalog_year = catalog
-    if catalog_day is not None:
-        return upload < catalog_day - UPLOAD_TIMEZONE_GRACE
-    return upload.year < catalog_year
+    boundary = catalog_day if catalog_day is not None else date(catalog_year, 1, 1)
+    return upload < boundary - UPLOAD_TIMEZONE_GRACE
 
 
 def expected_duration_seconds(talk: dict[str, Any]) -> float | None:

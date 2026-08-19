@@ -22,9 +22,12 @@ so a single day absorbs every real offset, while a recording genuinely from an
 earlier delivery is off by far more — the ten talks corrected under this issue
 were off by one to two YEARS.
 
-Year precision gets no grace. A bare-year record already spans the whole year,
-so an upload from December of the prior year is a real disagreement rather than
-a clock offset.
+The same grace covers a bare-year record's boundary, compared against 1 January
+of the year it names. "A bare year already spans the year, so it needs no grace"
+is true about the span and wrong about the edge: a talk delivered on 1 January
+in a UTC+13 venue is uploaded on 31 December UTC, which is the identical offset.
+An upload from 30 December or earlier still gates, which is the shape of every
+genuine finding this issue corrected.
 
 ## 0.20.94 — 2026-08-19
 

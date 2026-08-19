@@ -367,13 +367,18 @@ def test_day_precision_allows_one_day_of_timezone_offset(
 @pytest.mark.parametrize(
     ("upload", "catalog", "expected"),
     [
-        # A bare-year record already spans the year, so no grace is warranted:
-        # 31 Dec of the prior year is a real disagreement, not a clock offset.
-        (date(2013, 12, 31), (None, 2014), True),
+        # The year boundary has the same offset problem as any other day: a
+        # 1 January delivery in a UTC+13 venue is uploaded on 31 December UTC.
+        (date(2013, 12, 31), (None, 2014), False),
         (date(2014, 1, 1), (None, 2014), False),
+        (date(2014, 6, 1), (None, 2014), False),
+        # Beyond the offset, an earlier year is still a real disagreement — the
+        # shape of every genuine finding #333 corrected.
+        (date(2013, 12, 30), (None, 2014), True),
+        (date(2013, 11, 28), (None, 2014), True),
     ],
 )
-def test_year_precision_grants_no_timezone_grace(
+def test_year_precision_grace_covers_only_the_boundary(
     upload: date,
     catalog: tuple[date | None, int],
     expected: bool,
