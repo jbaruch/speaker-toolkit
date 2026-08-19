@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.96 — 2026-08-19
+
 ### fix(vault-ingress) — the equivalence ledger becomes its own collection (#333)
 
 The catalog repair was freed from the current-generation gate; the equivalence
