@@ -226,6 +226,7 @@ EQUIVALENCE = [
     {
         "schema_version": 1,
         "video_id": "QS-_4k7o7A4",
+        "catalog_title": "Spring config battle (Ru)",
         "provider_title": "JavaDay Kiev 2014: Spring - битва конфигураций",
         "reason": "cross_language_title",
         "evidence": "owner-reviewed translation",
@@ -257,6 +258,7 @@ def test_title_equivalence_matches_only_the_reviewed_video_and_title(
         source_identity_matching.title_equivalence_recorded(
             EQUIVALENCE,
             video_id=video_id,
+            catalog_title="Spring config battle (Ru)",
             provider_title=provider_title,
         )
         is expected
@@ -274,6 +276,7 @@ def test_title_equivalence_treats_an_unusable_ledger_as_no_approval(
         source_identity_matching.title_equivalence_recorded(
             ledger,
             video_id="QS-_4k7o7A4",
+            catalog_title="Spring config battle (Ru)",
             provider_title=EQUIVALENCE[0]["provider_title"],
         )
         is False
@@ -295,6 +298,7 @@ def test_an_unrecognized_equivalence_generation_never_suppresses_the_gate(
         source_identity_matching.title_equivalence_recorded(
             [record],
             video_id="QS-_4k7o7A4",
+            catalog_title="Spring config battle (Ru)",
             provider_title=EQUIVALENCE[0]["provider_title"],
         )
         is False
@@ -306,3 +310,30 @@ def test_pinned_provider_title_is_the_one_canonicalizer() -> None:
     assert source_identity_matching.pinned_provider_title(
         "  Spring -  битва   конфигураций \n"
     ) == source_identity_matching.pinned_provider_title("Spring - битва конфигураций")
+
+
+@pytest.mark.parametrize(
+    ("catalog_title", "expected"),
+    [
+        ("Spring config battle (Ru)", True),
+        # Whitespace and composition still vary harmlessly on this side too.
+        ("  Spring config   battle (Ru) ", True),
+        # A catalog title edited after the review was never approved.
+        ("Spring Configuration Showdown", False),
+        ("", False),
+    ],
+)
+def test_a_catalog_retitle_retires_the_equivalence(
+    catalog_title: str,
+    expected: bool,
+) -> None:
+    """The approval was that THESE two names the same talk — both sides pinned."""
+    assert (
+        source_identity_matching.title_equivalence_recorded(
+            EQUIVALENCE,
+            video_id="QS-_4k7o7A4",
+            catalog_title=catalog_title,
+            provider_title=EQUIVALENCE[0]["provider_title"],
+        )
+        is expected
+    )

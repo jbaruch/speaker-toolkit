@@ -32,9 +32,11 @@ LEGACY_TRACKING_DATABASE_SCHEMA_VERSION = 0
 TRACKING_DATABASE_SCHEMA_VERSION = 1
 LEGACY_TALK_RECORD_SCHEMA_VERSION = 1
 FLAT_SCORE_TALK_RECORD_SCHEMA_VERSION = 5
+# The generation before the owner-reviewed title-equivalence ledger (#333).
+PRE_TITLE_EQUIVALENCE_TALK_RECORD_SCHEMA_VERSION = 6
 # The weighted generation's record shape (#299): `pattern_observations` may
 # carry a `pattern_score_basis` and `pattern_score` may be fractional.
-TALK_RECORD_SCHEMA_VERSION = 6
+TALK_RECORD_SCHEMA_VERSION = 7
 LEGACY_CONFIG_RECORD_SCHEMA_VERSION = 1
 CONFIG_RECORD_SCHEMA_VERSION = 2
 LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION = 1
@@ -192,7 +194,14 @@ SOURCE_REJECTION_REQUIRED_FIELDS = frozenset(
     {"source_type", "url", "reason", "evidence", "verified_at"}
 )
 SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS = frozenset(
-    {"video_id", "provider_title", "reason", "evidence", "verified_at"}
+    {
+        "video_id",
+        "catalog_title",
+        "provider_title",
+        "reason",
+        "evidence",
+        "verified_at",
+    }
 )
 # Why an owner accepted a provider title the comparator cannot reach. Closed on
 # purpose: a free-text reason would turn the ledger into a place to wave through
@@ -1068,9 +1077,11 @@ def validate_source_title_equivalence(
 ) -> None:
     """Validate one owner-reviewed title equivalence.
 
-    The record pins the exact provider title an owner reviewed. A provider that
-    retitles the video again no longer matches the pinned string, so the talk
-    re-gates instead of riding a stale approval.
+    The record pins BOTH titles the owner read — the catalog title and the
+    provider title. An equivalence is a judgment about one specific pair, so
+    either side changing retires it: a provider that retitles the video, and a
+    catalog title edited after the review, both re-gate instead of riding a
+    stale approval.
     """
     _require_closed_shape(
         equivalence,
@@ -1090,7 +1101,7 @@ def validate_source_title_equivalence(
             f"{label}.schema_version must be "
             f"{SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION}"
         )
-    for field in ("video_id", "provider_title", "evidence"):
+    for field in ("video_id", "catalog_title", "provider_title", "evidence"):
         _require_nonempty_string(equivalence[field], f"{label}.{field}")
     reason = _require_nonempty_string(equivalence["reason"], f"{label}.reason")
     if reason not in SOURCE_TITLE_EQUIVALENCE_REASONS:
@@ -1485,8 +1496,16 @@ def _migrate_talk_record(talk: dict[str, Any]) -> bool:
     return talk_version_added
 
 
+_RESTAMPABLE_TALK_RECORD_SCHEMA_VERSIONS = frozenset(
+    {
+        FLAT_SCORE_TALK_RECORD_SCHEMA_VERSION,
+        PRE_TITLE_EQUIVALENCE_TALK_RECORD_SCHEMA_VERSION,
+    }
+)
+
+
 def _restamp_talk_records(candidate: dict[str, Any]) -> int:
-    """Restamp v5 talk records to the weighted record shape (#299).
+    """Restamp analysed talk records to the current record shape (#299, #333).
 
     A RESTAMP, never a rescore. The v6 shape admits a `pattern_score_basis` and
     a fractional `pattern_score`; a stored v5 record has neither, and computing
@@ -1503,6 +1522,13 @@ def _restamp_talk_records(candidate: dict[str, Any]) -> int:
     Without the restamp every stored talk would be unmutatable: the owner writer
     requires the exact current talk schema before any mutation, so the bump
     alone would lock the database until this ran.
+
+    v6 to v7 (#333) adds the optional `source_title_equivalence` ledger. That is
+    a pure shape addition — absence means "no equivalences", the correct default
+    — so the restamp carries a v6 record forward untouched. Only records already
+    holding the analysis v7 implies are restampable; an earlier generation
+    reaches the current shape by being reanalysed, never by being stamped, which
+    is why this set is not simply "every version below current".
     """
     talks = candidate.get("talks")
     if not isinstance(talks, list):
@@ -1511,7 +1537,7 @@ def _restamp_talk_records(candidate: dict[str, Any]) -> int:
     for talk in talks:
         if not isinstance(talk, dict):
             continue
-        if talk.get("schema_version") != FLAT_SCORE_TALK_RECORD_SCHEMA_VERSION:
+        if talk.get("schema_version") not in _RESTAMPABLE_TALK_RECORD_SCHEMA_VERSIONS:
             continue
         talk["schema_version"] = TALK_RECORD_SCHEMA_VERSION
         restamped += 1

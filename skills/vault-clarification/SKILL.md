@@ -84,7 +84,7 @@ Exit 2 writes one error object to stdout plus an `ERROR:` diagnostic to stderr;
 stop without changing session state.
 
 Every tracking write in Steps 2–8 is current-only. Preserve database schema 1,
-config schema 2, talk schema 5, and every unrelated record. Stamp confirmed
+config schema 2, talk schema 7, and every unrelated record. Stamp confirmed
 intents with schema 1 and new improvement goals with schema 2. Capture the exact
 input bytes immediately before each write, reject a changed generation, validate
 the complete current shape, and use a same-directory atomic replacement. Never

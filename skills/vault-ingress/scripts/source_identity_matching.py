@@ -456,22 +456,30 @@ def title_equivalence_recorded(
     equivalences: Any,
     *,
     video_id: Any,
+    catalog_title: Any,
     provider_title: Any,
 ) -> bool:
-    """Report whether an owner reviewed this exact provider title for this video.
+    """Report whether an owner reviewed this exact title pair for this video.
 
-    Comparison is on the pinned string, not the fuzzy title contract: the ledger
-    records a judgment about one observed title, so a provider that retitles the
-    video again stops matching and the talk re-gates. Whitespace and Unicode
-    composition are normalized because those vary without changing what an owner
-    read.
+    Comparison is on the pinned strings, not the fuzzy title contract: the ledger
+    records a judgment about one observed pair, so either side changing retires
+    it. A provider that retitles the video re-gates, and so does a catalog title
+    edited after the review — the approval was that THESE two name the same
+    talk, and it says nothing about a name the owner never read. Whitespace and
+    Unicode composition are normalized because those vary without changing what
+    an owner read.
     """
     if not isinstance(equivalences, list):
         return False
-    if not isinstance(video_id, str) or not isinstance(provider_title, str):
+    if (
+        not isinstance(video_id, str)
+        or not isinstance(catalog_title, str)
+        or not isinstance(provider_title, str)
+    ):
         return False
     pinned = pinned_provider_title(provider_title)
-    if not pinned:
+    pinned_catalog = pinned_provider_title(catalog_title)
+    if not pinned or not pinned_catalog:
         return False
     for equivalence in equivalences:
         if not isinstance(equivalence, dict):
@@ -488,8 +496,17 @@ def title_equivalence_recorded(
             continue
         recorded_id = equivalence.get("video_id")
         recorded_title = equivalence.get("provider_title")
-        if not isinstance(recorded_id, str) or not isinstance(recorded_title, str):
+        recorded_catalog = equivalence.get("catalog_title")
+        if (
+            not isinstance(recorded_id, str)
+            or not isinstance(recorded_title, str)
+            or not isinstance(recorded_catalog, str)
+        ):
             continue
-        if recorded_id == video_id and pinned_provider_title(recorded_title) == pinned:
+        if (
+            recorded_id == video_id
+            and pinned_provider_title(recorded_title) == pinned
+            and pinned_provider_title(recorded_catalog) == pinned_catalog
+        ):
             return True
     return False
