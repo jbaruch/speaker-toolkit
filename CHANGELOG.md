@@ -1,5 +1,34 @@
 # Changelog
 
+### fix(vault-ingress) — the upload comparison respects the venue's timezone (#333)
+
+#333 listed `2025-11-01-churconf-...` among eleven talks whose recording appeared
+to predate its own delivery: cataloged `2025-11-02`, uploaded `2025-11-01`. It
+called the one-day gap "almost certainly a timezone slip rather than a wrong
+delivery", and it was right — but the check had no way to say so.
+
+ChurConf 2025 ran on Sunday 2 November in Auckland. Auckland is UTC+13 in
+November, so a talk delivered there and uploaded straight after carries a UTC
+upload date of the previous day. The catalog was correct; the comparison was
+wrong.
+
+That is not a ChurConf quirk. A provider upload date is UTC and a cataloged
+delivery date is the local day at the venue, so the two are not measured on the
+same clock. Every delivery east of UTC can produce this, and the gate would keep
+reporting a wrong delivery for a correctly cataloged talk.
+
+Day-precision comparison now allows one day. The extremes are UTC-12 and UTC+14,
+so a single day absorbs every real offset, while a recording genuinely from an
+earlier delivery is off by far more — the ten talks corrected under this issue
+were off by one to two YEARS.
+
+The same grace covers a bare-year record's boundary, compared against 1 January
+of the year it names. "A bare year already spans the year, so it needs no grace"
+is true about the span and wrong about the edge: a talk delivered on 1 January
+in a UTC+13 venue is uploaded on 31 December UTC, which is the identical offset.
+An upload from 30 December or earlier still gates, which is the shape of every
+genuine finding this issue corrected.
+
 ## 0.20.94 — 2026-08-19
 
 ### fix(vault-ingress) — catalog repair reaches legacy talk records (#333)
