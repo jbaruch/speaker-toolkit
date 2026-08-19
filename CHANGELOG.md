@@ -64,6 +64,12 @@ launch has to come back as that report rather than a traceback over empty
 stdout, which a parser reads as a malformed contract instead of a failed
 install. Interrupts still propagate.
 
+The cache locations are the caller's throughout. `configure_apt` and the apt
+config body read the module constants while accepting the arguments, so passing
+a cache path redirected nothing and the tests wrote `/tmp/apt-cache` on whatever
+machine ran them. The fake now refuses any path outside its sandbox, which turns
+that class of leak into a failing test rather than a directory left behind.
+
 The step moved out of the workflow into `scripts/install_system_deps.py`, whose
 side effects all route through an injected runner — the command sequence is the
 whole behaviour, and it is now assertable without a runner, sudo, or a network.

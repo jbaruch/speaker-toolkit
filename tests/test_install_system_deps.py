@@ -60,6 +60,7 @@ class FakeSystem:
         root: Path,
         *,
         archive_cache: Path,
+        sandbox: Path,
         sources: Path,
         sources_d: Path,
         reachable: Sequence[str] = ALL_ARCHIVES,
@@ -76,6 +77,7 @@ class FakeSystem:
         self.installed: list[str] = []
         self.probes: list[str] = []
         self.fetches: list[str] = []
+        self.sandbox = sandbox
         self.sources = sources
         self.sources_d = sources_d
         self.owners: dict[str, str] = {}
@@ -84,11 +86,24 @@ class FakeSystem:
     # --- filesystem ---------------------------------------------------------
 
     def local(self, path: str) -> Path:
+        """Resolve a command's path argument, refusing anything off the sandbox.
+
+        The refusal is the assertion: the installer takes its cache locations as
+        arguments, and a place that reads the module constant instead would
+        quietly write to the real `/tmp` on whatever machine ran the suite. That
+        happened, so it fails here now rather than leaving a directory behind.
+        """
         bare = path[:-2] if path.endswith("/.") else path.rstrip("/")
         for system_root in SYSTEM_ROOTS:
             if bare == system_root or bare.startswith(f"{system_root}/"):
                 return self.root / bare.lstrip("/")
-        return Path(bare)
+        resolved = Path(bare)
+        if not resolved.is_relative_to(self.sandbox):
+            raise AssertionError(
+                f"{bare} is outside the test sandbox: the installer reached for a "
+                "module constant where it was handed a path"
+            )
+        return resolved
 
     def owner_of(self, path: Path) -> str:
         return self.owners.get(str(path), "root")
@@ -230,8 +245,13 @@ def build(tmp_path: Path, **kwargs: object) -> tuple[FakeSystem, dict[str, Path]
     system = FakeSystem(
         root,
         archive_cache=paths["archive_cache"],
+        sandbox=tmp_path,
         sources=paths["sources"],
         sources_d=paths["sources_d"],
+        # The per-case knobs (reachable, update_fails, offline_satisfies,
+        # failing) are heterogeneous, so **kwargs is typed `object` and pyright
+        # cannot match each one to its parameter. The call is checked by the
+        # tests that pass them.
         **kwargs,  # type: ignore[arg-type]
     )
     return system, paths
@@ -396,7 +416,7 @@ def test_apt_is_configured_to_keep_its_downloads_where_the_cache_looks(
     run_install(system, paths)
 
     landed = system.local("/etc/apt/apt.conf.d/99ci").read_text()
-    assert 'Dir::Cache::Archives "/tmp/apt-cache";' in landed
+    assert f'Dir::Cache::Archives "{paths["archive_cache"]}";' in landed
     assert 'APT::Keep-Downloaded-Packages "true";' in landed
 
 

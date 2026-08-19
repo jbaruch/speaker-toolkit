@@ -99,15 +99,20 @@ PROBE_TIMEOUT_SEC = 20
 UPDATE_TIMEOUT_SEC = 300
 INSTALL_TIMEOUT_SEC = 600
 
+
 # `APT::Keep-Downloaded-Packages` is what makes the archive cache exist at all:
 # apt has discarded downloaded .debs after a successful install since 1.6, so the
 # archive dir was empty when the post-step ran and no cache was ever written.
-APT_CONF_BODY = f"""Dir::Cache::Archives "{ARCHIVE_CACHE}";
-APT::Keep-Downloaded-Packages "true";
-Acquire::Retries "3";
-Acquire::http::Timeout "30";
-Acquire::https::Timeout "30";
-"""
+def apt_conf_body(archive_cache: Path) -> str:
+    """apt's config, pointed at the archive dir the caller actually passed."""
+    return (
+        f'Dir::Cache::Archives "{archive_cache}";\n'
+        'APT::Keep-Downloaded-Packages "true";\n'
+        'Acquire::Retries "3";\n'
+        'Acquire::http::Timeout "30";\n'
+        'Acquire::https::Timeout "30";\n'
+    )
+
 
 Runner = Callable[[Sequence[str], int], int]
 
@@ -158,18 +163,24 @@ def run_command(command: Sequence[str], timeout: int) -> int:
         return 124
 
 
-def configure_apt(run: Runner, staged_conf: Path) -> None:
+def configure_apt(
+    run: Runner, staged_conf: Path, archive_cache: Path, list_cache: Path
+) -> None:
     """Point apt's archive dir at the cached location and bound its timeouts.
 
     The config is staged where the runner can write and copied in with sudo,
     rather than piped through a root shell: the staged file is what the tests
     read back, and a heredoc into `sudo tee` is not inspectable.
+
+    Every path here is the caller's, not the module constant. Taking the
+    constant while accepting the argument made the parameter a lie — the caller
+    redirected nothing and the write landed on the real machine anyway.
     """
-    staged_conf.write_text(APT_CONF_BODY)
+    staged_conf.write_text(apt_conf_body(archive_cache))
     require(
-        run, ["sudo", "mkdir", "-p", f"{ARCHIVE_CACHE}/partial", str(LIST_CACHE)], 60
+        run, ["sudo", "mkdir", "-p", f"{archive_cache}/partial", str(list_cache)], 60
     )
-    require(run, ["sudo", "chmod", "-R", "777", str(ARCHIVE_CACHE)], 60)
+    require(run, ["sudo", "chmod", "-R", "777", str(archive_cache)], 60)
     require(run, ["sudo", "cp", str(staged_conf), str(APT_CONF)], 60)
 
 
@@ -378,7 +389,7 @@ def install(
     sources_d: Path = APT_SOURCES_D,
 ) -> dict[str, object]:
     """Satisfy the dependencies from cache if possible, else from a mirror."""
-    configure_apt(run, staged_conf)
+    configure_apt(run, staged_conf, archive_cache, list_cache)
 
     if cache_is_usable(archive_cache, list_cache):
         restore_lists(run, list_cache)
