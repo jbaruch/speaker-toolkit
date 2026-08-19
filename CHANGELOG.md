@@ -35,6 +35,8 @@ generation has changed. It now accepts any generation the database assessment
 can read, and leaves the record's version alone: repairing a catalog fact must
 not claim the record was reanalyzed. Every other writer keeps the strict gate.
 
+## 0.20.93 — 2026-08-19
+
 ### feat(vault-ingress) — owner-reviewed provider-title equivalence (#333)
 
 Four talks in #333 could not register a source identity because `titles_agree`
