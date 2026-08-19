@@ -175,13 +175,14 @@ no-op.
 |---|---:|
 | database root | 1 |
 | config | 2 (schema 1 remains readable owner-migration input) |
-| talk | 5 |
+| talk | 7 (schemas 1-6 remain readable historical state; v5 and v6 restamp) |
 | PPTX catalog | 3 (schemas 1 and 2 remain readable legacy state) |
 | QR code | 2 (schema 1 remains readable legacy state) |
 | resource summary | 1 |
 | thumbnail | 1 |
 | confirmed intent | 1 |
 | source rejection | 1 |
+| source title equivalence | 1 |
 | improvement goal | 2 (schema 1 remains readable historical state) |
 
 | Component | Access | Contract |
@@ -192,8 +193,8 @@ no-op.
 | vault-ingress preflight, source audit, analysis rendering, shownotes dry-run | dual reader | Parse schemas 0 and 1; gate through existing finding/error channels; never rewrite |
 | vault-clarification | current read/write | Route schema migration to vault-ingress; preserve config v2 and stamp confirmed intent v1/improvement goal v2 |
 | presentation-creator QR writer | dual reader/current writer | Read schemas 0 and 1; require schema 1 before URL creation or QR metadata persistence; stamp QR v2 |
-| presentation-creator publishing/post-event | authorized current writer | Require schema 1 before tracking writes; stamp resource v1 and preserve talk v5 |
-| illustrations thumbnail workflow | authorized current writer | Require schema 1 before tracking writes; stamp thumbnail v1 and preserve talk v5 |
+| presentation-creator publishing/post-event | authorized current writer | Require schema 1 before tracking writes; stamp resource v1 and preserve talk v7 |
+| illustrations thumbnail workflow | authorized current writer | Require schema 1 before tracking writes; stamp thumbnail v1 and preserve talk v7 |
 | vault-profile | dual reader | Parse schemas 0 and 1; treat unsupported generations as unavailable; never migrate |
 
 Current database schema 1 with config schema 2 requires all eight top-level
@@ -270,8 +271,17 @@ customization, not the owner default. See the
       "evidence": "how the rejection was verified",
       "verified_at": "timezone-aware ISO-8601 timestamp"
     }],
+    "source_title_equivalence": [{
+      "schema_version": 1,
+      "video_id": "provider video the equivalence covers",
+      "catalog_title": "the exact reviewed catalog title",
+      "provider_title": "the exact reviewed provider title",
+      "reason": "cross_language_title|provider_retitled",
+      "evidence": "how the equivalence was reviewed",
+      "verified_at": "timezone-aware ISO-8601 timestamp"
+    }],
     "pptx_path": "Conference/Year/Talk Name.pptx  (optional — highest quality slide source when available)",
-    "schema_version": 5,
+    "schema_version": 7,
     "transcript_source": "youtube_auto|whisper|manual|none  (how the transcript was obtained; MAY BE ABSENT — see below)",
     "transcript_path": "transcripts/{id}.txt  (optional vault-relative path; required for non-YouTube transcript evidence)",
     "slide_source": "pptx|pdf|both|video_extracted|markdown|none  (set in Step 2 per slide source hierarchy)",
@@ -349,7 +359,7 @@ customization, not the owner default. See the
       "not_evaluable": []
     }
   }],
-  "_comment_schema_version": "Database schema v1 is owner-migrated by vault-ingress. A missing talk record version is the historical implicit-v1 lineage. v2 makes transcript_source optional. Two incompatible v3 lineages were emitted; v4 is their source-located union and remains archival with evidence ledger v1. V5 adds applicability assessments, exhaustive outcomes, opportunity-coverage identity, and evidence ledger v2. V6 adds `pattern_score_basis` and a possibly-fractional `pattern_score` at the weighted scoring generation; migration restamps a v5 record to v6 without rescoring it, because recomputing a score under arithmetic its worker never used would restate what the worker meant. Root migration preserves all historical evidence and never synthesizes v5 outcomes.",
+  "_comment_schema_version": "Database schema v1 is owner-migrated by vault-ingress. A missing talk record version is the historical implicit-v1 lineage. v2 makes transcript_source optional. Two incompatible v3 lineages were emitted; v4 is their source-located union and remains archival with evidence ledger v1. V5 adds applicability assessments, exhaustive outcomes, opportunity-coverage identity, and evidence ledger v2. V6 adds `pattern_score_basis` and a possibly-fractional `pattern_score` at the weighted scoring generation; migration restamps a v5 record to v6 without rescoring it, because recomputing a score under arithmetic its worker never used would restate what the worker meant. V7 adds the optional owner-reviewed `source_title_equivalence` ledger; migration restamps a v5 or v6 record to v7 and never invents the field, because an absent ledger already means no equivalences. Root migration preserves all historical evidence and never synthesizes v5 outcomes.",
   "_comment_absent_transcript_source": "Absent transcript_source: the key may be MISSING on a talk, and missing is meaningful — it means provenance is unknown, not that no transcript exists (that is the explicit value `none`). It arises on one path: fetch-transcript.py returning method `existing`, where a valid transcript was already on disk and no fetch ran, so nothing was learned about where it came from. Writers MUST NOT backfill a guess; `manual` in particular asserts a human produced it. Readers gauging transcript reliability MUST treat absent as unknown and MUST NOT default it to any value.",
   "pptx_catalog": [{
     "schema_version": 3,
@@ -557,8 +567,22 @@ exact-type rule. The supported mutation kinds are:
 | `upsert_resource` | Replace/add one complete schema-v1 record identified by `talk_slug` |
 | `upsert_thumbnail` | Replace/add one complete schema-v1 record identified by `talk_slug` |
 | `apply_reviewed_metadata` | Install one human-reviewed shownotes catalog-conflict decision on one exact talk filename, over a closed identity field set, with `expect` covering exactly the same fields |
+| `record_source_title_equivalence` | Append one owner-reviewed provider-title equivalence to one exact talk filename; append-only and refuses a duplicate |
 | `update_talk_publishing` | Set supported publishing fields on one exact talk filename, with `expect` covering exactly the same fields |
 | `update_talk_clarification` | Set complete object/array `blind_spot_observations` or `humor_postmortem` values on one exact talk, with matching field expectations |
+
+`source_title_equivalence` records that an owner read one provider title and
+accepted it as naming the cataloged talk. The title comparator is deterministic
+and cannot cross languages or follow a provider rename, and the only alternative
+was rewriting the catalog title to whatever the provider published. Its closed
+reason set and matching contract live in
+`skills/vault-ingress/scripts/tracking_database.py::validate_source_title_equivalence`
+and `source_identity_matching.py::title_equivalence_recorded`. An equivalence
+covers one video and one exact title PAIR, so either side changing re-gates
+rather than inheriting the approval — a later provider rename, and a catalog
+title edited after the review. Consulted only after the deterministic comparison
+fails; when it applies, the check passes silently and the record is the audit
+trail.
 
 `apply_reviewed_metadata` exists because `scan-shownotes.py --apply` refuses
 review-required entries by design: an approved catalog correction otherwise had

@@ -32,9 +32,11 @@ LEGACY_TRACKING_DATABASE_SCHEMA_VERSION = 0
 TRACKING_DATABASE_SCHEMA_VERSION = 1
 LEGACY_TALK_RECORD_SCHEMA_VERSION = 1
 FLAT_SCORE_TALK_RECORD_SCHEMA_VERSION = 5
+# The generation before the owner-reviewed title-equivalence ledger (#333).
+PRE_TITLE_EQUIVALENCE_TALK_RECORD_SCHEMA_VERSION = 6
 # The weighted generation's record shape (#299): `pattern_observations` may
 # carry a `pattern_score_basis` and `pattern_score` may be fractional.
-TALK_RECORD_SCHEMA_VERSION = 6
+TALK_RECORD_SCHEMA_VERSION = 7
 LEGACY_CONFIG_RECORD_SCHEMA_VERSION = 1
 CONFIG_RECORD_SCHEMA_VERSION = 2
 LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION = 1
@@ -46,6 +48,7 @@ RESOURCE_RECORD_SCHEMA_VERSION = 1
 THUMBNAIL_RECORD_SCHEMA_VERSION = 1
 CONFIRMED_INTENT_RECORD_SCHEMA_VERSION = 1
 SOURCE_REJECTION_RECORD_SCHEMA_VERSION = 1
+SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION = 1
 LEGACY_IMPROVEMENT_GOAL_RECORD_SCHEMA_VERSION = 1
 IMPROVEMENT_GOAL_RECORD_SCHEMA_VERSION = 2
 
@@ -189,6 +192,22 @@ CONFIRMED_INTENT_OPTIONAL_FIELDS = frozenset(
 )
 SOURCE_REJECTION_REQUIRED_FIELDS = frozenset(
     {"source_type", "url", "reason", "evidence", "verified_at"}
+)
+SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS = frozenset(
+    {
+        "video_id",
+        "catalog_title",
+        "provider_title",
+        "reason",
+        "evidence",
+        "verified_at",
+    }
+)
+# Why an owner accepted a provider title the comparator cannot reach. Closed on
+# purpose: a free-text reason would turn the ledger into a place to wave through
+# any mismatch, which is the wrong-delivery detection this ledger sits next to.
+SOURCE_TITLE_EQUIVALENCE_REASONS = frozenset(
+    {"cross_language_title", "provider_retitled"}
 )
 LEGACY_IMPROVEMENT_GOAL_REQUIRED_FIELDS = frozenset(
     {
@@ -1051,6 +1070,60 @@ def _validate_source_rejection(
         )
 
 
+def validate_source_title_equivalence(
+    equivalence: Mapping[str, object],
+    *,
+    label: str,
+) -> None:
+    """Validate one owner-reviewed title equivalence.
+
+    The record pins BOTH titles the owner read — the catalog title and the
+    provider title. An equivalence is a judgment about one specific pair, so
+    either side changing retires it: a provider that retitles the video, and a
+    catalog title edited after the review, both re-gate instead of riding a
+    stale approval.
+    """
+    _require_closed_shape(
+        equivalence,
+        required=SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS,
+        label=label,
+    )
+    # `_require_closed_shape` ignores `schema_version` for every record, so this
+    # ledger checks it explicitly. A record whose generation this reader cannot
+    # name must never be honored: what it suppresses is the wrong-delivery gate.
+    version = equivalence.get("schema_version")
+    if (
+        isinstance(version, bool)
+        or not isinstance(version, int)
+        or version != SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION
+    ):
+        raise TrackingDatabaseError(
+            f"{label}.schema_version must be "
+            f"{SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION}"
+        )
+    for field in ("video_id", "catalog_title", "provider_title", "evidence"):
+        _require_nonempty_string(equivalence[field], f"{label}.{field}")
+    reason = _require_nonempty_string(equivalence["reason"], f"{label}.reason")
+    if reason not in SOURCE_TITLE_EQUIVALENCE_REASONS:
+        raise TrackingDatabaseError(
+            f"{label}.reason must be one of {sorted(SOURCE_TITLE_EQUIVALENCE_REASONS)}"
+        )
+    verified_at = _require_nonempty_string(
+        equivalence["verified_at"],
+        f"{label}.verified_at",
+    )
+    try:
+        parsed = dt.datetime.fromisoformat(verified_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise TrackingDatabaseError(
+            f"{label}.verified_at must be a timezone-aware ISO-8601 timestamp"
+        ) from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise TrackingDatabaseError(
+            f"{label}.verified_at must be a timezone-aware ISO-8601 timestamp"
+        )
+
+
 def _validate_talk_observation_shape(
     talk: Mapping[str, object],
     index: int,
@@ -1326,6 +1399,23 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
                 rejection,
                 label=f"talks[{talk_index}].source_rejections[{rejection_index}]",
             )
+        equivalences = talk.get("source_title_equivalence", [])
+        if not isinstance(equivalences, list):
+            raise TrackingDatabaseError(
+                f"talks[{talk_index}].source_title_equivalence must be an array"
+            )
+        for equivalence_index, equivalence in enumerate(equivalences):
+            if not isinstance(equivalence, Mapping):
+                raise TrackingDatabaseError(
+                    f"talks[{talk_index}].source_title_equivalence"
+                    f"[{equivalence_index}] must be a JSON object"
+                )
+            validate_source_title_equivalence(
+                equivalence,
+                label=(
+                    f"talks[{talk_index}].source_title_equivalence[{equivalence_index}]"
+                ),
+            )
 
     try:
         # Assessment intentionally admits claim/status drift so schema-0 queue
@@ -1406,8 +1496,16 @@ def _migrate_talk_record(talk: dict[str, Any]) -> bool:
     return talk_version_added
 
 
+_RESTAMPABLE_TALK_RECORD_SCHEMA_VERSIONS = frozenset(
+    {
+        FLAT_SCORE_TALK_RECORD_SCHEMA_VERSION,
+        PRE_TITLE_EQUIVALENCE_TALK_RECORD_SCHEMA_VERSION,
+    }
+)
+
+
 def _restamp_talk_records(candidate: dict[str, Any]) -> int:
-    """Restamp v5 talk records to the weighted record shape (#299).
+    """Restamp analysed talk records to the current record shape (#299, #333).
 
     A RESTAMP, never a rescore. The v6 shape admits a `pattern_score_basis` and
     a fractional `pattern_score`; a stored v5 record has neither, and computing
@@ -1424,6 +1522,13 @@ def _restamp_talk_records(candidate: dict[str, Any]) -> int:
     Without the restamp every stored talk would be unmutatable: the owner writer
     requires the exact current talk schema before any mutation, so the bump
     alone would lock the database until this ran.
+
+    v6 to v7 (#333) adds the optional `source_title_equivalence` ledger. That is
+    a pure shape addition — absence means "no equivalences", the correct default
+    — so the restamp carries a v6 record forward untouched. Only records already
+    holding the analysis v7 implies are restampable; an earlier generation
+    reaches the current shape by being reanalysed, never by being stamped, which
+    is why this set is not simply "every version below current".
     """
     talks = candidate.get("talks")
     if not isinstance(talks, list):
@@ -1432,7 +1537,7 @@ def _restamp_talk_records(candidate: dict[str, Any]) -> int:
     for talk in talks:
         if not isinstance(talk, dict):
             continue
-        if talk.get("schema_version") != FLAT_SCORE_TALK_RECORD_SCHEMA_VERSION:
+        if talk.get("schema_version") not in _RESTAMPABLE_TALK_RECORD_SCHEMA_VERSIONS:
             continue
         talk["schema_version"] = TALK_RECORD_SCHEMA_VERSION
         restamped += 1

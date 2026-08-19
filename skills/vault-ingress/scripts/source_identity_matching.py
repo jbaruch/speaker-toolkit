@@ -436,3 +436,77 @@ def expected_duration_seconds(talk: dict[str, Any]) -> float | None:
         if isinstance(value, (int, float)) and math.isfinite(value) and value > 0:
             return float(value)
     return None
+
+
+SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION = 1
+
+
+def pinned_provider_title(value: str) -> str:
+    """Canonicalize a provider title for pinned comparison.
+
+    Whitespace runs and Unicode composition vary without changing what an owner
+    read, so both are normalized. Every comparison of a pinned title — the
+    reader's match and the writer's duplicate check — goes through this, or the
+    two disagree about which records are the same approval.
+    """
+    return " ".join(unicodedata.normalize("NFC", value).split())
+
+
+def title_equivalence_recorded(
+    equivalences: Any,
+    *,
+    video_id: Any,
+    catalog_title: Any,
+    provider_title: Any,
+) -> bool:
+    """Report whether an owner reviewed this exact title pair for this video.
+
+    Comparison is on the pinned strings, not the fuzzy title contract: the ledger
+    records a judgment about one observed pair, so either side changing retires
+    it. A provider that retitles the video re-gates, and so does a catalog title
+    edited after the review — the approval was that THESE two name the same
+    talk, and it says nothing about a name the owner never read. Whitespace and
+    Unicode composition are normalized because those vary without changing what
+    an owner read.
+    """
+    if not isinstance(equivalences, list):
+        return False
+    if (
+        not isinstance(video_id, str)
+        or not isinstance(catalog_title, str)
+        or not isinstance(provider_title, str)
+    ):
+        return False
+    pinned = pinned_provider_title(provider_title)
+    pinned_catalog = pinned_provider_title(catalog_title)
+    if not pinned or not pinned_catalog:
+        return False
+    for equivalence in equivalences:
+        if not isinstance(equivalence, dict):
+            continue
+        # An unrecognized generation is unusable state, never an approval: a
+        # future record may mean something this reader cannot see, and the
+        # failure it would suppress is the wrong-delivery gate.
+        recorded_version = equivalence.get("schema_version")
+        if (
+            isinstance(recorded_version, bool)
+            or not isinstance(recorded_version, int)
+            or recorded_version != SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION
+        ):
+            continue
+        recorded_id = equivalence.get("video_id")
+        recorded_title = equivalence.get("provider_title")
+        recorded_catalog = equivalence.get("catalog_title")
+        if (
+            not isinstance(recorded_id, str)
+            or not isinstance(recorded_title, str)
+            or not isinstance(recorded_catalog, str)
+        ):
+            continue
+        if (
+            recorded_id == video_id
+            and pinned_provider_title(recorded_title) == pinned
+            and pinned_provider_title(recorded_catalog) == pinned_catalog
+        ):
+            return True
+    return False

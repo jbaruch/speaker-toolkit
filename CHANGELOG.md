@@ -1,5 +1,60 @@
 # Changelog
 
+### feat(vault-ingress) — owner-reviewed provider-title equivalence (#333)
+
+Four talks in #333 could not register a source identity because `titles_agree`
+could not reach their provider titles. Two are Russian-language JavaDay Kiev
+2014 recordings whose catalog titles are English summaries carrying a `(Ru)`
+marker. Two are RoboCoders deliveries the uploader published as "AI-Assisted
+Engineering Applied: The Battle of Agents".
+
+Neither is a comparator bug. `битва конфигураций` is "battle of
+configurations", and no deterministic overlap test crosses that gap without also
+matching things it must not. The comparator is right to refuse, and it must stay
+right — it is the same test that catches a video from the wrong delivery.
+
+The alternative was rewriting four catalog titles to whatever the provider
+published: Russian titles in an otherwise-English catalog, and two RoboCoders
+entries that stop matching the ten around them. That discards the speaker's own
+naming to satisfy a string comparison.
+
+`source_title_equivalence` records the judgment as data instead — both titles
+the owner read, why the pair was accepted from a closed two-value reason set,
+and when. It is consulted only after the deterministic comparison fails, and it
+pins BOTH sides of the pair. An approval says these two names name one talk; it
+says nothing about a name the owner never read. So a provider that retitles the
+video re-gates, and so does a catalog title edited after the review — pinning
+only the provider side would have left an edited catalog title riding an
+approval granted for a different one. The
+writer appends only and refuses a duplicate, so the ledger stays an audit trail
+rather than a mutable override.
+
+The record's own `schema_version` is validated exactly, and both the reader and
+the writer refuse a generation they cannot name — `_require_closed_shape` ignores
+that field for every record, so a ledger whose whole purpose is suppressing a
+blocking finding checks it itself. Reader and writer canonicalize the pinned
+title through one shared normalizer, so two records the reader would treat as a
+single approval cannot be stored as two.
+
+`TALK_RECORD_SCHEMA_VERSION` goes to **7**, because the ledger changes the
+persisted talk-record shape and the nested record's own version does not version
+its parent. The migration restamps v5 and v6 forward — both already hold the
+analysis v7 implies — and leaves earlier generations alone, since those reach the
+current shape by being reanalysed, never by being stamped. On the live vault that
+is 6 records restamped and 209 legacy records untouched. Migration never invents
+the field: absence means "no equivalences", which is the correct default.
+
+The writer binds each approval to what the talk actually holds when it is
+recorded: its current catalog title, its recorded provider title, and its video.
+Without that, a plan could pre-authorize an identity the talk does not have — a
+title it might be renamed to later, or another video's — and that record would
+sit dormant until the catalog drifted onto it, suppressing the gate for a pair
+no owner ever compared.
+
+When an equivalence applies the check passes silently. A warning on every run
+would be noise about a decision the owner already made and recorded, and the
+record itself carries the evidence and the timestamp.
+
 ## 0.20.91 — 2026-08-19
 
 ### feat(vault-ingress) — owner-reviewed delivery-date repair (#333)

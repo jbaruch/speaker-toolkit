@@ -220,3 +220,120 @@ def test_expected_duration_seconds_reads_the_first_usable_catalog_duration(
     expected: float | None,
 ) -> None:
     assert source_identity_matching.expected_duration_seconds(talk) == expected
+
+
+EQUIVALENCE = [
+    {
+        "schema_version": 1,
+        "video_id": "QS-_4k7o7A4",
+        "catalog_title": "Spring config battle (Ru)",
+        "provider_title": "JavaDay Kiev 2014: Spring - битва конфигураций",
+        "reason": "cross_language_title",
+        "evidence": "owner-reviewed translation",
+        "verified_at": "2026-08-18T12:00:00Z",
+    }
+]
+
+
+@pytest.mark.parametrize(
+    ("video_id", "provider_title", "expected"),
+    [
+        # The reviewed pair, exactly as recorded.
+        ("QS-_4k7o7A4", EQUIVALENCE[0]["provider_title"], True),
+        # Whitespace and Unicode composition vary without changing what was read.
+        ("QS-_4k7o7A4", f"  {EQUIVALENCE[0]['provider_title']}  ", True),
+        # A different video must never ride another talk's approval.
+        ("wd-mXqXdfk0", EQUIVALENCE[0]["provider_title"], False),
+        # A provider that retitles again re-gates instead of staying approved.
+        ("QS-_4k7o7A4", "JavaDay Kiev 2014: Spring config showdown", False),
+        ("QS-_4k7o7A4", "", False),
+    ],
+)
+def test_title_equivalence_matches_only_the_reviewed_video_and_title(
+    video_id: str,
+    provider_title: str,
+    expected: bool,
+) -> None:
+    assert (
+        source_identity_matching.title_equivalence_recorded(
+            EQUIVALENCE,
+            video_id=video_id,
+            catalog_title="Spring config battle (Ru)",
+            provider_title=provider_title,
+        )
+        is expected
+    )
+
+
+@pytest.mark.parametrize(
+    "ledger",
+    [None, [], "not-a-list", [None], [{"video_id": "QS-_4k7o7A4"}]],
+)
+def test_title_equivalence_treats_an_unusable_ledger_as_no_approval(
+    ledger: object,
+) -> None:
+    assert (
+        source_identity_matching.title_equivalence_recorded(
+            ledger,
+            video_id="QS-_4k7o7A4",
+            catalog_title="Spring config battle (Ru)",
+            provider_title=EQUIVALENCE[0]["provider_title"],
+        )
+        is False
+    )
+
+
+@pytest.mark.parametrize("version", [2, 0, None, True, "1", 1.0])
+def test_an_unrecognized_equivalence_generation_never_suppresses_the_gate(
+    version: object,
+) -> None:
+    """Unusable state is not an approval — what it would suppress is the gate."""
+    record = dict(EQUIVALENCE[0])
+    if version is None:
+        del record["schema_version"]
+    else:
+        record["schema_version"] = version
+
+    assert (
+        source_identity_matching.title_equivalence_recorded(
+            [record],
+            video_id="QS-_4k7o7A4",
+            catalog_title="Spring config battle (Ru)",
+            provider_title=EQUIVALENCE[0]["provider_title"],
+        )
+        is False
+    )
+
+
+def test_pinned_provider_title_is_the_one_canonicalizer() -> None:
+    """Reader and writer must agree on which titles are the same approval."""
+    assert source_identity_matching.pinned_provider_title(
+        "  Spring -  битва   конфигураций \n"
+    ) == source_identity_matching.pinned_provider_title("Spring - битва конфигураций")
+
+
+@pytest.mark.parametrize(
+    ("catalog_title", "expected"),
+    [
+        ("Spring config battle (Ru)", True),
+        # Whitespace and composition still vary harmlessly on this side too.
+        ("  Spring config   battle (Ru) ", True),
+        # A catalog title edited after the review was never approved.
+        ("Spring Configuration Showdown", False),
+        ("", False),
+    ],
+)
+def test_a_catalog_retitle_retires_the_equivalence(
+    catalog_title: str,
+    expected: bool,
+) -> None:
+    """The approval was that THESE two names the same talk — both sides pinned."""
+    assert (
+        source_identity_matching.title_equivalence_recorded(
+            EQUIVALENCE,
+            video_id="QS-_4k7o7A4",
+            catalog_title=catalog_title,
+            provider_title=EQUIVALENCE[0]["provider_title"],
+        )
+        is expected
+    )
