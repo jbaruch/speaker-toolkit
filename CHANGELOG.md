@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.97 — 2026-08-19
+
 ### fix(ci) — the apt cache stops being decorative
 
 The dependency install cached apt's `.deb` archives and hit that cache every
