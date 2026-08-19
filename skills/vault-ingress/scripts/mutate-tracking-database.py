@@ -55,6 +55,7 @@ from pptx_discovery_contract import (
     validate_pptx_directory_exclusions,
 )
 from pptx_talk_identity import binding_refusal
+from source_identity_matching import parse_catalog_date
 
 
 PLAN_SCHEMA_VERSION = 1
@@ -96,13 +97,13 @@ CLARIFICATION_TALK_FIELDS = frozenset({"blind_spot_observations", "humor_postmor
 # purpose: `scan-shownotes.py --apply` refuses review-required entries, and the
 # answer is one narrow owner path, never arbitrary talk-field mutation. Source
 # lanes stay with apply-source-repairs.py.
-METADATA_TALK_FIELDS = frozenset({"title", "conference"})
+METADATA_TALK_FIELDS = frozenset({"title", "conference", "date"})
 # Whether repairing a field invalidates derived analysis. Rhetoric analysis
 # derives from transcript and slide content, so correcting a talk's catalog
 # title or conference cannot stale it — the writer proves that rather than
 # assuming it. A field that DOES invalidate belongs in the second set, and the
 # writer then requires the reprocessing transition in the same plan.
-METADATA_ONLY_FIELDS = frozenset({"title", "conference"})
+METADATA_ONLY_FIELDS = frozenset({"title", "conference", "date"})
 ANALYSIS_INVALIDATING_METADATA_FIELDS: frozenset[str] = frozenset()
 _UNCLASSIFIED_METADATA_FIELDS = METADATA_TALK_FIELDS - (
     METADATA_ONLY_FIELDS | ANALYSIS_INVALIDATING_METADATA_FIELDS
@@ -848,11 +849,21 @@ def _apply_update_talk(
 
 
 def _validate_metadata_values(values: object, label: str) -> None:
-    """Every repaired catalog value is a non-empty trimmed string."""
+    """Every repaired catalog value is a non-empty trimmed string.
+
+    `date` carries the extra requirement that the shared catalog-date parser can
+    read it. Writing an unparseable delivery date would swap a wrong date for an
+    uncheckable one: preflight would stop comparing source evidence against it
+    and report `source_identity_date_uncheckable` instead of gating.
+    """
     if not isinstance(values, dict):
         raise TrackingDatabaseMutationError(f"{label} must be an object")
     for field, value in values.items():
         _nonempty(value, f"{label}.{field}")
+        if field == "date" and parse_catalog_date(value) is None:
+            raise TrackingDatabaseMutationError(
+                f"{label}.date must be YYYY or an ISO-8601 calendar date"
+            )
 
 
 def _apply_reviewed_metadata(
