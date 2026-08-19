@@ -155,75 +155,10 @@ jobs:
             sudo cp -r /etc/apt/sources.list.d "$apt_src_backup/sources.list.d"
           fi
 
-          # Suite-aware, because a line-based rewrite cannot do this correctly:
-          # Azure runners serve BOTH pockets from azure.archive.ubuntu.com, so
-          # matching on the URI alone rewrites the security stanza as an archive
-          # one and the security fallback never applies. deb822 is a stanza
-          # format — the `URIs:` belongs to the `Suites:` in its own stanza — so
-          # the association has to be parsed, not pattern-matched.
-          sudo tee /usr/local/bin/apt-set-mirror >/dev/null <<'PYEOF'
-          #!/usr/bin/env python3
-          """Point Ubuntu archive and security pockets at the given hosts.
-
-          Only official Ubuntu hosts are rewritten; a PPA or third-party repo on
-          the runner is left exactly as it was.
-          """
-          import re
-          import sys
-          from pathlib import Path
-
-          ARCHIVE, SECURITY = sys.argv[1], sys.argv[2]
-          OFFICIAL = re.compile(
-              r"https?://(?:[a-z0-9.-]*\.)?(?:archive|security)\.ubuntu\.com/ubuntu/?"
-          )
-
-
-          def host_for(suites: str) -> str:
-              return SECURITY if any(s.endswith("-security") for s in suites.split()) else ARCHIVE
-
-
-          def rewrite_deb822(text: str) -> str:
-              out = []
-              for stanza in text.split("\n\n"):
-                  suites = ""
-                  for line in stanza.splitlines():
-                      if line.lower().startswith("suites:"):
-                          suites = line.split(":", 1)[1]
-                  host = host_for(suites)
-                  out.append(OFFICIAL.sub(host, stanza) if suites else stanza)
-              return "\n\n".join(out)
-
-
-          # `deb [arch=amd64 signed-by=/k.gpg] <uri> <suite> ...` — the options are
-          # one bracketed group that may contain spaces, and the field after the
-          # URI is the suite. Picking the first non-`[` token instead lands on the
-          # URI, so `-security` is never seen and the security pocket silently
-          # follows the archive host.
-          LEGACY = re.compile(
-              r"^\s*(?:deb|deb-src)\s+(?:\[[^\]]*\]\s+)?\S+\s+(?P<suite>\S+)"
-          )
-
-
-          def rewrite_legacy(text: str) -> str:
-              out = []
-              for line in text.splitlines():
-                  match = LEGACY.match(line)
-                  out.append(OFFICIAL.sub(host_for(match.group("suite")), line) if match else line)
-              return "\n".join(out) + ("\n" if text.endswith("\n") else "")
-
-
-          for path in sys.argv[3:]:
-              target = Path(path)
-              if not target.is_file():
-                  continue
-              body = target.read_text()
-              rewritten = rewrite_deb822(body) if target.suffix == ".sources" else rewrite_legacy(body)
-              if rewritten != body:
-                  target.write_text(rewritten)
-                  print(f"rewrote {target}")
-          PYEOF
-          sudo chmod +x /usr/local/bin/apt-set-mirror
-
+          # The rewrite is suite-aware and lives in scripts/apt_set_mirror.py
+          # with its own tests: a line-based rewrite cannot do it correctly,
+          # because Azure runners serve BOTH pockets from one host and deb822
+          # binds a `URIs:` to the `Suites:` in its own stanza.
           set_mirror() {
             local archive="$1" security="$2"
             if [ -f "$apt_src_backup/sources.list" ]; then
@@ -233,7 +168,8 @@ jobs:
               sudo rm -rf /etc/apt/sources.list.d
               sudo cp -r "$apt_src_backup/sources.list.d" /etc/apt/sources.list.d
             fi
-            sudo /usr/local/bin/apt-set-mirror "$archive" "$security" \
+            sudo python3 "${GITHUB_WORKSPACE}/scripts/apt_set_mirror.py" \
+              "$archive" "$security" \
               /etc/apt/sources.list /etc/apt/sources.list.d/*.list \
               /etc/apt/sources.list.d/*.sources
           }
