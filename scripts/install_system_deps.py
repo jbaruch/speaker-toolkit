@@ -30,6 +30,7 @@ mirrors were skipped. Exit 0 on success, 1 when no path installed.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -141,10 +142,17 @@ def run_command(command: Sequence[str], timeout: int) -> int:
     the caller is walking.
     """
     # Diagnostics go to stderr: stdout carries one JSON object and nothing else,
-    # so a caller can parse it without stripping a command trace out first.
+    # so a caller can parse it without stripping anything out first. The child's
+    # own stdout is redirected there too — apt is chatty, it inherits this
+    # process's streams by default, and its progress would otherwise land in the
+    # middle of the report. Redirecting rather than capturing keeps the output
+    # live, which is the whole point of it during a 300s stall.
     print(f"+ {' '.join(command)}", file=sys.stderr, flush=True)
+    sys.stderr.flush()
     try:
-        return subprocess.run(command, timeout=timeout, check=False).returncode
+        return subprocess.run(
+            command, timeout=timeout, check=False, stdout=sys.stderr
+        ).returncode
     except subprocess.TimeoutExpired:
         print(f"timed out after {timeout}s: {' '.join(command)}", file=sys.stderr)
         return 124
@@ -399,17 +407,52 @@ def install(
     return {"installed": False, "source": None, "unreachable": unreachable}
 
 
-def main(argv: Sequence[str]) -> int:
+def package_digest() -> str:
+    """A short stable digest of the pinned package set.
+
+    The cache key binds to this rather than to the file, so renewing a pin
+    invalidates the cache and editing a comment or the fallback order does not
+    throw away 185 MiB of archives for nothing.
+    """
+    joined = "\n".join(PACKAGES).encode()
+    return hashlib.sha256(joined).hexdigest()[:16]
+
+
+def main(
+    argv: Sequence[str],
+    *,
+    runner: Runner = run_command,
+    os_release: Path = Path("/etc/os-release"),
+    staged_conf: Path = Path("/tmp/apt-99ci.conf"),
+) -> int:
+    """Run the install and emit its report.
+
+    The runner and the two paths read from the machine are keyword arguments so
+    the entry point's own contract — one JSON object on stdout, whatever
+    happened — is testable without an Ubuntu runner under it.
+    """
+    if len(argv) == 2 and argv[1] == "--package-digest":
+        print(package_digest())
+        return 0
     if len(argv) != 2:
-        print("usage: install_system_deps.py <workspace-root>", file=sys.stderr)
+        print(
+            "usage: install_system_deps.py <workspace-root> | --package-digest",
+            file=sys.stderr,
+        )
         return 2
-    workspace = Path(argv[1])
-    report = install(
-        run_command,
-        workspace=workspace,
-        codename=read_codename(Path("/etc/os-release")),
-        staged_conf=Path("/tmp/apt-99ci.conf"),
-    )
+    try:
+        report = install(
+            runner,
+            workspace=Path(argv[1]),
+            codename=read_codename(os_release),
+            staged_conf=staged_conf,
+        )
+    except SystemDepsError as error:
+        # Still one JSON object on stdout: a caller parsing the report should not
+        # have to tell "the install failed" from "the script died" by whether it
+        # got valid JSON.
+        print(error, file=sys.stderr)
+        report = {"installed": False, "source": None, "unreachable": []}
     print(json.dumps(report))
     return 0 if report["installed"] else 1
 

@@ -101,14 +101,16 @@ jobs:
         # publish and install, so _dimensions.yaml was absent from every clean
         # install from 0.20.57 on and the catalog audit exited 1 (issue #316).
         run: python3 scripts/check_shipped_extensions.py > /dev/null
-      - name: Compute the apt cache week
-        id: apt-cache-week
-        # The key rotates weekly so the cached archives and indices are renewed
-        # instead of pinned forever (`dependency-management` Freshness), and the
-        # installer's own hash rotates it whenever the package set or the install
-        # logic changes — the old `-v1` suffix relied on someone remembering to
-        # bump it by hand.
-        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - name: Resolve the apt cache key
+        id: apt-cache-key
+        # The key binds to the pinned package set, not to the installer file: a
+        # renewed pin must invalidate the cache, and an edited comment or a
+        # reordered fallback must not throw away 185 MiB of archives. The week
+        # stamp is the renewal cadence — a set nobody touches is still refetched
+        # rather than pinned forever (`dependency-management` Freshness).
+        run: |
+          echo "packages=$(python3 scripts/install_system_deps.py --package-digest)" >> "$GITHUB_OUTPUT"
+          echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
       - name: Cache apt package downloads and package indices
         # Both halves, and the second is the point. Caching only the .deb
         # archives left `apt-get update` fetching the indices from a mirror on
@@ -120,7 +122,7 @@ jobs:
           path: |
             /tmp/apt-cache
             /tmp/apt-lists
-          key: apt-${{ runner.os }}-${{ hashFiles('scripts/install_system_deps.py') }}-${{ steps.apt-cache-week.outputs.week }}
+          key: apt-${{ runner.os }}-${{ steps.apt-cache-key.outputs.packages }}-${{ steps.apt-cache-key.outputs.week }}
       - name: Install system dependencies (ffmpeg, libreoffice-impress, tesseract)
         # Offline from the cache when it can, else through the mirror list with a
         # reachability probe ahead of each host. The package set, mirror list,

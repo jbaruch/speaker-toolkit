@@ -40,6 +40,11 @@ serves only the current version of each — a superseded pin fails the install
 loudly rather than drifting quietly. The madison query that yields the current
 versions is recorded with them.
 
+The cache key binds to a digest of the pinned set rather than to the installer
+file. Hashing the file invalidated 185 MiB of archives whenever a comment or the
+fallback order changed, and the thing a cache entry actually depends on is which
+package versions it holds.
+
 The step moved out of the workflow into `scripts/install_system_deps.py`, whose
 side effects all route through an injected runner — the command sequence is the
 whole behaviour, and it is now assertable without a runner, sudo, or a network.

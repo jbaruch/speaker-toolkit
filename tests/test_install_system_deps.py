@@ -16,6 +16,7 @@ not which commands were issued to get there.
 from __future__ import annotations
 
 import importlib.util
+import json
 import shutil
 from collections.abc import Sequence
 from pathlib import Path
@@ -443,3 +444,63 @@ def test_the_entry_point_refuses_a_call_without_a_workspace_root():
     read as a mirror failure four times over.
     """
     assert install_system_deps.main(["install_system_deps.py"]) == 2
+
+
+def test_the_real_runner_keeps_child_output_off_stdout(
+    capfd: pytest.CaptureFixture[str],
+):
+    """apt is chatty and inherits this process's streams by default.
+
+    Its progress landing between the report's braces breaks every caller that
+    parses stdout, and the script promises exactly one JSON object there.
+    """
+    code = install_system_deps.run_command(["printf", "Reading package lists"], 30)
+
+    captured = capfd.readouterr()
+    assert code == 0
+    assert captured.out == ""
+    assert "Reading package lists" in captured.err
+
+
+def test_a_failed_setup_command_still_leaves_one_json_object_on_stdout(
+    tmp_path: Path, capfd: pytest.CaptureFixture[str]
+):
+    """A caller should not tell a failed install from a dead script by whether
+    it got parseable JSON back."""
+    system, paths = build(tmp_path, failing="mkdir")
+    os_release = tmp_path / "os-release"
+    os_release.write_text("VERSION_CODENAME=noble\n")
+
+    code = install_system_deps.main(
+        ["install_system_deps.py", str(paths["root"])],
+        runner=system,
+        os_release=os_release,
+        staged_conf=paths["staged_conf"],
+    )
+
+    captured = capfd.readouterr()
+    assert code == 1
+    assert json.loads(captured.out) == {
+        "installed": False,
+        "source": None,
+        "unreachable": [],
+    }
+
+
+def test_the_cache_key_digest_tracks_the_pins_and_nothing_else(
+    capfd: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """The key must invalidate on a renewed pin and survive an edited comment.
+
+    Hashing the file did the first and not the second, throwing away 185 MiB of
+    archives every time the fallback order or a docstring changed.
+    """
+    assert install_system_deps.main(["prog", "--package-digest"]) == 0
+    printed = capfd.readouterr().out.strip()
+
+    assert printed == install_system_deps.package_digest()
+
+    renewed = (*install_system_deps.PACKAGES[:-1], "tesseract-ocr=5.3.5-1")
+    monkeypatch.setattr(install_system_deps, "PACKAGES", renewed)
+    assert install_system_deps.package_digest() != printed
