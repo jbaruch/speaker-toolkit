@@ -182,8 +182,10 @@ def test_parse_catalog_date_keeps_a_bare_year_comparable(
         (date(2013, 11, 28), (None, 2014), True),
         (date(2014, 11, 28), (None, 2014), False),
         (date(2015, 1, 1), (None, 2014), False),
-        # An exact catalog day gates at day precision.
-        (date(2025, 11, 1), (date(2025, 11, 2), 2025), True),
+        # An exact catalog day gates at day precision, allowing one day of
+        # timezone offset — see the dedicated cases below. Two days early is
+        # beyond any real offset and still gates.
+        (date(2025, 10, 31), (date(2025, 11, 2), 2025), True),
         (date(2025, 11, 2), (date(2025, 11, 2), 2025), False),
         # An uncomparable side is unknown, never "does not predate".
         (None, (None, 2014), None),
@@ -337,3 +339,43 @@ def test_a_catalog_retitle_retires_the_equivalence(
         )
         is expected
     )
+
+
+@pytest.mark.parametrize(
+    ("upload", "catalog", "expected"),
+    [
+        # The live ChurConf case: delivered 2 Nov in Auckland (UTC+13), uploaded
+        # straight after, so YouTube stamps it 1 Nov UTC. The catalog is right.
+        (date(2025, 11, 1), (date(2025, 11, 2), 2025), False),
+        # Same day, and a day late, are obviously fine.
+        (date(2025, 11, 2), (date(2025, 11, 2), 2025), False),
+        (date(2025, 11, 3), (date(2025, 11, 2), 2025), False),
+        # Two days early is beyond any real offset — still a real finding.
+        (date(2025, 10, 31), (date(2025, 11, 2), 2025), True),
+        (date(2024, 11, 2), (date(2025, 11, 2), 2025), True),
+    ],
+)
+def test_day_precision_allows_one_day_of_timezone_offset(
+    upload: date,
+    catalog: tuple[date | None, int],
+    expected: bool,
+) -> None:
+    """Upload dates are UTC; delivery dates are local to the venue."""
+    assert source_identity_matching.upload_predates_catalog(upload, catalog) is expected
+
+
+@pytest.mark.parametrize(
+    ("upload", "catalog", "expected"),
+    [
+        # A bare-year record already spans the year, so no grace is warranted:
+        # 31 Dec of the prior year is a real disagreement, not a clock offset.
+        (date(2013, 12, 31), (None, 2014), True),
+        (date(2014, 1, 1), (None, 2014), False),
+    ],
+)
+def test_year_precision_grants_no_timezone_grace(
+    upload: date,
+    catalog: tuple[date | None, int],
+    expected: bool,
+) -> None:
+    assert source_identity_matching.upload_predates_catalog(upload, catalog) is expected

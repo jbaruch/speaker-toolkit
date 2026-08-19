@@ -9,7 +9,7 @@ from the wrong delivery.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import date
+from datetime import date, timedelta
 import math
 import re
 from typing import Any
@@ -390,6 +390,15 @@ def parse_catalog_date(value: Any) -> tuple[date | None, int] | None:
     return parsed, parsed.year
 
 
+# A provider upload date is UTC; a cataloged delivery date is the local day at
+# the venue. A talk delivered in Auckland (UTC+13) and uploaded straight after
+# carries a UTC upload date of the previous day, which is not evidence of a
+# recording that predates its own delivery. One day absorbs every real offset —
+# the extremes are UTC-12 and UTC+14 — while a recording genuinely from an
+# earlier delivery is off by far more than a day.
+UPLOAD_TIMEZONE_GRACE = timedelta(days=1)
+
+
 def upload_predates_catalog(
     upload: date | None,
     catalog: tuple[date | None, int] | None,
@@ -399,12 +408,17 @@ def upload_predates_catalog(
     Compares at the catalog record's own precision: against the exact day when
     the record carries one, and against the year otherwise. `None` means the
     comparison could not be made, which is distinct from `False`.
+
+    Day-precision comparison allows `UPLOAD_TIMEZONE_GRACE`, because the two
+    dates are not measured in the same timezone. Year-precision comparison does
+    not: a bare-year record already spans the whole year, so an upload from the
+    previous year is a real disagreement, not a clock offset.
     """
     if upload is None or catalog is None:
         return None
     catalog_day, catalog_year = catalog
     if catalog_day is not None:
-        return upload < catalog_day
+        return upload < catalog_day - UPLOAD_TIMEZONE_GRACE
     return upload.year < catalog_year
 
 
