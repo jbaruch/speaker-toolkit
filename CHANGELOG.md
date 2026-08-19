@@ -20,6 +20,8 @@ asserts nothing about the record's generation, so it now accepts any generation
 the database assessment can read and leaves the version untouched. Every writer
 that does assume the current analysis shape keeps the strict gate.
 
+## 0.20.95 — 2026-08-19
+
 ### fix(vault-ingress) — the upload comparison respects the venue's timezone (#333)
 
 #333 listed `2025-11-01-churconf-...` among eleven talks whose recording appeared
