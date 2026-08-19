@@ -7,18 +7,20 @@ the live vault then failed on all ten:
 
 ```
 talks['2018-java-8-puzzlers.md'].schema_version must be exact current
-talk schema 6 before this mutation
+talk schema 7 before this mutation
 ```
 
-**209 of the 215 live talk records are schema v1.** Six are v6. Every talk #333
-set out to correct is legacy, and so is 97% of the catalog.
+**209 of the 215 live talk records are schema v1.** The other six are analysed
+records at the current generation. Every talk #333 set out to correct is legacy,
+and so is 97% of the catalog.
 
-No migration lifts them. `_restamp_talk_records` promotes v5 to v6 and stops
-there, because the generations in between carry analysis a migration is
-forbidden to fabricate — recomputing a score under arithmetic its worker never
-used is the silent reinterpretation `stateful-artifacts` exists to prevent. A v1
-record reaches v6 by being reanalyzed, not by being restamped. That function's
-own docstring names the failure this produced:
+No migration lifts them. `_restamp_talk_records` promotes only records that
+already hold the analysis the current shape implies, because the generations
+below carry analysis a migration is forbidden to fabricate — recomputing a score
+under arithmetic its worker never used is the silent reinterpretation
+`stateful-artifacts` exists to prevent. A v1 record reaches the current shape by
+being reanalyzed, not by being restamped. That function's own docstring names
+the failure this produced:
 
 > Without the restamp every stored talk would be unmutatable: the owner writer
 > requires the exact current talk schema before any mutation, so the bump alone
