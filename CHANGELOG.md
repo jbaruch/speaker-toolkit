@@ -30,6 +30,8 @@ When an equivalence applies the check passes silently. A warning on every run
 would be noise about a decision the owner already made and recorded, and the
 record itself carries the evidence and the timestamp.
 
+## 0.20.91 — 2026-08-19
+
 ### feat(vault-ingress) — owner-reviewed delivery-date repair (#333)
 
 Correcting the eleven catalog dates #333 measured turned out to be impossible
