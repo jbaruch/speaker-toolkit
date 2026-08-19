@@ -1,5 +1,91 @@
 # Changelog
 
+### fix(ci) — the apt cache stops being decorative
+
+The dependency install cached apt's `.deb` archives and hit that cache every
+run — 185 MiB restored, logged as `Cache restored successfully` — and then went
+to a mirror anyway. Nothing in the step consulted what it had just restored:
+`fetch_deps()` ran `apt-get update` unconditionally, and the archives only ever
+save work inside `apt-get install`, which the run never reached. The bytes were
+cached, the package indices were not, and fetching the indices is what hung.
+
+So the network trip was not a cache miss. It was unconditional by construction,
+and a perfect cache would not have avoided one second of it.
+
+The indices are cached beside the archives now, and a restored pair installs
+with `--no-download` — no probe, no `apt-get update`, no mirror. Both halves are
+checked rather than the cache-hit flag, because an entry saved before this
+change holds only the archives and cannot resolve anything offline. A cached set
+that cannot satisfy the install — a runner image that gained or lost a
+preinstalled library — falls through to the mirror path instead of failing.
+
+The second failure is what the 20-minute stall actually was. Four mirrors, each
+given a 300s `apt-get update` timeout, each timing out at exactly 300.0s with no
+`Err:` or `Failed to fetch` line anywhere in the log. Canonical, kernel.org and
+Oregon State do not go dark in five-minute lockstep; four identical timeouts are
+the runner's side of the connection. A HEAD of each mirror's `InRelease` now
+runs ahead of it: an unreachable host is skipped in seconds, and every host
+unreachable fails the step immediately naming the runner's network as the
+diagnosis. A mirror that answers the probe and then fails the update is still a
+real mirror failure and still walks the fallback chain, so the two shapes stay
+distinguishable in the report.
+
+Every package now carries an exact version. `tesseract-ocr` was already pinned;
+`ffmpeg` and `libreoffice-impress` were not, so the tested toolchain could change
+between two runs of the same commit. No scanner tracks an apt version baked into
+a script, so the renewal mechanism is stated beside the pins: ffmpeg and
+tesseract sit in the static `noble` pocket, libreoffice-impress ships from
+`noble-updates` on Ubuntu's roughly monthly security cadence, and the archive
+serves only the current version of each — a superseded pin fails the install
+loudly rather than drifting quietly. The madison query that yields the current
+versions is recorded with them.
+
+The cache key binds to a digest of the pinned set plus a week stamp, rather than
+to the installer file. Hashing the file invalidated 185 MiB of archives whenever
+a comment or the fallback order changed, and the thing a cache entry actually
+depends on is which package versions it holds. The week stamp is what keeps a
+set nobody touches from being pinned forever: it is refetched on the next
+rotation instead of being served from a cache indefinitely.
+
+Moving the step out of shell nearly broke the fallback it exists for. The old
+form passed `/etc/apt/sources.list.d/*.list` to the mirror rewriter and the
+shell expanded it first; Python does not, so the rewriter received a path with
+an asterisk in it, found nothing there, and skipped it — silently, since a
+missing source file is a legitimate skip. Every retry would have repointed
+nothing and fetched from the mirror that had just failed. The caller enumerates
+the matching files now, and the tests run the real rewriter against real source
+files and read the mirror back out of them, because a fake that reports success
+for a rewrite that changed nothing is what let the bug pass in the first place.
+The deb822-only layout — what 24.04 actually ships, and where a missed rewrite
+leaves no other file to cover for it — has its own fallback test.
+
+`main` catches at the process boundary under the `error-handling` outer-boundary
+carve-out. The workflow step reads stdout as the report and a non-zero exit as
+"not installed", so an unreadable `/etc/os-release` or a subprocess that will not
+launch has to come back as that report rather than a traceback over empty
+stdout, which a parser reads as a malformed contract instead of a failed
+install. Interrupts still propagate.
+
+The cache locations are the caller's throughout. `configure_apt` and the apt
+config body read the module constants while accepting the arguments, so passing
+a cache path redirected nothing and the tests wrote `/tmp/apt-cache` on whatever
+machine ran them. The fake now refuses any path outside its sandbox, which turns
+that class of leak into a failing test rather than a directory left behind.
+
+The probe covers both hosts of a pair. Only Canonical's splits archive from
+security, and probing the archive alone let a pair with a dead security host
+through to the update that then burned its full timeout — the stall the probe
+exists to avoid. The suites differ with the host: security.ubuntu.com carries
+`<codename>-security` and does not serve the plain suite, so probing it for that
+would report a healthy host as unreachable and skip Canonical permanently.
+
+The step moved out of the workflow into `scripts/install_system_deps.py`, whose
+side effects all route through an injected runner — the command sequence is the
+whole behaviour, and it is now assertable without a runner, sudo, or a network.
+Both original failures are pinned by a test that fails if the cache is consulted
+and the mirror contacted anyway, or if a single `apt-get update` is issued when
+no mirror answered.
+
 ## 0.20.96 — 2026-08-19
 
 ### fix(vault-ingress) — the equivalence ledger becomes its own collection (#333)
