@@ -1,5 +1,44 @@
 # Changelog
 
+### fix(ci) — the apt cache stops being decorative
+
+The dependency install cached apt's `.deb` archives and hit that cache every
+run — 185 MiB restored, logged as `Cache restored successfully` — and then went
+to a mirror anyway. Nothing in the step consulted what it had just restored:
+`fetch_deps()` ran `apt-get update` unconditionally, and the archives only ever
+save work inside `apt-get install`, which the run never reached. The bytes were
+cached, the package indices were not, and fetching the indices is what hung.
+
+So the network trip was not a cache miss. It was unconditional by construction,
+and a perfect cache would not have avoided one second of it.
+
+The indices are cached beside the archives now, and a restored pair installs
+with `--no-download` — no probe, no `apt-get update`, no mirror. Both halves are
+checked rather than the cache-hit flag, because an entry saved before this
+change holds only the archives and cannot resolve anything offline. A cached set
+that cannot satisfy the install — a runner image that gained or lost a
+preinstalled library — falls through to the mirror path instead of failing.
+
+The second failure is what the 20-minute stall actually was. Four mirrors, each
+given a 300s `apt-get update` timeout, each timing out at exactly 300.0s with no
+`Err:` or `Failed to fetch` line anywhere in the log. Canonical, kernel.org and
+Oregon State do not go dark in five-minute lockstep; four identical timeouts are
+the runner's side of the connection. A HEAD of each mirror's `InRelease` now
+runs ahead of it: an unreachable host is skipped in seconds, and every host
+unreachable fails the step immediately naming the runner's network as the
+diagnosis. A mirror that answers the probe and then fails the update is still a
+real mirror failure and still walks the fallback chain, so the two shapes stay
+distinguishable in the report.
+
+The step moved out of the workflow into `scripts/install_system_deps.py`, whose
+side effects all route through an injected runner — the command sequence is the
+whole behaviour, and it is now assertable without a runner, sudo, or a network.
+Both original failures are pinned by a test that fails if the cache is consulted
+and the mirror contacted anyway, or if a single `apt-get update` is issued when
+no mirror answered. The cache key carries the installer's hash and a week stamp,
+so the package set changing invalidates it and a stale set is renewed instead of
+pinned forever — the old hand-bumped `-v1` suffix did neither.
+
 ### fix(vault-ingress) — the equivalence ledger becomes its own collection (#333)
 
 The catalog repair was freed from the current-generation gate; the equivalence
