@@ -26,6 +26,8 @@ Year precision gets no grace. A bare-year record already spans the whole year,
 so an upload from December of the prior year is a real disagreement rather than
 a clock offset.
 
+## 0.20.94 — 2026-08-19
+
 ### fix(vault-ingress) — catalog repair reaches legacy talk records (#333)
 
 #336 gave the delivery date an owner writer. Applying #333's corrections against
