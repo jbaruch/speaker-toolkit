@@ -281,7 +281,7 @@ customization, not the owner default. See the
       "verified_at": "timezone-aware ISO-8601 timestamp"
     }],
     "pptx_path": "Conference/Year/Talk Name.pptx  (optional — highest quality slide source when available)",
-    "schema_version": 5,
+    "schema_version": 7,
     "transcript_source": "youtube_auto|whisper|manual|none  (how the transcript was obtained; MAY BE ABSENT — see below)",
     "transcript_path": "transcripts/{id}.txt  (optional vault-relative path; required for non-YouTube transcript evidence)",
     "slide_source": "pptx|pdf|both|video_extracted|markdown|none  (set in Step 2 per slide source hierarchy)",
@@ -359,7 +359,7 @@ customization, not the owner default. See the
       "not_evaluable": []
     }
   }],
-  "_comment_schema_version": "Database schema v1 is owner-migrated by vault-ingress. A missing talk record version is the historical implicit-v1 lineage. v2 makes transcript_source optional. Two incompatible v3 lineages were emitted; v4 is their source-located union and remains archival with evidence ledger v1. V5 adds applicability assessments, exhaustive outcomes, opportunity-coverage identity, and evidence ledger v2. V6 adds `pattern_score_basis` and a possibly-fractional `pattern_score` at the weighted scoring generation; migration restamps a v5 record to v6 without rescoring it, because recomputing a score under arithmetic its worker never used would restate what the worker meant. Root migration preserves all historical evidence and never synthesizes v5 outcomes.",
+  "_comment_schema_version": "Database schema v1 is owner-migrated by vault-ingress. A missing talk record version is the historical implicit-v1 lineage. v2 makes transcript_source optional. Two incompatible v3 lineages were emitted; v4 is their source-located union and remains archival with evidence ledger v1. V5 adds applicability assessments, exhaustive outcomes, opportunity-coverage identity, and evidence ledger v2. V6 adds `pattern_score_basis` and a possibly-fractional `pattern_score` at the weighted scoring generation; migration restamps a v5 record to v6 without rescoring it, because recomputing a score under arithmetic its worker never used would restate what the worker meant. V7 adds the optional owner-reviewed `source_title_equivalence` ledger; migration restamps a v5 or v6 record to v7 and never invents the field, because an absent ledger already means no equivalences. Root migration preserves all historical evidence and never synthesizes v5 outcomes.",
   "_comment_absent_transcript_source": "Absent transcript_source: the key may be MISSING on a talk, and missing is meaningful — it means provenance is unknown, not that no transcript exists (that is the explicit value `none`). It arises on one path: fetch-transcript.py returning method `existing`, where a valid transcript was already on disk and no fetch ran, so nothing was learned about where it came from. Writers MUST NOT backfill a guess; `manual` in particular asserts a human produced it. Readers gauging transcript reliability MUST treat absent as unknown and MUST NOT default it to any value.",
   "pptx_catalog": [{
     "schema_version": 3,
