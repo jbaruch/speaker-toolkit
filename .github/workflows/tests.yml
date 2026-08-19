@@ -105,6 +105,11 @@ jobs:
         # Cache the downloaded .deb archives (kept in a runner-writable dir via
         # Dir::Cache::Archives below), so the slow libreoffice fetch only hits
         # the network on a cache miss. Bump the key suffix to invalidate.
+        #
+        # `APT::Keep-Downloaded-Packages "true"` below is what makes this cache
+        # exist at all: apt has discarded downloaded .debs after a successful
+        # install since 1.6, so the archive dir was empty when the post-step ran
+        # and no cache was ever written — every run re-fetched all of it.
         uses: actions/cache@v4
         with:
           path: /tmp/apt-cache
@@ -137,6 +142,7 @@ jobs:
           sudo chmod -R 777 /tmp/apt-cache
           sudo tee /etc/apt/apt.conf.d/99ci >/dev/null <<'CONF'
           Dir::Cache::Archives "/tmp/apt-cache";
+          APT::Keep-Downloaded-Packages "true";
           Acquire::Retries "3";
           Acquire::http::Timeout "30";
           Acquire::https::Timeout "30";
