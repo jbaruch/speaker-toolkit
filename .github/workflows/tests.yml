@@ -196,13 +196,21 @@ jobs:
             return 0
           }
 
-          # Each pair is a distinct set of hosts for BOTH pockets, so a stall in
-          # either one is retried somewhere genuinely different. Azure runners
-          # serve security from the archive host; the fallback splits them back
-          # onto Canonical's own.
+          # Ordered fastest-first, then genuinely independent. The first two are
+          # Canonical's own infrastructure and fail together when Canonical is
+          # degraded — which is not a fallback at all, so the list continues onto
+          # mirrors run by other organisations entirely.
+          #
+          # A third-party mirror cannot serve tampered packages: apt verifies
+          # each Release against the ubuntu-archive-keyring signature, so
+          # integrity comes from the signature, not from who hosts the bytes.
+          # Full Ubuntu mirrors carry the `-security` suites too, so one host
+          # serves both pockets.
           installed=""
           for pair in "http://azure.archive.ubuntu.com/ubuntu|http://azure.archive.ubuntu.com/ubuntu" \
-                      "http://archive.ubuntu.com/ubuntu|http://security.ubuntu.com/ubuntu"; do
+                      "http://archive.ubuntu.com/ubuntu|http://security.ubuntu.com/ubuntu" \
+                      "http://mirrors.edge.kernel.org/ubuntu|http://mirrors.edge.kernel.org/ubuntu" \
+                      "http://ubuntu.osuosl.org/ubuntu|http://ubuntu.osuosl.org/ubuntu"; do
             archive="${pair%%|*}"
             security="${pair##*|}"
             set_mirror "$archive" "$security"
@@ -210,10 +218,10 @@ jobs:
               installed="$archive"
               break
             fi
-            echo "apt failed against ${archive} / ${security}; trying the next official pair" >&2
+            echo "apt failed against ${archive} / ${security}; trying the next mirror" >&2
           done
           if [ -z "$installed" ]; then
-            echo "every official Ubuntu archive failed; this is a mirror outage, not a build error — re-run the job" >&2
+            echo "every configured Ubuntu mirror failed, Canonical's and independent alike — re-run the job" >&2
             exit 1
           fi
           echo "system dependencies installed from ${installed}"
