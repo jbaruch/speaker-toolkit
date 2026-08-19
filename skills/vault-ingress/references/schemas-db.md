@@ -175,7 +175,7 @@ no-op.
 |---|---:|
 | database root | 1 |
 | config | 2 (schema 1 remains readable owner-migration input) |
-| talk | 5 |
+| talk | 7 (schemas 1-6 remain readable historical state; v5 and v6 restamp) |
 | PPTX catalog | 3 (schemas 1 and 2 remain readable legacy state) |
 | QR code | 2 (schema 1 remains readable legacy state) |
 | resource summary | 1 |
@@ -193,8 +193,8 @@ no-op.
 | vault-ingress preflight, source audit, analysis rendering, shownotes dry-run | dual reader | Parse schemas 0 and 1; gate through existing finding/error channels; never rewrite |
 | vault-clarification | current read/write | Route schema migration to vault-ingress; preserve config v2 and stamp confirmed intent v1/improvement goal v2 |
 | presentation-creator QR writer | dual reader/current writer | Read schemas 0 and 1; require schema 1 before URL creation or QR metadata persistence; stamp QR v2 |
-| presentation-creator publishing/post-event | authorized current writer | Require schema 1 before tracking writes; stamp resource v1 and preserve talk v5 |
-| illustrations thumbnail workflow | authorized current writer | Require schema 1 before tracking writes; stamp thumbnail v1 and preserve talk v5 |
+| presentation-creator publishing/post-event | authorized current writer | Require schema 1 before tracking writes; stamp resource v1 and preserve talk v7 |
+| illustrations thumbnail workflow | authorized current writer | Require schema 1 before tracking writes; stamp thumbnail v1 and preserve talk v7 |
 | vault-profile | dual reader | Parse schemas 0 and 1; treat unsupported generations as unavailable; never migrate |
 
 Current database schema 1 with config schema 2 requires all eight top-level

@@ -1711,3 +1711,42 @@ def test_a_database_with_nothing_stale_still_reports_no_change(tracking_database
 
     assert migration.changed is False
     assert not any(migration.record_counts.values())
+
+
+def test_v6_restamps_to_the_title_equivalence_record_shape(tracking_database) -> None:
+    """#333: v7 adds the optional equivalence ledger, a pure shape addition.
+
+    A v6 record already holds the analysis v7 implies, so it carries forward
+    untouched. Generations below v5 still stay put — they reach the current
+    shape by being reanalysed, never by being stamped.
+    """
+    database = _legacy_database()
+    database["talks"] = []
+    for version in (1, 4, 5, 6):
+        talk = _legacy_talk(filename=f"v{version}.md")
+        talk["schema_version"] = version
+        database["talks"].append(talk)
+
+    migrated = tracking_database.migrate_tracking_database(database).database
+
+    current = _tracking_database.TALK_RECORD_SCHEMA_VERSION
+    assert [talk["schema_version"] for talk in migrated["talks"]] == [
+        1,
+        4,
+        current,
+        current,
+    ]
+
+
+def test_a_restamped_record_keeps_its_equivalence_ledger_absent(
+    tracking_database,
+) -> None:
+    """Absence means "no equivalences"; migration must not invent the field."""
+    database = _legacy_database()
+    talk = _legacy_talk(filename="v6.md")
+    talk["schema_version"] = 6
+    database["talks"] = [talk]
+
+    migrated = tracking_database.migrate_tracking_database(database).database
+
+    assert "source_title_equivalence" not in migrated["talks"][0]

@@ -36,6 +36,14 @@ blocking finding checks it itself. Reader and writer canonicalize the pinned
 title through one shared normalizer, so two records the reader would treat as a
 single approval cannot be stored as two.
 
+`TALK_RECORD_SCHEMA_VERSION` goes to **7**, because the ledger changes the
+persisted talk-record shape and the nested record's own version does not version
+its parent. The migration restamps v5 and v6 forward — both already hold the
+analysis v7 implies — and leaves earlier generations alone, since those reach the
+current shape by being reanalysed, never by being stamped. On the live vault that
+is 6 records restamped and 209 legacy records untouched. Migration never invents
+the field: absence means "no equivalences", which is the correct default.
+
 When an equivalence applies the check passes silently. A warning on every run
 would be noise about a decision the owner already made and recorded, and the
 record itself carries the evidence and the timestamp.
