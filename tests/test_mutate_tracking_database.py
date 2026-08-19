@@ -1689,3 +1689,96 @@ def test_a_reviewed_date_repair_does_not_open_unrelated_talk_fields(
             database,
             [_repair({"date": "2013", "status": "pending"}, {"date": "2014"})],
         )
+
+
+# Owner-reviewed provider-title equivalence ledger (#333).
+
+
+def _equivalence(**updates: Any) -> dict[str, Any]:
+    record = {
+        "video_id": "QS-_4k7o7A4",
+        "provider_title": "JavaDay Kiev 2014: Spring - битва конфигураций",
+        "reason": "cross_language_title",
+        "evidence": "owner-reviewed translation of the catalog title",
+        "verified_at": "2026-08-18T12:00:00Z",
+    }
+    record.update(updates)
+    return record
+
+
+def _record_equivalence(**updates: Any) -> dict[str, Any]:
+    mutation = {
+        "kind": "record_source_title_equivalence",
+        "filename": "talk.md",
+        "equivalence": _equivalence(),
+    }
+    mutation.update(updates)
+    return mutation
+
+
+def test_a_reviewed_title_equivalence_is_appended_with_a_stamped_version(
+    mutate_tracking_database,
+) -> None:
+    database = _catalog_database()
+
+    candidate, changes = mutate_tracking_database.build_candidate(
+        database, [_record_equivalence()]
+    )
+
+    recorded = candidate["talks"][0]["source_title_equivalence"]
+    assert len(recorded) == 1
+    assert recorded[0]["schema_version"] == 1
+    assert recorded[0]["reason"] == "cross_language_title"
+    assert changes[0]["kind"] == "record_source_title_equivalence"
+    assert "source_title_equivalence" not in database["talks"][0]
+
+
+def test_a_second_equivalence_appends_rather_than_replacing(
+    mutate_tracking_database,
+) -> None:
+    database = _catalog_database(source_title_equivalence=[_equivalence()])
+
+    candidate, _ = mutate_tracking_database.build_candidate(
+        database,
+        [
+            _record_equivalence(
+                equivalence=_equivalence(
+                    video_id="wd-mXqXdfk0",
+                    provider_title="JavaDay Kiev 2014: Транcформации",
+                )
+            )
+        ],
+    )
+
+    assert len(candidate["talks"][0]["source_title_equivalence"]) == 2
+
+
+def test_a_duplicate_equivalence_is_refused(mutate_tracking_database) -> None:
+    database = _catalog_database(source_title_equivalence=[_equivalence()])
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError
+    ) as excinfo:
+        mutate_tracking_database.build_candidate(database, [_record_equivalence()])
+
+    assert "duplicates an equivalence" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        {"reason": "looked_close_enough"},
+        {"evidence": ""},
+        {"verified_at": "2026-08-18T12:00:00"},
+        {"video_id": ""},
+    ],
+)
+def test_an_unreviewable_equivalence_is_refused(
+    mutate_tracking_database, invalid: dict[str, Any]
+) -> None:
+    database = _catalog_database()
+
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(
+            database, [_record_equivalence(equivalence=_equivalence(**invalid))]
+        )

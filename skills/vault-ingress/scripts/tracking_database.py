@@ -46,6 +46,7 @@ RESOURCE_RECORD_SCHEMA_VERSION = 1
 THUMBNAIL_RECORD_SCHEMA_VERSION = 1
 CONFIRMED_INTENT_RECORD_SCHEMA_VERSION = 1
 SOURCE_REJECTION_RECORD_SCHEMA_VERSION = 1
+SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION = 1
 LEGACY_IMPROVEMENT_GOAL_RECORD_SCHEMA_VERSION = 1
 IMPROVEMENT_GOAL_RECORD_SCHEMA_VERSION = 2
 
@@ -189,6 +190,15 @@ CONFIRMED_INTENT_OPTIONAL_FIELDS = frozenset(
 )
 SOURCE_REJECTION_REQUIRED_FIELDS = frozenset(
     {"source_type", "url", "reason", "evidence", "verified_at"}
+)
+SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS = frozenset(
+    {"video_id", "provider_title", "reason", "evidence", "verified_at"}
+)
+# Why an owner accepted a provider title the comparator cannot reach. Closed on
+# purpose: a free-text reason would turn the ledger into a place to wave through
+# any mismatch, which is the wrong-delivery detection this ledger sits next to.
+SOURCE_TITLE_EQUIVALENCE_REASONS = frozenset(
+    {"cross_language_title", "provider_retitled"}
 )
 LEGACY_IMPROVEMENT_GOAL_REQUIRED_FIELDS = frozenset(
     {
@@ -1051,6 +1061,45 @@ def _validate_source_rejection(
         )
 
 
+def validate_source_title_equivalence(
+    equivalence: Mapping[str, object],
+    *,
+    label: str,
+) -> None:
+    """Validate one owner-reviewed title equivalence.
+
+    The record pins the exact provider title an owner reviewed. A provider that
+    retitles the video again no longer matches the pinned string, so the talk
+    re-gates instead of riding a stale approval.
+    """
+    _require_closed_shape(
+        equivalence,
+        required=SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS,
+        label=label,
+    )
+    for field in ("video_id", "provider_title", "evidence"):
+        _require_nonempty_string(equivalence[field], f"{label}.{field}")
+    reason = _require_nonempty_string(equivalence["reason"], f"{label}.reason")
+    if reason not in SOURCE_TITLE_EQUIVALENCE_REASONS:
+        raise TrackingDatabaseError(
+            f"{label}.reason must be one of {sorted(SOURCE_TITLE_EQUIVALENCE_REASONS)}"
+        )
+    verified_at = _require_nonempty_string(
+        equivalence["verified_at"],
+        f"{label}.verified_at",
+    )
+    try:
+        parsed = dt.datetime.fromisoformat(verified_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise TrackingDatabaseError(
+            f"{label}.verified_at must be a timezone-aware ISO-8601 timestamp"
+        ) from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise TrackingDatabaseError(
+            f"{label}.verified_at must be a timezone-aware ISO-8601 timestamp"
+        )
+
+
 def _validate_talk_observation_shape(
     talk: Mapping[str, object],
     index: int,
@@ -1325,6 +1374,23 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
             _validate_source_rejection(
                 rejection,
                 label=f"talks[{talk_index}].source_rejections[{rejection_index}]",
+            )
+        equivalences = talk.get("source_title_equivalence", [])
+        if not isinstance(equivalences, list):
+            raise TrackingDatabaseError(
+                f"talks[{talk_index}].source_title_equivalence must be an array"
+            )
+        for equivalence_index, equivalence in enumerate(equivalences):
+            if not isinstance(equivalence, Mapping):
+                raise TrackingDatabaseError(
+                    f"talks[{talk_index}].source_title_equivalence"
+                    f"[{equivalence_index}] must be a JSON object"
+                )
+            validate_source_title_equivalence(
+                equivalence,
+                label=(
+                    f"talks[{talk_index}].source_title_equivalence[{equivalence_index}]"
+                ),
             )
 
     try:

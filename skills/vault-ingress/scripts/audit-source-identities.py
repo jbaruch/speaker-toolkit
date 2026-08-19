@@ -28,6 +28,7 @@ from source_identity_matching import (
     known_event_aliases,
     normalized_words,
     parse_catalog_date,
+    title_equivalence_recorded,
     titles_agree,
     upload_predates_catalog,
 )
@@ -972,6 +973,11 @@ def audit_database(
             catalog_title = _nonempty(talk.get("title"))
             title_agrees = (
                 titles_agree(catalog_title, provider_title)
+                or title_equivalence_recorded(
+                    talk.get("source_title_equivalence"),
+                    video_id=video_id,
+                    provider_title=provider_title,
+                )
                 if catalog_title and provider_title
                 else None
             )

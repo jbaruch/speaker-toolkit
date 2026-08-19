@@ -1,5 +1,35 @@
 # Changelog
 
+### feat(vault-ingress) — owner-reviewed provider-title equivalence (#333)
+
+Four talks in #333 could not register a source identity because `titles_agree`
+could not reach their provider titles. Two are Russian-language JavaDay Kiev
+2014 recordings whose catalog titles are English summaries carrying a `(Ru)`
+marker. Two are RoboCoders deliveries the uploader published as "AI-Assisted
+Engineering Applied: The Battle of Agents".
+
+Neither is a comparator bug. `битва конфигураций` is "battle of
+configurations", and no deterministic overlap test crosses that gap without also
+matching things it must not. The comparator is right to refuse, and it must stay
+right — it is the same test that catches a video from the wrong delivery.
+
+The alternative was rewriting four catalog titles to whatever the provider
+published: Russian titles in an otherwise-English catalog, and two RoboCoders
+entries that stop matching the ten around them. That discards the speaker's own
+naming to satisfy a string comparison.
+
+`source_title_equivalence` records the judgment as data instead — the exact
+provider title reviewed, why it was accepted from a closed two-value reason set,
+and when. It is consulted only after the deterministic comparison fails, and it
+pins the exact title that was read: a provider that retitles the video again no
+longer matches, and the talk re-gates rather than riding a stale approval. The
+writer appends only and refuses a duplicate, so the ledger stays an audit trail
+rather than a mutable override.
+
+When an equivalence applies the check passes silently. A warning on every run
+would be noise about a decision the owner already made and recorded, and the
+record itself carries the evidence and the timestamp.
+
 ### feat(vault-ingress) — owner-reviewed delivery-date repair (#333)
 
 Correcting the eleven catalog dates #333 measured turned out to be impossible

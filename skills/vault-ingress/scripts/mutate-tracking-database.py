@@ -34,10 +34,12 @@ from tracking_database import (
     RESOURCE_REQUIRED_FIELDS as OWNER_RESOURCE_REQUIRED_FIELDS,
     THUMBNAIL_RECORD_SCHEMA_VERSION,
     THUMBNAIL_REQUIRED_FIELDS as OWNER_THUMBNAIL_REQUIRED_FIELDS,
+    SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION,
     TALK_RECORD_SCHEMA_VERSION,
     TRACKING_DATABASE_SCHEMA_VERSION,
     TrackingDatabaseError,
     require_current_tracking_database,
+    validate_source_title_equivalence,
 )
 from tracking_database_io import (
     TrackingDatabaseIOError,
@@ -848,6 +850,70 @@ def _apply_update_talk(
     )
 
 
+def _apply_record_title_equivalence(
+    database: dict[str, Any],
+    mutation: dict[str, Any],
+    changes: list[dict[str, Any]],
+    *,
+    index: int,
+) -> None:
+    """Append one owner-reviewed provider-title equivalence to a talk.
+
+    The comparator cannot cross languages and cannot follow a provider rename,
+    and the alternative to recording the judgment is rewriting the catalog title
+    to match whatever the provider published. This writer keeps that judgment as
+    reviewable data: the exact provider title, why it was accepted, and when.
+    Appending only — an equivalence is never edited in place, so the ledger
+    stays an audit trail rather than a mutable override.
+    """
+    _require_keys(
+        mutation,
+        required={"kind", "filename", "equivalence"},
+        label=f"mutations[{index}]",
+    )
+    filename = _nonempty(mutation["filename"], f"mutations[{index}].filename")
+    talk = _talk_by_filename(database, filename)
+    _require_current_talk_record(talk, filename=filename)
+    equivalence = mutation["equivalence"]
+    if not isinstance(equivalence, dict):
+        raise TrackingDatabaseMutationError(
+            f"mutations[{index}].equivalence must be an object"
+        )
+    record = dict(equivalence)
+    record.setdefault("schema_version", SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION)
+    try:
+        validate_source_title_equivalence(
+            record,
+            label=f"mutations[{index}].equivalence",
+        )
+    except TrackingDatabaseError as exc:
+        raise TrackingDatabaseMutationError(str(exc)) from exc
+
+    existing = talk.get("source_title_equivalence", [])
+    if not isinstance(existing, list):
+        raise TrackingDatabaseMutationError(
+            f"talks[{filename!r}].source_title_equivalence must be an array"
+        )
+    for recorded in existing:
+        if (
+            isinstance(recorded, dict)
+            and recorded.get("video_id") == record["video_id"]
+            and recorded.get("provider_title") == record["provider_title"]
+        ):
+            raise TrackingDatabaseMutationError(
+                f"mutations[{index}] duplicates an equivalence already recorded "
+                f"for video {record['video_id']!r} on {filename!r}"
+            )
+    talk["source_title_equivalence"] = [*existing, record]
+    _record_change(
+        changes,
+        kind="record_source_title_equivalence",
+        identity=filename,
+        before={"source_title_equivalence": len(existing)},
+        after={"source_title_equivalence": len(existing) + 1},
+    )
+
+
 def _validate_metadata_values(values: object, label: str) -> None:
     """Every repaired catalog value is a non-empty trimmed string.
 
@@ -1491,6 +1557,8 @@ def build_candidate(
             _apply_sever_pptx_talk_binding(candidate, mutation, changes, index=index)
         elif kind == "apply_reviewed_metadata":
             _apply_reviewed_metadata(candidate, mutation, changes, index=index)
+        elif kind == "record_source_title_equivalence":
+            _apply_record_title_equivalence(candidate, mutation, changes, index=index)
         elif kind == "update_talk_publishing":
             _apply_update_talk(candidate, mutation, changes, index=index)
         elif kind == "update_talk_clarification":

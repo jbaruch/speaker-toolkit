@@ -436,3 +436,40 @@ def expected_duration_seconds(talk: dict[str, Any]) -> float | None:
         if isinstance(value, (int, float)) and math.isfinite(value) and value > 0:
             return float(value)
     return None
+
+
+def _pinned_title(value: str) -> str:
+    return " ".join(unicodedata.normalize("NFC", value).split())
+
+
+def title_equivalence_recorded(
+    equivalences: Any,
+    *,
+    video_id: Any,
+    provider_title: Any,
+) -> bool:
+    """Report whether an owner reviewed this exact provider title for this video.
+
+    Comparison is on the pinned string, not the fuzzy title contract: the ledger
+    records a judgment about one observed title, so a provider that retitles the
+    video again stops matching and the talk re-gates. Whitespace and Unicode
+    composition are normalized because those vary without changing what an owner
+    read.
+    """
+    if not isinstance(equivalences, list):
+        return False
+    if not isinstance(video_id, str) or not isinstance(provider_title, str):
+        return False
+    pinned = _pinned_title(provider_title)
+    if not pinned:
+        return False
+    for equivalence in equivalences:
+        if not isinstance(equivalence, dict):
+            continue
+        recorded_id = equivalence.get("video_id")
+        recorded_title = equivalence.get("provider_title")
+        if not isinstance(recorded_id, str) or not isinstance(recorded_title, str):
+            continue
+        if recorded_id == video_id and _pinned_title(recorded_title) == pinned:
+            return True
+    return False

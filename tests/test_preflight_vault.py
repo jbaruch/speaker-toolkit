@@ -4347,3 +4347,70 @@ def test_replaced_source_video_leaves_an_unrelated_talk_current(
     ]
     assert len(lineage) == 1
     assert lineage[0]["filename"] == "2026-07-30-perfect-ingress.md"
+
+
+# Owner-reviewed provider-title equivalence (#333). The comparator cannot cross
+# languages and cannot follow a provider rename, so four talks could not
+# register a source identity without either rewriting the catalog title to
+# whatever the provider published or recording the judgment as data.
+
+
+def title_equivalence(**updates: Any) -> dict[str, Any]:
+    record = {
+        "schema_version": 1,
+        "video_id": VIDEO_ID,
+        "provider_title": "Совершенно другое название",
+        "reason": "cross_language_title",
+        "evidence": "owner-reviewed translation of the catalog title",
+        "verified_at": "2026-08-18T12:00:00Z",
+    }
+    record.update(updates)
+    return record
+
+
+def test_a_reviewed_title_equivalence_clears_the_title_gate(
+    preflight_vault, vault_fixture
+):
+    materialize_transcript(vault_fixture)
+    talk = base_talk(
+        duration_seconds=2700,
+        source_identity=source_identity(title="Совершенно другое название"),
+        source_title_equivalence=[title_equivalence()],
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["database"])
+
+    assert "source_identity_title_mismatch" not in finding_codes(report, "blocking")
+
+
+def test_an_unmatched_title_still_blocks_without_an_equivalence(
+    preflight_vault, vault_fixture
+):
+    materialize_transcript(vault_fixture)
+    talk = base_talk(
+        duration_seconds=2700,
+        source_identity=source_identity(title="Совершенно другое название"),
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["database"])
+
+    assert "source_identity_title_mismatch" in finding_codes(report, "blocking")
+
+
+def test_an_equivalence_for_another_title_does_not_clear_the_gate(
+    preflight_vault, vault_fixture
+):
+    """A provider that retitles again re-gates rather than riding the approval."""
+    materialize_transcript(vault_fixture)
+    talk = base_talk(
+        duration_seconds=2700,
+        source_identity=source_identity(title="Ещё одно новое название"),
+        source_title_equivalence=[title_equivalence()],
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["database"])
+
+    assert "source_identity_title_mismatch" in finding_codes(report, "blocking")

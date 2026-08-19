@@ -270,6 +270,14 @@ customization, not the owner default. See the
       "evidence": "how the rejection was verified",
       "verified_at": "timezone-aware ISO-8601 timestamp"
     }],
+    "source_title_equivalence": [{
+      "schema_version": 1,
+      "video_id": "provider video the equivalence covers",
+      "provider_title": "the exact reviewed provider title",
+      "reason": "cross_language_title|provider_retitled",
+      "evidence": "how the equivalence was reviewed",
+      "verified_at": "timezone-aware ISO-8601 timestamp"
+    }],
     "pptx_path": "Conference/Year/Talk Name.pptx  (optional — highest quality slide source when available)",
     "schema_version": 5,
     "transcript_source": "youtube_auto|whisper|manual|none  (how the transcript was obtained; MAY BE ABSENT — see below)",
@@ -557,8 +565,21 @@ exact-type rule. The supported mutation kinds are:
 | `upsert_resource` | Replace/add one complete schema-v1 record identified by `talk_slug` |
 | `upsert_thumbnail` | Replace/add one complete schema-v1 record identified by `talk_slug` |
 | `apply_reviewed_metadata` | Install one human-reviewed shownotes catalog-conflict decision on one exact talk filename, over a closed identity field set, with `expect` covering exactly the same fields |
+| `record_source_title_equivalence` | Append one owner-reviewed provider-title equivalence to one exact talk filename; append-only and refuses a duplicate |
 | `update_talk_publishing` | Set supported publishing fields on one exact talk filename, with `expect` covering exactly the same fields |
 | `update_talk_clarification` | Set complete object/array `blind_spot_observations` or `humor_postmortem` values on one exact talk, with matching field expectations |
+
+`source_title_equivalence` records that an owner read one provider title and
+accepted it as naming the cataloged talk. The title comparator is deterministic
+and cannot cross languages or follow a provider rename, and the only alternative
+was rewriting the catalog title to whatever the provider published. Its closed
+reason set and matching contract live in
+`skills/vault-ingress/scripts/tracking_database.py::validate_source_title_equivalence`
+and `source_identity_matching.py::title_equivalence_recorded`. An equivalence
+covers one video and one exact title, so a later provider rename re-gates rather
+than inheriting the approval. Consulted only after the deterministic comparison
+fails; when it applies, the check passes silently and the record is the audit
+trail.
 
 `apply_reviewed_metadata` exists because `scan-shownotes.py --apply` refuses
 review-required entries by design: an approved catalog correction otherwise had

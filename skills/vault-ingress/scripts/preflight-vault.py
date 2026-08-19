@@ -76,6 +76,7 @@ from source_identity_matching import (
     expected_duration_seconds,
     known_event_aliases,
     parse_catalog_date,
+    title_equivalence_recorded,
     titles_agree,
     upload_predates_catalog,
 )
@@ -2123,15 +2124,27 @@ class VaultPreflight:
             )
             return
         if not titles_agree(expected_title, observed_title):
-            self.talk_add(
-                index,
-                "blocking",
-                "source_identity_title_mismatch",
-                "recorded video title does not materially overlap the catalog title",
-                field="source_identity.title",
-                expected=expected_title,
-                actual=observed_title,
-            )
+            # An owner may have reviewed this exact provider title and recorded
+            # that it names the cataloged talk — a translation, or a provider
+            # rename the comparator cannot reach. The ledger is consulted only
+            # after the deterministic comparison fails.
+            # Silence is the pass: the persisted ledger record carries the
+            # evidence and the review timestamp, so re-reporting a decision the
+            # owner already made would warn about it on every run forever.
+            if not title_equivalence_recorded(
+                self.talks[index].get("source_title_equivalence"),
+                video_id=evidence.get("video_id"),
+                provider_title=observed_title,
+            ):
+                self.talk_add(
+                    index,
+                    "blocking",
+                    "source_identity_title_mismatch",
+                    "recorded video title does not materially overlap the catalog title",
+                    field="source_identity.title",
+                    expected=expected_title,
+                    actual=observed_title,
+                )
         event_agrees, catalog_event, provider_events = event_agreement(
             self.talks[index].get("conference"),
             observed_title,
