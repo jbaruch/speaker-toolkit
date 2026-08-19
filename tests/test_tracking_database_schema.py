@@ -1809,3 +1809,64 @@ def test_lifting_an_equivalence_is_idempotent(tracking_database):
 
     assert twice.record_counts["source_title_equivalences"] == 0
     assert len(twice.database["source_title_equivalences"]) == 1
+
+
+def _talk_with_nested_ledger(database, nested):
+    database["talks"][0]["schema_version"] = 1
+    database["talks"][0]["source_title_equivalence"] = nested
+    return database
+
+
+def test_an_empty_nested_ledger_is_removed_and_counted(tracking_database):
+    """Removing it changes the database, so it must not report no change.
+
+    A migration that alters bytes while counting zero breaks the no-op contract
+    the caller relies on to decide whether anything was written.
+    """
+    database = _talk_with_nested_ledger(_legacy_database(), [])
+
+    result = tracking_database.migrate_tracking_database(database)
+
+    assert "source_title_equivalence" not in result.database["talks"][0]
+    assert result.record_counts["source_title_equivalences"] == 1
+    assert result.changed is True
+
+
+@pytest.mark.parametrize(
+    "nested",
+    [
+        "not-an-array",
+        {"video_id": "QS-_4k7o7A4"},
+        42,
+    ],
+)
+def test_a_malformed_nested_ledger_is_refused_not_discarded(
+    tracking_database, nested: object
+):
+    """Assessment no longer inspects the nested shape, so discarding it here
+    would destroy owner state with nothing left to report it."""
+    database = _talk_with_nested_ledger(_legacy_database(), nested)
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="must be an array"
+    ):
+        tracking_database.migrate_tracking_database(database)
+
+
+def test_a_malformed_nested_entry_is_refused_not_skipped(tracking_database):
+    database = _talk_with_nested_ledger(_legacy_database(), ["not-an-object"])
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="must be a JSON object"
+    ):
+        tracking_database.migrate_tracking_database(database)
+
+
+def test_a_refused_ledger_leaves_the_input_untouched(tracking_database):
+    """Validation runs before any removal, so nothing is lost on refusal."""
+    database = _talk_with_nested_ledger(_legacy_database(), ["not-an-object"])
+
+    with pytest.raises(tracking_database.TrackingDatabaseError):
+        tracking_database.migrate_tracking_database(database)
+
+    assert database["talks"][0]["source_title_equivalence"] == ["not-an-object"]

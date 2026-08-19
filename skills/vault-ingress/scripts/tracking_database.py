@@ -1531,34 +1531,48 @@ def _migrate_title_equivalences(candidate: dict[str, Any]) -> int:
     v1 recorded the ledger on the talk record, which bound an owner judgment to
     the talk's analysis generation. Readers now consult the collection only, so
     a v1 entry left in place would be ignored and its talk would re-gate on a
-    title mismatch its owner had already approved. The entry is moved, stamped
-    v2, and given the filename of the talk that carried it.
+    title mismatch its owner had already approved.
+
+    Every legacy ledger is validated before anything is removed: assessment no
+    longer inspects the nested shape, so a malformed one discarded here would be
+    destroyed with nothing left to report it. Returns the number of talks whose
+    field was removed, empty ledgers included — removing one changes the
+    database, and a migration that alters bytes while reporting no change breaks
+    the no-op contract callers rely on.
     """
     talks = candidate.get("talks")
     if not isinstance(talks, list):
         return 0
+
+    pending: list[tuple[dict[str, Any], list[Any]]] = []
+    for index, talk in enumerate(talks):
+        if not isinstance(talk, dict) or "source_title_equivalence" not in talk:
+            continue
+        nested = talk["source_title_equivalence"]
+        label = f"talks[{index}].source_title_equivalence"
+        if not isinstance(nested, list):
+            raise TrackingDatabaseError(f"{label} must be an array")
+        for entry_index, record in enumerate(nested):
+            if not isinstance(record, Mapping):
+                raise TrackingDatabaseError(
+                    f"{label}[{entry_index}] must be a JSON object"
+                )
+        pending.append((talk, nested))
+    if not pending:
+        return 0
+
     collection = candidate.get("source_title_equivalences")
     if not isinstance(collection, list):
         collection = []
-    migrated = 0
-    for talk in talks:
-        if not isinstance(talk, dict):
-            continue
-        nested = talk.pop("source_title_equivalence", None)
-        if not isinstance(nested, list):
-            continue
-        filename = talk.get("filename")
+    for talk, nested in pending:
+        del talk["source_title_equivalence"]
         for record in nested:
-            if not isinstance(record, dict):
-                continue
             lifted = dict(record)
-            lifted.setdefault("talk_filename", filename)
+            lifted.setdefault("talk_filename", talk.get("filename"))
             lifted["schema_version"] = SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION
             collection.append(lifted)
-            migrated += 1
-    if migrated:
-        candidate["source_title_equivalences"] = collection
-    return migrated
+    candidate["source_title_equivalences"] = collection
+    return len(pending)
 
 
 def _restamp_talk_records(candidate: dict[str, Any]) -> int:

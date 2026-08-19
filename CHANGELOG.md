@@ -29,6 +29,11 @@ database written before it existed stays valid.
 
 The equivalence record goes to **v2** and the owner migration lifts any v1 entry
 off its talk into the collection, stamped v2 and carrying the owning filename.
+It validates every legacy ledger before removing anything — assessment no longer
+inspects the nested shape, so a malformed one discarded there would be destroyed
+with nothing left to report it — and counts an empty ledger's removal as a
+change, because altering the database while reporting no change breaks the
+no-op contract callers rely on.
 The nested shape shipped in a release, so a consumer can hold one: readers now
 consult the collection only, and an unmigrated entry would be ignored — the talk
 re-gating on a mismatch its owner had already approved, with nothing to show the
