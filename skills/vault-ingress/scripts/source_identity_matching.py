@@ -471,11 +471,12 @@ def pinned_provider_title(value: str) -> str:
 def title_equivalence_recorded(
     equivalences: Any,
     *,
+    talk_filename: Any,
     video_id: Any,
     catalog_title: Any,
     provider_title: Any,
 ) -> bool:
-    """Report whether an owner reviewed this exact title pair for this video.
+    """Report whether an owner reviewed this exact title pair for this talk.
 
     Comparison is on the pinned strings, not the fuzzy title contract: the ledger
     records a judgment about one observed pair, so either side changing retires
@@ -488,7 +489,8 @@ def title_equivalence_recorded(
     if not isinstance(equivalences, list):
         return False
     if (
-        not isinstance(video_id, str)
+        not isinstance(talk_filename, str)
+        or not isinstance(video_id, str)
         or not isinstance(catalog_title, str)
         or not isinstance(provider_title, str)
     ):
@@ -510,17 +512,20 @@ def title_equivalence_recorded(
             or recorded_version != SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION
         ):
             continue
+        recorded_filename = equivalence.get("talk_filename")
         recorded_id = equivalence.get("video_id")
         recorded_title = equivalence.get("provider_title")
         recorded_catalog = equivalence.get("catalog_title")
         if (
-            not isinstance(recorded_id, str)
+            not isinstance(recorded_filename, str)
+            or not isinstance(recorded_id, str)
             or not isinstance(recorded_title, str)
             or not isinstance(recorded_catalog, str)
         ):
             continue
         if (
-            recorded_id == video_id
+            recorded_filename == talk_filename
+            and recorded_id == video_id
             and pinned_provider_title(recorded_title) == pinned
             and pinned_provider_title(recorded_catalog) == pinned_catalog
         ):

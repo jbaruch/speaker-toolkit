@@ -1,6 +1,6 @@
 # Changelog
 
-### fix(vault-ingress) — the equivalence ledger reaches legacy records too (#333)
+### fix(vault-ingress) — the equivalence ledger becomes its own collection (#333)
 
 The catalog repair was freed from the current-generation gate; the equivalence
 writer beside it was not. Registering the four talks the ledger exists for then
@@ -15,10 +15,20 @@ All four are schema v1, like 209 of the 215 live records. The ledger was
 unreachable for every talk it was built to serve — the same gap as the catalog
 repair, one writer over, and only visible when the records were finally written.
 
-An equivalence is a judgment about two titles. It reads no analysis field and
-asserts nothing about the record's generation, so it now accepts any generation
-the database assessment can read and leaves the version untouched. Every writer
-that does assume the current analysis shape keeps the strict gate.
+Relaxing the writer's gate would have written a v7-shape field onto a v1 record
+— the ledger cannot be both "the v7 shape addition" and reachable on v1. The
+contradiction is real, and it comes from `TALK_RECORD_SCHEMA_VERSION` carrying
+two meanings at once: the analysis generation, which is why a v1 record can
+never migrate forward, and the record shape, which is all an owner ledger needs.
+
+`source_title_equivalences` moves out to its own top-level versioned collection,
+keyed by `talk_filename`. The talk record's shape stops changing, so the
+generation question does not arise and no record carries a field it does not
+declare. The collection is optional — absent means no equivalences — so every
+database written before it existed stays valid.
+
+v7 was introduced for this ledger and no longer carries it. The bump is
+published and stays; the migration docstring now says what it actually does.
 
 ## 0.20.95 — 2026-08-19
 

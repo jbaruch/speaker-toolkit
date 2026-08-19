@@ -128,7 +128,7 @@ def source_identity(**updates):
     return evidence
 
 
-def write_database(fixture, talks, config=None, *, current=False):
+def write_database(fixture, talks, config=None, *, current=False, equivalences=None):
     database = {
         "config": config
         or {
@@ -137,6 +137,8 @@ def write_database(fixture, talks, config=None, *, current=False):
         },
         "talks": talks,
     }
+    if equivalences is not None:
+        database["source_title_equivalences"] = equivalences
     if current:
         database.update(
             {
@@ -4358,6 +4360,7 @@ def test_replaced_source_video_leaves_an_unrelated_talk_current(
 def title_equivalence(**updates: Any) -> dict[str, Any]:
     record = {
         "schema_version": 1,
+        "talk_filename": "2026-07-30-perfect-ingress.md",
         "video_id": VIDEO_ID,
         "catalog_title": "Perfect Vault Ingress",
         "provider_title": "Совершенно другое название",
@@ -4376,9 +4379,8 @@ def test_a_reviewed_title_equivalence_clears_the_title_gate(
     talk = base_talk(
         duration_seconds=2700,
         source_identity=source_identity(title="Совершенно другое название"),
-        source_title_equivalence=[title_equivalence()],
     )
-    write_database(vault_fixture, [talk])
+    write_database(vault_fixture, [talk], equivalences=[title_equivalence()])
 
     report = preflight_vault.run_preflight(vault_fixture["database"])
 
@@ -4408,9 +4410,8 @@ def test_an_equivalence_for_another_title_does_not_clear_the_gate(
     talk = base_talk(
         duration_seconds=2700,
         source_identity=source_identity(title="Ещё одно новое название"),
-        source_title_equivalence=[title_equivalence()],
     )
-    write_database(vault_fixture, [talk])
+    write_database(vault_fixture, [talk], equivalences=[title_equivalence()])
 
     report = preflight_vault.run_preflight(vault_fixture["database"])
 
@@ -4426,9 +4427,8 @@ def test_a_catalog_retitle_after_review_re_gates_the_talk(
         title="Perfect Vault Ingress, Revised Edition",
         duration_seconds=2700,
         source_identity=source_identity(title="Совершенно другое название"),
-        source_title_equivalence=[title_equivalence()],
     )
-    write_database(vault_fixture, [talk])
+    write_database(vault_fixture, [talk], equivalences=[title_equivalence()])
 
     report = preflight_vault.run_preflight(vault_fixture["database"])
 

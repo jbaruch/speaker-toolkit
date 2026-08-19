@@ -195,6 +195,7 @@ SOURCE_REJECTION_REQUIRED_FIELDS = frozenset(
 )
 SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS = frozenset(
     {
+        "talk_filename",
         "video_id",
         "catalog_title",
         "provider_title",
@@ -1101,7 +1102,13 @@ def validate_source_title_equivalence(
             f"{label}.schema_version must be "
             f"{SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION}"
         )
-    for field in ("video_id", "catalog_title", "provider_title", "evidence"):
+    for field in (
+        "talk_filename",
+        "video_id",
+        "catalog_title",
+        "provider_title",
+        "evidence",
+    ):
         _require_nonempty_string(equivalence[field], f"{label}.{field}")
     reason = _require_nonempty_string(equivalence["reason"], f"{label}.reason")
     if reason not in SOURCE_TITLE_EQUIVALENCE_REASONS:
@@ -1399,22 +1406,31 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
                 rejection,
                 label=f"talks[{talk_index}].source_rejections[{rejection_index}]",
             )
-        equivalences = talk.get("source_title_equivalence", [])
-        if not isinstance(equivalences, list):
+
+    # Validated in the assessment rather than only at the writer: an equivalence
+    # suppresses the wrong-delivery title gate, so a hand-edited or malformed
+    # record must refuse the database instead of quietly passing a talk.
+    equivalences = database.get("source_title_equivalences", [])
+    if not isinstance(equivalences, list):
+        raise TrackingDatabaseError("source_title_equivalences must be an array")
+    known_filenames = {
+        talk.get("filename")
+        for talk in collections["talks"]
+        if isinstance(talk, Mapping)
+    }
+    for index, equivalence in enumerate(equivalences):
+        if not isinstance(equivalence, Mapping):
             raise TrackingDatabaseError(
-                f"talks[{talk_index}].source_title_equivalence must be an array"
+                f"source_title_equivalences[{index}] must be a JSON object"
             )
-        for equivalence_index, equivalence in enumerate(equivalences):
-            if not isinstance(equivalence, Mapping):
-                raise TrackingDatabaseError(
-                    f"talks[{talk_index}].source_title_equivalence"
-                    f"[{equivalence_index}] must be a JSON object"
-                )
-            validate_source_title_equivalence(
-                equivalence,
-                label=(
-                    f"talks[{talk_index}].source_title_equivalence[{equivalence_index}]"
-                ),
+        validate_source_title_equivalence(
+            equivalence,
+            label=f"source_title_equivalences[{index}]",
+        )
+        if equivalence["talk_filename"] not in known_filenames:
+            raise TrackingDatabaseError(
+                f"source_title_equivalences[{index}].talk_filename names no talk: "
+                f"{equivalence['talk_filename']!r}"
             )
 
     try:
@@ -1523,12 +1539,12 @@ def _restamp_talk_records(candidate: dict[str, Any]) -> int:
     requires the exact current talk schema before any mutation, so the bump
     alone would lock the database until this ran.
 
-    v6 to v7 (#333) adds the optional `source_title_equivalence` ledger. That is
-    a pure shape addition — absence means "no equivalences", the correct default
-    — so the restamp carries a v6 record forward untouched. Only records already
-    holding the analysis v7 implies are restampable; an earlier generation
-    reaches the current shape by being reanalysed, never by being stamped, which
-    is why this set is not simply "every version below current".
+    v6 to v7 (#333) was introduced for an owner ledger that has since moved to
+    its own top-level collection, so v7 adds no field a v6 record lacks and the
+    restamp carries it forward untouched. Only records already holding the
+    analysis v7 implies are restampable; an earlier generation reaches the
+    current shape by being reanalysed, never by being stamped, which is why this
+    set is not simply "every version below current".
     """
     talks = candidate.get("talks")
     if not isinstance(talks, list):

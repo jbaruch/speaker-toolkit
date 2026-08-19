@@ -2132,7 +2132,8 @@ class VaultPreflight:
             # evidence and the review timestamp, so re-reporting a decision the
             # owner already made would warn about it on every run forever.
             if not title_equivalence_recorded(
-                self.talks[index].get("source_title_equivalence"),
+                self.database.get("source_title_equivalences"),
+                talk_filename=self.talks[index].get("filename"),
                 video_id=evidence.get("video_id"),
                 catalog_title=expected_title,
                 provider_title=observed_title,

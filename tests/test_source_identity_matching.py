@@ -227,6 +227,7 @@ def test_expected_duration_seconds_reads_the_first_usable_catalog_duration(
 EQUIVALENCE = [
     {
         "schema_version": 1,
+        "talk_filename": "playlist-QS-_4k7o7A4.md",
         "video_id": "QS-_4k7o7A4",
         "catalog_title": "Spring config battle (Ru)",
         "provider_title": "JavaDay Kiev 2014: Spring - битва конфигураций",
@@ -259,6 +260,7 @@ def test_title_equivalence_matches_only_the_reviewed_video_and_title(
     assert (
         source_identity_matching.title_equivalence_recorded(
             EQUIVALENCE,
+            talk_filename="playlist-QS-_4k7o7A4.md",
             video_id=video_id,
             catalog_title="Spring config battle (Ru)",
             provider_title=provider_title,
@@ -277,6 +279,7 @@ def test_title_equivalence_treats_an_unusable_ledger_as_no_approval(
     assert (
         source_identity_matching.title_equivalence_recorded(
             ledger,
+            talk_filename="playlist-QS-_4k7o7A4.md",
             video_id="QS-_4k7o7A4",
             catalog_title="Spring config battle (Ru)",
             provider_title=EQUIVALENCE[0]["provider_title"],
@@ -299,6 +302,7 @@ def test_an_unrecognized_equivalence_generation_never_suppresses_the_gate(
     assert (
         source_identity_matching.title_equivalence_recorded(
             [record],
+            talk_filename="playlist-QS-_4k7o7A4.md",
             video_id="QS-_4k7o7A4",
             catalog_title="Spring config battle (Ru)",
             provider_title=EQUIVALENCE[0]["provider_title"],
@@ -333,6 +337,7 @@ def test_a_catalog_retitle_retires_the_equivalence(
     assert (
         source_identity_matching.title_equivalence_recorded(
             EQUIVALENCE,
+            talk_filename="playlist-QS-_4k7o7A4.md",
             video_id="QS-_4k7o7A4",
             catalog_title=catalog_title,
             provider_title=EQUIVALENCE[0]["provider_title"],
@@ -384,3 +389,17 @@ def test_year_precision_grace_covers_only_the_boundary(
     expected: bool,
 ) -> None:
     assert source_identity_matching.upload_predates_catalog(upload, catalog) is expected
+
+
+def test_an_equivalence_for_another_talk_is_not_this_talks_approval() -> None:
+    """The ledger is one collection for the whole vault, so it is keyed by talk."""
+    assert (
+        source_identity_matching.title_equivalence_recorded(
+            EQUIVALENCE,
+            talk_filename="some-other-talk.md",
+            video_id="QS-_4k7o7A4",
+            catalog_title="Spring config battle (Ru)",
+            provider_title=EQUIVALENCE[0]["provider_title"],
+        )
+        is False
+    )

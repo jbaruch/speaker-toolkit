@@ -976,7 +976,8 @@ def audit_database(
                 title_agrees = titles_agree(
                     catalog_title, provider_title
                 ) or title_equivalence_recorded(
-                    talk.get("source_title_equivalence"),
+                    database.get("source_title_equivalences"),
+                    talk_filename=talk.get("filename"),
                     video_id=video_id,
                     catalog_title=catalog_title,
                     provider_title=provider_title,

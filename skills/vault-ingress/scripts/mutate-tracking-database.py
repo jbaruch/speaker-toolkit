@@ -888,14 +888,20 @@ def _apply_record_title_equivalence(
     *,
     index: int,
 ) -> None:
-    """Append one owner-reviewed provider-title equivalence to a talk.
+    """Append one owner-reviewed provider-title equivalence.
 
     The comparator cannot cross languages and cannot follow a provider rename,
     and the alternative to recording the judgment is rewriting the catalog title
     to match whatever the provider published. This writer keeps that judgment as
-    reviewable data: the exact provider title, why it was accepted, and when.
-    Appending only — an equivalence is never edited in place, so the ledger
-    stays an audit trail rather than a mutable override.
+    reviewable data: the exact pair of titles, why it was accepted, and when.
+
+    The ledger is its own top-level collection rather than a talk field. A talk
+    record's version tracks its analysis generation, which a legacy record can
+    never advance without fabricating analysis — binding an owner judgment to
+    that generation made the ledger unreachable for the very records needing it.
+
+    Appending only — an equivalence is never edited in place, so the ledger stays
+    an audit trail rather than a mutable override.
     """
     _require_keys(
         mutation,
@@ -904,18 +910,18 @@ def _apply_record_title_equivalence(
     )
     filename = _nonempty(mutation["filename"], f"mutations[{index}].filename")
     talk = _talk_by_filename(database, filename)
-    # Same reasoning as the catalog repair above: an equivalence is a judgment
-    # about two titles and reads no analysis field, so the current-generation
-    # gate does not apply. Requiring it here locked the ledger out of every
-    # legacy record — including all four talks it was built for, which are v1.
-    _require_readable_talk_record(talk, filename=filename)
     equivalence = mutation["equivalence"]
     if not isinstance(equivalence, dict):
         raise TrackingDatabaseMutationError(
             f"mutations[{index}].equivalence must be an object"
         )
     record = dict(equivalence)
+    record.setdefault("talk_filename", filename)
     record.setdefault("schema_version", SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION)
+    if record["talk_filename"] != filename:
+        raise TrackingDatabaseMutationError(
+            f"mutations[{index}].equivalence.talk_filename must be {filename!r}"
+        )
     try:
         validate_source_title_equivalence(
             record,
@@ -952,22 +958,22 @@ def _apply_record_title_equivalence(
             f"recorded source identity on {filename!r}"
         )
 
-    existing = talk.get("source_title_equivalence", [])
+    existing = database.get("source_title_equivalences", [])
     if not isinstance(existing, list):
         raise TrackingDatabaseMutationError(
-            f"talks[{filename!r}].source_title_equivalence must be an array"
+            "source_title_equivalences must be an array"
         )
     # The duplicate predicate is the reader's identity, canonicalized the same
-    # way: video, catalog title, and provider title together. Matching on the
-    # video and provider title alone would reject a newly reviewed approval for
-    # a retitled catalog entry as a duplicate — the reader stopped honoring the
-    # old record at that point, so refusing the new one leaves the talk gated
-    # with no owner-supported way to restore it.
+    # way: talk, video, catalog title, and provider title together. Matching on
+    # fewer fields would reject a newly reviewed approval for a retitled catalog
+    # entry — the reader stopped honoring the old record at that point, so
+    # refusing the new one leaves the talk gated with no way to restore it.
     pinned = pinned_provider_title(record["provider_title"])
     pinned_catalog = pinned_provider_title(record["catalog_title"])
     for recorded in existing:
         if (
             isinstance(recorded, dict)
+            and recorded.get("talk_filename") == filename
             and recorded.get("video_id") == record["video_id"]
             and isinstance(recorded.get("provider_title"), str)
             and isinstance(recorded.get("catalog_title"), str)
@@ -978,13 +984,13 @@ def _apply_record_title_equivalence(
                 f"mutations[{index}] duplicates an equivalence already recorded "
                 f"for video {record['video_id']!r} on {filename!r}"
             )
-    talk["source_title_equivalence"] = [*existing, record]
+    database["source_title_equivalences"] = [*existing, record]
     _record_change(
         changes,
         kind="record_source_title_equivalence",
         identity=filename,
-        before={"source_title_equivalence": len(existing)},
-        after={"source_title_equivalence": len(existing) + 1},
+        before={"source_title_equivalences": len(existing)},
+        after={"source_title_equivalences": len(existing) + 1},
     )
 
 

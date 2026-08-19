@@ -182,7 +182,7 @@ no-op.
 | thumbnail | 1 |
 | confirmed intent | 1 |
 | source rejection | 1 |
-| source title equivalence | 1 |
+| source title equivalence | 1 (own top-level collection, not a talk field) |
 | improvement goal | 2 (schema 1 remains readable historical state) |
 
 | Component | Access | Contract |
@@ -269,15 +269,6 @@ customization, not the owner default. See the
       "source_type": "video|slides", "url": "known-bad upstream URL",
       "reason": "non_delivery_clip|wrong_delivery|unrelated_recording",
       "evidence": "how the rejection was verified",
-      "verified_at": "timezone-aware ISO-8601 timestamp"
-    }],
-    "source_title_equivalence": [{
-      "schema_version": 1,
-      "video_id": "provider video the equivalence covers",
-      "catalog_title": "the exact reviewed catalog title",
-      "provider_title": "the exact reviewed provider title",
-      "reason": "cross_language_title|provider_retitled",
-      "evidence": "how the equivalence was reviewed",
       "verified_at": "timezone-aware ISO-8601 timestamp"
     }],
     "pptx_path": "Conference/Year/Talk Name.pptx  (optional — highest quality slide source when available)",
@@ -571,7 +562,28 @@ exact-type rule. The supported mutation kinds are:
 | `update_talk_publishing` | Set supported publishing fields on one exact talk filename, with `expect` covering exactly the same fields |
 | `update_talk_clarification` | Set complete object/array `blind_spot_observations` or `humor_postmortem` values on one exact talk, with matching field expectations |
 
-`source_title_equivalence` records that an owner read one provider title and
+`source_title_equivalences` is a top-level collection, not a talk field:
+
+```json
+"source_title_equivalences": [{
+  "schema_version": 1,
+  "talk_filename": "playlist-QS-_4k7o7A4.md",
+  "video_id": "provider video the equivalence covers",
+  "catalog_title": "the exact reviewed catalog title",
+  "provider_title": "the exact reviewed provider title",
+  "reason": "cross_language_title|provider_retitled",
+  "evidence": "how the equivalence was reviewed",
+  "verified_at": "timezone-aware ISO-8601 timestamp"
+}]
+```
+
+It sits outside the talk record because a talk's `schema_version` tracks its
+analysis generation, which a legacy record cannot advance without fabricating
+analysis. Binding an owner judgment to that generation made the ledger
+unreachable for the records that needed it. The collection is optional: absent
+means no equivalences.
+
+The ledger records that an owner read one provider title and
 accepted it as naming the cataloged talk. The title comparator is deterministic
 and cannot cross languages or follow a provider rename, and the only alternative
 was rewriting the catalog title to whatever the provider published. Its closed
