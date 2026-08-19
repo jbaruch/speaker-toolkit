@@ -225,6 +225,16 @@ jobs:
             exit 1
           fi
           echo "system dependencies installed from ${installed}"
+
+          # actions/cache tars as the runner user, and apt leaves behind a
+          # root-owned `lock` and `partial/`. tar cannot read them, the save
+          # aborts, and it reports a WARNING — so the step goes green having
+          # cached nothing, which is how this stayed invisible. Drop the
+          # transient entries and hand the archives to the runner.
+          sudo rm -f /tmp/apt-cache/lock
+          sudo rm -rf /tmp/apt-cache/partial
+          sudo chown -R "$(id -u):$(id -g)" /tmp/apt-cache
+          echo "cached $(find /tmp/apt-cache -name '*.deb' | wc -l) .deb archives"
       - run: pip install ".[test]"
       - run: pytest -v --tb=short
 
