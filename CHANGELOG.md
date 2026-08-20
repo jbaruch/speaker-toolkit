@@ -1,5 +1,142 @@
 # Changelog
 
+### feat(vault-ingress) — render markdown-authored decks as slide evidence
+
+Issue #318, items (2) and (3). Seven of twenty-one talks in a real vault had an
+authored deck on disk that this toolkit could not see, because the deck was a
+`slides.md` and every `slide_source` value assumed a binary artifact. Exactly
+one talk in that cohort had a PDF and therefore got slide evidence at all.
+`slide_source: "markdown"` (shipped in 0.20.86) stopped those records being
+invalid; it did not make the deck readable. This does.
+
+`render-markdown-deck.py` detects which of the four tools wrote the deck,
+renders it to `slides/{talk}.pdf`, and hands back a receipt. The PDF then binds
+as an ordinary `static_slides` artifact — no parallel evidence path, no new
+artifact identity, nothing downstream needs to know the deck started as
+markdown. `references/markdown-decks.md` carries the register-and-requeue plan,
+which pairs with the `source_added` reprocess reason from the previous release.
+
+**Four lanes, not one.** The issue proposed a single `markdown-deck` lane. A
+lane is an AND over its commands, and no vault authors decks in four tools at
+once, so one lane would report a presenterm-only vault as degraded for three
+renderers it will never call. `markdown-deck-presenterm`,
+`markdown-deck-slidev`, `markdown-deck-marp`, and `markdown-deck-reveal-md`
+each degrade on their own, and the renderer requires exactly the one the
+detected flavor names.
+
+**The per-click trap, avoided rather than corrected.** The issue documents
+Slidev exports where pages 4, 5 and 6 are cumulative build states of one
+authored slide, and decks of far fewer real slides exporting at 96, 137, 140,
+185 and 228 pages. Item (4) asked for those build runs to be collapsed when
+deriving `slide_count`. The cheaper answer is not to create them: Slidev's
+`--with-clicks` is off by default, and every renderer here is invoked in its
+one-page-per-slide mode, so the page count IS the authored slide count and no
+collapsing is needed. The build structure a per-click export would have carried
+comes from the source instead — the author's own `<!-- pause -->`, `v-click`,
+and `fragment` markers, counted per slide. That is honest
+`progressive-reveal` evidence, and the reference file is explicit that it is
+neither `crawling-code` nor observed motion.
+
+A deck ending on a separator used to invent a slide out of it — an empty span
+starting one line past the end of the file, inflating the very count the page
+count is checked against. The trailing separator closes the slide before it.
+
+The source's own slide count is still computed and reported beside the page
+count as a cross-check, never reconciled with it. A deck using a construct the
+source reader does not model shows up as `slide_count_agrees_with_source:
+false` rather than as a confidently wrong number. One such construct is named
+outright: a Slidev `src:` key imports slides from another file, so the source
+reading is a floor and says so — found by running the reader over the real
+Slidev demo deck, where slide 14 is an import.
+
+The render is staged and probed before it is committed. A renderer that exits 0
+over a corrupt PDF would otherwise replace a valid earlier render with an
+unreadable one and then report the failure, which is the worst of both.
+
+**presenterm's pty, solved rather than documented.** The issue found
+`presenterm --export-pdf` failing non-interactively with `Inappropriate ioctl
+for device (os error 25)`. `script -qec` gets past that and then hits
+`render: screen is too small`, because presenterm reads its export canvas size
+from the terminal's window size and `script` leaves it at 0x0. The renderer
+attaches a stdlib pty sized 45x160, which presenterm reports as a 2560x1440
+canvas — exactly 16:9. Verified against presenterm 0.16.1, which is also where
+the headmatter intro-slide rule came from: `author:` alone adds a page,
+`theme:` and `options:` alone do not.
+
+**CI installs all four and renders through each.** The first cut shipped
+stand-in renderers only, on the reasoning that the real tools are not on the
+runners. `ci-safety` Install, Don't Skip says that is backwards: they are
+installable, so install them. `scripts/install_deck_renderers.py` puts
+presenterm on the runner from its pinned release tarball, checksum-verified,
+and the three npm CLIs plus `playwright-chromium` at exact versions;
+`tests/test_markdown_deck_renderers.py` then renders a three-slide deck through
+each and asserts three pages. That is the only place the claim this design
+rests on is actually testable — a tool that starts exporting per click fails
+there and nowhere else.
+
+The npm side installs from a committed manifest and lock file with `npm ci`,
+not from four top-level versions: exact tops leave the several thousand
+packages beneath them free to move between runs, which is not a pin at all. The
+cache key hashes the lock file's own bytes, so a transitive version that shifts
+under an unchanged manifest misses the cache rather than silently reusing a
+different graph.
+
+The install is otherwise cached on the pin set, so a renewed pin reinstalls and
+an edited comment does not, and both halves are idempotent against a restored
+cache. Three paths are cached, and the two extra ones are the point:
+Slidev drives playwright's chromium and reveal-md drives puppeteer's chrome,
+each downloaded by its own postinstall into its own cache root. Caching the npm
+tree alone would restore a tree whose postinstalls never run again, leaving
+reveal-md with no browser on precisely the runs the cache was meant to speed
+up. `test_ci_carries_every_renderer` fails rather than skips when the
+install left a renderer absent, so a broken install cannot pass as a quiet
+green — a per-flavor `skipif` alone would have hidden exactly that.
+
+Verified before shipping by rendering through the real presenterm 0.16.1,
+Marp 4.5.0 and Slidev 52.19.1: three pages for three authored slides each,
+`<v-clicks>` counted once. reveal-md could not be verified locally — it refuses
+a Node outside `^18.18 || ^20.9 || ^22` and this machine runs 26, which is why
+the workflow pins 22 and a test asserts the runner honours it.
+
+The stand-in renderers stay for what they are good at: a corrupt render, a
+renderer that exits 0 writing nothing, a process that closes its terminal and
+hangs. Those are reproducible against a stand-in and nothing else.
+
+Two cache defects the reviewer found that a green run never would: a present
+`presenterm` binary was taken as the pinned one, and the npm tree counted as
+restored on the strength of Slidev's shim alone. Either would have run an
+unreviewed version and reported a cache hit doing it. Both halves write a stamp
+naming exactly what was installed — presenterm's version, the lock file's
+digest — and a hit now requires the stamp to match and every renderer
+executable to be present.
+
+Two things the live runs found that no amount of local testing would have.
+`tar` told to extract the member `presenterm` failed with `Not found in
+archive`, because the release nests its binary under a version-stamped
+directory and the fixtures were flat. And reveal-md's chromium died with `No
+usable sandbox!`: Ubuntu 23.10 restricts unprivileged user namespaces through
+AppArmor. Chromium suggests `--no-sandbox`, which would have shipped a weakened
+browser to every operator to work around one CI image, so the installer lifts
+the restriction on the runner instead and the renderer stays sandboxed
+everywhere else.
+
+Finding the second one at all took a change worth keeping: reveal-md catches
+every puppeteer failure and prints exactly `Error while generating PDF for
+"<deck>"`. A `RendererSpec` can now declare the environment its tool needs, and
+reveal-md's declares its debug channel — so the wrapper's diagnostic carries
+the real exception rather than that one line.
+
+And once reveal-md could render at all, it rendered the per-click export this
+whole design exists to avoid: reveal.js puts every fragment on its own PDF
+page, so the three-slide fixture with one fragment came back as four. There is
+no flag for it — reveal-md reads `pdfSeparateFragments` only from a
+`reveal-md.json` in its working directory — so a spec can also declare files to
+drop in the staging directory it runs from. Slidev's `--with-clicks` was off by
+default; reveal.js's equivalent is on, and only a live render says which.
+
+Also fixed while in `tests/test_check_runtime.py`: a child-process traceback
+assertion that failed under an inherited `FORCE_COLOR`, which Python 3.13+
+reads as permission to colorize. The child now runs with `PYTHON_COLORS=0`.
 ## 0.20.100 — 2026-08-20
 
 ### fix(ci) — renew the Chocolatey ffmpeg pin to 9.0.1

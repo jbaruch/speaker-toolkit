@@ -41,9 +41,14 @@ Every script named below lives in `skills/vault-ingress/scripts/`.
 | `audit-pattern-catalog.py` | one JSON report | 3 | `catalog_audit_unexpected_failure` | — read-only |
 | `aggregate-catalog-feedback.py` | one JSON report | 3 | `catalog_feedback_unexpected_failure` | — read-only |
 | `audit-persisted-pattern-observations.py` | one JSON report | 3 | `persisted_observation_audit_unexpected_failure` | — read-only |
+| `render-markdown-deck.py` | one JSON receipt | 3 | `render_markdown_deck_unexpected_failure` | `output_written` |
 
-The three read-only audits use exit 3 because argparse already owns exit 2
-there; a caller can still tell a malformed invocation from a broken tool.
+The three read-only audits and `render-markdown-deck.py` use exit 3 because
+argparse already owns exit 2 there; a caller can still tell a malformed
+invocation from a broken tool. `render-markdown-deck.py` additionally owns exit
+1 for its own verdict — an unreadable deck, an unavailable renderer lane, a
+renderer that failed — with a plain diagnostic on stderr, not the JSON document
+above.
 
 `preflight-vault.py` is the one entrypoint whose failure lands on **stdout**: a
 caller gates claiming on its report, and a missing report reads as "preflight
@@ -61,8 +66,8 @@ keys match every other finding — so a consumer parses it normally.
 
 ## Retrying a Mutating Script
 
-`database_written` and `analyses_written` state whether the atomic commit
-landed before the failure:
+`database_written`, `analyses_written`, and `output_written` state whether the
+atomic commit landed before the failure:
 
 - `true` — the write is durable. Re-running re-persists the batch. Re-read the
   live state before deciding.

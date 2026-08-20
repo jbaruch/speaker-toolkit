@@ -152,9 +152,12 @@ Drive acquisition additionally needs the `gdown` module; captions need
 `youtube-transcript-api`; audio download fallback needs `yt-dlp`; rendered PDF
 inspection needs `pdftoppm`; video extraction needs exactly `Pillow==12.3.0`,
 `ImageHash==4.3.2`, `numpy==2.2.6`, and `filelock==3.32.2`, plus `ffmpeg` and
-`ffprobe`; local Whisper needs `mlx-whisper` and `ffprobe`.
+`ffprobe`; local Whisper needs `mlx-whisper` and `ffprobe`; rendering a
+markdown-authored deck needs that deck's own tool, one lane per flavor (see
+[markdown-decks.md](markdown-decks.md)).
 Inspect those with the checker's `google-drive`, `captions`,
-`youtube-download`, `pdf-render`, `video`, and `whisper` lanes as selected talks
+`youtube-download`, `pdf-render`, `video`, `whisper`, and `markdown-deck-*`
+lanes as selected talks
 require; use `source-video` for evidence over an already-preserved recording and
 `video` for frame extraction. Each lane is independent: a failed optional
 import/tool disables only that lane. Import failure details appear under the

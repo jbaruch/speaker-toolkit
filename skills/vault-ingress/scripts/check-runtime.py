@@ -90,6 +90,29 @@ LANE_REQUIREMENTS: dict[str, dict[str, dict[str, str]]] = {
         "modules": {},
         "commands": {"pdftoppm": "pdftoppm"},
     },
+    # One lane per markdown deck tool rather than one `markdown-deck` lane over
+    # all four. A lane is an AND over its commands, and no vault authors decks
+    # in every tool at once: a single lane would report a presenterm-only vault
+    # as degraded for the three renderers it will never call. Each degrades on
+    # its own, and `render-markdown-deck.py` requires exactly the one the deck's
+    # detected flavor names.
+    "markdown-deck-presenterm": {
+        "modules": {},
+        # presenterm shells out to weasyprint for the PDF itself.
+        "commands": {"presenterm": "presenterm", "weasyprint": "weasyprint"},
+    },
+    "markdown-deck-slidev": {
+        "modules": {},
+        "commands": {"slidev": "slidev"},
+    },
+    "markdown-deck-marp": {
+        "modules": {},
+        "commands": {"marp": "marp"},
+    },
+    "markdown-deck-reveal-md": {
+        "modules": {},
+        "commands": {"reveal-md": "reveal-md"},
+    },
 }
 DEFAULT_LANES = ("core", "pdf", "pptx")
 DEFAULT_REQUIRED_LANES = ("core",)

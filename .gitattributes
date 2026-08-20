@@ -13,3 +13,10 @@
 skills/**/*.bas.txt linguist-generated=true merge=ours
 skills/**/*.applescript.txt linguist-generated=true merge=ours
 skills/**/*.yaml.txt linguist-generated=true merge=ours
+
+# Renderer dependency lock. Committed under the generated-artifact exception in
+# coding-policy: file-hygiene — pinning four top-level versions leaves the
+# several thousand beneath them free to move, and `npm ci` needs the lock to
+# install the graph that was reviewed. Regenerate with
+# `npm install --package-lock-only`, never by hand.
+scripts/deck-renderers/package-lock.json linguist-generated=true merge=ours

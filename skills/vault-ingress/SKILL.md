@@ -59,6 +59,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | [references/rhetoric-dimensions.md](references/rhetoric-dimensions.md) | 14 analysis dimensions |
 | [references/subagent-instructions.md](references/subagent-instructions.md) | Step 3 per-talk procedure — transcript download, slide acquisition, fallback chains, return-JSON shape |
 | [references/video-slide-extraction.md](references/video-slide-extraction.md) | Video-to-slides pipeline — layout heuristics, tuning, limitations |
+| [references/markdown-decks.md](references/markdown-decks.md) | Slidev/presenterm/Marp/reveal-md decks — render lanes, register-and-requeue, reveal structure |
 | [references/source-identity-preflight.md](references/source-identity-preflight.md) | Offline identity, duplicate-source, enum, and artifact integrity contracts |
 | [references/source-identity-audit.md](references/source-identity-audit.md) | Networked, read-only capture of live provider identity evidence and review findings |
 | [references/catalog-feedback-intake.md](references/catalog-feedback-intake.md) | Five-lane catalog-feedback schema, polarity, recurrence, and review contract |
@@ -79,12 +80,15 @@ finish `processed_partial`; `video_url` is not a queue prerequisite. Slide sourc
 in order of preference:
 1. `pptx_path` — richest data (exact colors, fonts, shapes via python-pptx)
 2. `slides_url` — download PDF from Google Drive
-3. `video_url` — extract slides from the video using ffmpeg + perceptual dedup
-4. none — transcript-only analysis (`processed_partial`)
+3. a markdown deck (Slidev, presenterm, Marp, reveal-md) — render it to
+   `slides/{talk}.pdf` and register it as a normal PDF source, per
+   [references/markdown-decks.md](references/markdown-decks.md)
+4. `video_url` — extract slides from the video using ffmpeg + perceptual dedup
+5. none — transcript-only analysis (`processed_partial`)
 
 The `slide_source` field tracks which path: `"pptx"`, `"pdf"`, `"both"`,
 `"video_extracted"`, `"markdown"` (a Slidev/presenterm/Marp deck — provenance
-only, it yields no slide evidence until exported to PDF and re-registered as
+only, it yields no slide evidence until rendered to PDF and re-registered as
 `"pdf"`), or `"none"`. The `pptx_catalog` array fuzzy-matches `.pptx`
 files to shownotes entries.
 

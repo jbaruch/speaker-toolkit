@@ -64,7 +64,10 @@ jobs:
     runs-on: ubuntu-latest
     # Backstop against the apt step hanging on flaky runner networking: fail
     # fast and re-runnable instead of consuming the 6h default job limit.
-    timeout-minutes: 25
+    # Raised from 25 when the markdown deck renderers landed: a cold cache pays
+    # for three npm trees and two browser downloads on top of the apt install,
+    # and four live renders after that. A warm cache is nowhere near this.
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -145,7 +148,50 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: python3 scripts/install_system_deps.py "$GITHUB_WORKSPACE"
-      - run: pip install ".[test]"
+      - uses: actions/setup-node@v7
+        with:
+          # reveal-md 6.1.4 declares `node: ^18.18.0 || ^20.9.0 || ^22.0.0`, and
+          # scripts/install_deck_renderers.py pins the major it expects so a
+          # drift between the two fails a test rather than a CI run. No
+          # Dependabot ecosystem tracks a `node-version` input; renew this
+          # literal with the renderer pins in that script.
+          node-version: "22.23.2"
+      - name: Resolve the markdown-deck renderer cache key
+        id: deck-renderers
+        # Keyed on the pin set, not the installer file: a renewed pin must miss
+        # the cache and reinstall, an edited comment must not throw away three
+        # npm trees and a browser download.
+        run: |
+          set -euo pipefail
+          digest="$(python3 scripts/install_deck_renderers.py --pin-digest \
+            | jq -r .pin_digest)"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Cache the markdown deck renderers
+        # Three paths, because the browsers do not live in the workspace and
+        # they are the expensive half of this install. Two of them: Slidev
+        # drives playwright's chromium, reveal-md drives puppeteer's chrome,
+        # and each postinstall downloads into its own cache root. Caching the
+        # npm tree without them would restore a tree whose postinstalls never
+        # run again and leave reveal-md with no browser at all.
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/deck-renderers
+            ~/.cache/ms-playwright
+            ~/.cache/puppeteer
+          key: deck-renderers-${{ runner.os }}-${{ steps.deck-renderers.outputs.digest }}
+      - name: Install the markdown deck renderers
+        # presenterm, Slidev, Marp and reveal-md, so the renderer's tests drive
+        # the real tools rather than stand-ins (`ci-safety` Install, Don't
+        # Skip). Pins, checksums, and the idempotent cache-hit path are the
+        # script's — see scripts/install_deck_renderers.py, covered by
+        # tests/test_install_deck_renderers.py. The report is discarded; the
+        # step reads the exit code and the PATH export.
+        run: python3 scripts/install_deck_renderers.py "$GITHUB_WORKSPACE" > /dev/null
+      # `markdown-deck` carries weasyprint, which presenterm shells out to for
+      # its PDF export. Declared as an extra so the pip ecosystem in
+      # .github/dependabot.yml renews it like every other pin.
+      - run: pip install ".[test,markdown-deck]"
       - run: pytest -v --tb=short
 
   # Exercise native artifact supervision, path handling, private video

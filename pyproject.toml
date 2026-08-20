@@ -71,6 +71,15 @@ lint = [
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
     "lxml-stubs==0.5.1",
 ]
+# presenterm shells out to weasyprint for its PDF export, so the
+# `markdown-deck-presenterm` runtime lane needs the command this installs. An
+# extra rather than a base dependency: three of the four markdown deck
+# renderers are npm CLIs this manifest cannot express at all, and a vault that
+# authors no presenterm decks should not carry a PDF engine.
+# Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
+markdown-deck = [
+    "weasyprint==69.0",
+]
 # Local Whisper transcription, used by vault-ingress/scripts/fetch-transcript.py
 # when a video has no caption track. Optional and not in the base dependency set
 # because mlx-whisper requires Apple Silicon and cannot install on the Linux CI

@@ -1,0 +1,534 @@
+"""Contract tests for the CI markdown-deck renderer install.
+
+Every command goes through an injected runner, so the install sequence is
+assertable without a network, a node, or a GitHub runner.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import io
+import json
+import re
+import subprocess
+import sys
+import tarfile
+from pathlib import Path
+
+import pytest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts" / "install_deck_renderers.py"
+SPEC = importlib.util.spec_from_file_location("install_deck_renderers", SCRIPT)
+assert SPEC is not None and SPEC.loader is not None
+install_deck_renderers = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = install_deck_renderers
+SPEC.loader.exec_module(install_deck_renderers)
+
+
+# The real asset nests its payload under a version-stamped directory. Fixtures
+# mirror that: a flat archive would have let the member-path extraction that
+# `tar: presenterm: Not found in archive` killed in CI pass here.
+PRESENTERM_ARCHIVE_PREFIX = "presenterm-0.16.1"
+
+
+def _tarball(member_names: tuple[str, ...]) -> bytes:
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+        for name in member_names:
+            payload = b"#!/bin/sh\nexit 0\n"
+            info = tarfile.TarInfo(f"{PRESENTERM_ARCHIVE_PREFIX}/{name}")
+            info.size = len(payload)
+            archive.addfile(info, io.BytesIO(payload))
+    return buffer.getvalue()
+
+
+class _FakeRunner:
+    """Record every command, and act out the side effects a real one has."""
+
+    def __init__(
+        self,
+        *,
+        archive: bytes | None = None,
+        failing: str | None = None,
+        silent_tar: bool = False,
+        npm_produces: tuple[str, ...] | None = None,
+    ):
+        self.commands: list[list[str]] = []
+        self.npm_prefix_contents: list[str] = []
+        self._npm_produces = (
+            install_deck_renderers.NPM_EXECUTABLES
+            if npm_produces is None
+            else npm_produces
+        )
+        self._archive = archive
+        self._failing = failing
+        self._silent_tar = silent_tar
+
+    def __call__(self, command, timeout):  # noqa: D102 - runner protocol
+        del timeout  # every command here is instantaneous
+        self.commands.append(list(command))
+        if self._failing is not None and command[0] == self._failing:
+            return 1
+        if command[0] == "curl":
+            destination = Path(command[command.index("--output") + 1])
+            destination.write_bytes(self._archive or b"")
+        if command[0] == "tar" and self._silent_tar:
+            return 0
+        if command[0] == "tar":
+            target = Path(command[command.index("-C") + 1])
+            with tarfile.open(fileobj=io.BytesIO(self._archive or b"")) as archive:
+                for member in archive.getmembers():
+                    if not member.isfile():
+                        continue
+                    handle = archive.extractfile(member)
+                    if handle is None:
+                        continue
+                    destination = target / member.name
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination.write_bytes(handle.read())
+        if command[0] == "npm":
+            prefix = Path(command[command.index("--prefix") + 1])
+            self.npm_prefix_contents = sorted(
+                path.name for path in prefix.iterdir() if path.is_file()
+            )
+            binaries = prefix / "node_modules" / ".bin"
+            binaries.mkdir(parents=True, exist_ok=True)
+            for executable in self._npm_produces:
+                (binaries / executable).write_text("", encoding="utf-8")
+        return 0
+
+
+@pytest.fixture
+def pinned_archive(monkeypatch):
+    """Return a tarball whose checksum the module accepts as the pinned one."""
+    archive = _tarball(("presenterm",))
+    monkeypatch.setattr(
+        install_deck_renderers,
+        "PRESENTERM_SHA512",
+        hashlib.sha512(archive).hexdigest(),
+    )
+    return archive
+
+
+def test_the_pin_digest_is_stable_and_short():
+    first = install_deck_renderers.pin_digest()
+
+    assert first == install_deck_renderers.pin_digest()
+    assert re.fullmatch(r"[0-9a-f]{16}", first)
+
+
+def test_renewing_a_pin_changes_the_cache_key(monkeypatch):
+    before = install_deck_renderers.pin_digest()
+    monkeypatch.setattr(install_deck_renderers, "PRESENTERM_VERSION", "0.17.0")
+
+    assert install_deck_renderers.pin_digest() != before
+
+
+def _stamp_presenterm(root: Path, version: str) -> None:
+    binary = root / "bin" / "presenterm"
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    binary.write_text("", encoding="utf-8")
+    (binary.parent / install_deck_renderers.PRESENTERM_STAMP).write_text(
+        f"{version}\n", encoding="utf-8"
+    )
+
+
+def test_a_cached_presenterm_is_left_alone(tmp_path):
+    _stamp_presenterm(tmp_path, install_deck_renderers.PRESENTERM_VERSION)
+    runner = _FakeRunner()
+
+    assert install_deck_renderers.install_presenterm(tmp_path, runner) == "cached"
+    assert runner.commands == []
+
+
+def test_a_cached_presenterm_from_another_pin_is_reinstalled(
+    tmp_path,
+    pinned_archive,
+):
+    """A present binary is not evidence of the pinned binary."""
+    _stamp_presenterm(tmp_path, "0.15.0")
+    runner = _FakeRunner(archive=pinned_archive)
+
+    assert install_deck_renderers.install_presenterm(tmp_path, runner) == "downloaded"
+    assert runner.commands[0][0] == "curl"
+
+
+def test_an_unstamped_presenterm_is_reinstalled(tmp_path, pinned_archive):
+    """A half-restored cache leaves the file without the stamp beside it."""
+    binary = tmp_path / "bin" / "presenterm"
+    binary.parent.mkdir(parents=True)
+    binary.write_text("", encoding="utf-8")
+
+    result = install_deck_renderers.install_presenterm(
+        tmp_path, _FakeRunner(archive=pinned_archive)
+    )
+
+    assert result == "downloaded"
+    assert (binary.parent / install_deck_renderers.PRESENTERM_STAMP).exists()
+
+
+def test_presenterm_is_downloaded_and_checksum_verified(tmp_path, pinned_archive):
+    runner = _FakeRunner(archive=pinned_archive)
+
+    result = install_deck_renderers.install_presenterm(tmp_path, runner)
+
+    assert result == "downloaded"
+    assert (tmp_path / "bin" / "presenterm").is_file()
+    assert runner.commands[0][0] == "curl"
+    assert install_deck_renderers.PRESENTERM_URL in runner.commands[0]
+    # The archive is not left behind to be cached as dead weight.
+    assert not (tmp_path / install_deck_renderers.PRESENTERM_ASSET).exists()
+
+
+def test_an_asset_that_changed_under_the_pin_is_refused(tmp_path):
+    runner = _FakeRunner(archive=_tarball(("presenterm",)))
+
+    with pytest.raises(install_deck_renderers.InstallFailure) as excinfo:
+        install_deck_renderers.install_presenterm(tmp_path, runner)
+
+    assert "checksum" in str(excinfo.value)
+    assert not (tmp_path / "bin" / "presenterm").exists()
+
+
+def test_an_archive_without_the_binary_is_refused(tmp_path, monkeypatch):
+    """An asset that carries everything but the binary is a layout change."""
+    archive = _tarball(("README.md",))
+    monkeypatch.setattr(
+        install_deck_renderers,
+        "PRESENTERM_SHA512",
+        hashlib.sha512(archive).hexdigest(),
+    )
+    runner = _FakeRunner(archive=archive)
+
+    with pytest.raises(install_deck_renderers.InstallFailure) as excinfo:
+        install_deck_renderers.install_presenterm(tmp_path, runner)
+
+    assert "release layout changed" in str(excinfo.value)
+    assert not (tmp_path / "bin" / "presenterm").exists()
+
+
+def test_a_failed_extraction_is_refused(tmp_path, monkeypatch, pinned_archive):
+    runner = _FakeRunner(archive=pinned_archive, failing="tar")
+
+    with pytest.raises(install_deck_renderers.InstallFailure) as excinfo:
+        install_deck_renderers.install_presenterm(tmp_path, runner)
+
+    assert "could not extract" in str(excinfo.value)
+
+
+def test_a_binary_nested_under_a_version_directory_is_found(
+    tmp_path,
+    pinned_archive,
+):
+    """The real asset nests it; naming a flat member path failed in CI."""
+    runner = _FakeRunner(archive=pinned_archive)
+
+    install_deck_renderers.install_presenterm(tmp_path, runner)
+
+    assert (tmp_path / "bin" / "presenterm").is_file()
+    # The extraction staging area does not survive into the cached tree.
+    assert not (tmp_path / "presenterm-extract").exists()
+
+
+def test_an_extraction_that_writes_no_binary_is_refused(tmp_path, pinned_archive):
+    """A layout change can leave tar happy and the binary somewhere else."""
+    runner = _FakeRunner(archive=pinned_archive, silent_tar=True)
+
+    with pytest.raises(install_deck_renderers.InstallFailure) as excinfo:
+        install_deck_renderers.install_presenterm(tmp_path, runner)
+
+    assert "release layout changed" in str(excinfo.value)
+
+
+def test_a_failed_download_names_the_url(tmp_path):
+    runner = _FakeRunner(failing="curl")
+
+    with pytest.raises(install_deck_renderers.InstallFailure) as excinfo:
+        install_deck_renderers.install_presenterm(tmp_path, runner)
+
+    assert install_deck_renderers.PRESENTERM_URL in str(excinfo.value)
+
+
+def _stamp_npm(root: Path, digest: str, executables: tuple[str, ...]) -> None:
+    prefix = root / "npm"
+    binaries = prefix / "node_modules" / ".bin"
+    binaries.mkdir(parents=True, exist_ok=True)
+    for executable in executables:
+        (binaries / executable).write_text("", encoding="utf-8")
+    (prefix / install_deck_renderers.NPM_STAMP).write_text(
+        f"{digest}\n", encoding="utf-8"
+    )
+
+
+def _locked_digest() -> str:
+    return hashlib.sha256(install_deck_renderers.NPM_LOCKFILE.read_bytes()).hexdigest()
+
+
+def test_a_cached_npm_tree_is_left_alone(tmp_path):
+    _stamp_npm(tmp_path, _locked_digest(), install_deck_renderers.NPM_EXECUTABLES)
+    runner = _FakeRunner()
+
+    assert install_deck_renderers.install_npm_renderers(tmp_path, runner) == "cached"
+    assert runner.commands == []
+
+
+def test_a_tree_installed_from_another_lock_is_reinstalled(tmp_path):
+    """The lock moved under an unchanged tree; the tree is the old graph."""
+    _stamp_npm(tmp_path, "0" * 64, install_deck_renderers.NPM_EXECUTABLES)
+    runner = _FakeRunner()
+
+    assert install_deck_renderers.install_npm_renderers(tmp_path, runner) == "installed"
+    assert runner.commands[0][:2] == ["npm", "ci"]
+
+
+def test_a_partially_restored_tree_is_reinstalled(tmp_path):
+    """Slidev alone is not the install; Marp and reveal-md are renderers too."""
+    _stamp_npm(tmp_path, _locked_digest(), ("slidev",))
+    runner = _FakeRunner()
+
+    assert install_deck_renderers.install_npm_renderers(tmp_path, runner) == "installed"
+    assert runner.commands[0][:2] == ["npm", "ci"]
+
+
+def test_an_npm_ci_that_produces_no_renderer_is_refused(tmp_path):
+    runner = _FakeRunner(npm_produces=("slidev",))
+
+    with pytest.raises(install_deck_renderers.InstallFailure) as excinfo:
+        install_deck_renderers.install_npm_renderers(tmp_path, runner)
+
+    message = str(excinfo.value)
+    assert "marp" in message
+    assert "reveal-md" in message
+
+
+def test_the_npm_executables_are_the_renderers_the_wrapper_calls():
+    """Two files name the same commands; a test keeps them from drifting."""
+    scripts = ROOT / "skills" / "vault-ingress" / "scripts"
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    renderer_script = scripts / "render-markdown-deck.py"
+    spec = importlib.util.spec_from_file_location(
+        "render_markdown_deck_executables", renderer_script
+    )
+    assert spec is not None and spec.loader is not None
+    renderer = importlib.util.module_from_spec(spec)
+    # Registered before exec: a dataclass defined in a module absent from
+    # sys.modules cannot resolve its own __module__ and raises on definition.
+    sys.modules[spec.name] = renderer
+    spec.loader.exec_module(renderer)
+    npm_backed = {
+        renderer.RENDERERS[flavor].commands[0]
+        for flavor in ("slidev", "marp", "reveal-md")
+    }
+
+    assert set(install_deck_renderers.NPM_EXECUTABLES) == npm_backed
+
+
+def test_the_lock_file_is_installed_rather_than_the_manifest(tmp_path):
+    """`npm install` from top-level pins leaves the transitive graph free."""
+    runner = _FakeRunner()
+
+    install_deck_renderers.install_npm_renderers(tmp_path, runner)
+
+    assert runner.commands[0][:2] == ["npm", "ci"]
+    assert runner.npm_prefix_contents == ["package-lock.json", "package.json"]
+
+
+def test_a_failed_npm_install_names_the_pins_and_the_lock(tmp_path):
+    runner = _FakeRunner(failing="npm")
+
+    with pytest.raises(install_deck_renderers.InstallFailure) as excinfo:
+        install_deck_renderers.install_npm_renderers(tmp_path, runner)
+
+    message = str(excinfo.value)
+    assert install_deck_renderers.npm_pins()[0] in message
+    assert "package-lock.json" in message
+
+
+def test_every_npm_pin_carries_an_exact_version():
+    pins = install_deck_renderers.npm_pins()
+
+    assert pins
+    for pin in pins:
+        name, _, version = pin.rpartition("@")
+
+        assert name, f"{pin} must name a package"
+        assert re.fullmatch(r"\d+\.\d+\.\d+", version), f"{pin} is not an exact pin"
+
+
+def test_the_lock_file_covers_every_manifest_dependency():
+    lock = json.loads(install_deck_renderers.NPM_LOCKFILE.read_text(encoding="utf-8"))
+    locked = lock.get("packages", {}).get("", {}).get("dependencies", {})
+
+    assert {f"{name}@{version}" for name, version in locked.items()} == set(
+        install_deck_renderers.npm_pins()
+    )
+
+
+def test_a_transitive_version_moving_changes_the_cache_key(tmp_path, monkeypatch):
+    """The manifest's four lines are not the install; the lock file is."""
+    before = install_deck_renderers.pin_digest()
+    drifted = tmp_path / "package-lock.json"
+    drifted.write_bytes(install_deck_renderers.NPM_LOCKFILE.read_bytes() + b"\n")
+    monkeypatch.setattr(install_deck_renderers, "NPM_LOCKFILE", drifted)
+
+    assert install_deck_renderers.pin_digest() != before
+
+
+def test_a_kernel_without_the_restriction_is_left_alone(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        install_deck_renderers, "APPARMOR_USERNS_PATH", tmp_path / "absent"
+    )
+    runner = _FakeRunner()
+
+    assert install_deck_renderers.permit_browser_sandbox(runner) == "not_applicable"
+    assert runner.commands == []
+
+
+def test_a_kernel_already_permitting_it_is_left_alone(tmp_path, monkeypatch):
+    sysctl = tmp_path / "apparmor_restrict_unprivileged_userns"
+    sysctl.write_text("0\n", encoding="utf-8")
+    monkeypatch.setattr(install_deck_renderers, "APPARMOR_USERNS_PATH", sysctl)
+    runner = _FakeRunner()
+
+    assert install_deck_renderers.permit_browser_sandbox(runner) == "already_permitted"
+    assert runner.commands == []
+
+
+def test_a_restricting_kernel_is_cleared(tmp_path, monkeypatch):
+    sysctl = tmp_path / "apparmor_restrict_unprivileged_userns"
+    sysctl.write_text("1\n", encoding="utf-8")
+    monkeypatch.setattr(install_deck_renderers, "APPARMOR_USERNS_PATH", sysctl)
+    runner = _FakeRunner()
+
+    assert install_deck_renderers.permit_browser_sandbox(runner) == "permitted"
+    assert runner.commands == [
+        [
+            "sudo",
+            "sysctl",
+            "-w",
+            f"{install_deck_renderers.APPARMOR_USERNS_SYSCTL}=0",
+        ]
+    ]
+
+
+def test_a_kernel_that_refuses_warns_rather_than_aborting(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """The render that needs it fails loudly on its own; this must not abort."""
+    sysctl = tmp_path / "apparmor_restrict_unprivileged_userns"
+    sysctl.write_text("1\n", encoding="utf-8")
+    monkeypatch.setattr(install_deck_renderers, "APPARMOR_USERNS_PATH", sysctl)
+
+    result = install_deck_renderers.permit_browser_sandbox(_FakeRunner(failing="sudo"))
+
+    assert result == "failed"
+    assert "No usable sandbox" in capsys.readouterr().err
+
+
+def test_the_report_names_how_each_renderer_was_satisfied(tmp_path, pinned_archive):
+    runner = _FakeRunner(archive=pinned_archive)
+
+    report = install_deck_renderers.execute(tmp_path, runner)
+
+    assert report["ok"] is True
+    assert report["presenterm"] == "downloaded"
+    assert report["npm"] == "installed"
+    assert report["browser_sandbox"] in {
+        "not_applicable",
+        "already_permitted",
+        "permitted",
+        "failed",
+    }
+    assert report["path_entries"] == install_deck_renderers.path_entries(
+        tmp_path / install_deck_renderers.RENDERER_SUBDIR
+    )
+
+
+def test_a_second_run_over_a_restored_cache_installs_nothing(
+    tmp_path,
+    pinned_archive,
+):
+    install_deck_renderers.execute(tmp_path, _FakeRunner(archive=pinned_archive))
+    second = _FakeRunner(archive=pinned_archive)
+
+    report = install_deck_renderers.execute(tmp_path, second)
+
+    assert report["presenterm"] == "cached"
+    assert report["npm"] == "cached"
+    assert second.commands == []
+
+
+def test_the_path_entries_lead_with_the_downloaded_binary(tmp_path):
+    entries = install_deck_renderers.path_entries(tmp_path)
+
+    assert entries == [
+        str(tmp_path / "bin"),
+        str(tmp_path / "npm" / "node_modules" / ".bin"),
+    ]
+
+
+def test_the_pin_digest_mode_prints_one_json_object(capsys):
+    assert install_deck_renderers.main(["--pin-digest"]) == 0
+
+    assert json.loads(capsys.readouterr().out) == {
+        "pin_digest": install_deck_renderers.pin_digest()
+    }
+
+
+def test_a_missing_workspace_is_an_argument_error():
+    with pytest.raises(SystemExit) as excinfo:
+        install_deck_renderers.main([])
+
+    assert excinfo.value.code == 2
+
+
+def test_a_command_s_own_output_stays_off_stdout(tmp_path, capsys):
+    """stdout carries one JSON object; npm alone would bury it."""
+    result = install_deck_renderers._run(
+        [sys.executable, "-c", "print('chatty install output')"], 30
+    )
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert captured.out == ""
+    assert "chatty install output" in captured.err
+
+
+def test_a_failed_install_reports_json_and_exits_one(tmp_path):
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), str(tmp_path)],
+        capture_output=True,
+        text=True,
+        env={"PATH": "", "HOME": str(tmp_path)},
+    )
+
+    assert result.returncode == 1
+    assert json.loads(result.stdout)["ok"] is False
+    assert result.stderr
+
+
+def test_the_workflow_pins_the_node_major_the_installer_requires():
+    """One number in two files; the drift shows up here, not on a CI runner."""
+    workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(
+        encoding="utf-8"
+    )
+    pinned = re.search(r'node-version:\s*"(\d+)\.', workflow)
+
+    assert pinned is not None, "tests.yml must pin an explicit node-version"
+    assert int(pinned.group(1)) == install_deck_renderers.REQUIRED_NODE_MAJOR
+
+
+def test_the_workflow_keys_its_cache_on_the_pin_digest():
+    workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "install_deck_renderers.py --pin-digest" in workflow
+    assert "jq -r .pin_digest" in workflow
+    assert "deck-renderers-${{ runner.os }}" in workflow

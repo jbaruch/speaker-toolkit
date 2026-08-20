@@ -1,0 +1,11 @@
+{
+  "name": "speaker-toolkit-deck-renderers",
+  "private": true,
+  "description": "CI-only manifest for the markdown deck renderers. scripts/install_deck_renderers.py copies this beside its lock file and runs `npm ci`, so the transitive graph is pinned, not just these four. Renew with `npm install --package-lock-only` after bumping a version here, and keep NPM_PINS in that script in step.",
+  "dependencies": {
+    "@marp-team/marp-cli": "4.5.0",
+    "@slidev/cli": "52.19.1",
+    "playwright-chromium": "1.58.1",
+    "reveal-md": "6.1.4"
+  }
+}
