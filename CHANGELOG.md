@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.98 — 2026-08-20
+
 ### fix(ci) — the apt cache key names the suite it was built for
 
 The key was `apt-<os>-<package-digest>-<week>`, and `runner.os` is `Linux` for
