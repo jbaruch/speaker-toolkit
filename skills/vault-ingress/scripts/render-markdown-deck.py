@@ -305,8 +305,18 @@ def render(
             f"PATH. Install {' and '.join(spec.commands)}, or export the deck "
             "by hand and register the PDF"
         )
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=output.parent) as staging:
+    # An unwritable or missing output directory is an operator mistake with an
+    # obvious fix, not an unexpected failure. Let it exit 1 saying what to fix
+    # rather than 3 with a closed failure document.
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        staging_directory = tempfile.TemporaryDirectory(dir=output.parent)
+    except OSError as exc:
+        raise RenderError(
+            f"cannot stage a render in {output.parent}: {exc.strerror or exc} "
+            "— point --output at a writable directory"
+        ) from exc
+    with staging_directory as staging:
         staged = Path(staging) / output.name
         argv = spec.argv(deck, staged)
         runner = _run_with_pty if spec.needs_pty else _run_plain
@@ -331,7 +341,13 @@ def render(
                 f"({exc.reason_code}) — it is not usable as slide evidence, so "
                 f"{output} was left as it was"
             ) from exc
-        os.replace(staged, output)
+        try:
+            os.replace(staged, output)
+        except OSError as exc:
+            raise RenderError(
+                f"cannot write the render to {output}: {exc.strerror or exc} "
+                "— check the path is a writable file location"
+            ) from exc
     return page_count
 
 
@@ -423,6 +439,12 @@ def execute(
         decided_by, evidence = decision.decided_by, decision.evidence
         chosen = decision.flavor
     else:
+        # argparse already restricts `--flavor`, and `execute` is also called
+        # directly; a bad name here is a caller mistake, not a broken tool.
+        if flavor not in RENDERERS:
+            raise RenderError(
+                f"unknown flavor {flavor!r}; choose from {', '.join(FLAVORS)}"
+            )
         chosen, decided_by, evidence = flavor, "operator", flavor
     page_count: int | None = None
     output_sha256: str | None = None

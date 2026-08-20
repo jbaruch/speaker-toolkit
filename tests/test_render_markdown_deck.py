@@ -574,3 +574,38 @@ def test_a_chatty_pty_renderer_that_never_finishes_is_killed(tmp_path, fake_path
 
     assert "did not finish within 1s" in str(excinfo.value)
     assert not (tmp_path / "talk.pdf").exists()
+
+
+def test_an_unwritable_output_directory_is_a_verdict_not_a_crash(
+    tmp_path,
+    fake_path,
+):
+    rendered = _write_pdf(tmp_path / "source.pdf", pages=1)
+    _install(fake_path, "marp", _copy_last_argument_body(rendered))
+    blocked = tmp_path / "readonly"
+    blocked.mkdir()
+    blocked.chmod(0o500)
+    try:
+        with pytest.raises(render_markdown_deck.RenderError) as excinfo:
+            render_markdown_deck.execute(
+                _deck(tmp_path, MARP_DECK),
+                output=blocked / "talk.pdf",
+                flavor=None,
+                timeout_seconds=30,
+            )
+    finally:
+        blocked.chmod(0o700)
+
+    assert "writable directory" in str(excinfo.value)
+
+
+def test_a_flavor_the_caller_invented_is_a_verdict_not_a_crash(tmp_path):
+    with pytest.raises(render_markdown_deck.RenderError) as excinfo:
+        render_markdown_deck.execute(
+            _deck(tmp_path, MARP_DECK),
+            output=None,
+            flavor="powerpoint",
+            timeout_seconds=30,
+        )
+
+    assert "unknown flavor 'powerpoint'" in str(excinfo.value)
