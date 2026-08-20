@@ -191,8 +191,9 @@ jobs:
       - name: Install Windows media evidence dependencies
         if: runner.os == 'Windows'
         shell: pwsh
-        # Chocolatey package pin, renewed from 8.1.2 to 9.0.0 after the feed
-        # withdrew 8.1.2 and took `main` red with no source change. No
+        # Chocolatey package pin, renewed 8.1.2 -> 9.0.0 -> 9.0.1, each time
+        # after the feed withdrew the previous one and took `main` red with no
+        # source change. No
         # Dependabot ecosystem covers Chocolatey, so RENEWAL IS MANUAL: check
         # the feed's current version whenever this step fails to resolve, or
         # quarterly, whichever comes first. Chocolatey serves only the current
@@ -206,7 +207,7 @@ jobs:
         # ffprobe child.
         run: |
           $ErrorActionPreference = 'Stop'
-          choco install ffmpeg --version=9.0.0 --no-progress -y
+          choco install ffmpeg --version=9.0.1 --no-progress -y
           # Locate the real binary rather than assuming a layout. The package
           # moved ffprobe.exe out of tools\ffmpeg\bin between versions, so a
           # hardcoded path fails on exactly the upgrade that unpinning invites.
@@ -225,7 +226,7 @@ jobs:
             throw "cannot read the Chocolatey ffmpeg package tree: $($_.Exception.Message)"
           }
           if (-not $probe) {
-            throw "Chocolatey installed ffmpeg 9.0.0 but no ffprobe.exe is in its package tree — check the package layout and update this step's search root"
+            throw "Chocolatey installed ffmpeg 9.0.1 but no ffprobe.exe is in its package tree — check the package layout and update this step's search root"
           }
           $ffmpegBin = $probe.DirectoryName
           if (-not (Test-Path (Join-Path $ffmpegBin 'ffmpeg.exe') -PathType Leaf)) {
