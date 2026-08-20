@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.99 — 2026-08-20
+
 ### feat(vault-ingress) — `source_added` is its own requeue reason
 
 Issue #318 found the workaround at the end of a real 21-talk reparse: after
