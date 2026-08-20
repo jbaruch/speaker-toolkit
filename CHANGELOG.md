@@ -70,9 +70,16 @@ each and asserts three pages. That is the only place the claim this design
 rests on is actually testable — a tool that starts exporting per click fails
 there and nowhere else.
 
-The install is cached on a digest of the pin set, so a renewed pin reinstalls
-and an edited comment does not, and both halves are idempotent against a
-restored cache. Three paths are cached, and the two extra ones are the point:
+The npm side installs from a committed manifest and lock file with `npm ci`,
+not from four top-level versions: exact tops leave the several thousand
+packages beneath them free to move between runs, which is not a pin at all. The
+cache key hashes the lock file's own bytes, so a transitive version that shifts
+under an unchanged manifest misses the cache rather than silently reusing a
+different graph.
+
+The install is otherwise cached on the pin set, so a renewed pin reinstalls and
+an edited comment does not, and both halves are idempotent against a restored
+cache. Three paths are cached, and the two extra ones are the point:
 Slidev drives playwright's chromium and reveal-md drives puppeteer's chrome,
 each downloaded by its own postinstall into its own cache root. Caching the npm
 tree alone would restore a tree whose postinstalls never run again, leaving

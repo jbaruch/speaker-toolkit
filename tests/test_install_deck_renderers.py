@@ -56,6 +56,7 @@ class _FakeRunner:
         silent_tar: bool = False,
     ):
         self.commands: list[list[str]] = []
+        self.npm_prefix_contents: list[str] = []
         self._archive = archive
         self._failing = failing
         self._silent_tar = silent_tar
@@ -84,6 +85,9 @@ class _FakeRunner:
                     destination.write_bytes(handle.read())
         if command[0] == "npm":
             prefix = Path(command[command.index("--prefix") + 1])
+            self.npm_prefix_contents = sorted(
+                path.name for path in prefix.iterdir() if path.is_file()
+            )
             binaries = prefix / "node_modules" / ".bin"
             binaries.mkdir(parents=True, exist_ok=True)
             (binaries / "slidev").write_text("", encoding="utf-8")
@@ -218,32 +222,55 @@ def test_a_cached_npm_tree_is_left_alone(tmp_path):
     assert runner.commands == []
 
 
-def test_every_npm_pin_reaches_npm_exactly(tmp_path):
+def test_the_lock_file_is_installed_rather_than_the_manifest(tmp_path):
+    """`npm install` from top-level pins leaves the transitive graph free."""
     runner = _FakeRunner()
 
     install_deck_renderers.install_npm_renderers(tmp_path, runner)
 
-    assert runner.commands[0][:2] == ["npm", "install"]
-    assert runner.commands[0][-len(install_deck_renderers.NPM_PINS) :] == list(
-        install_deck_renderers.NPM_PINS
-    )
+    assert runner.commands[0][:2] == ["npm", "ci"]
+    assert runner.npm_prefix_contents == ["package-lock.json", "package.json"]
 
 
-def test_a_failed_npm_install_names_the_pins(tmp_path):
+def test_a_failed_npm_install_names_the_pins_and_the_lock(tmp_path):
     runner = _FakeRunner(failing="npm")
 
     with pytest.raises(install_deck_renderers.InstallFailure) as excinfo:
         install_deck_renderers.install_npm_renderers(tmp_path, runner)
 
-    assert install_deck_renderers.NPM_PINS[0] in str(excinfo.value)
+    message = str(excinfo.value)
+    assert install_deck_renderers.npm_pins()[0] in message
+    assert "package-lock.json" in message
 
 
 def test_every_npm_pin_carries_an_exact_version():
-    for pin in install_deck_renderers.NPM_PINS:
+    pins = install_deck_renderers.npm_pins()
+
+    assert pins
+    for pin in pins:
         name, _, version = pin.rpartition("@")
 
         assert name, f"{pin} must name a package"
         assert re.fullmatch(r"\d+\.\d+\.\d+", version), f"{pin} is not an exact pin"
+
+
+def test_the_lock_file_covers_every_manifest_dependency():
+    lock = json.loads(install_deck_renderers.NPM_LOCKFILE.read_text(encoding="utf-8"))
+    locked = lock.get("packages", {}).get("", {}).get("dependencies", {})
+
+    assert {f"{name}@{version}" for name, version in locked.items()} == set(
+        install_deck_renderers.npm_pins()
+    )
+
+
+def test_a_transitive_version_moving_changes_the_cache_key(tmp_path, monkeypatch):
+    """The manifest's four lines are not the install; the lock file is."""
+    before = install_deck_renderers.pin_digest()
+    drifted = tmp_path / "package-lock.json"
+    drifted.write_bytes(install_deck_renderers.NPM_LOCKFILE.read_bytes() + b"\n")
+    monkeypatch.setattr(install_deck_renderers, "NPM_LOCKFILE", drifted)
+
+    assert install_deck_renderers.pin_digest() != before
 
 
 def test_a_kernel_without_the_restriction_is_left_alone(tmp_path, monkeypatch):

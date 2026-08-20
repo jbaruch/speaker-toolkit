@@ -53,19 +53,19 @@ PRESENTERM_SHA512 = (
     "beb52062494b8d3ebed8cf5662f8dab62a6ec4fb6e81c1529a9d794150cf13b0"
 )
 
-# The three npm CLIs, exact. `playwright-chromium` is not a renderer: Slidev's
-# PDF export requires it, and its postinstall is what puts a browser on the
-# runner — which Marp and reveal-md then find too. Renewal is the same manual
-# quarterly read as presenterm's; no scanner tracks a version baked into a
-# script.
+# The npm side lives in a committed manifest and lock file, installed with
+# `npm ci`: exact top-level versions pin four packages and leave the several
+# thousand beneath them free to move between runs, which is not a pin at all.
+# `playwright-chromium` is not a renderer — Slidev's PDF export requires it,
+# and its postinstall is what puts a browser on the runner, which Marp and
+# reveal-md then find too.
 #
-#   npm view <package> version
-NPM_PINS = (
-    "@slidev/cli@52.19.1",
-    "@marp-team/marp-cli@4.5.0",
-    "reveal-md@6.1.4",
-    "playwright-chromium@1.58.1",
-)
+# Renewal is the same manual quarterly read as presenterm's; no scanner tracks
+# these. Bump a version in the manifest, re-run `npm install
+# --package-lock-only` beside it, and commit both.
+NPM_MANIFEST_DIR = Path(__file__).resolve().parent / "deck-renderers"
+NPM_MANIFEST = NPM_MANIFEST_DIR / "package.json"
+NPM_LOCKFILE = NPM_MANIFEST_DIR / "package-lock.json"
 # reveal-md 6.1.4 declares `node: ^18.18.0 || ^20.9.0 || ^22.0.0`. The workflow
 # pins the runner's node; this literal exists so a drift between the two fails
 # a test rather than a CI run.
@@ -126,13 +126,25 @@ def _run(command: Sequence[str], timeout: int) -> int:
     return completed.returncode
 
 
+def npm_pins() -> tuple[str, ...]:
+    """Return the manifest's top-level dependencies as `name@version` strings."""
+    manifest = json.loads(NPM_MANIFEST.read_text(encoding="utf-8"))
+    dependencies = manifest.get("dependencies", {})
+    return tuple(f"{name}@{version}" for name, version in sorted(dependencies.items()))
+
+
 def pin_digest() -> str:
-    """Return a stable hash of every pin, for the workflow's cache key."""
+    """Return a stable hash of every pin, for the workflow's cache key.
+
+    The lock file's own bytes, not the manifest's four lines: a transitive
+    version that moves under an unchanged manifest is a different install and
+    must miss the cache.
+    """
     material = "\n".join(
         (
             PRESENTERM_VERSION,
             PRESENTERM_SHA512,
-            *NPM_PINS,
+            hashlib.sha256(NPM_LOCKFILE.read_bytes()).hexdigest(),
             str(REQUIRED_NODE_MAJOR),
         )
     )
@@ -193,24 +205,28 @@ def install_presenterm(root: Path, run: Runner) -> str:
 
 
 def install_npm_renderers(root: Path, run: Runner) -> str:
-    """Install the pinned npm CLIs under `root/npm`, or leave a cached tree."""
+    """Install the locked npm CLIs under `root/npm`, or leave a cached tree."""
     prefix = root / "npm"
     if (prefix / "node_modules" / ".bin" / "slidev").exists():
         return "cached"
     prefix.mkdir(parents=True, exist_ok=True)
+    # `npm ci` installs the lock file exactly and refuses a manifest the lock
+    # disagrees with, so both are copied beside each other in the prefix.
+    for source in (NPM_MANIFEST, NPM_LOCKFILE):
+        try:
+            shutil.copyfile(source, prefix / source.name)
+        except OSError as exc:
+            raise InstallFailure(
+                f"cannot stage {source.name} in {prefix}: {exc.strerror or exc}"
+            ) from exc
     if run(
-        [
-            "npm",
-            "install",
-            "--prefix",
-            str(prefix),
-            "--no-fund",
-            "--no-audit",
-            *NPM_PINS,
-        ],
+        ["npm", "ci", "--prefix", str(prefix), "--no-fund", "--no-audit"],
         INSTALL_TIMEOUT_SEC,
     ):
-        raise InstallFailure(f"npm install failed for {', '.join(NPM_PINS)}")
+        raise InstallFailure(
+            f"npm ci failed for {', '.join(npm_pins())} — see "
+            f"{NPM_LOCKFILE} for the locked graph"
+        )
     return "installed"
 
 

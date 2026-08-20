@@ -11,8 +11,10 @@ __pycache__/
 
 # Where scripts/install_deck_renderers.py lays down the markdown deck
 # renderers. CI points it at $GITHUB_WORKSPACE, so a local run of the same
-# command puts three npm trees in the repo root.
-deck-renderers/
+# command puts three npm trees in the repo root. Anchored: unanchored it also
+# swallowed scripts/deck-renderers/, the committed manifest and lock file that
+# install reads.
+/deck-renderers/
 
 # Per-developer agent / IDE state
 .agents/
