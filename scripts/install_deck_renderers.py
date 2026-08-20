@@ -32,6 +32,7 @@ import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import TypedDict
 
 
 # presenterm ships prebuilt release binaries; the checksum is the one published
@@ -97,6 +98,17 @@ APPARMOR_USERNS_SYSCTL = "kernel.apparmor_restrict_unprivileged_userns"
 APPARMOR_USERNS_PATH = Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns")
 
 Runner = Callable[[Sequence[str], int], int]
+
+
+class InstallReport(TypedDict):
+    """One run's account of how each renderer was satisfied."""
+
+    ok: bool
+    pin_digest: str
+    presenterm: str
+    npm: str
+    browser_sandbox: str
+    path_entries: list[str]
 
 
 def _run(command: Sequence[str], timeout: int) -> int:
@@ -303,11 +315,11 @@ def permit_browser_sandbox(run: Runner) -> str:
     return "permitted"
 
 
-def execute(workspace: Path, run: Runner) -> dict[str, object]:
+def execute(workspace: Path, run: Runner) -> InstallReport:
     """Install every renderer under `workspace` and report how each was met."""
     root = workspace / RENDERER_SUBDIR
     root.mkdir(parents=True, exist_ok=True)
-    report: dict[str, object] = {
+    report: InstallReport = {
         "ok": True,
         "pin_digest": pin_digest(),
         "presenterm": install_presenterm(root, run),
@@ -353,7 +365,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"install_deck_renderers.py: {exc}", file=sys.stderr)
         print(json.dumps({"ok": False, "reason": str(exc)}, sort_keys=True))
         return 1
-    _export_path(report["path_entries"])  # type: ignore[arg-type]
+    _export_path(report["path_entries"])
     print(json.dumps(report, sort_keys=True))
     return 0
 
