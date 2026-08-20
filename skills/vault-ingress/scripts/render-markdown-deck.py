@@ -44,7 +44,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import NoReturn, Sequence
 
 from failure_diagnostics import emit_unexpected_failure
 from markdown_deck import (
@@ -170,6 +170,20 @@ def missing_commands(spec: RendererSpec) -> list[str]:
     return [command for command in spec.commands if shutil.which(command) is None]
 
 
+def _kill_over_deadline(
+    process: "subprocess.Popen[bytes]",
+    command: str,
+    timeout_seconds: int,
+) -> NoReturn:
+    """Kill a renderer that outlived the wall limit and report it as a failure."""
+    process.kill()
+    process.wait()
+    raise RenderError(
+        f"{command} did not finish within {timeout_seconds}s and was killed "
+        "— raise --timeout-seconds or export the deck by hand"
+    )
+
+
 def _run_with_pty(argv: Sequence[str], timeout_seconds: int) -> tuple[int, str]:
     """Run a command attached to a sized pseudo-terminal, returning its output.
 
@@ -229,20 +243,22 @@ def _run_with_pty(argv: Sequence[str], timeout_seconds: int) -> tuple[int, str]:
                 data = os.read(master, 65536)
             except OSError:
                 # The child closed its end: a pty reports EIO here, not EOF.
-                # The run is not judged by this — `process.wait()` below still
-                # decides, and a non-zero exit is still a failure.
+                # The run is not judged by this — the wait below still decides,
+                # and a non-zero exit is still a failure.
                 break
             if not data:
                 break
             chunks.append(data)
         if deadline_expired:
-            process.kill()
-            process.wait()
-            raise RenderError(
-                f"{argv[0]} did not finish within {timeout_seconds}s and was "
-                "killed — raise --timeout-seconds or export the deck by hand"
-            )
-        returncode = process.wait()
+            _kill_over_deadline(process, argv[0], timeout_seconds)
+        # Closing the terminal is not exiting. A renderer that drops its
+        # descriptors and keeps working ends the read loop above while still
+        # running, and an unbounded wait here would outlive the wall limit
+        # this function promises.
+        try:
+            returncode = process.wait(timeout=max(deadline - time.monotonic(), 0))
+        except subprocess.TimeoutExpired:
+            _kill_over_deadline(process, argv[0], timeout_seconds)
     finally:
         if slave != -1:
             os.close(slave)

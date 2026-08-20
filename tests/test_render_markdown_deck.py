@@ -18,6 +18,7 @@ import os
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -609,3 +610,29 @@ def test_a_flavor_the_caller_invented_is_a_verdict_not_a_crash(tmp_path):
         )
 
     assert "unknown flavor 'powerpoint'" in str(excinfo.value)
+
+
+def test_a_renderer_that_closes_its_terminal_and_hangs_is_still_killed(
+    tmp_path,
+    fake_path,
+):
+    """Closing the pty ends the read loop; the wall limit must still apply."""
+    _install(
+        fake_path,
+        "presenterm",
+        'echo "processing slide 1..."\nexec 0<&- 1>&- 2>&-\nsleep 30\n',
+    )
+    _install(fake_path, "weasyprint", "exit 0\n")
+    started = time.monotonic()
+
+    with pytest.raises(render_markdown_deck.RenderError) as excinfo:
+        render_markdown_deck.execute(
+            _deck(tmp_path),
+            output=tmp_path / "talk.pdf",
+            flavor=None,
+            timeout_seconds=1,
+        )
+
+    assert "did not finish within 1s" in str(excinfo.value)
+    assert time.monotonic() - started < 20
+    assert not (tmp_path / "talk.pdf").exists()
