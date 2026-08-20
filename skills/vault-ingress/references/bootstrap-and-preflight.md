@@ -418,6 +418,17 @@ claims, writes a byte-for-byte backup under `{vault_root}/.backups/`, and replac
 the DB atomically. Re-run the preflight after applying; do not claim work until
 blocking findings reach zero.
 
+Registering a source that did not exist at analysis time — a markdown-authored
+deck exported to PDF, a recording that finally published, a hand-recovered
+transcript — is the same plan plus a deliberate requeue. One repair sets the
+new source fields, `status: "needs-reprocessing"`, and
+`reprocess_reason: "source_added"`. `queue-state.py normalize` will not do it:
+normalization requeues drifted evidence, and a source that arrived is not
+drift. The reasons that let a completed claim's `result_status` disagree with
+the talk status are named in
+`skills/vault-ingress/scripts/queue_claim_contract.py`
+(`DELIBERATE_REPROCESS_REASONS`).
+
 The summary's status block is owner-generated, never hand-edited. Refresh it at
 safe checkpoints — after migration or recovery, after normalization, and after a
 batch persists — with:

@@ -2212,3 +2212,59 @@ def test_cli_requires_timezone_aware_now(tmp_path):
     payload = json.loads(result.stdout)
     assert payload["ok"] is False
     assert "has no timezone" in payload["error"]
+
+
+def _completed_claim(result_status: str = "processed") -> dict[str, Any]:
+    """A closed schema-v2 claim: no adherence baseline, receipt required."""
+    return {
+        "schema_version": 2,
+        "run_id": "reparse-2026-07",
+        "batch_id": "25",
+        "claimed_at": NOW,
+        "previous_status": "pending",
+        "reprocess_generation": 1,
+        "state": "completed",
+        "released_at": NOW,
+        "release_reason": "batch persisted",
+        "result_status": result_status,
+        "result_payload_sha256": "0" * 64,
+    }
+
+
+def test_source_added_requeues_a_talk_whose_claim_completed():
+    talk = {
+        "schema_version": 5,
+        "filename": "talk.md",
+        "status": "needs-reprocessing",
+        "reprocess_generation": 1,
+        "reprocess_reason": queue_claim_contract.SOURCE_ADDED_REPROCESS_REASON,
+        "_queue_claim": _completed_claim(),
+    }
+
+    queue_claim_contract.validate_talk_queue_claim_state(talk, 0)
+
+
+def test_a_requeue_reason_outside_the_deliberate_set_is_drift():
+    talk = {
+        "schema_version": 5,
+        "filename": "talk.md",
+        "status": "needs-reprocessing",
+        "reprocess_generation": 1,
+        "reprocess_reason": "operator_hunch",
+        "_queue_claim": _completed_claim(),
+    }
+
+    with pytest.raises(queue_claim_contract.QueueClaimContractError) as excinfo:
+        queue_claim_contract.validate_talk_queue_claim_state(talk, 0)
+
+    assert "disagrees with talk status" in str(excinfo.value)
+
+
+def test_deliberate_reprocess_reasons_extend_the_legacy_set():
+    assert queue_claim_contract.DELIBERATE_REPROCESS_REASONS == (
+        queue_claim_contract.LEGACY_REPROCESS_REASONS
+        | {queue_claim_contract.SOURCE_ADDED_REPROCESS_REASON}
+    )
+    assert queue_claim_contract.is_deliberate_reprocess_reason(
+        queue_claim_contract.SOURCE_ADDED_REPROCESS_REASON
+    )

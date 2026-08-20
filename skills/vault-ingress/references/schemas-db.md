@@ -279,7 +279,7 @@ customization, not the owner default. See the
     "slides_local_path": "slides/<artifact>.pdf  (optional explicit local PDF; legacy readers also accept slides_pdf_path/pdf_path)",
     "pptx_visual_status": "pending|extracted|no_pptx",
     "status": "pending|needs-reprocessing|reprocessing-inflight|processed|processed_partial|skipped_no_sources|skipped_download_failed|skipped_duplicate",
-    "reprocess_reason": "machine-readable reason for needs-reprocessing, or null",
+    "reprocess_reason": "machine-readable reason for needs-reprocessing, or null (owner-set values: DELIBERATE_REPROCESS_REASONS in queue_claim_contract.py)",
     "reprocess_generation": 1,
     "_queue_claim": {
       "schema_version": 5,

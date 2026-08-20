@@ -1,5 +1,34 @@
 # Changelog
 
+### feat(vault-ingress) — `source_added` is its own requeue reason
+
+Issue #318 found the workaround at the end of a real 21-talk reparse: after
+exporting a Slidev deck to PDF and registering it on an already-`processed`
+talk, there was no supported way to get the talk back into the queue.
+`apply-source-repairs.py` refused the status change with `completed claim
+result_status 'processed_partial' disagrees with talk status
+'needs-reprocessing'`, and `queue-state.py normalize` reported `changed: 0`
+because normalization requeues evidence that *drifted*, and evidence that
+newly *arrived* has not drifted.
+
+The path that worked was `reprocess_reason: "source_identity_correction"` — a
+`LEGACY_REPROCESS_REASONS` member, so `is_deliberate_reprocess_reason` accepted
+it and the claim/status disagreement was allowed. It worked for the wrong
+reason. Nothing about the talk's identity was corrected: the video is the same
+video, the deck is the same deck, and the only thing that changed is that one
+of them became readable. A vault audited a year from now would show a run of
+identity corrections that never happened.
+
+`source_added` now says what actually happened, and
+`DELIBERATE_REPROCESS_REASONS` is the set `is_deliberate_reprocess_reason`
+checks — `LEGACY_REPROCESS_REASONS` keeps its own meaning as the two reasons
+that predate the structured `pattern_scoring_generation:` form rather than
+quietly growing a third member that is not legacy at all.
+
+`references/bootstrap-and-preflight.md` documents the register-then-requeue
+plan next to the source-repair commands, which is where the reparse looked for
+it and did not find it.
+
 ## 0.20.98 — 2026-08-20
 
 ### fix(ci) — the apt cache key names the suite it was built for
