@@ -1,13 +1,13 @@
 """Contract tests for the markdown-deck renderer.
 
-The markdown tools themselves are not installed on the CI runners, so every
-test here puts a stand-in renderer on PATH: a script that asserts the calling
-conditions the real tool needs (a sized terminal for presenterm) and writes a
-PDF built by pypdf in the test. What is under test is the wrapper — flavor
-routing, lane refusal, failure containment, and the receipt — not weasyprint.
+Every test here puts a stand-in renderer on PATH: a script that asserts the
+calling conditions the real tool needs (a sized terminal for presenterm) and
+writes a PDF built by pypdf in the test. What is under test is the wrapper —
+flavor routing, lane refusal, failure containment, and the receipt — and a
+stand-in is what makes a corrupt render or a hung process reproducible.
 
-Manual validation of the real renderers is documented in
-`skills/vault-ingress/references/markdown-decks.md`.
+The real tools are exercised in `tests/test_markdown_deck_renderers.py`, which
+CI installs them for.
 """
 
 from __future__ import annotations

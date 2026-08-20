@@ -59,11 +59,37 @@ canvas — exactly 16:9. Verified against presenterm 0.16.1, which is also where
 the headmatter intro-slide rule came from: `author:` alone adds a page,
 `theme:` and `options:` alone do not.
 
-The markdown tools are not on the CI runners, so the tests drive stand-in
-renderers that assert the calling conditions the real ones need — the
-presenterm case fails unless it is handed a terminal, and writes back the
-window size the wrapper set. Manual validation of the real renderers is in
-`references/markdown-decks.md`.
+**CI installs all four and renders through each.** The first cut shipped
+stand-in renderers only, on the reasoning that the real tools are not on the
+runners. `ci-safety` Install, Don't Skip says that is backwards: they are
+installable, so install them. `scripts/install_deck_renderers.py` puts
+presenterm on the runner from its pinned release tarball, checksum-verified,
+and the three npm CLIs plus `playwright-chromium` at exact versions;
+`tests/test_markdown_deck_renderers.py` then renders a three-slide deck through
+each and asserts three pages. That is the only place the claim this design
+rests on is actually testable — a tool that starts exporting per click fails
+there and nowhere else.
+
+The install is cached on a digest of the pin set, so a renewed pin reinstalls
+and an edited comment does not, and both halves are idempotent against a
+restored cache. Three paths are cached, and the two extra ones are the point:
+Slidev drives playwright's chromium and reveal-md drives puppeteer's chrome,
+each downloaded by its own postinstall into its own cache root. Caching the npm
+tree alone would restore a tree whose postinstalls never run again, leaving
+reveal-md with no browser on precisely the runs the cache was meant to speed
+up. `test_ci_carries_every_renderer` fails rather than skips when the
+install left a renderer absent, so a broken install cannot pass as a quiet
+green — a per-flavor `skipif` alone would have hidden exactly that.
+
+Verified before shipping by rendering through the real presenterm 0.16.1,
+Marp 4.5.0 and Slidev 52.19.1: three pages for three authored slides each,
+`<v-clicks>` counted once. reveal-md could not be verified locally — it refuses
+a Node outside `^18.18 || ^20.9 || ^22` and this machine runs 26, which is why
+the workflow pins 22 and a test asserts the runner honours it.
+
+The stand-in renderers stay for what they are good at: a corrupt render, a
+renderer that exits 0 writing nothing, a process that closes its terminal and
+hangs. Those are reproducible against a stand-in and nothing else.
 
 Also fixed while in `tests/test_check_runtime.py`: a child-process traceback
 assertion that failed under an inherited `FORCE_COLOR`, which Python 3.13+

@@ -26,22 +26,14 @@ Dimensions 8 and 13 are unmeasurable for them.
 ## The lane
 
 Each renderer is its own optional lane, so a presenterm vault is not reported
-as degraded for three tools it will never call:
-
-| flavor | lane |
-|---|---|
-| presenterm | `markdown-deck-presenterm` |
-| Slidev | `markdown-deck-slidev` |
-| Marp | `markdown-deck-marp` |
-| reveal-md | `markdown-deck-reveal-md` |
-
-What each lane requires is `LANE_REQUIREMENTS` in
-`skills/vault-ingress/scripts/check-runtime.py`, and the checker names the
-missing commands itself when a lane is unavailable.
+as degraded for three tools it will never call. Which lane a deck needs is the
+`lane` field of its own receipt (probe it below); what that lane requires is
+`LANE_REQUIREMENTS` in `skills/vault-ingress/scripts/check-runtime.py`, and the
+checker names the missing commands itself when a lane is unavailable.
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/check-runtime.py" \
-  --lanes core,markdown-deck-presenterm
+  --lanes "core,{lane_from_the_receipt}"
 ```
 
 Never `--require-lanes` a markdown-deck lane during bootstrap. Like every other
@@ -117,10 +109,11 @@ another file, so one source slide renders as however many that file holds.
 `true`, which is why a disagreement there is expected rather than alarming.
 
 **`source_structure.slides[].reveal_markers` is `progressive-reveal` evidence.**
-It counts the author's own staged-reveal markers — presenterm's `<!-- pause -->`,
-Slidev's `v-click` family, reveal-md's `fragment` class. A slide with markers
-declares ordered cumulative content, which is exactly what `progressive-reveal`
-asks for. Two things it is not:
+It counts the staged-reveal markers the deck's own author wrote; which literals
+each tool's markers are is `_REVEAL_PATTERNS` in
+`skills/vault-ingress/scripts/markdown_deck.py`. A slide with markers declares
+ordered cumulative content, which is exactly what `progressive-reveal` asks
+for. Two things it is not:
 
 - It is **not** `crawling-code` or repetition padding. Build states of one
   authored slide are one slide, and the one-page-per-slide export never split
@@ -130,14 +123,14 @@ asks for. Two things it is not:
   separate.
 
 When `reveal_markers_are_a_floor` is `true`, `floor_causes` names the headmatter
-switch that stages content the source never marks (presenterm's
-`options.incremental_lists`). The count is a lower bound in that case — a slide
-reporting zero may still build.
+switch that stages content the source never marks. The count is a lower bound in
+that case — a slide reporting zero may still build.
 
-## Validating the real renderers by hand
+## Validating a deck by hand
 
-The CI runners do not carry these tools, and the tests drive stand-in renderers
-that assert the calling conditions instead. To check a real one end to end:
+CI installs all four renderers at pinned versions and renders a three-slide
+deck through each on every run, so the one-page-per-slide claim is checked
+there rather than asserted. What CI cannot check is YOUR deck. To do that:
 
 1. Install what the flavor's lane requires — run the checker above and
    read the lane's `missing_commands`.
