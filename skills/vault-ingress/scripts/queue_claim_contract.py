@@ -111,9 +111,11 @@ LEGACY_REPROCESS_REASONS = frozenset(
 # finally published, a hand-recovered transcript. The evidence changed, the
 # recorded identity did not, so this is not a `source_identity_correction`.
 SOURCE_ADDED_REPROCESS_REASON = "source_added"
-# Reasons an owner may set to move a talk with a completed claim back to
-# `needs-reprocessing`. A claim's `result_status` is allowed to disagree with
-# the talk status only under one of these; every other disagreement is drift.
+# Reasons an owner sets by hand to move a talk with a completed claim back to
+# `needs-reprocessing`. `is_deliberate_reprocess_reason` accepts these plus the
+# structured `pattern_scoring_generation:` form the normalizer writes; a claim's
+# `result_status` may disagree with the talk status under any of them, and every
+# other disagreement is drift.
 DELIBERATE_REPROCESS_REASONS = LEGACY_REPROCESS_REASONS | frozenset(
     {SOURCE_ADDED_REPROCESS_REASON}
 )
