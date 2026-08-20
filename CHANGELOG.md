@@ -40,7 +40,14 @@ neither `crawling-code` nor observed motion.
 The source's own slide count is still computed and reported beside the page
 count as a cross-check, never reconciled with it. A deck using a construct the
 source reader does not model shows up as `slide_count_agrees_with_source:
-false` rather than as a confidently wrong number.
+false` rather than as a confidently wrong number. One such construct is named
+outright: a Slidev `src:` key imports slides from another file, so the source
+reading is a floor and says so — found by running the reader over the real
+Slidev demo deck, where slide 14 is an import.
+
+The render is staged and probed before it is committed. A renderer that exits 0
+over a corrupt PDF would otherwise replace a valid earlier render with an
+unreadable one and then report the failure, which is the worst of both.
 
 **presenterm's pty, solved rather than documented.** The issue found
 `presenterm --export-pdf` failing non-interactively with `Inappropriate ioctl

@@ -259,6 +259,30 @@ def test_a_renderer_output_the_pdf_probe_rejects_is_not_slide_evidence(
         )
 
     assert "not usable as slide evidence" in str(excinfo.value)
+    assert not output.exists()
+
+
+def test_a_rejected_render_leaves_the_previous_one_intact(tmp_path, fake_path):
+    """An unreadable PDF must not replace a valid earlier render."""
+    good = _write_pdf(tmp_path / "good.pdf", pages=3)
+    _install(fake_path, "marp", _copy_last_argument_body(good))
+    output = tmp_path / "talk.pdf"
+    deck = _deck(tmp_path, MARP_DECK)
+    render_markdown_deck.execute(deck, output=output, flavor=None, timeout_seconds=60)
+    survivor = output.read_bytes()
+
+    _install(
+        fake_path,
+        "marp",
+        'for last; do :; done\nprintf "not a pdf" > "$last"\n',
+    )
+    with pytest.raises(render_markdown_deck.RenderError) as excinfo:
+        render_markdown_deck.execute(
+            deck, output=output, flavor=None, timeout_seconds=60
+        )
+
+    assert "was left as it was" in str(excinfo.value)
+    assert output.read_bytes() == survivor
 
 
 def test_an_existing_render_is_replaced_rather_than_appended(tmp_path, fake_path):

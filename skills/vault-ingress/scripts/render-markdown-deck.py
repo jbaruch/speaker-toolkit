@@ -290,8 +290,14 @@ def render(
     spec: RendererSpec,
     *,
     timeout_seconds: int,
-) -> None:
-    """Render the deck into `output`, leaving nothing behind on failure."""
+) -> int:
+    """Render the deck into `output` and return its page count.
+
+    Nothing reaches `output` until the bounded PDF probe has accepted the
+    staged file. A renderer that exits 0 over a corrupt PDF must not replace
+    a valid earlier render with an unreadable one, so the probe runs on the
+    staging copy and a rejection leaves the previous artifact untouched.
+    """
     absent = missing_commands(spec)
     if absent:
         raise RenderError(
@@ -315,7 +321,18 @@ def render(
                 f"{spec.commands[0]} exited 0 without writing {staged.name} — "
                 f"its output was:\n{_tail(transcript)}"
             )
+        try:
+            page_count = probe_pdf_artifact(
+                staged, trusted_root=Path(staging)
+            ).page_count
+        except PdfEvidenceError as exc:
+            raise RenderError(
+                f"{spec.commands[0]} wrote a PDF the bounded probe rejected "
+                f"({exc.reason_code}) — it is not usable as slide evidence, so "
+                f"{output} was left as it was"
+            ) from exc
         os.replace(staged, output)
+    return page_count
 
 
 def _output_generation(output: Path | None) -> tuple[int, int] | None:
@@ -357,6 +374,7 @@ def build_receipt(
     structure = read_deck(source, decision_flavor)
     declared = structure.slide_count
     agreement = None if page_count is None else page_count == declared
+    absent = missing_commands(RENDERERS[decision_flavor])
     receipt: dict[str, object] = {
         "schema_version": RECEIPT_SCHEMA_VERSION,
         "deck_path": str(deck),
@@ -365,8 +383,8 @@ def build_receipt(
         "flavor_decided_by": decided_by,
         "flavor_evidence": evidence,
         "lane": RENDERERS[decision_flavor].lane,
-        "lane_available": not missing_commands(RENDERERS[decision_flavor]),
-        "missing_commands": missing_commands(RENDERERS[decision_flavor]),
+        "lane_available": not absent,
+        "missing_commands": absent,
         "source_structure": structure.to_dict(),
         "rendered": output is not None,
         "output_path": None if output is None else str(output),
@@ -409,16 +427,9 @@ def execute(
     page_count: int | None = None
     output_sha256: str | None = None
     if output is not None:
-        render(deck, output, RENDERERS[chosen], timeout_seconds=timeout_seconds)
-        try:
-            probe = probe_pdf_artifact(output, trusted_root=output.parent)
-        except PdfEvidenceError as exc:
-            raise RenderError(
-                f"{RENDERERS[chosen].commands[0]} wrote {output}, and the PDF "
-                f"probe rejected it ({exc.reason_code}) — the render is not "
-                "usable as slide evidence"
-            ) from exc
-        page_count = probe.page_count
+        page_count = render(
+            deck, output, RENDERERS[chosen], timeout_seconds=timeout_seconds
+        )
         output_sha256 = _sha256(output)
     try:
         return build_receipt(

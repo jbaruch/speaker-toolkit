@@ -92,19 +92,29 @@ _MANIFEST_PACKAGES: dict[str, tuple[str, ...]] = {
 # Incremental-reveal markers: the author's own request for a staged reveal.
 # These are structure, not observed motion — a build run is ordered cumulative
 # content, never evidence that anything animated on screen.
-_REVEAL_MARKERS: dict[str, tuple[str, ...]] = {
-    PRESENTERM: ("<!-- pause -->",),
-    SLIDEV: ("<v-click", "<v-clicks", "<v-switch", "v-click=", "v-clicks=", "v-after"),
-    REVEAL_MD: ('class="fragment"', "class='fragment'"),
+#
+# One compiled alternation per flavor, never a list of substrings counted
+# independently: `<v-clicks>` contains `<v-click`, so counting both tokens
+# scored one marker twice. A single left-to-right scan consumes each match, so
+# overlapping spellings cannot double-count. Longest alternative first.
+_REVEAL_PATTERNS: dict[str, re.Pattern[str] | None] = {
+    PRESENTERM: re.compile(r"<!--\s*pause\s*-->"),
+    SLIDEV: re.compile(r"<v-clicks?\b|<v-switch\b|v-clicks?\s*=|v-after\b"),
+    REVEAL_MD: re.compile(r"""class\s*=\s*["']fragment"""),
     # Marp renders a fragmented list whole in a PDF export. Nothing in the
     # source declares a build the export preserves, so nothing is counted.
-    MARP: (),
+    MARP: None,
 }
 # Headmatter switches that make an explicit marker count a FLOOR rather than an
 # exact one: the tool stages content the source never marks.
 _IMPLICIT_REVEAL_SWITCHES: dict[str, tuple[tuple[str, ...], ...]] = {
     PRESENTERM: (("options", "incremental_lists"),),
 }
+# Slidev pulls slides from another file with a per-slide `src:` key. That one
+# source slide can render as many, so a count taken here is a floor. Verified
+# against the Slidev demo deck, whose `src: ./pages/imported-slides.md` slide
+# reads as one and renders as however many the imported file holds.
+_SLIDEV_IMPORT_KEY = re.compile(r"^src\s*:\s*(\S.*?)\s*$")
 
 _FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
 _YAML_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_.\-]*\s*:(\s|$)")
@@ -163,6 +173,7 @@ class DeckStructure:
     headmatter_readable: bool
     reveal_markers_are_a_floor: bool
     floor_causes: tuple[str, ...]
+    imported_files: tuple[str, ...]
 
     @property
     def slide_count(self) -> int:
@@ -180,6 +191,10 @@ class DeckStructure:
             "reveal_marker_total": sum(slide.reveal_markers for slide in self.slides),
             "reveal_markers_are_a_floor": self.reveal_markers_are_a_floor,
             "floor_causes": list(self.floor_causes),
+            # A deck that imports slides from another file renders more slides
+            # than this reading counts, so `slide_count` above is a floor.
+            "imported_files": list(self.imported_files),
+            "slide_count_is_a_floor": bool(self.imported_files),
             "slides": [slide.to_dict() for slide in self.slides],
         }
 
@@ -417,7 +432,7 @@ def read_deck(source: str, flavor: str) -> DeckStructure:
             inside_fence,
             vertical=flavor == REVEAL_MD,
         )
-    markers = _REVEAL_MARKERS[flavor]
+    pattern = _REVEAL_PATTERNS[flavor]
     slides: list[SlideStructure] = []
     for position, first_line in enumerate(boundaries):
         last_line = (
@@ -435,7 +450,7 @@ def read_deck(source: str, flavor: str) -> DeckStructure:
                 index=position + 1,
                 first_line=first_line + 1,
                 last_line=max(last_line, first_line + 1),
-                reveal_markers=sum(body.count(marker) for marker in markers),
+                reveal_markers=(0 if pattern is None else len(pattern.findall(body))),
             )
         )
     floor_causes = tuple(
@@ -443,12 +458,21 @@ def read_deck(source: str, flavor: str) -> DeckStructure:
         for path in _IMPLICIT_REVEAL_SWITCHES.get(flavor, ())
         if _nested(headmatter, path) is True
     )
+    imported: list[str] = []
+    if flavor == SLIDEV:
+        for number, line in enumerate(lines):
+            if inside_fence[number]:
+                continue
+            match = _SLIDEV_IMPORT_KEY.match(line)
+            if match is not None:
+                imported.append(match.group(1))
     return DeckStructure(
         flavor=flavor,
         slides=tuple(slides),
         headmatter_readable=headmatter_readable,
         reveal_markers_are_a_floor=bool(floor_causes),
         floor_causes=floor_causes,
+        imported_files=tuple(imported),
     )
 
 

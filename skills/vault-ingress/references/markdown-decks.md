@@ -92,6 +92,10 @@ the `apply-source-repairs.py` dry-run/apply pair):
 The talk then binds as a normal `static_slides` artifact. Nothing about the
 evidence path is special-cased for a deck that started as markdown.
 
+Nothing reaches the output path until the bounded PDF probe has accepted the
+render. A renderer that exits 0 over a corrupt file leaves an earlier valid
+render exactly where it was.
+
 ## Reading the receipt honestly
 
 **`slide_count` comes from the rendered page count.** Every renderer here is
@@ -106,6 +110,11 @@ segmenting the markdown source finds. When it disagrees with the page count,
 source reader does not model. Record `slide_count` from the render, and treat
 the disagreement as a reason to look at the pages rather than as a number to
 reconcile.
+
+One such construct is named outright: a Slidev `src:` key pulls slides from
+another file, so one source slide renders as however many that file holds.
+`source_structure.imported_files` lists them and `slide_count_is_a_floor` goes
+`true`, which is why a disagreement there is expected rather than alarming.
 
 **`source_structure.slides[].reveal_markers` is `progressive-reveal` evidence.**
 It counts the author's own staged-reveal markers — presenterm's `<!-- pause -->`,

@@ -282,4 +282,47 @@ def test_an_unknown_flavor_is_refused():
 
 def test_every_declared_flavor_has_a_reveal_vocabulary():
     for flavor in markdown_deck.FLAVORS:
-        assert flavor in markdown_deck._REVEAL_MARKERS
+        assert flavor in markdown_deck._REVEAL_PATTERNS
+
+
+def test_a_v_clicks_block_counts_once_not_twice():
+    """`<v-clicks>` contains `<v-click`; two tokens once scored it twice."""
+    deck = SLIDEV_DECK.replace(
+        "<v-click>\n\nrevealed later\n\n</v-click>",
+        "<v-clicks>\n\n- one\n- two\n\n</v-clicks>",
+    )
+
+    structure = markdown_deck.read_deck(deck, markdown_deck.SLIDEV)
+
+    assert structure.to_dict()["reveal_marker_total"] == 1
+
+
+def test_slidev_click_spellings_each_count_once():
+    deck = (
+        "---\nmdc: true\n---\n\n"
+        "# One\n\n"
+        '<div v-click="3">a</div>\n'
+        "<v-switch>b</v-switch>\n"
+        "<div v-after>c</div>\n"
+        "<v-clicks>\n- d\n</v-clicks>\n"
+    )
+
+    structure = markdown_deck.read_deck(deck, markdown_deck.SLIDEV)
+
+    assert structure.to_dict()["reveal_marker_total"] == 4
+
+
+def test_an_imported_slide_file_makes_the_slide_count_a_floor():
+    deck = SLIDEV_DECK + "\n---\nsrc: ./pages/imported-slides.md\n---\n\n"
+
+    payload = markdown_deck.read_deck(deck, markdown_deck.SLIDEV).to_dict()
+
+    assert payload["imported_files"] == ["./pages/imported-slides.md"]
+    assert payload["slide_count_is_a_floor"] is True
+
+
+def test_a_deck_that_imports_nothing_is_not_a_floor():
+    payload = markdown_deck.read_deck(SLIDEV_DECK, markdown_deck.SLIDEV).to_dict()
+
+    assert payload["imported_files"] == []
+    assert payload["slide_count_is_a_floor"] is False
