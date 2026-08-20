@@ -106,6 +106,17 @@ PATTERN_SCORING_REPROCESS_REASON_SEQUENCES = frozenset(
 LEGACY_REPROCESS_REASONS = frozenset(
     {"pattern_scoring_added", "source_identity_correction"}
 )
+# A source that did not exist when the talk was analysed became available: a
+# markdown-authored deck exported to PDF and registered, a recording that
+# finally published, a hand-recovered transcript. The evidence changed, the
+# recorded identity did not, so this is not a `source_identity_correction`.
+SOURCE_ADDED_REPROCESS_REASON = "source_added"
+# Reasons an owner may set to move a talk with a completed claim back to
+# `needs-reprocessing`. A claim's `result_status` is allowed to disagree with
+# the talk status only under one of these; every other disagreement is drift.
+DELIBERATE_REPROCESS_REASONS = LEGACY_REPROCESS_REASONS | frozenset(
+    {SOURCE_ADDED_REPROCESS_REASON}
+)
 
 QUEUE_CLAIM_SCHEMA_UNSUPPORTED_REASON = "queue_claim_schema_version_unsupported"
 ADHERENCE_BASELINE_SCHEMA_UNSUPPORTED_REASON = (
@@ -155,7 +166,7 @@ def require_queue_identifier(value: object, label: str) -> str:
 def is_deliberate_reprocess_reason(value: object) -> bool:
     if not isinstance(value, str):
         return False
-    if value in LEGACY_REPROCESS_REASONS:
+    if value in DELIBERATE_REPROCESS_REASONS:
         return True
     if not value.startswith(PATTERN_SCORING_REPROCESS_REASON_PREFIX):
         return False
