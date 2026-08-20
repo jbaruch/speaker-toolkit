@@ -54,9 +54,15 @@ class _FakeRunner:
         archive: bytes | None = None,
         failing: str | None = None,
         silent_tar: bool = False,
+        npm_produces: tuple[str, ...] | None = None,
     ):
         self.commands: list[list[str]] = []
         self.npm_prefix_contents: list[str] = []
+        self._npm_produces = (
+            install_deck_renderers.NPM_EXECUTABLES
+            if npm_produces is None
+            else npm_produces
+        )
         self._archive = archive
         self._failing = failing
         self._silent_tar = silent_tar
@@ -90,7 +96,8 @@ class _FakeRunner:
             )
             binaries = prefix / "node_modules" / ".bin"
             binaries.mkdir(parents=True, exist_ok=True)
-            (binaries / "slidev").write_text("", encoding="utf-8")
+            for executable in self._npm_produces:
+                (binaries / executable).write_text("", encoding="utf-8")
         return 0
 
 
@@ -120,14 +127,47 @@ def test_renewing_a_pin_changes_the_cache_key(monkeypatch):
     assert install_deck_renderers.pin_digest() != before
 
 
-def test_a_cached_presenterm_is_left_alone(tmp_path):
-    binary = tmp_path / "bin" / "presenterm"
-    binary.parent.mkdir(parents=True)
+def _stamp_presenterm(root: Path, version: str) -> None:
+    binary = root / "bin" / "presenterm"
+    binary.parent.mkdir(parents=True, exist_ok=True)
     binary.write_text("", encoding="utf-8")
+    (binary.parent / install_deck_renderers.PRESENTERM_STAMP).write_text(
+        f"{version}\n", encoding="utf-8"
+    )
+
+
+def test_a_cached_presenterm_is_left_alone(tmp_path):
+    _stamp_presenterm(tmp_path, install_deck_renderers.PRESENTERM_VERSION)
     runner = _FakeRunner()
 
     assert install_deck_renderers.install_presenterm(tmp_path, runner) == "cached"
     assert runner.commands == []
+
+
+def test_a_cached_presenterm_from_another_pin_is_reinstalled(
+    tmp_path,
+    pinned_archive,
+):
+    """A present binary is not evidence of the pinned binary."""
+    _stamp_presenterm(tmp_path, "0.15.0")
+    runner = _FakeRunner(archive=pinned_archive)
+
+    assert install_deck_renderers.install_presenterm(tmp_path, runner) == "downloaded"
+    assert runner.commands[0][0] == "curl"
+
+
+def test_an_unstamped_presenterm_is_reinstalled(tmp_path, pinned_archive):
+    """A half-restored cache leaves the file without the stamp beside it."""
+    binary = tmp_path / "bin" / "presenterm"
+    binary.parent.mkdir(parents=True)
+    binary.write_text("", encoding="utf-8")
+
+    result = install_deck_renderers.install_presenterm(
+        tmp_path, _FakeRunner(archive=pinned_archive)
+    )
+
+    assert result == "downloaded"
+    assert (binary.parent / install_deck_renderers.PRESENTERM_STAMP).exists()
 
 
 def test_presenterm_is_downloaded_and_checksum_verified(tmp_path, pinned_archive):
@@ -212,14 +252,79 @@ def test_a_failed_download_names_the_url(tmp_path):
     assert install_deck_renderers.PRESENTERM_URL in str(excinfo.value)
 
 
+def _stamp_npm(root: Path, digest: str, executables: tuple[str, ...]) -> None:
+    prefix = root / "npm"
+    binaries = prefix / "node_modules" / ".bin"
+    binaries.mkdir(parents=True, exist_ok=True)
+    for executable in executables:
+        (binaries / executable).write_text("", encoding="utf-8")
+    (prefix / install_deck_renderers.NPM_STAMP).write_text(
+        f"{digest}\n", encoding="utf-8"
+    )
+
+
+def _locked_digest() -> str:
+    return hashlib.sha256(install_deck_renderers.NPM_LOCKFILE.read_bytes()).hexdigest()
+
+
 def test_a_cached_npm_tree_is_left_alone(tmp_path):
-    binaries = tmp_path / "npm" / "node_modules" / ".bin"
-    binaries.mkdir(parents=True)
-    (binaries / "slidev").write_text("", encoding="utf-8")
+    _stamp_npm(tmp_path, _locked_digest(), install_deck_renderers.NPM_EXECUTABLES)
     runner = _FakeRunner()
 
     assert install_deck_renderers.install_npm_renderers(tmp_path, runner) == "cached"
     assert runner.commands == []
+
+
+def test_a_tree_installed_from_another_lock_is_reinstalled(tmp_path):
+    """The lock moved under an unchanged tree; the tree is the old graph."""
+    _stamp_npm(tmp_path, "0" * 64, install_deck_renderers.NPM_EXECUTABLES)
+    runner = _FakeRunner()
+
+    assert install_deck_renderers.install_npm_renderers(tmp_path, runner) == "installed"
+    assert runner.commands[0][:2] == ["npm", "ci"]
+
+
+def test_a_partially_restored_tree_is_reinstalled(tmp_path):
+    """Slidev alone is not the install; Marp and reveal-md are renderers too."""
+    _stamp_npm(tmp_path, _locked_digest(), ("slidev",))
+    runner = _FakeRunner()
+
+    assert install_deck_renderers.install_npm_renderers(tmp_path, runner) == "installed"
+    assert runner.commands[0][:2] == ["npm", "ci"]
+
+
+def test_an_npm_ci_that_produces_no_renderer_is_refused(tmp_path):
+    runner = _FakeRunner(npm_produces=("slidev",))
+
+    with pytest.raises(install_deck_renderers.InstallFailure) as excinfo:
+        install_deck_renderers.install_npm_renderers(tmp_path, runner)
+
+    message = str(excinfo.value)
+    assert "marp" in message
+    assert "reveal-md" in message
+
+
+def test_the_npm_executables_are_the_renderers_the_wrapper_calls():
+    """Two files name the same commands; a test keeps them from drifting."""
+    scripts = ROOT / "skills" / "vault-ingress" / "scripts"
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    renderer_script = scripts / "render-markdown-deck.py"
+    spec = importlib.util.spec_from_file_location(
+        "render_markdown_deck_executables", renderer_script
+    )
+    assert spec is not None and spec.loader is not None
+    renderer = importlib.util.module_from_spec(spec)
+    # Registered before exec: a dataclass defined in a module absent from
+    # sys.modules cannot resolve its own __module__ and raises on definition.
+    sys.modules[spec.name] = renderer
+    spec.loader.exec_module(renderer)
+    npm_backed = {
+        renderer.RENDERERS[flavor].commands[0]
+        for flavor in ("slidev", "marp", "reveal-md")
+    }
+
+    assert set(install_deck_renderers.NPM_EXECUTABLES) == npm_backed
 
 
 def test_the_lock_file_is_installed_rather_than_the_manifest(tmp_path):

@@ -71,6 +71,17 @@ NPM_LOCKFILE = NPM_MANIFEST_DIR / "package-lock.json"
 # a test rather than a CI run.
 REQUIRED_NODE_MAJOR = 22
 
+# The executables the npm half must produce. A cache holding only some of them
+# is a partial restore, not a hit. Pinned against the renderer specs by
+# tests/test_install_deck_renderers.py.
+NPM_EXECUTABLES = ("marp", "reveal-md", "slidev")
+# Stamps written beside each half, naming exactly what was installed. A present
+# binary is not evidence of the pinned binary: a renewed pin, a half-restored
+# cache, or an install left from an earlier version all leave files in place,
+# and each would otherwise be reported as a cache hit and run unreviewed.
+PRESENTERM_STAMP = ".presenterm-version"
+NPM_STAMP = ".lock-digest"
+
 DOWNLOAD_TIMEOUT_SEC = 300
 INSTALL_TIMEOUT_SEC = 900
 SYSCTL_TIMEOUT_SEC = 60
@@ -159,10 +170,19 @@ def _sha512(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _stamp_matches(stamp: Path, expected: str) -> bool:
+    """Return whether a stamp file records exactly `expected`."""
+    try:
+        return stamp.read_text(encoding="utf-8").strip() == expected
+    except OSError:
+        return False
+
+
 def install_presenterm(root: Path, run: Runner) -> str:
     """Put the pinned presenterm binary in `root/bin`, or leave a cached one."""
     binary = root / "bin" / "presenterm"
-    if binary.is_file():
+    stamp = binary.parent / PRESENTERM_STAMP
+    if binary.is_file() and _stamp_matches(stamp, PRESENTERM_VERSION):
         return "cached"
     binary.parent.mkdir(parents=True, exist_ok=True)
     archive = root / PRESENTERM_ASSET
@@ -201,13 +221,18 @@ def install_presenterm(root: Path, run: Runner) -> str:
     binary.chmod(0o755)
     shutil.rmtree(staging)
     archive.unlink()
+    stamp.write_text(f"{PRESENTERM_VERSION}\n", encoding="utf-8")
     return "downloaded"
 
 
 def install_npm_renderers(root: Path, run: Runner) -> str:
     """Install the locked npm CLIs under `root/npm`, or leave a cached tree."""
     prefix = root / "npm"
-    if (prefix / "node_modules" / ".bin" / "slidev").exists():
+    binaries = prefix / "node_modules" / ".bin"
+    locked = hashlib.sha256(NPM_LOCKFILE.read_bytes()).hexdigest()
+    if _stamp_matches(prefix / NPM_STAMP, locked) and all(
+        (binaries / executable).exists() for executable in NPM_EXECUTABLES
+    ):
         return "cached"
     prefix.mkdir(parents=True, exist_ok=True)
     # `npm ci` installs the lock file exactly and refuses a manifest the lock
@@ -227,6 +252,17 @@ def install_npm_renderers(root: Path, run: Runner) -> str:
             f"npm ci failed for {', '.join(npm_pins())} — see "
             f"{NPM_LOCKFILE} for the locked graph"
         )
+    absent = [
+        executable
+        for executable in NPM_EXECUTABLES
+        if not (binaries / executable).exists()
+    ]
+    if absent:
+        raise InstallFailure(
+            f"npm ci reported success without {', '.join(absent)} in "
+            f"{binaries} — the manifest and the renderers have drifted apart"
+        )
+    (prefix / NPM_STAMP).write_text(f"{locked}\n", encoding="utf-8")
     return "installed"
 
 

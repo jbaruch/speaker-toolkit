@@ -37,6 +37,10 @@ and `fragment` markers, counted per slide. That is honest
 `progressive-reveal` evidence, and the reference file is explicit that it is
 neither `crawling-code` nor observed motion.
 
+A deck ending on a separator used to invent a slide out of it — an empty span
+starting one line past the end of the file, inflating the very count the page
+count is checked against. The trailing separator closes the slide before it.
+
 The source's own slide count is still computed and reported beside the page
 count as a cross-check, never reconciled with it. A deck using a construct the
 source reader does not model shows up as `slide_count_agrees_with_source:
@@ -97,6 +101,14 @@ the workflow pins 22 and a test asserts the runner honours it.
 The stand-in renderers stay for what they are good at: a corrupt render, a
 renderer that exits 0 writing nothing, a process that closes its terminal and
 hangs. Those are reproducible against a stand-in and nothing else.
+
+Two cache defects the reviewer found that a green run never would: a present
+`presenterm` binary was taken as the pinned one, and the npm tree counted as
+restored on the strength of Slidev's shim alone. Either would have run an
+unreviewed version and reported a cache hit doing it. Both halves write a stamp
+naming exactly what was installed — presenterm's version, the lock file's
+digest — and a hit now requires the stamp to match and every renderer
+executable to be present.
 
 Two things the live runs found that no amount of local testing would have.
 `tar` told to extract the member `presenterm` failed with `Not found in

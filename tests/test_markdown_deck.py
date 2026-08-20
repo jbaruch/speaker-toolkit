@@ -344,3 +344,22 @@ def test_the_reported_span_brackets_exactly_the_slide_s_own_lines():
     ]
     # The separator that ended each slide belongs to no slide's span.
     assert not [line for span in spans for line in span if line.strip() == "---"]
+
+
+def test_a_deck_ending_on_a_separator_invents_no_slide():
+    """The trailing separator closes the last slide; it does not open one."""
+    for deck, flavor, expected in (
+        ("# One\n\nbody\n\n<!-- end_slide -->\n", markdown_deck.PRESENTERM, 1),
+        (MARP_DECK + "\n---\n", markdown_deck.MARP, 3),
+        (SLIDEV_DECK + "\n---\n", markdown_deck.SLIDEV, 3),
+    ):
+        structure = markdown_deck.read_deck(deck, flavor)
+        lines = len(deck.splitlines())
+
+        assert structure.slide_count == expected, flavor
+        assert all(slide.first_line <= lines for slide in structure.slides), flavor
+        assert all(slide.last_line <= lines for slide in structure.slides), flavor
+
+
+def test_an_empty_source_declares_no_slides():
+    assert markdown_deck.read_deck("", markdown_deck.MARP).slide_count == 0

@@ -432,6 +432,11 @@ def read_deck(source: str, flavor: str) -> DeckStructure:
             inside_fence,
             vertical=flavor == REVEAL_MD,
         )
+    # A deck that ends on a separator puts a boundary at EOF. That separator
+    # closes the slide before it; treating it as the start of another invents
+    # an empty slide with a first_line past the end of the file, and inflates
+    # the count the render's page count is checked against.
+    boundaries = [start for start in boundaries if start < len(lines)]
     pattern = _REVEAL_PATTERNS[flavor]
     slides: list[SlideStructure] = []
     for position, start in enumerate(boundaries):
