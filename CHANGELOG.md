@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.101 — 2026-08-20
+
 ### feat(vault-ingress) — render markdown-authored decks as slide evidence
 
 Issue #318, items (2) and (3). Seven of twenty-one talks in a real vault had an
