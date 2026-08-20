@@ -1,5 +1,36 @@
 # Changelog
 
+### fix(ci) — the apt cache key names the suite it was built for
+
+The key was `apt-<os>-<package-digest>-<week>`, and `runner.os` is `Linux` for
+every Ubuntu image GitHub has ever shipped. So when `ubuntu-latest` rolls to the
+next LTS, the first run on the new image computes a key identical to one the old
+image saved, restores that entry, and gets indices and `.deb` archives for the
+suite it is no longer on. `actions/cache` does not save on an exact key hit, so
+the new suite would not get an entry of its own until the week stamp rotated.
+
+Narrow and self-limiting, which is why #344 deferred it rather than folding it
+in: the pins in `PACKAGES` are suite-specific (`4:24.2.7-0ubuntu0.24.04.6` is a
+noble build), so the same image move makes them unresolvable and the install
+fails loudly on the pin long before anyone wonders about the cache. Two failure
+modes, one trigger, and the loud one lands first.
+
+`VERSION_CODENAME` from `/etc/os-release` is in the key now, read through the
+`--codename` mode of `scripts/install_system_deps.py` rather than a second
+parse in shell — `read_codename` already existed for the mirror probe URL and
+already had tests. That mode sits outside the entry point's report contract on
+purpose: the install path answers an unreadable `/etc/os-release` with a failure
+report, but a cache key has nothing to fall back on, and a swallowed error there
+keys every run on the empty string, which is one shared entry across every
+suite. It raises instead.
+
+The step's shell went with it. `echo "k=$(cmd)" >> "$GITHUB_OUTPUT"` discards
+`cmd`'s exit status — `echo` succeeds, the output is written empty, and the
+`set -e` the runner gives the block never sees a thing. The three values are
+assigned first and echoed after, so a failing resolver takes the step down.
+
+Closes #345.
+
 ## 0.20.97 — 2026-08-19
 
 ### fix(ci) — the apt cache stops being decorative

@@ -476,9 +476,18 @@ def main(
     if len(argv) == 2 and argv[1] == "--package-digest":
         print(package_digest())
         return 0
+    if len(argv) == 2 and argv[1] == "--codename":
+        # The other half of the cache key. A suite name absent from the key
+        # lets a run restore the previous LTS's indices and archives, so this
+        # is deliberately outside the report contract below: an unreadable
+        # /etc/os-release fails the step loudly rather than keying the cache on
+        # an empty string.
+        print(read_codename(os_release))
+        return 0
     if len(argv) != 2:
         print(
-            "usage: install_system_deps.py <workspace-root> | --package-digest",
+            "usage: install_system_deps.py <workspace-root> | --package-digest"
+            " | --codename",
             file=sys.stderr,
         )
         return 2

@@ -108,9 +108,22 @@ jobs:
         # reordered fallback must not throw away 185 MiB of archives. The week
         # stamp is the renewal cadence — a set nobody touches is still refetched
         # rather than pinned forever (`dependency-management` Freshness).
+        #
+        # The suite name is in the key too. `ubuntu-latest` moves to the next
+        # LTS on GitHub's schedule, and an entry saved under the previous one
+        # holds indices and archives the new suite's apt cannot install from —
+        # and `actions/cache` does not save on an exact key hit, so the new
+        # suite would go without an entry of its own until the week rolled.
         run: |
-          echo "packages=$(python3 scripts/install_system_deps.py --package-digest)" >> "$GITHUB_OUTPUT"
-          echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          packages="$(python3 scripts/install_system_deps.py --package-digest)"
+          codename="$(python3 scripts/install_system_deps.py --codename)"
+          week="$(date -u +%G-%V)"
+          {
+            echo "packages=$packages"
+            echo "codename=$codename"
+            echo "week=$week"
+          } >> "$GITHUB_OUTPUT"
       - name: Cache apt package downloads and package indices
         # Both halves, and the second is the point. Caching only the .deb
         # archives left `apt-get update` fetching the indices from a mirror on
@@ -122,7 +135,7 @@ jobs:
           path: |
             /tmp/apt-cache
             /tmp/apt-lists
-          key: apt-${{ runner.os }}-${{ steps.apt-cache-key.outputs.packages }}-${{ steps.apt-cache-key.outputs.week }}
+          key: apt-${{ runner.os }}-${{ steps.apt-cache-key.outputs.codename }}-${{ steps.apt-cache-key.outputs.packages }}-${{ steps.apt-cache-key.outputs.week }}
       - name: Install system dependencies (ffmpeg, libreoffice-impress, tesseract)
         # Offline from the cache when it can, else through the mirror list with a
         # reachability probe ahead of each host. The package set, mirror list,
