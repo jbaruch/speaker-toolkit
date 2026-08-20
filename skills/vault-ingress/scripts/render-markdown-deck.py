@@ -566,11 +566,14 @@ def main(argv: list[str] | None = None) -> int:
     except RenderError as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    # An agent reads a non-zero exit as "no deck was rendered" and moves the
-    # talk on transcript-only. A traceback here would say neither what failed
-    # nor whether a PDF now sits at --output for the next run to trust, and it
-    # would print the deck path the caller already knows into a log that
-    # should not carry it.
+    # Caller's silent-failure shape: an agent reads a non-zero exit as "no deck
+    # was rendered" and moves the talk on transcript-only, with no way to tell
+    # a broken tool from an absent deck.
+    # What this emits: the closed unexpected-failure JSON document on stderr —
+    # error code, exception class, sanitized origin — plus `output_written`,
+    # so the next run knows whether a PDF is already at --output.
+    # Why propagation breaks the contract: a traceback answers neither
+    # question and prints the deck path into a log that should not carry it.
     except Exception as exc:  # noqa: BLE001 - outer-boundary-process-contract
         emit_unexpected_failure(
             exc,
