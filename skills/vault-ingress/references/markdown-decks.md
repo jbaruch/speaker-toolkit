@@ -98,11 +98,11 @@ render exactly where it was.
 
 ## Reading the receipt honestly
 
-**`slide_count` comes from the rendered page count.** Every renderer here is
-invoked in its one-page-per-slide mode. Slidev's `--with-clicks` — and the
-equivalent elsewhere — emits one page per *click*, so a 40-slide deck exports
-as 228 pages of cumulative build states and any count read off that is simply
-wrong. This never passes that flag.
+**`slide_count` comes from the rendered page count**, and the page count means
+what it says: the renderer is invoked so that one page is one authored slide,
+never one page per build state. How each tool is invoked to get that is the
+script's — see `RendererSpec.argv` and the module docstring in
+`skills/vault-ingress/scripts/render-markdown-deck.py`.
 
 **`source_slide_count` is the cross-check, never the authority.** It is what
 segmenting the markdown source finds. When it disagrees with the page count,
@@ -153,11 +153,13 @@ that assert the calling conditions instead. To check a real one end to end:
 
 ## Two gotchas worth knowing
 
-**presenterm needs a terminal.** Run non-interactively it fails with
-`Inappropriate ioctl for device (os error 25)`, and given an unsized pty it
-fails with `render: screen is too small` — it reads the export canvas size from
-the terminal's window size. The script attaches a sized pseudo-terminal for it.
-It then shells out to `weasyprint`, so the lane requires both.
+**presenterm needs a terminal.** Exporting it by hand from a script or a CI
+step fails with `Inappropriate ioctl for device (os error 25)`, and from an
+unsized pty with `render: screen is too small`. Both are handled — see
+`_run_with_pty` in `skills/vault-ingress/scripts/render-markdown-deck.py`.
+Recognize the messages if you export by hand; the renderer here does not hit
+them. presenterm also shells out to `weasyprint`, which is why its lane wants
+both.
 
 **Browser-backed renderers need a browser.** Slidev's PDF export needs
 `playwright-chromium`; Marp and reveal-md drive a Chrome/Chromium or Firefox.

@@ -434,22 +434,29 @@ def read_deck(source: str, flavor: str) -> DeckStructure:
         )
     pattern = _REVEAL_PATTERNS[flavor]
     slides: list[SlideStructure] = []
-    for position, first_line in enumerate(boundaries):
-        last_line = (
+    for position, start in enumerate(boundaries):
+        # A boundary is the index of a slide's FIRST line, so the next boundary
+        # minus one is the separator that ended this slide — excluded from the
+        # body. Reported line numbers are 1-based, which makes the same integer
+        # both the exclusive 0-based body end and the inclusive 1-based last
+        # content line. Named separately so neither reading has to be inferred.
+        body_end = (
             boundaries[position + 1] - 1
             if position + 1 < len(boundaries)
             else len(lines)
         )
         body = "\n".join(
             line
-            for number, line in enumerate(lines[first_line:last_line], start=first_line)
+            for number, line in enumerate(lines[start:body_end], start=start)
             if not inside_fence[number]
         )
         slides.append(
             SlideStructure(
                 index=position + 1,
-                first_line=first_line + 1,
-                last_line=max(last_line, first_line + 1),
+                first_line=start + 1,
+                # A separator-only slide has no content line; report its own
+                # first line rather than a span that runs backwards.
+                last_line=max(body_end, start + 1),
                 reveal_markers=(0 if pattern is None else len(pattern.findall(body))),
             )
         )

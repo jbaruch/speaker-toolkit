@@ -326,3 +326,21 @@ def test_a_deck_that_imports_nothing_is_not_a_floor():
 
     assert payload["imported_files"] == []
     assert payload["slide_count_is_a_floor"] is False
+
+
+def test_the_reported_span_brackets_exactly_the_slide_s_own_lines():
+    """1-based inclusive, separator excluded — for every slide, not just the last."""
+    lines = MARP_DECK.splitlines()
+    structure = markdown_deck.read_deck(MARP_DECK, markdown_deck.MARP)
+
+    spans = [
+        lines[slide.first_line - 1 : slide.last_line] for slide in structure.slides
+    ]
+
+    assert [line for span in spans for line in span if line.startswith("#")] == [
+        "# One",
+        "# Two",
+        "# Three",
+    ]
+    # The separator that ended each slide belongs to no slide's span.
+    assert not [line for span in spans for line in span if line.strip() == "---"]
