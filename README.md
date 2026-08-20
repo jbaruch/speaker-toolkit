@@ -374,6 +374,9 @@ notes which named patterns and antipatterns are detected per talk.
   download, `pdftoppm` for rendered-PDF inspection, Pillow + `imagehash` +
   `ffmpeg`/`ffprobe` for video extraction, and optional `mlx-whisper` for local
   Whisper fallback
+- Markdown-authored decks (Slidev, presenterm, Marp, reveal-md) render through
+  that deck's own tool, one optional lane per flavor — `presenterm` +
+  `weasyprint`, `slidev`, `marp`, or `reveal-md`
 - Talks with at least one reachable transcript, slide, or video source
 
 Installed plugin bundles do not include `pyproject.toml`; README and the
@@ -495,6 +498,8 @@ If the speaker profile doesn't exist yet (fewer than 10 talks parsed), the creat
 - `yt-dlp`, `pdftoppm`, `ffmpeg`, and `ffprobe` for the provider/download,
   rendered-PDF, and video lanes that require them; optional `mlx-whisper` for
   local Whisper fallback
+- The authoring tool of any markdown deck you want rendered as slide evidence:
+  `presenterm` + `weasyprint`, `slidev`, `marp`, or `reveal-md`
 - Talks with at least one usable transcript, slide, or delivery-video source
 
 ### For the Presentation Creator & Illustrations Skills

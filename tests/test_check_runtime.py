@@ -76,8 +76,20 @@ def _assert_probe_result_removed(result_path: Path) -> None:
     assert not result_path.parent.exists()
 
 
-def _child_probe_environment(module_directory: Path) -> dict[str, str]:
+def _plain_child_environment() -> dict[str, str]:
+    """Return an environment whose child writes uncolored tracebacks.
+
+    Python 3.13+ colorizes a traceback when `FORCE_COLOR` is set, and a
+    terminal multiplexer or CI runner that exports it turns an assertion on the
+    child's stderr text into an assertion on ANSI escapes.
+    """
     env = os.environ.copy()
+    env["PYTHON_COLORS"] = "0"
+    return env
+
+
+def _child_probe_environment(module_directory: Path) -> dict[str, str]:
+    env = _plain_child_environment()
     existing_pythonpath = env.get("PYTHONPATH")
     env["PYTHONPATH"] = (
         f"{module_directory}{os.pathsep}{existing_pythonpath}"
@@ -96,7 +108,7 @@ def _run_child_probe(
     env = (
         _child_probe_environment(module_directory)
         if module_directory is not None
-        else None
+        else _plain_child_environment()
     )
     with result_path.open("x+b", buffering=0):
         return subprocess.run(
@@ -1104,6 +1116,38 @@ def test_lane_requirements_match_the_configured_interpreter_contract() -> None:
         "Pillow": "PIL",
     }
     assert requirements["pdf-render"]["commands"] == {"pdftoppm": "pdftoppm"}
+    assert requirements["markdown-deck-presenterm"] == {
+        "modules": {},
+        "commands": {"presenterm": "presenterm", "weasyprint": "weasyprint"},
+    }
+    assert requirements["markdown-deck-slidev"]["commands"] == {"slidev": "slidev"}
+    assert requirements["markdown-deck-marp"]["commands"] == {"marp": "marp"}
+    assert requirements["markdown-deck-reveal-md"]["commands"] == {
+        "reveal-md": "reveal-md"
+    }
+
+
+def test_no_markdown_deck_lane_is_selected_or_required_by_default() -> None:
+    """A vault authors decks in one tool, so none of the four is a default."""
+    markdown_lanes = {
+        lane
+        for lane in check_runtime.LANE_REQUIREMENTS
+        if lane.startswith("markdown-deck-")
+    }
+
+    assert markdown_lanes
+    assert markdown_lanes.isdisjoint(check_runtime.DEFAULT_LANES)
+    assert markdown_lanes.isdisjoint(check_runtime.DEFAULT_REQUIRED_LANES)
+
+
+def test_an_absent_markdown_deck_lane_degrades_rather_than_blocks() -> None:
+    report = check_runtime.build_report(("markdown-deck-slidev",), ("core",))
+    lane = report["lanes"]["markdown-deck-slidev"]
+
+    assert lane["required"] is False
+    if not lane["available"]:
+        assert "markdown-deck-slidev" in report["degraded_lanes"]
+        assert "markdown-deck-slidev" not in report["blocking_lanes"]
 
 
 def test_psutil_version_authorities_are_synchronized() -> None:

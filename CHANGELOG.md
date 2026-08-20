@@ -1,5 +1,66 @@
 # Changelog
 
+### feat(vault-ingress) — render markdown-authored decks as slide evidence
+
+Issue #318, items (2) and (3). Seven of twenty-one talks in a real vault had an
+authored deck on disk that this toolkit could not see, because the deck was a
+`slides.md` and every `slide_source` value assumed a binary artifact. Exactly
+one talk in that cohort had a PDF and therefore got slide evidence at all.
+`slide_source: "markdown"` (shipped in 0.20.86) stopped those records being
+invalid; it did not make the deck readable. This does.
+
+`render-markdown-deck.py` detects which of the four tools wrote the deck,
+renders it to `slides/{talk}.pdf`, and hands back a receipt. The PDF then binds
+as an ordinary `static_slides` artifact — no parallel evidence path, no new
+artifact identity, nothing downstream needs to know the deck started as
+markdown. `references/markdown-decks.md` carries the register-and-requeue plan,
+which pairs with the `source_added` reprocess reason from the previous release.
+
+**Four lanes, not one.** The issue proposed a single `markdown-deck` lane. A
+lane is an AND over its commands, and no vault authors decks in four tools at
+once, so one lane would report a presenterm-only vault as degraded for three
+renderers it will never call. `markdown-deck-presenterm`,
+`markdown-deck-slidev`, `markdown-deck-marp`, and `markdown-deck-reveal-md`
+each degrade on their own, and the renderer requires exactly the one the
+detected flavor names.
+
+**The per-click trap, avoided rather than corrected.** The issue documents
+Slidev exports where pages 4, 5 and 6 are cumulative build states of one
+authored slide, and decks of far fewer real slides exporting at 96, 137, 140,
+185 and 228 pages. Item (4) asked for those build runs to be collapsed when
+deriving `slide_count`. The cheaper answer is not to create them: Slidev's
+`--with-clicks` is off by default, and every renderer here is invoked in its
+one-page-per-slide mode, so the page count IS the authored slide count and no
+collapsing is needed. The build structure a per-click export would have carried
+comes from the source instead — the author's own `<!-- pause -->`, `v-click`,
+and `fragment` markers, counted per slide. That is honest
+`progressive-reveal` evidence, and the reference file is explicit that it is
+neither `crawling-code` nor observed motion.
+
+The source's own slide count is still computed and reported beside the page
+count as a cross-check, never reconciled with it. A deck using a construct the
+source reader does not model shows up as `slide_count_agrees_with_source:
+false` rather than as a confidently wrong number.
+
+**presenterm's pty, solved rather than documented.** The issue found
+`presenterm --export-pdf` failing non-interactively with `Inappropriate ioctl
+for device (os error 25)`. `script -qec` gets past that and then hits
+`render: screen is too small`, because presenterm reads its export canvas size
+from the terminal's window size and `script` leaves it at 0x0. The renderer
+attaches a stdlib pty sized 45x160, which presenterm reports as a 2560x1440
+canvas — exactly 16:9. Verified against presenterm 0.16.1, which is also where
+the headmatter intro-slide rule came from: `author:` alone adds a page,
+`theme:` and `options:` alone do not.
+
+The markdown tools are not on the CI runners, so the tests drive stand-in
+renderers that assert the calling conditions the real ones need — the
+presenterm case fails unless it is handed a terminal, and writes back the
+window size the wrapper set. Manual validation of the real renderers is in
+`references/markdown-decks.md`.
+
+Also fixed while in `tests/test_check_runtime.py`: a child-process traceback
+assertion that failed under an inherited `FORCE_COLOR`, which Python 3.13+
+reads as permission to colorize. The child now runs with `PYTHON_COLORS=0`.
 ## 0.20.100 — 2026-08-20
 
 ### fix(ci) — renew the Chocolatey ffmpeg pin to 9.0.1
