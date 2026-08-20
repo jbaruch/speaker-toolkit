@@ -28,12 +28,18 @@ sys.modules[SPEC.name] = install_deck_renderers
 SPEC.loader.exec_module(install_deck_renderers)
 
 
+# The real asset nests its payload under a version-stamped directory. Fixtures
+# mirror that: a flat archive would have let the member-path extraction that
+# `tar: presenterm: Not found in archive` killed in CI pass here.
+PRESENTERM_ARCHIVE_PREFIX = "presenterm-0.16.1"
+
+
 def _tarball(member_names: tuple[str, ...]) -> bytes:
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
         for name in member_names:
             payload = b"#!/bin/sh\nexit 0\n"
-            info = tarfile.TarInfo(name)
+            info = tarfile.TarInfo(f"{PRESENTERM_ARCHIVE_PREFIX}/{name}")
             info.size = len(payload)
             archive.addfile(info, io.BytesIO(payload))
     return buffer.getvalue()
@@ -67,14 +73,15 @@ class _FakeRunner:
         if command[0] == "tar":
             target = Path(command[command.index("-C") + 1])
             with tarfile.open(fileobj=io.BytesIO(self._archive or b"")) as archive:
-                for name in command[command.index("-C") + 2 :]:
-                    try:
-                        member = archive.extractfile(name)
-                    except KeyError:
-                        # Real tar exits non-zero for a member it cannot find.
-                        return 1
-                    if member is not None:
-                        (target / name).write_bytes(member.read())
+                for member in archive.getmembers():
+                    if not member.isfile():
+                        continue
+                    handle = archive.extractfile(member)
+                    if handle is None:
+                        continue
+                    destination = target / member.name
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination.write_bytes(handle.read())
         if command[0] == "npm":
             prefix = Path(command[command.index("--prefix") + 1])
             binaries = prefix / "node_modules" / ".bin"
@@ -143,7 +150,7 @@ def test_an_asset_that_changed_under_the_pin_is_refused(tmp_path):
 
 
 def test_an_archive_without_the_binary_is_refused(tmp_path, monkeypatch):
-    """tar exits non-zero for a member it cannot find, and that is the report."""
+    """An asset that carries everything but the binary is a layout change."""
     archive = _tarball(("README.md",))
     monkeypatch.setattr(
         install_deck_renderers,
@@ -155,8 +162,31 @@ def test_an_archive_without_the_binary_is_refused(tmp_path, monkeypatch):
     with pytest.raises(install_deck_renderers.InstallFailure) as excinfo:
         install_deck_renderers.install_presenterm(tmp_path, runner)
 
-    assert "could not extract presenterm" in str(excinfo.value)
+    assert "release layout changed" in str(excinfo.value)
     assert not (tmp_path / "bin" / "presenterm").exists()
+
+
+def test_a_failed_extraction_is_refused(tmp_path, monkeypatch, pinned_archive):
+    runner = _FakeRunner(archive=pinned_archive, failing="tar")
+
+    with pytest.raises(install_deck_renderers.InstallFailure) as excinfo:
+        install_deck_renderers.install_presenterm(tmp_path, runner)
+
+    assert "could not extract" in str(excinfo.value)
+
+
+def test_a_binary_nested_under_a_version_directory_is_found(
+    tmp_path,
+    pinned_archive,
+):
+    """The real asset nests it; naming a flat member path failed in CI."""
+    runner = _FakeRunner(archive=pinned_archive)
+
+    install_deck_renderers.install_presenterm(tmp_path, runner)
+
+    assert (tmp_path / "bin" / "presenterm").is_file()
+    # The extraction staging area does not survive into the cached tree.
+    assert not (tmp_path / "presenterm-extract").exists()
 
 
 def test_an_extraction_that_writes_no_binary_is_refused(tmp_path, pinned_archive):

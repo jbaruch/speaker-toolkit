@@ -27,6 +27,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
@@ -138,17 +139,29 @@ def install_presenterm(root: Path, run: Runner) -> str:
             f"{PRESENTERM_ASSET} checksum is {observed}, expected "
             f"{PRESENTERM_SHA512} — the release asset changed under the pin"
         )
-    if run(
-        ["tar", "-xzf", str(archive), "-C", str(binary.parent), "presenterm"],
-        DOWNLOAD_TIMEOUT_SEC,
-    ):
-        raise InstallFailure(f"could not extract presenterm from {PRESENTERM_ASSET}")
-    if not binary.is_file():
+    # Extract the whole archive and go looking, rather than naming a member
+    # path: the asset nests its binary under a version-stamped directory
+    # (`presenterm-0.16.1/presenterm`), and a `tar` told to extract
+    # `presenterm` fails with `Not found in archive`. Searching survives that
+    # layout changing again; an archive with no binary anywhere still fails.
+    staging = root / "presenterm-extract"
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True)
+    if run(["tar", "-xzf", str(archive), "-C", str(staging)], DOWNLOAD_TIMEOUT_SEC):
+        raise InstallFailure(f"could not extract {PRESENTERM_ASSET}")
+    extracted = next(
+        (path for path in sorted(staging.rglob("presenterm")) if path.is_file()),
+        None,
+    )
+    if extracted is None:
         raise InstallFailure(
-            f"{PRESENTERM_ASSET} extracted without a `presenterm` binary — the "
-            "release layout changed under the pin"
+            f"{PRESENTERM_ASSET} holds no `presenterm` binary — the release "
+            "layout changed under the pin"
         )
+    extracted.replace(binary)
     binary.chmod(0o755)
+    shutil.rmtree(staging)
     archive.unlink()
     return "downloaded"
 
