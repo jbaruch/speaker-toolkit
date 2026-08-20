@@ -246,6 +246,59 @@ def test_every_npm_pin_carries_an_exact_version():
         assert re.fullmatch(r"\d+\.\d+\.\d+", version), f"{pin} is not an exact pin"
 
 
+def test_a_kernel_without_the_restriction_is_left_alone(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        install_deck_renderers, "APPARMOR_USERNS_PATH", tmp_path / "absent"
+    )
+    runner = _FakeRunner()
+
+    assert install_deck_renderers.permit_browser_sandbox(runner) == "not_applicable"
+    assert runner.commands == []
+
+
+def test_a_kernel_already_permitting_it_is_left_alone(tmp_path, monkeypatch):
+    sysctl = tmp_path / "apparmor_restrict_unprivileged_userns"
+    sysctl.write_text("0\n", encoding="utf-8")
+    monkeypatch.setattr(install_deck_renderers, "APPARMOR_USERNS_PATH", sysctl)
+    runner = _FakeRunner()
+
+    assert install_deck_renderers.permit_browser_sandbox(runner) == "already_permitted"
+    assert runner.commands == []
+
+
+def test_a_restricting_kernel_is_cleared(tmp_path, monkeypatch):
+    sysctl = tmp_path / "apparmor_restrict_unprivileged_userns"
+    sysctl.write_text("1\n", encoding="utf-8")
+    monkeypatch.setattr(install_deck_renderers, "APPARMOR_USERNS_PATH", sysctl)
+    runner = _FakeRunner()
+
+    assert install_deck_renderers.permit_browser_sandbox(runner) == "permitted"
+    assert runner.commands == [
+        [
+            "sudo",
+            "sysctl",
+            "-w",
+            f"{install_deck_renderers.APPARMOR_USERNS_SYSCTL}=0",
+        ]
+    ]
+
+
+def test_a_kernel_that_refuses_warns_rather_than_aborting(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """The render that needs it fails loudly on its own; this must not abort."""
+    sysctl = tmp_path / "apparmor_restrict_unprivileged_userns"
+    sysctl.write_text("1\n", encoding="utf-8")
+    monkeypatch.setattr(install_deck_renderers, "APPARMOR_USERNS_PATH", sysctl)
+
+    result = install_deck_renderers.permit_browser_sandbox(_FakeRunner(failing="sudo"))
+
+    assert result == "failed"
+    assert "No usable sandbox" in capsys.readouterr().err
+
+
 def test_the_report_names_how_each_renderer_was_satisfied(tmp_path, pinned_archive):
     runner = _FakeRunner(archive=pinned_archive)
 
@@ -254,6 +307,12 @@ def test_the_report_names_how_each_renderer_was_satisfied(tmp_path, pinned_archi
     assert report["ok"] is True
     assert report["presenterm"] == "downloaded"
     assert report["npm"] == "installed"
+    assert report["browser_sandbox"] in {
+        "not_applicable",
+        "already_permitted",
+        "permitted",
+        "failed",
+    }
     assert report["path_entries"] == install_deck_renderers.path_entries(
         tmp_path / install_deck_renderers.RENDERER_SUBDIR
     )

@@ -73,7 +73,17 @@ REQUIRED_NODE_MAJOR = 22
 
 DOWNLOAD_TIMEOUT_SEC = 300
 INSTALL_TIMEOUT_SEC = 900
+SYSCTL_TIMEOUT_SEC = 60
 RENDERER_SUBDIR = "deck-renderers"
+
+# Ubuntu 23.10 restricts unprivileged user namespaces through AppArmor, and a
+# bundled chromium that cannot open its sandbox dies with `No usable sandbox!`
+# before rendering a page. reveal-md hits it; Slidev's playwright build does
+# not. Chromium suggests `--no-sandbox`, which would ship a weakened browser to
+# every operator to work around a property of one CI image — lifting the
+# restriction on the runner keeps the renderer sandboxed everywhere else.
+APPARMOR_USERNS_SYSCTL = "kernel.apparmor_restrict_unprivileged_userns"
+APPARMOR_USERNS_PATH = Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns")
 
 Runner = Callable[[Sequence[str], int], int]
 
@@ -197,6 +207,34 @@ def path_entries(root: Path) -> list[str]:
     return [str(root / "bin"), str(root / "npm" / "node_modules" / ".bin")]
 
 
+def permit_browser_sandbox(run: Runner) -> str:
+    """Let a bundled chromium open its sandbox, where the kernel forbids it.
+
+    Runs on every invocation, cache hit included: this is kernel state, and a
+    restored install directory carries none of it. A failure here is reported
+    and not fatal — the render that needs it fails loudly with chromium's own
+    message, which names this exact restriction.
+    """
+    try:
+        current = APPARMOR_USERNS_PATH.read_text(encoding="utf-8").strip()
+    except OSError:
+        return "not_applicable"
+    if current == "0":
+        return "already_permitted"
+    if run(
+        ["sudo", "sysctl", "-w", f"{APPARMOR_USERNS_SYSCTL}=0"],
+        SYSCTL_TIMEOUT_SEC,
+    ):
+        print(
+            "install_deck_renderers.py: warning: could not clear "
+            f"{APPARMOR_USERNS_SYSCTL} (currently {current}); a bundled "
+            "chromium will fail with `No usable sandbox!`",
+            file=sys.stderr,
+        )
+        return "failed"
+    return "permitted"
+
+
 def execute(workspace: Path, run: Runner) -> dict[str, object]:
     """Install every renderer under `workspace` and report how each was met."""
     root = workspace / RENDERER_SUBDIR
@@ -206,6 +244,7 @@ def execute(workspace: Path, run: Runner) -> dict[str, object]:
         "pin_digest": pin_digest(),
         "presenterm": install_presenterm(root, run),
         "npm": install_npm_renderers(root, run),
+        "browser_sandbox": permit_browser_sandbox(run),
         "path_entries": path_entries(root),
     }
     return report

@@ -91,6 +91,22 @@ The stand-in renderers stay for what they are good at: a corrupt render, a
 renderer that exits 0 writing nothing, a process that closes its terminal and
 hangs. Those are reproducible against a stand-in and nothing else.
 
+Two things the live runs found that no amount of local testing would have.
+`tar` told to extract the member `presenterm` failed with `Not found in
+archive`, because the release nests its binary under a version-stamped
+directory and the fixtures were flat. And reveal-md's chromium died with `No
+usable sandbox!`: Ubuntu 23.10 restricts unprivileged user namespaces through
+AppArmor. Chromium suggests `--no-sandbox`, which would have shipped a weakened
+browser to every operator to work around one CI image, so the installer lifts
+the restriction on the runner instead and the renderer stays sandboxed
+everywhere else.
+
+Finding the second one at all took a change worth keeping: reveal-md catches
+every puppeteer failure and prints exactly `Error while generating PDF for
+"<deck>"`. A `RendererSpec` can now declare the environment its tool needs, and
+reveal-md's declares its debug channel — so the wrapper's diagnostic carries
+the real exception rather than that one line.
+
 Also fixed while in `tests/test_check_runtime.py`: a child-process traceback
 assertion that failed under an inherited `FORCE_COLOR`, which Python 3.13+
 reads as permission to colorize. The child now runs with `PYTHON_COLORS=0`.
