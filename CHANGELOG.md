@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.100 — 2026-08-20
+
 ### fix(ci) — renew the Chocolatey ffmpeg pin to 9.0.1
 
 Third time, same mechanism, and the step's own comment called it: "Chocolatey
