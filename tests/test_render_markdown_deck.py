@@ -636,3 +636,47 @@ def test_a_renderer_that_closes_its_terminal_and_hangs_is_still_killed(
     assert "did not finish within 1s" in str(excinfo.value)
     assert time.monotonic() - started < 20
     assert not (tmp_path / "talk.pdf").exists()
+
+
+def test_a_renderer_gets_the_environment_its_spec_declares(tmp_path, fake_path):
+    """reveal-md says nothing useful about a failure without its debug channel."""
+    _install(
+        fake_path,
+        "reveal-md",
+        'echo "DEBUG=${DEBUG:-unset}" >&2\nexit 1\n',
+    )
+    deck = tmp_path / "slides.md"
+    deck.write_text('# One\n\n<!-- .element: class="fragment" -->\n', encoding="utf-8")
+
+    with pytest.raises(render_markdown_deck.RenderError) as excinfo:
+        render_markdown_deck.execute(
+            deck,
+            output=tmp_path / "talk.pdf",
+            flavor=None,
+            timeout_seconds=30,
+        )
+
+    assert "DEBUG=reveal-md*" in str(excinfo.value)
+
+
+def test_a_renderer_without_declared_environment_inherits_the_callers(
+    tmp_path,
+    fake_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("SPEAKER_TOOLKIT_MARKER", "inherited")
+    _install(
+        fake_path,
+        "marp",
+        'echo "marker=${SPEAKER_TOOLKIT_MARKER:-unset}" >&2\nexit 1\n',
+    )
+
+    with pytest.raises(render_markdown_deck.RenderError) as excinfo:
+        render_markdown_deck.execute(
+            _deck(tmp_path, MARP_DECK),
+            output=tmp_path / "talk.pdf",
+            flavor=None,
+            timeout_seconds=30,
+        )
+
+    assert "marker=inherited" in str(excinfo.value)

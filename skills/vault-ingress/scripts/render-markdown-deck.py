@@ -44,7 +44,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import NoReturn, Sequence
+from typing import Mapping, NoReturn, Sequence
 
 from failure_diagnostics import emit_unexpected_failure
 from markdown_deck import (
@@ -82,6 +82,9 @@ class RendererSpec:
     commands: tuple[str, ...]
     needs_pty: bool
     lane: str
+    # Environment the renderer needs beyond the caller's, as ordered pairs so
+    # the spec stays hashable and reads in one place.
+    environment: tuple[tuple[str, str], ...] = ()
 
     def argv(self, deck: Path, output: Path) -> list[str]:
         if self.flavor == PRESENTERM:
@@ -129,6 +132,11 @@ RENDERERS: dict[str, RendererSpec] = {
         commands=("reveal-md",),
         needs_pty=False,
         lane="markdown-deck-reveal-md",
+        # reveal-md catches every puppeteer failure and prints exactly `Error
+        # while generating PDF for "<deck>"`, which names neither the cause nor
+        # a next step. Its debug channel carries the real exception, and this
+        # wrapper's diagnostic is only as good as what the renderer says.
+        environment=(("DEBUG", "reveal-md*"),),
     ),
 }
 
@@ -184,7 +192,11 @@ def _kill_over_deadline(
     )
 
 
-def _run_with_pty(argv: Sequence[str], timeout_seconds: int) -> tuple[int, str]:
+def _run_with_pty(
+    argv: Sequence[str],
+    timeout_seconds: int,
+    environment: Mapping[str, str] | None = None,
+) -> tuple[int, str]:
     """Run a command attached to a sized pseudo-terminal, returning its output.
 
     presenterm refuses to export without a terminal (`Inappropriate ioctl for
@@ -222,6 +234,7 @@ def _run_with_pty(argv: Sequence[str], timeout_seconds: int) -> tuple[int, str]:
                 stdout=slave,
                 stderr=slave,
                 close_fds=True,
+                env=None if not environment else {**os.environ, **environment},
             )
         except OSError as exc:
             raise RenderError(f"cannot start {argv[0]}: {exc.strerror or exc}") from exc
@@ -266,7 +279,11 @@ def _run_with_pty(argv: Sequence[str], timeout_seconds: int) -> tuple[int, str]:
     return returncode, b"".join(chunks).decode("utf-8", "replace")
 
 
-def _run_plain(argv: Sequence[str], timeout_seconds: int) -> tuple[int, str]:
+def _run_plain(
+    argv: Sequence[str],
+    timeout_seconds: int,
+    environment: Mapping[str, str] | None = None,
+) -> tuple[int, str]:
     """Run a command with pipes, returning its exit code and merged output."""
     try:
         completed = subprocess.run(
@@ -276,6 +293,7 @@ def _run_plain(argv: Sequence[str], timeout_seconds: int) -> tuple[int, str]:
             stderr=subprocess.STDOUT,
             timeout=timeout_seconds,
             check=False,
+            env=None if not environment else {**os.environ, **environment},
         )
     except subprocess.TimeoutExpired as exc:
         raise RenderError(
@@ -336,7 +354,7 @@ def render(
         staged = Path(staging) / output.name
         argv = spec.argv(deck, staged)
         runner = _run_with_pty if spec.needs_pty else _run_plain
-        returncode, transcript = runner(argv, timeout_seconds)
+        returncode, transcript = runner(argv, timeout_seconds, dict(spec.environment))
         if returncode != 0:
             raise RenderError(
                 f"{spec.commands[0]} exited {returncode} rendering {deck}:\n"
