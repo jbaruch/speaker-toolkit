@@ -89,9 +89,22 @@ Runner = Callable[[Sequence[str], int], int]
 
 
 def _run(command: Sequence[str], timeout: int) -> int:
-    """Run one command, letting its output reach the job log."""
+    """Run one command, relaying its output to stderr.
+
+    Not inherited stdout: this script's stdout carries one JSON object and
+    nothing else, and `npm install` alone would put hundreds of lines in front
+    of it. The output still reaches the job log, on the stream that carries
+    diagnostics.
+    """
     try:
-        return subprocess.run(list(command), timeout=timeout, check=False).returncode
+        completed = subprocess.run(
+            list(command),
+            timeout=timeout,
+            check=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
     except subprocess.TimeoutExpired:
         print(
             f"install_deck_renderers.py: {command[0]} exceeded {timeout}s",
@@ -108,6 +121,9 @@ def _run(command: Sequence[str], timeout: int) -> int:
             file=sys.stderr,
         )
         return 127
+    if completed.stdout:
+        sys.stderr.write(completed.stdout.decode("utf-8", "replace"))
+    return completed.returncode
 
 
 def pin_digest() -> str:
@@ -275,7 +291,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     if args.pin_digest:
-        print(pin_digest())
+        print(json.dumps({"pin_digest": pin_digest()}, sort_keys=True))
         return 0
     if args.workspace is None:
         parser.error("workspace is required unless --pin-digest is passed")

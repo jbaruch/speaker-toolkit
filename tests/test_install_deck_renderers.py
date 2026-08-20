@@ -341,10 +341,12 @@ def test_the_path_entries_lead_with_the_downloaded_binary(tmp_path):
     ]
 
 
-def test_the_pin_digest_mode_prints_only_the_digest(capsys):
+def test_the_pin_digest_mode_prints_one_json_object(capsys):
     assert install_deck_renderers.main(["--pin-digest"]) == 0
 
-    assert capsys.readouterr().out.strip() == install_deck_renderers.pin_digest()
+    assert json.loads(capsys.readouterr().out) == {
+        "pin_digest": install_deck_renderers.pin_digest()
+    }
 
 
 def test_a_missing_workspace_is_an_argument_error():
@@ -352,6 +354,18 @@ def test_a_missing_workspace_is_an_argument_error():
         install_deck_renderers.main([])
 
     assert excinfo.value.code == 2
+
+
+def test_a_command_s_own_output_stays_off_stdout(tmp_path, capsys):
+    """stdout carries one JSON object; npm alone would bury it."""
+    result = install_deck_renderers._run(
+        [sys.executable, "-c", "print('chatty install output')"], 30
+    )
+    captured = capsys.readouterr()
+
+    assert result == 0
+    assert captured.out == ""
+    assert "chatty install output" in captured.err
 
 
 def test_a_failed_install_reports_json_and_exits_one(tmp_path):
@@ -384,4 +398,5 @@ def test_the_workflow_keys_its_cache_on_the_pin_digest():
     )
 
     assert "install_deck_renderers.py --pin-digest" in workflow
+    assert "jq -r .pin_digest" in workflow
     assert "deck-renderers-${{ runner.os }}" in workflow

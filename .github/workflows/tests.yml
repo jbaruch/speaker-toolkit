@@ -163,7 +163,8 @@ jobs:
         # npm trees and a browser download.
         run: |
           set -euo pipefail
-          digest="$(python3 scripts/install_deck_renderers.py --pin-digest)"
+          digest="$(python3 scripts/install_deck_renderers.py --pin-digest \
+            | jq -r .pin_digest)"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
       - name: Cache the markdown deck renderers
         # Three paths, because the browsers do not live in the workspace and
