@@ -1,5 +1,22 @@
 # Changelog
 
+### fix(ci) — renew the Chocolatey ffmpeg pin to 9.0.1
+
+Third time, same mechanism, and the step's own comment called it: "Chocolatey
+serves only the current version of a package, so expect this pin to need
+renewing again." The feed withdrew 9.0.0, `choco install ffmpeg
+--version=9.0.0` stopped resolving, and the Windows platform-contracts job went
+red on every branch with no source change behind it.
+
+Its own bump rather than a ride-along on whatever PR happened to notice, per
+`dependency-management` Freshness. Nothing but the three version literals
+moved.
+
+The renewal stays manual because no Dependabot ecosystem covers Chocolatey. The
+current version is one query away, and the comment already carries it:
+
+    https://community.chocolatey.org/api/v2/Packages()?$filter=Id eq 'ffmpeg' and IsLatestVersion
+
 ## 0.20.99 — 2026-08-20
 
 ### feat(vault-ingress) — `source_added` is its own requeue reason
