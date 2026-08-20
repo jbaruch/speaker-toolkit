@@ -680,3 +680,46 @@ def test_a_renderer_without_declared_environment_inherits_the_callers(
         )
 
     assert "marker=inherited" in str(excinfo.value)
+
+
+def test_a_renderer_reads_the_staging_files_its_spec_declares(tmp_path, fake_path):
+    """reveal.js splits fragments onto separate pages unless its config says not to."""
+    _install(
+        fake_path,
+        "reveal-md",
+        'echo "cwd=$PWD" >&2\ncat reveal-md.json >&2\nexit 1\n',
+    )
+    deck = tmp_path / "slides.md"
+    deck.write_text('# One\n\n<!-- .element: class="fragment" -->\n', encoding="utf-8")
+
+    with pytest.raises(render_markdown_deck.RenderError) as excinfo:
+        render_markdown_deck.execute(
+            deck,
+            output=tmp_path / "talk.pdf",
+            flavor=None,
+            timeout_seconds=30,
+        )
+
+    message = str(excinfo.value)
+    assert '"pdfSeparateFragments": false' in message
+    # Read from the staging directory, which is where the file was written.
+    assert "cwd=" in message
+
+
+def test_a_renderer_without_staging_files_keeps_the_callers_directory(
+    tmp_path,
+    fake_path,
+):
+    _install(
+        fake_path, "marp", 'ls reveal-md.json >&2 || echo "no config" >&2\nexit 1\n'
+    )
+
+    with pytest.raises(render_markdown_deck.RenderError) as excinfo:
+        render_markdown_deck.execute(
+            _deck(tmp_path, MARP_DECK),
+            output=tmp_path / "talk.pdf",
+            flavor=None,
+            timeout_seconds=30,
+        )
+
+    assert "no config" in str(excinfo.value)

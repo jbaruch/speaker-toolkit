@@ -107,6 +107,14 @@ every puppeteer failure and prints exactly `Error while generating PDF for
 reveal-md's declares its debug channel — so the wrapper's diagnostic carries
 the real exception rather than that one line.
 
+And once reveal-md could render at all, it rendered the per-click export this
+whole design exists to avoid: reveal.js puts every fragment on its own PDF
+page, so the three-slide fixture with one fragment came back as four. There is
+no flag for it — reveal-md reads `pdfSeparateFragments` only from a
+`reveal-md.json` in its working directory — so a spec can also declare files to
+drop in the staging directory it runs from. Slidev's `--with-clicks` was off by
+default; reveal.js's equivalent is on, and only a live render says which.
+
 Also fixed while in `tests/test_check_runtime.py`: a child-process traceback
 assertion that failed under an inherited `FORCE_COLOR`, which Python 3.13+
 reads as permission to colorize. The child now runs with `PYTHON_COLORS=0`.

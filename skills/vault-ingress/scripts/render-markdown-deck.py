@@ -85,6 +85,9 @@ class RendererSpec:
     # Environment the renderer needs beyond the caller's, as ordered pairs so
     # the spec stays hashable and reads in one place.
     environment: tuple[tuple[str, str], ...] = ()
+    # Files the renderer reads out of its working directory, as (name, content).
+    # A spec that declares any is run with the staging directory as its cwd.
+    staging_files: tuple[tuple[str, str], ...] = ()
 
     def argv(self, deck: Path, output: Path) -> list[str]:
         if self.flavor == PRESENTERM:
@@ -137,6 +140,14 @@ RENDERERS: dict[str, RendererSpec] = {
         # a next step. Its debug channel carries the real exception, and this
         # wrapper's diagnostic is only as good as what the renderer says.
         environment=(("DEBUG", "reveal-md*"),),
+        # reveal.js puts every fragment on its own PDF page
+        # (`pdfSeparateFragments` defaults true), which is the per-click export
+        # this renderer exists to avoid — a 3-slide deck with one fragment
+        # exports as 4 pages. reveal-md has no flag for it and reads the
+        # setting only from a `reveal-md.json` in its working directory.
+        staging_files=(
+            ("reveal-md.json", '{"revealOptions": {"pdfSeparateFragments": false}}'),
+        ),
     ),
 }
 
@@ -196,6 +207,7 @@ def _run_with_pty(
     argv: Sequence[str],
     timeout_seconds: int,
     environment: Mapping[str, str] | None = None,
+    working_directory: Path | None = None,
 ) -> tuple[int, str]:
     """Run a command attached to a sized pseudo-terminal, returning its output.
 
@@ -235,6 +247,7 @@ def _run_with_pty(
                 stderr=slave,
                 close_fds=True,
                 env=None if not environment else {**os.environ, **environment},
+                cwd=working_directory,
             )
         except OSError as exc:
             raise RenderError(f"cannot start {argv[0]}: {exc.strerror or exc}") from exc
@@ -283,6 +296,7 @@ def _run_plain(
     argv: Sequence[str],
     timeout_seconds: int,
     environment: Mapping[str, str] | None = None,
+    working_directory: Path | None = None,
 ) -> tuple[int, str]:
     """Run a command with pipes, returning its exit code and merged output."""
     try:
@@ -294,6 +308,7 @@ def _run_plain(
             timeout=timeout_seconds,
             check=False,
             env=None if not environment else {**os.environ, **environment},
+            cwd=working_directory,
         )
     except subprocess.TimeoutExpired as exc:
         raise RenderError(
@@ -352,9 +367,18 @@ def render(
         ) from exc
     with staging_directory as staging:
         staged = Path(staging) / output.name
-        argv = spec.argv(deck, staged)
+        for name, content in spec.staging_files:
+            (Path(staging) / name).write_text(content, encoding="utf-8")
+        # An absolute deck path, since a spec with staging files runs from the
+        # staging directory rather than the caller's.
+        argv = spec.argv(deck.resolve(), staged)
         runner = _run_with_pty if spec.needs_pty else _run_plain
-        returncode, transcript = runner(argv, timeout_seconds, dict(spec.environment))
+        returncode, transcript = runner(
+            argv,
+            timeout_seconds,
+            dict(spec.environment),
+            Path(staging) if spec.staging_files else None,
+        )
         if returncode != 0:
             raise RenderError(
                 f"{spec.commands[0]} exited {returncode} rendering {deck}:\n"
