@@ -617,6 +617,36 @@ def test_the_cache_key_digest_tracks_the_pins_and_nothing_else(
     assert install_system_deps.package_digest() != printed
 
 
+def test_the_cache_key_carries_the_suite_the_runner_image_is_on(
+    tmp_path: Path, capfd: pytest.CaptureFixture[str]
+):
+    """`ubuntu-latest` moves between LTS releases without the workflow changing.
+
+    A key without the suite lets the first run on the new image restore the old
+    one's indices and archives, which its apt cannot install from.
+    """
+    os_release = tmp_path / "os-release"
+    os_release.write_text('NAME="Ubuntu"\nVERSION_CODENAME=noble\nID=ubuntu\n')
+
+    assert install_system_deps.main(["prog", "--codename"], os_release=os_release) == 0
+    assert capfd.readouterr().out.strip() == CODENAME
+
+
+def test_an_unreadable_suite_fails_the_cache_key_rather_than_emptying_it(
+    tmp_path: Path,
+):
+    """The install path answers a bad /etc/os-release with a failure report.
+
+    The cache key has no report to fall back on: a swallowed error keys every
+    run on an empty string, which is one shared entry across every suite.
+    """
+    os_release = tmp_path / "os-release"
+    os_release.write_text('NAME="Something Else"\nID=other\n')
+
+    with pytest.raises(ValueError, match="pin the suite explicitly"):
+        install_system_deps.main(["prog", "--codename"], os_release=os_release)
+
+
 def test_a_pair_whose_security_host_is_dead_is_skipped_before_the_timeout(
     tmp_path: Path,
 ):
