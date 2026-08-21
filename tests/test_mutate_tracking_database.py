@@ -2049,3 +2049,156 @@ def test_an_equivalence_reaches_every_readable_talk_generation(
 
     assert len(candidate["source_title_equivalences"]) == 1
     assert candidate["talks"][0]["schema_version"] == version
+
+
+# Registered markdown deck sources (#318).
+
+
+def _record_deck(**updates: Any) -> dict[str, Any]:
+    mutation = {
+        "kind": "record_markdown_deck",
+        "filename": "talk.md",
+        "deck_source_path": "/repos/spring-rag/slides.md",
+    }
+    mutation.update(updates)
+    return mutation
+
+
+def test_a_registered_deck_lands_in_its_own_versioned_collection(
+    mutate_tracking_database,
+) -> None:
+    """The deck record carries its own generation; the talk record is untouched.
+
+    That separation is the design: `TALK_RECORD_SCHEMA_VERSION` means the
+    analysis generation, so putting the deck path on the talk would gate it
+    behind a shape the legacy records this serves can never reach.
+    """
+    database = _base_database()
+    before = copy.deepcopy(database["talks"][0])
+
+    candidate, changes = mutate_tracking_database.build_candidate(
+        database, [_record_deck()]
+    )
+
+    recorded = candidate["markdown_decks"]
+    assert len(recorded) == 1
+    assert recorded[0]["schema_version"] == 1
+    assert recorded[0]["talk_filename"] == "talk.md"
+    assert recorded[0]["deck_source_path"] == "/repos/spring-rag/slides.md"
+    assert candidate["talks"][0] == before
+    assert changes[0]["kind"] == "record_markdown_deck"
+    assert "markdown_decks" not in database
+
+
+def test_a_legacy_talk_record_can_still_register_a_deck(
+    mutate_tracking_database,
+) -> None:
+    """The 209-of-215 case: a v1 record is exactly who this field is for."""
+    database = _base_database()
+    database["talks"][0]["schema_version"] = 1
+
+    candidate, _ = mutate_tracking_database.build_candidate(database, [_record_deck()])
+
+    assert candidate["markdown_decks"][0]["deck_source_path"] == (
+        "/repos/spring-rag/slides.md"
+    )
+
+
+def test_re_registering_a_moved_deck_repoints_rather_than_appends(
+    mutate_tracking_database,
+) -> None:
+    """One deck per talk: a second record would leave readers picking a path."""
+    database = _base_database()
+    candidate, _ = mutate_tracking_database.build_candidate(database, [_record_deck()])
+    candidate, changes = mutate_tracking_database.build_candidate(
+        candidate, [_record_deck(deck_source_path="/repos/moved/slides.md")]
+    )
+
+    assert len(candidate["markdown_decks"]) == 1
+    assert candidate["markdown_decks"][0]["deck_source_path"] == (
+        "/repos/moved/slides.md"
+    )
+    assert changes[0]["before"] == {"deck_source_path": "/repos/spring-rag/slides.md"}
+
+
+def test_registering_the_same_deck_twice_changes_nothing(
+    mutate_tracking_database,
+) -> None:
+    database = _base_database()
+    once, _ = mutate_tracking_database.build_candidate(database, [_record_deck()])
+    twice, changes = mutate_tracking_database.build_candidate(once, [_record_deck()])
+
+    assert twice["markdown_decks"] == once["markdown_decks"]
+    assert changes == []
+
+
+def test_a_deck_cannot_be_registered_for_a_talk_that_does_not_exist(
+    mutate_tracking_database,
+) -> None:
+    database = _base_database()
+
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(
+            database, [_record_deck(filename="absent.md")]
+        )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "deck.pptx",
+        "decks/spring-rag",
+        "../slides.md",
+        "~/slides.md",
+        "//server/share/slides.md",
+        "slides\x00.md",
+        "",
+        42,
+    ],
+)
+def test_a_deck_source_path_that_is_not_a_usable_locator_is_refused(
+    mutate_tracking_database,
+    path,
+) -> None:
+    """Locator shape goes through the shared artifact-locator contract.
+
+    A NUL byte reached `Path.stat()` and raised outside the renderer's OSError
+    diagnostic; an ambiguous `//server/share` is not a canonical locator. Both
+    are the shared reader's rejections, not a private opinion about paths.
+    """
+    database = _base_database()
+
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(
+            database, [_record_deck(deck_source_path=path)]
+        )
+
+
+def test_the_documented_deck_registration_plan_applies(
+    mutate_tracking_database,
+) -> None:
+    """The plan in references/markdown-decks.md, verbatim.
+
+    A documented plan that `validate_plan` refuses is worse than no
+    documentation: the reader follows it and gets a rejection naming a
+    contract they cannot see. The previous registration recipe on that page
+    changed `status` and `reprocess_reason` without declaring them in
+    `expect`, which the repair validator refuses.
+    """
+    plan = json.loads(
+        """
+        {"schema_version": 1, "mutations": [{
+          "kind": "record_markdown_deck",
+          "filename": "talk.md",
+          "deck_source_path": "/repos/spring-rag/slides.md"}]}
+        """
+    )
+
+    candidate, changes = mutate_tracking_database.build_candidate(
+        _base_database(), plan["mutations"]
+    )
+
+    assert candidate["markdown_decks"][0]["deck_source_path"] == (
+        "/repos/spring-rag/slides.md"
+    )
+    assert changes

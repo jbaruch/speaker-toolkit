@@ -1926,3 +1926,90 @@ def test_a_v1_entry_already_naming_a_talk_is_refused(tracking_database):
 
     with pytest.raises(tracking_database.TrackingDatabaseError, match="unknown fields"):
         tracking_database.migrate_tracking_database(database)
+
+
+# Registered markdown deck sources (#318).
+
+
+def _deck(**updates):
+    record = {
+        "schema_version": 1,
+        "talk_filename": "one.md",
+        "deck_source_path": "/repos/spring-rag/slides.md",
+    }
+    record.update(updates)
+    return record
+
+
+def _database_with_decks(tracking_database, decks):
+    migrated = tracking_database.migrate_tracking_database(_legacy_database()).database
+    migrated["markdown_decks"] = decks
+    return migrated
+
+
+def test_a_registered_deck_leaves_the_database_current(tracking_database):
+    """The collection is optional and additive: no talk record changes shape."""
+    database = _database_with_decks(tracking_database, [_deck()])
+
+    assessment = tracking_database.assess_tracking_database(database)
+
+    assert assessment.state == "current"
+    assert assessment.usable is True
+
+
+def test_a_database_without_the_collection_stays_current(tracking_database):
+    """Absent means no registered deck — every database written before today."""
+    database = tracking_database.migrate_tracking_database(_legacy_database()).database
+
+    assert "markdown_decks" not in database
+    assert tracking_database.assess_tracking_database(database).state == "current"
+
+
+def test_a_deck_naming_no_talk_refuses_the_database(tracking_database):
+    """An orphaned record would send a renderer at a path no reader can place."""
+    database = _database_with_decks(
+        tracking_database, [_deck(talk_filename="absent.md")]
+    )
+
+    with pytest.raises(tracking_database.TrackingDatabaseError, match="names no talk"):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_a_second_deck_for_one_talk_refuses_the_database(tracking_database):
+    database = _database_with_decks(
+        tracking_database,
+        [_deck(), _deck(deck_source_path="/repos/other/slides.md")],
+    )
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="a talk has one authored deck"
+    ):
+        tracking_database.assess_tracking_database(database)
+
+
+@pytest.mark.parametrize("version", [2, 0, True, "1"])
+def test_a_foreign_deck_generation_is_refused(tracking_database, version):
+    database = _database_with_decks(tracking_database, [_deck(schema_version=version)])
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="schema_version must be 1"
+    ):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_a_deck_record_carrying_an_unknown_field_is_refused(tracking_database):
+    database = _database_with_decks(tracking_database, [_deck(flavor="slidev")])
+
+    with pytest.raises(tracking_database.TrackingDatabaseError, match="unknown fields"):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_a_deck_that_is_not_a_markdown_file_is_refused(tracking_database):
+    database = _database_with_decks(
+        tracking_database, [_deck(deck_source_path="/repos/x/deck.pptx")]
+    )
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="markdown deck source"
+    ):
+        tracking_database.assess_tracking_database(database)

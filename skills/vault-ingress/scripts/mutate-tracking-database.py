@@ -35,11 +35,13 @@ from tracking_database import (
     THUMBNAIL_RECORD_SCHEMA_VERSION,
     THUMBNAIL_REQUIRED_FIELDS as OWNER_THUMBNAIL_REQUIRED_FIELDS,
     LEGACY_TALK_RECORD_SCHEMA_VERSION,
+    MARKDOWN_DECK_RECORD_SCHEMA_VERSION,
     SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION,
     TALK_RECORD_SCHEMA_VERSION,
     TRACKING_DATABASE_SCHEMA_VERSION,
     TrackingDatabaseError,
     require_current_tracking_database,
+    validate_markdown_deck,
     validate_source_title_equivalence,
 )
 from tracking_database_io import (
@@ -994,6 +996,67 @@ def _apply_record_title_equivalence(
     )
 
 
+def _apply_record_markdown_deck(
+    database: dict[str, Any],
+    mutation: dict[str, Any],
+    changes: list[dict[str, Any]],
+    *,
+    index: int,
+) -> None:
+    """Register, or re-point, the markdown deck a talk's slides come from.
+
+    Upsert rather than append. The equivalence ledger beside it is an audit
+    trail of owner judgments, so it only ever grows; a deck registration is
+    current state — the repo moved, the deck was renamed — and the assessment
+    refuses a second record for one talk, so appending would write a database
+    no reader could resolve.
+
+    The talk is read for existence only. Nothing here touches the talk record,
+    which is the point: `TALK_RECORD_SCHEMA_VERSION` is the analysis
+    generation, and the talks that need a deck registered are the legacy ones
+    that can never migrate forward to a shape gate (#333). The readable-record
+    check accepts every generation the assessment can read.
+    """
+    _require_keys(
+        mutation,
+        required={"kind", "filename", "deck_source_path"},
+        label=f"mutations[{index}]",
+    )
+    filename = _nonempty(mutation["filename"], f"mutations[{index}].filename")
+    talk = _talk_by_filename(database, filename)
+    _require_readable_talk_record(talk, filename=filename)
+    record = {
+        "schema_version": MARKDOWN_DECK_RECORD_SCHEMA_VERSION,
+        "talk_filename": filename,
+        "deck_source_path": mutation["deck_source_path"],
+    }
+    try:
+        validate_markdown_deck(record, label=f"mutations[{index}]")
+    except TrackingDatabaseError as exc:
+        raise TrackingDatabaseMutationError(str(exc)) from exc
+
+    existing = database.get("markdown_decks", [])
+    if not isinstance(existing, list):
+        raise TrackingDatabaseMutationError("markdown_decks must be an array")
+    replaced: object = MISSING_MARKER
+    remaining: list[Any] = []
+    for recorded in existing:
+        if isinstance(recorded, dict) and recorded.get("talk_filename") == filename:
+            replaced = recorded.get("deck_source_path")
+            continue
+        remaining.append(recorded)
+    if replaced == record["deck_source_path"]:
+        return
+    database["markdown_decks"] = [*remaining, record]
+    _record_change(
+        changes,
+        kind="record_markdown_deck",
+        identity=filename,
+        before={"deck_source_path": replaced},
+        after={"deck_source_path": record["deck_source_path"]},
+    )
+
+
 def _validate_metadata_values(values: object, label: str) -> None:
     """Every repaired catalog value is a non-empty trimmed string.
 
@@ -1639,6 +1702,8 @@ def build_candidate(
             _apply_reviewed_metadata(candidate, mutation, changes, index=index)
         elif kind == "record_source_title_equivalence":
             _apply_record_title_equivalence(candidate, mutation, changes, index=index)
+        elif kind == "record_markdown_deck":
+            _apply_record_markdown_deck(candidate, mutation, changes, index=index)
         elif kind == "update_talk_publishing":
             _apply_update_talk(candidate, mutation, changes, index=index)
         elif kind == "update_talk_clarification":

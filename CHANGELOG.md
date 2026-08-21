@@ -10,18 +10,20 @@ correct — the talk now has real slides — and in doing so erases the only fie
 that said the deck was ever markdown. Nothing on the record named the file. The
 second render, after the speaker added three slides, started with a hunt.
 
-`deck_source_path` is that name. It goes on the talk record through
-`apply-source-repairs.py`, holds an absolute path (the ordinary case: these
-decks live one git repo per talk, so no configured directory locates them the
-way `config.pptx_source_dir` locates a deck library) or a vault-root-relative
-one like `pptx_path`, and it is deliberately independent of `slide_source` so it
-survives the `"markdown"` → `"pdf"` rewrite that motivated it.
+`markdown_decks` is a new top-level collection at record v1, one record per
+talk, holding `talk_filename` and `deck_source_path`. It is written by a new
+`record_markdown_deck` mutation kind, which upserts rather than appends — the
+equivalence ledger beside it is an audit trail of owner judgments and only ever
+grows, while a deck registration is current state and a repo that moves
+re-points it.
 
-**It does not bump `TALK_RECORD_SCHEMA_VERSION`, and that is the whole design
-decision.** The obvious move was 7 → 8 with 7 added to
-`_RESTAMPABLE_TALK_RECORD_SCHEMA_VERSIONS`; the machinery is built for exactly
-that additive shape and no test references the literal. Three things argued
-against it, all of them already written down in this file:
+**Why a collection and not a field on the talk record.** The first attempt added
+`deck_source_path` as an optional talk field and left
+`TALK_RECORD_SCHEMA_VERSION` alone, on the reasoning that a never-before-defined
+optional field cannot be misread by an older reader. `stateful-artifacts`
+requires a version bump for any persisted shape change, additive included, and
+the policy review blocked it. The rule is right and the bump was still wrong,
+which is the whole reason this landed where it did:
 
 The constant means analysis generation, not record shape — the #333 entry says
 so outright: "the contradiction is real, and it comes from
@@ -29,43 +31,53 @@ so outright: "the contradiction is real, and it comes from
 generation, which is why a v1 record can never migrate forward, and the record
 shape." That is why v7 is today a bump for a field that no longer lives on the
 talk record at all; `_restamp_talk_records` says "v7 adds no field a v6 record
-lacks." Adding a second such bump would compound the confusion, not resolve it.
+lacks."
 
-The stamp would not reach the records that need the field. 209 of the 215 live
-talk records are schema v1, non-restampable by design, and they are precisely
-the transcript-only markdown talks #318 is about. A v8 stamp lifts six modern
-records and leaves the other 209 exactly where they were — the same wall #333
-hit, then reversed by moving its field off the talk record entirely.
+A bump would not have reached the records that need the field. 209 of the 215
+live talk records are schema v1, non-restampable by design, and they are
+precisely the transcript-only markdown talks #318 is about. A v8 stamp lifts the
+six modern records and leaves the other 209 where they were.
 
-And the stamp is not free. Talk versions are accepted as `range(1, CURRENT + 1)`,
+And the bump is not free. Talk versions are accepted as `range(1, CURRENT + 1)`,
 so a v8-stamped database read by any older toolkit is not one unreadable record:
-it is `talks_schema_version_unsupported`, `usable: false`, the whole vault. That
-is a real downgrade cliff, paid for a marker that reaches 3% of the corpus.
+it is `talks_schema_version_unsupported`, `usable: false`, the whole vault.
 
-So the field lands additively at v7. The talk record has never been closed-shape
-— `_require_closed_shape` guards catalog records, QR artifacts, and
-equivalences, never talks — and `apply-source-repairs.py` carries no
-record-version gate at all, which is why #318's documented manual workaround
-already worked on v1 records. Absence means no registered deck, which is the
-correct reading of every database written before today. An older toolkit ignores
-the field rather than misreading it, because no version ever defined it
-differently. This is `stateful-artifacts`' additive backward-compatible case:
-the new reader reads old records via the field's default, and the default is the
-truth.
+#333 hit this exact wall — an owner ledger bound to the analysis generation,
+unreachable for 97% of the corpus — and resolved it by moving the field off the
+talk into its own versioned collection. Same wall, same resolution. The nested
+alternative is closed for the same reason #333 closed it: "the nested record's
+own version does not version its parent."
 
-`validate_deck_source_path` refuses a directory, a `..` segment, a backslash
-separator, a non-canonical spelling, and any suffix outside `.md` / `.markdown`,
-naming the canonical form in the diagnostic rather than the first check that
-fired. It does not check existence — the deck's repo need not be on this
-machine, so a missing file is the renderer's loud failure, not a plan's silent
-precondition.
+The collection is optional, absent means no registered deck, and no migration
+owns it — it is deliberately absent from `_RECORD_COUNT_KEYS`, since a deck is
+registered by an owner who knows where the file is and is never inferred.
+
+`deck_source_path` goes through `classify_artifact_locator`, the same lexical
+contract every other persisted artifact path uses, so a NUL byte (which used to
+reach `Path.stat()` and raise outside the renderer's `OSError` diagnostic), a
+`~`, a `..` segment, an ambiguous `//server/share`, and a Windows reserved name
+are refused by one shared reader rather than by a private opinion about paths. A
+markdown-suffix check sits on top. Existence is never checked: the deck's repo
+need not be on this machine, so an absent file is the renderer's loud failure at
+render time.
+
+Two documentation faults fixed in the same pass. The register-the-render plan in
+`references/markdown-decks.md` set `status` and `reprocess_reason` without
+declaring them in `expect`, and `validate_plan` refuses a repair that changes a
+field it did not declare — so the recipe could never be applied by a reader
+following it. Both documented plans are now executed verbatim by a test. And the
+page now says that a vault-relative deck path must be resolved against the vault
+root before it reaches a renderer, which resolves a relative CLI path from its
+own working directory and would otherwise report a missing deck for a good
+locator.
 
 Not done here, deliberately: a return claiming `slide_source: "markdown"` is not
-required to have a registered deck path, though the symmetry with `"pdf"`
-requiring `has_pdf` is tempting. Workers analyse; they do not discover decks.
-Making it a return precondition would block reprocessing a known-markdown talk
-whose path nobody has registered yet, which is the state every such talk starts
-in.
+required to have a registered deck, though the symmetry with `"pdf"` requiring
+`has_pdf` is tempting. Workers analyse; they do not discover decks. Making it a
+return precondition would block reprocessing a known-markdown talk whose deck
+nobody has registered yet, which is the state every such talk starts in. There
+is also no unregister mutation — a deck that moves is re-pointed, which is the
+case that actually occurs.
 
 ## 0.20.101 — 2026-08-20
 

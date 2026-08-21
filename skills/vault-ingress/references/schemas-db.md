@@ -277,7 +277,6 @@ customization, not the owner default. See the
     "transcript_path": "transcripts/{id}.txt  (optional vault-relative path; required for non-YouTube transcript evidence)",
     "slide_source": "pptx|pdf|both|video_extracted|markdown|none  (set in Step 2 per slide source hierarchy)",
     "slides_local_path": "slides/<artifact>.pdf  (optional explicit local PDF; legacy readers also accept slides_pdf_path/pdf_path)",
-    "deck_source_path": "/decks/<talk>/slides.md  (optional; the markdown file the deck was authored in \u2014 see below)",
     "pptx_visual_status": "pending|extracted|no_pptx",
     "status": "pending|needs-reprocessing|reprocessing-inflight|processed|processed_partial|skipped_no_sources|skipped_download_failed|skipped_duplicate",
     "reprocess_reason": "machine-readable reason for needs-reprocessing, or null (owner-set values: DELIBERATE_REPROCESS_REASONS in queue_claim_contract.py)",
@@ -560,6 +559,7 @@ exact-type rule. The supported mutation kinds are:
 | `upsert_thumbnail` | Replace/add one complete schema-v1 record identified by `talk_slug` |
 | `apply_reviewed_metadata` | Install one human-reviewed shownotes catalog-conflict decision on one exact talk filename, over a closed identity field set, with `expect` covering exactly the same fields |
 | `record_source_title_equivalence` | Append one owner-reviewed provider-title equivalence to one exact talk filename; append-only and refuses a duplicate |
+| `record_markdown_deck` | Register (or re-point) the markdown file one exact talk's deck was authored in; upsert, one deck per talk |
 | `update_talk_publishing` | Set supported publishing fields on one exact talk filename, with `expect` covering exactly the same fields |
 | `update_talk_clarification` | Set complete object/array `blind_spot_observations` or `humor_postmortem` values on one exact talk, with matching field expectations |
 
@@ -596,6 +596,43 @@ rather than inheriting the approval — a later provider rename, and a catalog
 title edited after the review. Consulted only after the deterministic comparison
 fails; when it applies, the check passes silently and the record is the audit
 trail.
+
+`markdown_decks` is a top-level collection for the same reason, and it is the
+newer half of the same lesson:
+
+```json
+"markdown_decks": [{
+  "schema_version": 1,
+  "talk_filename": "spring-rag-jcon.md",
+  "deck_source_path": "/repos/spring-rag/slides.md"
+}]
+```
+
+It names the markdown file a talk's deck was authored in — Slidev, presenterm,
+Marp, reveal-md. It is kept because registering a render destroys the only other
+trace: the repair that binds `slides/<talk>.pdf` moves `slide_source` from
+`"markdown"` to `"pdf"`, correctly, since the talk now has readable slides, and
+after that nothing says the deck was ever markdown. The next render, after the
+deck gained three slides, would begin by hunting for the file.
+
+`deck_source_path` is a native absolute path in the ordinary case — these decks
+live one git repo per talk, so no configured directory locates them the way
+`config.pptx_source_dir` locates a deck library — or a vault-root-relative one
+like `pptx_path`. **A relative value is resolved by the caller against the vault
+root before it reaches a renderer**, which resolves a relative CLI path from its
+own working directory and would otherwise report a missing deck for a perfectly
+good locator. Its shape goes through `classify_artifact_locator`
+(`skills/vault-ingress/scripts/artifact_locator.py`), the same lexical contract
+every other persisted artifact path uses, plus a markdown-suffix check; the
+accepted and refused spellings are
+`skills/vault-ingress/scripts/tracking_database.py::validate_markdown_deck`.
+
+Existence is never checked. The deck's repo need not be on this machine, so an
+absent file is the renderer's loud failure at render time rather than a silent
+reason to refuse the whole database. The collection is optional — absent means
+no registered deck, which is the correct reading of every database written
+before it existed — and no migration owns it: a deck is registered by an owner
+who knows where the file is, never inferred.
 
 `apply_reviewed_metadata` exists because `scan-shownotes.py --apply` refuses
 review-required entries by design: an approved catalog correction otherwise had
@@ -1354,21 +1391,6 @@ to a `processed_partial` return. An untrusted manifest is context-only: do not l
 `full_frame_context` artifact may still qualify as `delivery_video` evidence for room,
 speaker, PiP, and delivery/timing phenomena that it actually establishes; its scope can
 never be promoted into authored-slide evidence.
-
-`deck_source_path` names the markdown file a talk's deck was authored in
-(Slidev, presenterm, Marp, reveal-md). It is owner-set through
-`apply-source-repairs.py`, never returned by a worker, and it is deliberately
-independent of `slide_source`: registering a render moves `slide_source` from
-`"markdown"` to `"pdf"`, and the deck path has to outlive that rewrite or
-nothing names the file to re-render when the deck changes. Absolute values are
-the ordinary case, since these decks live one git repo per talk rather than in
-a configured library; a relative value resolves from the vault root like
-`pptx_path`. Absence means no authored markdown deck is registered — the
-correct reading for every record written before the field existed. Existence is
-not a precondition of any repair: the deck's repo need not be in this checkout,
-so a missing file surfaces as the renderer's diagnostic rather than a plan
-rejection. The accepted spellings are `validate_deck_source_path` in
-`skills/vault-ingress/scripts/apply-source-repairs.py`.
 
 `clear_fields` explicitly deletes prior analysis before the return is applied. Allowed paths
 are top-level analysis prose/provenance scalars or leaves under
