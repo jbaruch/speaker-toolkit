@@ -1019,12 +1019,18 @@ def _apply_record_markdown_deck(
     """
     _require_keys(
         mutation,
-        required={"kind", "filename", "deck_source_path"},
+        required={"kind", "filename", "expect", "deck_source_path"},
         label=f"mutations[{index}]",
     )
     filename = _nonempty(mutation["filename"], f"mutations[{index}].filename")
     talk = _talk_by_filename(database, filename)
     _require_readable_talk_record(talk, filename=filename)
+    expect = mutation["expect"]
+    if not isinstance(expect, dict) or set(expect) != {"deck_source_path"}:
+        raise TrackingDatabaseMutationError(
+            f"mutations[{index}].expect must be an object naming exactly "
+            "deck_source_path"
+        )
     record = {
         "schema_version": MARKDOWN_DECK_RECORD_SCHEMA_VERSION,
         "talk_filename": filename,
@@ -1039,13 +1045,25 @@ def _apply_record_markdown_deck(
     if not isinstance(existing, list):
         raise TrackingDatabaseMutationError("markdown_decks must be an array")
     replaced: object = MISSING_MARKER
+    registered = False
     remaining: list[Any] = []
     for recorded in existing:
         if isinstance(recorded, dict) and recorded.get("talk_filename") == filename:
-            replaced = recorded.get("deck_source_path")
+            replaced = recorded.get("deck_source_path", MISSING_MARKER)
+            registered = True
             continue
         remaining.append(recorded)
-    if replaced == record["deck_source_path"]:
+    # Same optimistic precondition every other talk-touching mutation carries:
+    # the plan states what it believes is registered, and a registration that
+    # moved under it fails instead of being silently overwritten. `$missing`
+    # is how a plan says "no deck is registered yet".
+    _expect_value(
+        exists=registered,
+        actual=replaced,
+        expected=expect["deck_source_path"],
+        label=f"mutations[{index}].expect.deck_source_path",
+    )
+    if registered and json_values_equal(replaced, record["deck_source_path"]):
         return
     database["markdown_decks"] = [*remaining, record]
     _record_change(

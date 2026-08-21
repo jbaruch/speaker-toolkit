@@ -68,7 +68,7 @@ changed report authorizes this exact apply command:
 
 Exit 0 from apply writes one JSON report with `database_written: true`, preserves
 the complete original bytes under `{vault_root}/.backups/`, and atomically
-installs database schema v1 with config schema v2. A current root with config
+installs database schema v2 with config schema v2. A current root with config
 schema v1 is also a migration: root `from_schema_version` and
 `to_schema_version` both remain `1`, while `record_counts.config` records the
 config upgrade.

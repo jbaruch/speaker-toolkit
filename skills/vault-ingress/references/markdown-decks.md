@@ -111,11 +111,16 @@ reworked the demo — reads its source instead of asking whoever remembers:
 {"schema_version": 1, "mutations": [{
   "kind": "record_markdown_deck",
   "filename": "spring-rag-jcon.md",
+  "expect": {"deck_source_path": {"$missing": true}},
   "deck_source_path": "/repos/spring-rag/slides.md"}]}
 ```
 
-It is an upsert keyed on the talk, so a deck repo that moves is re-pointed by
-running it again; a second record for one talk is refused. It does not touch the
+`expect` is the same optimistic precondition every other talk-touching mutation
+carries: state what you believe is registered, and `{"$missing": true}` when
+nothing is. A registration that moved under the plan fails the write instead of
+being silently overwritten. Re-pointing a deck repo that moved names the old
+path there and runs the same mutation again; a second record for one talk is
+refused. It does not touch the
 talk record — deliberately, because a talk's `schema_version` is its analysis
 generation, and the transcript-only talks this whole page is about are legacy
 records that can never advance to a shape gate. Field contract and accepted path

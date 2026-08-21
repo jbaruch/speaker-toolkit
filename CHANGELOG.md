@@ -63,6 +63,12 @@ the v0 path stamps — so v1 needs no branch of its own; what it did need was fo
 the tail to stop reporting a hardcoded `from_schema_version: 0`, which would
 have misnamed what was migrated.
 
+`record_markdown_deck` takes an `expect`, the same optimistic precondition every
+other talk-touching mutation carries: the plan states the `deck_source_path` it
+believes is registered, or `{"$missing": true}` when nothing is, and a
+registration that moved under the plan fails the write instead of being
+overwritten without anyone noticing.
+
 The writer/reader contract moved with it. `references/schemas-db.md` carries the
 schema-version table and one access-contract row per consumer, and a root bump
 that leaves those rows saying "require database schema 1" documents a flow that

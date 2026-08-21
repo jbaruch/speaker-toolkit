@@ -2060,6 +2060,7 @@ def _record_deck(**updates: Any) -> dict[str, Any]:
     mutation = {
         "kind": "record_markdown_deck",
         "filename": "talk.md",
+        "expect": {"deck_source_path": {"$missing": True}},
         "deck_source_path": "/repos/spring-rag/slides.md",
     }
     mutation.update(updates)
@@ -2113,7 +2114,13 @@ def test_re_registering_a_moved_deck_repoints_rather_than_appends(
     database = _base_database()
     candidate, _ = mutate_tracking_database.build_candidate(database, [_record_deck()])
     candidate, changes = mutate_tracking_database.build_candidate(
-        candidate, [_record_deck(deck_source_path="/repos/moved/slides.md")]
+        candidate,
+        [
+            _record_deck(
+                expect={"deck_source_path": "/repos/spring-rag/slides.md"},
+                deck_source_path="/repos/moved/slides.md",
+            )
+        ],
     )
 
     assert len(candidate["markdown_decks"]) == 1
@@ -2128,7 +2135,10 @@ def test_registering_the_same_deck_twice_changes_nothing(
 ) -> None:
     database = _base_database()
     once, _ = mutate_tracking_database.build_candidate(database, [_record_deck()])
-    twice, changes = mutate_tracking_database.build_candidate(once, [_record_deck()])
+    twice, changes = mutate_tracking_database.build_candidate(
+        once,
+        [_record_deck(expect={"deck_source_path": "/repos/spring-rag/slides.md"})],
+    )
 
     assert twice["markdown_decks"] == once["markdown_decks"]
     assert changes == []
@@ -2192,6 +2202,7 @@ def test_the_documented_deck_registration_plan_applies(
         {"schema_version": 1, "mutations": [{
           "kind": "record_markdown_deck",
           "filename": "talk.md",
+          "expect": {"deck_source_path": {"$missing": true}},
           "deck_source_path": "/repos/spring-rag/slides.md"}]}
         """
     )
@@ -2204,3 +2215,58 @@ def test_the_documented_deck_registration_plan_applies(
         "/repos/spring-rag/slides.md"
     )
     assert changes
+
+
+def test_a_deck_registration_that_moved_under_the_plan_is_refused(
+    mutate_tracking_database,
+) -> None:
+    """Optimistic, like every other talk-touching mutation.
+
+    A plan that believes nothing is registered must not silently overwrite a
+    registration someone added in between; the write fails and the operator
+    re-reads instead of losing the other path.
+    """
+    database = _base_database()
+    registered, _ = mutate_tracking_database.build_candidate(database, [_record_deck()])
+
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(
+            registered, [_record_deck(deck_source_path="/repos/other/slides.md")]
+        )
+
+
+def test_a_deck_registration_expecting_the_wrong_path_is_refused(
+    mutate_tracking_database,
+) -> None:
+    database = _base_database()
+    registered, _ = mutate_tracking_database.build_candidate(database, [_record_deck()])
+
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(
+            registered,
+            [
+                _record_deck(
+                    expect={"deck_source_path": "/repos/never-registered.md"},
+                    deck_source_path="/repos/other/slides.md",
+                )
+            ],
+        )
+
+
+@pytest.mark.parametrize(
+    "expect",
+    [
+        None,
+        {},
+        {"deck_source_path": "/a.md", "talk_filename": "talk.md"},
+        {"talk_filename": "talk.md"},
+    ],
+)
+def test_a_deck_registration_without_a_usable_expectation_is_refused(
+    mutate_tracking_database,
+    expect,
+) -> None:
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(
+            _base_database(), [_record_deck(expect=expect)]
+        )

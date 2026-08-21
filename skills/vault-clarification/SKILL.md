@@ -76,7 +76,7 @@ state:
 
 Exit 0 writes one JSON object with `from_schema_version`,
 `to_schema_version`, `changed`, `database_written: false`, `input_sha256`, and
-`record_counts`. Continue only for `changed: false` at database schema v1 with
+`record_counts`. Continue only for `changed: false` at database schema v2 with
 config schema v2. A legacy root or config report requires the owner workflow;
 invoke `Skill(skill: "vault-ingress")`
 with the migration report as handoff context, then finish this clarification run.
