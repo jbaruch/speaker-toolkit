@@ -1,5 +1,36 @@
 # Changelog
 
+### fix(vault-ingress) — close a code fence only with one long enough to close it
+
+Issue #351, both advisories from #349's review, deferred at the time because the
+PR was green and `review-severity` says not to burn a re-review round on a lone
+advisory.
+
+`_fence_mask` tracked which character opened a fence and not how many of them
+there were. CommonMark closes a fence only with the same character, at least as
+long — which is the entire reason four backticks exist, since that is how a deck
+quotes markdown that itself contains a three-backtick block. Matching on the
+character alone closed the outer block on the inner one, and everything after
+that point read as deck source: the `---` inside the quoted sample became a
+slide break, a quoted `<!-- pause -->` became a reveal. Measured on the test
+deck, a three-slide deck read as five and one reveal read as two.
+
+The render's page count was never wrong — it does not consult this reader. The
+symptom was `source_slide_count` disagreeing with it, which flips
+`slide_count_agrees_with_source` to `false` and tells the operator the deck uses
+a construct the source reader does not model. It did not. It used four
+backticks.
+
+The same pass takes the adjacent CommonMark rule, for the same reason: a closing
+fence carries no info string, so a ```` ```yaml ```` line inside a quoted block is
+content rather than a close.
+
+Second advisory, presentation only: a half-installed lane told the operator to
+install the whole lane. With presenterm on PATH and weasyprint missing, "Install
+presenterm and weasyprint" sends them to check a box that is already checked.
+The install clause now names what is absent, which is what the clause before it
+already said.
+
 ## 0.20.101 — 2026-08-20
 
 ### feat(vault-ingress) — render markdown-authored decks as slide evidence

@@ -351,7 +351,7 @@ def render(
     if absent:
         raise RenderError(
             f"the {spec.lane} lane is unavailable: {', '.join(absent)} not on "
-            f"PATH. Install {' and '.join(spec.commands)}, or export the deck "
+            f"PATH. Install {' and '.join(absent)}, or export the deck "
             "by hand and register the PDF"
         )
     # An unwritable or missing output directory is an operator mistake with an
