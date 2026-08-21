@@ -631,6 +631,11 @@ every other persisted artifact path uses, plus a markdown-suffix check; the
 accepted and refused spellings are
 `skills/vault-ingress/scripts/tracking_database.py::validate_markdown_deck`.
 
+The collection is the root v2 shape, so it cannot ride an older root: a database
+at root 0 or 1 carrying a `markdown_decks` key is refused, naming the migration
+that stamps the root before the collection is usable. Otherwise the root version
+would stop describing the bytes, which is what the generation exists to record.
+
 Existence is never checked. The deck's repo need not be on this machine, so an
 absent file is the renderer's loud failure at render time rather than a silent
 reason to refuse the whole database. The collection is optional — absent means

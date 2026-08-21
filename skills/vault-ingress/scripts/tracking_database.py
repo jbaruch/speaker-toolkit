@@ -1570,6 +1570,20 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
     # Validated in the assessment, like the equivalences above: a deck record
     # names the file a re-render reads, so a malformed or orphaned one must
     # refuse the database rather than send a renderer at a path no owner wrote.
+    #
+    # Gated on the root generation first. The collection IS the root v2 shape,
+    # so accepting it on a v0 or v1 root would let a database carry the new
+    # shape while still claiming the old generation — the version stops
+    # describing the bytes, which is the entire thing the bump exists to
+    # prevent (`stateful-artifacts` Migration Policy).
+    if not current and "markdown_decks" in database:
+        raise TrackingDatabaseError(
+            f"tracking database at root schema v{root_version} carries a "
+            "'markdown_decks' collection, which is the root schema "
+            f"v{TRACKING_DATABASE_SCHEMA_VERSION} shape; run "
+            "migrate-tracking-database.py to stamp the root before the "
+            "collection is usable"
+        )
     decks = database.get("markdown_decks", [])
     if not isinstance(decks, list):
         raise TrackingDatabaseError("markdown_decks must be an array")

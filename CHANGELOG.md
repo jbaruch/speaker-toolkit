@@ -63,6 +63,12 @@ the v0 path stamps — so v1 needs no branch of its own; what it did need was fo
 the tail to stop reporting a hardcoded `from_schema_version: 0`, which would
 have misnamed what was migrated.
 
+The collection is gated on the root generation, not merely versioned alongside
+it. Validating `markdown_decks` on any root would let a v0 or v1 database carry
+the new shape while still claiming the old generation — the version would stop
+describing the bytes, which is the whole reason the bump exists. A pre-v2 root
+carrying the key is refused, naming the migration that stamps it.
+
 Two holes the review caught in this PR's own new code. An absolute locator may
 carry a trailing slash — `classify_artifact_locator` accepts it and
 `PurePosixPath(value).name` then strips it — so `/repos/slides.md/` reached the

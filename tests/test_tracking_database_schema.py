@@ -2055,3 +2055,40 @@ def test_a_malformed_current_database_names_its_own_generation(tracking_database
         tracking_database.require_current_tracking_database(database)
 
     assert f"schema v{CURRENT_ROOT}" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("root", [None, 1])
+def test_a_pre_v2_root_carrying_the_deck_collection_is_refused(
+    tracking_database,
+    root,
+):
+    """The collection IS the root v2 shape, so it cannot ride an older root.
+
+    Accepting it on a v0 or v1 root would let a database carry the new shape
+    while still claiming the old generation, and the version would stop
+    describing the bytes — the exact auditability the bump exists to give.
+    """
+    database = _legacy_database()
+    if root is not None:
+        database["schema_version"] = root
+    database["markdown_decks"] = [_deck(talk_filename=database["talks"][0]["filename"])]
+
+    with pytest.raises(tracking_database.TrackingDatabaseError, match="markdown_decks"):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_migrating_a_pre_v2_root_without_the_collection_reaches_v2(
+    tracking_database,
+):
+    """The ordinary path: nothing carries the new shape until an owner adds it."""
+    database = _legacy_database()
+    database["schema_version"] = 1
+
+    result = tracking_database.migrate_tracking_database(database)
+
+    assert result.from_schema_version == 1
+    assert result.to_schema_version == CURRENT_ROOT
+    assert "markdown_decks" not in result.database
+    assert tracking_database.assess_tracking_database(result.database).state == (
+        "current"
+    )
