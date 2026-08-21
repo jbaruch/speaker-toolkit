@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.102 — 2026-08-21
+
 ### fix(vault-ingress) — close a code fence only with one long enough to close it
 
 Issue #351, both advisories from #349's review, deferred at the time because the
