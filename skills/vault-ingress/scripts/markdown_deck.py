@@ -116,7 +116,10 @@ _IMPLICIT_REVEAL_SWITCHES: dict[str, tuple[tuple[str, ...], ...]] = {
 # reads as one and renders as however many the imported file holds.
 _SLIDEV_IMPORT_KEY = re.compile(r"^src\s*:\s*(\S.*?)\s*$")
 
-_FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
+# Group 1 is the fence run itself, group 2 everything after it. Both are
+# load-bearing: CommonMark closes a fence only with the same character, at
+# least as long, and carrying no info string (#351).
+_FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})(.*)$")
 _YAML_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_.\-]*\s*:(\s|$)")
 _HORIZONTAL_RULE = re.compile(r"^-{3,}\s*$")
 _VERTICAL_RULE = re.compile(r"^--\s*$")
@@ -200,19 +203,43 @@ class DeckStructure:
 
 
 def _fence_mask(lines: Sequence[str]) -> list[bool]:
-    """Return, per line, whether it sits inside a fenced code block."""
+    """Return, per line, whether it sits inside a fenced code block.
+
+    Fence LENGTH is tracked, not just the character. A four-backtick fence is
+    how a deck quotes markdown that itself contains a three-backtick block, and
+    matching on the character alone closed the outer fence on the inner one:
+    everything from there to the real close read as deck source, so a `---` or
+    a `<!-- pause -->` in the quoted sample counted as a slide break or a
+    reveal. The symptom was `source_slide_count` disagreeing with the render
+    for a reason the receipt could not explain.
+
+    An info string disqualifies a closing fence for the same reason — ```` ```py ````
+    inside a quoted block is content, not a close.
+    """
     inside = [False] * len(lines)
     open_fence: str | None = None
+    open_length = 0
     for number, line in enumerate(lines):
         match = _FENCE.match(line)
         if open_fence is None:
             if match is not None:
+                # A backtick fence's info string may not itself contain a
+                # backtick, so a line like ```` ```a`b ```` opens nothing.
+                if match.group(1)[0] == "`" and "`" in match.group(2):
+                    continue
                 open_fence = match.group(1)[0]
+                open_length = len(match.group(1))
                 inside[number] = True
             continue
         inside[number] = True
-        if match is not None and match.group(1)[0] == open_fence:
+        if (
+            match is not None
+            and match.group(1)[0] == open_fence
+            and len(match.group(1)) >= open_length
+            and not match.group(2).strip()
+        ):
             open_fence = None
+            open_length = 0
     return inside
 
 

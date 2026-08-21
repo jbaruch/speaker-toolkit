@@ -363,3 +363,67 @@ def test_a_deck_ending_on_a_separator_invents_no_slide():
 
 def test_an_empty_source_declares_no_slides():
     assert markdown_deck.read_deck("", markdown_deck.MARP).slide_count == 0
+
+
+def test_a_longer_fence_is_not_closed_by_a_shorter_one_inside_it():
+    """Quoting markdown that contains a code block is what four backticks are for.
+
+    Matching on the fence character alone closed the outer block on the inner
+    one, and everything after it — the `---` in the quoted sample included —
+    read as deck source. The symptom was a slide count that disagreed with the
+    render for a reason the receipt could not explain (#351).
+    """
+    quoted = MARP_DECK.replace(
+        "# Two",
+        "# Two\n\n````markdown\n```yaml\n---\nnot: a slide break\n---\n```\n````",
+    )
+
+    structure = markdown_deck.read_deck(quoted, markdown_deck.MARP)
+
+    assert structure.slide_count == 3
+
+
+def test_a_longer_fence_still_closes_on_a_fence_at_least_as_long():
+    """The length rule is a floor, not an equality: five backticks close four."""
+    quoted = MARP_DECK.replace(
+        "# Two",
+        "# Two\n\n````text\nquoted\n`````\n\n---\n\n# Three",
+    )
+
+    structure = markdown_deck.read_deck(quoted, markdown_deck.MARP)
+
+    assert structure.slide_count == 4
+
+
+def test_a_reveal_marker_inside_a_longer_fence_is_not_a_reveal():
+    quoted = PRESENTERM_DECK.replace(
+        "# Close",
+        "# Close\n\n````markdown\n```\n<!-- pause -->\n```\n````",
+    )
+
+    structure = markdown_deck.read_deck(quoted, markdown_deck.PRESENTERM)
+
+    assert structure.to_dict()["reveal_marker_total"] == 1
+
+
+def test_a_fence_carrying_an_info_string_does_not_close_a_block():
+    """A closing fence carries no info string, so ```py inside a block is content."""
+    quoted = MARP_DECK.replace(
+        "# Two",
+        "# Two\n\n````\n```yaml\n---\nnot: a slide break\n---\n```yaml\n````",
+    )
+
+    structure = markdown_deck.read_deck(quoted, markdown_deck.MARP)
+
+    assert structure.slide_count == 3
+
+
+def test_a_tilde_fence_is_not_closed_by_a_backtick_one():
+    quoted = MARP_DECK.replace(
+        "# Two",
+        "# Two\n\n~~~markdown\n```\n---\nnot: a slide break\n---\n```\n~~~",
+    )
+
+    structure = markdown_deck.read_deck(quoted, markdown_deck.MARP)
+
+    assert structure.slide_count == 3
