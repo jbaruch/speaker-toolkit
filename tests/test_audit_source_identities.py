@@ -1019,7 +1019,7 @@ def test_a_candidate_failure_leaves_the_cli_exit_status_clean(
 ):
     """`complete` drives the CLI exit code; a lane-local failure must not fail it."""
     database = {
-        "schema_version": 1,
+        "schema_version": 2,
         "config": {"schema_version": 2, "pptx_directory_exclusions": []},
         "talks": [dict(talk(), schema_version=5)],
         "pptx_catalog": [],

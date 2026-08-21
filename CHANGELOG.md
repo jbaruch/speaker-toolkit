@@ -52,6 +52,28 @@ The collection is optional, absent means no registered deck, and no migration
 owns it — it is deliberately absent from `_RECORD_COUNT_KEYS`, since a deck is
 registered by an owner who knows where the file is and is never inferred.
 
+**The root schema goes to v2.** A top-level key is part of the ROOT record's
+shape, and a version on each nested deck record does not version its parent
+database — the same principle #333 stated one level down. So
+`TRACKING_DATABASE_SCHEMA_VERSION` moves 1 → 2, root v1 becomes
+`PRE_MARKDOWN_DECKS_TRACKING_DATABASE_SCHEMA_VERSION`, and a v0 or v1 database
+reaches v2 through the migration tail that already existed. Every step in that
+tail is idempotent for a v1 database — its records already carry the versions
+the v0 path stamps — so v1 needs no branch of its own; what it did need was for
+the tail to stop reporting a hardcoded `from_schema_version: 0`, which would
+have misnamed what was migrated.
+
+Fixture fallout worth naming, because it is the argument for the shared
+constant now in `tests/conftest.py`: seventeen fixtures pinned the root
+generation by literal, and each one failed as `assert 2 == 1` with nothing in
+the message naming a generation. Three tests turned out to read
+`~/.claude/rhetoric-knowledge-vault` — the developer's real vault — because
+they passed no `--vault`, so the argument-validation they assert was being
+decided by whatever generation that machine happened to be at. They now pass a
+`tmp_path`. And a strict-reader case pinned a "future" root of literal 2, which
+this bump turned into the current one; it is derived now, the same way the
+talk-record case beside it already warned it should be.
+
 `deck_source_path` goes through `classify_artifact_locator`, the same lexical
 contract every other persisted artifact path uses, so a NUL byte (which used to
 reach `Path.stat()` and raise outside the renderer's `OSError` diagnostic), a

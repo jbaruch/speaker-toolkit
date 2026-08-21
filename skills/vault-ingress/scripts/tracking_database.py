@@ -31,7 +31,12 @@ from pptx_talk_identity import unassessed_legacy_binding
 
 
 LEGACY_TRACKING_DATABASE_SCHEMA_VERSION = 0
-TRACKING_DATABASE_SCHEMA_VERSION = 1
+# The root shape before the `markdown_decks` collection (#318). A top-level key
+# is part of the ROOT record's shape, and a version on each nested deck record
+# does not version its parent database, so admitting the collection moves the
+# root generation (`stateful-artifacts` Migration Policy).
+PRE_MARKDOWN_DECKS_TRACKING_DATABASE_SCHEMA_VERSION = 1
+TRACKING_DATABASE_SCHEMA_VERSION = 2
 LEGACY_TALK_RECORD_SCHEMA_VERSION = 1
 FLAT_SCORE_TALK_RECORD_SCHEMA_VERSION = 5
 # The generation before the owner-reviewed title-equivalence ledger (#333).
@@ -70,6 +75,7 @@ MARKDOWN_DECK_RECORD_SCHEMA_VERSION = 1
 READABLE_TRACKING_DATABASE_SCHEMA_VERSIONS = frozenset(
     {
         LEGACY_TRACKING_DATABASE_SCHEMA_VERSION,
+        PRE_MARKDOWN_DECKS_TRACKING_DATABASE_SCHEMA_VERSION,
         TRACKING_DATABASE_SCHEMA_VERSION,
     }
 )
@@ -1975,7 +1981,12 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
     return TrackingDatabaseMigration(
         database=candidate,
         changed=True,
-        from_schema_version=LEGACY_TRACKING_DATABASE_SCHEMA_VERSION,
+        # The generation actually read, not a hardcoded legacy 0. Every step
+        # above is idempotent for a root v1 database — its records already carry
+        # the versions the v0 path stamps — so v1 reaches v2 through the same
+        # tail, and reporting it as having come from v0 would misname what was
+        # migrated.
+        from_schema_version=root_version,
         to_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
         record_counts=counts,
     )

@@ -142,7 +142,7 @@ def write_database(fixture, talks, config=None, *, current=False, equivalences=N
     if current:
         database.update(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "pptx_catalog": [],
                 "qr_codes": [],
                 "resources": [],

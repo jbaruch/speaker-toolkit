@@ -11,6 +11,8 @@ import unicodedata
 
 import pytest
 
+from conftest import CURRENT_ROOT_SCHEMA_VERSION as CURRENT_ROOT
+
 
 import importlib as _importlib
 import sys as _sys
@@ -62,7 +64,7 @@ def _write_json(path: Path, value: object) -> None:
 
 def _base_database() -> dict[str, Any]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "config": _current_config(),
         "talks": [
             {
@@ -427,7 +429,7 @@ def test_initialization_dry_run_and_missing_precondition(
     )
     assert applied["database_written"] is True
     initialized = json.loads(database_path.read_text(encoding="utf-8"))
-    assert initialized["schema_version"] == 1
+    assert initialized["schema_version"] == CURRENT_ROOT
     assert initialized["config"]["schema_version"] == 2
     assert (
         initialized["config"]["pptx_directory_exclusions"]

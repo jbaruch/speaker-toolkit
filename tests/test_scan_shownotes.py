@@ -73,7 +73,7 @@ def _database_path(
             ]
             current_talks.append(current_talk)
         database = {
-            "schema_version": 1,
+            "schema_version": 2,
             "config": current_tracking_config(**config),
             "talks": current_talks,
             "pptx_catalog": [],

@@ -199,7 +199,7 @@ def _write_tiny_mp4(path):
 
 def _db_json(database):
     """Render a current tracking database around one test's talk fixtures."""
-    database["schema_version"] = 1
+    database["schema_version"] = 2
     config = database.setdefault("config", {})
     if isinstance(config, dict):
         existing = dict(config)

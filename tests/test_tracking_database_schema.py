@@ -39,6 +39,9 @@ DEFAULT_DIRECTORY_EXCLUSIONS = [
 ]
 
 
+CURRENT_ROOT = _tracking_database.TRACKING_DATABASE_SCHEMA_VERSION
+
+
 def _legacy_goal(*, goal_id: str = "legacy") -> dict:
     return {
         "id": goal_id,
@@ -237,7 +240,7 @@ def _legacy_database() -> dict:
 
 def _expected_migration(database: dict) -> dict:
     expected = copy.deepcopy(database)
-    expected["schema_version"] = 1
+    expected["schema_version"] = CURRENT_ROOT
     expected["config"]["schema_version"] = 2
     expected["config"]["pptx_directory_exclusions"] = DEFAULT_DIRECTORY_EXCLUSIONS
     for talk in expected["talks"]:
@@ -278,7 +281,9 @@ def test_legacy_reader_accepts_without_mutating(tracking_database):
         "usable": True,
         "state": "legacy",
         "schema_version": 0,
-        "accepted_schema_versions": [0, 1],
+        "accepted_schema_versions": sorted(
+            _tracking_database.READABLE_TRACKING_DATABASE_SCHEMA_VERSIONS
+        ),
         "reason_codes": [],
     }
     assert database == original
@@ -286,7 +291,8 @@ def test_legacy_reader_accepts_without_mutating(tracking_database):
 
 def test_future_root_is_no_usable_prior_state(tracking_database):
     assessment = tracking_database.assess_tracking_database(
-        _legacy_database() | {"schema_version": 2}
+        _legacy_database()
+        | {"schema_version": tracking_database.TRACKING_DATABASE_SCHEMA_VERSION + 1}
     )
 
     assert assessment.usable is False
@@ -475,7 +481,9 @@ def test_owner_migration_only_adds_owned_version_keys(tracking_database):
 
     assert result.changed is True
     assert result.from_schema_version == 0
-    assert result.to_schema_version == 1
+    assert (
+        result.to_schema_version == tracking_database.TRACKING_DATABASE_SCHEMA_VERSION
+    )
     assert database == original
     assert result.database == _expected_migration(original)
     assert result.database["talks"][0]["schema_version"] == 1
@@ -750,7 +758,10 @@ def test_owner_migration_adds_absent_owned_collections(tracking_database):
         "improvement_goals",
     ):
         assert result.database[collection] == []
-    assert result.database["schema_version"] == 1
+    assert (
+        result.database["schema_version"]
+        == tracking_database.TRACKING_DATABASE_SCHEMA_VERSION
+    )
 
 
 def test_owner_migration_preserves_mixed_historical_talk_versions(
@@ -852,8 +863,8 @@ def test_current_root_config_v1_migrates_only_config(tracking_database):
     assert assessment.usable is True
     assert assessment.state == "legacy"
     assert migration.changed is True
-    assert migration.from_schema_version == 1
-    assert migration.to_schema_version == 1
+    assert migration.from_schema_version == CURRENT_ROOT
+    assert migration.to_schema_version == CURRENT_ROOT
     assert migration.record_counts["config"] == 1
     assert migration.database["config"] == {
         "schema_version": 2,
@@ -866,8 +877,8 @@ def test_current_root_config_v1_migrates_only_config(tracking_database):
 
     second = tracking_database.migrate_tracking_database(migration.database)
     assert second.changed is False
-    assert second.from_schema_version == 1
-    assert second.to_schema_version == 1
+    assert second.from_schema_version == CURRENT_ROOT
+    assert second.to_schema_version == CURRENT_ROOT
     assert second.database == migration.database
     assert all(count == 0 for count in second.record_counts.values())
 
@@ -924,7 +935,7 @@ def test_future_config_generation_fails_closed_without_poisoning_root_version(
     assessment = tracking_database.assess_tracking_database(current)
 
     assert assessment.usable is False
-    assert assessment.schema_version == 1
+    assert assessment.schema_version == CURRENT_ROOT
     assert assessment.reason_codes == ("config_schema_version_unsupported",)
     with pytest.raises(
         tracking_database.TrackingDatabaseError,
@@ -1084,8 +1095,8 @@ def test_config_only_migration_uses_generation_neutral_backup_name(
     backup = tmp_path / ".backups" / f"{path.name}.owner-migration-{digest}.bak"
     assert backup.read_bytes() == raw
     assert report["backup"] == str(backup)
-    assert report["from_schema_version"] == 1
-    assert report["to_schema_version"] == 1
+    assert report["from_schema_version"] == CURRENT_ROOT
+    assert report["to_schema_version"] == CURRENT_ROOT
     assert report["record_counts"]["config"] == 1
 
 
@@ -1359,7 +1370,7 @@ def test_legacy_queue_recovery_unblocks_migration_without_schema_stamping(
     )
     assert report["changed"] is True
     assert report["from_schema_version"] == 0
-    assert report["to_schema_version"] == 1
+    assert report["to_schema_version"] == CURRENT_ROOT
 
 
 @pytest.mark.parametrize(

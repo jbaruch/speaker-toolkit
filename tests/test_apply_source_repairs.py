@@ -15,7 +15,7 @@ def write_json(path, value):
 
 def base_database():
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "config": current_tracking_config(),
         "talks": [
             {
