@@ -83,7 +83,7 @@ with the migration report as handoff context, then finish this clarification run
 Exit 2 writes one error object to stdout plus an `ERROR:` diagnostic to stderr;
 stop without changing session state.
 
-Every tracking write in Steps 2–8 is current-only. Preserve database schema 1,
+Every tracking write in Steps 2–8 is current-only. Preserve database schema 2,
 config schema 2, talk schema 7, and every unrelated record. Stamp confirmed
 intents with schema 1 and new improvement goals with schema 2. Capture the exact
 input bytes immediately before each write, reject a changed generation, validate

@@ -9,9 +9,10 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
 shape, and all migrations. vault-clarification may write current config,
 confirmed-intent, and improvement-goal records. presentation-creator may write
 current QR records. vault-profile and the remaining presentation consumers are
-read-only. Non-owner readers accept legacy database schema 0 and current schema
-1 during rollout. They never rewrite legacy state. An unsupported future
-database or record version is no usable prior state.
+read-only. Non-owner readers accept every readable database generation during
+rollout — legacy 0, pre-`markdown_decks` 1, and current 2. They never rewrite
+legacy state. An unsupported future database or record version is no usable
+prior state.
 
 The independently versioned records are the database root, `config`, each
 `talks[]`, `pptx_catalog[]`, `qr_codes[]`, `resources[]`, `thumbnails[]`,
@@ -160,7 +161,8 @@ schema fields; the established queue transition may advance a recovered claim
 receipt from v1 to v2 while adding its release fields.
 
 The owner migration is a preservation migration. Its only allowed semantic
-changes are adding root schema v1, adding the validated historical version to an
+changes are advancing the root to schema v2, adding the validated historical
+version to an
 unversioned owner record, creating absent owned arrays as empty arrays, and
 upgrading config v1 to v2. A missing exclusion list receives the canonical
 defaults; a valid owner-supplied list is preserved exactly. It
@@ -173,7 +175,7 @@ no-op.
 
 | Independent record | Current schema |
 |---|---:|
-| database root | 1 |
+| database root | 2 (schema 1, the generation before `markdown_decks`, remains readable) |
 | config | 2 (schema 1 remains readable owner-migration input) |
 | talk | 7 (schemas 1-6 remain readable historical state; v5 and v6 restamp) |
 | PPTX catalog | 3 (schemas 1 and 2 remain readable legacy state) |
@@ -187,18 +189,20 @@ no-op.
 
 | Component | Access | Contract |
 |---|---|---|
-| vault-ingress migration | owner read/write | Accept root schema 0/1 and config schema 1/2; migrate to root v1/config v2; never downgrade future state |
-| vault-ingress queue inspection/recovery | owner compatibility transition | Inspect schema 0/1; recover active leases in schema 0/1; never stamp artifact or talk schema versions |
-| vault-ingress queue normalization/claim, persistence, shownotes apply, source repair | current read/write | Require database schema 1, config schema 2, and supported explicit owner-record versions; targeted writers emit their current record generation and never migrate the root implicitly |
-| vault-ingress preflight, source audit, analysis rendering, shownotes dry-run | dual reader | Parse schemas 0 and 1; gate through existing finding/error channels; never rewrite |
+| vault-ingress migration | owner read/write | Accept root schema 0/1/2 and config schema 1/2; migrate to root v2/config v2; never downgrade future state |
+| vault-ingress queue inspection/recovery | owner compatibility transition | Inspect schema 0/1/2; recover active leases in schema 0/1/2; never stamp artifact or talk schema versions |
+| vault-ingress queue normalization/claim, persistence, shownotes apply, source repair | current read/write | Require database schema 2, config schema 2, and supported explicit owner-record versions; targeted writers emit their current record generation and never migrate the root implicitly |
+| vault-ingress preflight, source audit, analysis rendering, shownotes dry-run | dual reader | Parse schemas 0, 1, and 2; gate through existing finding/error channels; never rewrite |
 | vault-clarification | current read/write | Route schema migration to vault-ingress; preserve config v2 and stamp confirmed intent v1/improvement goal v2 |
-| presentation-creator QR writer | dual reader/current writer | Read schemas 0 and 1; require schema 1 before URL creation or QR metadata persistence; stamp QR v2 |
-| presentation-creator publishing/post-event | authorized current writer | Require schema 1 before tracking writes; stamp resource v1 and preserve talk v7 |
-| illustrations thumbnail workflow | authorized current writer | Require schema 1 before tracking writes; stamp thumbnail v1 and preserve talk v7 |
-| vault-profile | dual reader | Parse schemas 0 and 1; treat unsupported generations as unavailable; never migrate |
+| presentation-creator QR writer | dual reader/current writer | Read schemas 0, 1, and 2; require schema 2 before URL creation or QR metadata persistence; stamp QR v2 |
+| presentation-creator publishing/post-event | authorized current writer | Require schema 2 before tracking writes; stamp resource v1 and preserve talk v7 |
+| illustrations thumbnail workflow | authorized current writer | Require schema 2 before tracking writes; stamp thumbnail v1 and preserve talk v7 |
+| vault-profile | dual reader | Parse schemas 0, 1, and 2; treat unsupported generations as unavailable; never migrate |
 
-Current database schema 1 with config schema 2 requires all eight top-level
-state fields shown below.
+Current database schema 2 with config schema 2 requires all eight top-level
+state fields shown below. `markdown_decks` is the ninth key and is optional:
+absent means no talk has a registered markdown deck, which is what every
+database written before root v2 says.
 Missing legacy arrays become empty during owner migration. Current writers do
 not create them opportunistically. A schema-v1 improvement goal remains valid
 historical state; migration never fabricates the schema-v2 baseline provenance
@@ -2165,7 +2169,7 @@ bounded PDF ceiling, complete page-tree walk, and repair-diagnostic rejection to
 render receipts produced inside the already-contained PPTX extraction worker.
 
 Extractor schema v4 is independent of persisted pattern-evidence schema v2,
-return schema v5, queue-claim schema v5, and tracking-database schema v1. Those
+return schema v5, queue-claim schema v5, and tracking-database schema v2. Those
 downstream generations do not advance here; their current readers bind or
 validate the new nested records inside their existing contracts.
 

@@ -92,7 +92,7 @@ database or talk record. The existing queue transition may advance a recovered
 legacy claim receipt from schema v1 to v2 while adding its release fields. Rerun
 migration dry-run, then apply its new exact digest. Do not copy a digest across
 runs. `queue-state.py ... normalize` and `queue-state.py ... claim` require
-database schema 1.
+database schema 2.
 
 **Config bootstrapping** — ask once per missing user-owned field and persist to the tracking
 database with expectation-bound `set_config` mutations. Re-read after every
@@ -123,7 +123,7 @@ before another config write.
   --lanes core,pdf,pptx
 ```
 
-All owner-authored tracking writes below require database schema 1 and config
+All owner-authored tracking writes below require database schema 2 and config
 schema 2 after this
 gate. Preserve every independent record version and validate the complete
 candidate before installing it. Only `migrate-tracking-database.py` may move

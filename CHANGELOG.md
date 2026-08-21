@@ -63,6 +63,16 @@ the v0 path stamps — so v1 needs no branch of its own; what it did need was fo
 the tail to stop reporting a hardcoded `from_schema_version: 0`, which would
 have misnamed what was migrated.
 
+The writer/reader contract moved with it. `references/schemas-db.md` carries the
+schema-version table and one access-contract row per consumer, and a root bump
+that leaves those rows saying "require database schema 1" documents a flow that
+rejects the state the owner now writes. Every row is updated, along with the
+five consumer pages outside vault-ingress that state the same requirement —
+`illustrations/references/thumbnails.md`,
+`vault-ingress/references/bootstrap-and-preflight.md`,
+`presentation-creator/references/phase6-publishing.md` and `phase7-post-event.md`,
+and `vault-clarification/SKILL.md`.
+
 Fixture fallout worth naming, because it is the argument for the shared
 constant now in `tests/conftest.py`: seventeen fixtures pinned the root
 generation by literal, and each one failed as `assert 2 == 1` with nothing in

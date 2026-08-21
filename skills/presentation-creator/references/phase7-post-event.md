@@ -16,8 +16,8 @@ Before ANY Phase 7 action, load these files. If any is missing, STOP and ask.
 
 Read the tracking database through the main presentation-creator compatibility
 gate. Thumbnail and shownotes lookup may read schema 0 or 1. Any database update
-in this phase requires current database schema 1 and talk schema 7 before the
-thumbnail, shownotes, or video side effect paired with it. Route schema 0 through
+in this phase requires current database schema 2 and talk schema 7 before the
+thumbnail, shownotes, or video side effect paired with it. Route schema 0 or 1 through
 `Skill(skill: "vault-ingress")`; preserve all schema fields and apply the main
 skill's exact-generation atomic-write contract.
 
