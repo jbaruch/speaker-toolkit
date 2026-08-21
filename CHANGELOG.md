@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.103 — 2026-08-21
+
 ### feat(vault-ingress) — name the deck a rendered PDF came from
 
 Issue #318, item (1)'s second half, and the last piece of it. `slide_source:
