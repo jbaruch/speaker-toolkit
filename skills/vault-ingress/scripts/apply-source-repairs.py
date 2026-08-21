@@ -30,7 +30,7 @@ import argparse
 import copy
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import sys
 from typing import Any
 
@@ -63,6 +63,7 @@ ALLOWED_FIELDS = frozenset(
         "slides_local_path",
         "slides_pdf_path",
         "pdf_path",
+        "deck_source_path",
         "transcript_path",
         "transcript_source",
         "slide_source",
@@ -73,6 +74,10 @@ ALLOWED_FIELDS = frozenset(
         "reprocess_reason",
     }
 )
+# Suffixes a markdown-authored deck source is written with. Every flavor this
+# toolkit renders — Slidev, presenterm, Marp, reveal-md — authors markdown, so a
+# `deck_source_path` naming anything else is a mistyped path rather than a deck.
+DECK_SOURCE_SUFFIXES = frozenset({".md", ".markdown"})
 ALLOWED_REPAIR_STATUSES = frozenset(
     {
         "pending",
@@ -203,8 +208,66 @@ def validate_plan(plan: dict[str, Any]) -> list[dict[str, Any]]:
             raise SourceRepairError(
                 f"{label}.set.status must be one of {sorted(ALLOWED_REPAIR_STATUSES)}"
             )
+        if "deck_source_path" in set_values:
+            validate_deck_source_path(
+                set_values["deck_source_path"], f"{label}.set.deck_source_path"
+            )
         normalized.append(repair)
     return normalized
+
+
+def validate_deck_source_path(value: Any, label: str) -> None:
+    """Check a `deck_source_path` before it is written onto a talk.
+
+    The field names the markdown file a talk's deck was authored in. It exists
+    as its own field rather than being read back off `slide_source` because
+    registering a render overwrites that: the repair that binds
+    `slides/<talk>.pdf` moves `slide_source` from "markdown" to "pdf", and the
+    only record that the deck was ever markdown goes with it. A talk whose deck
+    later changes then has nothing naming the file to re-render.
+
+    Absolute values are the ordinary case. The decks in #318 live in a git repo
+    per talk beside the vault, so no single configured directory locates them
+    the way `config.pptx_source_dir` locates a deck library; a relative value
+    resolves from the vault root, which is `pptx_path`'s own fallback.
+
+    Rejected: a non-string, a directory, a traversal segment, a backslash
+    separator, and any suffix outside DECK_SOURCE_SUFFIXES. Existence is NOT
+    checked here — the deck lives outside the vault and may legitimately be
+    absent from this checkout, so a missing file is the renderer's diagnostic
+    to give, not this plan's precondition to fail.
+    """
+    if not isinstance(value, str) or not value.strip():
+        raise SourceRepairError(f"{label} must be a nonempty string")
+    if value != value.strip():
+        raise SourceRepairError(
+            f"{label} has leading or trailing whitespace; write it as {value.strip()!r}"
+        )
+    if "\\" in value:
+        raise SourceRepairError(
+            f"{label} must separate path segments with '/', not a backslash"
+        )
+    path = PurePosixPath(value)
+    if ".." in path.parts:
+        raise SourceRepairError(
+            f"{label} must not contain a '..' segment; give the resolved path"
+        )
+    # Each rejected form has one canonical spelling, so the diagnostic can name
+    # it rather than leaving the operator to guess which character offended.
+    if path.as_posix() != value:
+        raise SourceRepairError(
+            f"{label} is not canonical (a doubled, trailing, or './' separator); "
+            f"write it as {path.as_posix()!r}"
+        )
+    if path.name in {".", ".."} or not path.suffix:
+        raise SourceRepairError(
+            f"{label} must name a deck file, not a directory: {value!r}"
+        )
+    if path.suffix.lower() not in DECK_SOURCE_SUFFIXES:
+        raise SourceRepairError(
+            f"{label} must name a markdown deck source "
+            f"({', '.join(sorted(DECK_SOURCE_SUFFIXES))}), not {path.name!r}"
+        )
 
 
 def _matches_expected(talk: dict[str, Any], field: str, expected: Any) -> bool:

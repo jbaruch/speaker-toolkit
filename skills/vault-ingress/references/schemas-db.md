@@ -277,6 +277,7 @@ customization, not the owner default. See the
     "transcript_path": "transcripts/{id}.txt  (optional vault-relative path; required for non-YouTube transcript evidence)",
     "slide_source": "pptx|pdf|both|video_extracted|markdown|none  (set in Step 2 per slide source hierarchy)",
     "slides_local_path": "slides/<artifact>.pdf  (optional explicit local PDF; legacy readers also accept slides_pdf_path/pdf_path)",
+    "deck_source_path": "/decks/<talk>/slides.md  (optional; the markdown file the deck was authored in \u2014 see below)",
     "pptx_visual_status": "pending|extracted|no_pptx",
     "status": "pending|needs-reprocessing|reprocessing-inflight|processed|processed_partial|skipped_no_sources|skipped_download_failed|skipped_duplicate",
     "reprocess_reason": "machine-readable reason for needs-reprocessing, or null (owner-set values: DELIBERATE_REPROCESS_REASONS in queue_claim_contract.py)",
@@ -1353,6 +1354,21 @@ to a `processed_partial` return. An untrusted manifest is context-only: do not l
 `full_frame_context` artifact may still qualify as `delivery_video` evidence for room,
 speaker, PiP, and delivery/timing phenomena that it actually establishes; its scope can
 never be promoted into authored-slide evidence.
+
+`deck_source_path` names the markdown file a talk's deck was authored in
+(Slidev, presenterm, Marp, reveal-md). It is owner-set through
+`apply-source-repairs.py`, never returned by a worker, and it is deliberately
+independent of `slide_source`: registering a render moves `slide_source` from
+`"markdown"` to `"pdf"`, and the deck path has to outlive that rewrite or
+nothing names the file to re-render when the deck changes. Absolute values are
+the ordinary case, since these decks live one git repo per talk rather than in
+a configured library; a relative value resolves from the vault root like
+`pptx_path`. Absence means no authored markdown deck is registered — the
+correct reading for every record written before the field existed. Existence is
+not a precondition of any repair: the deck's repo need not be in this checkout,
+so a missing file surfaces as the renderer's diagnostic rather than a plan
+rejection. The accepted spellings are `validate_deck_source_path` in
+`skills/vault-ingress/scripts/apply-source-repairs.py`.
 
 `clear_fields` explicitly deletes prior analysis before the return is applied. Allowed paths
 are top-level analysis prose/provenance scalars or leaves under

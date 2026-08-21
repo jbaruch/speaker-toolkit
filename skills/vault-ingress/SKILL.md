@@ -89,7 +89,9 @@ in order of preference:
 The `slide_source` field tracks which path: `"pptx"`, `"pdf"`, `"both"`,
 `"video_extracted"`, `"markdown"` (a Slidev/presenterm/Marp deck — provenance
 only, it yields no slide evidence until rendered to PDF and re-registered as
-`"pdf"`), or `"none"`. The `pptx_catalog` array fuzzy-matches `.pptx`
+`"pdf"`), or `"none"`. `deck_source_path` names the markdown file that deck was
+authored in and outlives the re-registration, so a changed deck re-renders
+without being located again. The `pptx_catalog` array fuzzy-matches `.pptx`
 files to shownotes entries.
 
 ## Step 1 — Bootstrap Vault State

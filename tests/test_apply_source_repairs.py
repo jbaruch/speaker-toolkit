@@ -401,3 +401,136 @@ def test_malformed_missing_marker_is_an_exact_object_not_absence(
         match="preconditions failed",
     ):
         apply_source_repairs.build_repaired_database(database, [repair])
+
+
+def deck_database():
+    """A markdown-authored talk in the state #318 describes: deck, no evidence."""
+    database = base_database()
+    database["talks"][0]["slide_source"] = "markdown"
+    return database
+
+
+def deck_repair(**overrides):
+    repair = {
+        "filename": "talk.md",
+        "reason": "Slidev deck rendered to PDF and registered as slide evidence",
+        "expect": {
+            "slide_source": "markdown",
+            "slides_local_path": {"$missing": True},
+            "deck_source_path": {"$missing": True},
+        },
+        "set": {
+            "slide_source": "pdf",
+            "slides_local_path": "slides/talk.pdf",
+            "deck_source_path": "/decks/spring-rag/slides.md",
+        },
+    }
+    repair.update(overrides)
+    return {"schema_version": 1, "repairs": [repair]}
+
+
+def test_registering_a_render_keeps_the_deck_it_was_rendered_from(
+    apply_source_repairs,
+) -> None:
+    """`slide_source` alone loses the provenance the moment the PDF is bound.
+
+    Registering the render moves `slide_source` from "markdown" to "pdf", which
+    is correct — the talk now has readable slide evidence. Before this field
+    existed that rewrite also erased the only trace that the deck was authored
+    in markdown, leaving nothing to re-render when the deck changed.
+    """
+    repaired, changes = apply_source_repairs.build_repaired_database(
+        deck_database(),
+        deck_repair()["repairs"],
+    )
+
+    talk = repaired["talks"][0]
+    assert talk["slide_source"] == "pdf"
+    assert talk["slides_local_path"] == "slides/talk.pdf"
+    assert talk["deck_source_path"] == "/decks/spring-rag/slides.md"
+    assert changes
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/decks/spring-rag/slides.md",
+        "decks/spring-rag/slides.md",
+        "slides.MD",
+        "deck.markdown",
+    ],
+)
+def test_deck_source_path_accepts_absolute_and_vault_relative_decks(
+    apply_source_repairs,
+    path,
+) -> None:
+    """Decks live one git repo per talk, so no configured directory locates them.
+
+    An absolute path is the ordinary case and a relative one resolves from the
+    vault root, matching `pptx_path`. Both are accepted here; neither is
+    checked for existence, because the deck's repo need not be in this
+    checkout.
+    """
+    apply_source_repairs.validate_plan(
+        deck_repair(
+            set={
+                "slide_source": "pdf",
+                "slides_local_path": "slides/talk.pdf",
+                "deck_source_path": path,
+            }
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "message"),
+    [
+        ("deck.pptx", "must name a markdown deck source"),
+        ("decks/spring-rag", "must name a deck file, not a directory"),
+        ("decks//slides.md", "write it as 'decks/slides.md'"),
+        ("./slides.md", "write it as 'slides.md'"),
+        ("../slides.md", "must not contain a '..' segment"),
+        (" slides.md", "write it as 'slides.md'"),
+        ("decks\\slides.md", "must separate path segments with '/'"),
+        ("", "must be a nonempty string"),
+        (42, "must be a nonempty string"),
+    ],
+)
+def test_deck_source_path_rejects_a_value_that_is_not_a_deck(
+    apply_source_repairs,
+    path,
+    message,
+) -> None:
+    """Each rejection names the defect it found, not the first check to fire."""
+    plan = deck_repair(
+        set={
+            "slide_source": "pdf",
+            "slides_local_path": "slides/talk.pdf",
+            "deck_source_path": path,
+        }
+    )
+
+    with pytest.raises(apply_source_repairs.SourceRepairError, match=message):
+        apply_source_repairs.validate_plan(plan)
+
+
+def test_deck_source_path_can_be_cleared_when_a_deck_moves_away(
+    apply_source_repairs,
+) -> None:
+    """A registered deck that is no longer the talk's source is unregisterable."""
+    database = deck_database()
+    database["talks"][0]["deck_source_path"] = "/decks/old/slides.md"
+    repaired, changes = apply_source_repairs.build_repaired_database(
+        database,
+        [
+            {
+                "filename": "talk.md",
+                "reason": "deck repo retired; the render is now the only source",
+                "expect": {"deck_source_path": "/decks/old/slides.md"},
+                "clear": ["deck_source_path"],
+            }
+        ],
+    )
+
+    assert "deck_source_path" not in repaired["talks"][0]
+    assert changes

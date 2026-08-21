@@ -41,6 +41,10 @@ optional lane, an absent renderer degrades that one deck, not the run.
 
 ## Render, then register
 
+`{deck_path}` below is the talk's `deck_source_path` when one is registered,
+and the file you located by hand when it is not — registering it is the last
+step of this page.
+
 Read the deck without touching a renderer — this reports the detected flavor,
 the lane, and what is missing from it:
 
@@ -74,8 +78,11 @@ the `apply-source-repairs.py` dry-run/apply pair):
 {"schema_version": 1, "repairs": [{
   "filename": "spring-rag-jcon.md",
   "reason": "Slidev deck rendered to PDF and registered as slide evidence",
-  "expect": {"slides_local_path": {"$missing": true}, "slide_source": "markdown"},
+  "expect": {"slides_local_path": {"$missing": true},
+             "deck_source_path": {"$missing": true},
+             "slide_source": "markdown"},
   "set": {"slides_local_path": "slides/spring-rag-jcon.pdf",
+          "deck_source_path": "/repos/spring-rag/slides.md",
           "slide_source": "pdf",
           "status": "needs-reprocessing",
           "reprocess_reason": "source_added"}}]}
@@ -83,6 +90,19 @@ the `apply-source-repairs.py` dry-run/apply pair):
 
 The talk then binds as a normal `static_slides` artifact. Nothing about the
 evidence path is special-cased for a deck that started as markdown.
+
+`deck_source_path` is the one thing that does not follow that rule, and it is
+why the repair sets it in the same plan. The rest of this registration is a
+one-way door: `slide_source` goes from `"markdown"` to `"pdf"` because the talk
+now genuinely has readable slides, and after that no field on the record says
+the deck was ever markdown or where it lives. Set the deck path here and a
+later render — the deck gained three slides, the speaker reworked the demo —
+reads its source off the talk instead of asking whoever remembers. Leave it out
+and the second render starts by hunting for the file.
+
+The path may be absolute (the usual case; these decks live one git repo per
+talk) or vault-root-relative. It is not checked for existence, so a deck repo
+that is not on this machine registers fine and fails, loudly, at the render.
 
 Nothing reaches the output path until the bounded PDF probe has accepted the
 render. A renderer that exits 0 over a corrupt file leaves an earlier valid

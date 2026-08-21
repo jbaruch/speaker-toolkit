@@ -1,5 +1,72 @@
 # Changelog
 
+### feat(vault-ingress) — name the deck a rendered PDF came from
+
+Issue #318, item (1)'s second half, and the last piece of it. `slide_source:
+"markdown"` (0.20.86) made a markdown-authored talk a valid record, and
+`render-markdown-deck.py` (0.20.101) made its deck readable. Between them sat a
+quiet data loss: registering the render sets `slide_source` to `"pdf"`, which is
+correct — the talk now has real slides — and in doing so erases the only field
+that said the deck was ever markdown. Nothing on the record named the file. The
+second render, after the speaker added three slides, started with a hunt.
+
+`deck_source_path` is that name. It goes on the talk record through
+`apply-source-repairs.py`, holds an absolute path (the ordinary case: these
+decks live one git repo per talk, so no configured directory locates them the
+way `config.pptx_source_dir` locates a deck library) or a vault-root-relative
+one like `pptx_path`, and it is deliberately independent of `slide_source` so it
+survives the `"markdown"` → `"pdf"` rewrite that motivated it.
+
+**It does not bump `TALK_RECORD_SCHEMA_VERSION`, and that is the whole design
+decision.** The obvious move was 7 → 8 with 7 added to
+`_RESTAMPABLE_TALK_RECORD_SCHEMA_VERSIONS`; the machinery is built for exactly
+that additive shape and no test references the literal. Three things argued
+against it, all of them already written down in this file:
+
+The constant means analysis generation, not record shape — the #333 entry says
+so outright: "the contradiction is real, and it comes from
+`TALK_RECORD_SCHEMA_VERSION` carrying two meanings at once: the analysis
+generation, which is why a v1 record can never migrate forward, and the record
+shape." That is why v7 is today a bump for a field that no longer lives on the
+talk record at all; `_restamp_talk_records` says "v7 adds no field a v6 record
+lacks." Adding a second such bump would compound the confusion, not resolve it.
+
+The stamp would not reach the records that need the field. 209 of the 215 live
+talk records are schema v1, non-restampable by design, and they are precisely
+the transcript-only markdown talks #318 is about. A v8 stamp lifts six modern
+records and leaves the other 209 exactly where they were — the same wall #333
+hit, then reversed by moving its field off the talk record entirely.
+
+And the stamp is not free. Talk versions are accepted as `range(1, CURRENT + 1)`,
+so a v8-stamped database read by any older toolkit is not one unreadable record:
+it is `talks_schema_version_unsupported`, `usable: false`, the whole vault. That
+is a real downgrade cliff, paid for a marker that reaches 3% of the corpus.
+
+So the field lands additively at v7. The talk record has never been closed-shape
+— `_require_closed_shape` guards catalog records, QR artifacts, and
+equivalences, never talks — and `apply-source-repairs.py` carries no
+record-version gate at all, which is why #318's documented manual workaround
+already worked on v1 records. Absence means no registered deck, which is the
+correct reading of every database written before today. An older toolkit ignores
+the field rather than misreading it, because no version ever defined it
+differently. This is `stateful-artifacts`' additive backward-compatible case:
+the new reader reads old records via the field's default, and the default is the
+truth.
+
+`validate_deck_source_path` refuses a directory, a `..` segment, a backslash
+separator, a non-canonical spelling, and any suffix outside `.md` / `.markdown`,
+naming the canonical form in the diagnostic rather than the first check that
+fired. It does not check existence — the deck's repo need not be on this
+machine, so a missing file is the renderer's loud failure, not a plan's silent
+precondition.
+
+Not done here, deliberately: a return claiming `slide_source: "markdown"` is not
+required to have a registered deck path, though the symmetry with `"pdf"`
+requiring `has_pdf` is tempting. Workers analyse; they do not discover decks.
+Making it a return precondition would block reprocessing a known-markdown talk
+whose path nobody has registered yet, which is the state every such talk starts
+in.
+
 ## 0.20.101 — 2026-08-20
 
 ### feat(vault-ingress) — render markdown-authored decks as slide evidence
