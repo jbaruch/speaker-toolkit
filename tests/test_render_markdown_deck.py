@@ -132,7 +132,13 @@ def test_a_half_installed_lane_names_only_what_is_missing(tmp_path, fake_path):
             timeout_seconds=30,
         )
 
-    assert "weasyprint not on PATH" in str(excinfo.value)
+    message = str(excinfo.value)
+    assert "weasyprint not on PATH" in message
+    # The install clause is built from what is absent, not from the whole
+    # spec: telling an operator with presenterm already installed to install
+    # presenterm sends them to check a box that is checked (#351).
+    assert "Install weasyprint," in message
+    assert "Install presenterm" not in message
 
 
 def test_presenterm_is_handed_a_sized_terminal(tmp_path, fake_path):
