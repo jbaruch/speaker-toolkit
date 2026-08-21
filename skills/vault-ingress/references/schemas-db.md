@@ -672,7 +672,7 @@ review its `changes`, then bind apply to that report's exact input hash:
 ```
 
 Initialization uses a sole `initialize_database` mutation, stamps database
-schema version 1 and config schema version 2, supplies the canonical
+schema version 2 and config schema version 2, supplies the canonical
 `pptx_directory_exclusions` when the plan omits that field, defaults to dry-run,
 and applies with the literal
 `--expected-sha256 missing`. All other applies

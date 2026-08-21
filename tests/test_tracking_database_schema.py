@@ -2024,3 +2024,34 @@ def test_a_deck_that_is_not_a_markdown_file_is_refused(tracking_database):
         tracking_database.TrackingDatabaseError, match="markdown deck source"
     ):
         tracking_database.assess_tracking_database(database)
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/repos/spring-rag/slides.md/", "/repos/spring-rag/"],
+)
+def test_a_deck_path_ending_in_a_separator_is_refused(tracking_database, path):
+    """An absolute locator may carry a trailing slash and still classify.
+
+    `PurePosixPath(value).name` then strips it, so `/repos/slides.md/` reached
+    the suffix check looking like a file and passed — the renderer would have
+    been handed a directory.
+    """
+    database = _database_with_decks(tracking_database, [_deck(deck_source_path=path)])
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="names a directory"
+    ):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_a_malformed_current_database_names_its_own_generation(tracking_database):
+    """The diagnostic read v1 after the root moved, sending readers at the wrong
+    generation."""
+    database = tracking_database.migrate_tracking_database(_legacy_database()).database
+    database["talks"] = [{"filename": "broken.md", "schema_version": "not-an-int"}]
+
+    with pytest.raises(tracking_database.TrackingDatabaseError) as excinfo:
+        tracking_database.require_current_tracking_database(database)
+
+    assert f"schema v{CURRENT_ROOT}" in str(excinfo.value)

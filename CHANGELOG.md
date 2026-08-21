@@ -63,6 +63,14 @@ the v0 path stamps — so v1 needs no branch of its own; what it did need was fo
 the tail to stop reporting a hardcoded `from_schema_version: 0`, which would
 have misnamed what was migrated.
 
+Two holes the review caught in this PR's own new code. An absolute locator may
+carry a trailing slash — `classify_artifact_locator` accepts it and
+`PurePosixPath(value).name` then strips it — so `/repos/slides.md/` reached the
+suffix check looking like a file and passed, and the renderer would have been
+handed a directory. And the malformed-owner-state diagnostic hardcoded "schema
+v1", so after the bump it sent readers at the wrong generation. Both now carry
+regression tests.
+
 `record_markdown_deck` takes an `expect`, the same optimistic precondition every
 other talk-touching mutation carries: the plan states the `deck_source_path` it
 believes is registered, or `{"$missing": true}` when nothing is, and a

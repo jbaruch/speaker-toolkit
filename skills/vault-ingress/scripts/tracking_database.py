@@ -1206,6 +1206,10 @@ def validate_markdown_deck(
             f"{label}.deck_source_path is not a usable artifact locator "
             f"({exc.reason_code}): {value!r}"
         ) from exc
+    if value.endswith("/"):
+        raise TrackingDatabaseError(
+            f"{label}.deck_source_path ends in '/', which names a directory: {value!r}"
+        )
     name = PurePosixPath(value).name
     suffix = PurePosixPath(name).suffix
     if not suffix or name == suffix:
@@ -1622,7 +1626,8 @@ def require_current_tracking_database(database: object) -> dict[str, Any]:
     except TrackingDatabaseError as exc:
         if version == TRACKING_DATABASE_SCHEMA_VERSION:
             raise TrackingDatabaseError(
-                "tracking database schema v1 has malformed owner-managed state; "
+                f"tracking database schema v{TRACKING_DATABASE_SCHEMA_VERSION} "
+                "has malformed owner-managed state; "
                 "update speaker-toolkit or repair the owner-managed state. Schema "
                 f"migration will refuse this state ({exc})"
             ) from exc

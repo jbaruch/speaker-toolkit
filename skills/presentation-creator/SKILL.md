@@ -44,7 +44,7 @@ location). Load `tracking-database.json` with the strict owner reader at
 `{speaker_toolkit_root}/skills/vault-ingress/scripts/read-tracking-database.py` to
 get `config.vault_root`; never parse it directly. The stdlib-only reader may use
 the host interpreter for this one bootstrap read. It accepts legacy database
-schema 0 and current schema 1 without rewriting either. Stop on unsupported root
+schemas 0 and 1 and current schema 2 without rewriting any of them. Stop on unsupported root
 or owner-record generations and route migration to `Skill(skill: "vault-ingress")`.
 
 Discover the exact non-empty `config.python_path`, then immediately re-read the

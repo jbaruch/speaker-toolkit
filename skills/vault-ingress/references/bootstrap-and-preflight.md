@@ -127,7 +127,7 @@ All owner-authored tracking writes below require database schema 2 and config
 schema 2 after this
 gate. Preserve every independent record version and validate the complete
 candidate before installing it. Only `migrate-tracking-database.py` may move
-schema 0 to schema 1; its hash precondition binds replacement to the exact input
+schema 0 or schema 1 to schema 2; its hash precondition binds replacement to the exact input
 bytes as documented above.
 
 Core requires Python 3.10+ and PyYAML and is blocking. The PDF lane requires
