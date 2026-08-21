@@ -10,7 +10,7 @@ each section in order; later sections assume every earlier gate succeeded.
    [schemas-db.md](schemas-db.md#owner-read-and-mutation-contract).
 2. **Path missing** — first-time setup: ask preferred location via `AskUserQuestion`,
    create the directory (and symlink if a custom path was chosen), then use a sole
-   `initialize_database` mutation. Include database `schema_version: 1`, config
+   `initialize_database` mutation. Include database `schema_version: 2`, config
    `schema_version: 2`, and empty `talks`, `pptx_catalog`, `qr_codes`, `resources`,
    `thumbnails`, `confirmed_intents`, and `improvement_goals` arrays. The plan may
    omit `pptx_directory_exclusions`; the initializer supplies the canonical default
@@ -70,7 +70,7 @@ Exit 0 from apply writes one JSON report with `database_written: true`, preserve
 the complete original bytes under `{vault_root}/.backups/`, and atomically
 installs database schema v2 with config schema v2. A current root with config
 schema v1 is also a migration: root `from_schema_version` and
-`to_schema_version` both remain `1`, while `record_counts.config` records the
+`to_schema_version` both remain `2`, while `record_counts.config` records the
 config upgrade.
 
 `persisted_observations` reports what the migration did to corrupt persisted
