@@ -152,9 +152,10 @@ v1 and v2 for the rollout window.
   legacy record has no `artifacts` and cannot satisfy the v2 shape. Only the QR
   writer produces v2 records, and it writes them complete.
 
-A schema-v1 database with config v2 is an idempotent no-op. A schema-v1 database
-with config v1 receives only the config-v2 migration; the root generation and
-every other record remain unchanged. Before migration, queue `inspect` may read
+A schema-v2 database with config v2 is an idempotent no-op. A schema-v1 database
+is not: its root advances to v2, and a config v1 is upgraded in the same pass.
+A schema-v2 database with config v1 receives only the config-v2 migration; the
+root generation and every other record remain unchanged. Before migration, queue `inspect` may read
 schema 0 and queue `recover` may close an active schema-0 lease in place.
 Recovery changes only queue lease/status state and never stamps database or talk
 schema fields; the established queue transition may advance a recovered claim
@@ -162,9 +163,8 @@ receipt from v1 to v2 while adding its release fields.
 
 The owner migration is a preservation migration. Its only allowed semantic
 changes are advancing the root to schema v2, adding the validated historical
-version to an
-unversioned owner record, creating absent owned arrays as empty arrays, and
-upgrading config v1 to v2. A missing exclusion list receives the canonical
+version to an unversioned owner record, creating absent owned arrays as empty
+arrays, and upgrading config v1 to v2. A missing exclusion list receives the canonical
 defaults; a valid owner-supplied list is preserved exactly. It
 preserves every other JSON value and missing-vs-present distinction, including
 legacy-v1 `pattern_observations` objects, arrays, or nulls and every historical
@@ -631,10 +631,12 @@ every other persisted artifact path uses, plus a markdown-suffix check; the
 accepted and refused spellings are
 `skills/vault-ingress/scripts/tracking_database.py::validate_markdown_deck`.
 
-The collection is the root v2 shape, so it cannot ride an older root: a database
-at root 0 or 1 carrying a `markdown_decks` key is refused, naming the migration
-that stamps the root before the collection is usable. Otherwise the root version
-would stop describing the bytes, which is what the generation exists to record.
+The collection is the root v2 shape, so it is not usable on an older root. A
+database at root 0 or 1 carrying a `markdown_decks` key is never `current`, so
+every reader and writer that requires current state refuses it; the migration
+advances the root and preserves the records, which is what a preservation
+migration is for. Refusing such a database outright would be a dead end — the
+migration assesses before it stamps.
 
 Existence is never checked. The deck's repo need not be on this machine, so an
 absent file is the renderer's loud failure at render time rather than a silent

@@ -2058,23 +2058,45 @@ def test_a_malformed_current_database_names_its_own_generation(tracking_database
 
 
 @pytest.mark.parametrize("root", [None, 1])
-def test_a_pre_v2_root_carrying_the_deck_collection_is_refused(
+def test_a_pre_v2_root_carrying_the_deck_collection_is_not_current(
     tracking_database,
     root,
 ):
-    """The collection IS the root v2 shape, so it cannot ride an older root.
+    """The collection IS the root v2 shape, so it is not usable on an older root.
 
-    Accepting it on a v0 or v1 root would let a database carry the new shape
-    while still claiming the old generation, and the version would stop
-    describing the bytes — the exact auditability the bump exists to give.
+    Refusing it outright in the assessment was a dead end: the migration
+    assesses before it stamps, so the diagnostic sent an owner at the one
+    command that would refuse them. Usability is gated one level up instead —
+    a pre-v2 root is never `current`, so nothing requiring current state takes
+    it, and the migration is the way forward rather than a wall.
     """
     database = _legacy_database()
     if root is not None:
         database["schema_version"] = root
     database["markdown_decks"] = [_deck(talk_filename=database["talks"][0]["filename"])]
 
-    with pytest.raises(tracking_database.TrackingDatabaseError, match="markdown_decks"):
-        tracking_database.assess_tracking_database(database)
+    assert tracking_database.assess_tracking_database(database).state != "current"
+    with pytest.raises(tracking_database.TrackingDatabaseError):
+        tracking_database.require_current_tracking_database(database)
+
+
+@pytest.mark.parametrize("root", [None, 1])
+def test_migrating_a_pre_v2_root_stamps_it_and_keeps_the_deck_collection(
+    tracking_database,
+    root,
+):
+    """A preservation migration: the root advances, the records survive."""
+    database = _legacy_database()
+    if root is not None:
+        database["schema_version"] = root
+    deck = _deck(talk_filename=database["talks"][0]["filename"])
+    database["markdown_decks"] = [deck]
+
+    result = tracking_database.migrate_tracking_database(database)
+
+    assert result.to_schema_version == CURRENT_ROOT
+    assert result.database["markdown_decks"] == [deck]
+    tracking_database.require_current_tracking_database(result.database)
 
 
 def test_migrating_a_pre_v2_root_without_the_collection_reaches_v2(

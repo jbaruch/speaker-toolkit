@@ -63,11 +63,14 @@ the v0 path stamps — so v1 needs no branch of its own; what it did need was fo
 the tail to stop reporting a hardcoded `from_schema_version: 0`, which would
 have misnamed what was migrated.
 
-The collection is gated on the root generation, not merely versioned alongside
-it. Validating `markdown_decks` on any root would let a v0 or v1 database carry
-the new shape while still claiming the old generation — the version would stop
-describing the bytes, which is the whole reason the bump exists. A pre-v2 root
-carrying the key is refused, naming the migration that stamps it.
+The collection is not usable on a pre-v2 root, and the way that is enforced
+matters. The first attempt raised from the assessment — which turned out to be a
+dead end, because `migrate_tracking_database` assesses before it stamps, so the
+diagnostic sent an owner at the one command that would refuse them. Usability is
+gated one level up instead: a pre-v2 root is never `current`, so every reader
+and writer requiring current state refuses it, and the migration advances the
+root while preserving the records. Which is what a preservation migration is
+for.
 
 Two holes the review caught in this PR's own new code. An absolute locator may
 carry a trailing slash — `classify_artifact_locator` accepts it and
