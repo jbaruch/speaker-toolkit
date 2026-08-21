@@ -16,6 +16,9 @@ if str(_SCRIPTS) not in _sys.path:
 _FUTURE_TALK_SCHEMA_VERSION = (
     _importlib.import_module("tracking_database").TALK_RECORD_SCHEMA_VERSION + 1
 )
+_FUTURE_ROOT_SCHEMA_VERSION = (
+    _importlib.import_module("tracking_database").TRACKING_DATABASE_SCHEMA_VERSION + 1
+)
 
 
 STRICT_INVALID_CASES = (
@@ -110,7 +113,11 @@ def test_owner_reader_accepts_implicit_legacy_after_schema_assessment(
     "payload",
     [
         {
-            "schema_version": 2,
+            # Derived, never a literal — the same hazard the talk-record case
+            # below names: a pinned number stops being "future" the moment the
+            # schema reaches it, and the payload then exercises a different
+            # rejection path while still reading as a future-root test.
+            "schema_version": _FUTURE_ROOT_SCHEMA_VERSION,
             "future_config": ["no old config/talks shape"],
         },
         {

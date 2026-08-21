@@ -12,9 +12,11 @@ from contextlib import contextmanager
 import copy
 from dataclasses import dataclass
 import datetime as dt
+from pathlib import PurePosixPath
 import re
 from typing import Any, Mapping
 
+from artifact_locator import ArtifactLocatorError, classify_artifact_locator
 from queue_claim_contract import (
     QueueClaimContractError,
     classify_queue_claim_versions,
@@ -29,7 +31,12 @@ from pptx_talk_identity import unassessed_legacy_binding
 
 
 LEGACY_TRACKING_DATABASE_SCHEMA_VERSION = 0
-TRACKING_DATABASE_SCHEMA_VERSION = 1
+# The root shape before the `markdown_decks` collection (#318). A top-level key
+# is part of the ROOT record's shape, and a version on each nested deck record
+# does not version its parent database, so admitting the collection moves the
+# root generation (`stateful-artifacts` Migration Policy).
+PRE_MARKDOWN_DECKS_TRACKING_DATABASE_SCHEMA_VERSION = 1
+TRACKING_DATABASE_SCHEMA_VERSION = 2
 LEGACY_TALK_RECORD_SCHEMA_VERSION = 1
 FLAT_SCORE_TALK_RECORD_SCHEMA_VERSION = 5
 # The generation before the owner-reviewed title-equivalence ledger (#333).
@@ -55,10 +62,20 @@ LEGACY_SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION = 1
 SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION = 2
 LEGACY_IMPROVEMENT_GOAL_RECORD_SCHEMA_VERSION = 1
 IMPROVEMENT_GOAL_RECORD_SCHEMA_VERSION = 2
+# The authored markdown deck a talk's slides were rendered from (#318). Its own
+# top-level collection rather than a talk field: `TALK_RECORD_SCHEMA_VERSION`
+# means the analysis generation, so a shape change there is unreachable for the
+# legacy records this is for, and a nested record's version does not version its
+# parent (#333). The collection is optional — absent means no registered deck —
+# so every database written before it existed stays valid, and no migration
+# owns it (it is absent from `_RECORD_COUNT_KEYS` for that reason): a deck is
+# registered by an owner who knows where the file is, never inferred.
+MARKDOWN_DECK_RECORD_SCHEMA_VERSION = 1
 
 READABLE_TRACKING_DATABASE_SCHEMA_VERSIONS = frozenset(
     {
         LEGACY_TRACKING_DATABASE_SCHEMA_VERSION,
+        PRE_MARKDOWN_DECKS_TRACKING_DATABASE_SCHEMA_VERSION,
         TRACKING_DATABASE_SCHEMA_VERSION,
     }
 )
@@ -209,6 +226,11 @@ LEGACY_SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS = frozenset(
         "verified_at",
     }
 )
+MARKDOWN_DECK_REQUIRED_FIELDS = frozenset({"talk_filename", "deck_source_path"})
+# Every flavor this toolkit renders — Slidev, presenterm, Marp, reveal-md —
+# authors markdown, so a deck source named with any other suffix is a mistyped
+# path rather than a deck.
+MARKDOWN_DECK_SOURCE_SUFFIXES = frozenset({".md", ".markdown"})
 SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS = frozenset(
     {
         "talk_filename",
@@ -1130,6 +1152,78 @@ def _validate_title_equivalence_shape(
         )
 
 
+def validate_markdown_deck(
+    record: Mapping[str, object],
+    *,
+    label: str,
+) -> None:
+    """Validate one registered markdown deck source.
+
+    The record names the markdown file a talk's deck was authored in. It is
+    kept because registering a render destroys the only other trace of it: the
+    repair that binds `slides/<talk>.pdf` moves `slide_source` from "markdown"
+    to "pdf", correctly — the talk now has readable slides — and after that no
+    field says the deck was ever markdown. The next render, after the deck
+    gained slides, would begin by hunting for the file.
+
+    The locator goes through `classify_artifact_locator`, the same lexical
+    contract every other persisted artifact path uses, so a NUL byte, a `~`,
+    a `..` segment, an ambiguous `//`, and a Windows reserved name are refused
+    here by one shared reader rather than by a private opinion about paths.
+    A native absolute value is the ordinary case, since these decks live one
+    git repo per talk; a relative one is vault-root-relative, like `pptx_path`.
+
+    Existence is not checked. The deck's repo need not be on this machine, so
+    an absent file is the renderer's loud failure at render time, never a
+    silent reason to refuse the whole database.
+    """
+    _require_closed_shape(
+        record,
+        required=MARKDOWN_DECK_REQUIRED_FIELDS,
+        label=label,
+    )
+    # `_require_closed_shape` ignores `schema_version` for every record, so the
+    # generation is checked explicitly. A record this reader cannot name must
+    # refuse rather than be coerced into the current shape.
+    recorded = record.get("schema_version")
+    if (
+        isinstance(recorded, bool)
+        or not isinstance(recorded, int)
+        or recorded != MARKDOWN_DECK_RECORD_SCHEMA_VERSION
+    ):
+        raise TrackingDatabaseError(
+            f"{label}.schema_version must be {MARKDOWN_DECK_RECORD_SCHEMA_VERSION}"
+        )
+    _require_nonempty_string(record["talk_filename"], f"{label}.talk_filename")
+    value = _require_nonempty_string(
+        record["deck_source_path"],
+        f"{label}.deck_source_path",
+    )
+    try:
+        classify_artifact_locator(value)
+    except ArtifactLocatorError as exc:
+        raise TrackingDatabaseError(
+            f"{label}.deck_source_path is not a usable artifact locator "
+            f"({exc.reason_code}): {value!r}"
+        ) from exc
+    if value.endswith("/"):
+        raise TrackingDatabaseError(
+            f"{label}.deck_source_path ends in '/', which names a directory: {value!r}"
+        )
+    name = PurePosixPath(value).name
+    suffix = PurePosixPath(name).suffix
+    if not suffix or name == suffix:
+        raise TrackingDatabaseError(
+            f"{label}.deck_source_path must name a deck file, not a directory: "
+            f"{value!r}"
+        )
+    if suffix.lower() not in MARKDOWN_DECK_SOURCE_SUFFIXES:
+        raise TrackingDatabaseError(
+            f"{label}.deck_source_path must name a markdown deck source "
+            f"({', '.join(sorted(MARKDOWN_DECK_SOURCE_SUFFIXES))}), not {name!r}"
+        )
+
+
 def validate_source_title_equivalence(
     equivalence: Mapping[str, object],
     *,
@@ -1473,6 +1567,44 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
                 f"{equivalence['talk_filename']!r}"
             )
 
+    # Validated in the assessment, like the equivalences above: a deck record
+    # names the file a re-render reads, so a malformed or orphaned one must
+    # refuse the database rather than send a renderer at a path no owner wrote.
+    #
+    # The collection IS the root v2 shape, so a pre-v2 root carrying it is not
+    # usable AS current — but the fix is the migration, not a refusal. Raising
+    # here would have been a dead end: `migrate_tracking_database` assesses
+    # before it stamps, so the diagnostic told an owner to run the one command
+    # that would refuse them. Usability is already gated correctly one level
+    # up — a pre-v2 root is `legacy`, and `require_current_tracking_database`
+    # refuses every generation but the current one — so the migration advances
+    # the root and preserves the records, which is what a preservation
+    # migration is for.
+    decks = database.get("markdown_decks", [])
+    if not isinstance(decks, list):
+        raise TrackingDatabaseError("markdown_decks must be an array")
+    claimed_by_talk: set[object] = set()
+    for index, record in enumerate(decks):
+        if not isinstance(record, Mapping):
+            raise TrackingDatabaseError(
+                f"markdown_decks[{index}] must be a JSON object"
+            )
+        validate_markdown_deck(record, label=f"markdown_decks[{index}]")
+        talk_filename = record["talk_filename"]
+        if talk_filename not in known_filenames:
+            raise TrackingDatabaseError(
+                f"markdown_decks[{index}].talk_filename names no talk: "
+                f"{talk_filename!r}"
+            )
+        # One deck per talk. A second record would leave every reader picking
+        # between two paths with nothing in the data saying which is current.
+        if talk_filename in claimed_by_talk:
+            raise TrackingDatabaseError(
+                f"markdown_decks[{index}] is a second deck for "
+                f"{talk_filename!r}; a talk has one authored deck source"
+            )
+        claimed_by_talk.add(talk_filename)
+
     try:
         # Assessment intentionally admits claim/status drift so schema-0 queue
         # recovery can reach its dedicated repair transition.  Every other
@@ -1504,7 +1636,8 @@ def require_current_tracking_database(database: object) -> dict[str, Any]:
     except TrackingDatabaseError as exc:
         if version == TRACKING_DATABASE_SCHEMA_VERSION:
             raise TrackingDatabaseError(
-                "tracking database schema v1 has malformed owner-managed state; "
+                f"tracking database schema v{TRACKING_DATABASE_SCHEMA_VERSION} "
+                "has malformed owner-managed state; "
                 "update speaker-toolkit or repair the owner-managed state. Schema "
                 f"migration will refuse this state ({exc})"
             ) from exc
@@ -1715,7 +1848,7 @@ def _migrate_pptx_catalog_records(candidate: dict[str, Any]) -> int:
 
 
 def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
-    """Build the deterministic owner migration to root v1/config v2."""
+    """Build the deterministic owner migration to root v2/config v2."""
     assessment = assess_tracking_database(database)
     if not assessment.usable:
         raise TrackingDatabaseError(
@@ -1863,7 +1996,12 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
     return TrackingDatabaseMigration(
         database=candidate,
         changed=True,
-        from_schema_version=LEGACY_TRACKING_DATABASE_SCHEMA_VERSION,
+        # The generation actually read, not a hardcoded legacy 0. Every step
+        # above is idempotent for a root v1 database — its records already carry
+        # the versions the v0 path stamps — so v1 reaches v2 through the same
+        # tail, and reporting it as having come from v0 would misname what was
+        # migrated.
+        from_schema_version=root_version,
         to_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
         record_counts=counts,
     )

@@ -1,5 +1,139 @@
 # Changelog
 
+### feat(vault-ingress) — name the deck a rendered PDF came from
+
+Issue #318, item (1)'s second half, and the last piece of it. `slide_source:
+"markdown"` (0.20.86) made a markdown-authored talk a valid record, and
+`render-markdown-deck.py` (0.20.101) made its deck readable. Between them sat a
+quiet data loss: registering the render sets `slide_source` to `"pdf"`, which is
+correct — the talk now has real slides — and in doing so erases the only field
+that said the deck was ever markdown. Nothing on the record named the file. The
+second render, after the speaker added three slides, started with a hunt.
+
+`markdown_decks` is a new top-level collection at record v1, one record per
+talk, holding `talk_filename` and `deck_source_path`. It is written by a new
+`record_markdown_deck` mutation kind, which upserts rather than appends — the
+equivalence ledger beside it is an audit trail of owner judgments and only ever
+grows, while a deck registration is current state and a repo that moves
+re-points it.
+
+**Why a collection and not a field on the talk record.** The first attempt added
+`deck_source_path` as an optional talk field and left
+`TALK_RECORD_SCHEMA_VERSION` alone, on the reasoning that a never-before-defined
+optional field cannot be misread by an older reader. `stateful-artifacts`
+requires a version bump for any persisted shape change, additive included, and
+the policy review blocked it. The rule is right and the bump was still wrong,
+which is the whole reason this landed where it did:
+
+The constant means analysis generation, not record shape — the #333 entry says
+so outright: "the contradiction is real, and it comes from
+`TALK_RECORD_SCHEMA_VERSION` carrying two meanings at once: the analysis
+generation, which is why a v1 record can never migrate forward, and the record
+shape." That is why v7 is today a bump for a field that no longer lives on the
+talk record at all; `_restamp_talk_records` says "v7 adds no field a v6 record
+lacks."
+
+A bump would not have reached the records that need the field. 209 of the 215
+live talk records are schema v1, non-restampable by design, and they are
+precisely the transcript-only markdown talks #318 is about. A v8 stamp lifts the
+six modern records and leaves the other 209 where they were.
+
+And the bump is not free. Talk versions are accepted as `range(1, CURRENT + 1)`,
+so a v8-stamped database read by any older toolkit is not one unreadable record:
+it is `talks_schema_version_unsupported`, `usable: false`, the whole vault.
+
+#333 hit this exact wall — an owner ledger bound to the analysis generation,
+unreachable for 97% of the corpus — and resolved it by moving the field off the
+talk into its own versioned collection. Same wall, same resolution. The nested
+alternative is closed for the same reason #333 closed it: "the nested record's
+own version does not version its parent."
+
+The collection is optional, absent means no registered deck, and no migration
+owns it — it is deliberately absent from `_RECORD_COUNT_KEYS`, since a deck is
+registered by an owner who knows where the file is and is never inferred.
+
+**The root schema goes to v2.** A top-level key is part of the ROOT record's
+shape, and a version on each nested deck record does not version its parent
+database — the same principle #333 stated one level down. So
+`TRACKING_DATABASE_SCHEMA_VERSION` moves 1 → 2, root v1 becomes
+`PRE_MARKDOWN_DECKS_TRACKING_DATABASE_SCHEMA_VERSION`, and a v0 or v1 database
+reaches v2 through the migration tail that already existed. Every step in that
+tail is idempotent for a v1 database — its records already carry the versions
+the v0 path stamps — so v1 needs no branch of its own; what it did need was for
+the tail to stop reporting a hardcoded `from_schema_version: 0`, which would
+have misnamed what was migrated.
+
+The collection is not usable on a pre-v2 root, and the way that is enforced
+matters. The first attempt raised from the assessment — which turned out to be a
+dead end, because `migrate_tracking_database` assesses before it stamps, so the
+diagnostic sent an owner at the one command that would refuse them. Usability is
+gated one level up instead: a pre-v2 root is never `current`, so every reader
+and writer requiring current state refuses it, and the migration advances the
+root while preserving the records. Which is what a preservation migration is
+for.
+
+Two holes the review caught in this PR's own new code. An absolute locator may
+carry a trailing slash — `classify_artifact_locator` accepts it and
+`PurePosixPath(value).name` then strips it — so `/repos/slides.md/` reached the
+suffix check looking like a file and passed, and the renderer would have been
+handed a directory. And the malformed-owner-state diagnostic hardcoded "schema
+v1", so after the bump it sent readers at the wrong generation. Both now carry
+regression tests.
+
+`record_markdown_deck` takes an `expect`, the same optimistic precondition every
+other talk-touching mutation carries: the plan states the `deck_source_path` it
+believes is registered, or `{"$missing": true}` when nothing is, and a
+registration that moved under the plan fails the write instead of being
+overwritten without anyone noticing.
+
+The writer/reader contract moved with it. `references/schemas-db.md` carries the
+schema-version table and one access-contract row per consumer, and a root bump
+that leaves those rows saying "require database schema 1" documents a flow that
+rejects the state the owner now writes. Every row is updated, along with the
+five consumer pages outside vault-ingress that state the same requirement —
+`illustrations/references/thumbnails.md`,
+`vault-ingress/references/bootstrap-and-preflight.md`,
+`presentation-creator/references/phase6-publishing.md` and `phase7-post-event.md`,
+and `vault-clarification/SKILL.md`.
+
+Fixture fallout worth naming, because it is the argument for the shared
+constant now in `tests/conftest.py`: seventeen fixtures pinned the root
+generation by literal, and each one failed as `assert 2 == 1` with nothing in
+the message naming a generation. Three tests turned out to read
+`~/.claude/rhetoric-knowledge-vault` — the developer's real vault — because
+they passed no `--vault`, so the argument-validation they assert was being
+decided by whatever generation that machine happened to be at. They now pass a
+`tmp_path`. And a strict-reader case pinned a "future" root of literal 2, which
+this bump turned into the current one; it is derived now, the same way the
+talk-record case beside it already warned it should be.
+
+`deck_source_path` goes through `classify_artifact_locator`, the same lexical
+contract every other persisted artifact path uses, so a NUL byte (which used to
+reach `Path.stat()` and raise outside the renderer's `OSError` diagnostic), a
+`~`, a `..` segment, an ambiguous `//server/share`, and a Windows reserved name
+are refused by one shared reader rather than by a private opinion about paths. A
+markdown-suffix check sits on top. Existence is never checked: the deck's repo
+need not be on this machine, so an absent file is the renderer's loud failure at
+render time.
+
+Two documentation faults fixed in the same pass. The register-the-render plan in
+`references/markdown-decks.md` set `status` and `reprocess_reason` without
+declaring them in `expect`, and `validate_plan` refuses a repair that changes a
+field it did not declare — so the recipe could never be applied by a reader
+following it. Both documented plans are now executed verbatim by a test. And the
+page now says that a vault-relative deck path must be resolved against the vault
+root before it reaches a renderer, which resolves a relative CLI path from its
+own working directory and would otherwise report a missing deck for a good
+locator.
+
+Not done here, deliberately: a return claiming `slide_source: "markdown"` is not
+required to have a registered deck, though the symmetry with `"pdf"` requiring
+`has_pdf` is tempting. Workers analyse; they do not discover decks. Making it a
+return precondition would block reprocessing a known-markdown talk whose deck
+nobody has registered yet, which is the state every such talk starts in. There
+is also no unregister mutation — a deck that moves is re-pointed, which is the
+case that actually occurs.
+
 ## 0.20.102 — 2026-08-21
 
 ### fix(vault-ingress) — close a code fence only with one long enough to close it

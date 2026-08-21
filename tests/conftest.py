@@ -32,6 +32,12 @@ DEFAULT_PPTX_DIRECTORY_EXCLUSIONS = [
 ]
 
 
+# The owner-current root generation, in one place. A fixture that pins it by
+# literal has to be hunted down on every root bump, and the ones that were
+# missed failed as "assert 2 == 1" with nothing naming the generation.
+CURRENT_ROOT_SCHEMA_VERSION = 2
+
+
 def current_tracking_config(**updates: object) -> dict[str, object]:
     """Return the owner-current config generation for writer fixtures."""
     config: dict[str, object] = {

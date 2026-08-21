@@ -20,6 +20,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import CURRENT_ROOT_SCHEMA_VERSION as CURRENT_ROOT
+
 GENERATED_AT = "2026-08-10T12:00:00Z"
 
 
@@ -67,7 +69,7 @@ def _database(talks: list[dict], **config_extra) -> dict:
     config = {"schema_version": 2, "pptx_directory_exclusions": []}
     config.update(config_extra)
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "config": config,
         "talks": talks,
         "pptx_catalog": [],
@@ -185,7 +187,7 @@ def test_the_block_binds_the_exact_database_generation(
 
     status = report["status"]
     assert status["database_sha256"] == hashlib.sha256(raw).hexdigest()
-    assert status["database_schema_version"] == 1
+    assert status["database_schema_version"] == CURRENT_ROOT
     assert status["scoring_generation"] == {
         "pattern_scoring_schema_version": 5,
         "pattern_catalog_fingerprint": "a" * 64,

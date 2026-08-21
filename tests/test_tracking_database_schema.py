@@ -39,6 +39,9 @@ DEFAULT_DIRECTORY_EXCLUSIONS = [
 ]
 
 
+CURRENT_ROOT = _tracking_database.TRACKING_DATABASE_SCHEMA_VERSION
+
+
 def _legacy_goal(*, goal_id: str = "legacy") -> dict:
     return {
         "id": goal_id,
@@ -237,7 +240,7 @@ def _legacy_database() -> dict:
 
 def _expected_migration(database: dict) -> dict:
     expected = copy.deepcopy(database)
-    expected["schema_version"] = 1
+    expected["schema_version"] = CURRENT_ROOT
     expected["config"]["schema_version"] = 2
     expected["config"]["pptx_directory_exclusions"] = DEFAULT_DIRECTORY_EXCLUSIONS
     for talk in expected["talks"]:
@@ -278,7 +281,9 @@ def test_legacy_reader_accepts_without_mutating(tracking_database):
         "usable": True,
         "state": "legacy",
         "schema_version": 0,
-        "accepted_schema_versions": [0, 1],
+        "accepted_schema_versions": sorted(
+            _tracking_database.READABLE_TRACKING_DATABASE_SCHEMA_VERSIONS
+        ),
         "reason_codes": [],
     }
     assert database == original
@@ -286,7 +291,8 @@ def test_legacy_reader_accepts_without_mutating(tracking_database):
 
 def test_future_root_is_no_usable_prior_state(tracking_database):
     assessment = tracking_database.assess_tracking_database(
-        _legacy_database() | {"schema_version": 2}
+        _legacy_database()
+        | {"schema_version": tracking_database.TRACKING_DATABASE_SCHEMA_VERSION + 1}
     )
 
     assert assessment.usable is False
@@ -475,7 +481,9 @@ def test_owner_migration_only_adds_owned_version_keys(tracking_database):
 
     assert result.changed is True
     assert result.from_schema_version == 0
-    assert result.to_schema_version == 1
+    assert (
+        result.to_schema_version == tracking_database.TRACKING_DATABASE_SCHEMA_VERSION
+    )
     assert database == original
     assert result.database == _expected_migration(original)
     assert result.database["talks"][0]["schema_version"] == 1
@@ -750,7 +758,10 @@ def test_owner_migration_adds_absent_owned_collections(tracking_database):
         "improvement_goals",
     ):
         assert result.database[collection] == []
-    assert result.database["schema_version"] == 1
+    assert (
+        result.database["schema_version"]
+        == tracking_database.TRACKING_DATABASE_SCHEMA_VERSION
+    )
 
 
 def test_owner_migration_preserves_mixed_historical_talk_versions(
@@ -852,8 +863,8 @@ def test_current_root_config_v1_migrates_only_config(tracking_database):
     assert assessment.usable is True
     assert assessment.state == "legacy"
     assert migration.changed is True
-    assert migration.from_schema_version == 1
-    assert migration.to_schema_version == 1
+    assert migration.from_schema_version == CURRENT_ROOT
+    assert migration.to_schema_version == CURRENT_ROOT
     assert migration.record_counts["config"] == 1
     assert migration.database["config"] == {
         "schema_version": 2,
@@ -866,8 +877,8 @@ def test_current_root_config_v1_migrates_only_config(tracking_database):
 
     second = tracking_database.migrate_tracking_database(migration.database)
     assert second.changed is False
-    assert second.from_schema_version == 1
-    assert second.to_schema_version == 1
+    assert second.from_schema_version == CURRENT_ROOT
+    assert second.to_schema_version == CURRENT_ROOT
     assert second.database == migration.database
     assert all(count == 0 for count in second.record_counts.values())
 
@@ -924,7 +935,7 @@ def test_future_config_generation_fails_closed_without_poisoning_root_version(
     assessment = tracking_database.assess_tracking_database(current)
 
     assert assessment.usable is False
-    assert assessment.schema_version == 1
+    assert assessment.schema_version == CURRENT_ROOT
     assert assessment.reason_codes == ("config_schema_version_unsupported",)
     with pytest.raises(
         tracking_database.TrackingDatabaseError,
@@ -1084,8 +1095,8 @@ def test_config_only_migration_uses_generation_neutral_backup_name(
     backup = tmp_path / ".backups" / f"{path.name}.owner-migration-{digest}.bak"
     assert backup.read_bytes() == raw
     assert report["backup"] == str(backup)
-    assert report["from_schema_version"] == 1
-    assert report["to_schema_version"] == 1
+    assert report["from_schema_version"] == CURRENT_ROOT
+    assert report["to_schema_version"] == CURRENT_ROOT
     assert report["record_counts"]["config"] == 1
 
 
@@ -1359,7 +1370,7 @@ def test_legacy_queue_recovery_unblocks_migration_without_schema_stamping(
     )
     assert report["changed"] is True
     assert report["from_schema_version"] == 0
-    assert report["to_schema_version"] == 1
+    assert report["to_schema_version"] == CURRENT_ROOT
 
 
 @pytest.mark.parametrize(
@@ -1926,3 +1937,180 @@ def test_a_v1_entry_already_naming_a_talk_is_refused(tracking_database):
 
     with pytest.raises(tracking_database.TrackingDatabaseError, match="unknown fields"):
         tracking_database.migrate_tracking_database(database)
+
+
+# Registered markdown deck sources (#318).
+
+
+def _deck(**updates):
+    record = {
+        "schema_version": 1,
+        "talk_filename": "one.md",
+        "deck_source_path": "/repos/spring-rag/slides.md",
+    }
+    record.update(updates)
+    return record
+
+
+def _database_with_decks(tracking_database, decks):
+    migrated = tracking_database.migrate_tracking_database(_legacy_database()).database
+    migrated["markdown_decks"] = decks
+    return migrated
+
+
+def test_a_registered_deck_leaves_the_database_current(tracking_database):
+    """The collection is optional and additive: no talk record changes shape."""
+    database = _database_with_decks(tracking_database, [_deck()])
+
+    assessment = tracking_database.assess_tracking_database(database)
+
+    assert assessment.state == "current"
+    assert assessment.usable is True
+
+
+def test_a_database_without_the_collection_stays_current(tracking_database):
+    """Absent means no registered deck — every database written before today."""
+    database = tracking_database.migrate_tracking_database(_legacy_database()).database
+
+    assert "markdown_decks" not in database
+    assert tracking_database.assess_tracking_database(database).state == "current"
+
+
+def test_a_deck_naming_no_talk_refuses_the_database(tracking_database):
+    """An orphaned record would send a renderer at a path no reader can place."""
+    database = _database_with_decks(
+        tracking_database, [_deck(talk_filename="absent.md")]
+    )
+
+    with pytest.raises(tracking_database.TrackingDatabaseError, match="names no talk"):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_a_second_deck_for_one_talk_refuses_the_database(tracking_database):
+    database = _database_with_decks(
+        tracking_database,
+        [_deck(), _deck(deck_source_path="/repos/other/slides.md")],
+    )
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="a talk has one authored deck"
+    ):
+        tracking_database.assess_tracking_database(database)
+
+
+@pytest.mark.parametrize("version", [2, 0, True, "1"])
+def test_a_foreign_deck_generation_is_refused(tracking_database, version):
+    database = _database_with_decks(tracking_database, [_deck(schema_version=version)])
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="schema_version must be 1"
+    ):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_a_deck_record_carrying_an_unknown_field_is_refused(tracking_database):
+    database = _database_with_decks(tracking_database, [_deck(flavor="slidev")])
+
+    with pytest.raises(tracking_database.TrackingDatabaseError, match="unknown fields"):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_a_deck_that_is_not_a_markdown_file_is_refused(tracking_database):
+    database = _database_with_decks(
+        tracking_database, [_deck(deck_source_path="/repos/x/deck.pptx")]
+    )
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="markdown deck source"
+    ):
+        tracking_database.assess_tracking_database(database)
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/repos/spring-rag/slides.md/", "/repos/spring-rag/"],
+)
+def test_a_deck_path_ending_in_a_separator_is_refused(tracking_database, path):
+    """An absolute locator may carry a trailing slash and still classify.
+
+    `PurePosixPath(value).name` then strips it, so `/repos/slides.md/` reached
+    the suffix check looking like a file and passed — the renderer would have
+    been handed a directory.
+    """
+    database = _database_with_decks(tracking_database, [_deck(deck_source_path=path)])
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="names a directory"
+    ):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_a_malformed_current_database_names_its_own_generation(tracking_database):
+    """The diagnostic read v1 after the root moved, sending readers at the wrong
+    generation."""
+    database = tracking_database.migrate_tracking_database(_legacy_database()).database
+    database["talks"] = [{"filename": "broken.md", "schema_version": "not-an-int"}]
+
+    with pytest.raises(tracking_database.TrackingDatabaseError) as excinfo:
+        tracking_database.require_current_tracking_database(database)
+
+    assert f"schema v{CURRENT_ROOT}" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("root", [None, 1])
+def test_a_pre_v2_root_carrying_the_deck_collection_is_not_current(
+    tracking_database,
+    root,
+):
+    """The collection IS the root v2 shape, so it is not usable on an older root.
+
+    Refusing it outright in the assessment was a dead end: the migration
+    assesses before it stamps, so the diagnostic sent an owner at the one
+    command that would refuse them. Usability is gated one level up instead —
+    a pre-v2 root is never `current`, so nothing requiring current state takes
+    it, and the migration is the way forward rather than a wall.
+    """
+    database = _legacy_database()
+    if root is not None:
+        database["schema_version"] = root
+    database["markdown_decks"] = [_deck(talk_filename=database["talks"][0]["filename"])]
+
+    assert tracking_database.assess_tracking_database(database).state != "current"
+    with pytest.raises(tracking_database.TrackingDatabaseError):
+        tracking_database.require_current_tracking_database(database)
+
+
+@pytest.mark.parametrize("root", [None, 1])
+def test_migrating_a_pre_v2_root_stamps_it_and_keeps_the_deck_collection(
+    tracking_database,
+    root,
+):
+    """A preservation migration: the root advances, the records survive."""
+    database = _legacy_database()
+    if root is not None:
+        database["schema_version"] = root
+    deck = _deck(talk_filename=database["talks"][0]["filename"])
+    database["markdown_decks"] = [deck]
+
+    result = tracking_database.migrate_tracking_database(database)
+
+    assert result.to_schema_version == CURRENT_ROOT
+    assert result.database["markdown_decks"] == [deck]
+    tracking_database.require_current_tracking_database(result.database)
+
+
+def test_migrating_a_pre_v2_root_without_the_collection_reaches_v2(
+    tracking_database,
+):
+    """The ordinary path: nothing carries the new shape until an owner adds it."""
+    database = _legacy_database()
+    database["schema_version"] = 1
+
+    result = tracking_database.migrate_tracking_database(database)
+
+    assert result.from_schema_version == 1
+    assert result.to_schema_version == CURRENT_ROOT
+    assert "markdown_decks" not in result.database
+    assert tracking_database.assess_tracking_database(result.database).state == (
+        "current"
+    )

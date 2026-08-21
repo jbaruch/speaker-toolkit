@@ -811,7 +811,7 @@ def test_load_vault_projects_confirmed_intents_without_storage_metadata(
     _write_vault(tmp_path, [])
     database_path = tmp_path / "tracking-database.json"
     database = {
-        "schema_version": 1,
+        "schema_version": 2,
         "config": {"schema_version": 1, "synthetic": True},
         "talks": [],
         "pptx_catalog": [],

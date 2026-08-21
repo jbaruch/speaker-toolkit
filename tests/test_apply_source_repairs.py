@@ -15,7 +15,7 @@ def write_json(path, value):
 
 def base_database():
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "config": current_tracking_config(),
         "talks": [
             {
@@ -401,3 +401,48 @@ def test_malformed_missing_marker_is_an_exact_object_not_absence(
         match="preconditions failed",
     ):
         apply_source_repairs.build_repaired_database(database, [repair])
+
+
+def test_the_documented_render_registration_plan_applies(
+    apply_source_repairs,
+) -> None:
+    """The register-the-render plan in references/markdown-decks.md, verbatim.
+
+    `validate_plan` refuses a repair that changes a field it did not declare in
+    `expect`, so the page's earlier recipe — which set `status` and
+    `reprocess_reason` while expecting neither — could never be applied by the
+    reader following it.
+    """
+    database = base_database()
+    database["talks"][0]["slide_source"] = "markdown"
+    database["talks"][0]["status"] = "processed_partial"
+    plan = {
+        "schema_version": 1,
+        "repairs": [
+            {
+                "filename": "talk.md",
+                "reason": "Slidev deck rendered to PDF and registered as evidence",
+                "expect": {
+                    "slides_local_path": {"$missing": True},
+                    "slide_source": "markdown",
+                    "status": "processed_partial",
+                    "reprocess_reason": {"$missing": True},
+                },
+                "set": {
+                    "slides_local_path": "slides/talk.pdf",
+                    "slide_source": "pdf",
+                    "status": "needs-reprocessing",
+                    "reprocess_reason": "source_added",
+                },
+            }
+        ],
+    }
+
+    repairs = apply_source_repairs.validate_plan(plan)
+    repaired, changes = apply_source_repairs.build_repaired_database(database, repairs)
+
+    talk = repaired["talks"][0]
+    assert talk["slide_source"] == "pdf"
+    assert talk["slides_local_path"] == "slides/talk.pdf"
+    assert talk["status"] == "needs-reprocessing"
+    assert changes

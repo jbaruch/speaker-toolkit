@@ -41,6 +41,13 @@ optional lane, an absent renderer degrades that one deck, not the run.
 
 ## Render, then register
 
+`{deck_path}` below is the talk's registered `deck_source_path` when it has one,
+and the file you located by hand when it does not — registering it is the last
+step of this page. A registered value that is not absolute is vault-root
+relative: resolve it against `{vault_root}` before passing it, because the
+renderer resolves a relative path from its own working directory and would
+report a missing deck for a locator that is fine.
+
 Read the deck without touching a renderer — this reports the detected flavor,
 the lane, and what is missing from it:
 
@@ -74,15 +81,50 @@ the `apply-source-repairs.py` dry-run/apply pair):
 {"schema_version": 1, "repairs": [{
   "filename": "spring-rag-jcon.md",
   "reason": "Slidev deck rendered to PDF and registered as slide evidence",
-  "expect": {"slides_local_path": {"$missing": true}, "slide_source": "markdown"},
+  "expect": {"slides_local_path": {"$missing": true},
+             "slide_source": "markdown",
+             "status": "processed_partial",
+             "reprocess_reason": {"$missing": true}},
   "set": {"slides_local_path": "slides/spring-rag-jcon.pdf",
           "slide_source": "pdf",
           "status": "needs-reprocessing",
           "reprocess_reason": "source_added"}}]}
 ```
 
+`expect` covers every field `set` touches, `status` and `reprocess_reason`
+included — `validate_plan` refuses a repair that changes a field it did not
+declare, so a plan missing those two is rejected before anything is written.
+Use the talk's actual current `status`, not the one above.
+
 The talk then binds as a normal `static_slides` artifact. Nothing about the
 evidence path is special-cased for a deck that started as markdown.
+
+## Register the deck itself
+
+That repair is a one-way door: `slide_source` becomes `"pdf"` because the talk
+now genuinely has readable slides, and after it nothing on the record says the
+deck was ever markdown or where it lives. Record the deck separately, in its own
+collection, so a later render — the deck gained three slides, the speaker
+reworked the demo — reads its source instead of asking whoever remembers:
+
+```json
+{"schema_version": 1, "mutations": [{
+  "kind": "record_markdown_deck",
+  "filename": "spring-rag-jcon.md",
+  "expect": {"deck_source_path": {"$missing": true}},
+  "deck_source_path": "/repos/spring-rag/slides.md"}]}
+```
+
+`expect` is the same optimistic precondition every other talk-touching mutation
+carries: state what you believe is registered, and `{"$missing": true}` when
+nothing is. A registration that moved under the plan fails the write instead of
+being silently overwritten. Re-pointing a deck repo that moved names the old
+path there and runs the same mutation again; a second record for one talk is
+refused. It does not touch the
+talk record — deliberately, because a talk's `schema_version` is its analysis
+generation, and the transcript-only talks this whole page is about are legacy
+records that can never advance to a shape gate. Field contract and accepted path
+spellings: [schemas-db.md](schemas-db.md#owner-read-and-mutation-contract).
 
 Nothing reaches the output path until the bounded PDF probe has accepted the
 render. A renderer that exits 0 over a corrupt file leaves an earlier valid

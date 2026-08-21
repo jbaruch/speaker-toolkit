@@ -13,12 +13,16 @@ from PIL import Image
 from pptx import Presentation
 from pptx.util import Inches
 
-from conftest import current_tracking_config, make_deck
+from conftest import (
+    CURRENT_ROOT_SCHEMA_VERSION as CURRENT_ROOT,
+    current_tracking_config,
+    make_deck,
+)
 
 
 def _current_tracking_database():
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "config": current_tracking_config(),
         "talks": [],
         "pptx_catalog": [],
@@ -874,7 +878,7 @@ def test_main_current_database_stamps_qr_record_and_writes_atomically(
     generate_qr.main()
 
     written = json.loads(path.read_text(encoding="utf-8"))
-    assert written["schema_version"] == 1
+    assert written["schema_version"] == CURRENT_ROOT
     record = written["qr_codes"][0]
     assert written["qr_codes"] == [
         {
@@ -906,7 +910,7 @@ def test_main_current_database_stamps_qr_record_and_writes_atomically(
 def test_main_rejects_future_database_without_side_effect(
     generate_qr, monkeypatch, tmp_path
 ):
-    database = _current_tracking_database() | {"schema_version": 2}
+    database = _current_tracking_database() | {"schema_version": CURRENT_ROOT + 1}
     path = tmp_path / "tracking-database.json"
     path.write_text(json.dumps(database), encoding="utf-8")
     before = path.read_bytes()
@@ -1346,6 +1350,8 @@ def test_mcp_non_slug_back_half_exits_before_any_side_effect(
             "https://bit.ly/a3xK9f",
             "--output",
             str(output),
+            "--vault",
+            str(tmp_path),
         ],
     )
     with pytest.raises(SystemExit) as excinfo:
@@ -1354,7 +1360,7 @@ def test_mcp_non_slug_back_half_exits_before_any_side_effect(
     assert not output.exists()
 
 
-def test_provider_flags_require_short_url(generate_qr, monkeypatch):
+def test_provider_flags_require_short_url(generate_qr, monkeypatch, tmp_path):
     """Provider identity without --short-url would be silently dropped."""
     monkeypatch.setattr(
         sys,
@@ -1370,6 +1376,8 @@ def test_provider_flags_require_short_url(generate_qr, monkeypatch):
             "bitly",
             "--short-link-id",
             "bit.ly/abc",
+            "--vault",
+            str(tmp_path),
         ],
     )
     with pytest.raises(SystemExit):
@@ -1403,6 +1411,8 @@ def test_provider_identity_is_all_or_neither(
             value,
             "--output",
             str(tmp_path / "qr.png"),
+            "--vault",
+            str(tmp_path),
         ],
     )
     with pytest.raises(SystemExit):

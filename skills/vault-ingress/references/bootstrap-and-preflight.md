@@ -10,7 +10,7 @@ each section in order; later sections assume every earlier gate succeeded.
    [schemas-db.md](schemas-db.md#owner-read-and-mutation-contract).
 2. **Path missing** — first-time setup: ask preferred location via `AskUserQuestion`,
    create the directory (and symlink if a custom path was chosen), then use a sole
-   `initialize_database` mutation. Include database `schema_version: 1`, config
+   `initialize_database` mutation. Include database `schema_version: 2`, config
    `schema_version: 2`, and empty `talks`, `pptx_catalog`, `qr_codes`, `resources`,
    `thumbnails`, `confirmed_intents`, and `improvement_goals` arrays. The plan may
    omit `pptx_directory_exclusions`; the initializer supplies the canonical default
@@ -68,9 +68,9 @@ changed report authorizes this exact apply command:
 
 Exit 0 from apply writes one JSON report with `database_written: true`, preserves
 the complete original bytes under `{vault_root}/.backups/`, and atomically
-installs database schema v1 with config schema v2. A current root with config
+installs database schema v2 with config schema v2. A current root with config
 schema v1 is also a migration: root `from_schema_version` and
-`to_schema_version` both remain `1`, while `record_counts.config` records the
+`to_schema_version` both remain `2`, while `record_counts.config` records the
 config upgrade.
 
 `persisted_observations` reports what the migration did to corrupt persisted
@@ -92,7 +92,7 @@ database or talk record. The existing queue transition may advance a recovered
 legacy claim receipt from schema v1 to v2 while adding its release fields. Rerun
 migration dry-run, then apply its new exact digest. Do not copy a digest across
 runs. `queue-state.py ... normalize` and `queue-state.py ... claim` require
-database schema 1.
+database schema 2.
 
 **Config bootstrapping** — ask once per missing user-owned field and persist to the tracking
 database with expectation-bound `set_config` mutations. Re-read after every
@@ -123,11 +123,11 @@ before another config write.
   --lanes core,pdf,pptx
 ```
 
-All owner-authored tracking writes below require database schema 1 and config
+All owner-authored tracking writes below require database schema 2 and config
 schema 2 after this
 gate. Preserve every independent record version and validate the complete
 candidate before installing it. Only `migrate-tracking-database.py` may move
-schema 0 to schema 1; its hash precondition binds replacement to the exact input
+schema 0 or schema 1 to schema 2; its hash precondition binds replacement to the exact input
 bytes as documented above.
 
 Core requires Python 3.10+ and PyYAML and is blocking. The PDF lane requires

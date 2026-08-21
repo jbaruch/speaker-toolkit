@@ -78,7 +78,7 @@ def catalog_row(pptx_path: str, talk_filename: str | None, **overrides: Any) -> 
 def database(rows: list[dict], talks: list[dict], source_root: Path) -> dict:
     """One owner-current database whose only interesting part is the catalog."""
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "config": {
             "schema_version": 2,
             "pptx_directory_exclusions": [],

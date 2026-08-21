@@ -241,7 +241,7 @@ def _write_db(tmp_path, talks, *, config=None, current=True):
         "improvement_goals": [],
     }
     if current:
-        database["schema_version"] = 1
+        database["schema_version"] = 2
         database["config"] = current_tracking_config(**database["config"])
     else:
         for talk in talks:

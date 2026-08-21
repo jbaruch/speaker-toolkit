@@ -37,9 +37,9 @@ never fall back to a PATH interpreter.
 
 Read `tracking-database.json` through the vault path used by
 presentation-creator. Selection and composition may read legacy database schema
-0 or current schema 1 without mutation. Before copying the approved thumbnail or
-writing tracking state, require database schema 1, current independent records,
-and talk schema 7. Invoke `Skill(skill: "vault-ingress")` for schema 0 and stop
+0 or 1, or current schema 2, without mutation. Before copying the approved thumbnail or
+writing tracking state, require database schema 2, current independent records,
+and talk schema 7. Invoke `Skill(skill: "vault-ingress")` for schema 0 or 1 and stop
 this run. Unknown future generations are no usable prior state. Preserve every
 schema field and use the presentation-creator exact-generation atomic-write
 contract.
