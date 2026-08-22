@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.104 — 2026-08-22
+
 ### fix(vault-ingress) — bound the transcript word rate from above, and stop the bound erasing itself
 
 The first talk of a full-vault reparse returned `ok: true`, exit 0, and a
