@@ -26,6 +26,15 @@ NON_SPEECH_MARKERS = ("[Music]", "[Applause]", "[Laughter]", "[музыка]")
 WORD = re.compile(r"[^\W\d_]+", re.UNICODE)
 DEFAULT_MIN_WORDS = 400
 MIN_WORDS_PER_MINUTE = 30
+# A caption track that covers more than this talk — a venue's whole session
+# block, a livestream spanning several speakers — parses as clean speech and
+# clears every floor, so only its rate against the source-owned duration
+# gives it away. Sustained human delivery does not reach this: observed
+# vault transcripts run 110-132 wpm, and the fastest plausible speaker sits
+# far below the ceiling. The bound is deliberately loose — it exists to
+# catch a track belonging to a different recording, never to police a fast
+# talker.
+MAX_WORDS_PER_MINUTE = 240
 QUALITY_POLICY_SCHEMA_VERSION = 1
 QUALITY_POLICY_FIELDS = frozenset({"schema_version", "min_words", "duration_seconds"})
 
@@ -143,6 +152,51 @@ def validate_quality_policy(policy: object) -> tuple[bool, str]:
     return True, "canonical transcript quality policy"
 
 
+def receipt_claims_source_duration(receipt: object) -> bool:
+    """Return whether a stored receipt records a source-owned duration.
+
+    A receipt that already carries a probed duration is a standing claim that
+    this recording's length is knowable. Re-deriving without asking the
+    provider replaces that claim with the fixed default and writes the weaker
+    receipt back, so the evidence a later run needs is destroyed by the run
+    that declined to gather it. Treat the claim as a reason to probe again.
+    """
+    if not isinstance(receipt, dict):
+        return False
+    policy = receipt.get("policy")
+    if not isinstance(policy, dict):
+        return False
+    return policy.get("duration_seconds") is not None
+
+
+def receipt_duration_cannot_hold(receipt: object, words: int) -> bool:
+    """Return whether a receipt's own duration is too short to hold this speech.
+
+    Screening only, and deliberately so. The stored duration is not trusted
+    authority: a value larger than the truth would hide a foreign caption
+    track, and one smaller would accuse a sound transcript. So a True here buys
+    a provider probe and nothing else — the verdict still comes from the probed
+    duration. A receipt that is absent, malformed, or carries no duration
+    screens nothing and returns False, leaving the caller's other probe
+    triggers untouched.
+    """
+    if not isinstance(receipt, dict):
+        return False
+    policy = receipt.get("policy")
+    if not isinstance(policy, dict):
+        return False
+    duration = policy.get("duration_seconds")
+    if (
+        duration is None
+        or isinstance(duration, bool)
+        or not isinstance(duration, (int, float))
+        or not math.isfinite(float(duration))
+        or float(duration) <= 0
+    ):
+        return False
+    return words / (float(duration) / 60.0) > MAX_WORDS_PER_MINUTE
+
+
 def validate_transcript(
     text: str,
     *,
@@ -199,5 +253,13 @@ def validate_transcript(
                 f"({words_per_minute:.0f} wpm), below the "
                 f"{MIN_WORDS_PER_MINUTE} wpm floor — it likely covers only "
                 "part of the talk"
+            )
+        if words_per_minute > MAX_WORDS_PER_MINUTE:
+            return False, (
+                f"transcript has {words} words for {minutes:.0f} minutes "
+                f"({words_per_minute:.0f} wpm), above the "
+                f"{MAX_WORDS_PER_MINUTE} wpm ceiling — the caption track "
+                "covers more than this recording; confirm it belongs to this "
+                "video before use"
             )
     return True, f"{words} words"

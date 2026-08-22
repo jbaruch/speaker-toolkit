@@ -163,6 +163,87 @@ def test_transcript_far_too_short_for_runtime_is_rejected(fetch_transcript):
     assert "wpm" in reason
 
 
+def test_caption_track_covering_more_than_the_recording_is_rejected(
+    fetch_transcript,
+):
+    """The real shape: a 5-minute segment served the session block's captions.
+
+    Reproduces Kl6tLcQ5hGI — 1568 words against a provider-probed 318s, which
+    opened as the right talk and closed inside a different speaker's.
+    """
+    ok, reason = fetch_transcript.validate_transcript(_talk(1568), duration_seconds=318)
+    assert not ok
+    assert "wpm" in reason
+    assert "ceiling" in reason
+
+
+def test_a_fast_talker_is_not_mistaken_for_a_foreign_caption_track(
+    fetch_transcript,
+):
+    """The ceiling catches a wrong recording, never a brisk delivery."""
+    ok, _reason = fetch_transcript.validate_transcript(
+        _talk(200 * 30), duration_seconds=30 * 60
+    )
+    assert ok
+
+
+def test_the_observed_vault_word_rates_all_clear_the_ceiling(fetch_transcript):
+    """Every genuine receipt in the vault sat at 110-132 wpm."""
+    for words, seconds in ((2389, 18 * 60), (1067, 492), (6626, 53 * 60)):
+        ok, reason = fetch_transcript.validate_transcript(
+            _talk(words), duration_seconds=seconds
+        )
+        assert ok, reason
+
+
+def test_receipt_whose_duration_cannot_hold_the_words_asks_for_a_probe(
+    fetch_transcript,
+):
+    """The Kl6tLcQ5hGI receipt: 318s recorded, 1609 words on disk."""
+    receipt = {"policy": {"duration_seconds": 318.0}}
+    assert fetch_transcript.receipt_duration_cannot_hold(receipt, 1609) is True
+
+
+def test_a_receipt_that_comfortably_holds_its_words_asks_for_nothing(
+    fetch_transcript,
+):
+    receipt = {"policy": {"duration_seconds": 53 * 60}}
+    assert fetch_transcript.receipt_duration_cannot_hold(receipt, 6626) is False
+
+
+def test_an_absent_or_unusable_receipt_screens_nothing(fetch_transcript):
+    """Screening must never manufacture a probe from a missing duration."""
+    for receipt in (
+        None,
+        {},
+        {"policy": {}},
+        {"policy": {"duration_seconds": None}},
+        {"policy": {"duration_seconds": 0}},
+        {"policy": {"duration_seconds": -5}},
+        {"policy": {"duration_seconds": True}},
+        {"policy": {"duration_seconds": float("inf")}},
+        {"policy": "not-an-object"},
+    ):
+        assert fetch_transcript.receipt_duration_cannot_hold(receipt, 99999) is False
+
+
+def test_a_receipt_with_a_probed_duration_asks_to_be_reprobed(fetch_transcript):
+    """Re-deriving without asking the provider would write the weaker receipt."""
+    receipt = {"policy": {"duration_seconds": 318.0}}
+    assert fetch_transcript.receipt_claims_source_duration(receipt) is True
+
+
+def test_a_receipt_without_a_duration_claims_nothing(fetch_transcript):
+    for receipt in (
+        None,
+        {},
+        {"policy": {}},
+        {"policy": {"duration_seconds": None}},
+        {"policy": "not-an-object"},
+    ):
+        assert fetch_transcript.receipt_claims_source_duration(receipt) is False
+
+
 def test_plausible_transcript_passes(fetch_transcript):
     ok, reason = fetch_transcript.validate_transcript(
         _talk(7000), duration_seconds=50 * 60
