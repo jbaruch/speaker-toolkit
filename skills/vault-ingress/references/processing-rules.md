@@ -190,7 +190,7 @@ Treat the readable transcript and its two receipts as three separate artifacts:
 - `transcripts/<id>.segments.json` schema v2 owns owner-bound acquisition
   source and optional timing.
 - `transcripts/<id>.quality.json` owns the exact validation policy and the
-  source of any duration that lowered the fixed short-artifact floor.
+  source of any duration that bounded the transcript word rate.
 
 Both receipts carry SHA-256 of the exact `.txt` bytes. Verify against raw bytes,
 not newline-normalized text: replacing CRLF with LF invalidates both even when
@@ -207,6 +207,22 @@ YouTube ID or `ffprobe` over exact local media, whose digest is stored in the
 provenance. `--duration-seconds` is an expected value that must match that
 source-owned probe; it is not authority itself. Return fields, analysis prose,
 and unbound talk metadata never lower the floor.
+
+A trusted duration bounds the word rate in both directions. Below
+`MIN_WORDS_PER_MINUTE` the transcript covers only part of the talk; above
+`MAX_WORDS_PER_MINUTE` the caption track covers more than the recording, which
+is a track belonging to a different video rather than a fast talker. Both
+rejections are validation failures, so an existing transcript that breaches
+either bound is refused with exit 1 until `--force` authorizes replacement.
+Bound values are the script's constants (see
+`skills/vault-ingress/scripts/transcript_quality.py` — named constants at the
+top of the file), never restated here.
+
+Because the ceiling needs a duration to fire, a stored receipt that already
+records one is itself a reason to re-probe: a receipt whose own duration cannot
+hold the transcript's words buys a provider probe, and only the probed duration
+decides. A probe that cannot reach the provider leaves a stronger stored
+receipt in place rather than overwriting it with the fixed default.
 
 Current v5 persistence requires a hash-current receipt with exact provenance.
 For `youtube_duration`, the receipt video ID must equal the owning talk's
