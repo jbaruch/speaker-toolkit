@@ -1634,7 +1634,11 @@ source-owned duration beyond the reader's one-second measurement tolerance.
 existing output bundle is preserved unless `--force` authorizes replacement.
 
 `fetch-transcript.py` separately writes `transcripts/{id}.quality.json`. This
-closed receipt owns quality authority even when no timed segments exist:
+closed receipt owns quality authority even when no timed segments exist. Its
+`duration_seconds` bounds the transcript word rate in both directions — a floor
+below which the text covers only part of the talk, and a ceiling above which
+the caption track covers more than the recording (see
+`references/processing-rules.md`):
 
 ```json
 {

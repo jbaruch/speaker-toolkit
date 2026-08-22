@@ -1,5 +1,49 @@
 # Changelog
 
+### fix(vault-ingress) — bound the transcript word rate from above, and stop the bound erasing itself
+
+The first talk of a full-vault reparse returned `ok: true`, exit 0, and a
+transcript holding two speakers. `Kl6tLcQ5hGI` is a 5.3-minute DevOpsDays
+segment; YouTube served it the whole session block's caption track. The text
+opens as the right talk ("my name is Baruch Sadogursky") and closes inside
+somebody else's ("how can we break Brooks' law?"). Rhetoric analysis reads
+verbatim examples, hiccup words, pacing and closing type straight off that
+text, so the wrong speaker's delivery would have been scored as this one's.
+
+Three defects stacked to let it through, and each hid the next.
+
+**The policy had a floor and no ceiling.** `min_words` is derived from
+`duration_seconds`, and the receipt carried both numbers while only ever
+comparing them upward. 1609 words over 318s is 304 wpm. Every genuine receipt
+in the vault sits at 110-132 wpm, so the separation is not marginal.
+`MAX_WORDS_PER_MINUTE` is deliberately loose at 240 — it exists to catch a
+track belonging to a different recording, never to police a fast talker.
+
+**The duration was modelled as a floor-relaxation input, so the bound could
+only be reached from below.** `needs_duration_probe` fired when a transcript
+looked too *short*; a long one never got a duration, and the new ceiling would
+have been inert on exactly the path a reparse takes most — the transcript is
+already on disk. The probe stays off the offline fast path: a stored receipt
+whose own duration cannot hold the words now buys a probe, and the verdict
+still comes from the probed value, never the stored one.
+
+**A re-validation that declined to probe wrote the weaker receipt back.** The
+run that found no duration replaced `{youtube_duration, 318.0}` with
+`{fixed_default, null}`, destroying the evidence the next run needed — and
+defeating the screening above. A receipt claiming a source-owned duration now
+triggers a probe, and a probe that cannot reach the provider leaves the
+stronger receipt alone.
+
+Found by #355 during the reparse of a 250-talk vault where
+`transcript_quality_receipt_unverified` fires on 193 talks — nearly every
+receipt in that vault was about to be written for the first time.
+
+The ceiling catches gross contamination, not subtle: a caption track only
+moderately longer than its talk still lands under 240 wpm. Promoting the
+timing-overrun rejection ("timed segments extend beyond the source-owned
+duration bound") from a dropped `timed_path` to a transcript-level verdict is
+the precise detector and stays open on #355.
+
 ## 0.20.103 — 2026-08-21
 
 ### feat(vault-ingress) — name the deck a rendered PDF came from
