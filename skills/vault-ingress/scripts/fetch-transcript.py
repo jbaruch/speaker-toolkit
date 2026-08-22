@@ -1298,8 +1298,7 @@ def main(argv: list[str] | None = None) -> NoReturn:
         # run inherits a transcript nothing can bound. Keep the stronger
         # receipt and let a run that reaches the provider refresh it.
         would_discard_source_duration = (
-            trusted_duration is None
-            and receipt_claims_source_duration(receipt)
+            trusted_duration is None and receipt_claims_source_duration(receipt)
         )
         if receipt != expected_receipt and not would_discard_source_duration:
             try:

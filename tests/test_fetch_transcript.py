@@ -171,9 +171,7 @@ def test_caption_track_covering_more_than_the_recording_is_rejected(
     Reproduces Kl6tLcQ5hGI — 1568 words against a provider-probed 318s, which
     opened as the right talk and closed inside a different speaker's.
     """
-    ok, reason = fetch_transcript.validate_transcript(
-        _talk(1568), duration_seconds=318
-    )
+    ok, reason = fetch_transcript.validate_transcript(_talk(1568), duration_seconds=318)
     assert not ok
     assert "wpm" in reason
     assert "ceiling" in reason
