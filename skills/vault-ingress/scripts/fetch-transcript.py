@@ -99,6 +99,8 @@ from transcript_quality import (
     build_quality_policy,
     count_words,
     normalize_duration,
+    receipt_claims_source_duration,
+    receipt_duration_cannot_hold,
     validate_transcript,
 )
 
@@ -1196,11 +1198,21 @@ def main(argv: list[str] | None = None) -> NoReturn:
         existing_words = count_words(existing)
         receipt, _receipt_reason = load_verified_quality_receipt(out, existing)
         # Stored duration authority is never trusted as its own proof. Re-probe
-        # the current provider owner before a duration can lower the safe floor.
+        # the current provider owner before a duration can bound the floor.
+        #
+        # The stored duration is also read here, but only to decide whether to
+        # spend a probe. Gating the probe on the transcript looking too short
+        # made the duration bound reachable only from below, so a caption track
+        # covering a whole session block was never measured against the
+        # recording it claims to describe. A receipt whose own duration cannot
+        # hold this many words is grounds to go ask the provider — never
+        # grounds to reject, which still requires the probe.
         needs_duration_probe = (
             args.duration_seconds is not None
             or existing_words < DEFAULT_MIN_WORDS
             or sidecar_path(out).exists()
+            or receipt_claims_source_duration(receipt)
+            or receipt_duration_cannot_hold(receipt, existing_words)
             or (
                 args.existing_source == "youtube_auto"
                 and args.method in {"auto", "captions"}
@@ -1280,7 +1292,16 @@ def main(argv: list[str] | None = None) -> NoReturn:
             "policy": quality_policy,
             "provenance": quality_provenance,
         }
-        if receipt != expected_receipt:
+        # A probe that could not reach the provider leaves the fixed default in
+        # hand. Writing that over a receipt that already records a source-owned
+        # duration trades evidence for the absence of evidence, and the next
+        # run inherits a transcript nothing can bound. Keep the stronger
+        # receipt and let a run that reaches the provider refresh it.
+        would_discard_source_duration = (
+            trusted_duration is None
+            and receipt_claims_source_duration(receipt)
+        )
+        if receipt != expected_receipt and not would_discard_source_duration:
             try:
                 write_quality_receipt(
                     out,
