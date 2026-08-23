@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.105 — 2026-08-23
+
 ### fix(vault-ingress) — declare yt-dlp, and stop one refusal ending the Whisper lane
 
 The Whisper fallback was dead and blamed the wrong component. `yt-dlp` returned
