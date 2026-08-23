@@ -923,6 +923,47 @@ def test_a_foreign_caption_track_falls_through_to_whisper(
     )
 
 
+def test_a_one_shot_segment_iterable_does_not_bypass_the_guard(
+    fetch_transcript, monkeypatch, tmp_path, capsys
+):
+    """A generator must not disable the check by being read twice.
+
+    The extent check reads the segments and the timing bundle reads them
+    again. If the lane hands back a one-shot iterable and nothing materializes
+    it, the second reader gets an exhausted iterator and the guard silently
+    passes a foreign track.
+    """
+    caption_text = _talk(1600)
+    whisper_text = _talk(800)
+    monkeypatch.setattr(
+        fetch_transcript,
+        "probe_youtube_duration",
+        lambda _v: (318.0, "trusted synthetic duration"),
+    )
+    monkeypatch.setattr(
+        fetch_transcript,
+        "fetch_captions",
+        lambda *_a, **_k: (
+            caption_text,
+            "en",
+            (s for s in [{"text": "a later talk", "start": 2990.0, "duration": 10.0}]),
+        ),
+    )
+    monkeypatch.setattr(
+        fetch_transcript,
+        "fetch_whisper",
+        lambda *_a, **_k: (whisper_text, "en", None),
+    )
+    out = tmp_path / "Kl6tLcQ5hGI.txt"
+
+    with pytest.raises(SystemExit) as exited:
+        fetch_transcript.main(["Kl6tLcQ5hGI", "--out", str(out)])
+
+    assert exited.value.code == 0
+    assert json.loads(capsys.readouterr().out)["method"] == "whisper"
+    assert out.read_text(encoding="utf-8") == whisper_text
+
+
 def test_a_caption_track_within_its_recording_is_kept(
     fetch_transcript, monkeypatch, tmp_path, capsys
 ):

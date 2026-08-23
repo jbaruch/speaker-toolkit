@@ -1497,8 +1497,14 @@ def main(argv: list[str] | None = None) -> NoReturn:
         # catches gross cases; this measures it directly. Falling through
         # rather than failing hands the talk to Whisper, which transcribes the
         # actual audio and cannot overrun it.
-        overrun = timing_extent_overrun_ratio(segments, trusted_duration)
-        if overrun is not None and timing_extent_is_foreign(segments, trusted_duration):
+        # A lane may hand back a one-shot iterable. The extent check reads the
+        # segments and so does the timing bundle below, and the second reader
+        # would get an exhausted iterator — disabling the guard and the timing
+        # both, silently. Materialize once so every reader sees the same data.
+        if segments is not None and not isinstance(segments, (list, tuple)):
+            segments = list(segments)
+        if timing_extent_is_foreign(segments, trusted_duration):
+            overrun = timing_extent_overrun_ratio(segments, trusted_duration) or 0.0
             failures.append(
                 f"{name}: caption track covers {overrun:.1f}x this recording's "
                 "duration — it belongs to a longer video"
