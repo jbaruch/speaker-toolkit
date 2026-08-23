@@ -1,5 +1,41 @@
 # Changelog
 
+### fix(vault-ingress) — try every YouTube player client before declaring a talk untranscribable
+
+The Whisper fallback was dead and said the wrong thing about why. `yt-dlp`
+media download returned `HTTP 403: Forbidden`, the script reported
+`whisper: unavailable`, and mlx-whisper was installed and working the whole
+time. What failed was the download, not the transcriber.
+
+YouTube blocks its player clients unevenly. Measured against
+`Kl6tLcQ5hGI`: the default chain, `web_safari`, `ios` and `tv` all 403, while
+`mweb` downloads fine. The script passed no `--extractor-args` at all, so it
+took whatever default the installed yt-dlp picked and stopped at the first
+refusal. One working client existed and it was never reached.
+
+`fetch_whisper` now walks `YOUTUBE_PLAYER_CLIENTS`, starting with `None` so a
+healthy environment runs yt-dlp's own default chain and pays nothing for the
+fallbacks. On exhaustion the error names every client tried and its reason,
+rather than blaming the transcriber.
+
+This mattered immediately: #359 made a contaminated caption track fail closed,
+and the intended recovery from a rejected track is Whisper. Between the two,
+a talk with bad captions had no path to a transcript at all.
+
+The same run also carried the local-audio half of the receipt-preservation fix
+that #359 landed for YouTube only. In `_handle_local_audio` a failed
+`probe_local_media_duration` still overwrote a valid `local_media_duration`
+receipt with the fixed default, destroying the duration a later run needs for
+either word-rate bound. The guard now applies there too, with one condition the
+YouTube branch does not need: a stored receipt is the stronger one only while
+its `media_sha256` still names the bytes in hand. A receipt describing other
+media is stale, not strong.
+
+Found by Copilot on #359 and tracked as #360; the 403 is #361, which stays open
+for the dependency half — `yt-dlp` is not declared in `pyproject.toml` at all,
+resolves from `PATH`, and has no renewal mechanism, which is the
+adversarial-freshness case in `rules/dependency-management.md`.
+
 ## 0.20.104 — 2026-08-22
 
 ### fix(vault-ingress) — bound the transcript word rate from above, and stop the bound erasing itself

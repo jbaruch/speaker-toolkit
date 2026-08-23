@@ -101,10 +101,28 @@ from transcript_quality import (
     normalize_duration,
     receipt_claims_source_duration,
     receipt_duration_cannot_hold,
+    receipt_matches_media_digest,
     validate_transcript,
 )
 
 __all__ = ["VTT_TIMING_TAG", "write_atomically"]
+
+
+# YouTube serves media per player client, and it blocks them unevenly: a client
+# that 403s today may work tomorrow and the reverse. Trying one client and
+# giving up turns a transient block into "this talk has no transcript", which
+# is how the Whisper fallback went silently dead while mlx-whisper sat
+# installed and working. `None` runs yt-dlp's own default chain first, so a
+# healthy environment pays nothing; the named clients are only reached after it
+# fails. Order is cheapest-first, not preference — every entry produces the
+# same audio when it works.
+YOUTUBE_PLAYER_CLIENTS: tuple[str | None, ...] = (
+    None,
+    "mweb",
+    "web_safari",
+    "ios",
+    "tv",
+)
 
 
 VIDEO_ID = re.compile(r"(?:v=|youtu\.be/|/embed/|/shorts/)([A-Za-z0-9_-]{11})")
@@ -631,35 +649,40 @@ def fetch_whisper(
     """Download audio and return Whisper text, language, and timed segments."""
     url = f"https://www.youtube.com/watch?v={video_id}"
     audio = Path(work_dir) / "audio.mp3"
-    try:
-        download = subprocess.run(
-            [
-                "yt-dlp",
-                "-x",
-                "--audio-format",
-                "mp3",
-                "--no-playlist",
-                "-o",
-                str(Path(work_dir) / "audio.%(ext)s"),
-                url,
-            ],
-            capture_output=True,
-            text=True,
-        )
-    except (FileNotFoundError, OSError) as exc:
-        # A missing yt-dlp must not escape as a traceback: this script's callers
-        # parse its stdout JSON, and a script that dies without emitting it is
-        # the same silent-failure shape the whole file exists to prevent.
+    failures: list[str] = []
+    for client in YOUTUBE_PLAYER_CLIENTS:
+        command = [
+            "yt-dlp",
+            "-x",
+            "--audio-format",
+            "mp3",
+            "--no-playlist",
+            "-o",
+            str(Path(work_dir) / "audio.%(ext)s"),
+        ]
+        if client is not None:
+            command += ["--extractor-args", f"youtube:player_client={client}"]
+        command.append(url)
+        try:
+            download = subprocess.run(command, capture_output=True, text=True)
+        except (FileNotFoundError, OSError) as exc:
+            # A missing yt-dlp must not escape as a traceback: this script's
+            # callers parse its stdout JSON, and a script that dies without
+            # emitting it is the same silent-failure shape the whole file
+            # exists to prevent.
+            print(
+                f"cannot run yt-dlp ({exc}) — install it with "
+                "`brew install yt-dlp` or `pip install yt-dlp`",
+                file=sys.stderr,
+            )
+            return None, None, None
+        if download.returncode == 0 and audio.exists():
+            break
+        failures.append(f"{client or 'default'}: {download.stderr.strip()[:200]}")
+    else:
         print(
-            f"cannot run yt-dlp ({exc}) — install it with "
-            "`brew install yt-dlp` or `pip install yt-dlp`",
-            file=sys.stderr,
-        )
-        return None, None, None
-    if download.returncode != 0 or not audio.exists():
-        print(
-            f"yt-dlp could not download audio for {video_id}: "
-            f"{download.stderr.strip()[:400]}",
+            f"yt-dlp could not download audio for {video_id} under any player "
+            f"client — {'; '.join(failures)}",
             file=sys.stderr,
         )
         return None, None, None
@@ -877,7 +900,19 @@ def _handle_local_audio(
                 "policy": quality_policy,
                 "provenance": quality_provenance,
             }
-            if receipt != expected_receipt:
+            # Same rule as the YouTube branch: a probe that could not read the
+            # media leaves the fixed default in hand, and writing that over a
+            # receipt already recording a source-owned duration trades evidence
+            # for its absence. One condition this branch adds — the stored
+            # receipt is only the stronger one while it still describes these
+            # bytes. A receipt for different media is stale, not strong, so the
+            # digest must match before it is preserved.
+            would_discard_source_duration = (
+                trusted_duration is None
+                and receipt_claims_source_duration(receipt)
+                and receipt_matches_media_digest(receipt, media.sha256)
+            )
+            if receipt != expected_receipt and not would_discard_source_duration:
                 media.assert_unchanged(verify_source_digest=True)
                 try:
                     write_quality_receipt(

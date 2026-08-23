@@ -169,6 +169,24 @@ def receipt_claims_source_duration(receipt: object) -> bool:
     return policy.get("duration_seconds") is not None
 
 
+def receipt_matches_media_digest(receipt: object, media_sha256: object) -> bool:
+    """Return whether a receipt's provenance names exactly these media bytes.
+
+    A stored receipt is only stronger evidence while it still describes the
+    file in hand. One that names different bytes is stale, and preserving it
+    would pin a duration to media nobody is reading. A receipt with no media
+    digest — the YouTube provenance forms — never matches, because this asks a
+    local-media question.
+    """
+    if not isinstance(receipt, dict) or not isinstance(media_sha256, str):
+        return False
+    provenance = receipt.get("provenance")
+    if not isinstance(provenance, dict):
+        return False
+    stored = provenance.get("media_sha256")
+    return isinstance(stored, str) and stored == media_sha256
+
+
 def receipt_duration_cannot_hold(receipt: object, words: int) -> bool:
     """Return whether a receipt's own duration is too short to hold this speech.
 

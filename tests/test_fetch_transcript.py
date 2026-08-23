@@ -244,6 +244,44 @@ def test_a_receipt_without_a_duration_claims_nothing(fetch_transcript):
         assert fetch_transcript.receipt_claims_source_duration(receipt) is False
 
 
+def test_a_receipt_for_these_exact_media_bytes_is_preservable(fetch_transcript):
+    receipt = {"provenance": {"media_sha256": "a" * 64}}
+    assert fetch_transcript.receipt_matches_media_digest(receipt, "a" * 64) is True
+
+
+def test_a_receipt_for_other_media_is_stale_not_strong(fetch_transcript):
+    """Preserving it would pin a duration to bytes nobody is reading."""
+    receipt = {"provenance": {"media_sha256": "a" * 64}}
+    assert fetch_transcript.receipt_matches_media_digest(receipt, "b" * 64) is False
+
+
+def test_a_receipt_with_no_media_digest_never_matches(fetch_transcript):
+    """The YouTube provenance forms answer a different question."""
+    for receipt in (
+        None,
+        {},
+        {"provenance": {}},
+        {"provenance": {"video_id": "Kl6tLcQ5hGI"}},
+        {"provenance": {"media_sha256": None}},
+        {"provenance": "not-an-object"},
+    ):
+        assert fetch_transcript.receipt_matches_media_digest(receipt, "a" * 64) is False
+    assert (
+        fetch_transcript.receipt_matches_media_digest(
+            {"provenance": {"media_sha256": "a" * 64}}, None
+        )
+        is False
+    )
+
+
+def test_the_player_client_chain_tries_the_default_first(fetch_transcript):
+    """A healthy environment must not pay for the fallbacks."""
+    clients = fetch_transcript.YOUTUBE_PLAYER_CLIENTS
+    assert clients[0] is None
+    assert "mweb" in clients
+    assert len(set(clients)) == len(clients)
+
+
 def test_plausible_transcript_passes(fetch_transcript):
     ok, reason = fetch_transcript.validate_transcript(
         _talk(7000), duration_seconds=50 * 60
