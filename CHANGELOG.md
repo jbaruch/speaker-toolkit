@@ -31,6 +31,8 @@ long the recording is. That shape has not been seen in this vault.
 The threshold is loose on purpose — its verdict discards a transcript, and a
 cue trailing an hour-long talk by three seconds reads 1.0008.
 
+## 0.20.105 — 2026-08-23
+
 ### fix(vault-ingress) — declare yt-dlp, and stop one refusal ending the Whisper lane
 
 The Whisper fallback was dead and blamed the wrong component. `yt-dlp` returned
