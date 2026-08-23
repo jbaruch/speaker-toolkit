@@ -1,6 +1,50 @@
 # Changelog
 
-## 0.20.104 — 2026-08-22
+### fix(vault-ingress) — declare yt-dlp, and stop one refusal ending the Whisper lane
+
+The Whisper fallback was dead and blamed the wrong component. `yt-dlp` returned
+`HTTP 403: Forbidden`, the script reported `whisper: unavailable`, and
+mlx-whisper was installed and working the whole time. What failed was the
+download.
+
+**The root cause was staleness, not YouTube.** `yt-dlp` was never declared in
+`pyproject.toml`. It resolved from `PATH` — a Homebrew binary at 2026.06.09,
+two and a half months old — with no floor, no pin, and no renewal path.
+Nothing broke when it rotted, which is the whole problem: a stale yt-dlp does
+not fail the build, it quietly removes the ability to transcribe. Declaring
+`yt-dlp==2026.8.19` puts it under the `pip` Dependabot ecosystem the repo
+already runs weekly, so the renewal that was missing now happens on its own.
+Verified: 2026.8.19 downloads on the default player client, where 2026.06.09
+403s.
+
+That makes the second change defense in depth rather than the fix. YouTube
+blocks its player clients unevenly and a pin will always lag the adversary by
+up to a renewal cycle, so a single refusal should not end the lane. Measured
+against `Kl6tLcQ5hGI` on the stale version: default, `web_safari`, `ios` and
+`tv` all 403, `mweb` served it. `fetch_whisper` now walks
+`YOUTUBE_PLAYER_CLIENTS`, `None` first so a healthy environment runs yt-dlp's
+own default chain and pays nothing, and on exhaustion names every client tried.
+
+Each attempt downloads into its own directory. Sharing one output path let a
+refused attempt leave a partial file behind, and the next attempt's
+existence check would accept those bytes as its own success — the chain would
+stop early and transcribe the failure's leftovers. A zero-byte artifact is
+likewise a failed extraction wearing a filename, not a download.
+
+This blocked recovery from the previous entry: a contaminated caption track now
+fails closed, and Whisper is the intended fallback. Between the two, a talk with
+bad captions had no path to a transcript at all.
+
+The same change carries the local-audio half of the receipt-preservation guard,
+which landed for YouTube only. In `_handle_local_audio` a failed
+`probe_local_media_duration` still overwrote a valid `local_media_duration`
+receipt with the fixed default, destroying the duration a later run needs for
+either word-rate bound. That branch adds one condition the YouTube branch does
+not need: a stored receipt is the stronger one only while its `media_sha256`
+still names the bytes in hand. A receipt describing other media is stale, not
+strong.
+
+Found during the reparse of a 250-talk vault; #360 and #361.
 
 ### fix(vault-ingress) — bound the transcript word rate from above, and stop the bound erasing itself
 

@@ -13,6 +13,7 @@ in CI without a network, without YouTube, and without Apple-Silicon Whisper.
 import hashlib
 import json
 import os
+import pathlib
 import subprocess
 import sys
 from pathlib import Path
@@ -242,6 +243,188 @@ def test_a_receipt_without_a_duration_claims_nothing(fetch_transcript):
         {"policy": "not-an-object"},
     ):
         assert fetch_transcript.receipt_claims_source_duration(receipt) is False
+
+
+def test_a_receipt_for_these_exact_media_bytes_is_preservable(fetch_transcript):
+    receipt = {"provenance": {"media_sha256": "a" * 64}}
+    assert fetch_transcript.receipt_matches_media_digest(receipt, "a" * 64) is True
+
+
+def test_a_receipt_for_other_media_is_stale_not_strong(fetch_transcript):
+    """Preserving it would pin a duration to bytes nobody is reading."""
+    receipt = {"provenance": {"media_sha256": "a" * 64}}
+    assert fetch_transcript.receipt_matches_media_digest(receipt, "b" * 64) is False
+
+
+def test_a_receipt_with_no_media_digest_never_matches(fetch_transcript):
+    """The YouTube provenance forms answer a different question."""
+    for receipt in (
+        None,
+        {},
+        {"provenance": {}},
+        {"provenance": {"video_id": "Kl6tLcQ5hGI"}},
+        {"provenance": {"media_sha256": None}},
+        {"provenance": "not-an-object"},
+    ):
+        assert fetch_transcript.receipt_matches_media_digest(receipt, "a" * 64) is False
+    assert (
+        fetch_transcript.receipt_matches_media_digest(
+            {"provenance": {"media_sha256": "a" * 64}}, None
+        )
+        is False
+    )
+
+
+def _blocking_yt_dlp(fetch_transcript, monkeypatch, serving_client, attempts):
+    """Mock yt-dlp as YouTube currently behaves: one client works, others 403.
+
+    Writes the audio file only for `serving_client`, exactly as a real download
+    does, so the caller's "did a file appear" check decides the outcome.
+    """
+
+    def run(command, **_kwargs):
+        client = None
+        if "--extractor-args" in command:
+            client = command[command.index("--extractor-args") + 1].split("=")[-1]
+        attempts.append(client)
+        if client != serving_client:
+            return subprocess.CompletedProcess(
+                command, 1, stdout="", stderr="HTTP Error 403: Forbidden"
+            )
+        target = command[command.index("-o") + 1]
+        pathlib.Path(target.replace("%(ext)s", "mp3")).write_bytes(b"audio")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(fetch_transcript.subprocess, "run", run)
+
+
+def test_a_refused_attempt_that_left_bytes_behind_is_not_reused(
+    fetch_transcript, monkeypatch, tmp_path
+):
+    """A partial file from a failed client must not end the retry chain.
+
+    yt-dlp can exit nonzero having already written something. If every attempt
+    shared one output path, the next attempt's existence check would accept
+    those bytes as its own success and transcribe the failure's leftovers.
+    """
+    attempts: list[str | None] = []
+
+    def run(command, **_kwargs):
+        client = None
+        if "--extractor-args" in command:
+            client = command[command.index("--extractor-args") + 1].split("=")[-1]
+        attempts.append(client)
+        target = pathlib.Path(
+            command[command.index("-o") + 1].replace("%(ext)s", "mp3")
+        )
+        if client != "mweb":
+            # the failure leaves a truncated artifact behind
+            target.write_bytes(b"partial-garbage")
+            return subprocess.CompletedProcess(
+                command, 1, stdout="", stderr="HTTP Error 403: Forbidden"
+            )
+        target.write_bytes(b"real-audio")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(fetch_transcript.subprocess, "run", run)
+    transcribed: list[bytes] = []
+
+    def transcribe(audio_path, *_a, **_k):
+        transcribed.append(pathlib.Path(audio_path).read_bytes())
+        return "spoken words here", "en", None
+
+    monkeypatch.setattr(fetch_transcript, "transcribe_audio", transcribe)
+
+    text, _language, _segments = fetch_transcript.fetch_whisper(
+        "Kl6tLcQ5hGI", str(tmp_path), "tiny"
+    )
+
+    assert text == "spoken words here"
+    assert "mweb" in attempts, "a leftover file must not end the chain early"
+    assert transcribed == [b"real-audio"], "the failure's bytes must never be read"
+
+
+def test_a_zero_byte_download_is_not_a_success(fetch_transcript, monkeypatch, tmp_path):
+    """An empty artifact is a failed extraction wearing a filename."""
+    attempts: list[str | None] = []
+
+    def run(command, **_kwargs):
+        client = None
+        if "--extractor-args" in command:
+            client = command[command.index("--extractor-args") + 1].split("=")[-1]
+        attempts.append(client)
+        pathlib.Path(
+            command[command.index("-o") + 1].replace("%(ext)s", "mp3")
+        ).write_bytes(b"")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(fetch_transcript.subprocess, "run", run)
+
+    text, language, segments = fetch_transcript.fetch_whisper(
+        "Kl6tLcQ5hGI", str(tmp_path), "tiny"
+    )
+
+    assert (text, language, segments) == (None, None, None)
+    assert len(attempts) == len(fetch_transcript.YOUTUBE_PLAYER_CLIENTS)
+
+
+def test_a_refused_player_client_advances_to_the_next(
+    fetch_transcript, monkeypatch, tmp_path
+):
+    """The 403 that killed the fallback: a later client must still be tried."""
+    attempts: list[str | None] = []
+    _blocking_yt_dlp(fetch_transcript, monkeypatch, "mweb", attempts)
+    monkeypatch.setattr(
+        fetch_transcript,
+        "transcribe_audio",
+        lambda *a, **k: ("spoken words here", "en", None),
+    )
+
+    text, language, _segments = fetch_transcript.fetch_whisper(
+        "Kl6tLcQ5hGI", str(tmp_path), "tiny"
+    )
+
+    assert text == "spoken words here"
+    assert language == "en"
+    assert attempts[0] is None, "the default chain must be tried first"
+    assert "mweb" in attempts, "the serving client must be reached"
+
+
+def test_a_working_default_client_never_pays_for_the_fallbacks(
+    fetch_transcript, monkeypatch, tmp_path
+):
+    attempts: list[str | None] = []
+    _blocking_yt_dlp(fetch_transcript, monkeypatch, None, attempts)
+    monkeypatch.setattr(
+        fetch_transcript,
+        "transcribe_audio",
+        lambda *a, **k: ("spoken words here", "en", None),
+    )
+
+    text, _language, _segments = fetch_transcript.fetch_whisper(
+        "Kl6tLcQ5hGI", str(tmp_path), "tiny"
+    )
+
+    assert text == "spoken words here"
+    assert attempts == [None], "a healthy environment must make exactly one attempt"
+
+
+def test_every_player_client_refusing_reports_failure(
+    fetch_transcript, monkeypatch, tmp_path, capsys
+):
+    """Exhaustion is a failure that names what was tried, not a traceback."""
+    attempts: list[str | None] = []
+    _blocking_yt_dlp(fetch_transcript, monkeypatch, "no-such-client", attempts)
+
+    text, language, segments = fetch_transcript.fetch_whisper(
+        "Kl6tLcQ5hGI", str(tmp_path), "tiny"
+    )
+
+    assert (text, language, segments) == (None, None, None)
+    assert len(attempts) == len(fetch_transcript.YOUTUBE_PLAYER_CLIENTS)
+    stderr = capsys.readouterr().err
+    assert "under any player client" in stderr
+    assert "403" in stderr
 
 
 def test_plausible_transcript_passes(fetch_transcript):
@@ -624,6 +807,76 @@ def test_local_duration_provenance_hashes_the_exact_media(
         ),
         "duration_seconds": 61.25,
     }
+
+
+def _existing_local_audio_bundle(fetch_transcript, tmp_path, receipt_digest):
+    """An on-disk transcript plus a local-media receipt naming `receipt_digest`."""
+    media = tmp_path / "recording.mp4"
+    media.write_bytes(b"stable local media bytes")
+    out = tmp_path / "local-talk.txt"
+    text = _talk(600)
+    out.write_text(text, encoding="utf-8")
+    policy = fetch_transcript.build_quality_policy(None, trusted_duration_seconds=600.0)
+    out.with_suffix(".quality.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "transcript_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                "policy": policy,
+                "provenance": {
+                    "kind": "local_media_duration",
+                    "media_sha256": receipt_digest,
+                    "duration_seconds": 600.0,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return media, out
+
+
+def test_a_failed_probe_keeps_a_receipt_that_still_names_these_media_bytes(
+    fetch_transcript, monkeypatch, tmp_path, capsys
+):
+    """ffprobe unavailable must not cost the duration a later bound needs."""
+    digest = hashlib.sha256(b"stable local media bytes").hexdigest()
+    media, out = _existing_local_audio_bundle(fetch_transcript, tmp_path, digest)
+    before = out.with_suffix(".quality.json").read_text(encoding="utf-8")
+    monkeypatch.setattr(
+        fetch_transcript,
+        "probe_local_media_duration",
+        lambda _path: (None, "ffprobe unavailable"),
+    )
+
+    with pytest.raises(SystemExit) as exited:
+        fetch_transcript.main(["local-talk", "--audio", str(media), "--out", str(out)])
+
+    assert exited.value.code == 0
+    assert json.loads(capsys.readouterr().out)["ok"] is True
+    after = json.loads(out.with_suffix(".quality.json").read_text(encoding="utf-8"))
+    assert after == json.loads(before), "the source-owned receipt must survive"
+    assert after["provenance"]["kind"] == "local_media_duration"
+    assert after["policy"]["duration_seconds"] == 600.0
+
+
+def test_a_failed_probe_replaces_a_receipt_describing_other_media(
+    fetch_transcript, monkeypatch, tmp_path, capsys
+):
+    """A receipt for bytes nobody is reading is stale, not strong."""
+    media, out = _existing_local_audio_bundle(fetch_transcript, tmp_path, "f" * 64)
+    monkeypatch.setattr(
+        fetch_transcript,
+        "probe_local_media_duration",
+        lambda _path: (None, "ffprobe unavailable"),
+    )
+
+    with pytest.raises(SystemExit) as exited:
+        fetch_transcript.main(["local-talk", "--audio", str(media), "--out", str(out)])
+
+    assert exited.value.code == 0
+    after = json.loads(out.with_suffix(".quality.json").read_text(encoding="utf-8"))
+    assert after["provenance"] == {"kind": "fixed_default"}
+    assert after["policy"]["duration_seconds"] is None
 
 
 def test_local_audio_probe_transcription_and_receipts_share_one_snapshot(

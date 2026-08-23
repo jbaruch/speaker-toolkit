@@ -41,6 +41,7 @@ dependencies = [
     # in .github/dependabot.yml (weekly), so the next break lands as a reviewed
     # bump rather than as corrupt data.
     "youtube-transcript-api==1.2.4",
+    "yt-dlp==2026.8.19",
 ]
 
 [project.optional-dependencies]
