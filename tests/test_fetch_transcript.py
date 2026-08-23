@@ -809,6 +809,76 @@ def test_local_duration_provenance_hashes_the_exact_media(
     }
 
 
+def _existing_local_audio_bundle(fetch_transcript, tmp_path, receipt_digest):
+    """An on-disk transcript plus a local-media receipt naming `receipt_digest`."""
+    media = tmp_path / "recording.mp4"
+    media.write_bytes(b"stable local media bytes")
+    out = tmp_path / "local-talk.txt"
+    text = _talk(600)
+    out.write_text(text, encoding="utf-8")
+    policy = fetch_transcript.build_quality_policy(None, trusted_duration_seconds=600.0)
+    out.with_suffix(".quality.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "transcript_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                "policy": policy,
+                "provenance": {
+                    "kind": "local_media_duration",
+                    "media_sha256": receipt_digest,
+                    "duration_seconds": 600.0,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return media, out
+
+
+def test_a_failed_probe_keeps_a_receipt_that_still_names_these_media_bytes(
+    fetch_transcript, monkeypatch, tmp_path, capsys
+):
+    """ffprobe unavailable must not cost the duration a later bound needs."""
+    digest = hashlib.sha256(b"stable local media bytes").hexdigest()
+    media, out = _existing_local_audio_bundle(fetch_transcript, tmp_path, digest)
+    before = out.with_suffix(".quality.json").read_text(encoding="utf-8")
+    monkeypatch.setattr(
+        fetch_transcript,
+        "probe_local_media_duration",
+        lambda _path: (None, "ffprobe unavailable"),
+    )
+
+    with pytest.raises(SystemExit) as exited:
+        fetch_transcript.main(["local-talk", "--audio", str(media), "--out", str(out)])
+
+    assert exited.value.code == 0
+    assert json.loads(capsys.readouterr().out)["ok"] is True
+    after = json.loads(out.with_suffix(".quality.json").read_text(encoding="utf-8"))
+    assert after == json.loads(before), "the source-owned receipt must survive"
+    assert after["provenance"]["kind"] == "local_media_duration"
+    assert after["policy"]["duration_seconds"] == 600.0
+
+
+def test_a_failed_probe_replaces_a_receipt_describing_other_media(
+    fetch_transcript, monkeypatch, tmp_path, capsys
+):
+    """A receipt for bytes nobody is reading is stale, not strong."""
+    media, out = _existing_local_audio_bundle(fetch_transcript, tmp_path, "f" * 64)
+    monkeypatch.setattr(
+        fetch_transcript,
+        "probe_local_media_duration",
+        lambda _path: (None, "ffprobe unavailable"),
+    )
+
+    with pytest.raises(SystemExit) as exited:
+        fetch_transcript.main(["local-talk", "--audio", str(media), "--out", str(out)])
+
+    assert exited.value.code == 0
+    after = json.loads(out.with_suffix(".quality.json").read_text(encoding="utf-8"))
+    assert after["provenance"] == {"kind": "fixed_default"}
+    assert after["policy"]["duration_seconds"] is None
+
+
 def test_local_audio_probe_transcription_and_receipts_share_one_snapshot(
     fetch_transcript, monkeypatch, tmp_path, capsys
 ):
