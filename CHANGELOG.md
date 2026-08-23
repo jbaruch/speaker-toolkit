@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.106 — 2026-08-23
+
 ### feat(vault-ingress) — catch a caption track that belongs to a longer recording
 
 Timed cues running far past the source-owned duration mean the track describes
