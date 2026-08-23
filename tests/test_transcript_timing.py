@@ -799,3 +799,42 @@ def test_overlapping_caption_text_does_not_invalidate_line_location(
     )
 
     assert resolved == {"line_start": 1, "line_end": 1}
+
+
+def test_a_session_block_caption_track_is_foreign(transcript_timing):
+    """Kl6tLcQ5hGI: a 5.3-minute video served the venue's whole block."""
+    segments = [{"text": "later talk", "start": 2990.0, "duration": 10.0}]
+    assert transcript_timing.timing_extent_is_foreign(segments, 318.0) is True
+    ratio = transcript_timing.timing_extent_overrun_ratio(segments, 318.0)
+    assert round(ratio, 1) == 9.4
+
+
+def test_a_cue_trailing_its_video_by_seconds_is_not_foreign(transcript_timing):
+    """Rounding at the end of an hour-long talk must not throw it away."""
+    segments = [{"text": "closing", "start": 3600.0, "duration": 3.0}]
+    assert transcript_timing.timing_extent_is_foreign(segments, 3600.0) is False
+
+
+def test_a_cue_landing_exactly_on_the_end_is_not_foreign(transcript_timing):
+    segments = [{"text": "closing", "start": 300.0, "duration": 18.0}]
+    assert transcript_timing.timing_extent_is_foreign(segments, 318.0) is False
+
+
+def test_the_foreign_question_is_unanswerable_without_both_sides(
+    transcript_timing,
+):
+    """No duration, no segments, or unreadable timing must not accuse anyone."""
+    good = [{"text": "x", "start": 0.0, "duration": 1.0}]
+    for segments, duration in (
+        (good, None),
+        (good, 0),
+        (good, -1),
+        (good, float("nan")),
+        (good, True),
+        (None, 318.0),
+        ([], 318.0),
+        ("not-segments", 318.0),
+        ([{"text": "x"}], 318.0),
+    ):
+        assert transcript_timing.timing_extent_overrun_ratio(segments, duration) is None
+        assert transcript_timing.timing_extent_is_foreign(segments, duration) is False

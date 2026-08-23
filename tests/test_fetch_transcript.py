@@ -879,6 +879,83 @@ def test_a_failed_probe_replaces_a_receipt_describing_other_media(
     assert after["policy"]["duration_seconds"] is None
 
 
+def test_a_foreign_caption_track_falls_through_to_whisper(
+    fetch_transcript, monkeypatch, tmp_path, capsys
+):
+    """The Kl6tLcQ5hGI shape, handled end to end.
+
+    A 318-second video served a caption track whose cues run to 3000 seconds.
+    That track must not become the transcript, and rejecting it must hand the
+    talk to Whisper rather than leaving it with nothing.
+    """
+    caption_text = _talk(1600)
+    whisper_text = _talk(800)
+    monkeypatch.setattr(
+        fetch_transcript,
+        "probe_youtube_duration",
+        lambda _v: (318.0, "trusted synthetic duration"),
+    )
+    monkeypatch.setattr(
+        fetch_transcript,
+        "fetch_captions",
+        lambda *_a, **_k: (
+            caption_text,
+            "en",
+            [{"text": "a later talk", "start": 2990.0, "duration": 10.0}],
+        ),
+    )
+    monkeypatch.setattr(
+        fetch_transcript,
+        "fetch_whisper",
+        lambda *_a, **_k: (whisper_text, "en", None),
+    )
+    out = tmp_path / "Kl6tLcQ5hGI.txt"
+
+    with pytest.raises(SystemExit) as exited:
+        fetch_transcript.main(["Kl6tLcQ5hGI", "--out", str(out)])
+
+    assert exited.value.code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True
+    assert payload["method"] == "whisper"
+    assert out.read_text(encoding="utf-8") == whisper_text, (
+        "the session-block caption track must never reach the corpus"
+    )
+
+
+def test_a_caption_track_within_its_recording_is_kept(
+    fetch_transcript, monkeypatch, tmp_path, capsys
+):
+    """The guard must not push ordinary captions into the Whisper lane."""
+    caption_text = _talk(800)
+    monkeypatch.setattr(
+        fetch_transcript,
+        "probe_youtube_duration",
+        lambda _v: (318.0, "trusted synthetic duration"),
+    )
+    monkeypatch.setattr(
+        fetch_transcript,
+        "fetch_captions",
+        lambda *_a, **_k: (
+            caption_text,
+            "en",
+            [{"text": "closing", "start": 300.0, "duration": 18.0}],
+        ),
+    )
+
+    def unreachable(*_a, **_k):  # pragma: no cover - asserted by not running
+        raise AssertionError("a sound caption track must not reach Whisper")
+
+    monkeypatch.setattr(fetch_transcript, "fetch_whisper", unreachable)
+    out = tmp_path / "Kl6tLcQ5hGI.txt"
+
+    with pytest.raises(SystemExit) as exited:
+        fetch_transcript.main(["Kl6tLcQ5hGI", "--out", str(out)])
+
+    assert exited.value.code == 0
+    assert json.loads(capsys.readouterr().out)["method"] == "captions"
+
+
 def test_local_audio_probe_transcription_and_receipts_share_one_snapshot(
     fetch_transcript, monkeypatch, tmp_path, capsys
 ):

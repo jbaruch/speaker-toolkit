@@ -92,6 +92,8 @@ from transcript_timing import (
     write_timing_receipt,
     write_transcript_bundle,
     youtube_timing_provenance,
+    timing_extent_is_foreign,
+    timing_extent_overrun_ratio,
 )
 from transcript_quality import (
     DEFAULT_MIN_WORDS,
@@ -1487,6 +1489,20 @@ def main(argv: list[str] | None = None) -> NoReturn:
         text, language, segments = lane_result
         if text is None:
             failures.append(f"{name}: unavailable")
+            continue
+        # The strongest contamination signal available, and it is free: cues
+        # that run far past the recording mean this track describes a longer
+        # one — a venue's session block served to a single talk's video. The
+        # word-rate ceiling infers the same thing from text alone and only
+        # catches gross cases; this measures it directly. Falling through
+        # rather than failing hands the talk to Whisper, which transcribes the
+        # actual audio and cannot overrun it.
+        overrun = timing_extent_overrun_ratio(segments, trusted_duration)
+        if overrun is not None and timing_extent_is_foreign(segments, trusted_duration):
+            failures.append(
+                f"{name}: caption track covers {overrun:.1f}x this recording's "
+                "duration — it belongs to a longer video"
+            )
             continue
         policy_min_words = quality_policy["min_words"]
         if not isinstance(policy_min_words, int):
