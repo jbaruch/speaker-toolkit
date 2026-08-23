@@ -77,6 +77,56 @@ TIMING_OWNER_SOURCES = frozenset(
     {"youtube_auto", "whisper", "manual", "unknown", "vtt"}
 )
 TIMING_BOUND_TOLERANCE_SECONDS = 1.0
+# Past the tolerance above, timing is merely untrustworthy — a caption track
+# routinely trails its video by a rounding artifact. Past this ratio it is not
+# this recording's track at all: the segments describe more speech than the
+# recording can physically hold, which is what a venue's whole session block
+# looks like when YouTube serves it to one talk's video. The two thresholds
+# answer different questions, so they are separate constants; this one is
+# deliberately loose because its verdict throws the transcript away.
+FOREIGN_TIMING_EXTENT_RATIO = 1.25
+
+
+def timing_extent_overrun_ratio(
+    segments: object, duration_seconds: object
+) -> float | None:
+    """Return how far timed segments run past a source-owned duration.
+
+    `None` when the question cannot be asked — no usable duration, or no
+    segment carrying a readable end. A ratio of 1.0 means the final cue lands
+    exactly on the end of the recording. Normalization is shared with the rest
+    of this module, so a raw caption object and a stored segment dict are read
+    the same way.
+    """
+    if (
+        not isinstance(duration_seconds, (int, float))
+        or isinstance(duration_seconds, bool)
+        or not math.isfinite(float(duration_seconds))
+        or float(duration_seconds) <= 0
+    ):
+        return None
+    if segments is None or isinstance(segments, (str, bytes)):
+        return None
+    if not isinstance(segments, Iterable):
+        return None
+    normalized = normalize_segments(segments)
+    ends = [
+        float(end)
+        for item in normalized
+        for end in (item.get("end_seconds"),)
+        if isinstance(end, (int, float)) and not isinstance(end, bool)
+    ]
+    if not ends:
+        return None
+    return max(ends) / float(duration_seconds)
+
+
+def timing_extent_is_foreign(segments: object, duration_seconds: object) -> bool:
+    """Return whether timed segments describe a different recording."""
+    ratio = timing_extent_overrun_ratio(segments, duration_seconds)
+    return ratio is not None and ratio > FOREIGN_TIMING_EXTENT_RATIO
+
+
 QUALITY_RECEIPT_SCHEMA_VERSION = 1
 QUALITY_RECEIPT_FIELDS = frozenset(
     {"schema_version", "transcript_sha256", "policy", "provenance"}

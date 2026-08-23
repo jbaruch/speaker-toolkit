@@ -92,6 +92,8 @@ from transcript_timing import (
     write_timing_receipt,
     write_transcript_bundle,
     youtube_timing_provenance,
+    timing_extent_is_foreign,
+    timing_extent_overrun_ratio,
 )
 from transcript_quality import (
     DEFAULT_MIN_WORDS,
@@ -540,9 +542,19 @@ def _fetch_captions_from_api(
             file=sys.stderr,
         )
         return None, None, None
+    # The track's own language, read before materializing — `list()` keeps the
+    # segments and drops the object's attributes.
     raw_language = getattr(segments, "language_code", None)
     language = raw_language if isinstance(raw_language, str) else None
-    return segments_to_text(segments), language, segments
+    # Materialize here, inside the lane the caller wrapped in its expected-error
+    # boundary. A lazy track that raises mid-consumption must read as a caption
+    # lane failure and fall through to Whisper; consumed outside this function
+    # the same exception reaches the process boundary and ends the run. Doing it
+    # once also means the text and the returned segments are the same data —
+    # `segments_to_text` would otherwise exhaust a one-shot track and hand the
+    # caller an empty one.
+    materialized = list(segments)
+    return segments_to_text(materialized), language, materialized
 
 
 def enrich_existing_caption_timing(
@@ -1487,6 +1499,21 @@ def main(argv: list[str] | None = None) -> NoReturn:
         text, language, segments = lane_result
         if text is None:
             failures.append(f"{name}: unavailable")
+            continue
+        # Captions only. A caption track can belong to a different recording —
+        # a venue's session block served to one talk's video — and cues running
+        # far past the duration are the direct evidence of it. Whisper cannot
+        # be foreign: it transcribes the audio in hand. Its timestamps are
+        # merely sometimes sloppy, and this same talk has already produced
+        # "malformed or zero-duration segments" from that lane. Applying the
+        # check there would discard a sound transcript over bad timing, and
+        # since Whisper is the last fallback the talk would end with nothing.
+        if name == "captions" and timing_extent_is_foreign(segments, trusted_duration):
+            overrun = timing_extent_overrun_ratio(segments, trusted_duration) or 0.0
+            failures.append(
+                f"{name}: caption track covers {overrun:.1f}x this recording's "
+                "duration — it belongs to a longer video"
+            )
             continue
         policy_min_words = quality_policy["min_words"]
         if not isinstance(policy_min_words, int):
