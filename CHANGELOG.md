@@ -1,42 +1,50 @@
 # Changelog
 
-### fix(vault-ingress) — try every YouTube player client before declaring a talk untranscribable
+### fix(vault-ingress) — declare yt-dlp, and stop one refusal ending the Whisper lane
 
-The Whisper fallback was dead and said the wrong thing about why. `yt-dlp`
-media download returned `HTTP 403: Forbidden`, the script reported
-`whisper: unavailable`, and mlx-whisper was installed and working the whole
-time. What failed was the download, not the transcriber.
+The Whisper fallback was dead and blamed the wrong component. `yt-dlp` returned
+`HTTP 403: Forbidden`, the script reported `whisper: unavailable`, and
+mlx-whisper was installed and working the whole time. What failed was the
+download.
 
-YouTube blocks its player clients unevenly. Measured against
-`Kl6tLcQ5hGI`: the default chain, `web_safari`, `ios` and `tv` all 403, while
-`mweb` downloads fine. The script passed no `--extractor-args` at all, so it
-took whatever default the installed yt-dlp picked and stopped at the first
-refusal. One working client existed and it was never reached.
+**The root cause was staleness, not YouTube.** `yt-dlp` was never declared in
+`pyproject.toml`. It resolved from `PATH` — a Homebrew binary at 2026.06.09,
+two and a half months old — with no floor, no pin, and no renewal path.
+Nothing broke when it rotted, which is the whole problem: a stale yt-dlp does
+not fail the build, it quietly removes the ability to transcribe. Declaring
+`yt-dlp==2026.8.19` puts it under the `pip` Dependabot ecosystem the repo
+already runs weekly, so the renewal that was missing now happens on its own.
+Verified: 2026.8.19 downloads on the default player client, where 2026.06.09
+403s.
 
-`fetch_whisper` now walks `YOUTUBE_PLAYER_CLIENTS`, starting with `None` so a
-healthy environment runs yt-dlp's own default chain and pays nothing for the
-fallbacks. On exhaustion the error names every client tried and its reason,
-rather than blaming the transcriber.
+That makes the second change defense in depth rather than the fix. YouTube
+blocks its player clients unevenly and a pin will always lag the adversary by
+up to a renewal cycle, so a single refusal should not end the lane. Measured
+against `Kl6tLcQ5hGI` on the stale version: default, `web_safari`, `ios` and
+`tv` all 403, `mweb` served it. `fetch_whisper` now walks
+`YOUTUBE_PLAYER_CLIENTS`, `None` first so a healthy environment runs yt-dlp's
+own default chain and pays nothing, and on exhaustion names every client tried.
 
-This mattered immediately: #359 made a contaminated caption track fail closed,
-and the intended recovery from a rejected track is Whisper. Between the two,
-a talk with bad captions had no path to a transcript at all.
+Each attempt downloads into its own directory. Sharing one output path let a
+refused attempt leave a partial file behind, and the next attempt's
+existence check would accept those bytes as its own success — the chain would
+stop early and transcribe the failure's leftovers. A zero-byte artifact is
+likewise a failed extraction wearing a filename, not a download.
 
-The same run also carried the local-audio half of the receipt-preservation fix
-that #359 landed for YouTube only. In `_handle_local_audio` a failed
+This blocked recovery from the previous entry: a contaminated caption track now
+fails closed, and Whisper is the intended fallback. Between the two, a talk with
+bad captions had no path to a transcript at all.
+
+The same change carries the local-audio half of the receipt-preservation guard,
+which landed for YouTube only. In `_handle_local_audio` a failed
 `probe_local_media_duration` still overwrote a valid `local_media_duration`
 receipt with the fixed default, destroying the duration a later run needs for
-either word-rate bound. The guard now applies there too, with one condition the
-YouTube branch does not need: a stored receipt is the stronger one only while
-its `media_sha256` still names the bytes in hand. A receipt describing other
-media is stale, not strong.
+either word-rate bound. That branch adds one condition the YouTube branch does
+not need: a stored receipt is the stronger one only while its `media_sha256`
+still names the bytes in hand. A receipt describing other media is stale, not
+strong.
 
-Found by Copilot on #359 and tracked as #360; the 403 is #361, which stays open
-for the dependency half — `yt-dlp` is not declared in `pyproject.toml` at all,
-resolves from `PATH`, and has no renewal mechanism, which is the
-adversarial-freshness case in `rules/dependency-management.md`.
-
-## 0.20.104 — 2026-08-22
+Found during the reparse of a 250-talk vault; #360 and #361.
 
 ### fix(vault-ingress) — bound the transcript word rate from above, and stop the bound erasing itself
 

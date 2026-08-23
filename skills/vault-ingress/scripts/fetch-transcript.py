@@ -648,9 +648,16 @@ def fetch_whisper(
 ) -> tuple[str | None, str | None, Iterable[object] | None]:
     """Download audio and return Whisper text, language, and timed segments."""
     url = f"https://www.youtube.com/watch?v={video_id}"
-    audio = Path(work_dir) / "audio.mp3"
+    audio: Path | None = None
     failures: list[str] = []
-    for client in YOUTUBE_PLAYER_CLIENTS:
+    # Each attempt downloads into its own directory. Sharing one path let a
+    # refused attempt leave a partial file behind, and the next attempt's
+    # "did the audio appear" check would accept those bytes as its own success
+    # — the retry chain would stop early and transcribe whatever the failure
+    # left. Isolation makes the check answer only for the attempt that ran.
+    for index, client in enumerate(YOUTUBE_PLAYER_CLIENTS):
+        attempt_dir = Path(work_dir) / f"download-{index}"
+        attempt_dir.mkdir(parents=True, exist_ok=True)
         command = [
             "yt-dlp",
             "-x",
@@ -658,7 +665,7 @@ def fetch_whisper(
             "mp3",
             "--no-playlist",
             "-o",
-            str(Path(work_dir) / "audio.%(ext)s"),
+            str(attempt_dir / "audio.%(ext)s"),
         ]
         if client is not None:
             command += ["--extractor-args", f"youtube:player_client={client}"]
@@ -676,7 +683,14 @@ def fetch_whisper(
                 file=sys.stderr,
             )
             return None, None, None
-        if download.returncode == 0 and audio.exists():
+        candidate = attempt_dir / "audio.mp3"
+        # A zero-byte artifact is a failed extraction wearing a filename.
+        if (
+            download.returncode == 0
+            and candidate.exists()
+            and candidate.stat().st_size > 0
+        ):
+            audio = candidate
             break
         failures.append(f"{client or 'default'}: {download.stderr.strip()[:200]}")
     else:

@@ -12,8 +12,8 @@ in CI without a network, without YouTube, and without Apple-Silicon Whisper.
 
 import hashlib
 import json
-import pathlib
 import os
+import pathlib
 import subprocess
 import sys
 from pathlib import Path
@@ -296,6 +296,76 @@ def _blocking_yt_dlp(fetch_transcript, monkeypatch, serving_client, attempts):
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
     monkeypatch.setattr(fetch_transcript.subprocess, "run", run)
+
+
+def test_a_refused_attempt_that_left_bytes_behind_is_not_reused(
+    fetch_transcript, monkeypatch, tmp_path
+):
+    """A partial file from a failed client must not end the retry chain.
+
+    yt-dlp can exit nonzero having already written something. If every attempt
+    shared one output path, the next attempt's existence check would accept
+    those bytes as its own success and transcribe the failure's leftovers.
+    """
+    attempts: list[str | None] = []
+
+    def run(command, **_kwargs):
+        client = None
+        if "--extractor-args" in command:
+            client = command[command.index("--extractor-args") + 1].split("=")[-1]
+        attempts.append(client)
+        target = pathlib.Path(
+            command[command.index("-o") + 1].replace("%(ext)s", "mp3")
+        )
+        if client != "mweb":
+            # the failure leaves a truncated artifact behind
+            target.write_bytes(b"partial-garbage")
+            return subprocess.CompletedProcess(
+                command, 1, stdout="", stderr="HTTP Error 403: Forbidden"
+            )
+        target.write_bytes(b"real-audio")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(fetch_transcript.subprocess, "run", run)
+    transcribed: list[bytes] = []
+
+    def transcribe(audio_path, *_a, **_k):
+        transcribed.append(pathlib.Path(audio_path).read_bytes())
+        return "spoken words here", "en", None
+
+    monkeypatch.setattr(fetch_transcript, "transcribe_audio", transcribe)
+
+    text, _language, _segments = fetch_transcript.fetch_whisper(
+        "Kl6tLcQ5hGI", str(tmp_path), "tiny"
+    )
+
+    assert text == "spoken words here"
+    assert "mweb" in attempts, "a leftover file must not end the chain early"
+    assert transcribed == [b"real-audio"], "the failure's bytes must never be read"
+
+
+def test_a_zero_byte_download_is_not_a_success(fetch_transcript, monkeypatch, tmp_path):
+    """An empty artifact is a failed extraction wearing a filename."""
+    attempts: list[str | None] = []
+
+    def run(command, **_kwargs):
+        client = None
+        if "--extractor-args" in command:
+            client = command[command.index("--extractor-args") + 1].split("=")[-1]
+        attempts.append(client)
+        pathlib.Path(
+            command[command.index("-o") + 1].replace("%(ext)s", "mp3")
+        ).write_bytes(b"")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(fetch_transcript.subprocess, "run", run)
+
+    text, language, segments = fetch_transcript.fetch_whisper(
+        "Kl6tLcQ5hGI", str(tmp_path), "tiny"
+    )
+
+    assert (text, language, segments) == (None, None, None)
+    assert len(attempts) == len(fetch_transcript.YOUTUBE_PLAYER_CLIENTS)
 
 
 def test_a_refused_player_client_advances_to_the_next(
