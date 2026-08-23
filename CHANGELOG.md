@@ -28,6 +28,16 @@ The third row is the whole justification. The ceiling divides words by the
 *video's* duration, so it can never learn that the track disagrees about how
 long the recording is. That shape has not been seen in this vault.
 
+The check runs on the caption lane only. Whisper cannot be foreign — it
+transcribes the audio in hand — and its timestamps are merely sometimes sloppy;
+this same talk produced `malformed or zero-duration segments` from that lane.
+Applying the guard to the final fallback would discard a sound transcript over
+bad timing and leave the talk with nothing.
+
+Segments are materialized before the check, because the timing bundle reads
+them again and a lane returning a one-shot iterable would hand the second
+reader an exhausted iterator — disabling the guard and the timing both.
+
 The threshold is loose on purpose — its verdict discards a transcript, and a
 cue trailing an hour-long talk by three seconds reads 1.0008.
 

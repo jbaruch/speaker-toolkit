@@ -964,6 +964,45 @@ def test_a_one_shot_segment_iterable_does_not_bypass_the_guard(
     assert out.read_text(encoding="utf-8") == whisper_text
 
 
+def test_overlong_whisper_timestamps_do_not_discard_the_transcript(
+    fetch_transcript, monkeypatch, tmp_path, capsys
+):
+    """Whisper cannot be a foreign track — it transcribed the audio in hand.
+
+    Its timestamps are merely sometimes sloppy. Applying the caption guard to
+    the final fallback would leave a talk with nothing despite having valid
+    transcript text.
+    """
+    whisper_text = _talk(800)
+    monkeypatch.setattr(
+        fetch_transcript,
+        "probe_youtube_duration",
+        lambda _v: (318.0, "trusted synthetic duration"),
+    )
+    monkeypatch.setattr(
+        fetch_transcript, "fetch_captions", lambda *_a, **_k: (None, None, None)
+    )
+    monkeypatch.setattr(
+        fetch_transcript,
+        "fetch_whisper",
+        lambda *_a, **_k: (
+            whisper_text,
+            "en",
+            [{"text": "drifted cue", "start": 2990.0, "duration": 10.0}],
+        ),
+    )
+    out = tmp_path / "Kl6tLcQ5hGI.txt"
+
+    with pytest.raises(SystemExit) as exited:
+        fetch_transcript.main(["Kl6tLcQ5hGI", "--out", str(out)])
+
+    assert exited.value.code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True
+    assert payload["method"] == "whisper"
+    assert out.read_text(encoding="utf-8") == whisper_text
+
+
 def test_a_caption_track_within_its_recording_is_kept(
     fetch_transcript, monkeypatch, tmp_path, capsys
 ):

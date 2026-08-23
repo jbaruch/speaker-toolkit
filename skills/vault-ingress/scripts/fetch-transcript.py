@@ -1490,20 +1490,21 @@ def main(argv: list[str] | None = None) -> NoReturn:
         if text is None:
             failures.append(f"{name}: unavailable")
             continue
-        # The strongest contamination signal available, and it is free: cues
-        # that run far past the recording mean this track describes a longer
-        # one — a venue's session block served to a single talk's video. The
-        # word-rate ceiling infers the same thing from text alone and only
-        # catches gross cases; this measures it directly. Falling through
-        # rather than failing hands the talk to Whisper, which transcribes the
-        # actual audio and cannot overrun it.
+        # Captions only. A caption track can belong to a different recording —
+        # a venue's session block served to one talk's video — and cues running
+        # far past the duration are the direct evidence of it. Whisper cannot
+        # be foreign: it transcribes the audio in hand. Its timestamps are
+        # merely sometimes sloppy, and this same talk has already produced
+        # "malformed or zero-duration segments" from that lane. Applying the
+        # check there would discard a sound transcript over bad timing, and
+        # since Whisper is the last fallback the talk would end with nothing.
         # A lane may hand back a one-shot iterable. The extent check reads the
         # segments and so does the timing bundle below, and the second reader
         # would get an exhausted iterator — disabling the guard and the timing
         # both, silently. Materialize once so every reader sees the same data.
         if segments is not None and not isinstance(segments, (list, tuple)):
             segments = list(segments)
-        if timing_extent_is_foreign(segments, trusted_duration):
+        if name == "captions" and timing_extent_is_foreign(segments, trusted_duration):
             overrun = timing_extent_overrun_ratio(segments, trusted_duration) or 0.0
             failures.append(
                 f"{name}: caption track covers {overrun:.1f}x this recording's "
