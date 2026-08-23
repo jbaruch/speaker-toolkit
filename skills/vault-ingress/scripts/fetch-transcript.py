@@ -542,9 +542,19 @@ def _fetch_captions_from_api(
             file=sys.stderr,
         )
         return None, None, None
+    # The track's own language, read before materializing — `list()` keeps the
+    # segments and drops the object's attributes.
     raw_language = getattr(segments, "language_code", None)
     language = raw_language if isinstance(raw_language, str) else None
-    return segments_to_text(segments), language, segments
+    # Materialize here, inside the lane the caller wrapped in its expected-error
+    # boundary. A lazy track that raises mid-consumption must read as a caption
+    # lane failure and fall through to Whisper; consumed outside this function
+    # the same exception reaches the process boundary and ends the run. Doing it
+    # once also means the text and the returned segments are the same data —
+    # `segments_to_text` would otherwise exhaust a one-shot track and hand the
+    # caller an empty one.
+    materialized = list(segments)
+    return segments_to_text(materialized), language, materialized
 
 
 def enrich_existing_caption_timing(
@@ -1498,12 +1508,6 @@ def main(argv: list[str] | None = None) -> NoReturn:
         # "malformed or zero-duration segments" from that lane. Applying the
         # check there would discard a sound transcript over bad timing, and
         # since Whisper is the last fallback the talk would end with nothing.
-        # A lane may hand back a one-shot iterable. The extent check reads the
-        # segments and so does the timing bundle below, and the second reader
-        # would get an exhausted iterator — disabling the guard and the timing
-        # both, silently. Materialize once so every reader sees the same data.
-        if segments is not None and not isinstance(segments, (list, tuple)):
-            segments = list(segments)
         if name == "captions" and timing_extent_is_foreign(segments, trusted_duration):
             overrun = timing_extent_overrun_ratio(segments, trusted_duration) or 0.0
             failures.append(

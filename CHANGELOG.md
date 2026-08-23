@@ -34,9 +34,15 @@ this same talk produced `malformed or zero-duration segments` from that lane.
 Applying the guard to the final fallback would discard a sound transcript over
 bad timing and leave the talk with nothing.
 
-Segments are materialized before the check, because the timing bundle reads
-them again and a lane returning a one-shot iterable would hand the second
-reader an exhausted iterator — disabling the guard and the timing both.
+Segments are materialized inside the caption lane, not at the call site. Two
+readers consume them — the extent check and the timing bundle — so a one-shot
+track would hand the second an exhausted iterator, disabling the guard and the
+timing both. `segments_to_text` is a third reader and runs first, so the lane
+was already returning a spent iterable to anyone who received a lazy track.
+Consuming it inside the lane also keeps the consumption within the caller's
+expected-error boundary: a track that raises mid-read is a caption-lane
+failure that falls through to Whisper, where materializing at the call site
+would have let the same exception reach the process boundary and end the run.
 
 The threshold is loose on purpose — its verdict discards a transcript, and a
 cue trailing an hour-long talk by three seconds reads 1.0008.

@@ -504,6 +504,75 @@ def test_caption_errors_fall_through_instead_of_propagating(
     )
 
 
+def test_a_one_shot_caption_track_is_materialized_by_the_lane(
+    fetch_transcript, monkeypatch
+):
+    """Text and segments must be the same data, both readable.
+
+    `segments_to_text` consumes the track. Returning the consumed iterable
+    would hand the caller an empty one, and materializing later — outside this
+    lane — would put the consumption beyond the caller's expected-error
+    boundary.
+    """
+    from youtube_transcript_api import YouTubeTranscriptApi
+
+    cues = [
+        {"text": "first cue", "start": 0.0, "duration": 2.0},
+        {"text": "second cue", "start": 2.0, "duration": 2.0},
+    ]
+
+    def one_shot(self, *_args, **_kwargs):
+        return (cue for cue in cues)
+
+    monkeypatch.setattr(YouTubeTranscriptApi, "fetch", one_shot, raising=False)
+
+    text, _language, segments = fetch_transcript.fetch_captions("eg6gqvUFh6Q", ["en"])
+
+    assert text and "first cue" in text and "second cue" in text
+    assert isinstance(segments, list)
+    assert len(list(segments)) == 2, "the segments must survive a second read"
+    assert len(list(segments)) == 2
+
+
+def test_a_caption_track_raising_mid_read_degrades_to_the_next_lane(
+    fetch_transcript, monkeypatch, tmp_path, capsys
+):
+    """Consumption happens inside the lane, so a failure is not fatal.
+
+    Materialized outside the caller's expected-error boundary, this exception
+    would reach the process boundary and end the run instead of recording a
+    caption-lane failure and trying Whisper.
+    """
+    from youtube_transcript_api import YouTubeTranscriptApi
+
+    def exploding(self, *_args, **_kwargs):
+        def cues():
+            yield {"text": "first cue", "start": 0.0, "duration": 2.0}
+            raise ValueError("synthetic mid-read caption failure")
+
+        return cues()
+
+    monkeypatch.setattr(YouTubeTranscriptApi, "fetch", exploding, raising=False)
+    whisper_text = _talk(800)
+    monkeypatch.setattr(
+        fetch_transcript,
+        "probe_youtube_duration",
+        lambda _v: (318.0, "trusted synthetic duration"),
+    )
+    monkeypatch.setattr(
+        fetch_transcript,
+        "fetch_whisper",
+        lambda *_a, **_k: (whisper_text, "en", None),
+    )
+    out = tmp_path / "eg6gqvUFh6Q.txt"
+
+    with pytest.raises(SystemExit) as exited:
+        fetch_transcript.main(["eg6gqvUFh6Q", "--out", str(out)])
+
+    assert exited.value.code == 0
+    assert json.loads(capsys.readouterr().out)["method"] == "whisper"
+
+
 def test_broken_caption_constructor_degrades_only_caption_lane(
     fetch_transcript, monkeypatch
 ):
