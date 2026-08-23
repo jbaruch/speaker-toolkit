@@ -12,6 +12,7 @@ in CI without a network, without YouTube, and without Apple-Silicon Whisper.
 
 import hashlib
 import json
+import pathlib
 import os
 import subprocess
 import sys
@@ -274,12 +275,86 @@ def test_a_receipt_with_no_media_digest_never_matches(fetch_transcript):
     )
 
 
-def test_the_player_client_chain_tries_the_default_first(fetch_transcript):
-    """A healthy environment must not pay for the fallbacks."""
-    clients = fetch_transcript.YOUTUBE_PLAYER_CLIENTS
-    assert clients[0] is None
-    assert "mweb" in clients
-    assert len(set(clients)) == len(clients)
+def _blocking_yt_dlp(fetch_transcript, monkeypatch, serving_client, attempts):
+    """Mock yt-dlp as YouTube currently behaves: one client works, others 403.
+
+    Writes the audio file only for `serving_client`, exactly as a real download
+    does, so the caller's "did a file appear" check decides the outcome.
+    """
+
+    def run(command, **_kwargs):
+        client = None
+        if "--extractor-args" in command:
+            client = command[command.index("--extractor-args") + 1].split("=")[-1]
+        attempts.append(client)
+        if client != serving_client:
+            return subprocess.CompletedProcess(
+                command, 1, stdout="", stderr="HTTP Error 403: Forbidden"
+            )
+        target = command[command.index("-o") + 1]
+        pathlib.Path(target.replace("%(ext)s", "mp3")).write_bytes(b"audio")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(fetch_transcript.subprocess, "run", run)
+
+
+def test_a_refused_player_client_advances_to_the_next(
+    fetch_transcript, monkeypatch, tmp_path
+):
+    """The 403 that killed the fallback: a later client must still be tried."""
+    attempts: list[str | None] = []
+    _blocking_yt_dlp(fetch_transcript, monkeypatch, "mweb", attempts)
+    monkeypatch.setattr(
+        fetch_transcript,
+        "transcribe_audio",
+        lambda *a, **k: ("spoken words here", "en", None),
+    )
+
+    text, language, _segments = fetch_transcript.fetch_whisper(
+        "Kl6tLcQ5hGI", str(tmp_path), "tiny"
+    )
+
+    assert text == "spoken words here"
+    assert language == "en"
+    assert attempts[0] is None, "the default chain must be tried first"
+    assert "mweb" in attempts, "the serving client must be reached"
+
+
+def test_a_working_default_client_never_pays_for_the_fallbacks(
+    fetch_transcript, monkeypatch, tmp_path
+):
+    attempts: list[str | None] = []
+    _blocking_yt_dlp(fetch_transcript, monkeypatch, None, attempts)
+    monkeypatch.setattr(
+        fetch_transcript,
+        "transcribe_audio",
+        lambda *a, **k: ("spoken words here", "en", None),
+    )
+
+    text, _language, _segments = fetch_transcript.fetch_whisper(
+        "Kl6tLcQ5hGI", str(tmp_path), "tiny"
+    )
+
+    assert text == "spoken words here"
+    assert attempts == [None], "a healthy environment must make exactly one attempt"
+
+
+def test_every_player_client_refusing_reports_failure(
+    fetch_transcript, monkeypatch, tmp_path, capsys
+):
+    """Exhaustion is a failure that names what was tried, not a traceback."""
+    attempts: list[str | None] = []
+    _blocking_yt_dlp(fetch_transcript, monkeypatch, "no-such-client", attempts)
+
+    text, language, segments = fetch_transcript.fetch_whisper(
+        "Kl6tLcQ5hGI", str(tmp_path), "tiny"
+    )
+
+    assert (text, language, segments) == (None, None, None)
+    assert len(attempts) == len(fetch_transcript.YOUTUBE_PLAYER_CLIENTS)
+    stderr = capsys.readouterr().err
+    assert "under any player client" in stderr
+    assert "403" in stderr
 
 
 def test_plausible_transcript_passes(fetch_transcript):
