@@ -76,7 +76,18 @@ TIMING_PROVENANCE_KINDS = frozenset(
 TIMING_OWNER_SOURCES = frozenset(
     {"youtube_auto", "whisper", "manual", "unknown", "vtt"}
 )
-TIMING_BOUND_TOLERANCE_SECONDS = 1.0
+# A caption cue carries display time, not speech time, so the final cue
+# routinely outlives the recording by a second or two. Measured across a
+# 12-talk sample of this vault's caption-sourced transcripts, the overhang runs
+# -10.88s to +2.32s and 7 of the 12 sat between 1.4s and 2.32s — so a 1.0s
+# bound discarded the timed evidence of most talks that had any. Negative
+# values are equally ordinary: captions often stop before the video does.
+#
+# The bound only has to absorb that format artifact. Whether the cues describe
+# a different recording is FOREIGN_TIMING_EXTENT_RATIO's question, and it has
+# its own headroom — on a 318s video it fires at ~80s of overrun, so nothing
+# this tolerance admits can hide from it.
+TIMING_BOUND_TOLERANCE_SECONDS = 5.0
 # Past the tolerance above, timing is merely untrustworthy — a caption track
 # routinely trails its video by a rounding artifact. Past this ratio it is not
 # this recording's track at all: the segments describe more speech than the
@@ -776,7 +787,11 @@ def _validate_timing_semantics(
         and not isinstance(duration, bool)
         and maximum_end > float(duration) + TIMING_BOUND_TOLERANCE_SECONDS
     ):
-        raise ValueError("timed segments extend beyond the source-owned duration bound")
+        raise ValueError(
+            f"timed segments overhang the source-owned duration by "
+            f"{maximum_end - float(duration):.2f}s, beyond the "
+            f"{TIMING_BOUND_TOLERANCE_SECONDS:.0f}s tolerance"
+        )
 
 
 def timing_enrichment_equivalent(existing: str, fetched: str) -> bool:

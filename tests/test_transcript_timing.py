@@ -570,7 +570,7 @@ def test_timing_reader_rejects_segment_text_and_duration_mismatch(
                     {
                         "text": text,
                         "start_seconds": 0.0,
-                        "end_seconds": 12.0,
+                        "end_seconds": 40.0,
                     }
                 ],
             }
@@ -581,7 +581,8 @@ def test_timing_reader_rejects_segment_text_and_duration_mismatch(
         transcript, text, **_owner(duration=10.0)
     )
     assert segments == []
-    assert "duration bound" in bound_reason
+    assert "overhang" in bound_reason
+    assert "30.00s" in bound_reason, "the reason must state the actual overhang"
 
 
 def test_direct_timing_writer_remains_strict_on_semantic_mismatch(
@@ -838,3 +839,39 @@ def test_the_foreign_question_is_unanswerable_without_both_sides(
     ):
         assert transcript_timing.timing_extent_overrun_ratio(segments, duration) is None
         assert transcript_timing.timing_extent_is_foreign(segments, duration) is False
+
+
+def test_a_final_cue_outliving_the_recording_by_seconds_keeps_its_timing(
+    transcript_timing, tmp_path
+):
+    """The measured reality: 7 of 12 sampled talks overhang by 1.4-2.32s.
+
+    A caption cue carries display time, not speech time, so the last one
+    routinely outlives the recording. At the old 1.0s bound those talks lost
+    their timed evidence entirely.
+    """
+    transcript = tmp_path / "eg6gqvUFh6Q.txt"
+    text = "Canonical transcript text."
+    transcript.write_text(text, encoding="utf-8")
+    sidecar = transcript_timing.sidecar_path(transcript)
+    sidecar.write_text(
+        json.dumps(
+            {
+                "schema_version": transcript_timing.SIDECAR_SCHEMA_VERSION,
+                "transcript_sha256": transcript_timing.transcript_sha256(text),
+                "source": "captions",
+                "provenance": _youtube_timing(transcript_timing, duration=10.0),
+                "segments": [
+                    {"text": text, "start_seconds": 0.0, "end_seconds": 12.32}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    segments, reason = transcript_timing.load_verified_segments(
+        transcript, text, **_owner(duration=10.0)
+    )
+
+    assert segments, reason
+    assert len(segments) == 1

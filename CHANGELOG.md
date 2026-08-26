@@ -1,5 +1,40 @@
 # Changelog
 
+### fix(vault-ingress) — stop a final-cue overhang discarding a talk's timing
+
+A caption cue carries display time, not speech time, so the last one routinely
+outlives the recording by a second or two. `TIMING_BOUND_TOLERANCE_SECONDS` was
+1.0s, so those talks lost their timed segments — and with them
+`timed_transcript` as a citable evidence source — over a rendering artifact.
+
+Measured across a 12-talk sample of this vault's caption-sourced transcripts:
+
+```
+-10.88  -4.12  -0.78  0.00  +0.97          kept timing
++1.40  +1.52  +1.52  +1.68  +1.88  +2.24  +2.32   lost it
+```
+
+**Seven of twelve.** Not an edge case — the majority of talks that had timing at
+all were losing it. Negative overhang is equally ordinary: captions often stop
+before the video does. The bound is now 5.0s, above the observed maximum of
+2.32s with room, and every loss in the sample sat between 1.4s and 2.32s.
+
+Raising it costs nothing in detection because the bound was never the right
+owner of the identity question. Whether cues describe a *different* recording
+is `FOREIGN_TIMING_EXTENT_RATIO`, added the release before — on a 318s video it
+fires at roughly 80s of overrun, so nothing a 5s tolerance admits can hide from
+it.
+
+The rejection also stated the wrong thing. `receipt write failed: timed
+segments extend beyond the source-owned duration bound` reads as a write fault
+plus a serious identity problem; the write had not failed and the bound was
+exceeded by 1.6s. It now names the measured overhang and the tolerance it
+crossed, so an operator can tell a rounding artifact from the genuine
+foreign-track case.
+
+Found on the first batch of the 250-talk reparse, where
+`2013-devcontlv-modules-hell` lost 18 minutes of timing to a 1.6s overhang.
+
 ## 0.20.106 — 2026-08-23
 
 ### feat(vault-ingress) — catch a caption track that belongs to a longer recording
