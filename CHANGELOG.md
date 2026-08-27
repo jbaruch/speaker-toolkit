@@ -58,8 +58,8 @@ the same reason.
 
 The guard follows the same line. Rather than re-deriving fields by hand or
 comparing against a pasted copy, it runs the documented sequence: parse the
-example, generate the basis with `build-score-basis.py`, merge, and validate
-through `validate-returns.py`. What is under test is the flow a worker is told
+example, pass it through `build-score-basis.py` for the completed return, and
+validate that through `validate-returns.py`. What is under test is the flow a worker is told
 to follow, and it asserts the example does *not* contain the generated field.
 
 Found while preparing the first hand-run batch of a 250-talk reparse, before
