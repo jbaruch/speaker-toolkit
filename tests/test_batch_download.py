@@ -322,3 +322,17 @@ def test_every_exit_path_emits_a_json_report(tmp_path):
         report = _report(run)
         assert report["schema_version"] == 1
         assert isinstance(report["ok"], bool)
+
+
+def test_help_flag_yields_a_typed_failure_not_prose(tmp_path):
+    """There is no prose help path: stdout is a JSON object on every exit."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    result = _run(vault, [], ytdlp=_fake_ytdlp(tmp_path, FAKE_OK))
+    flagged = subprocess.run(
+        [SCRIPT, "--help"], capture_output=True, text=True, timeout=30
+    )
+
+    assert _report(result)["code"] == "usage"
+    assert flagged.returncode == 2
+    assert json.loads(flagged.stdout)["code"] == "usage"

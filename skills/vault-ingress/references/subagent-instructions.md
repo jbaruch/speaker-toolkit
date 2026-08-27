@@ -152,16 +152,23 @@ explicitly authorizes full transcript/receipt replacement.
   "{python_path}" -m gdown "{google_drive_id}" \
     -O "{vault_root}/slides/{google_drive_id}.pdf"
   ```
-- **`video_extracted`** — download video at 720p, then extract slides:
+- **`video_extracted`** — download video at 720p, then extract slides. Never
+  invoke `yt-dlp` directly; the downloader resolves the pinned binary, and a
+  stale one answers every download with HTTP 403:
   ```bash
-  yt-dlp -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]" \
-    --merge-output-format mp4 \
-    -o "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \
-    "https://www.youtube.com/watch?v={youtube_id}"
+  "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/batch-download-videos.py" \
+    "{vault_root}" "{youtube_id}"
   "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/video-slide-extraction.py" \
     "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \
     "{vault_root}/slides-rebuild/{youtube_id}" "{youtube_id}"
   ```
+  The downloader takes any number of ids and writes one JSON report to stdout.
+  Read this id's `results` entry rather than assuming the MP4 exists. On a
+  non-zero exit do not run the extractor: treat the talk as having no video
+  source, fall back per **Fallback** below, and carry the entry's `reason` into
+  the return. See the docstring at the top of `batch-download-videos.py` for the
+  report shape, the exit codes, and the closed failure vocabulary.
+
   Store the complete JSON result in `structured_data.video_extraction`, then obey its
   artifact gate:
 
@@ -204,8 +211,7 @@ explicitly authorizes full transcript/receipt replacement.
   deletes only its intermediate JPEG frames. `unique_frame_count` and artifact
   `page_count` are retained video samples, not authored `slide_count`; populate
   `structured_data.slide_count` only from corroborated deck numbering or an authored
-  source. For batch downloads, use
-  `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/batch-download-videos.py" <vault_root> ID1 ID2 ...`.
+  source.
 - **`none`** — transcript-only, status `processed_partial`.
 - **Fallback** — if primary slides fail but `video_url` exists, fall back to
   video extraction. A talk can still reach `processed` status this way.

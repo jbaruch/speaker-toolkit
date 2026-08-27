@@ -297,10 +297,10 @@ def report_failure(code: str, message: str) -> int:
 def main(argv: list[str] | None = None) -> int:
     # Hand-parsed rather than argparse: a YouTube id may legitimately begin with
     # `-`, which argparse reads as a flag.
+    # There is no `--help` path: stdout carries one JSON object on every exit,
+    # and prose there would hand a JSON-consuming caller non-JSON on a zero
+    # exit. The docstring above is the help.
     arguments = list(sys.argv[1:] if argv is None else argv)
-    if arguments and arguments[0] in ("-h", "--help"):
-        print(__doc__)
-        return 0
     # No argument is a flag, so a leading-dash id already reads as an id; a `--`
     # separator is accepted out of habit and dropped.
     if "--" in arguments:

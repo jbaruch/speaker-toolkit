@@ -39,9 +39,16 @@ vocabulary rather than bare prose, so a caller parsing stdout is never handed
 nothing.
 
 `references/video-slide-extraction.md` taught the bare `yt-dlp` invocation in
-three places, which is where the habit came from; all three now point at the
-script, and the reference names the behavioral contract while leaving binary
-resolution and concurrency to the script's own docstring.
+three places, and `references/subagent-instructions.md` carried a fourth — the
+primary block every per-talk worker copies, which is where the habit came from.
+All four now call the script, the worker is told to read its `results` entry
+rather than assume the MP4 exists and to skip extraction on a non-zero exit, and
+the references name the behavioral contract while leaving binary resolution,
+concurrency, and the failure vocabulary to the script's own docstring.
+
+The script has no `--help`: prose on stdout would hand a JSON-consuming caller
+non-JSON on a zero exit, so the docstring is the help and `--help` reads as the
+typed `usage` failure.
 
 #371's other two halves are unaddressed: the Python call sites in
 `fetch-transcript.py` and `audit-source-identities.py` still resolve from
