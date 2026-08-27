@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.107 — 2026-08-27
+
 ### fix(vault-ingress) — stop a final-cue overhang discarding a talk's timing
 
 A caption cue carries display time, not speech time, so the last one routinely
