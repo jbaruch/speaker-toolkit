@@ -609,6 +609,12 @@ Minimal processed structure for a fresh v6 claim:
 }
 ```
 
+The `pattern_score_basis` weights in that block mirror
+`skills/vault-ingress/scripts/return_validation.py` — `DETECTION_WEIGHTS` and the
+basis contract live there and are the only authority for their values. The
+example carries them because the object must be complete to be copyable, and a
+documentation test pins them to that constant, so the mirror cannot drift.
+
 This block illustrates field shapes, not a runnable return. It declares every
 evidence source at once so each lane's syntax is visible; a real return may only
 name a source it can back — `native_deck` requires the current
