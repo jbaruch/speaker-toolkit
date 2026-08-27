@@ -340,24 +340,43 @@ def test_worker_example_uses_only_declared_verbatim_lanes(return_validation) -> 
     )
 
 
-def test_worker_example_passes_the_deterministic_return_validator() -> None:
-    """The block a subagent copies must survive the gate it will be run through.
+def test_the_documented_flow_turns_the_example_into_a_valid_return() -> None:
+    """Example plus basis builder must equal something the validator accepts.
 
-    Checking the version and shape by hand leaves the advertised acceptance
-    untested; this runs the example through validate-returns.py itself.
+    The block deliberately omits `pattern_score_basis`; the reference tells the
+    worker to generate it. This exercises that sequence end to end, so the
+    documented flow is what is under test rather than a copy of the script's
+    output pasted into the page.
     """
     import subprocess
     import sys
     import tempfile
 
     example = _worker_v6_example()
+    assert "pattern_score_basis" not in example["pattern_observations"], (
+        "the example must not restate script-owned output"
+    )
+    scripts = INGRESS / "scripts"
+
     with tempfile.TemporaryDirectory() as work:
         path = Path(work) / "example.json"
         path.write_text(json.dumps(example), encoding="utf-8")
-        result = subprocess.run(
+
+        built = subprocess.run(
+            [sys.executable, str(scripts / "build-score-basis.py"), str(path)],
+            capture_output=True,
+            text=True,
+        )
+        assert built.returncode == 0, built.stderr
+        example["pattern_observations"]["pattern_score_basis"] = json.loads(
+            built.stdout
+        )
+        path.write_text(json.dumps(example), encoding="utf-8")
+
+        validated = subprocess.run(
             [
                 sys.executable,
-                str(INGRESS / "scripts" / "validate-returns.py"),
+                str(scripts / "validate-returns.py"),
                 str(path),
                 "--catalog-dir",
                 str(
@@ -371,5 +390,6 @@ def test_worker_example_passes_the_deterministic_return_validator() -> None:
             capture_output=True,
             text=True,
         )
-    assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout)["valid"] is True
+
+    assert validated.returncode == 0, validated.stderr
+    assert json.loads(validated.stdout)["valid"] is True

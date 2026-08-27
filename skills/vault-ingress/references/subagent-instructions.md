@@ -585,25 +585,6 @@ Minimal processed structure for a fresh v6 claim:
       "patterns_used": 1,
       "antipatterns_detected": 0,
       "score": 1
-    },
-    "pattern_score_basis": {
-      "schema_version": 6,
-      "weights": {
-        "moderate": 0.5,
-        "strong": 1.0,
-        "weak": 0.25
-      },
-      "patterns": {
-        "moderate": 0,
-        "strong": 1,
-        "weak": 0
-      },
-      "antipatterns": {
-        "moderate": 0,
-        "strong": 0,
-        "weak": 0
-      },
-      "not_evaluable_count": 0
     }
   },
   "catalog_feedback": {
@@ -616,23 +597,26 @@ Minimal processed structure for a fresh v6 claim:
 }
 ```
 
-This block validates as written, claiming one inspected source. Add a source
-only with the audit behind it: `native_deck` requires the current
-`structured_data.native_deck_audit`, `static_slides` from a video-extracted deck
-requires the schema-v4 `structured_data.video_extraction` manifest, and
-`delivery_video` requires its own declared local artifact. A claimed source
-without its audit is rejected.
-
-Do not hand-derive `pattern_score_basis`. It is a pure function of the return's
-own detection lanes and not-evaluable ledger, so a script owns it:
+This block is complete except for `pattern_observations.pattern_score_basis`,
+which is generated rather than written. Run the basis builder over the return
+and merge its output before validating — that sequence is what produces a
+return the validator accepts:
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/build-score-basis.py" \
   batch-returns.json
 ```
 
-It prints the exact object `pattern_observations.pattern_score_basis` must
-carry, for one return or keyed by filename for several.
+It prints the exact object the field must carry, for one return or keyed by
+filename for several. The weight table and the object's shape belong to
+`skills/vault-ingress/scripts/return_validation.py`; nothing here restates them.
+
+The example claims one inspected source. Add a source only with the audit
+behind it: `native_deck` requires the current
+`structured_data.native_deck_audit`, `static_slides` from a video-extracted deck
+requires the schema-v4 `structured_data.video_extraction` manifest, and
+`delivery_video` requires its own declared local artifact. A claimed source
+without its audit is rejected.
 
 The raw worker return must not include engine-owned `evidence_schema_version`,
 `pattern_outcomes`, or `opportunity_coverage_identity`. Persistence derives the

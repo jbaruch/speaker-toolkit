@@ -30,11 +30,20 @@ entry point onto `return_validation.pattern_score_basis`, which keeps one owner
 for both the weight table and the shape. The reference names the command instead
 of the values.
 
-The example is now validator-clean rather than illustrative. It claimed all five
-evidence sources to show each lane's syntax, which no return may do without the
-audits behind them, so it could never have been copied. It now claims the one
-source it can back, and a test runs it through `validate-returns.py` — checking
-the acceptance the block advertises rather than re-deriving selected fields.
+The example no longer carries the basis at all. Printing it there would restate
+computed values the script owns, and a static copy drifts; the block now stops
+where a worker's own writing stops, and the reference names the command that
+completes it.
+
+It also claimed all five evidence sources to show each lane's syntax, which no
+return may do without the audits behind them — so it could never have been
+copied. It claims the one source it can back.
+
+The guard follows the same line. Rather than re-deriving fields by hand or
+comparing against a pasted copy, it runs the documented sequence: parse the
+example, generate the basis with `build-score-basis.py`, merge, and validate
+through `validate-returns.py`. What is under test is the flow a worker is told
+to follow, and it asserts the example does *not* contain the generated field.
 
 Found while preparing the first hand-run batch of a 250-talk reparse, before
 launching parallel workers against the same instructions.
