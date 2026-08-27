@@ -1,10 +1,20 @@
 """Documentation guards for live claim-v5 and archival-v4 adherence."""
 
+import json
+import sys
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 INGRESS = REPO_ROOT / "skills" / "vault-ingress"
+sys.path.insert(0, str(INGRESS / "scripts"))
+from return_validation import (  # noqa: E402
+    DETECTION_WEIGHTS,
+    VERBATIM_EXAMPLE_FIELDS,
+    WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION,
+    WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
+)
+
 DOC_PATHS = {
     "skill": INGRESS / "SKILL.md",
     "bootstrap": INGRESS / "references" / "bootstrap-and-preflight.md",
@@ -113,11 +123,6 @@ def test_threshold_and_structured_comparison_contract_is_documented() -> None:
     # above that example states a v5 return "still validates and still
     # persists, at the flat scoring generation".
     assert '"return_schema_version": 5' in docs["schemas"]
-    # The worker example is headed "fresh v6 claim", and a v6 claim rejects a
-    # v5 return outright. Pinning 5 here is what kept the wrong version in the
-    # block every subagent copies.
-    assert '"return_schema_version": 6' in docs["worker"]
-    assert '"pattern_score_basis"' in docs["worker"]
 
 
 def test_native_picture_render_threshold_is_script_owned() -> None:
@@ -308,3 +313,52 @@ def test_transcript_freshness_revalidates_quality_provenance() -> None:
         in docs["selection"]
     )
     assert "transcript_quality_context_drift" in docs["schemas"]
+
+
+def _worker_v6_example() -> dict:
+    """Parse the fenced return example the per-talk workers copy."""
+    doc = DOC_PATHS["worker"].read_text(encoding="utf-8")
+    marker = '{\n  "filename": "2026-01-01-example.md"'
+    start = doc.index(marker)
+    return json.loads(doc[start : doc.index("```", start)].strip())
+
+
+def test_worker_example_is_a_v6_return_the_validator_accepts() -> None:
+    """The block every subagent copies must satisfy the v6 claim it names.
+
+    It previously declared version 5 with no score basis, so a worker following
+    it produced a return rejected twice — and the rejection read as the worker
+    analysing badly rather than the instruction being wrong.
+    """
+    example = _worker_v6_example()
+
+    assert example["return_schema_version"] == WEIGHTED_SCORE_RETURN_SCHEMA_VERSION
+
+    basis = example["pattern_observations"]["pattern_score_basis"]
+    assert set(basis) == {
+        "schema_version",
+        "weights",
+        "patterns",
+        "antipatterns",
+        "not_evaluable_count",
+    }
+    assert basis["schema_version"] == WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
+    assert basis["weights"] == DETECTION_WEIGHTS
+
+    # the basis has to describe the example's own detections, not arbitrary counts
+    observations = example["pattern_observations"]
+    for lane, key in (
+        ("patterns_detected", "patterns"),
+        ("antipatterns_detected", "antipatterns"),
+    ):
+        counted = {level: 0 for level in DETECTION_WEIGHTS}
+        for detection in observations[lane]:
+            counted[detection["confidence"]] += 1
+        assert basis[key] == counted, f"{key} basis disagrees with {lane}"
+    assert basis["not_evaluable_count"] == len(observations["not_evaluable"])
+
+
+def test_worker_example_uses_only_declared_verbatim_lanes() -> None:
+    """Invented lane names are rejected as unknown snapshot lanes."""
+    example = _worker_v6_example()
+    assert set(example.get("verbatim_examples", {})) <= VERBATIM_EXAMPLE_FIELDS

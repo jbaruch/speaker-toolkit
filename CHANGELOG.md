@@ -31,10 +31,15 @@ stated next to the block, because the shape it teaches is copy-pasted.
 A test pinned the wrong value in place. `test_ingress_adherence_docs.py`
 asserted the worker doc *contains* `"return_schema_version": 5`, so correcting
 the example failed CI and the bug could not be fixed without also fixing its
-guard. That assertion now requires 6 and the presence of a basis; the
-`schemas-db.md` assertion stays at 5, because the compatibility table above that
-example states a v5 return "still validates and still persists, at the flat
-scoring generation".
+guard. The replacement parses the fenced example and checks the outcome instead of the
+text: the version equals the weighted-score return constant, the basis carries
+exactly its five fields with the validator's own weights, each lane's counts
+match that example's detection arrays, `not_evaluable_count` matches its ledger,
+and the verbatim lanes are a subset of the declared set. Substring assertions
+would pass on a match anywhere in the document, including inside an unrelated
+example. The `schemas-db.md` assertion stays at 5, because the compatibility
+table above that example states a v5 return "still validates and still persists,
+at the flat scoring generation".
 
 Found while preparing the first hand-run batch of a 250-talk reparse, before
 launching parallel workers against the same instructions. The first draft of this
