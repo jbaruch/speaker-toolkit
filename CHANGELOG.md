@@ -17,8 +17,21 @@ following it produced a return rejected twice over, and the failure surfaced as
 the worker being wrong rather than the instruction being wrong — the expensive
 direction to debug, since the fix looks like it belongs in the analysis.
 
+`pattern_score_basis` also had the wrong shape. The validator requires exactly
+`{schema_version, weights, patterns, antipatterns, not_evaluable_count}` with
+per-confidence counts — not the `{patterns_used, antipatterns_detected}` pair the
+score object uses. A basis is what makes a weighted number honest: "a single
+weighted number cannot say whether it came from two strong detections or four
+moderate ones."
+
+The example also declares all five evidence sources at once to show each lane's
+syntax, which no real return may do without the audits behind them. That is now
+stated next to the block, because the shape it teaches is copy-pasted.
+
 Found while preparing the first hand-run batch of a 250-talk reparse, before
-launching parallel workers against the same instructions.
+launching parallel workers against the same instructions. The first draft of this
+fix was itself wrong — the corrected basis only survived once it was run through
+`validate-returns.py` rather than reasoned about.
 
 ## 0.20.107 — 2026-08-27
 

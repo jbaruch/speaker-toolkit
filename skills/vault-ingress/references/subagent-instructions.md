@@ -592,8 +592,11 @@ Minimal processed structure for a fresh v6 claim:
       "score": 1
     },
     "pattern_score_basis": {
-      "patterns_used": 1,
-      "antipatterns_detected": 0
+      "schema_version": 6,
+      "weights": {"moderate": 0.5, "strong": 1.0, "weak": 0.25},
+      "patterns": {"moderate": 0, "strong": 1, "weak": 0},
+      "antipatterns": {"moderate": 0, "strong": 0, "weak": 0},
+      "not_evaluable_count": 0
     }
   },
   "catalog_feedback": {
@@ -605,6 +608,14 @@ Minimal processed structure for a fresh v6 claim:
   }
 }
 ```
+
+This block illustrates field shapes, not a runnable return. It declares every
+evidence source at once so each lane's syntax is visible; a real return may only
+name a source it can back — `native_deck` requires the current
+`structured_data.native_deck_audit`, `static_slides` from a video-extracted deck
+requires the schema-v4 `structured_data.video_extraction` manifest, and
+`delivery_video` requires its own declared local artifact. Claim only what the
+talk's inspected sources support, or validation rejects the return.
 
 The raw worker return must not include engine-owned `evidence_schema_version`,
 `pattern_outcomes`, or `opportunity_coverage_identity`. Persistence derives the
