@@ -125,3 +125,33 @@ def test_cli_reports_unreadable_input_without_a_traceback(
     path.write_text("{not json", encoding="utf-8")
     assert build_score_basis.main([str(path)]) == 2
     assert "cannot build pattern_score_basis" in capsys.readouterr().err
+
+
+def test_duplicate_filenames_fail_instead_of_overwriting(
+    build_score_basis, tmp_path, capsys
+):
+    """Keying by filename would drop every return but the last.
+
+    A caller merging that output would give one talk another talk's basis,
+    which is worse than no output at all.
+    """
+    first = _return(patterns=[_detection("strong")])
+    second = _return(patterns=[_detection("weak")])
+    path = tmp_path / "batch.json"
+    path.write_text(json.dumps([first, second]), encoding="utf-8")
+
+    assert build_score_basis.main([str(path)]) == 2
+    err = capsys.readouterr().err
+    assert "duplicate talk filenames" in err
+    assert "talk.md" in err
+
+
+def test_duplicates_across_separate_files_are_caught_too(
+    build_score_basis, tmp_path, capsys
+):
+    a, b = tmp_path / "a.json", tmp_path / "b.json"
+    a.write_text(json.dumps(_return()), encoding="utf-8")
+    b.write_text(json.dumps(_return()), encoding="utf-8")
+
+    assert build_score_basis.main([str(a), str(b)]) == 2
+    assert "duplicate talk filenames" in capsys.readouterr().err

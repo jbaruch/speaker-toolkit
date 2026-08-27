@@ -39,6 +39,12 @@ It also claimed all five evidence sources to show each lane's syntax, which no
 return may do without the audits behind them — so it could never have been
 copied. It claims the one source it can back.
 
+The builder rejects duplicate talk filenames rather than keying past them.
+Building the result as a filename map would drop every return but the last, and
+a caller merging that output would hand one talk another talk's basis — worse
+than no output. `validate-returns.py` rejects duplicates across its inputs for
+the same reason.
+
 The guard follows the same line. Rather than re-deriving fields by hand or
 comparing against a pasted copy, it runs the documented sequence: parse the
 example, generate the basis with `build-score-basis.py`, merge, and validate

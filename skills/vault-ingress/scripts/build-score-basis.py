@@ -76,6 +76,17 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         loaded = load(args.returns)
+        seen = [label for label, _ in loaded]
+        repeated = sorted({label for label in seen if seen.count(label) > 1})
+        if repeated:
+            # Keying by filename would drop every return but the last, and a
+            # caller merging the output would silently give one talk another
+            # talk's basis. The sibling validator rejects duplicate filenames
+            # across inputs for the same reason.
+            raise ValueError(
+                f"duplicate talk filenames across the inputs: {', '.join(repeated)}; "
+                "pass each return once, or split the batch so every filename is unique"
+            )
         results = {label: basis_for(ret, label) for label, ret in loaded}
     except (ValueError, KeyError) as exc:
         print(f"cannot build pattern_score_basis: {exc}", file=sys.stderr)
