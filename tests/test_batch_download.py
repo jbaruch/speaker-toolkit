@@ -98,7 +98,9 @@ def test_downloads_to_correct_path(tmp_path):
     result = _run(vault, ["xyz789"], ytdlp=_fake_ytdlp(tmp_path, FAKE_OK))
 
     assert result.returncode == 0, result.stderr
-    assert (vault / "slides-rebuild" / "xyz789" / "xyz789.mp4").read_text() == "video-bytes"
+    assert (
+        vault / "slides-rebuild" / "xyz789" / "xyz789.mp4"
+    ).read_text() == "video-bytes"
     assert _outcomes(result.stdout)["xyz789"][0] == "OK"
 
 
@@ -140,7 +142,9 @@ def test_zero_exit_with_no_output_file_is_a_failure(tmp_path):
     """yt-dlp exiting zero having produced nothing is FAIL, not OK."""
     vault = tmp_path / "vault"
     vault.mkdir()
-    result = _run(vault, ["merged-away"], ytdlp=_fake_ytdlp(tmp_path, FAKE_EMPTY_SUCCESS, "empty"))
+    result = _run(
+        vault, ["merged-away"], ytdlp=_fake_ytdlp(tmp_path, FAKE_EMPTY_SUCCESS, "empty")
+    )
 
     assert result.returncode == 1
     assert _outcomes(result.stdout)["merged-away"][0] == "FAIL"
@@ -154,7 +158,9 @@ def test_one_failure_does_not_stop_the_others(tmp_path):
     good.mkdir(parents=True)
     (good / "already.mp4").write_text("prior-bytes")
 
-    result = _run(vault, ["already", "blocked"], ytdlp=_fake_ytdlp(tmp_path, FAKE_403, "403"))
+    result = _run(
+        vault, ["already", "blocked"], ytdlp=_fake_ytdlp(tmp_path, FAKE_403, "403")
+    )
 
     assert result.returncode == 1
     outcomes = _outcomes(result.stdout)
