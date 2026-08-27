@@ -1,52 +1,34 @@
 # Changelog
 
-### fix(vault-ingress) — the "fresh v6 claim" example was a v5 return
+### fix(vault-ingress) — the "fresh v6 claim" example declared version 5
 
 The canonical return example in `references/subagent-instructions.md` is headed
 "Minimal processed structure for a fresh v6 claim" and carried
-`"return_schema_version": 5` with no `pattern_score_basis`. Both are fatal
-against the claim it names:
-
-- `return_validation.py` rejects a version mismatch outright — a v6 claim
-  "requires return schema version 6, got 5"
-- `pattern_score_basis` is required alongside a weighted score, because "a bare
-  number cannot say what evidence produced it"
+`"return_schema_version": 5`. `return_validation.py` rejects that outright: a v6
+claim "requires return schema version 6, got 5".
 
 Every per-talk worker reads this file, and this is the block it copies. A worker
-following it produced a return rejected twice over, and the failure surfaced as
-the worker being wrong rather than the instruction being wrong — the expensive
+following it produced a rejected return, and the rejection surfaced as the
+worker being wrong rather than the instruction being wrong — the expensive
 direction to debug, since the fix looks like it belongs in the analysis.
 
-`pattern_score_basis` also had the wrong shape. The validator requires exactly
-`{schema_version, weights, patterns, antipatterns, not_evaluable_count}` with
-per-confidence counts — not the `{patterns_used, antipatterns_detected}` pair the
-score object uses. A basis is what makes a weighted number honest: "a single
-weighted number cannot say whether it came from two strong detections or four
-moderate ones."
+A test held the error in place. `test_ingress_adherence_docs.py` asserted the
+worker doc *contains* `"return_schema_version": 5`, so correcting the example
+failed CI; the guard required the bug to stay. That assertion now parses the
+fenced example and compares its version against the validator's own
+`WEIGHTED_SCORE_RETURN_SCHEMA_VERSION`, so it tracks the code instead of a
+string. The `schemas-db.md` assertion stays at 5, which that document's
+compatibility table calls a still-valid return at the flat scoring generation.
 
-The example also declares all five evidence sources at once to show each lane's
-syntax, which no real return may do without the audits behind them. That is now
-stated next to the block, because the shape it teaches is copy-pasted.
-
-A test pinned the wrong value in place. `test_ingress_adherence_docs.py`
-asserted the worker doc *contains* `"return_schema_version": 5`, so correcting
-the example failed CI and the bug could not be fixed without also fixing its
-guard. The replacement parses the fenced example and checks the outcome instead of the
-text: the version equals the weighted-score return constant, the basis carries
-exactly its five fields with the validator's own weights, each lane's counts
-match that example's detection arrays, `not_evaluable_count` matches its ledger,
-and the verbatim lanes are a subset of the declared set. Substring assertions
-would pass on a match anywhere in the document, including inside an unrelated
-example. The `schemas-db.md` assertion stays at 5, because the compatibility
-table above that example states a v5 return "still validates and still persists,
-at the flat scoring generation".
+The block also omits `pattern_score_basis`, which a v6 return requires. Showing
+it means reproducing `DETECTION_WEIGHTS` in reference prose, which
+`rules/script-as-black-box.md` forbids, and no script-owned operation exists
+that a worker can call to produce the object instead. The example now points at
+`return_validation.py` for that contract, and the gap is tracked separately
+rather than resolved by mirroring a constant.
 
 Found while preparing the first hand-run batch of a 250-talk reparse, before
-launching parallel workers against the same instructions. The first draft of this
-fix was itself wrong — the corrected basis only survived once it was run through
-`validate-returns.py` rather than reasoned about.
-
-## 0.20.107 — 2026-08-27
+launching parallel workers against the same instructions.
 
 ### fix(vault-ingress) — stop a final-cue overhang discarding a talk's timing
 

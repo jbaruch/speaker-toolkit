@@ -590,13 +590,6 @@ Minimal processed structure for a fresh v6 claim:
       "patterns_used": 1,
       "antipatterns_detected": 0,
       "score": 1
-    },
-    "pattern_score_basis": {
-      "schema_version": 6,
-      "weights": {"moderate": 0.5, "strong": 1.0, "weak": 0.25},
-      "patterns": {"moderate": 0, "strong": 1, "weak": 0},
-      "antipatterns": {"moderate": 0, "strong": 0, "weak": 0},
-      "not_evaluable_count": 0
     }
   },
   "catalog_feedback": {
@@ -609,11 +602,11 @@ Minimal processed structure for a fresh v6 claim:
 }
 ```
 
-The `pattern_score_basis` weights in that block mirror
-`skills/vault-ingress/scripts/return_validation.py` — `DETECTION_WEIGHTS` and the
-basis contract live there and are the only authority for their values. The
-example carries them because the object must be complete to be copyable, and a
-documentation test pins them to that constant, so the mirror cannot drift.
+A v6 return additionally requires `pattern_observations.pattern_score_basis`,
+which this block does not show. Its exact fields and the weight values behind
+them are owned by `skills/vault-ingress/scripts/return_validation.py`; read the
+basis contract there rather than reproducing it here, and run
+`validate-returns.py`, which names the missing or wrong fields.
 
 This block illustrates field shapes, not a runnable return. It declares every
 evidence source at once so each lane's syntax is visible; a real return may only

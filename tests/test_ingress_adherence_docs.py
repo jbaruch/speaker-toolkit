@@ -315,47 +315,20 @@ def _worker_v6_example() -> dict:
     return json.loads(doc[start : doc.index("```", start)].strip())
 
 
-def test_worker_example_is_a_v6_return_the_validator_accepts(return_validation) -> None:
-    """The block every subagent copies must satisfy the v6 claim it names.
+def test_worker_example_declares_the_version_its_heading_claims(
+    return_validation,
+) -> None:
+    """The block every subagent copies is headed "fresh v6 claim".
 
-    It previously declared version 5 with no score basis, so a worker following
-    it produced a return rejected twice — and the rejection read as the worker
-    analysing badly rather than the instruction being wrong.
+    It previously declared version 5, which a v6 claim rejects outright, and the
+    rejection read as the worker analysing badly rather than the instruction
+    being wrong.
     """
     example = _worker_v6_example()
-
     assert (
         example["return_schema_version"]
         == return_validation.WEIGHTED_SCORE_RETURN_SCHEMA_VERSION
     )
-
-    basis = example["pattern_observations"]["pattern_score_basis"]
-    assert set(basis) == {
-        "schema_version",
-        "weights",
-        "patterns",
-        "antipatterns",
-        "not_evaluable_count",
-    }
-    assert (
-        basis["schema_version"]
-        == return_validation.WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
-    )
-    # Pinning the example's weights to the script's own constant is what keeps
-    # the mirrored values from drifting away from the validator.
-    assert basis["weights"] == return_validation.DETECTION_WEIGHTS
-
-    # the basis has to describe the example's own detections, not arbitrary counts
-    observations = example["pattern_observations"]
-    for lane, key in (
-        ("patterns_detected", "patterns"),
-        ("antipatterns_detected", "antipatterns"),
-    ):
-        counted = {level: 0 for level in return_validation.DETECTION_WEIGHTS}
-        for detection in observations[lane]:
-            counted[detection["confidence"]] += 1
-        assert basis[key] == counted, f"{key} basis disagrees with {lane}"
-    assert basis["not_evaluable_count"] == len(observations["not_evaluable"])
 
 
 def test_worker_example_uses_only_declared_verbatim_lanes(return_validation) -> None:
