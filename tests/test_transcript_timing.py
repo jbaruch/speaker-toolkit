@@ -566,23 +566,25 @@ def test_timing_reader_rejects_segment_text_and_duration_mismatch(
         json.dumps(
             {
                 **base,
+                "provenance": _youtube_timing(transcript_timing, duration=100.0),
                 "segments": [
                     {
                         "text": text,
                         "start_seconds": 0.0,
-                        "end_seconds": 40.0,
+                        "end_seconds": 110.0,
                     }
                 ],
             }
         ),
         encoding="utf-8",
     )
+    # 10s past a 100s recording: beyond the tolerance, but 1.10x — not foreign.
     segments, bound_reason = transcript_timing.load_verified_segments(
-        transcript, text, **_owner(duration=10.0)
+        transcript, text, **_owner(duration=100.0)
     )
     assert segments == []
     assert "overhang" in bound_reason
-    assert "30.00s" in bound_reason, "the reason must state the actual overhang"
+    assert "10.00s" in bound_reason, "the reason must state the actual overhang"
 
 
 def test_direct_timing_writer_remains_strict_on_semantic_mismatch(
@@ -875,3 +877,39 @@ def test_a_final_cue_outliving_the_recording_by_seconds_keeps_its_timing(
 
     assert segments, reason
     assert len(segments) == 1
+
+
+def test_a_short_recording_catches_a_foreign_track_the_tolerance_admits(
+    transcript_timing, tmp_path
+):
+    """The gap a seconds-based bound cannot see.
+
+    Cues running to 14s on a 10s video overhang by 4s — inside the 5s
+    tolerance — while describing a recording 1.4x this one's length. Only the
+    extent ratio distinguishes them, so it has to run wherever timing is
+    validated, not only in the caption lane.
+    """
+    transcript = tmp_path / "eg6gqvUFh6Q.txt"
+    text = "Canonical transcript text."
+    transcript.write_text(text, encoding="utf-8")
+    sidecar = transcript_timing.sidecar_path(transcript)
+    sidecar.write_text(
+        json.dumps(
+            {
+                "schema_version": transcript_timing.SIDECAR_SCHEMA_VERSION,
+                "transcript_sha256": transcript_timing.transcript_sha256(text),
+                "source": "captions",
+                "provenance": _youtube_timing(transcript_timing, duration=10.0),
+                "segments": [{"text": text, "start_seconds": 0.0, "end_seconds": 14.0}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    segments, reason = transcript_timing.load_verified_segments(
+        transcript, text, **_owner(duration=10.0)
+    )
+
+    assert segments == []
+    assert "1.40x" in reason
+    assert "different, longer recording" in reason

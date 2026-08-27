@@ -19,11 +19,15 @@ all were losing it. Negative overhang is equally ordinary: captions often stop
 before the video does. The bound is now 5.0s, above the observed maximum of
 2.32s with room, and every loss in the sample sat between 1.4s and 2.32s.
 
-Raising it costs nothing in detection because the bound was never the right
-owner of the identity question. Whether cues describe a *different* recording
-is `FOREIGN_TIMING_EXTENT_RATIO`, added the release before — on a 318s video it
-fires at roughly 80s of overrun, so nothing a 5s tolerance admits can hide from
-it.
+Raising it costs nothing in detection, but only because the identity question
+moved to where it can be answered. `FOREIGN_TIMING_EXTENT_RATIO` shipped the
+release before and ran solely in the caption lane, so the receipt write and
+load paths never asked it. On a **short** recording that gap is the whole
+story: cues running to 14s on a 10s video overhang by 4s — inside the new
+tolerance — while describing a recording 1.4x this one's length. Seconds cannot
+see it; only the ratio can. The extent check now runs beside the tolerance in
+`_validate_timing_semantics`, so both verdicts reach every path, and the more
+specific one is reported first.
 
 The rejection also stated the wrong thing. `receipt write failed: timed
 segments extend beyond the source-owned duration bound` reads as a write fault

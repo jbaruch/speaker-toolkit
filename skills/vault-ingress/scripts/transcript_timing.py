@@ -84,9 +84,11 @@ TIMING_OWNER_SOURCES = frozenset(
 # values are equally ordinary: captions often stop before the video does.
 #
 # The bound only has to absorb that format artifact. Whether the cues describe
-# a different recording is FOREIGN_TIMING_EXTENT_RATIO's question, and it has
-# its own headroom — on a 318s video it fires at ~80s of overrun, so nothing
-# this tolerance admits can hide from it.
+# a different recording is FOREIGN_TIMING_EXTENT_RATIO's question, checked
+# alongside this bound in _validate_timing_semantics so both verdicts reach
+# every write and load path. On a long recording the ratio fires far beyond
+# this tolerance; on a short one it is the only check that fires at all, which
+# is why the tolerance alone was never sufficient.
 TIMING_BOUND_TOLERANCE_SECONDS = 5.0
 # Past the tolerance above, timing is merely untrustworthy — a caption track
 # routinely trails its video by a rounding artifact. Past this ratio it is not
@@ -781,6 +783,23 @@ def _validate_timing_semantics(
         return
 
     duration = provenance.get("duration_seconds")
+    if (
+        maximum_end is not None
+        and isinstance(duration, (int, float))
+        and not isinstance(duration, bool)
+        and float(duration) > 0
+        and maximum_end / float(duration) > FOREIGN_TIMING_EXTENT_RATIO
+    ):
+        # Checked before the tolerance because it is the more specific verdict,
+        # and because on a short recording it is the only one that fires: cues
+        # running to 14s on a 10s video overhang by 4s — inside the tolerance —
+        # while describing a recording 1.4x this one's length.
+        raise ValueError(
+            f"timed segments span {maximum_end / float(duration):.2f}x the "
+            "source-owned duration, so they describe a different, longer "
+            "recording — re-run fetch-transcript.py with --method whisper "
+            "--force to transcribe this recording's own audio"
+        )
     if (
         maximum_end is not None
         and isinstance(duration, (int, float))
