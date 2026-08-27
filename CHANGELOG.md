@@ -1,6 +1,69 @@
 # Changelog
 
-## 0.20.107 — 2026-08-27
+### fix(vault-ingress) — the "fresh v6 claim" example declared version 5
+
+The canonical return example in `references/subagent-instructions.md` is headed
+"Minimal processed structure for a fresh v6 claim" and carried
+`"return_schema_version": 5`. `return_validation.py` rejects that outright: a v6
+claim "requires return schema version 6, got 5".
+
+Every per-talk worker reads this file, and this is the block it copies. A worker
+following it produced a rejected return, and the rejection surfaced as the
+worker being wrong rather than the instruction being wrong — the expensive
+direction to debug, since the fix looks like it belongs in the analysis.
+
+A test held the error in place. `test_ingress_adherence_docs.py` asserted the
+worker doc *contains* `"return_schema_version": 5`, so correcting the example
+failed CI; the guard required the bug to stay. That assertion now parses the
+fenced example and compares its version against the validator's own
+`WEIGHTED_SCORE_RETURN_SCHEMA_VERSION`, so it tracks the code instead of a
+string. The `schemas-db.md` assertion stays at 5, which that document's
+compatibility table calls a still-valid return at the flat scoring generation.
+
+The block also omitted `pattern_score_basis`, which a v6 return requires.
+Documenting the object meant reproducing `DETECTION_WEIGHTS` in reference prose,
+and no script-owned operation existed that a worker could call instead — so the
+only paths were a mirrored constant or a worker deriving it from the validator's
+source. `build-score-basis.py` closes that: the basis is a pure function of a
+return's own detection lanes and not-evaluable ledger, and the script is a thin
+entry point onto `return_validation.pattern_score_basis`, which keeps one owner
+for both the weight table and the shape. The reference names the command instead
+of the values.
+
+The example no longer carries the basis at all. Printing it there would restate
+computed values the script owns, and a static copy drifts; the block now stops
+where a worker's own writing stops, and the reference names the command that
+completes it.
+
+It also claimed all five evidence sources to show each lane's syntax, which no
+return may do without the audits behind them — so it could never have been
+copied. It claims the one source it can back.
+
+The builder emits completed returns rather than a fragment to paste. Inserting
+the field is as deterministic as computing it, and leaving that merge to the
+worker invites an incorrectly placed or wrongly associated basis. Its stdout is
+the same returns with the field set, ready for `validate-returns.py`. It exits
+`0` on success and `2` on unreadable, malformed, or duplicate-filename input,
+with a diagnostic on stderr and nothing on stdout; the reference states that
+contract and tells the worker to stop on nonzero. A malformed detection reaches
+the owner function as a `TypeError` or `KeyError`, which is converted to the
+documented exit rather than leaking a traceback into a caller that is parsing
+stdout.
+
+The builder rejects duplicate talk filenames rather than keying past them.
+Building the result as a filename map would drop every return but the last, and
+a caller merging that output would hand one talk another talk's basis — worse
+than no output. `validate-returns.py` rejects duplicates across its inputs for
+the same reason.
+
+The guard follows the same line. Rather than re-deriving fields by hand or
+comparing against a pasted copy, it runs the documented sequence: parse the
+example, pass it through `build-score-basis.py` for the completed return, and
+validate that through `validate-returns.py`. What is under test is the flow a worker is told
+to follow, and it asserts the example does *not* contain the generated field.
+
+Found while preparing the first hand-run batch of a 250-talk reparse, before
+launching parallel workers against the same instructions.
 
 ### fix(vault-ingress) — stop a final-cue overhang discarding a talk's timing
 

@@ -529,16 +529,15 @@ Minimal processed structure for a fresh v6 claim:
 ```json
 {
   "filename": "2026-01-01-example.md",
-  "return_schema_version": 5,
+  "return_schema_version": 6,
   "queue_claim": {
     "run_id": "reparse-2026-07",
     "batch_id": "25",
     "reprocess_generation": 1
   },
-  "status": "processed",
+  "status": "processed_partial",
   "transcript_source": "youtube_auto",
-  "slide_source": "both",
-  "slides_local_path": "slides/example.pdf",
+  "slide_source": "none",
   "rhetoric_notes": "Dimensions 1-13 analysis...",
   "areas_for_improvement": "Dimension 14 analysis...",
   "adherence_assessment": "",
@@ -551,21 +550,17 @@ Minimal processed structure for a fresh v6 claim:
   "verbatim_examples": {},
   "pattern_observations": {
     "evidence_sources": [
-      "transcript",
-      "static_slides",
-      "native_deck",
-      "delivery_video",
-      "source_comparison"
+      "transcript"
     ],
     "source_inspection": [
-      {"source": "transcript", "line_ranges": [[1, 360]]},
-      {"source": "static_slides", "page_ranges": [[1, 42]]},
-      {"source": "native_deck", "page_ranges": [[1, 42]]},
-      {"source": "delivery_video", "time_ranges": [[0, 1800.0]]},
       {
-        "source": "source_comparison",
-        "evidence_sources_used": ["static_slides", "native_deck"],
-        "comparison_scope": "full"
+        "source": "transcript",
+        "line_ranges": [
+          [
+            1,
+            360
+          ]
+        ]
       }
     ],
     "patterns_detected": [
@@ -601,6 +596,28 @@ Minimal processed structure for a fresh v6 claim:
   }
 }
 ```
+
+This block is complete except for `pattern_observations.pattern_score_basis`,
+which a script fills in. Do not write or merge it by hand:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/build-score-basis.py" \
+  batch-returns.json > completed-returns.json
+```
+
+Input is one return object or an array of them; output is those same returns
+with the field set, ready for `validate-returns.py`. Exit `0` means the batch
+is complete. Exit `2` means unreadable, malformed, or duplicate-filename input:
+a diagnostic goes to stderr, stdout stays empty, and you must stop rather than
+validate a partial batch. The weight table and the object's shape belong to
+`skills/vault-ingress/scripts/return_validation.py`; nothing here restates them.
+
+The example claims one inspected source. Add a source only with the audit
+behind it: `native_deck` requires the current
+`structured_data.native_deck_audit`, `static_slides` from a video-extracted deck
+requires the schema-v4 `structured_data.video_extraction` manifest, and
+`delivery_video` requires its own declared local artifact. A claimed source
+without its audit is rejected.
 
 The raw worker return must not include engine-owned `evidence_schema_version`,
 `pattern_outcomes`, or `opportunity_coverage_identity`. Persistence derives the

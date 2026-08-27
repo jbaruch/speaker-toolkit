@@ -1,10 +1,12 @@
 """Documentation guards for live claim-v5 and archival-v4 adherence."""
 
+import json
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 INGRESS = REPO_ROOT / "skills" / "vault-ingress"
+
 DOC_PATHS = {
     "skill": INGRESS / "SKILL.md",
     "bootstrap": INGRESS / "references" / "bootstrap-and-preflight.md",
@@ -109,8 +111,10 @@ def test_threshold_and_structured_comparison_contract_is_documented() -> None:
     assert "2–4 punctuation-terminated sentences" in docs["processing"]
     assert "Validators deliberately do not parse prose" in docs["processing"]
     assert "renderer generates this anchor mechanically" in docs["processing"]
+    # schemas-db documents the v5 shape deliberately: the compatibility table
+    # above that example states a v5 return "still validates and still
+    # persists, at the flat scoring generation".
     assert '"return_schema_version": 5' in docs["schemas"]
-    assert '"return_schema_version": 5' in docs["worker"]
 
 
 def test_native_picture_render_threshold_is_script_owned() -> None:
@@ -301,3 +305,89 @@ def test_transcript_freshness_revalidates_quality_provenance() -> None:
         in docs["selection"]
     )
     assert "transcript_quality_context_drift" in docs["schemas"]
+
+
+def _worker_v6_example() -> dict:
+    """Parse the fenced return example the per-talk workers copy."""
+    doc = DOC_PATHS["worker"].read_text(encoding="utf-8")
+    marker = '{\n  "filename": "2026-01-01-example.md"'
+    start = doc.index(marker)
+    return json.loads(doc[start : doc.index("```", start)].strip())
+
+
+def test_worker_example_declares_the_version_its_heading_claims(
+    return_validation,
+) -> None:
+    """The block every subagent copies is headed "fresh v6 claim".
+
+    It previously declared version 5, which a v6 claim rejects outright, and the
+    rejection read as the worker analysing badly rather than the instruction
+    being wrong.
+    """
+    example = _worker_v6_example()
+    assert (
+        example["return_schema_version"]
+        == return_validation.WEIGHTED_SCORE_RETURN_SCHEMA_VERSION
+    )
+
+
+def test_worker_example_uses_only_declared_verbatim_lanes(return_validation) -> None:
+    """Invented lane names are rejected as unknown snapshot lanes."""
+    example = _worker_v6_example()
+    assert (
+        set(example.get("verbatim_examples", {}))
+        <= return_validation.VERBATIM_EXAMPLE_FIELDS
+    )
+
+
+def test_the_documented_flow_turns_the_example_into_a_valid_return() -> None:
+    """Example plus basis builder must equal something the validator accepts.
+
+    The block deliberately omits `pattern_score_basis`; the reference tells the
+    worker to generate it. This exercises that sequence end to end, so the
+    documented flow is what is under test rather than a copy of the script's
+    output pasted into the page.
+    """
+    import subprocess
+    import sys
+    import tempfile
+
+    example = _worker_v6_example()
+    assert "pattern_score_basis" not in example["pattern_observations"], (
+        "the example must not restate script-owned output"
+    )
+    scripts = INGRESS / "scripts"
+
+    with tempfile.TemporaryDirectory() as work:
+        path = Path(work) / "example.json"
+        path.write_text(json.dumps(example), encoding="utf-8")
+
+        built = subprocess.run(
+            [sys.executable, str(scripts / "build-score-basis.py"), str(path)],
+            capture_output=True,
+            text=True,
+        )
+        assert built.returncode == 0, built.stderr
+        # the builder emits the completed return, so nothing is merged by hand
+        path.write_text(built.stdout, encoding="utf-8")
+
+        validated = subprocess.run(
+            [
+                sys.executable,
+                str(scripts / "validate-returns.py"),
+                str(path),
+                "--catalog-dir",
+                str(
+                    REPO_ROOT
+                    / "skills"
+                    / "presentation-creator"
+                    / "references"
+                    / "patterns"
+                ),
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+    assert validated.returncode == 0, validated.stderr
+    assert json.loads(validated.stdout)["valid"] is True
