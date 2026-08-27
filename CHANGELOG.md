@@ -28,15 +28,18 @@ is visible up front rather than after the batch. A binary that cannot answer
 
 Stdout is one JSON report: a `results` entry per requested id in the order
 given, each `ok`, `skip`, or `fail` with its bytes or its exit code, yt-dlp
-reason, and log path. The file on disk is the verdict rather than the exit code,
-since yt-dlp can exit zero having produced nothing after a failed merge. Ids
-already downloaded are skipped, so a 78-video batch resumes instead of
-restarting, and every id is checked against the shared ingress YouTube grammar
-before becoming a directory name or a URL. Exit 0 when every id ended `ok` or
-`skip`, 1 when any failed, 2 on a usage or resolution error — and that exit-2
-path reports a typed `{"ok": false, "code": ...}` object from a closed
-vocabulary rather than bare prose, so a caller parsing stdout is never handed
-nothing.
+reason, and log path. An `ok` needs both halves — yt-dlp can exit zero having
+produced nothing after a failed merge, and it can exit non-zero having left a
+truncated file behind, which the resume check would then read as a finished
+download. That partial is discarded so the retry downloads instead of skipping.
+Ids already downloaded are skipped, so a 78-video batch resumes instead of
+restarting; every id is checked against the shared ingress YouTube grammar
+before becoming a directory name or a URL; and a repeated id is rejected rather
+than handed to two workers writing the same file at once. Exit 0 when every id
+ended `ok` or `skip`, 1 when any failed, 2 on a usage or resolution error — and
+that exit-2 path reports a typed `{"ok": false, "code": ...}` object from a
+closed vocabulary rather than bare prose, so a caller parsing stdout is never
+handed nothing.
 
 `references/video-slide-extraction.md` taught the bare `yt-dlp` invocation in
 three places, and `references/subagent-instructions.md` carried a fourth — the

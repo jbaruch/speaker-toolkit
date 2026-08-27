@@ -21,9 +21,12 @@ Stdout: one JSON object.
      "counts": {"ok": 1, "skip": 1, "fail": 1},
      "results": [{"youtube_id": "...", "outcome": "ok|skip|fail", ...}]}
 
-`results` holds one entry per requested id, in the order given. An `ok` or
-`skip` entry carries `path` and `bytes`; a `fail` entry carries `exit_code`,
-`reason`, and `log`.
+`results` holds one entry per requested id, in the order given; an id repeated
+in one invocation is rejected rather than downloaded twice. An `ok` or `skip`
+entry carries `path` and `bytes`; a `fail` entry carries `exit_code`, `reason`,
+and `log`. An `ok` requires both a zero exit and a non-empty file — a run that
+exits non-zero having left a truncated file behind fails, and its partial output
+is discarded so the next run retries rather than skipping it.
 
 A usage or yt-dlp resolution failure is reported the same way, as a typed
 object drawn from a closed vocabulary rather than prose:
@@ -63,6 +66,7 @@ FAILURE_CODES = frozenset(
     {
         "usage",
         "youtube_id_invalid",
+        "youtube_id_duplicated",
         "ytdlp_override_invalid",
         "ytdlp_not_found",
         "ytdlp_version_unavailable",
@@ -223,21 +227,36 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
             "log": str(log_path),
         }
 
-    # yt-dlp can exit zero having produced nothing usable after a failed merge,
-    # so the file on disk is the verdict and the exit code only sharpens the
-    # reason for a failure.
-    if target.is_file() and target.stat().st_size > 0:
+    # Success needs both halves. yt-dlp can exit zero having produced nothing
+    # usable after a failed merge, and it can exit non-zero having left a
+    # truncated file behind — which the skip above would then read as a finished
+    # download on the next run.
+    written = target.is_file() and target.stat().st_size > 0
+    if exit_code == 0 and written:
         return {
             "youtube_id": youtube_id,
             "outcome": "ok",
             "path": str(target),
             "bytes": target.stat().st_size,
         }
+
+    reason = failure_reason(log_path)
+    if written:
+        # The skip check above proved there was no usable video here before this
+        # run, so whatever sits at the target is this run's own partial output.
+        # Leaving it would make the next run skip a truncated file.
+        try:
+            target.unlink()
+            reason = f"{reason} (discarded partial output)"
+        except OSError as exc:
+            reason = f"{reason} (partial output left at {target}: {exc})"
+    elif exit_code == 0:
+        reason = f"exited 0 without producing a video — {reason}"
     return {
         "youtube_id": youtube_id,
         "outcome": "fail",
         "exit_code": exit_code,
-        "reason": failure_reason(log_path),
+        "reason": reason,
         "log": str(log_path),
     }
 
@@ -318,6 +337,17 @@ def main(argv: list[str] | None = None) -> int:
             "youtube_id_invalid",
             f"not YouTube ids: {' '.join(invalid)} — each must match "
             f"{YOUTUBE_ID_RE.pattern}",
+        )
+    # Two workers on one id would write the same file at the same time. Rejected
+    # rather than deduplicated, so `results` keeps one entry per argument.
+    counted: set[str] = set()
+    repeated = sorted(
+        {value for value in youtube_ids if value in counted or counted.add(value)}
+    )
+    if repeated:
+        return report_failure(
+            "youtube_id_duplicated",
+            f"repeated YouTube ids: {' '.join(repeated)} — pass each id once",
         )
 
     try:

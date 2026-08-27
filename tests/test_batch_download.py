@@ -64,6 +64,22 @@ done
 exit 0
 """
 
+# Writes a partial file, then fails — the truncated-merge shape.
+FAKE_PARTIAL_THEN_FAIL = """\
+#!/usr/bin/env bash
+out=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --version) echo "9999.12.31"; exit 0 ;;
+        -o) shift; out="$1"; printf 'trunc' > "$1" ;;
+        *) ;;
+    esac
+    shift
+done
+echo "ERROR: Postprocessing: ffmpeg exited with code 1" >&2
+exit 1
+"""
+
 # Present and executable, but cannot answer --version.
 FAKE_NO_VERSION = """\
 #!/usr/bin/env bash
@@ -336,3 +352,46 @@ def test_help_flag_yields_a_typed_failure_not_prose(tmp_path):
     assert _report(result)["code"] == "usage"
     assert flagged.returncode == 2
     assert json.loads(flagged.stdout)["code"] == "usage"
+
+
+def test_nonzero_exit_with_a_partial_file_is_a_failure(tmp_path):
+    """A truncated file plus a non-zero exit is a failure, not a usable download."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    result = _run(
+        vault, [OK_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_PARTIAL_THEN_FAIL, "partial")
+    )
+
+    assert result.returncode == 1
+    entry = _by_id(result)[OK_ID]
+    assert entry["outcome"] == "fail"
+    assert entry["exit_code"] == 1
+
+
+def test_a_discarded_partial_does_not_become_the_next_run_s_skip(tmp_path):
+    """The partial is removed, so a retry downloads rather than skipping."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    failing = _run(
+        vault, [OK_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_PARTIAL_THEN_FAIL, "partial")
+    )
+    target = vault / "slides-rebuild" / OK_ID / f"{OK_ID}.mp4"
+
+    assert "discarded partial output" in _by_id(failing)[OK_ID]["reason"]
+    assert not target.exists()
+
+    retried = _run(vault, [OK_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_OK))
+    assert _by_id(retried)[OK_ID]["outcome"] == "ok"
+    assert target.read_text() == "video-bytes"
+
+
+def test_a_repeated_id_is_rejected_before_any_download(tmp_path):
+    """Two workers must never write the same file, so a repeat is a usage error."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    result = _run(vault, [OK_ID, OTHER_ID, OK_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_OK))
+
+    assert result.returncode == 2
+    assert _report(result)["code"] == "youtube_id_duplicated"
+    assert OK_ID in result.stderr
+    assert not (vault / "slides-rebuild").exists()
