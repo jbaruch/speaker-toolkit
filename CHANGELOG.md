@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.108 — 2026-08-27
+
 ### fix(vault-ingress) — the "fresh v6 claim" example declared version 5
 
 The canonical return example in `references/subagent-instructions.md` is headed
