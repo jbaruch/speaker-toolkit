@@ -1,5 +1,25 @@
 # Changelog
 
+### fix(vault-ingress) — the "fresh v6 claim" example was a v5 return
+
+The canonical return example in `references/subagent-instructions.md` is headed
+"Minimal processed structure for a fresh v6 claim" and carried
+`"return_schema_version": 5` with no `pattern_score_basis`. Both are fatal
+against the claim it names:
+
+- `return_validation.py` rejects a version mismatch outright — a v6 claim
+  "requires return schema version 6, got 5"
+- `pattern_score_basis` is required alongside a weighted score, because "a bare
+  number cannot say what evidence produced it"
+
+Every per-talk worker reads this file, and this is the block it copies. A worker
+following it produced a return rejected twice over, and the failure surfaced as
+the worker being wrong rather than the instruction being wrong — the expensive
+direction to debug, since the fix looks like it belongs in the analysis.
+
+Found while preparing the first hand-run batch of a 250-talk reparse, before
+launching parallel workers against the same instructions.
+
 ## 0.20.107 — 2026-08-27
 
 ### fix(vault-ingress) — stop a final-cue overhang discarding a talk's timing

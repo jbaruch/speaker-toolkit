@@ -529,7 +529,7 @@ Minimal processed structure for a fresh v6 claim:
 ```json
 {
   "filename": "2026-01-01-example.md",
-  "return_schema_version": 5,
+  "return_schema_version": 6,
   "queue_claim": {
     "run_id": "reparse-2026-07",
     "batch_id": "25",
@@ -590,6 +590,10 @@ Minimal processed structure for a fresh v6 claim:
       "patterns_used": 1,
       "antipatterns_detected": 0,
       "score": 1
+    },
+    "pattern_score_basis": {
+      "patterns_used": 1,
+      "antipatterns_detected": 0
     }
   },
   "catalog_feedback": {
