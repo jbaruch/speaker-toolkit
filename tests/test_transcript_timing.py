@@ -566,22 +566,25 @@ def test_timing_reader_rejects_segment_text_and_duration_mismatch(
         json.dumps(
             {
                 **base,
+                "provenance": _youtube_timing(transcript_timing, duration=100.0),
                 "segments": [
                     {
                         "text": text,
                         "start_seconds": 0.0,
-                        "end_seconds": 12.0,
+                        "end_seconds": 110.0,
                     }
                 ],
             }
         ),
         encoding="utf-8",
     )
+    # 10s past a 100s recording: beyond the tolerance, but 1.10x — not foreign.
     segments, bound_reason = transcript_timing.load_verified_segments(
-        transcript, text, **_owner(duration=10.0)
+        transcript, text, **_owner(duration=100.0)
     )
     assert segments == []
-    assert "duration bound" in bound_reason
+    assert "overhang" in bound_reason
+    assert "10.00s" in bound_reason, "the reason must state the actual overhang"
 
 
 def test_direct_timing_writer_remains_strict_on_semantic_mismatch(
@@ -838,3 +841,110 @@ def test_the_foreign_question_is_unanswerable_without_both_sides(
     ):
         assert transcript_timing.timing_extent_overrun_ratio(segments, duration) is None
         assert transcript_timing.timing_extent_is_foreign(segments, duration) is False
+
+
+def test_a_final_cue_outliving_the_recording_by_seconds_keeps_its_timing(
+    transcript_timing, tmp_path
+):
+    """The measured reality: 7 of 12 sampled talks overhang by 1.4-2.32s.
+
+    A caption cue carries display time, not speech time, so the last one
+    routinely outlives the recording. At the old 1.0s bound those talks lost
+    their timed evidence entirely.
+    """
+    transcript = tmp_path / "eg6gqvUFh6Q.txt"
+    text = "Canonical transcript text."
+    transcript.write_text(text, encoding="utf-8")
+    sidecar = transcript_timing.sidecar_path(transcript)
+    sidecar.write_text(
+        json.dumps(
+            {
+                "schema_version": transcript_timing.SIDECAR_SCHEMA_VERSION,
+                "transcript_sha256": transcript_timing.transcript_sha256(text),
+                "source": "captions",
+                "provenance": _youtube_timing(transcript_timing, duration=10.0),
+                "segments": [
+                    {"text": text, "start_seconds": 0.0, "end_seconds": 12.32}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    segments, reason = transcript_timing.load_verified_segments(
+        transcript, text, **_owner(duration=10.0)
+    )
+
+    assert segments, reason
+    assert len(segments) == 1
+
+
+def test_a_short_recording_catches_a_foreign_track_the_tolerance_admits(
+    transcript_timing, tmp_path
+):
+    """The gap a seconds-based bound cannot see.
+
+    Cues running to 14s on a 10s video overhang by 4s — inside the 5s
+    tolerance — while describing a recording 1.4x this one's length. Only the
+    extent ratio distinguishes them, so it has to run wherever timing is
+    validated, not only in the caption lane.
+    """
+    transcript = tmp_path / "eg6gqvUFh6Q.txt"
+    text = "Canonical transcript text."
+    transcript.write_text(text, encoding="utf-8")
+    sidecar = transcript_timing.sidecar_path(transcript)
+    sidecar.write_text(
+        json.dumps(
+            {
+                "schema_version": transcript_timing.SIDECAR_SCHEMA_VERSION,
+                "transcript_sha256": transcript_timing.transcript_sha256(text),
+                "source": "captions",
+                "provenance": _youtube_timing(transcript_timing, duration=10.0),
+                "segments": [{"text": text, "start_seconds": 0.0, "end_seconds": 14.0}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    segments, reason = transcript_timing.load_verified_segments(
+        transcript, text, **_owner(duration=10.0)
+    )
+
+    assert segments == []
+    assert "1.40x" in reason
+    assert "different, longer recording" in reason
+
+
+def test_overlong_whisper_timestamps_are_sloppy_not_foreign(
+    transcript_timing, tmp_path
+):
+    """Whisper transcribes the audio in hand, so it cannot be a foreign track.
+
+    Rejecting its imprecise timestamps as a different recording would tell the
+    operator to re-run the very transcription that produced them.
+    """
+    transcript = tmp_path / "eg6gqvUFh6Q.txt"
+    text = "Canonical transcript text."
+    transcript.write_text(text, encoding="utf-8")
+    sidecar = transcript_timing.sidecar_path(transcript)
+    sidecar.write_text(
+        json.dumps(
+            {
+                "schema_version": transcript_timing.SIDECAR_SCHEMA_VERSION,
+                "transcript_sha256": transcript_timing.transcript_sha256(text),
+                "source": "whisper",
+                "provenance": _youtube_timing(
+                    transcript_timing, source="whisper", duration=10.0
+                ),
+                "segments": [{"text": text, "start_seconds": 0.0, "end_seconds": 14.0}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    _segments, reason = transcript_timing.load_verified_segments(
+        transcript, text, **_owner(source="whisper", duration=10.0)
+    )
+
+    assert "different, longer recording" not in reason
+    assert "1.40x" not in reason

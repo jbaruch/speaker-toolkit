@@ -76,7 +76,20 @@ TIMING_PROVENANCE_KINDS = frozenset(
 TIMING_OWNER_SOURCES = frozenset(
     {"youtube_auto", "whisper", "manual", "unknown", "vtt"}
 )
-TIMING_BOUND_TOLERANCE_SECONDS = 1.0
+# A caption cue carries display time, not speech time, so the final cue
+# routinely outlives the recording by a second or two. Measured across a
+# 12-talk sample of this vault's caption-sourced transcripts, the overhang runs
+# -10.88s to +2.32s and 7 of the 12 sat between 1.4s and 2.32s — so a 1.0s
+# bound discarded the timed evidence of most talks that had any. Negative
+# values are equally ordinary: captions often stop before the video does.
+#
+# The bound only has to absorb that format artifact. Whether the cues describe
+# a different recording is FOREIGN_TIMING_EXTENT_RATIO's question, checked
+# alongside this bound in _validate_timing_semantics so both verdicts reach
+# every write and load path. On a long recording the ratio fires far beyond
+# this tolerance; on a short one it is the only check that fires at all, which
+# is why the tolerance alone was never sufficient.
+TIMING_BOUND_TOLERANCE_SECONDS = 5.0
 # Past the tolerance above, timing is merely untrustworthy — a caption track
 # routinely trails its video by a rounding artifact. Past this ratio it is not
 # this recording's track at all: the segments describe more speech than the
@@ -771,12 +784,46 @@ def _validate_timing_semantics(
 
     duration = provenance.get("duration_seconds")
     if (
+        kind == "youtube_captions"
+        and maximum_end is not None
+        and isinstance(duration, (int, float))
+        and not isinstance(duration, bool)
+        and float(duration) > 0
+        and maximum_end / float(duration) > FOREIGN_TIMING_EXTENT_RATIO
+    ):
+        # Captions only. A caption track can belong to a different recording;
+        # Whisper cannot, because it transcribes the audio in hand — imprecise
+        # Whisper timestamps are sloppy, not foreign, and rejecting them tells
+        # the operator to re-run the transcription that produced them.
+        #
+        # Checked before the tolerance because it is the more specific verdict,
+        # and because on a short recording it is the only one that fires: cues
+        # running to 14s on a 10s video overhang by 4s — inside the tolerance —
+        # while describing a recording 1.4x this one's length.
+        raise ValueError(
+            f"timed segments span {maximum_end / float(duration):.2f}x the "
+            "source-owned duration, so they describe a different, longer "
+            "recording — re-run fetch-transcript.py with --method whisper "
+            "--force to transcribe this recording's own audio"
+        )
+    if (
         maximum_end is not None
         and isinstance(duration, (int, float))
         and not isinstance(duration, bool)
         and maximum_end > float(duration) + TIMING_BOUND_TOLERANCE_SECONDS
     ):
-        raise ValueError("timed segments extend beyond the source-owned duration bound")
+        raise ValueError(
+            f"timed segments overhang the source-owned duration by "
+            f"{maximum_end - float(duration):.2f}s, beyond the "
+            f"{TIMING_BOUND_TOLERANCE_SECONDS:.0f}s tolerance, so the timing "
+            "cannot be trusted against this recording. The transcript text is "
+            "unaffected and stays usable without timed evidence. If the track "
+            "is this recording, that is the end state and no action recovers "
+            "the timing. If it is not — a track from a different, longer "
+            "video is reported separately as foreign, not here — re-run "
+            "fetch-transcript.py with --method whisper --force to transcribe "
+            "the audio itself"
+        )
 
 
 def timing_enrichment_equivalent(existing: str, fetched: str) -> bool:
