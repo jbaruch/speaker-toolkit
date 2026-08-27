@@ -390,23 +390,6 @@ def test_nonzero_exit_with_a_partial_file_is_a_failure(tmp_path):
     assert entry["exit_code"] == 1
 
 
-def test_a_discarded_partial_does_not_become_the_next_run_s_skip(tmp_path):
-    """The partial is removed, so a retry downloads rather than skipping."""
-    vault = tmp_path / "vault"
-    vault.mkdir()
-    failing = _run(
-        vault, [OK_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_PARTIAL_THEN_FAIL, "partial")
-    )
-    target = vault / "slides-rebuild" / OK_ID / f"{OK_ID}.mp4"
-
-    assert "discarded partial output" in _by_id(failing)[OK_ID]["reason"]
-    assert not target.exists()
-
-    retried = _run(vault, [OK_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_OK))
-    assert _by_id(retried)[OK_ID]["outcome"] == "ok"
-    assert target.read_text() == "video-bytes"
-
-
 def test_a_repeated_id_is_rejected_before_any_download(tmp_path):
     """Two workers must never write the same file, so a repeat is a usage error."""
     vault = tmp_path / "vault"
@@ -436,7 +419,12 @@ def test_an_unexpected_failure_still_writes_a_json_report(
     report = json.loads(captured.out)
     assert report["code"] == "unexpected_failure"
     assert report["ok"] is False
-    assert "the disk went away" in report["error"]
+    assert "rerun once the cause is fixed" in report["error"]
+    assert report["error_type"] == "RuntimeError"
+    assert report["origin"]
+    # `no-secrets`: the exception message never crosses the boundary.
+    assert "the disk went away" not in captured.out
+    assert "the disk went away" not in captured.err
     assert "Traceback" not in captured.err
 
 
@@ -450,3 +438,21 @@ def test_the_failure_boundary_lets_an_interrupt_through(tmp_path, monkeypatch):
 
     with pytest.raises(KeyboardInterrupt):
         downloader.run_cli([str(tmp_path), OK_ID])
+
+
+def test_a_partial_download_never_lands_on_the_target_path(tmp_path):
+    """The staged file is promoted only on success, so a retry cannot skip it."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    result = _run(
+        vault, [OK_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_PARTIAL_THEN_FAIL, "partial")
+    )
+    target = vault / "slides-rebuild" / OK_ID / f"{OK_ID}.mp4"
+
+    assert result.returncode == 1
+    assert not target.exists()
+    assert list(target.parent.glob("*.mp4")) == []
+
+    retried = _run(vault, [OK_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_OK))
+    assert _by_id(retried)[OK_ID]["outcome"] == "ok"
+    assert target.read_text() == "video-bytes"

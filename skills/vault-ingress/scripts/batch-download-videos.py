@@ -34,6 +34,10 @@ object drawn from a closed vocabulary rather than prose:
     {"schema_version": 1, "ok": false, "code": "ytdlp_not_found",
      "error": "cannot find yt-dlp — ..."}
 
+An `unexpected_failure` adds `error_type` and `origin`, the exception's type and
+its sanitized code locations. Its message never crosses the boundary: an OSError
+message embeds the host path it could not reach.
+
 Stderr: the resolved yt-dlp path and version, then one warning line per failure.
 A typed failure writes its message there too, so a caller reading only stderr
 still sees what to do.
@@ -57,6 +61,7 @@ import shutil
 import subprocess
 import sys
 
+from failure_diagnostics import sanitized_frames
 from ingress_contract import YOUTUBE_ID_RE
 
 USAGE = "usage: batch-download-videos.py <vault_root> ID1 [ID2 ...]"
@@ -183,6 +188,11 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
     """Download one video, returning its outcome rather than raising."""
     target_dir = vault_root / "slides-rebuild" / youtube_id
     target = target_dir / f"{youtube_id}.mp4"
+    # yt-dlp writes here and the file is promoted to `target` only once the run
+    # verifies, so nothing unverified can ever satisfy the resume check above —
+    # not even when the cleanup below cannot remove it. The `.mp4` suffix stays
+    # last so yt-dlp still picks the right container for the merge.
+    staging = target_dir / f"{youtube_id}.incomplete.mp4"
     log_path = target_dir / f"{youtube_id}.yt-dlp.log"
 
     if target.is_file() and target.stat().st_size > 0:
@@ -212,7 +222,7 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
         "mp4",
         "--no-progress",
         "-o",
-        str(target),
+        str(staging),
         f"https://www.youtube.com/watch?v={youtube_id}",
     ]
     try:
@@ -229,29 +239,37 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
             "log": str(log_path),
         }
 
-    # Success needs both halves. yt-dlp can exit zero having produced nothing
+    # Success needs both halves: yt-dlp can exit zero having produced nothing
     # usable after a failed merge, and it can exit non-zero having left a
-    # truncated file behind — which the skip above would then read as a finished
-    # download on the next run.
-    written = target.is_file() and target.stat().st_size > 0
+    # truncated file behind.
+    written = staging.is_file() and staging.stat().st_size > 0
     if exit_code == 0 and written:
+        size = staging.stat().st_size
+        try:
+            staging.replace(target)
+        except OSError as exc:
+            return {
+                "youtube_id": youtube_id,
+                "outcome": "fail",
+                "exit_code": exit_code,
+                "reason": f"downloaded but could not be promoted to {target}: {exc}",
+                "log": str(log_path),
+            }
         return {
             "youtube_id": youtube_id,
             "outcome": "ok",
             "path": str(target),
-            "bytes": target.stat().st_size,
+            "bytes": size,
         }
 
     reason = failure_reason(log_path)
     if written:
-        # The skip check above proved there was no usable video here before this
-        # run, so whatever sits at the target is this run's own partial output.
-        # Leaving it would make the next run skip a truncated file.
+        # Best-effort: an undeleted staging file is harmless, since the resume
+        # check reads `target` and the next run overwrites this same path.
         try:
-            target.unlink()
-            reason = f"{reason} (discarded partial output)"
-        except OSError as exc:
-            reason = f"{reason} (partial output left at {target}: {exc})"
+            staging.unlink()
+        except OSError:
+            reason = f"{reason} (partial output left in {target_dir})"
     elif exit_code == 0:
         reason = f"exited 0 without producing a video — {reason}"
     return {
@@ -297,20 +315,29 @@ def execute(vault_root: Path, youtube_ids: list[str]) -> dict[str, object]:
     }
 
 
-def report_failure(code: str, message: str) -> int:
-    """Emit one typed failure on stdout and its actionable line on stderr."""
-    json.dump(
-        {
-            "schema_version": REPORT_SCHEMA_VERSION,
-            "ok": False,
-            "code": code,
-            "error": message,
-        },
-        sys.stdout,
-        indent=2,
-        sort_keys=True,
-    )
-    sys.stdout.write("\n")
+def report_failure(
+    code: str,
+    message: str,
+    *,
+    error_type: str | None = None,
+    origin: list[str] | None = None,
+) -> int:
+    """Emit one typed failure on stdout and its actionable line on stderr.
+
+    Serialized before it is written, so a failure while building the document
+    leaves stdout empty rather than holding half of one.
+    """
+    document: dict[str, object] = {
+        "schema_version": REPORT_SCHEMA_VERSION,
+        "ok": False,
+        "code": code,
+        "error": message,
+    }
+    if error_type is not None:
+        document["error_type"] = error_type
+    if origin is not None:
+        document["origin"] = origin
+    sys.stdout.write(json.dumps(document, indent=2, sort_keys=True) + "\n")
     print(message, file=sys.stderr)
     return 2
 
@@ -356,8 +383,7 @@ def main(argv: list[str] | None = None) -> int:
         report = execute(vault_root, youtube_ids)
     except YtDlpResolutionError as exc:
         return report_failure(exc.code, str(exc))
-    json.dump(report, sys.stdout, indent=2, sort_keys=True)
-    sys.stdout.write("\n")
+    sys.stdout.write(json.dumps(report, indent=2, sort_keys=True) + "\n")
     return 0 if report["ok"] else 1
 
 
@@ -375,11 +401,16 @@ def run_cli(argv: list[str] | None = None) -> int:
     # emits the typed `unexpected_failure` object naming the exception; letting
     # it propagate would break the contract at the only boundary that has one.
     except Exception as exc:  # noqa: BLE001 - outer-boundary-process-contract
+        # `no-secrets`: the exception TYPE and sanitized frames cross the
+        # boundary, never its message — an OSError message embeds the host path
+        # it could not reach.
         report_failure(
             "unexpected_failure",
-            f"the download run failed unexpectedly ({type(exc).__name__}: {exc})"
-            " — no video is guaranteed downloaded; rerun once the cause is"
-            " fixed, since ids already on disk are skipped",
+            "the download run failed unexpectedly — no video is guaranteed "
+            "downloaded; rerun once the cause is fixed, since ids already on "
+            "disk are skipped",
+            error_type=type(exc).__name__,
+            origin=sanitized_frames(exc),
         )
         return 3
 

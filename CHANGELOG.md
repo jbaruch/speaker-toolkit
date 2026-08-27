@@ -31,7 +31,9 @@ given, each `ok`, `skip`, or `fail` with its bytes or its exit code, yt-dlp
 reason, and log path. An `ok` needs both halves — yt-dlp can exit zero having
 produced nothing after a failed merge, and it can exit non-zero having left a
 truncated file behind, which the resume check would then read as a finished
-download. That partial is discarded so the retry downloads instead of skipping.
+download. yt-dlp writes to a staging name and the file is promoted only once
+the run verifies, so nothing unverified can reach the path the resume check
+reads, even when the cleanup itself fails.
 Ids already downloaded are skipped, so a 78-video batch resumes instead of
 restarting; every id is checked against the shared ingress YouTube grammar
 before becoming a directory name or a URL; and a repeated id is rejected rather
@@ -43,7 +45,9 @@ prose or a traceback, so a caller parsing stdout is never handed nothing. That
 last exit is the outer-boundary carve-out in `rules/error-handling.md`: an
 escaping exception would leave empty stdout, which reads as "no videos were
 requested" rather than as a failed run — the same silence the whole change
-exists to remove.
+exists to remove. That document carries the exception's type and sanitized code
+locations, never its message: `no-secrets` forbids host paths in a diagnostic,
+and an `OSError` message embeds the path it could not reach.
 
 `references/video-slide-extraction.md` taught the bare `yt-dlp` invocation in
 three places, and `references/subagent-instructions.md` carried a fourth — the
