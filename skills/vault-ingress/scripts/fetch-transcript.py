@@ -1406,12 +1406,21 @@ def main(argv: list[str] | None = None) -> NoReturn:
                     existing_source=args.existing_source,
                     duration_seconds=trusted_duration,
                 )
-            except (OSError, ValueError) as exc:
+            except OSError as exc:
                 print(
                     f"caption timing enrichment failed safely for {out}: {exc}",
                     file=sys.stderr,
                 )
                 timing_reason = f"timing unavailable: receipt write failed: {exc}"
+            except ValueError as exc:
+                # Not a write fault. The timing was read and rejected, and the
+                # raiser already says why and what to do — prefixing it with a
+                # write failure sends the operator after the wrong cause.
+                print(
+                    f"caption timing enrichment failed safely for {out}: {exc}",
+                    file=sys.stderr,
+                )
+                timing_reason = f"timing unavailable: {exc}"
         elif timed_path is None and args.method == "whisper":
             timing_reason = (
                 "timing unavailable: --method whisper forbids caption "
