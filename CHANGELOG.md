@@ -28,9 +28,14 @@ it.
 The rejection also stated the wrong thing. `receipt write failed: timed
 segments extend beyond the source-owned duration bound` reads as a write fault
 plus a serious identity problem; the write had not failed and the bound was
-exceeded by 1.6s. It now names the measured overhang and the tolerance it
-crossed, so an operator can tell a rounding artifact from the genuine
-foreign-track case.
+exceeded by 1.6s. It now names the measured overhang, the tolerance it
+crossed, and what to do about it — so an operator can tell a rounding artifact
+from the genuine foreign-track case and knows which one they are looking at.
+
+The caller compounded it, catching `OSError` and `ValueError` together and
+labelling both a write failure. An `OSError` is one; a `ValueError` means the
+timing was read and rejected. They are separate handlers now, so a validation
+failure carries its own reason instead of a fault that never happened.
 
 Found on the first batch of the 250-talk reparse, where
 `2013-devcontlv-modules-hell` lost 18 minutes of timing to a 1.6s overhang.
