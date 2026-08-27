@@ -20,12 +20,21 @@ fenced example and compares its version against the validator's own
 string. The `schemas-db.md` assertion stays at 5, which that document's
 compatibility table calls a still-valid return at the flat scoring generation.
 
-The block also omits `pattern_score_basis`, which a v6 return requires. Showing
-it means reproducing `DETECTION_WEIGHTS` in reference prose, which
-`rules/script-as-black-box.md` forbids, and no script-owned operation exists
-that a worker can call to produce the object instead. The example now points at
-`return_validation.py` for that contract, and the gap is tracked separately
-rather than resolved by mirroring a constant.
+The block also omitted `pattern_score_basis`, which a v6 return requires.
+Documenting the object meant reproducing `DETECTION_WEIGHTS` in reference prose,
+and no script-owned operation existed that a worker could call instead — so the
+only paths were a mirrored constant or a worker deriving it from the validator's
+source. `build-score-basis.py` closes that: the basis is a pure function of a
+return's own detection lanes and not-evaluable ledger, and the script is a thin
+entry point onto `return_validation.pattern_score_basis`, which keeps one owner
+for both the weight table and the shape. The reference names the command instead
+of the values.
+
+The example is now validator-clean rather than illustrative. It claimed all five
+evidence sources to show each lane's syntax, which no return may do without the
+audits behind them, so it could never have been copied. It now claims the one
+source it can back, and a test runs it through `validate-returns.py` — checking
+the acceptance the block advertises rather than re-deriving selected fields.
 
 Found while preparing the first hand-run batch of a 250-talk reparse, before
 launching parallel workers against the same instructions.

@@ -338,3 +338,38 @@ def test_worker_example_uses_only_declared_verbatim_lanes(return_validation) -> 
         set(example.get("verbatim_examples", {}))
         <= return_validation.VERBATIM_EXAMPLE_FIELDS
     )
+
+
+def test_worker_example_passes_the_deterministic_return_validator() -> None:
+    """The block a subagent copies must survive the gate it will be run through.
+
+    Checking the version and shape by hand leaves the advertised acceptance
+    untested; this runs the example through validate-returns.py itself.
+    """
+    import subprocess
+    import sys
+    import tempfile
+
+    example = _worker_v6_example()
+    with tempfile.TemporaryDirectory() as work:
+        path = Path(work) / "example.json"
+        path.write_text(json.dumps(example), encoding="utf-8")
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(INGRESS / "scripts" / "validate-returns.py"),
+                str(path),
+                "--catalog-dir",
+                str(
+                    REPO_ROOT
+                    / "skills"
+                    / "presentation-creator"
+                    / "references"
+                    / "patterns"
+                ),
+            ],
+            capture_output=True,
+            text=True,
+        )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["valid"] is True

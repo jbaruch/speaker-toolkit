@@ -420,6 +420,13 @@ def return_validation():
 
 
 @pytest.fixture(scope="session")
+def build_score_basis():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "build-score-basis.py"), "build_score_basis"
+    )
+
+
+@pytest.fixture(scope="session")
 def write_analysis():
     return _import_script(
         os.path.join(SCRIPTS_VI, "write-analysis.py"), "write_analysis"

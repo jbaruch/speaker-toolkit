@@ -535,10 +535,9 @@ Minimal processed structure for a fresh v6 claim:
     "batch_id": "25",
     "reprocess_generation": 1
   },
-  "status": "processed",
+  "status": "processed_partial",
   "transcript_source": "youtube_auto",
-  "slide_source": "both",
-  "slides_local_path": "slides/example.pdf",
+  "slide_source": "none",
   "rhetoric_notes": "Dimensions 1-13 analysis...",
   "areas_for_improvement": "Dimension 14 analysis...",
   "adherence_assessment": "",
@@ -551,21 +550,17 @@ Minimal processed structure for a fresh v6 claim:
   "verbatim_examples": {},
   "pattern_observations": {
     "evidence_sources": [
-      "transcript",
-      "static_slides",
-      "native_deck",
-      "delivery_video",
-      "source_comparison"
+      "transcript"
     ],
     "source_inspection": [
-      {"source": "transcript", "line_ranges": [[1, 360]]},
-      {"source": "static_slides", "page_ranges": [[1, 42]]},
-      {"source": "native_deck", "page_ranges": [[1, 42]]},
-      {"source": "delivery_video", "time_ranges": [[0, 1800.0]]},
       {
-        "source": "source_comparison",
-        "evidence_sources_used": ["static_slides", "native_deck"],
-        "comparison_scope": "full"
+        "source": "transcript",
+        "line_ranges": [
+          [
+            1,
+            360
+          ]
+        ]
       }
     ],
     "patterns_detected": [
@@ -590,6 +585,25 @@ Minimal processed structure for a fresh v6 claim:
       "patterns_used": 1,
       "antipatterns_detected": 0,
       "score": 1
+    },
+    "pattern_score_basis": {
+      "schema_version": 6,
+      "weights": {
+        "moderate": 0.5,
+        "strong": 1.0,
+        "weak": 0.25
+      },
+      "patterns": {
+        "moderate": 0,
+        "strong": 1,
+        "weak": 0
+      },
+      "antipatterns": {
+        "moderate": 0,
+        "strong": 0,
+        "weak": 0
+      },
+      "not_evaluable_count": 0
     }
   },
   "catalog_feedback": {
@@ -602,19 +616,23 @@ Minimal processed structure for a fresh v6 claim:
 }
 ```
 
-A v6 return additionally requires `pattern_observations.pattern_score_basis`,
-which this block does not show. Its exact fields and the weight values behind
-them are owned by `skills/vault-ingress/scripts/return_validation.py`; read the
-basis contract there rather than reproducing it here, and run
-`validate-returns.py`, which names the missing or wrong fields.
-
-This block illustrates field shapes, not a runnable return. It declares every
-evidence source at once so each lane's syntax is visible; a real return may only
-name a source it can back — `native_deck` requires the current
+This block validates as written, claiming one inspected source. Add a source
+only with the audit behind it: `native_deck` requires the current
 `structured_data.native_deck_audit`, `static_slides` from a video-extracted deck
 requires the schema-v4 `structured_data.video_extraction` manifest, and
-`delivery_video` requires its own declared local artifact. Claim only what the
-talk's inspected sources support, or validation rejects the return.
+`delivery_video` requires its own declared local artifact. A claimed source
+without its audit is rejected.
+
+Do not hand-derive `pattern_score_basis`. It is a pure function of the return's
+own detection lanes and not-evaluable ledger, so a script owns it:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/build-score-basis.py" \
+  batch-returns.json
+```
+
+It prints the exact object `pattern_observations.pattern_score_basis` must
+carry, for one return or keyed by filename for several.
 
 The raw worker return must not include engine-owned `evidence_schema_version`,
 `pattern_outcomes`, or `opportunity_coverage_identity`. Persistence derives the
