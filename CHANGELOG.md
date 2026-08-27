@@ -11,21 +11,34 @@ command in the same minute. Together the two turned 34 of 35 failed downloads
 into silence, and the talks behind them read downstream as thin rather than
 unprocessed.
 
-The script now resolves `yt-dlp` in an explicit order — `$YT_DLP`, then
-`$VIRTUAL_ENV/bin/yt-dlp`, then the toolkit's own `.venv`, then `PATH` — and
-announces the resolved path and version on stderr, so a stale binary is visible
-before the first 403 rather than after the batch. It emits one tab-separated
-`OK` / `SKIP` / `FAIL` line per id with the yt-dlp reason and a log path,
-verifies the output file is non-empty (yt-dlp can exit zero having produced
-nothing after a failed merge), skips ids already downloaded so a large batch is
-resumable, and exits non-zero when any id failed while still attempting the
-rest. It runs under the aggregate-reporting carve-out in
-`rules/error-handling.md`: `set -uo pipefail` with every exit code captured
-explicitly.
+It is now `batch-download-videos.py`. The bash version was the directory's lone
+shell script among fifty Python ones, and `rules/script-delegation.md` requires
+a script to produce structured data — which meant hand-rolling JSON escaping in
+bash for strings that arrive as arbitrary yt-dlp error text. Python removes that
+along with the `set -e` carve-out gymnastics and two portability traps a
+reviewer found in the shell draft: an unset `VIRTUAL_ENV` expanding to
+`/bin/yt-dlp`, and an unchecked `mktemp -d`.
+
+The script resolves `yt-dlp` in an explicit order — `$YT_DLP`, then the console
+script beside the running interpreter (#371's own proposal), then
+`$VIRTUAL_ENV`, then the toolkit's `.venv`, then `PATH` — and announces the
+resolved path and version on stderr before the first download, so a stale binary
+is visible up front rather than after the batch. A binary that cannot answer
+`--version` is a resolution failure, not an unnamed version.
+
+Stdout is one JSON report: a `results` entry per requested id in the order
+given, each `ok`, `skip`, or `fail` with its bytes or its exit code, yt-dlp
+reason, and log path. The file on disk is the verdict rather than the exit code,
+since yt-dlp can exit zero having produced nothing after a failed merge. Ids
+already downloaded are skipped, so a 78-video batch resumes instead of
+restarting, and every id is checked against the shared ingress YouTube grammar
+before becoming a directory name or a URL. Exit 0 when every id ended `ok` or
+`skip`, 1 when any failed, 2 on a usage or resolution error.
 
 `references/video-slide-extraction.md` taught the bare `yt-dlp` invocation in
 three places, which is where the habit came from; all three now point at the
-script.
+script, and the reference names the behavioral contract while leaving binary
+resolution and concurrency to the script's own docstring.
 
 #371's other two halves are unaddressed: the Python call sites in
 `fetch-transcript.py` and `audit-source-identities.py` still resolve from

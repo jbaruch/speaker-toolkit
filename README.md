@@ -541,7 +541,7 @@ speaker-toolkit/
     |   |   +-- pptx-extraction.py            # supervised PPTX extraction + bounded discovery
     |   |   +-- video-slide-extraction.py     # Video-to-slides via ffmpeg + perceptual dedup
     |   |   +-- vtt-cleanup.py                # WebVTT to plain text
-    |   |   +-- batch-download-videos.sh      # Parallel video download for batch processing
+    |   |   +-- batch-download-videos.py      # Parallel video download for batch processing
     |   +-- references/
     |       +-- bootstrap-and-preflight.md     # Runtime, discovery, migration, and preflight contract
     |       +-- queue-selection.md             # Deterministic selection, claim, and lease contract

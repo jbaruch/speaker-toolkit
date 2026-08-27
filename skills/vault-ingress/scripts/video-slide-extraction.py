@@ -125,7 +125,7 @@ def _capture_source_receipt(assessment, source_video_path):
         raise VideoSourceLineageError(
             "source video did not pass bounded evidence inspection — hydrate a "
             "cloud placeholder, or reacquire the MP4 with "
-            "batch-download-videos.sh, then rerun extraction",
+            "batch-download-videos.py, then rerun extraction",
             reason_code=exc.reason_code,
             details=dict(exc.details),
         ) from exc

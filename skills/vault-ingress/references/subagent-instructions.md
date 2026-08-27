@@ -205,7 +205,7 @@ explicitly authorizes full transcript/receipt replacement.
   `page_count` are retained video samples, not authored `slide_count`; populate
   `structured_data.slide_count` only from corroborated deck numbering or an authored
   source. For batch downloads, use
-  `"{speaker_toolkit_root}/skills/vault-ingress/scripts/batch-download-videos.sh" <vault_root> ID1 ID2 ...`.
+  `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/batch-download-videos.py" <vault_root> ID1 ID2 ...`.
 - **`none`** — transcript-only, status `processed_partial`.
 - **Fallback** — if primary slides fail but `video_url` exists, fall back to
   video extraction. A talk can still reach `processed` status this way.

@@ -7,8 +7,7 @@ This is the fourth slide acquisition path — used when a talk has `video_url` b
 ## Prerequisites
 
 - `yt-dlp` (video download) — invoked through
-  `scripts/batch-download-videos.sh`, which resolves the pinned binary rather
-  than whatever `PATH` yields
+  `scripts/batch-download-videos.py`, never by bare name
 - `ffmpeg` (frame extraction)
 - Python packages: `imagehash`, NumPy, `Pillow` (perceptual deduplication), and
   `filelock` (same-video run coordination)
@@ -45,18 +44,18 @@ video → download (yt-dlp, 720p) → extract frames (ffmpeg, 1 per 2s)
 
 Download at 720p — enough resolution to read slide text, small enough to be fast.
 
-Download through `batch-download-videos.sh`, never a bare `yt-dlp`: the script
-resolves the pinned binary before `PATH`, where a stale build 403s on every
-video, and it reports one `OK` / `SKIP` / `FAIL` line per id.
+Download through `batch-download-videos.py`, never a bare `yt-dlp`.
 
 ```bash
-"{speaker_toolkit_root}/skills/vault-ingress/scripts/batch-download-videos.sh" \
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/batch-download-videos.py" \
   "{vault_root}" {youtube_id} [{youtube_id} ...]
 ```
 
-It downloads three at a time, skips ids already on disk, and exits non-zero when
-any id failed — see the script header for the resolution order and the outcome
-contract.
+Each video lands at `{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4`.
+Stdout is one JSON report carrying a `results` entry per requested id; exit 0
+means every id ended `ok` or `skip`, 1 that at least one failed. Binary
+resolution, concurrency, and the per-entry fields are the script's own —
+see the docstring at the top of `batch-download-videos.py`.
 
 For talks where 720p is unavailable, yt-dlp will fall back to the best available.
 
@@ -132,7 +131,7 @@ not become commands.
 
 ```bash
 # Download video at 720p
-"{speaker_toolkit_root}/skills/vault-ingress/scripts/batch-download-videos.sh" \
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/batch-download-videos.py" \
   "{vault_root}" "{youtube_id}"
 
 # Extract slides
@@ -155,7 +154,7 @@ cp "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.slide-region.pdf" \
   "{vault_root}/slides/{youtube_id}.pdf"
 ```
 
-For batch downloads: `"{speaker_toolkit_root}/skills/vault-ingress/scripts/batch-download-videos.sh" <vault_root> ID1 ID2 ...`
+For batch downloads: `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/batch-download-videos.py" <vault_root> ID1 ID2 ...`
 
 Always store the full script result in `structured_data.video_extraction` and keep
 `slide_source: "video_extracted"` to name the acquisition path. Set
@@ -342,7 +341,7 @@ In Step 3 of the skill (per-talk subagent):
 
 ```
 if slide_source == "video_extracted":
-    1. Download video: batch-download-videos.sh "{vault_root}" "{youtube_id}"
+    1. Download video: batch-download-videos.py "{vault_root}" "{youtube_id}"
     2. Run extract_slides_from_video()
     3. Store the complete artifact manifest in structured_data
     4. If review_required, inspect source + context + candidate and rerun with a
