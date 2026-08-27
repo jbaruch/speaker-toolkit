@@ -28,6 +28,14 @@ The example also declares all five evidence sources at once to show each lane's
 syntax, which no real return may do without the audits behind them. That is now
 stated next to the block, because the shape it teaches is copy-pasted.
 
+A test pinned the wrong value in place. `test_ingress_adherence_docs.py`
+asserted the worker doc *contains* `"return_schema_version": 5`, so correcting
+the example failed CI and the bug could not be fixed without also fixing its
+guard. That assertion now requires 6 and the presence of a basis; the
+`schemas-db.md` assertion stays at 5, because the compatibility table above that
+example states a v5 return "still validates and still persists, at the flat
+scoring generation".
+
 Found while preparing the first hand-run batch of a 250-talk reparse, before
 launching parallel workers against the same instructions. The first draft of this
 fix was itself wrong — the corrected basis only survived once it was run through

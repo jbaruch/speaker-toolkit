@@ -109,8 +109,15 @@ def test_threshold_and_structured_comparison_contract_is_documented() -> None:
     assert "2–4 punctuation-terminated sentences" in docs["processing"]
     assert "Validators deliberately do not parse prose" in docs["processing"]
     assert "renderer generates this anchor mechanically" in docs["processing"]
+    # schemas-db documents the v5 shape deliberately: the compatibility table
+    # above that example states a v5 return "still validates and still
+    # persists, at the flat scoring generation".
     assert '"return_schema_version": 5' in docs["schemas"]
-    assert '"return_schema_version": 5' in docs["worker"]
+    # The worker example is headed "fresh v6 claim", and a v6 claim rejects a
+    # v5 return outright. Pinning 5 here is what kept the wrong version in the
+    # block every subagent copies.
+    assert '"return_schema_version": 6' in docs["worker"]
+    assert '"pattern_score_basis"' in docs["worker"]
 
 
 def test_native_picture_render_threshold_is_script_owned() -> None:
