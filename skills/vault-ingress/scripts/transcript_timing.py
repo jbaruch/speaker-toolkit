@@ -790,12 +790,14 @@ def _validate_timing_semantics(
         raise ValueError(
             f"timed segments overhang the source-owned duration by "
             f"{maximum_end - float(duration):.2f}s, beyond the "
-            f"{TIMING_BOUND_TOLERANCE_SECONDS:.0f}s tolerance — the cues "
-            "describe a longer recording than this one, so re-fetching the "
-            "same track will be rejected again; confirm the track belongs to "
-            "this video, and when it does not, re-run fetch-transcript.py "
-            "with --method whisper --force to transcribe the audio itself, "
-            "whose timing cannot outrun it"
+            f"{TIMING_BOUND_TOLERANCE_SECONDS:.0f}s tolerance, so the timing "
+            "cannot be trusted against this recording. The transcript text is "
+            "unaffected and stays usable without timed evidence. If the track "
+            "is this recording, that is the end state and no action recovers "
+            "the timing. If it is not — a track from a different, longer "
+            "video is reported separately as foreign, not here — re-run "
+            "fetch-transcript.py with --method whisper --force to transcribe "
+            "the audio itself"
         )
 
 
