@@ -25,7 +25,15 @@ Stdout: one JSON object.
 `skip` entry carries `path` and `bytes`; a `fail` entry carries `exit_code`,
 `reason`, and `log`.
 
+A usage or yt-dlp resolution failure is reported the same way, as a typed
+object drawn from a closed vocabulary rather than prose:
+
+    {"schema_version": 1, "ok": false, "code": "ytdlp_not_found",
+     "error": "cannot find yt-dlp — ..."}
+
 Stderr: the resolved yt-dlp path and version, then one warning line per failure.
+A typed failure writes its message there too, so a caller reading only stderr
+still sees what to do.
 
 Exit 0 when every id ended `ok` or `skip`, 1 when any id failed, 2 on a usage or
 yt-dlp resolution error.
@@ -49,6 +57,18 @@ from ingress_contract import YOUTUBE_ID_RE
 
 USAGE = "usage: batch-download-videos.py <vault_root> ID1 [ID2 ...]"
 
+# Closed vocabulary for a typed exit-2 failure. Every code names a condition the
+# caller can act on without parsing the message.
+FAILURE_CODES = frozenset(
+    {
+        "usage",
+        "youtube_id_invalid",
+        "ytdlp_override_invalid",
+        "ytdlp_not_found",
+        "ytdlp_version_unavailable",
+    }
+)
+
 REPORT_SCHEMA_VERSION = 1
 
 # Three at a time saturates a home connection without starving any one download.
@@ -66,6 +86,12 @@ VIDEO_FORMAT = (
 class YtDlpResolutionError(RuntimeError):
     """No usable yt-dlp executable, reported with what to do about it."""
 
+    def __init__(self, code: str, message: str) -> None:
+        if code not in FAILURE_CODES:
+            raise ValueError("invalid yt-dlp resolution failure code")
+        super().__init__(message)
+        self.code = code
+
 
 def resolve_ytdlp() -> Path:
     """Find the pinned yt-dlp, falling back to PATH only as a last resort.
@@ -81,8 +107,9 @@ def resolve_ytdlp() -> Path:
         if os.access(candidate, os.X_OK) and candidate.is_file():
             return candidate
         raise YtDlpResolutionError(
+            "ytdlp_override_invalid",
             f"YT_DLP is set to {override!r}, which is not an executable file — "
-            "point it at a yt-dlp binary or unset it"
+            "point it at a yt-dlp binary or unset it",
         )
 
     candidates = [Path(sys.executable).parent / "yt-dlp"]
@@ -99,8 +126,9 @@ def resolve_ytdlp() -> Path:
     if found:
         return Path(found)
     raise YtDlpResolutionError(
+        "ytdlp_not_found",
         "cannot find yt-dlp — install the pinned version with `pip install .` "
-        "into the toolkit environment, or set YT_DLP to its path"
+        "into the toolkit environment, or set YT_DLP to its path",
     )
 
 
@@ -115,15 +143,17 @@ def probe_version(ytdlp: Path) -> str:
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise YtDlpResolutionError(
+            "ytdlp_version_unavailable",
             f"cannot run {ytdlp} ({exc}) — reinstall yt-dlp or set YT_DLP to a "
-            "working binary"
+            "working binary",
         ) from exc
     version = completed.stdout.strip()
     if completed.returncode != 0 or not version:
         detail = completed.stderr.strip() or f"exit {completed.returncode}"
         raise YtDlpResolutionError(
+            "ytdlp_version_unavailable",
             f"{ytdlp} did not report a version ({detail}) — reinstall yt-dlp or "
-            "set YT_DLP to a working binary"
+            "set YT_DLP to a working binary",
         )
     return version
 
@@ -246,6 +276,24 @@ def execute(vault_root: Path, youtube_ids: list[str]) -> dict[str, object]:
     }
 
 
+def report_failure(code: str, message: str) -> int:
+    """Emit one typed failure on stdout and its actionable line on stderr."""
+    json.dump(
+        {
+            "schema_version": REPORT_SCHEMA_VERSION,
+            "ok": False,
+            "code": code,
+            "error": message,
+        },
+        sys.stdout,
+        indent=2,
+        sort_keys=True,
+    )
+    sys.stdout.write("\n")
+    print(message, file=sys.stderr)
+    return 2
+
+
 def main(argv: list[str] | None = None) -> int:
     # Hand-parsed rather than argparse: a YouTube id may legitimately begin with
     # `-`, which argparse reads as a flag.
@@ -258,8 +306,7 @@ def main(argv: list[str] | None = None) -> int:
     if "--" in arguments:
         arguments.remove("--")
     if len(arguments) < 2:
-        print(USAGE, file=sys.stderr)
-        return 2
+        return report_failure("usage", USAGE)
 
     vault_root = Path(arguments[0])
     youtube_ids = arguments[1:]
@@ -267,18 +314,16 @@ def main(argv: list[str] | None = None) -> int:
     # shared ingress grammar before either boundary.
     invalid = [value for value in youtube_ids if YOUTUBE_ID_RE.fullmatch(value) is None]
     if invalid:
-        print(
+        return report_failure(
+            "youtube_id_invalid",
             f"not YouTube ids: {' '.join(invalid)} — each must match "
             f"{YOUTUBE_ID_RE.pattern}",
-            file=sys.stderr,
         )
-        return 2
 
     try:
         report = execute(vault_root, youtube_ids)
     except YtDlpResolutionError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
+        return report_failure(exc.code, str(exc))
     json.dump(report, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
     return 0 if report["ok"] else 1

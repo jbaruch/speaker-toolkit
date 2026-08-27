@@ -53,9 +53,11 @@ Download through `batch-download-videos.py`, never a bare `yt-dlp`.
 
 Each video lands at `{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4`.
 Stdout is one JSON report carrying a `results` entry per requested id; exit 0
-means every id ended `ok` or `skip`, 1 that at least one failed. Binary
-resolution, concurrency, and the per-entry fields are the script's own —
-see the docstring at the top of `batch-download-videos.py`.
+means every id ended `ok` or `skip`, 1 that at least one failed. A usage or
+yt-dlp resolution failure exits 2 and reports `{"ok": false, "code": ...}`
+instead of `results`. Binary resolution, concurrency, the per-entry fields, and
+the closed failure vocabulary are the script's own — see the docstring at the
+top of `batch-download-videos.py`.
 
 For talks where 720p is unavailable, yt-dlp will fall back to the best available.
 

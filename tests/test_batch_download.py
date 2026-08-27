@@ -257,6 +257,7 @@ def test_unusable_override_fails_before_downloading(tmp_path):
     result = _run(vault, [OK_ID], ytdlp=tmp_path / "nonexistent")
 
     assert result.returncode == 2
+    assert _report(result)["code"] == "ytdlp_override_invalid"
     assert "YT_DLP" in result.stderr
     assert not (vault / "slides-rebuild").exists()
 
@@ -268,6 +269,7 @@ def test_binary_that_cannot_report_a_version_is_rejected(tmp_path):
     result = _run(vault, [OK_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_NO_VERSION, "mute"))
 
     assert result.returncode == 2
+    assert _report(result)["code"] == "ytdlp_version_unavailable"
     assert "did not report a version" in result.stderr
     assert not (vault / "slides-rebuild").exists()
 
@@ -279,6 +281,7 @@ def test_missing_ids_is_a_usage_error(tmp_path):
     result = _run(vault, [], ytdlp=_fake_ytdlp(tmp_path, FAKE_OK))
 
     assert result.returncode == 2
+    assert _report(result)["code"] == "usage"
     assert "usage:" in result.stderr
 
 
@@ -289,6 +292,7 @@ def test_malformed_id_is_rejected_before_any_download(tmp_path):
     result = _run(vault, [OK_ID, "../escape"], ytdlp=_fake_ytdlp(tmp_path, FAKE_OK))
 
     assert result.returncode == 2
+    assert _report(result)["code"] == "youtube_id_invalid"
     assert "../escape" in result.stderr
     assert not (vault / "slides-rebuild").exists()
 
@@ -301,3 +305,20 @@ def test_leading_dash_id_is_accepted_after_a_separator(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert _by_id(result)[DASH_ID]["outcome"] == "ok"
+
+
+def test_every_exit_path_emits_a_json_report(tmp_path):
+    """Success, download failure, and typed failure all produce a parseable report."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    runs = [
+        _run(vault, [OK_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_OK)),
+        _run(vault, [BLOCKED_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_403, "403")),
+        _run(vault, [], ytdlp=_fake_ytdlp(tmp_path, FAKE_OK)),
+    ]
+
+    assert [run.returncode for run in runs] == [0, 1, 2]
+    for run in runs:
+        report = _report(run)
+        assert report["schema_version"] == 1
+        assert isinstance(report["ok"], bool)

@@ -33,7 +33,10 @@ since yt-dlp can exit zero having produced nothing after a failed merge. Ids
 already downloaded are skipped, so a 78-video batch resumes instead of
 restarting, and every id is checked against the shared ingress YouTube grammar
 before becoming a directory name or a URL. Exit 0 when every id ended `ok` or
-`skip`, 1 when any failed, 2 on a usage or resolution error.
+`skip`, 1 when any failed, 2 on a usage or resolution error — and that exit-2
+path reports a typed `{"ok": false, "code": ...}` object from a closed
+vocabulary rather than bare prose, so a caller parsing stdout is never handed
+nothing.
 
 `references/video-slide-extraction.md` taught the bare `yt-dlp` invocation in
 three places, which is where the habit came from; all three now point at the
