@@ -784,12 +784,18 @@ def _validate_timing_semantics(
 
     duration = provenance.get("duration_seconds")
     if (
-        maximum_end is not None
+        kind == "youtube_captions"
+        and maximum_end is not None
         and isinstance(duration, (int, float))
         and not isinstance(duration, bool)
         and float(duration) > 0
         and maximum_end / float(duration) > FOREIGN_TIMING_EXTENT_RATIO
     ):
+        # Captions only. A caption track can belong to a different recording;
+        # Whisper cannot, because it transcribes the audio in hand — imprecise
+        # Whisper timestamps are sloppy, not foreign, and rejecting them tells
+        # the operator to re-run the transcription that produced them.
+        #
         # Checked before the tolerance because it is the more specific verdict,
         # and because on a short recording it is the only one that fires: cues
         # running to 14s on a 10s video overhang by 4s — inside the tolerance —

@@ -29,6 +29,11 @@ see it; only the ratio can. The extent check now runs beside the tolerance in
 `_validate_timing_semantics`, so both verdicts reach every path, and the more
 specific one is reported first.
 
+Captions only, for the same reason the caption lane already had that
+restriction: Whisper transcribes the audio in hand and cannot be a foreign
+track. Its imprecise timestamps are sloppy, not foreign, and rejecting them
+would tell the operator to re-run the transcription that produced them.
+
 The rejection also stated the wrong thing. `receipt write failed: timed
 segments extend beyond the source-owned duration bound` reads as a write fault
 plus a serious identity problem; the write had not failed and the bound was

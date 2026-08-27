@@ -913,3 +913,38 @@ def test_a_short_recording_catches_a_foreign_track_the_tolerance_admits(
     assert segments == []
     assert "1.40x" in reason
     assert "different, longer recording" in reason
+
+
+def test_overlong_whisper_timestamps_are_sloppy_not_foreign(
+    transcript_timing, tmp_path
+):
+    """Whisper transcribes the audio in hand, so it cannot be a foreign track.
+
+    Rejecting its imprecise timestamps as a different recording would tell the
+    operator to re-run the very transcription that produced them.
+    """
+    transcript = tmp_path / "eg6gqvUFh6Q.txt"
+    text = "Canonical transcript text."
+    transcript.write_text(text, encoding="utf-8")
+    sidecar = transcript_timing.sidecar_path(transcript)
+    sidecar.write_text(
+        json.dumps(
+            {
+                "schema_version": transcript_timing.SIDECAR_SCHEMA_VERSION,
+                "transcript_sha256": transcript_timing.transcript_sha256(text),
+                "source": "whisper",
+                "provenance": _youtube_timing(
+                    transcript_timing, source="whisper", duration=10.0
+                ),
+                "segments": [{"text": text, "start_seconds": 0.0, "end_seconds": 14.0}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    _segments, reason = transcript_timing.load_verified_segments(
+        transcript, text, **_owner(source="whisper", duration=10.0)
+    )
+
+    assert "different, longer recording" not in reason
+    assert "1.40x" not in reason
