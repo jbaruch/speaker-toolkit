@@ -368,10 +368,8 @@ def test_the_documented_flow_turns_the_example_into_a_valid_return() -> None:
             text=True,
         )
         assert built.returncode == 0, built.stderr
-        example["pattern_observations"]["pattern_score_basis"] = json.loads(
-            built.stdout
-        )
-        path.write_text(json.dumps(example), encoding="utf-8")
+        # the builder emits the completed return, so nothing is merged by hand
+        path.write_text(built.stdout, encoding="utf-8")
 
         validated = subprocess.run(
             [

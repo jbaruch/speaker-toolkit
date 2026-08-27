@@ -39,6 +39,17 @@ It also claimed all five evidence sources to show each lane's syntax, which no
 return may do without the audits behind them — so it could never have been
 copied. It claims the one source it can back.
 
+The builder emits completed returns rather than a fragment to paste. Inserting
+the field is as deterministic as computing it, and leaving that merge to the
+worker invites an incorrectly placed or wrongly associated basis. Its stdout is
+the same returns with the field set, ready for `validate-returns.py`. It exits
+`0` on success and `2` on unreadable, malformed, or duplicate-filename input,
+with a diagnostic on stderr and nothing on stdout; the reference states that
+contract and tells the worker to stop on nonzero. A malformed detection reaches
+the owner function as a `TypeError` or `KeyError`, which is converted to the
+documented exit rather than leaking a traceback into a caller that is parsing
+stdout.
+
 The builder rejects duplicate talk filenames rather than keying past them.
 Building the result as a filename map would drop every return but the last, and
 a caller merging that output would hand one talk another talk's basis — worse

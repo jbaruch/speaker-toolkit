@@ -598,17 +598,18 @@ Minimal processed structure for a fresh v6 claim:
 ```
 
 This block is complete except for `pattern_observations.pattern_score_basis`,
-which is generated rather than written. Run the basis builder over the return
-and merge its output before validating — that sequence is what produces a
-return the validator accepts:
+which a script fills in. Do not write or merge it by hand:
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/build-score-basis.py" \
-  batch-returns.json
+  batch-returns.json > completed-returns.json
 ```
 
-It prints the exact object the field must carry, for one return or keyed by
-filename for several. The weight table and the object's shape belong to
+Input is one return object or an array of them; output is those same returns
+with the field set, ready for `validate-returns.py`. Exit `0` means the batch
+is complete. Exit `2` means unreadable, malformed, or duplicate-filename input:
+a diagnostic goes to stderr, stdout stays empty, and you must stop rather than
+validate a partial batch. The weight table and the object's shape belong to
 `skills/vault-ingress/scripts/return_validation.py`; nothing here restates them.
 
 The example claims one inspected source. Add a source only with the audit

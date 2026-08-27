@@ -1,26 +1,29 @@
 #!/usr/bin/env python3
-"""Emit the pattern_score_basis a v6 return requires, from its own detections.
+"""Complete v6 returns by filling in the pattern_score_basis they require.
 
 The basis is a pure function of a return's detection lanes and its
-not-evaluable ledger, so constructing it is a deterministic operation that
-belongs in a script rather than in a worker's reasoning. `return_validation`
-owns both the weight table and the object's shape; this is a thin entry point
-onto that owner so no caller has to reproduce either.
+not-evaluable ledger, and inserting it is a mechanical JSON edit, so both steps
+belong in a script rather than in a worker's reasoning. `return_validation`
+owns the weight table and the object's shape; this is a thin entry point onto
+that owner, so no caller reproduces either or decides where the field goes.
 
 Usage:
     build-score-basis.py <return.json> [...]
 
-Each input is one return object or an array of return objects. For a single
-return the basis is printed alone; for several, an object keyed by filename.
-The output is the exact value `pattern_observations.pattern_score_basis` must
-carry — paste it in, or merge it programmatically.
+Each input is one return object or an array of return objects. The output is
+those same returns with `pattern_observations.pattern_score_basis` set — one
+object for a single return, an array for several — ready to pass straight to
+`validate-returns.py`.
 
-Exit 0 on success, 2 on unreadable or malformed input.
+Exit 0 on success. Exit 2 on unreadable, malformed, or duplicate-filename
+input, with a diagnostic on stderr and nothing on stdout; callers must stop on
+a nonzero exit rather than proceeding with a partial batch.
 """
 
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import sys
 from pathlib import Path
@@ -46,11 +49,28 @@ def basis_for(ret: object, label: str) -> dict:
         if not isinstance(value, list):
             raise ValueError(f"{label} pattern_observations.{name} must be an array")
         lanes[name] = value
-    return pattern_score_basis(
-        lanes["patterns_detected"],
-        lanes["antipatterns_detected"],
-        lanes["not_evaluable"],
-    )
+    try:
+        return pattern_score_basis(
+            lanes["patterns_detected"],
+            lanes["antipatterns_detected"],
+            lanes["not_evaluable"],
+        )
+    except (TypeError, KeyError) as exc:
+        # A malformed detection reaches the owner function as a bad key or a
+        # non-mapping and surfaces as a traceback, which callers parsing stdout
+        # read as a crash rather than as input they can fix.
+        raise ValueError(
+            f"{label} has a malformed detection entry ({exc}); every detection "
+            "needs an object with a confidence of strong, moderate, or weak"
+        ) from exc
+
+
+def completed(ret: object, label: str) -> dict:
+    """Return a copy of this return with its required basis filled in."""
+    filled = copy.deepcopy(ret)
+    assert isinstance(filled, dict)
+    filled["pattern_observations"]["pattern_score_basis"] = basis_for(ret, label)
+    return filled
 
 
 def load(paths: list[Path]) -> list[tuple[str, object]]:
@@ -87,14 +107,12 @@ def main(argv: list[str] | None = None) -> int:
                 f"duplicate talk filenames across the inputs: {', '.join(repeated)}; "
                 "pass each return once, or split the batch so every filename is unique"
             )
-        results = {label: basis_for(ret, label) for label, ret in loaded}
-    except (ValueError, KeyError) as exc:
+        results = [completed(ret, label) for label, ret in loaded]
+    except (ValueError, KeyError, TypeError) as exc:
         print(f"cannot build pattern_score_basis: {exc}", file=sys.stderr)
         return 2
-    if len(results) == 1:
-        print(json.dumps(next(iter(results.values())), indent=2, sort_keys=True))
-    else:
-        print(json.dumps(results, indent=2, sort_keys=True))
+    payload = results[0] if len(results) == 1 else results
+    print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
 
 

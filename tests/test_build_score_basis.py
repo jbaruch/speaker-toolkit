@@ -97,25 +97,49 @@ def test_a_non_array_lane_is_rejected(build_score_basis):
         build_score_basis.basis_for(broken, "talk.md")
 
 
-def test_cli_prints_one_basis_for_one_return(build_score_basis, tmp_path, capsys):
+def test_cli_emits_the_completed_return(build_score_basis, tmp_path, capsys):
+    """Output is the return itself, so no caller decides where the field goes."""
     path = tmp_path / "r.json"
     path.write_text(
         json.dumps(_return(patterns=[_detection("moderate")])), encoding="utf-8"
     )
     assert build_score_basis.main([str(path)]) == 0
     printed = json.loads(capsys.readouterr().out)
-    assert printed["patterns"]["moderate"] == 1
+    assert printed["filename"] == "talk.md"
+    assert (
+        printed["pattern_observations"]["pattern_score_basis"]["patterns"]["moderate"]
+        == 1
+    )
 
 
-def test_cli_keys_by_filename_for_several_returns(build_score_basis, tmp_path, capsys):
+def test_cli_emits_an_array_for_several_returns(build_score_basis, tmp_path, capsys):
     a, b = _return(patterns=[_detection("strong")]), _return()
     b["filename"] = "other.md"
     path = tmp_path / "batch.json"
     path.write_text(json.dumps([a, b]), encoding="utf-8")
     assert build_score_basis.main([str(path)]) == 0
     printed = json.loads(capsys.readouterr().out)
-    assert set(printed) == {"talk.md", "other.md"}
-    assert printed["talk.md"]["patterns"]["strong"] == 1
+    assert [r["filename"] for r in printed] == ["talk.md", "other.md"]
+
+
+def test_the_input_return_is_not_mutated(build_score_basis):
+    """A caller reusing its own object must not find a field it did not add."""
+    original = _return(patterns=[_detection("strong")])
+    build_score_basis.completed(original, "talk.md")
+    assert "pattern_score_basis" not in original["pattern_observations"]
+
+
+def test_a_malformed_detection_exits_two_without_a_traceback(
+    build_score_basis, tmp_path, capsys
+):
+    """A bad detection reaches the owner function as a TypeError or KeyError."""
+    for broken in ("not-an-object", {"pattern_id": "x", "confidence": "enormous"}):
+        path = tmp_path / "broken.json"
+        path.write_text(json.dumps(_return(patterns=[broken])), encoding="utf-8")
+        assert build_score_basis.main([str(path)]) == 2
+        captured = capsys.readouterr()
+        assert "malformed detection entry" in captured.err
+        assert captured.out == ""
 
 
 def test_cli_reports_unreadable_input_without_a_traceback(
