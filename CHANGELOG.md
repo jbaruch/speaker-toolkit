@@ -36,10 +36,14 @@ Ids already downloaded are skipped, so a 78-video batch resumes instead of
 restarting; every id is checked against the shared ingress YouTube grammar
 before becoming a directory name or a URL; and a repeated id is rejected rather
 than handed to two workers writing the same file at once. Exit 0 when every id
-ended `ok` or `skip`, 1 when any failed, 2 on a usage or resolution error — and
-that exit-2 path reports a typed `{"ok": false, "code": ...}` object from a
-closed vocabulary rather than bare prose, so a caller parsing stdout is never
-handed nothing.
+ended `ok` or `skip`, 1 when any failed, 2 on a usage or resolution error, 3 on
+an unexpected one — and every one of those exits reports a typed
+`{"ok": false, "code": ...}` object from a closed vocabulary rather than bare
+prose or a traceback, so a caller parsing stdout is never handed nothing. That
+last exit is the outer-boundary carve-out in `rules/error-handling.md`: an
+escaping exception would leave empty stdout, which reads as "no videos were
+requested" rather than as a failed run — the same silence the whole change
+exists to remove.
 
 `references/video-slide-extraction.md` taught the bare `yt-dlp` invocation in
 three places, and `references/subagent-instructions.md` carried a fourth — the

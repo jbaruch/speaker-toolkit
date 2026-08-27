@@ -39,7 +39,8 @@ A typed failure writes its message there too, so a caller reading only stderr
 still sees what to do.
 
 Exit 0 when every id ended `ok` or `skip`, 1 when any id failed, 2 on a usage or
-yt-dlp resolution error.
+yt-dlp resolution error, 3 when the run failed unexpectedly. Every one of those
+exits writes a JSON object to stdout.
 
 A stale yt-dlp answers every download with HTTP 403 while the pinned one
 succeeds, so the binary is resolved explicitly rather than taken from PATH, and
@@ -70,6 +71,7 @@ FAILURE_CODES = frozenset(
         "ytdlp_override_invalid",
         "ytdlp_not_found",
         "ytdlp_version_unavailable",
+        "unexpected_failure",
     }
 )
 
@@ -359,5 +361,28 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if report["ok"] else 1
 
 
+def run_cli(argv: list[str] | None = None) -> int:
+    """Run the CLI behind its failure boundary. Returns the process exit code.
+
+    Importable so the boundary's contract is testable without executing the
+    module as a script.
+    """
+    try:
+        return main(argv)
+    # A caller parses stdout as one JSON object on every exit, so a traceback
+    # with empty stdout reads as "no videos were requested" rather than as a
+    # failed run — the same silence this script exists to remove. The catch
+    # emits the typed `unexpected_failure` object naming the exception; letting
+    # it propagate would break the contract at the only boundary that has one.
+    except Exception as exc:  # noqa: BLE001 - outer-boundary-process-contract
+        report_failure(
+            "unexpected_failure",
+            f"the download run failed unexpectedly ({type(exc).__name__}: {exc})"
+            " — no video is guaranteed downloaded; rerun once the cause is"
+            " fixed, since ids already on disk are skipped",
+        )
+        return 3
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(run_cli())

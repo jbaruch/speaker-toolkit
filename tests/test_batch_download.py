@@ -1,9 +1,13 @@
 """Tests for batch-download-videos.py — resolution, outcome reporting, and exit codes."""
 
+import importlib.util
 import json
 import os
 import stat
 import subprocess
+import sys
+
+import pytest
 
 SCRIPT = os.path.abspath(
     os.path.join(
@@ -86,6 +90,24 @@ FAKE_NO_VERSION = """\
 echo "yt-dlp: error: unrecognized arguments" >&2
 exit 2
 """
+
+
+def _load_downloader():
+    """Import the script as a module, so the failure boundary is unit-testable."""
+    if "batch_download_videos" in sys.modules:
+        return sys.modules["batch_download_videos"]
+    script_dir = os.path.dirname(SCRIPT)
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
+    spec = importlib.util.spec_from_file_location("batch_download_videos", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["batch_download_videos"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+downloader = _load_downloader()
 
 
 def _fake_ytdlp(tmp_path, body, name="yt-dlp"):
@@ -395,3 +417,36 @@ def test_a_repeated_id_is_rejected_before_any_download(tmp_path):
     assert _report(result)["code"] == "youtube_id_duplicated"
     assert OK_ID in result.stderr
     assert not (vault / "slides-rebuild").exists()
+
+
+def test_an_unexpected_failure_still_writes_a_json_report(
+    tmp_path, capsys, monkeypatch
+):
+    """A crash inside the run reports typed JSON rather than a bare traceback."""
+
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("the disk went away")
+
+    monkeypatch.setattr(downloader, "execute", explode)
+
+    code = downloader.run_cli([str(tmp_path), OK_ID])
+    captured = capsys.readouterr()
+
+    assert code == 3
+    report = json.loads(captured.out)
+    assert report["code"] == "unexpected_failure"
+    assert report["ok"] is False
+    assert "the disk went away" in report["error"]
+    assert "Traceback" not in captured.err
+
+
+def test_the_failure_boundary_lets_an_interrupt_through(tmp_path, monkeypatch):
+    """KeyboardInterrupt stays killable rather than being reported as a failure."""
+
+    def interrupt(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(downloader, "execute", interrupt)
+
+    with pytest.raises(KeyboardInterrupt):
+        downloader.run_cli([str(tmp_path), OK_ID])
