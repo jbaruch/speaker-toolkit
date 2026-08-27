@@ -7,7 +7,7 @@ This is the fourth slide acquisition path — used when a talk has `video_url` b
 ## Prerequisites
 
 - `yt-dlp` (video download) — invoked through
-  `scripts/batch-download-videos.py`, never by bare name
+  `skills/vault-ingress/scripts/batch-download-videos.py`, never by bare name
 - `ffmpeg` (frame extraction)
 - Python packages: `imagehash`, NumPy, `Pillow` (perceptual deduplication), and
   `filelock` (same-video run coordination)
@@ -57,7 +57,7 @@ means every id ended `ok` or `skip`, 1 that at least one failed. A usage or
 yt-dlp resolution failure exits 2 and reports `{"ok": false, "code": ...}`
 instead of `results`. Binary resolution, concurrency, the per-entry fields, and
 the closed failure vocabulary are the script's own — see the docstring at the
-top of `batch-download-videos.py`.
+top of `skills/vault-ingress/scripts/batch-download-videos.py`.
 
 For talks where 720p is unavailable, yt-dlp will fall back to the best available.
 
@@ -343,7 +343,8 @@ In Step 3 of the skill (per-talk subagent):
 
 ```
 if slide_source == "video_extracted":
-    1. Download video: batch-download-videos.py "{vault_root}" "{youtube_id}"
+    1. Download video: skills/vault-ingress/scripts/batch-download-videos.py
+       "{vault_root}" "{youtube_id}"
     2. Run extract_slides_from_video()
     3. Store the complete artifact manifest in structured_data
     4. If review_required, inspect source + context + candidate and rerun with a

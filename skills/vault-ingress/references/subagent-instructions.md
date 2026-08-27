@@ -163,11 +163,15 @@ explicitly authorizes full transcript/receipt replacement.
     "{vault_root}/slides-rebuild/{youtube_id}" "{youtube_id}"
   ```
   The downloader takes any number of ids and writes one JSON report to stdout.
-  Read this id's `results` entry rather than assuming the MP4 exists. On a
-  non-zero exit do not run the extractor: treat the talk as having no video
-  source, fall back per **Fallback** below, and carry the entry's `reason` into
-  the return. See the docstring at the top of `batch-download-videos.py` for the
-  report shape, the exit codes, and the closed failure vocabulary.
+  Branch on this id's `results` entry, never on the process exit: exit 1 only
+  means some id in the batch failed, and a sibling's failure never disqualifies
+  this one. Run the extractor when the entry is `ok` or `skip`. When the entry
+  is `fail` — or when the run exited 2, which reports a typed `error` and no
+  `results` at all — treat the talk as having no video source, fall back per
+  **Fallback** below, and carry that `reason` or `error` into the return. See
+  the docstring at the top of
+  `skills/vault-ingress/scripts/batch-download-videos.py` for the report shape,
+  the exit codes, and the closed failure vocabulary.
 
   Store the complete JSON result in `structured_data.video_extraction`, then obey its
   artifact gate:
