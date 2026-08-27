@@ -1,5 +1,37 @@
 # Changelog
 
+### fix(vault-ingress) — a failed video download is now visible, and uses the pinned yt-dlp
+
+`batch-download-videos.sh` discarded yt-dlp's stderr and never checked its exit
+code, so a failed download produced no line at all rather than a failure line
+(#370). It also invoked `yt-dlp` by bare name, resolving whatever `PATH`
+offered (#371) — on the host that surfaced this, a Homebrew 2026.06.09 that 403s
+on every video, while the pinned 2026.08.19 in the venv succeeds on the same
+command in the same minute. Together the two turned 34 of 35 failed downloads
+into silence, and the talks behind them read downstream as thin rather than
+unprocessed.
+
+The script now resolves `yt-dlp` in an explicit order — `$YT_DLP`, then
+`$VIRTUAL_ENV/bin/yt-dlp`, then the toolkit's own `.venv`, then `PATH` — and
+announces the resolved path and version on stderr, so a stale binary is visible
+before the first 403 rather than after the batch. It emits one tab-separated
+`OK` / `SKIP` / `FAIL` line per id with the yt-dlp reason and a log path,
+verifies the output file is non-empty (yt-dlp can exit zero having produced
+nothing after a failed merge), skips ids already downloaded so a large batch is
+resumable, and exits non-zero when any id failed while still attempting the
+rest. It runs under the aggregate-reporting carve-out in
+`rules/error-handling.md`: `set -uo pipefail` with every exit code captured
+explicitly.
+
+`references/video-slide-extraction.md` taught the bare `yt-dlp` invocation in
+three places, which is where the habit came from; all three now point at the
+script.
+
+#371's other two halves are unaddressed: the Python call sites in
+`fetch-transcript.py` and `audit-source-identities.py` still resolve from
+`PATH`, and `check-runtime.py` still reports the lane available on presence
+alone rather than asserting the pinned version.
+
 ## 0.20.108 — 2026-08-27
 
 ### fix(vault-ingress) — the "fresh v6 claim" example declared version 5
