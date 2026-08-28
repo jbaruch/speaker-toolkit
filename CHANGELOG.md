@@ -50,11 +50,15 @@ locations, never its message: `no-secrets` forbids host paths in a diagnostic,
 and an `OSError` message embeds the path it could not reach.
 
 The same rule reaches yt-dlp's own words. Its `ERROR` lines quote the signed
-media URL it was handed, whose query string carries the expiry and signature —
-so the reason in the report and the persisted `.yt-dlp.log` both have URL query
-strings and credential-bearing parameters redacted before anything reads them.
-The host, the path, and the HTTP status survive, which is what a diagnostic is
-for.
+media URL it was handed, whose query string carries the expiry and signature.
+Its output is captured in memory and redacted before the `.yt-dlp.log` is
+written, rather than streamed to disk and cleaned afterwards — the latter leaves
+the credential on disk for any interrupt or rewrite failure to make permanent.
+Redaction handles two shapes: a query or form parameter stops at its own
+delimiter, so an HTTP status after it still reads, while a header value runs to
+end of line, since `Authorization: Bearer <token>` contains spaces and a
+token-shaped match would have left the secret behind. The host, the path, and
+the status survive, which is what a diagnostic is for.
 
 `references/video-slide-extraction.md` taught the bare `yt-dlp` invocation in
 three places, and `references/subagent-instructions.md` carried a fourth — the

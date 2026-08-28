@@ -56,7 +56,7 @@ Stdout is one JSON report carrying a `results` entry per requested id; exit 0
 means every id ended `ok` or `skip`, 1 that at least one failed. A usage or
 yt-dlp resolution failure exits 2, and an unexpected failure exits 3; both
 report `{"ok": false, "code": ...}` instead of `results`. Binary resolution,
-concurrency, the per-entry fields, and
+concurrency, the per-entry fields, the diagnostic redaction, and
 the closed failure vocabulary are the script's own — see the docstring at the
 top of `skills/vault-ingress/scripts/batch-download-videos.py`.
 

@@ -96,6 +96,8 @@ while [[ $# -gt 0 ]]; do
 done
 echo "ERROR: unable to download https://rr3.googlevideo.com/videoplayback?expire=1&signature=DEADBEEFCAFE&ip=1.2.3.4: HTTP Error 403: Forbidden" >&2
 echo "token=SUPERSECRETVALUE" >&2
+echo "Authorization: Bearer SPACED SECRET VALUE" >&2
+echo "Cookie: sid=COOKIESECRET; theme=dark" >&2
 exit 1
 """
 
@@ -483,7 +485,13 @@ def test_a_signed_url_never_reaches_the_report_or_the_log(tmp_path):
     log = (vault / "slides-rebuild" / OK_ID / f"{OK_ID}.yt-dlp.log").read_text()
     reason = _by_id(result)[OK_ID]["reason"]
 
-    for secret in ("DEADBEEFCAFE", "SUPERSECRETVALUE"):
+    secrets = (
+        "DEADBEEFCAFE",
+        "SUPERSECRETVALUE",
+        "SPACED SECRET VALUE",
+        "COOKIESECRET",
+    )
+    for secret in secrets:
         assert secret not in reason
         assert secret not in result.stdout
         assert secret not in result.stderr
@@ -491,3 +499,26 @@ def test_a_signed_url_never_reaches_the_report_or_the_log(tmp_path):
     # The diagnostic still says what happened and which URL it was.
     assert "403" in reason
     assert "rr3.googlevideo.com/videoplayback" in reason
+
+
+def test_redaction_keeps_the_diagnostic_readable(tmp_path):
+    """Redaction stops at a parameter delimiter, so what follows still reads."""
+    line = (
+        "ERROR: unable to download "
+        "https://host/videoplayback?expire=1&signature=SECRET: HTTP Error 403"
+    )
+
+    cleaned = downloader.redact(line)
+
+    assert "SECRET" not in cleaned
+    assert "HTTP Error 403" in cleaned
+    assert "https://host/videoplayback" in cleaned
+
+
+def test_redaction_covers_a_header_value_containing_spaces(tmp_path):
+    """A header value runs to end of line, so `\\S+` would leave the secret behind."""
+    cleaned = downloader.redact("Authorization: Bearer TOKEN WITH SPACES")
+
+    assert "TOKEN" not in cleaned
+    assert "SPACES" not in cleaned
+    assert cleaned.startswith("Authorization: <redacted>")

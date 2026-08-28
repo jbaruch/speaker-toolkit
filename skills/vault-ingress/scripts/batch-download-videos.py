@@ -90,9 +90,19 @@ MAX_CONCURRENT_DOWNLOADS = 3
 # strings carry expiry and signature parameters. Both patterns are fully
 # enumerable, so redaction is a script's job rather than a judgement call.
 _URL_QUERY_RE = re.compile(r"(https?://[^\s?#]*)[?#]\S*")
-_SENSITIVE_PARAM_RE = re.compile(
+# A header value may contain spaces (`Authorization: Bearer <token>`), so this
+# form redacts to end of line. Over-redacting a diagnostic line is safe; leaving
+# half a credential in it is not.
+_SENSITIVE_HEADER_RE = re.compile(
+    r"\b(authorization|proxy-authorization|set-cookie|cookie|x-api-key|api-key"
+    r"|token|password|passwd|secret)\s*:\s*.*",
+    re.IGNORECASE,
+)
+# A query or form parameter ends at its own delimiter, so redaction stops there
+# and whatever followed — an HTTP status, the next parameter — still reads.
+_SENSITIVE_ASSIGNMENT_RE = re.compile(
     r"\b(token|signature|sig|secret|password|passwd|auth|authorization|cookie"
-    r"|session|api[_-]?key)\b\s*[=:]\s*\S+",
+    r"|session|api[_-]?key)\s*=\s*[^\s&;]+",
     re.IGNORECASE,
 )
 
@@ -181,41 +191,23 @@ def probe_version(ytdlp: Path) -> str:
 
 
 def redact(text: str) -> str:
-    """Strip signed-URL query strings and credential-bearing pairs from text."""
+    """Strip signed-URL query strings and credential-bearing values from text."""
     text = _URL_QUERY_RE.sub(r"\1?<redacted>", text)
-    return _SENSITIVE_PARAM_RE.sub(lambda match: f"{match.group(1)}=<redacted>", text)
+    text = _SENSITIVE_HEADER_RE.sub(lambda match: f"{match.group(1)}: <redacted>", text)
+    return _SENSITIVE_ASSIGNMENT_RE.sub(
+        lambda match: f"{match.group(1)}=<redacted>", text
+    )
 
 
-def redact_log(log_path: Path) -> None:
-    """Rewrite the persisted yt-dlp log with its credentials removed.
-
-    Done before anything reads the log, so no later caller can pick a secret out
-    of it and no secret outlives the run on disk.
-    """
-    try:
-        original = log_path.read_text(errors="replace")
-    except OSError:
-        return
-    cleaned = redact(original)
-    if cleaned != original:
-        try:
-            log_path.write_text(cleaned)
-        except OSError:
-            pass
-
-
-def failure_reason(log_path: Path) -> str:
+def failure_reason(output: str) -> str:
     """Name why a download produced nothing, preferring yt-dlp's own ERROR line."""
-    try:
-        lines = log_path.read_text(errors="replace").splitlines()
-    except OSError:
-        return "no output file and no readable yt-dlp log"
+    lines = output.splitlines()
     for line in lines:
         if line.startswith("ERROR"):
-            return redact(line.strip())
+            return line.strip()
     for line in reversed(lines):
         if line.strip():
-            return redact(line.strip())
+            return line.strip()
     return "no output file and no yt-dlp diagnostic"
 
 
@@ -260,20 +252,33 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
         str(staging),
         f"https://www.youtube.com/watch?v={youtube_id}",
     ]
+    # Captured rather than streamed straight to the log: yt-dlp quotes the
+    # signed URL it was handed, and writing that to disk first would leave the
+    # credential there for any interrupt or rewrite failure to make permanent.
+    # `--no-progress` keeps the captured output to a few kilobytes.
     try:
-        with log_path.open("w") as log_file:
-            exit_code = subprocess.call(
-                command, stdout=log_file, stderr=subprocess.STDOUT
-            )
+        completed = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            errors="replace",
+        )
     except OSError as exc:
         return {
             "youtube_id": youtube_id,
             "outcome": "fail",
             "exit_code": None,
             "reason": f"cannot run {ytdlp}: {exc}",
-            "log": str(log_path),
+            "log": None,
         }
-    redact_log(log_path)
+    exit_code = completed.returncode
+    output = redact(completed.stdout or "")
+    try:
+        log_path.write_text(output)
+        log_written = str(log_path)
+    except OSError:
+        log_written = None
 
     # Success needs both halves: yt-dlp can exit zero having produced nothing
     # usable after a failed merge, and it can exit non-zero having left a
@@ -289,7 +294,7 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
                 "outcome": "fail",
                 "exit_code": exit_code,
                 "reason": f"downloaded but could not be promoted to {target}: {exc}",
-                "log": str(log_path),
+                "log": log_written,
             }
         return {
             "youtube_id": youtube_id,
@@ -298,7 +303,7 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
             "bytes": size,
         }
 
-    reason = failure_reason(log_path)
+    reason = failure_reason(output)
     if written:
         # Best-effort: an undeleted staging file is harmless, since the resume
         # check reads `target` and the next run overwrites this same path.
@@ -313,7 +318,7 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
         "outcome": "fail",
         "exit_code": exit_code,
         "reason": reason,
-        "log": str(log_path),
+        "log": log_written,
     }
 
 
