@@ -158,22 +158,25 @@ explicitly authorizes full transcript/receipt replacement.
   ```bash
   "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/batch-download-videos.py" \
     "{vault_root}" "{youtube_id}"
+  ```
+  Read the report before going further. The downloader takes any number of ids
+  and writes one JSON report to stdout. Branch on this id's `results` entry,
+  never on the process exit: exit 1 only means some id in the batch failed, and
+  a sibling's failure never disqualifies this one. When the entry is `fail` — or
+  when the report carries no `results` at all, which is what exits 2 and 3
+  return alongside a typed `error` — treat the talk as having no video source,
+  fall back per **Fallback** below, and carry that `reason` or `error` into the
+  return. Never look for `results` in a report that has none, and never run the
+  extractor against a video the report did not confirm. See the docstring at the
+  top of `skills/vault-ingress/scripts/batch-download-videos.py` for the report
+  shape, the exit codes, and the closed failure vocabulary.
+
+  Only once this id's entry is `ok` or `skip`, extract:
+  ```bash
   "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/video-slide-extraction.py" \
     "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \
     "{vault_root}/slides-rebuild/{youtube_id}" "{youtube_id}"
   ```
-  The downloader takes any number of ids and writes one JSON report to stdout.
-  Branch on this id's `results` entry, never on the process exit: exit 1 only
-  means some id in the batch failed, and a sibling's failure never disqualifies
-  this one. Run the extractor when the entry is `ok` or `skip`. When the entry
-  is `fail` — or when the report carries no `results` at all, which is what
-  exits 2 and 3 return alongside a typed `error` — treat the talk as having no
-  video source, fall back per **Fallback** below, and carry that `reason` or
-  `error` into the return. Never look for `results` in a report that has none.
-  See
-  the docstring at the top of
-  `skills/vault-ingress/scripts/batch-download-videos.py` for the report shape,
-  the exit codes, and the closed failure vocabulary.
 
   Store the complete JSON result in `structured_data.video_extraction`, then obey its
   artifact gate:

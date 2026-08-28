@@ -75,10 +75,15 @@ partial as this run's video.
 `references/video-slide-extraction.md` taught the bare `yt-dlp` invocation in
 three places, and `references/subagent-instructions.md` carried a fourth — the
 primary block every per-talk worker copies, which is where the habit came from.
-All four now call the script, the worker is told to read its `results` entry
-rather than assume the MP4 exists and to skip extraction on a non-zero exit, and
-the references name the behavioral contract while leaving binary resolution,
-concurrency, and the failure vocabulary to the script's own docstring.
+All four now call the script. The worker reads this id's `results` entry rather
+than assuming the MP4 exists, and the command blocks are split so extraction
+sits visibly inside the `ok`/`skip` branch — a download and an extraction printed
+back to back get copied back to back, whatever the prose beneath them says. The
+branch is on the entry, never the process exit: exit 1 only means some id in the
+batch failed, and a sibling's failure never disqualifies this one. The
+references name the behavioral contract while leaving binary resolution,
+concurrency, redaction, and the failure vocabulary to the script's own
+docstring.
 
 The script has no `--help`: prose on stdout would hand a JSON-consuming caller
 non-JSON on a zero exit, so the docstring is the help and `--help` reads as the
