@@ -55,6 +55,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import shutil
@@ -84,6 +85,16 @@ REPORT_SCHEMA_VERSION = 1
 
 # Three at a time saturates a home connection without starving any one download.
 MAX_CONCURRENT_DOWNLOADS = 3
+
+# yt-dlp diagnostics quote the signed media URLs it was handed, whose query
+# strings carry expiry and signature parameters. Both patterns are fully
+# enumerable, so redaction is a script's job rather than a judgement call.
+_URL_QUERY_RE = re.compile(r"(https?://[^\s?#]*)[?#]\S*")
+_SENSITIVE_PARAM_RE = re.compile(
+    r"\b(token|signature|sig|secret|password|passwd|auth|authorization|cookie"
+    r"|session|api[_-]?key)\b\s*[=:]\s*\S+",
+    re.IGNORECASE,
+)
 
 # 720p reads slide text while staying small enough to extract frames from
 # quickly; yt-dlp falls back to the best available when 720p is absent.
@@ -169,6 +180,30 @@ def probe_version(ytdlp: Path) -> str:
     return version
 
 
+def redact(text: str) -> str:
+    """Strip signed-URL query strings and credential-bearing pairs from text."""
+    text = _URL_QUERY_RE.sub(r"\1?<redacted>", text)
+    return _SENSITIVE_PARAM_RE.sub(lambda match: f"{match.group(1)}=<redacted>", text)
+
+
+def redact_log(log_path: Path) -> None:
+    """Rewrite the persisted yt-dlp log with its credentials removed.
+
+    Done before anything reads the log, so no later caller can pick a secret out
+    of it and no secret outlives the run on disk.
+    """
+    try:
+        original = log_path.read_text(errors="replace")
+    except OSError:
+        return
+    cleaned = redact(original)
+    if cleaned != original:
+        try:
+            log_path.write_text(cleaned)
+        except OSError:
+            pass
+
+
 def failure_reason(log_path: Path) -> str:
     """Name why a download produced nothing, preferring yt-dlp's own ERROR line."""
     try:
@@ -177,10 +212,10 @@ def failure_reason(log_path: Path) -> str:
         return "no output file and no readable yt-dlp log"
     for line in lines:
         if line.startswith("ERROR"):
-            return line.strip()
+            return redact(line.strip())
     for line in reversed(lines):
         if line.strip():
-            return line.strip()
+            return redact(line.strip())
     return "no output file and no yt-dlp diagnostic"
 
 
@@ -238,6 +273,7 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
             "reason": f"cannot run {ytdlp}: {exc}",
             "log": str(log_path),
         }
+    redact_log(log_path)
 
     # Success needs both halves: yt-dlp can exit zero having produced nothing
     # usable after a failed merge, and it can exit non-zero having left a

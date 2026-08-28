@@ -49,6 +49,13 @@ exists to remove. That document carries the exception's type and sanitized code
 locations, never its message: `no-secrets` forbids host paths in a diagnostic,
 and an `OSError` message embeds the path it could not reach.
 
+The same rule reaches yt-dlp's own words. Its `ERROR` lines quote the signed
+media URL it was handed, whose query string carries the expiry and signature —
+so the reason in the report and the persisted `.yt-dlp.log` both have URL query
+strings and credential-bearing parameters redacted before anything reads them.
+The host, the path, and the HTTP status survive, which is what a diagnostic is
+for.
+
 `references/video-slide-extraction.md` taught the bare `yt-dlp` invocation in
 three places, and `references/subagent-instructions.md` carried a fourth — the
 primary block every per-talk worker copies, which is where the habit came from.

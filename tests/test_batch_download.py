@@ -84,6 +84,21 @@ echo "ERROR: Postprocessing: ffmpeg exited with code 1" >&2
 exit 1
 """
 
+# Fails quoting the signed media URL it was handed, as yt-dlp does on a 403.
+FAKE_SIGNED_URL_ERROR = """\
+#!/usr/bin/env bash
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --version) echo "9999.12.31"; exit 0 ;;
+        *) ;;
+    esac
+    shift
+done
+echo "ERROR: unable to download https://rr3.googlevideo.com/videoplayback?expire=1&signature=DEADBEEFCAFE&ip=1.2.3.4: HTTP Error 403: Forbidden" >&2
+echo "token=SUPERSECRETVALUE" >&2
+exit 1
+"""
+
 # Present and executable, but cannot answer --version.
 FAKE_NO_VERSION = """\
 #!/usr/bin/env bash
@@ -456,3 +471,23 @@ def test_a_partial_download_never_lands_on_the_target_path(tmp_path):
     retried = _run(vault, [OK_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_OK))
     assert _by_id(retried)[OK_ID]["outcome"] == "ok"
     assert target.read_text() == "video-bytes"
+
+
+def test_a_signed_url_never_reaches_the_report_or_the_log(tmp_path):
+    """yt-dlp quotes the signed media URL it was handed; the signature is redacted."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    result = _run(
+        vault, [OK_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_SIGNED_URL_ERROR, "signed")
+    )
+    log = (vault / "slides-rebuild" / OK_ID / f"{OK_ID}.yt-dlp.log").read_text()
+    reason = _by_id(result)[OK_ID]["reason"]
+
+    for secret in ("DEADBEEFCAFE", "SUPERSECRETVALUE"):
+        assert secret not in reason
+        assert secret not in result.stdout
+        assert secret not in result.stderr
+        assert secret not in log
+    # The diagnostic still says what happened and which URL it was.
+    assert "403" in reason
+    assert "rr3.googlevideo.com/videoplayback" in reason
