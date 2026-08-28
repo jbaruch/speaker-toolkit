@@ -239,7 +239,10 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
             "youtube_id": youtube_id,
             "outcome": "fail",
             "exit_code": None,
-            "reason": f"cannot create {target_dir}: {exc}",
+            "reason": (
+                f"cannot create {target_dir} ({redact(str(exc))}) — check the "
+                "vault root exists and is writable, then rerun this id"
+            ),
             "log": None,
         }
 
@@ -256,7 +259,8 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
                 "exit_code": None,
                 "reason": (
                     f"a partial download at {staging} could not be removed "
-                    f"({exc}) — delete it and rerun"
+                    f"({redact(str(exc))}) — delete that file, then rerun this "
+                    "id"
                 ),
                 "log": None,
             }
@@ -289,7 +293,11 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
             "youtube_id": youtube_id,
             "outcome": "fail",
             "exit_code": None,
-            "reason": f"cannot run {ytdlp}: {exc}",
+            "reason": (
+                f"cannot run {ytdlp} ({redact(str(exc))}) — reinstall yt-dlp "
+                "into the toolkit environment, or point YT_DLP at a working "
+                "binary, then rerun this id"
+            ),
             "log": None,
         }
     exit_code = completed.returncode
@@ -304,8 +312,10 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
         # to remove.
         log_fields["log"] = None
         log_fields["log_error"] = (
-            f"the yt-dlp log could not be written to {log_path} ({exc}); the "
-            "outcome stands but its diagnostic output was not kept"
+            f"the yt-dlp log could not be written to {log_path} "
+            f"({redact(str(exc))}); the outcome below stands, but this run's "
+            "diagnostic output was not kept — check write permission on that "
+            "directory before relying on the log next time"
         )
 
     # Success needs both halves: yt-dlp can exit zero having produced nothing
@@ -321,7 +331,12 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
                 "youtube_id": youtube_id,
                 "outcome": "fail",
                 "exit_code": exit_code,
-                "reason": f"downloaded but could not be promoted to {target}: {exc}",
+                "reason": (
+                    f"downloaded but could not be promoted to {target} "
+                    f"({redact(str(exc))}) — check free space and write "
+                    "permission on that directory, then rerun this id; the "
+                    "download starts over"
+                ),
                 **log_fields,
             }
         return {

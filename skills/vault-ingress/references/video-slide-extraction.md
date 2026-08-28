@@ -6,7 +6,7 @@ This is the fourth slide acquisition path — used when a talk has `video_url` b
 
 ## Prerequisites
 
-- `yt-dlp` (video download) — invoked through
+- `yt-dlp` (video download) — invoked only through
   `skills/vault-ingress/scripts/batch-download-videos.py`, never by bare name
 - `ffmpeg` (frame extraction)
 - Python packages: `imagehash`, NumPy, `Pillow` (perceptual deduplication), and
@@ -52,13 +52,9 @@ Download through `batch-download-videos.py`, never a bare `yt-dlp`.
 ```
 
 Each video lands at `{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4`.
-Stdout is one JSON report carrying a `results` entry per requested id; exit 0
-means every id ended `ok` or `skip`, 1 that at least one failed. A usage or
-yt-dlp resolution failure exits 2, and an unexpected failure exits 3; both
-report `{"ok": false, "code": ...}` instead of `results`. Binary resolution,
-concurrency, the per-entry fields, the diagnostic redaction, and
-the closed failure vocabulary are the script's own — see the docstring at the
-top of `skills/vault-ingress/scripts/batch-download-videos.py`.
+The report it writes, how a worker branches on it, and everything the script
+owns are in `references/subagent-instructions.md` under `video_extracted` and in
+the script's own docstring — not restated here.
 
 For talks where 720p is unavailable, yt-dlp will fall back to the best available.
 
@@ -162,8 +158,7 @@ cp "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.slide-region.pdf" \
 ```
 
 For batch downloads, pass every id in one invocation; each gets its own
-`results` entry, and each is gated on that entry alone:
-`"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/batch-download-videos.py" <vault_root> ID1 ID2 ...`
+`results` entry, and each is gated on that entry alone.
 
 Always store the full script result in `structured_data.video_extraction` and keep
 `slide_source: "video_extracted"` to name the acquisition path. Set

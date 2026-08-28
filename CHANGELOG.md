@@ -81,9 +81,17 @@ sits visibly inside the `ok`/`skip` branch — a download and an extraction prin
 back to back get copied back to back, whatever the prose beneath them says. The
 branch is on the entry, never the process exit: exit 1 only means some id in the
 batch failed, and a sibling's failure never disqualifies this one. The
-references name the behavioral contract while leaving binary resolution,
-concurrency, redaction, and the failure vocabulary to the script's own
+downloader's operational contract lives in one place — the per-talk worker
+procedure closest to execution — with `video-slide-extraction.md` pointing at it
+rather than carrying a second copy to drift from, and binary resolution,
+concurrency, redaction, and the failure vocabulary staying in the script's own
 docstring.
+
+Every failure a caller can act on now says what to do about it, sanitized:
+a directory that cannot be created names the vault-root write check, an
+unrunnable binary names the reinstall and the `YT_DLP` override, a promotion
+that fails names free space and permission, and each says whether a rerun
+resumes or starts over.
 
 The script has no `--help`: prose on stdout would hand a JSON-consuming caller
 non-JSON on a zero exit, so the docstring is the help and `--help` reads as the
