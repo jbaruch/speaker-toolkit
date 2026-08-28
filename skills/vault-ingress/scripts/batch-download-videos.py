@@ -294,11 +294,19 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
         }
     exit_code = completed.returncode
     output = redact(completed.stdout or "")
+    log_fields: dict[str, object] = {}
     try:
         log_path.write_text(output)
-        log_written = str(log_path)
-    except OSError:
-        log_written = None
+        log_fields["log"] = str(log_path)
+    except OSError as exc:
+        # The download's own outcome still stands; what is lost is the record of
+        # how it went, and losing that quietly is the failure this script exists
+        # to remove.
+        log_fields["log"] = None
+        log_fields["log_error"] = (
+            f"the yt-dlp log could not be written to {log_path} ({exc}); the "
+            "outcome stands but its diagnostic output was not kept"
+        )
 
     # Success needs both halves: yt-dlp can exit zero having produced nothing
     # usable after a failed merge, and it can exit non-zero having left a
@@ -314,13 +322,14 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
                 "outcome": "fail",
                 "exit_code": exit_code,
                 "reason": f"downloaded but could not be promoted to {target}: {exc}",
-                "log": log_written,
+                **log_fields,
             }
         return {
             "youtube_id": youtube_id,
             "outcome": "ok",
             "path": str(target),
             "bytes": size,
+            **log_fields,
         }
 
     reason = failure_reason(output)
@@ -338,7 +347,7 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
         "outcome": "fail",
         "exit_code": exit_code,
         "reason": reason,
-        "log": log_written,
+        **log_fields,
     }
 
 
@@ -366,6 +375,9 @@ def execute(vault_root: Path, youtube_ids: list[str]) -> dict[str, object]:
                 f"warning: {result['youtube_id']} — {result['reason']}",
                 file=sys.stderr,
             )
+        log_error = result.get("log_error")
+        if log_error:
+            print(f"warning: {result['youtube_id']} — {log_error}", file=sys.stderr)
     return {
         "schema_version": REPORT_SCHEMA_VERSION,
         "ok": counts["fail"] == 0,

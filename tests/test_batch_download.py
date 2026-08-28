@@ -588,3 +588,22 @@ def test_an_unremovable_stale_partial_fails_rather_than_promoting_it(tmp_path):
     assert entry["outcome"] == "fail"
     assert "could not be removed" in entry["reason"]
     assert not (holder / f"{OK_ID}.mp4").exists()
+
+
+def test_a_log_that_cannot_be_written_is_reported_not_swallowed(tmp_path):
+    """The download still stands, but losing its record is said out loud."""
+    vault = tmp_path / "vault"
+    target_dir = vault / "slides-rebuild" / OK_ID
+    target_dir.mkdir(parents=True)
+    # A directory where the log file belongs: the video writes, the log cannot.
+    (target_dir / f"{OK_ID}.yt-dlp.log").mkdir()
+
+    result = _run(vault, [OK_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_OK))
+    entry = _by_id(result)[OK_ID]
+
+    assert result.returncode == 0, result.stderr
+    assert entry["outcome"] == "ok"
+    assert entry["log"] is None
+    assert "could not be written" in entry["log_error"]
+    assert OK_ID in result.stderr
+    assert "could not be written" in result.stderr

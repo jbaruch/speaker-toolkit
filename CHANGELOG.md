@@ -62,6 +62,11 @@ the status survive, which is what a diagnostic is for. The `--version` probe
 redacts what the configured executable prints too: a binary a caller points
 `YT_DLP` at is not trusted to keep credentials out of its own errors.
 
+A log that cannot be written carries `log_error` beside a null `log` and warns
+on stderr rather than vanishing into an empty `except`: the download's outcome
+still stands, and losing the record of how it went quietly is the failure this
+whole change exists to remove.
+
 A staging file surviving an earlier attempt is removed before yt-dlp runs, and
 the id fails outright when it cannot be — yt-dlp reports a non-empty output path
 as already downloaded and exits zero, which would otherwise promote a stale
