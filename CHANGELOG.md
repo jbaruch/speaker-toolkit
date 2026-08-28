@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.109 — 2026-08-28
+
 ### fix(vault-ingress) — a failed video download is now visible, and uses the pinned yt-dlp
 
 `batch-download-videos.sh` discarded yt-dlp's stderr and never checked its exit
