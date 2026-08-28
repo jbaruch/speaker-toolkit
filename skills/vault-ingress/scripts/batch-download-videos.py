@@ -176,12 +176,14 @@ def probe_version(ytdlp: Path) -> str:
     except (OSError, subprocess.SubprocessError) as exc:
         raise YtDlpResolutionError(
             "ytdlp_version_unavailable",
-            f"cannot run {ytdlp} ({exc}) — reinstall yt-dlp or set YT_DLP to a "
-            "working binary",
+            f"cannot run {ytdlp} ({redact(str(exc))}) — reinstall yt-dlp or set "
+            "YT_DLP to a working binary",
         ) from exc
     version = completed.stdout.strip()
     if completed.returncode != 0 or not version:
-        detail = completed.stderr.strip() or f"exit {completed.returncode}"
+        # A configured executable is not trusted to keep credentials out of
+        # its own diagnostics, so its words cross this boundary redacted.
+        detail = redact(completed.stderr.strip()) or f"exit {completed.returncode}"
         raise YtDlpResolutionError(
             "ytdlp_version_unavailable",
             f"{ytdlp} did not report a version ({detail}) — reinstall yt-dlp or "
@@ -240,6 +242,24 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
             "reason": f"cannot create {target_dir}: {exc}",
             "log": None,
         }
+
+    # A staging file surviving an earlier attempt must not reach yt-dlp: it
+    # reports a non-empty output path as already downloaded and exits zero,
+    # which would promote the stale partial as this run's video.
+    if staging.exists():
+        try:
+            staging.unlink()
+        except OSError as exc:
+            return {
+                "youtube_id": youtube_id,
+                "outcome": "fail",
+                "exit_code": None,
+                "reason": (
+                    f"a partial download at {staging} could not be removed "
+                    f"({exc}) — delete it and rerun"
+                ),
+                "log": None,
+            }
 
     command = [
         str(ytdlp),
@@ -305,8 +325,8 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
 
     reason = failure_reason(output)
     if written:
-        # Best-effort: an undeleted staging file is harmless, since the resume
-        # check reads `target` and the next run overwrites this same path.
+        # Best-effort here; the next attempt removes it up front, and refuses to
+        # run when it cannot.
         try:
             staging.unlink()
         except OSError:

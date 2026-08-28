@@ -101,11 +101,26 @@ echo "Cookie: sid=COOKIESECRET; theme=dark" >&2
 exit 1
 """
 
-# Present and executable, but cannot answer --version.
+# Present and executable, but cannot answer --version — and leaks while failing.
 FAKE_NO_VERSION = """\
 #!/usr/bin/env bash
-echo "yt-dlp: error: unrecognized arguments" >&2
+echo "yt-dlp: error: unrecognized arguments token=VERSIONSECRET" >&2
 exit 2
+"""
+
+# Reports the output path as already downloaded, as yt-dlp does for a non-empty
+# target, without writing anything itself.
+FAKE_ALREADY_DOWNLOADED = """\
+#!/usr/bin/env bash
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --version) echo "9999.12.31"; exit 0 ;;
+        *) ;;
+    esac
+    shift
+done
+echo "[download] Destination already exists; skipping"
+exit 0
 """
 
 
@@ -522,3 +537,54 @@ def test_redaction_covers_a_header_value_containing_spaces(tmp_path):
     assert "TOKEN" not in cleaned
     assert "SPACES" not in cleaned
     assert cleaned.startswith("Authorization: <redacted>")
+
+
+def test_the_version_probe_redacts_what_the_binary_prints(tmp_path):
+    """A configured executable's own diagnostics cross the boundary redacted."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    result = _run(vault, [OK_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_NO_VERSION, "mute"))
+
+    assert result.returncode == 2
+    assert "VERSIONSECRET" not in result.stdout
+    assert "VERSIONSECRET" not in result.stderr
+
+
+def test_a_stale_staging_file_is_removed_before_yt_dlp_runs(tmp_path):
+    """yt-dlp must never see a leftover partial and call it already downloaded."""
+    vault = tmp_path / "vault"
+    staging = vault / "slides-rebuild" / OK_ID / f"{OK_ID}.incomplete.mp4"
+    staging.parent.mkdir(parents=True)
+    staging.write_text("stale-partial-bytes")
+
+    result = _run(
+        vault, [OK_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_ALREADY_DOWNLOADED, "already")
+    )
+    target = staging.parent / f"{OK_ID}.mp4"
+
+    assert result.returncode == 1
+    assert _by_id(result)[OK_ID]["outcome"] == "fail"
+    assert not target.exists()
+
+
+def test_an_unremovable_stale_partial_fails_rather_than_promoting_it(tmp_path):
+    """When the leftover cannot be cleared, the id fails instead of risking it."""
+    vault = tmp_path / "vault"
+    holder = vault / "slides-rebuild" / OK_ID
+    holder.mkdir(parents=True)
+    (holder / f"{OK_ID}.incomplete.mp4").write_text("stale-partial-bytes")
+    holder.chmod(0o500)
+    try:
+        result = _run(
+            vault,
+            [OK_ID],
+            ytdlp=_fake_ytdlp(tmp_path, FAKE_ALREADY_DOWNLOADED, "already"),
+        )
+        entry = _by_id(result)[OK_ID]
+    finally:
+        holder.chmod(0o700)
+
+    assert result.returncode == 1
+    assert entry["outcome"] == "fail"
+    assert "could not be removed" in entry["reason"]
+    assert not (holder / f"{OK_ID}.mp4").exists()

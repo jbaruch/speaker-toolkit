@@ -58,7 +58,14 @@ Redaction handles two shapes: a query or form parameter stops at its own
 delimiter, so an HTTP status after it still reads, while a header value runs to
 end of line, since `Authorization: Bearer <token>` contains spaces and a
 token-shaped match would have left the secret behind. The host, the path, and
-the status survive, which is what a diagnostic is for.
+the status survive, which is what a diagnostic is for. The `--version` probe
+redacts what the configured executable prints too: a binary a caller points
+`YT_DLP` at is not trusted to keep credentials out of its own errors.
+
+A staging file surviving an earlier attempt is removed before yt-dlp runs, and
+the id fails outright when it cannot be — yt-dlp reports a non-empty output path
+as already downloaded and exits zero, which would otherwise promote a stale
+partial as this run's video.
 
 `references/video-slide-extraction.md` taught the bare `yt-dlp` invocation in
 three places, and `references/subagent-instructions.md` carried a fourth — the
