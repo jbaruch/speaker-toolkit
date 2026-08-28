@@ -6,7 +6,8 @@ This is the fourth slide acquisition path — used when a talk has `video_url` b
 
 ## Prerequisites
 
-- `yt-dlp` (video download)
+- `yt-dlp` (video download) — invoked only through
+  `skills/vault-ingress/scripts/batch-download-videos.py`, never by bare name
 - `ffmpeg` (frame extraction)
 - Python packages: `imagehash`, NumPy, `Pillow` (perceptual deduplication), and
   `filelock` (same-video run coordination)
@@ -43,12 +44,17 @@ video → download (yt-dlp, 720p) → extract frames (ffmpeg, 1 per 2s)
 
 Download at 720p — enough resolution to read slide text, small enough to be fast.
 
+Download through `batch-download-videos.py`, never a bare `yt-dlp`.
+
 ```bash
-yt-dlp -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]" \
-  --merge-output-format mp4 \
-  -o "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \
-  "https://www.youtube.com/watch?v={youtube_id}"
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/batch-download-videos.py" \
+  "{vault_root}" {youtube_id} [{youtube_id} ...]
 ```
+
+Each video lands at `{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4`.
+The report it writes, how a worker branches on it, and everything the script
+owns are in `references/subagent-instructions.md` under `video_extracted` and in
+the script's own docstring — not restated here.
 
 For talks where 720p is unavailable, yt-dlp will fall back to the best available.
 
@@ -123,13 +129,15 @@ shell interpolation, so shell metacharacters in valid native POSIX filenames do
 not become commands.
 
 ```bash
-# Download video at 720p
-yt-dlp -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]" \
-  --merge-output-format mp4 \
-  -o "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \
-  "https://www.youtube.com/watch?v={youtube_id}"
+# Download video at 720p. Read the report before going further: extraction runs
+# only when this id's `results` entry is `ok` or `skip`. A `fail` entry, or a
+# report with no `results` at all (exits 2 and 3), means there is no video to
+# extract — stop here rather than running the extractor against an absent or
+# stale MP4.
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/batch-download-videos.py" \
+  "{vault_root}" "{youtube_id}"
 
-# Extract slides
+# Extract slides — only for an `ok` or `skip` entry
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/video-slide-extraction.py" \
   "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \
   "{vault_root}/slides-rebuild/{youtube_id}" \
@@ -149,7 +157,8 @@ cp "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.slide-region.pdf" \
   "{vault_root}/slides/{youtube_id}.pdf"
 ```
 
-For batch downloads: `"{speaker_toolkit_root}/skills/vault-ingress/scripts/batch-download-videos.sh" <vault_root> ID1 ID2 ...`
+For batch downloads, pass every id in one invocation; each gets its own
+`results` entry, and each is gated on that entry alone.
 
 Always store the full script result in `structured_data.video_extraction` and keep
 `slide_source: "video_extracted"` to name the acquisition path. Set
@@ -336,7 +345,9 @@ In Step 3 of the skill (per-talk subagent):
 
 ```
 if slide_source == "video_extracted":
-    1. Download video: yt-dlp -f "best[height<=720]" ...
+    1. Download video: skills/vault-ingress/scripts/batch-download-videos.py
+       "{vault_root}" "{youtube_id}" — and stop unless this id's `results`
+       entry is `ok` or `skip`
     2. Run extract_slides_from_video()
     3. Store the complete artifact manifest in structured_data
     4. If review_required, inspect source + context + candidate and rerun with a

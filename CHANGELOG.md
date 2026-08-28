@@ -1,5 +1,107 @@
 # Changelog
 
+### fix(vault-ingress) — a failed video download is now visible, and uses the pinned yt-dlp
+
+`batch-download-videos.sh` discarded yt-dlp's stderr and never checked its exit
+code, so a failed download produced no line at all rather than a failure line
+(#370). It also invoked `yt-dlp` by bare name, resolving whatever `PATH`
+offered (#371) — on the host that surfaced this, a Homebrew 2026.06.09 that 403s
+on every video, while the pinned 2026.08.19 in the venv succeeds on the same
+command in the same minute. Together the two turned 34 of 35 failed downloads
+into silence, and the talks behind them read downstream as thin rather than
+unprocessed.
+
+It is now `batch-download-videos.py`. The bash version was the directory's lone
+shell script among fifty Python ones, and `rules/script-delegation.md` requires
+a script to produce structured data — which meant hand-rolling JSON escaping in
+bash for strings that arrive as arbitrary yt-dlp error text. Python removes that
+along with the `set -e` carve-out gymnastics and two portability traps a
+reviewer found in the shell draft: an unset `VIRTUAL_ENV` expanding to
+`/bin/yt-dlp`, and an unchecked `mktemp -d`.
+
+The script resolves `yt-dlp` in an explicit order — `$YT_DLP`, then the console
+script beside the running interpreter (#371's own proposal), then
+`$VIRTUAL_ENV`, then the toolkit's `.venv`, then `PATH` — and announces the
+resolved path and version on stderr before the first download, so a stale binary
+is visible up front rather than after the batch. A binary that cannot answer
+`--version` is a resolution failure, not an unnamed version.
+
+Stdout is one JSON report: a `results` entry per requested id in the order
+given, each `ok`, `skip`, or `fail` with its bytes or its exit code, yt-dlp
+reason, and log path. An `ok` needs both halves — yt-dlp can exit zero having
+produced nothing after a failed merge, and it can exit non-zero having left a
+truncated file behind, which the resume check would then read as a finished
+download. yt-dlp writes to a staging name and the file is promoted only once
+the run verifies, so nothing unverified can reach the path the resume check
+reads, even when the cleanup itself fails.
+Ids already downloaded are skipped, so a 78-video batch resumes instead of
+restarting; every id is checked against the shared ingress YouTube grammar
+before becoming a directory name or a URL; and a repeated id is rejected rather
+than handed to two workers writing the same file at once. Exit 0 when every id
+ended `ok` or `skip`, 1 when any failed, 2 on a usage or resolution error, 3 on
+an unexpected one — and every one of those exits reports a typed
+`{"ok": false, "code": ...}` object from a closed vocabulary rather than bare
+prose or a traceback, so a caller parsing stdout is never handed nothing. That
+last exit is the outer-boundary carve-out in `rules/error-handling.md`: an
+escaping exception would leave empty stdout, which reads as "no videos were
+requested" rather than as a failed run — the same silence the whole change
+exists to remove. That document carries the exception's type and sanitized code
+locations, never its message: `no-secrets` forbids host paths in a diagnostic,
+and an `OSError` message embeds the path it could not reach.
+
+The same rule reaches yt-dlp's own words. Its `ERROR` lines quote the signed
+media URL it was handed, whose query string carries the expiry and signature.
+Its output is captured in memory and redacted before the `.yt-dlp.log` is
+written, rather than streamed to disk and cleaned afterwards — the latter leaves
+the credential on disk for any interrupt or rewrite failure to make permanent.
+Redaction handles two shapes: a query or form parameter stops at its own
+delimiter, so an HTTP status after it still reads, while a header value runs to
+end of line, since `Authorization: Bearer <token>` contains spaces and a
+token-shaped match would have left the secret behind. The host, the path, and
+the status survive, which is what a diagnostic is for. The `--version` probe
+redacts what the configured executable prints too: a binary a caller points
+`YT_DLP` at is not trusted to keep credentials out of its own errors.
+
+A log that cannot be written carries `log_error` beside a null `log` and warns
+on stderr rather than vanishing into an empty `except`: the download's outcome
+still stands, and losing the record of how it went quietly is the failure this
+whole change exists to remove.
+
+A staging file surviving an earlier attempt is removed before yt-dlp runs, and
+the id fails outright when it cannot be — yt-dlp reports a non-empty output path
+as already downloaded and exits zero, which would otherwise promote a stale
+partial as this run's video.
+
+`references/video-slide-extraction.md` taught the bare `yt-dlp` invocation in
+three places, and `references/subagent-instructions.md` carried a fourth — the
+primary block every per-talk worker copies, which is where the habit came from.
+All four now call the script. The worker reads this id's `results` entry rather
+than assuming the MP4 exists, and the command blocks are split so extraction
+sits visibly inside the `ok`/`skip` branch — a download and an extraction printed
+back to back get copied back to back, whatever the prose beneath them says. The
+branch is on the entry, never the process exit: exit 1 only means some id in the
+batch failed, and a sibling's failure never disqualifies this one. The
+downloader's operational contract lives in one place — the per-talk worker
+procedure closest to execution — with `video-slide-extraction.md` pointing at it
+rather than carrying a second copy to drift from, and binary resolution,
+concurrency, redaction, and the failure vocabulary staying in the script's own
+docstring.
+
+Every failure a caller can act on now says what to do about it, sanitized:
+a directory that cannot be created names the vault-root write check, an
+unrunnable binary names the reinstall and the `YT_DLP` override, a promotion
+that fails names free space and permission, and each says whether a rerun
+resumes or starts over.
+
+The script has no `--help`: prose on stdout would hand a JSON-consuming caller
+non-JSON on a zero exit, so the docstring is the help and `--help` reads as the
+typed `usage` failure.
+
+#371's other two halves are unaddressed: the Python call sites in
+`fetch-transcript.py` and `audit-source-identities.py` still resolve from
+`PATH`, and `check-runtime.py` still reports the lane available on presence
+alone rather than asserting the pinned version.
+
 ## 0.20.108 — 2026-08-27
 
 ### fix(vault-ingress) — the "fresh v6 claim" example declared version 5
