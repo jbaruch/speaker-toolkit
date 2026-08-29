@@ -62,7 +62,7 @@ test = [
 # `rules/code-formatting.md` Separation of Concerns.
 lint = [
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
-    "ruff==0.16.2",
+    "ruff==0.16.4",
     # The pip distribution bundles its own Node runtime, so CI needs no
     # separate Node setup step.
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
