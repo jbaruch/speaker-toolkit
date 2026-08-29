@@ -32,7 +32,7 @@ dependencies = [
     # 2.2.6 is the newest NumPy line compatible with requires-python >=3.10.
     "numpy==2.2.6",
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
-    "filelock==3.32.2",
+    "filelock==3.32.4",
     "pydantic==2.13.4",
     "PyYAML==6.0.3",
     # Pinned deliberately, not by habit: 1.0 removed the `get_transcript`
