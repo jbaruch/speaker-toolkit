@@ -3775,6 +3775,16 @@ def detection_claim(detection: object) -> object:
     # Dimensions are catalog authority, not model authority. Raw returns may
     # omit them; return validation rejects any supplied value that differs.
     claim.pop("dimensions", None)
+    # `evidence_sources_used` names a source GROUP, which the engine itself
+    # compares as a frozenset. Persistence may store it in a different order
+    # than the worker wrote, so normalize here; otherwise a batch that merged
+    # cleanly can never render, the raw/canonical projection reporting drift
+    # over ordering alone.
+    sources_used = claim.get("evidence_sources_used")
+    if isinstance(sources_used, list) and all(
+        isinstance(item, str) for item in sources_used
+    ):
+        claim["evidence_sources_used"] = sorted(sources_used)
     citations = claim.get("evidence_citations")
     if isinstance(citations, list):
         stripped = []

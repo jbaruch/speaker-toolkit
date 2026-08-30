@@ -3904,3 +3904,34 @@ def test_derivatives_from_two_runs_are_rejected_before_persistence(
             manifest,
             SYNTHETIC_VIDEO_ID,
         )
+
+
+def test_detection_claim_normalizes_evidence_sources_used_order() -> None:
+    """A comparison group is a set, so its order must not read as model drift.
+
+    persist-results.py may store `evidence_sources_used` in a different order than
+    the worker wrote it. write-analysis.py then compares the raw return against the
+    persisted overlay through this projection, so an order-sensitive comparison
+    made a batch that merged cleanly impossible to render.
+    """
+    worker = {
+        "pattern_id": "gradual-consistency",
+        "confidence": "moderate",
+        "evidence_source": "source_comparison",
+        "evidence_sources_used": ["native_deck", "static_slides"],
+    }
+    persisted = dict(worker, evidence_sources_used=["static_slides", "native_deck"])
+
+    assert pattern_evidence.detection_claim(worker) == pattern_evidence.detection_claim(
+        persisted
+    )
+
+
+def test_detection_claim_leaves_non_string_sources_used_untouched() -> None:
+    """Only a list of plain strings is a source group; anything else passes through."""
+    detection = {"pattern_id": "x", "evidence_sources_used": [{"source": "a"}, 2]}
+
+    assert pattern_evidence.detection_claim(detection)["evidence_sources_used"] == [
+        {"source": "a"},
+        2,
+    ]
