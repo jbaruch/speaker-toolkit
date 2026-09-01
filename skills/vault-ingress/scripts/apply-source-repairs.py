@@ -64,6 +64,8 @@ ALLOWED_FIELDS = frozenset(
         "slides_pdf_path",
         "pdf_path",
         "transcript_path",
+        "video_local_path",
+        "video_path",
         "transcript_source",
         "slide_source",
         "source_identity",

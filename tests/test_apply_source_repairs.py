@@ -446,3 +446,65 @@ def test_the_documented_render_registration_plan_applies(
     assert talk["slides_local_path"] == "slides/talk.pdf"
     assert talk["status"] == "needs-reprocessing"
     assert changes
+
+
+def test_preserved_local_media_can_be_registered(apply_source_repairs) -> None:
+    """Register a preserved recording whose remote source is gone.
+
+    `pattern_evidence._local_video_binding` trusts local media only through a
+    stored `structured_data.video_extraction` manifest or a `video_local_path` /
+    `video_path` on the talk. The manifest reaches the talk through the merge,
+    and a transcript Whispered from that media fails its receipt owner check
+    until something marks the file as the talk's. Registering the path is the
+    owner's way in.
+    """
+    database = base_database()
+    database["talks"][0]["transcript_source"] = "whisper"
+    plan = {
+        "schema_version": 1,
+        "repairs": [
+            {
+                "filename": "talk.md",
+                "reason": "YouTube source deleted upstream; preserved recording is the media",
+                "expect": {
+                    "video_local_path": {"$missing": True},
+                    "transcript_source": "whisper",
+                },
+                "set": {
+                    "video_local_path": "slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.mp4",
+                    "transcript_source": "whisper",
+                },
+            }
+        ],
+    }
+
+    repairs = apply_source_repairs.validate_plan(plan)
+    repaired, changes = apply_source_repairs.build_repaired_database(database, repairs)
+
+    talk = repaired["talks"][0]
+    assert talk["video_local_path"] == "slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.mp4"
+    assert changes
+
+
+def test_legacy_video_path_alias_can_be_cleared(apply_source_repairs) -> None:
+    """`video_path` is the legacy alias of the same locator and clears the same way."""
+    database = base_database()
+    database["talks"][0]["video_path"] = "slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.mp4"
+    plan = {
+        "schema_version": 1,
+        "repairs": [
+            {
+                "filename": "talk.md",
+                "reason": "preserved recording was removed from the vault",
+                "expect": {
+                    "video_path": "slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.mp4",
+                },
+                "clear": ["video_path"],
+            }
+        ],
+    }
+
+    repairs = apply_source_repairs.validate_plan(plan)
+    repaired, _ = apply_source_repairs.build_repaired_database(database, repairs)
+
+    assert "video_path" not in repaired["talks"][0]
