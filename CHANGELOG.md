@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.110 — 2026-09-01
+
 ### fix(vault-ingress) — an owner can register a preserved local recording
 
 `pattern_evidence._local_video_binding` trusts local media through exactly two
