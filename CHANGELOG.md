@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.111 — 2026-09-01
+
 ### fix(vault-ingress) — a source group's order no longer reads as model drift
 
 `detection_claim` projects a detection down to what the model actually claimed,
