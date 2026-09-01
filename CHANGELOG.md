@@ -1,5 +1,49 @@
 # Changelog
 
+### fix(vault-ingress) — an owner can register a preserved local recording
+
+`pattern_evidence._local_video_binding` trusts local media through exactly two
+doors: a `structured_data.video_extraction` manifest already stored on the talk,
+or a `video_local_path` / `video_path` on the talk. No owner path could open
+either. `video_local_path` was absent from `apply-source-repairs.py`'s
+`ALLOWED_FIELDS` and from `mutate-tracking-database.py`'s
+`PUBLISHING_TALK_FIELDS`, and the manifest only reaches a talk through the merge
+that the missing binding blocks — a closed loop.
+
+The talk that surfaced it had its YouTube source deleted upstream. The recording
+was preserved locally, `fetch-transcript.py --audio` transcribed it, and the
+quality receipt recorded `provenance.kind = local_media_duration` plus the
+media's SHA-256 (which matches the file byte for byte). Persistence then refused
+the transcript source outright with `receipt_owner_mismatch`, because nothing on
+the talk said that mp4 was this talk's media. The analysis scored 14.0 across
+four evidence lanes and could not be persisted at all.
+
+`video_local_path` and `video_path` now pass `apply-source-repairs.py`'s field
+allowlist, so the owner registers the preserved file the same guarded way every
+other source is registered: an exact `expect` precondition, a dry run, a
+byte-for-byte backup, and a refusal while the talk carries an active queue
+claim. Nothing about validation moves — `_resolve_local_video_artifact` still
+bounds the path inside the vault and to a video suffix, and the binding still
+requires the filename stem to equal the `youtube_id`, so a wrong path fails
+closed at evidence time rather than registering a lie.
+
+This does not reach the second known instance, an InfoQ talk Whispered from an
+`.mp3`: `_VIDEO_SUFFIXES` admits no audio, so that one still needs its own
+decision about whether duration-only binding may cite an audio file.
+
+The writer now also enforces the requeue that `references/bootstrap-and-preflight.md`
+has always required in prose. A source that appears after an analysis ran
+invalidates that analysis — the talk was scored without it — so a repair that
+registers a previously absent source on a `processed` or `processed_partial`
+talk must also set `status: "needs-reprocessing"` and
+`reprocess_reason: "source_added"`, or the whole plan is refused. What counts as
+a source is `ingress_contract`'s own `REMOTE_ACQUISITION_FIELDS` and
+`LOCAL_ARTIFACT_FIELDS` rather than a second list that can drift from them.
+`youtube_id` is deliberately outside it: the id identifies a `video_url` the
+talk already carries, so backfilling it adds no evidence and drags no requeue
+behind it. A talk already `pending` or `needs-reprocessing` has no analysis to
+invalidate and needs nothing extra.
+
 ## 0.20.109 — 2026-08-28
 
 ### fix(vault-ingress) — a failed video download is now visible, and uses the pinned yt-dlp
