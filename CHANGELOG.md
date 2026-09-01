@@ -1,5 +1,25 @@
 # Changelog
 
+### fix(vault-ingress) — a source group's order no longer reads as model drift
+
+`detection_claim` projects a detection down to what the model actually claimed,
+and `write-analysis.py` compares that projection of the raw return against the
+same projection of the persisted overlay. A mismatch means the engine rewrote
+something the model authored, which is a hard refusal of the whole batch.
+
+`evidence_sources_used` names a source GROUP. The engine compares it as a
+frozenset everywhere else, and persistence may store it in a different order
+than the worker wrote it. The projection compared it as a list, so a batch that
+merged cleanly could never render. A worker returned
+`["native_deck", "static_slides"]`, persistence stored
+`["static_slides", "native_deck"]`, and rendering failed with
+"canonicalization changed model-authored return fields" — with no way forward
+that did not involve editing an already-receipted return.
+
+The projection now sorts a plain list of strings, matching how the engine reads
+the field. A list holding anything else passes through untouched, so a malformed
+value still reaches the validator that owns the failure.
+
 ## 0.20.110 — 2026-09-01
 
 ### fix(vault-ingress) — an owner can register a preserved local recording
