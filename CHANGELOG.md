@@ -31,6 +31,19 @@ This does not reach the second known instance, an InfoQ talk Whispered from an
 `.mp3`: `_VIDEO_SUFFIXES` admits no audio, so that one still needs its own
 decision about whether duration-only binding may cite an audio file.
 
+The writer now also enforces the requeue that `references/bootstrap-and-preflight.md`
+has always required in prose. A source that appears after an analysis ran
+invalidates that analysis — the talk was scored without it — so a repair that
+registers a previously absent source on a `processed` or `processed_partial`
+talk must also set `status: "needs-reprocessing"` and
+`reprocess_reason: "source_added"`, or the whole plan is refused. What counts as
+a source is `ingress_contract`'s own `REMOTE_ACQUISITION_FIELDS` and
+`LOCAL_ARTIFACT_FIELDS` rather than a second list that can drift from them.
+`youtube_id` is deliberately outside it: the id identifies a `video_url` the
+talk already carries, so backfilling it adds no evidence and drags no requeue
+behind it. A talk already `pending` or `needs-reprocessing` has no analysis to
+invalidate and needs nothing extra.
+
 ## 0.20.109 — 2026-08-28
 
 ### fix(vault-ingress) — a failed video download is now visible, and uses the pinned yt-dlp

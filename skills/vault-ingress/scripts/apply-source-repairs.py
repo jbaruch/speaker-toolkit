@@ -34,6 +34,10 @@ from pathlib import Path
 import sys
 from typing import Any
 
+from ingress_contract import (
+    LOCAL_ARTIFACT_FIELDS,
+    REMOTE_ACQUISITION_FIELDS,
+)
 from tracking_database import (
     TrackingDatabaseError,
     require_current_tracking_database,
@@ -75,6 +79,19 @@ ALLOWED_FIELDS = frozenset(
         "reprocess_reason",
     }
 )
+# A source that appears after an analysis ran invalidates that analysis: the
+# talk was scored without it. references/bootstrap-and-preflight.md states the
+# contract in prose ("the same plan plus a deliberate requeue"); these constants
+# make the writer refuse a registration that omits it. What counts as a source
+# is the ingress contract's own answer, not a second list that can drift from
+# it. `youtube_id` is deliberately absent: it is the identifier of a `video_url`
+# already on the talk, so backfilling it adds no evidence.
+SOURCE_REGISTRATION_FIELDS = frozenset(REMOTE_ACQUISITION_FIELDS) | frozenset(
+    LOCAL_ARTIFACT_FIELDS
+)
+ANALYZED_STATUSES = frozenset({"processed", "processed_partial"})
+REQUEUE_STATUS = "needs-reprocessing"
+SOURCE_ADDED_REPROCESS_REASON = "source_added"
 ALLOWED_REPAIR_STATUSES = frozenset(
     {
         "pending",
@@ -209,6 +226,18 @@ def validate_plan(plan: dict[str, Any]) -> list[dict[str, Any]]:
     return normalized
 
 
+def _newly_registered_sources(repair: dict[str, Any]) -> set[str]:
+    """Name the source fields this repair adds where none was recorded."""
+    set_values = repair.get("set", {})
+    expect = repair["expect"]
+    return {
+        field
+        for field in set_values
+        if field in SOURCE_REGISTRATION_FIELDS
+        and json_values_equal(expect.get(field), MISSING_MARKER)
+    }
+
+
 def _matches_expected(talk: dict[str, Any], field: str, expected: Any) -> bool:
     if json_values_equal(expected, MISSING_MARKER):
         return field not in talk
@@ -254,6 +283,20 @@ def build_repaired_database(
                 actual = current[field] if field in current else MISSING_MARKER
                 errors.append(
                     f"{filename}.{field}: expected {expected!r}, found {actual!r}"
+                )
+        registered = _newly_registered_sources(repair)
+        if registered and current.get("status") in ANALYZED_STATUSES:
+            set_values = repair.get("set", {})
+            if (
+                set_values.get("status") != REQUEUE_STATUS
+                or set_values.get("reprocess_reason") != SOURCE_ADDED_REPROCESS_REASON
+            ):
+                errors.append(
+                    f"{filename}: registering {sorted(registered)} on a "
+                    f"{current.get('status')!r} talk must also set status "
+                    f"{REQUEUE_STATUS!r} and reprocess_reason "
+                    f"{SOURCE_ADDED_REPROCESS_REASON!r}; the stored analysis ran "
+                    "without that source"
                 )
 
     if errors:

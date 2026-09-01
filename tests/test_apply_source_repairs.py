@@ -448,6 +448,26 @@ def test_the_documented_render_registration_plan_applies(
     assert changes
 
 
+def preserved_media_repair(**overrides):
+    """The documented registration plan for a preserved local recording."""
+    repair = {
+        "filename": "talk.md",
+        "reason": "YouTube source deleted upstream; preserved recording is the media",
+        "expect": {
+            "video_local_path": {"$missing": True},
+            "status": "processed",
+            "reprocess_reason": {"$missing": True},
+        },
+        "set": {
+            "video_local_path": "slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.mp4",
+            "status": "needs-reprocessing",
+            "reprocess_reason": "source_added",
+        },
+    }
+    repair.update(overrides)
+    return {"schema_version": 1, "repairs": [repair]}
+
+
 def test_preserved_local_media_can_be_registered(apply_source_repairs) -> None:
     """Register a preserved recording whose remote source is gone.
 
@@ -460,30 +480,91 @@ def test_preserved_local_media_can_be_registered(apply_source_repairs) -> None:
     """
     database = base_database()
     database["talks"][0]["transcript_source"] = "whisper"
+
+    repairs = apply_source_repairs.validate_plan(preserved_media_repair())
+    repaired, changes = apply_source_repairs.build_repaired_database(database, repairs)
+
+    talk = repaired["talks"][0]
+    assert talk["video_local_path"] == "slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.mp4"
+    assert talk["status"] == "needs-reprocessing"
+    assert talk["reprocess_reason"] == "source_added"
+    assert changes
+
+
+def test_registering_a_source_without_the_requeue_is_refused(
+    apply_source_repairs,
+) -> None:
+    """A source that appears after the analysis ran must requeue the talk.
+
+    The stored analysis was scored without it, so leaving the talk `processed`
+    publishes a score that silently ignores evidence the vault now holds.
+    """
+    database = base_database()
+    plan = preserved_media_repair(
+        expect={
+            "video_local_path": {"$missing": True},
+            "transcript_source": "youtube_auto",
+        },
+        set={
+            "video_local_path": "slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.mp4",
+            "transcript_source": "whisper",
+        },
+    )
+    repairs = apply_source_repairs.validate_plan(plan)
+
+    with pytest.raises(
+        apply_source_repairs.SourceRepairError, match="must also set status"
+    ):
+        apply_source_repairs.build_repaired_database(database, repairs)
+
+
+def test_registering_a_source_on_a_queued_talk_needs_no_requeue(
+    apply_source_repairs,
+) -> None:
+    """A talk already awaiting reprocessing has nothing to invalidate."""
+    database = base_database()
+    database["talks"][0]["status"] = "pending"
+    plan = preserved_media_repair(
+        expect={
+            "video_local_path": {"$missing": True},
+            "transcript_source": "youtube_auto",
+        },
+        set={
+            "video_local_path": "slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.mp4",
+            "transcript_source": "whisper",
+        },
+    )
+    repairs = apply_source_repairs.validate_plan(plan)
+    repaired, _ = apply_source_repairs.build_repaired_database(database, repairs)
+
+    assert repaired["talks"][0]["status"] == "pending"
+
+
+def test_correcting_an_existing_source_is_not_a_registration(
+    apply_source_repairs,
+) -> None:
+    """Replacing a recorded locator is an identity correction, not an addition.
+
+    The requeue rule fires on a source the analysis could not have seen. A
+    locator that was already there keeps its own repair flow.
+    """
+    database = base_database()
     plan = {
         "schema_version": 1,
         "repairs": [
             {
                 "filename": "talk.md",
-                "reason": "YouTube source deleted upstream; preserved recording is the media",
-                "expect": {
-                    "video_local_path": {"$missing": True},
-                    "transcript_source": "whisper",
-                },
-                "set": {
-                    "video_local_path": "slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.mp4",
-                    "transcript_source": "whisper",
-                },
+                "reason": "provider metadata identifies the correct recording",
+                "expect": {"video_url": "https://youtu.be/AbCdEfGhI_1"},
+                "set": {"video_url": "https://youtu.be/AbCdEfGhI_2"},
             }
         ],
     }
-
     repairs = apply_source_repairs.validate_plan(plan)
-    repaired, changes = apply_source_repairs.build_repaired_database(database, repairs)
+    repaired, _ = apply_source_repairs.build_repaired_database(database, repairs)
 
-    talk = repaired["talks"][0]
-    assert talk["video_local_path"] == "slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.mp4"
-    assert changes
+    assert repaired["talks"][0]["video_url"] == "https://youtu.be/AbCdEfGhI_2"
+    assert repaired["talks"][0]["status"] == "processed"
 
 
 def test_legacy_video_path_alias_can_be_cleared(apply_source_repairs) -> None:
@@ -508,3 +589,31 @@ def test_legacy_video_path_alias_can_be_cleared(apply_source_repairs) -> None:
     repaired, _ = apply_source_repairs.build_repaired_database(database, repairs)
 
     assert "video_path" not in repaired["talks"][0]
+
+
+def test_backfilling_youtube_id_is_not_a_source_registration(
+    apply_source_repairs,
+) -> None:
+    """`youtube_id` identifies a `video_url` the talk already carries.
+
+    Recording the derived id adds no evidence the stored analysis lacked, so it
+    does not drag a requeue behind it.
+    """
+    database = base_database()
+    database["talks"][0].pop("youtube_id")
+    plan = {
+        "schema_version": 1,
+        "repairs": [
+            {
+                "filename": "talk.md",
+                "reason": "backfill the identifier of the recorded video_url",
+                "expect": {"youtube_id": {"$missing": True}},
+                "set": {"youtube_id": "AbCdEfGhI_1"},
+            }
+        ],
+    }
+    repairs = apply_source_repairs.validate_plan(plan)
+    repaired, _ = apply_source_repairs.build_repaired_database(database, repairs)
+
+    assert repaired["talks"][0]["youtube_id"] == "AbCdEfGhI_1"
+    assert repaired["talks"][0]["status"] == "processed"
