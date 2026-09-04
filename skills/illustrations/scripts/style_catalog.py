@@ -87,7 +87,12 @@ def _slug(value: Any) -> str:
 def _https(value: str) -> None:
     try:
         parts = urlsplit(value)
-        valid = parts.scheme == "https" and bool(parts.hostname) and not parts.username
+        valid = (
+            parts.scheme == "https"
+            and bool(parts.hostname)
+            and parts.username is None
+            and parts.password is None
+        )
     except ValueError:
         valid = False
     if not valid or any(c.isspace() for c in value):
@@ -237,7 +242,13 @@ def _file_ok(info: os.stat_result) -> None:
 def read_bytes(path: Path, *, missing: bool = False) -> bytes | None:
     try:
         _file_ok(path.lstat())
-        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
+        fd = os.open(
+            path,
+            os.O_RDONLY
+            | getattr(os, "O_NONBLOCK", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_BINARY", 0),
+        )
     except FileNotFoundError:
         if missing:
             return None
@@ -271,7 +282,10 @@ def read_bytes(path: Path, *, missing: bool = False) -> bytes | None:
 
 
 def personal_path(vault: Path) -> Path:
-    resolved = vault.resolve(strict=True)
+    try:
+        resolved = vault.resolve(strict=True)
+    except (FileNotFoundError, NotADirectoryError):
+        _fail("catalog_vault_invalid", "Select an existing vault directory.")
     if not resolved.is_dir():
         _fail("catalog_vault_invalid", "Select an existing vault directory.")
     return resolved / PERSONAL_NAME

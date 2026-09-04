@@ -154,6 +154,38 @@ def test_private_sample_not_accepted_as_public(catalog):
         catalog.validate_entry(entry)
 
 
+@pytest.mark.parametrize(
+    "userinfo",
+    ["user:synthetic-password", ":synthetic-password", "user:", ":", "user", ""],
+)
+@pytest.mark.parametrize("field", ["sample", "provenance"])
+def test_public_url_userinfo_is_always_refused(catalog, userinfo, field):
+    entry = personal_entry(catalog)
+    location = "location" if field == "sample" else "reference"
+    entry[field][location] = f"https://{userinfo}@example.test/image.png"
+    with pytest.raises(catalog.CatalogError, match="without credentials"):
+        catalog.validate_entry(entry, public=True)
+
+
+def test_cli_does_not_echo_password_with_empty_username(catalog, tmp_path):
+    entry = personal_entry(catalog)
+    entry["sample"]["location"] = "https://:synthetic-password@example.test/image.png"
+    path = write_json(
+        tmp_path / catalog.PERSONAL_NAME, {"schema_version": 1, "styles": [entry]}
+    )
+    original = path.read_bytes()
+    result = subprocess.run(
+        [sys.executable, catalog.__file__, "list", "--vault", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert json.loads(result.stdout)["error"]["code"] == "catalog_reference_invalid"
+    assert "synthetic-password" not in result.stdout + result.stderr
+    assert path.read_bytes() == original
+
+
 def test_preview_apply_backup_and_exact_idempotence(catalog, tmp_path):
     entry = personal_entry(catalog)
     preview = catalog.put_entry(tmp_path, entry, "missing")
@@ -248,6 +280,51 @@ def test_input_change_detected(catalog, tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "lstat", changed)
     with pytest.raises(catalog.CatalogError, match="changed during"):
         catalog.read_bytes(path)
+
+
+def test_regular_catalog_read_without_posix_open_flags(catalog, tmp_path, monkeypatch):
+    path = tmp_path / "catalog.json"
+    raw = b'{\r\n  "schema_version": 1, "styles": []\r\n}\r\n'
+    path.write_bytes(raw)
+    monkeypatch.delattr(catalog.os, "O_NONBLOCK", raising=False)
+    monkeypatch.delattr(catalog.os, "O_NOFOLLOW", raising=False)
+    assert catalog.read_bytes(path) == raw
+
+
+def test_binary_flag_is_used_where_available(catalog, tmp_path, monkeypatch):
+    path = tmp_path / "catalog.json"
+    path.write_bytes(b"{}\r\n")
+    original_open = catalog.os.open
+    binary_flag = getattr(catalog.os, "O_BINARY", 1 << 27)
+    monkeypatch.setattr(catalog.os, "O_BINARY", binary_flag, raising=False)
+    seen = []
+
+    def open_binary(candidate, flags):
+        seen.append(flags)
+        # Simulate a platform with O_BINARY while executing the byte read locally.
+        return original_open(candidate, catalog.os.O_RDONLY)
+
+    monkeypatch.setattr(catalog.os, "open", open_binary)
+    assert catalog.read_bytes(path) == b"{}\r\n"
+    assert seen[0] & binary_flag
+
+
+@pytest.mark.parametrize("kind", ["missing", "file", "below-file"])
+def test_invalid_vault_has_specific_closed_cli_diagnostic(catalog, tmp_path, kind):
+    path = tmp_path / "vault"
+    if kind in ("file", "below-file"):
+        path.write_text("not a vault")
+    if kind == "below-file":
+        path = path / "nested"
+    result = subprocess.run(
+        [sys.executable, catalog.__file__, "list", "--vault", str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert json.loads(result.stdout)["error"]["code"] == "catalog_vault_invalid"
+    assert "Select an existing vault directory" in result.stderr
 
 
 @pytest.mark.parametrize(
