@@ -210,12 +210,77 @@ def test_cloud_placeholder_blocks_preflight_with_cost_and_preserves_transcript(
     assert cost["total_bytes"] == artifact.stat().st_size
     assert cost["unknown_size_count"] == 0
     assert cost["artifacts"][0]["artifact_path"] == str(artifact)
+    assert cost["talk_count"] == 1
+    assert cost["artifacts"][0]["filenames"] == [base_talk()["filename"]]
     warning = next(
         item
         for item in report["findings"]
         if item["code"] == "slide_pdf_artifact_unavailable"
     )
     assert "transcript" in warning["capability_fact"]["verified_evidence_sources"]
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "filename,omit",
+    [
+        (None, True),
+        (None, False),
+        ("", False),
+        (" ", False),
+        (42, False),
+        ([], False),
+        ({}, False),
+    ],
+)
+def test_cloud_inventory_keeps_malformed_talk_identifiers_distinct(
+    preflight_vault, vault_fixture, monkeypatch, filename, omit
+):
+    from dataclasses import replace
+
+    artifact = write_pdf(vault_fixture["slides"] / "shared-cloud.pdf")
+    talks = [
+        base_talk(
+            filename=filename,
+            youtube_id=video_id,
+            video_url=f"https://www.youtube.com/watch?v={video_id}",
+            slide_source="pdf",
+            slides_local_path="slides/shared-cloud.pdf",
+            status="pending",
+        )
+        for video_id in (VIDEO_ID, OTHER_VIDEO_ID)
+    ]
+    if omit:
+        for talk in talks:
+            talk.pop("filename")
+    path = write_database(vault_fixture, talks)
+    pdf = importlib.import_module("pdf_evidence")
+    original = pdf._run_bounded_metadata_worker
+
+    def metadata(*args, **kwargs):
+        receipt = original(*args, **kwargs)
+        return replace(
+            receipt, generation=replace(receipt.generation, file_attributes=0x1000)
+        )
+
+    monkeypatch.setattr(pdf, "_run_bounded_metadata_worker", metadata)
+    monkeypatch.setattr(
+        pdf,
+        "_invoke_probe_worker",
+        lambda *_args, **_kwargs: pytest.fail("cloud PDF was opened"),
+    )
+    before = path.read_bytes()
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["ok"] is False
+    assert {"filename_missing", "artifact_dataless"} <= finding_codes(
+        report, "blocking"
+    )
+    inventory = report["cloud_artifacts"]
+    assert inventory["talk_count"] == 2
+    assert inventory["artifact_count"] == 1
+    assert inventory["total_bytes"] == artifact.stat().st_size
+    assert inventory["artifacts"][0]["filenames"] == ["talk[0]", "talk[1]"]
     assert path.read_bytes() == before
 
 
