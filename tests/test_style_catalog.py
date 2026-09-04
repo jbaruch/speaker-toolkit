@@ -150,7 +150,7 @@ def test_private_sample_not_accepted_as_public(catalog):
     entry["sample"].update(
         kind="remote-image", location="https://user:password@example.test/image.png"
     )
-    with pytest.raises(catalog.CatalogError, match="without credentials"):
+    with pytest.raises(catalog.CatalogError, match="credentials"):
         catalog.validate_entry(entry)
 
 
@@ -163,7 +163,7 @@ def test_public_url_userinfo_is_always_refused(catalog, userinfo, field):
     entry = personal_entry(catalog)
     location = "location" if field == "sample" else "reference"
     entry[field][location] = f"https://{userinfo}@example.test/image.png"
-    with pytest.raises(catalog.CatalogError, match="without credentials"):
+    with pytest.raises(catalog.CatalogError, match="credentials"):
         catalog.validate_entry(entry, public=True)
 
 
@@ -184,6 +184,59 @@ def test_cli_does_not_echo_password_with_empty_username(catalog, tmp_path):
     assert json.loads(result.stdout)["error"]["code"] == "catalog_reference_invalid"
     assert "synthetic-password" not in result.stdout + result.stderr
     assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("field", ["provenance", "local-sample"])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://user:synthetic-password@example.test/entry",
+        "https://:synthetic-password@example.test/entry",
+        "http://user:synthetic-password@example.test/entry",
+        "//user:synthetic-password@example.test/entry",
+        "ftp://user:synthetic-password@example.test/entry",
+    ],
+)
+def test_personal_reference_credentials_never_reach_cli_output(
+    catalog, tmp_path, field, url
+):
+    entry = personal_entry(catalog)
+    if field == "provenance":
+        entry["provenance"]["reference"] = url
+    else:
+        entry["sample"].update(kind="local-image", location=url)
+    path = write_json(
+        tmp_path / catalog.PERSONAL_NAME, {"schema_version": 1, "styles": [entry]}
+    )
+    original = path.read_bytes()
+    result = subprocess.run(
+        [sys.executable, catalog.__file__, "list", "--vault", str(tmp_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert json.loads(result.stdout)["error"]["code"] == "catalog_reference_invalid"
+    assert "synthetic-password" not in result.stdout + result.stderr
+    assert path.read_bytes() == original
+    with pytest.raises(catalog.CatalogError, match="credentials"):
+        catalog.put_entry(tmp_path, entry, catalog.digest(original), apply=True)
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "slides/sample.png",
+        "/speaker/slides/sample.png",
+        r"C:\speaker\slides\sample.png",
+    ],
+)
+def test_personal_local_references_remain_valid(catalog, path):
+    entry = personal_entry(catalog)
+    entry["sample"].update(kind="local-image", location=path)
+    entry["provenance"].update(kind="personal", reference=path)
+    assert catalog.validate_entry(entry) == entry
 
 
 def test_preview_apply_backup_and_exact_idempotence(catalog, tmp_path):
@@ -449,7 +502,8 @@ def test_poster_missing_title_refuses_before_render(
     with pytest.raises(SystemExit) as error:
         generate_illustrations.run_style_explore(str(outline), str(candidate))
     assert error.value.code == 1
-    assert "text_overlay" in capsys.readouterr().err
+    diagnostic = capsys.readouterr().err
+    assert "text_overlay" in diagnostic and "slide 3" in diagnostic
 
 
 def test_cli_candidates_round_trip_and_preserves_changed_output(catalog, tmp_path):
@@ -578,6 +632,30 @@ def test_owner_lock_failure_preserves_absent_catalog(catalog, tmp_path, monkeypa
     with pytest.raises(catalog.CatalogError, match="current catalog writer"):
         catalog.put_entry(tmp_path, personal_entry(catalog), "missing", apply=True)
     assert not (tmp_path / catalog.PERSONAL_NAME).exists()
+
+
+def test_personal_bytes_are_created_private_before_writing(
+    catalog, tmp_path, monkeypatch
+):
+    import stat
+
+    original_open = catalog.os.open
+    creation_modes = []
+
+    def open_private(path, flags, mode=0o777, **kwargs):
+        descriptor = original_open(path, flags, mode, **kwargs)
+        if flags & catalog.os.O_CREAT and Path(path).is_relative_to(tmp_path):
+            creation_modes.append(
+                (mode, stat.S_IMODE(catalog.os.fstat(descriptor).st_mode))
+            )
+        return descriptor
+
+    monkeypatch.setattr(catalog.os, "open", open_private)
+    catalog.put_entry(tmp_path, personal_entry(catalog), "missing", apply=True)
+    assert creation_modes
+    assert all(mode == 0o600 for mode, _ in creation_modes)
+    if catalog.os.name == "posix":
+        assert all(actual & 0o077 == 0 for _, actual in creation_modes)
 
 
 def test_contribution_form_requires_complete_payload_and_consent():

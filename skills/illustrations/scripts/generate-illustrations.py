@@ -1807,7 +1807,7 @@ def run_style_explore(outline_path, candidates_path):
         safe_zone = slide.get("safe_zone")
         if poster and (safe_zone or not slide.get("text")):
             print(
-                "ERROR: poster catalog exploration requires a FULL representative "
+                f"ERROR: poster catalog exploration slide {slide_num} requires a FULL representative "
                 "slide with text_overlay and no safe zone. Update the outline and retry.",
                 file=sys.stderr,
             )

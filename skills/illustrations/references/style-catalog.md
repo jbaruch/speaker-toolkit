@@ -95,6 +95,8 @@ Kinds: `exploration`, `delivered-talk`, `contribution`, or `personal`.
 Public provenance must be a credential-free public HTTPS reference. Personal
 provenance may refer to local evidence. Plain-text fields are bounded to 16,000
 characters; do not include credentials or private source text in a public entry.
+URL user information is forbidden in every sample/provenance reference, including
+personal local-image fields and personal provenance.
 
 The merged view is a read-only v1 envelope with `public_sha256`,
 `personal_sha256` (or `missing`), and `styles`. Each style retains its entry fields

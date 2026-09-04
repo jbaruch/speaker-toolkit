@@ -84,17 +84,21 @@ def _slug(value: Any) -> str:
     return value
 
 
-def _https(value: str) -> None:
+def _reject_url_credentials(value: str) -> None:
+    """Reference fields may hold local paths, but never URL user information."""
     try:
         parts = urlsplit(value)
-        valid = (
-            parts.scheme == "https"
-            and bool(parts.hostname)
-            and parts.username is None
-            and parts.password is None
-        )
+        credential_free = parts.username is None and parts.password is None
     except ValueError:
-        valid = False
+        credential_free = False
+    if not credential_free:
+        _fail("catalog_reference_invalid", "Remove URL credentials from the reference.")
+
+
+def _https(value: str) -> None:
+    _reject_url_credentials(value)
+    parts = urlsplit(value)
+    valid = parts.scheme == "https" and bool(parts.hostname)
     if not valid or any(c.isspace() for c in value):
         _fail(
             "catalog_reference_invalid",
@@ -147,6 +151,7 @@ def validate_entry(value: Any, *, public: bool = False) -> dict:
             "Declare an image or an explicitly unbundled reference.",
         )
     _text(sample["location"])
+    _reject_url_credentials(sample["location"])
     _text(sample["description"])
     if public or sample["kind"] != "local-image":
         if sample["kind"] == "local-image":
@@ -167,6 +172,7 @@ def validate_entry(value: Any, *, public: bool = False) -> dict:
     ):
         _fail("catalog_provenance_invalid", "Use a documented provenance kind.")
     _text(provenance["reference"])
+    _reject_url_credentials(provenance["reference"])
     _text(provenance["note"])
     if public:
         _https(provenance["reference"])
@@ -447,8 +453,12 @@ def _publish_new(path: Path, raw: bytes) -> bool:
         prefix=".style-catalog-", dir=path.parent
     ) as temporary:
         stage = Path(temporary) / "candidate.json"
-        with stage.open("xb") as stream:
-            os.chmod(stage, 0o600)
+        descriptor = os.open(
+            stage,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+            0o600,
+        )
+        with os.fdopen(descriptor, "wb") as stream:
             stream.write(raw)
             stream.flush()
             os.fsync(stream.fileno())
