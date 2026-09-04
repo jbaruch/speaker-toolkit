@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.115 — 2026-09-04
+
 ### fix(vault-ingress) — count unnamed cloud-blocked talks separately (#389)
 
 Preflight uses the existing indexed diagnostic label for missing or malformed
