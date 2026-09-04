@@ -523,8 +523,9 @@ Repeat the same dry run with that configured interpreter and require matching
 ```
 
 The repair's exact eligibility and preservation contract lives in
-`scripts/tracking_database.py::repair_missing_qr_schema_versions`; its CLI report
-and failure contract is in `scripts/migrate-tracking-database.py`'s docstring.
+`skills/vault-ingress/scripts/tracking_database.py::repair_missing_qr_schema_versions`;
+its CLI report and failure contract is in
+`skills/vault-ingress/scripts/migrate-tracking-database.py`'s docstring.
 It does not run the normal migration or its persisted-observation changes.
 Its exact backup and digest-bound replacement use the existing migration
 transaction. After success, repeat the ordinary strict owner read with the

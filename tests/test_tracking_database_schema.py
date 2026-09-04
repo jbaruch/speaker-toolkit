@@ -1710,6 +1710,10 @@ def test_qr_repair_refuses_ambiguous_or_unrelated_state(tracking_database, chang
         database["talks"][0].pop("schema_version")
     elif change == "active_writer":
         database["talks"][0]["status"] = "reprocessing-inflight"
+        database["talks"][0]["reprocess_generation"] = 1
+        database["talks"][0]["_queue_claim"] = _claim_for_version(
+            1, generation=1, state="claimed", batch_id="active"
+        )
     before = copy.deepcopy(database)
 
     with pytest.raises(tracking_database.TrackingDatabaseError):
@@ -1783,7 +1787,38 @@ def test_qr_repair_cli_reports_json_without_rejected_values(
     if invalid:
         assert str(path) not in captured.out + captured.err
         assert "retry" in report["error"]
+        assert report["code"] == "qr_repair_record_invalid"
+        assert report["details"] == {
+            "record_index": 0,
+            "missing_fields": [],
+            "unexpected_field_count": 0,
+            "has_artifacts": False,
+        }
     assert path.read_bytes() == raw
+
+
+def test_qr_repair_active_writer_diagnostic_has_no_database_values(
+    tracking_database, migrate_tracking_database, tmp_path, capsys
+):
+    path = tmp_path / "private.json"
+    database = _missing_qr_version_database(tracking_database)
+    database["talks"][0]["status"] = "reprocessing-inflight"
+    database["talks"][0]["reprocess_generation"] = 1
+    database["talks"][0]["_queue_claim"] = _claim_for_version(
+        1, generation=1, state="claimed", batch_id="active"
+    )
+    raw = _write_database(path, database)
+    assert (
+        migrate_tracking_database.main([str(path), "--repair-missing-qr-versions"]) == 2
+    )
+    captured = capsys.readouterr()
+    report = json.loads(captured.out)
+    assert report["code"] == "qr_repair_active_writers"
+    assert report["details"] == {"active_talk_count": 1}
+    assert "one.md" not in captured.out + captured.err
+    assert str(path) not in captured.out + captured.err
+    assert path.read_bytes() == raw
+    assert not (tmp_path / ".backups").exists()
 
 
 def test_qr_v2_record_validates(tracking_database):
