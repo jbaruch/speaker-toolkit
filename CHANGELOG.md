@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.116 — 2026-09-04
+
 ### fix(vault-ingress) — repair unstamped legacy QR records through the owner
 
 An explicit `--repair-missing-qr-versions` migration mode recovers valid legacy
