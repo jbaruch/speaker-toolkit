@@ -828,6 +828,7 @@ def _compute_generation_outcome(
             details={
                 "availability": availability.to_dict(),
                 "reparse_tag": receipt.reparse_tag,
+                "size_bytes": receipt.generation.size,
             },
         )
     if receipt.generation.size == 0:

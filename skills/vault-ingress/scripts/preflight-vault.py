@@ -33,6 +33,11 @@ from artifact_locator import (
     materialize_native_root,
 )
 from artifact_metadata import canonicalize_trusted_artifact_locator
+from cloud_artifacts import (
+    ARTIFACT_DATALESS,
+    cloud_artifacts,
+    summarize_cloud_artifacts,
+)
 from ingress_contract import (
     YOUTUBE_ID_RE,
     is_youtube_url,
@@ -669,6 +674,17 @@ class VaultPreflight:
             self._validate_source_status_reachability(index)
             self._validate_source_rejections(index)
             self._validate_artifacts(index)
+            for artifact in cloud_artifacts(self._capabilities(index)):
+                self.talk_add(
+                    index,
+                    "blocking",
+                    ARTIFACT_DATALESS,
+                    "declared local evidence is not downloaded; review "
+                    "cloud_artifacts and download the listed files with the "
+                    "cloud provider, then rerun preflight before claiming",
+                    actual=artifact,
+                    artifact_path=artifact["artifact_path"],
+                )
             self._validate_source_identity(index)
             self._validate_persisted_observations(index)
         self._validate_relations()
@@ -2464,6 +2480,10 @@ class VaultPreflight:
             "talk_count": talk_count,
             "blocking_count": blocking,
             "warning_count": warnings,
+            "cloud_artifacts": summarize_cloud_artifacts(
+                (str(self.talks[index].get("filename", "")), assessment)
+                for index, assessment in self.artifact_capabilities.items()
+            ),
             "summary": {
                 "by_severity": {
                     "blocking": blocking,
@@ -2656,6 +2676,7 @@ def run_cli() -> int:
                     "talk_count": 0,
                     "blocking_count": 1,
                     "warning_count": 0,
+                    "cloud_artifacts": summarize_cloud_artifacts(()),
                     "summary": {
                         "by_severity": {"blocking": 1, "warning": 0},
                         "by_code": {"preflight_unexpected_failure": 1},

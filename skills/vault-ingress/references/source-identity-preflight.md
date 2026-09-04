@@ -16,6 +16,34 @@ blocking. Invocation errors use argparse's exit `2` and still emit a blocking
 JSON report. A missing, unreadable, malformed, or structurally invalid tracking
 database is itself a blocking integrity finding.
 
+## Cloud files and download cost
+
+A declared PDF, PPTX, or preserved recording that is an offline cloud
+placeholder produces a blocking `artifact_dataless` finding, including for
+pending and legacy talks that have an independent transcript. Missing files
+retain their existing findings; a cloud placeholder is evidence awaiting download.
+
+The report's `cloud_artifacts` object is the download inventory. It contains
+`artifact_count`, `talk_count`, `total_bytes`, `unknown_size_count`, and
+`artifacts`. Each artifact names its path, apparent byte size, affected talk
+filenames, and source lanes. Shared paths count once. `total_bytes` sums known
+sizes; any nonzero `unknown_size_count` makes that sum a lower bound.
+The inventory reuses the evidence probes' metadata receipts and never opens a
+placeholder. Its schema and projection are owned by `scripts/cloud_artifacts.py`.
+
+To hydrate, run the preflight command above and present the inventory's file
+count and byte total. The owner chooses when to download that set. In Finder
+or Explorer, select the listed paths and use the cloud provider's **Download
+Now**, **Available offline**, or equivalent command. Wait for the provider to
+finish, then rerun preflight. Proceed only after the placeholder findings are
+gone and no other blocking finding remains. Do not change `slide_source`, erase
+paths, or mark sources absent to bypass this gate. Downloading the file does
+not itself authorize a manifest, crop, or source-identity claim.
+
+No automatic hydration occurs during preflight, queue normalization, or claims.
+Queue commands report the same inventory when a batch leaves cloud files waiting;
+explicitly claiming an affected talk exits `2` with `reason_code: artifact_dataless`.
+
 ## Trusted vault-root authority
 
 Every ingress reader derives the same artifact root before it assesses,

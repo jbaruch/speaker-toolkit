@@ -4,6 +4,15 @@ This is the complete normative Step 2 contract for `vault-ingress`. Execute
 normalization before claiming, and preserve every generation, freshness, replay,
 and recovery rule below.
 
+Declared cloud-placeholder evidence blocks a fresh claim even when another
+source is usable. Follow the download inventory and owner hydration procedure in
+[Source Identity Preflight](source-identity-preflight.md#cloud-files-and-download-cost).
+Automatic selection leaves affected talks unclaimed and reports `cloud_artifacts`;
+an explicitly named affected talk rejects the batch without changing the database.
+Legacy cloud-only talks keep their prior status during normalization instead of
+becoming `skipped_no_sources`. The final claim reassesses readiness before writing
+the lease. Replaying an existing claim does not create fresh evidence authority.
+
 Fresh queue work uses claim schema v7. Before changing any talk status,
 `queue-state.py claim` snapshots one immutable `adherence_baseline` for the
 entire selected batch, stamps `required_return_schema_version: 7`, and copies

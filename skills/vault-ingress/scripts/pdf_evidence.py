@@ -1748,6 +1748,7 @@ def probe_pdf_artifact(
             details={
                 "availability": _availability(receipt.generation).to_dict(),
                 "reparse_tag": receipt.reparse_tag,
+                "size_bytes": receipt.generation.size,
             },
         )
         _cache_result(key, _cached_failure(error))

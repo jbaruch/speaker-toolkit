@@ -163,6 +163,62 @@ def write_database(fixture, talks, config=None, *, current=False, equivalences=N
     return fixture["database"]
 
 
+def test_cloud_placeholder_blocks_preflight_with_cost_and_preserves_transcript(
+    preflight_vault,
+    vault_fixture,
+    monkeypatch,
+):
+    from dataclasses import replace
+
+    materialize_transcript(vault_fixture)
+    artifact = write_pdf(vault_fixture["slides"] / "cloud.pdf")
+    path = write_database(
+        vault_fixture,
+        [
+            base_talk(
+                slide_source="pdf",
+                slides_local_path="slides/cloud.pdf",
+                status="pending",
+            )
+        ],
+    )
+    pdf = importlib.import_module("pdf_evidence")
+    original = pdf._run_bounded_metadata_worker
+
+    def metadata(*args, **kwargs):
+        receipt = original(*args, **kwargs)
+        return replace(
+            receipt, generation=replace(receipt.generation, file_attributes=0x1000)
+        )
+
+    monkeypatch.setattr(pdf, "_run_bounded_metadata_worker", metadata)
+    monkeypatch.setattr(
+        pdf,
+        "_invoke_probe_worker",
+        lambda *_args, **_kwargs: pytest.fail("cloud PDF was opened"),
+    )
+    before = path.read_bytes()
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+    assert report["ok"] is False
+    findings = [
+        item for item in report["findings"] if item["code"] == "artifact_dataless"
+    ]
+    assert len(findings) == 1
+    assert findings[0]["severity"] == "blocking"
+    cost = report["cloud_artifacts"]
+    assert cost["artifact_count"] == 1
+    assert cost["total_bytes"] == artifact.stat().st_size
+    assert cost["unknown_size_count"] == 0
+    assert cost["artifacts"][0]["artifact_path"] == str(artifact)
+    warning = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "slide_pdf_artifact_unavailable"
+    )
+    assert "transcript" in warning["capability_fact"]["verified_evidence_sources"]
+    assert path.read_bytes() == before
+
+
 def materialize_transcript(fixture, video_id=VIDEO_ID):
     path = fixture["transcripts"] / f"{video_id}.txt"
     # Long enough to remain plausible for the 45-minute provider-duration

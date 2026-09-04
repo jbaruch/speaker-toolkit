@@ -1924,7 +1924,7 @@ def _cloud_placeholder_failure(
     if details is not None:
         return _probe_failure(
             "pptx_cloud_placeholder_unavailable",
-            details=details,
+            details={**details, "size_bytes": key[3]},
         )
     return None
 
