@@ -838,10 +838,6 @@ def command_claim(
             )
         selected = [by_filename[filename] for filename in sorted(requested)]
         for talk in selected:
-            if talk["status"] not in CLAIMABLE_STATUSES:
-                raise QueueStateError(
-                    f"{talk['filename']}: cannot claim status {talk['status']!r}"
-                )
             provisional_assessment = capability_assessor(talk)
 
             def provisional_assessor(_talk):
@@ -857,6 +853,10 @@ def command_claim(
                     reason_code=ARTIFACT_DATALESS
                     if cloud_artifacts(provisional_assessment)
                     else None,
+                )
+            if talk["status"] not in CLAIMABLE_STATUSES:
+                raise QueueStateError(
+                    f"{talk['filename']}: cannot claim status {talk['status']!r}"
                 )
             if not has_processable_source(
                 talk,

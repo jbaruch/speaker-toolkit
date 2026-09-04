@@ -41,13 +41,17 @@ return_validation = importlib.import_module("return_validation")
 NOW = "2026-07-31T18:00:00+00:00"
 
 
+@pytest.mark.parametrize(
+    "status", ["pending", "skipped_no_transcript", "skipped_no_video"]
+)
 def test_cloud_pdf_blocks_claim_without_byte_io_then_hydration_allows_it(
     queue_state,
     tmp_path,
     monkeypatch,
     capsys,
+    status,
 ):
-    talk = _talk("abcdefghijk")
+    talk = _talk("abcdefghijk", status=status)
     talk.update({"slide_source": "pdf", "slides_local_path": "slides/cloud.pdf"})
     path = _write_db(tmp_path, [talk])
     slides = tmp_path / "slides"
@@ -91,6 +95,7 @@ def test_cloud_pdf_blocks_claim_without_byte_io_then_hydration_allows_it(
     assert queue_state.main(command + ["--filename", str(talk["filename"])]) == 2
     report = json.loads(capsys.readouterr().out)
     assert report["reason_code"] == "artifact_dataless"
+    assert "download those files with the cloud provider" in report["error"]
     assert path.read_bytes() == before
     assert queue_state.main(command) == 0
     report = json.loads(capsys.readouterr().out)
