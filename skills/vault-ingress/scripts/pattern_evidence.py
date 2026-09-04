@@ -64,13 +64,15 @@ PATTERN_EVIDENCE_SCHEMA_VERSION = 2
 SOURCE_LOCATED_RETURN_SCHEMA_VERSION = 4
 EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION = 5
 WEIGHTED_SCORE_RETURN_SCHEMA_VERSION = 6
-# v6 canonicalizes as of the activation (#299): persistence, the talk schema
-# bump, the claim contract, and the migration moved together.
+PROVIDER_AUTO_RETURN_SCHEMA_VERSION = 7
+# v6 canonicalizes as of the activation (#299), and v7 keeps that evidence
+# contract while widening transcript provenance.
 CANONICALIZABLE_RETURN_SCHEMA_VERSIONS = frozenset(
     {
         SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
         EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION,
         WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
+        PROVIDER_AUTO_RETURN_SCHEMA_VERSION,
     }
 )
 # Every generation carrying exhaustive outcomes and applicability assessments.
@@ -82,6 +84,7 @@ EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS = frozenset(
     {
         EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION,
         WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
+        PROVIDER_AUTO_RETURN_SCHEMA_VERSION,
     }
 )
 # The scoring generation whose aggregate is confidence-weighted, and so MAY be
@@ -1615,7 +1618,12 @@ def build_evidence_context(
     transcript_policy_bound = False
     canonical_transcript_source: str | None = None
     recorded_transcript_source = talk.get("transcript_source")
-    if recorded_transcript_source in {"youtube_auto", "whisper", "manual"}:
+    if recorded_transcript_source in {
+        "youtube_auto",
+        "provider_auto",
+        "whisper",
+        "manual",
+    }:
         canonical_transcript_source = cast(str, recorded_transcript_source)
     timing_owner_source = canonical_transcript_source or "unknown"
     timing_owner_duration = _catalog_duration(talk)
@@ -3374,7 +3382,7 @@ def canonicalize_return_evidence(
     pattern_scoring_schema_version: int = CURRENT_PATTERN_SCORING_SCHEMA_VERSION,
     video_evidence_assessment: VideoEvidenceAssessment | None = None,
 ) -> dict[str, object]:
-    """Return a v4/v5 payload with source claims canonically located."""
+    """Return a source-located payload with source claims canonicalized."""
     canonical = copy.deepcopy(dict(ret))
     return_schema_version = canonical.get("return_schema_version")
     if return_schema_version not in CANONICALIZABLE_RETURN_SCHEMA_VERSIONS:
@@ -3396,7 +3404,12 @@ def canonicalize_return_evidence(
     )
     if context.get("transcript_text") is not None:
         canonical_transcript_source = context.get("canonical_transcript_source")
-        if canonical_transcript_source not in {"youtube_auto", "whisper", "manual"}:
+        if canonical_transcript_source not in {
+            "youtube_auto",
+            "provider_auto",
+            "whisper",
+            "manual",
+        }:
             raise PatternEvidenceError(
                 "validated transcript has no machine receipt or pre-registered "
                 "transcript_source provenance"

@@ -25,7 +25,7 @@ Sources, in order:
 Usage:
     fetch-transcript.py <video-id-or-url> --out <path> [--languages en,ru,he]
                         [--method auto|captions|whisper] [--force]
-                        [--existing-source youtube_auto|whisper|manual|unknown]
+                        [--existing-source youtube_auto|provider_auto|whisper|manual|unknown]
                         [--duration-seconds N] [--min-words N]
     fetch-transcript.py <label> --audio <file> --out <path>   # non-YouTube talk
 
@@ -106,6 +106,7 @@ from transcript_quality import (
     receipt_matches_media_digest,
     validate_transcript,
 )
+from ytdlp_runtime import YtDlpResolutionError, resolve_ytdlp
 
 __all__ = ["VTT_TIMING_TAG", "write_atomically"]
 
@@ -340,13 +341,16 @@ def _positive_duration(value: object) -> float | None:
     return normalize_duration(value)
 
 
-def probe_youtube_duration(video_id: str) -> tuple[float | None, str]:
+def probe_youtube_duration(
+    video_id: str, *, ytdlp: str | Path | None = None
+) -> tuple[float | None, str]:
     """Read source-owned duration for one exact YouTube identity via yt-dlp."""
     url = f"https://www.youtube.com/watch?v={video_id}"
     try:
+        executable = Path(ytdlp) if ytdlp is not None else resolve_ytdlp()
         completed = subprocess.run(
             [
-                "yt-dlp",
+                str(executable),
                 "--dump-single-json",
                 "--skip-download",
                 "--no-playlist",
@@ -355,10 +359,10 @@ def probe_youtube_duration(video_id: str) -> tuple[float | None, str]:
             capture_output=True,
             text=True,
         )
-    except (FileNotFoundError, OSError) as exc:
+    except (YtDlpResolutionError, OSError) as exc:
         return None, (
-            f"cannot probe trusted YouTube duration ({exc}) — install yt-dlp "
-            "with `brew install yt-dlp` or `pip install yt-dlp`"
+            f"cannot probe trusted YouTube duration ({exc}) — install the pinned "
+            "yt-dlp with `pip install .` or set YT_DLP to its path"
         )
     if completed.returncode != 0:
         detail = completed.stderr.strip()[:400] or "provider metadata unavailable"
@@ -656,12 +660,21 @@ def _transcribe_audio_with_mlx(
 
 
 def fetch_whisper(
-    video_id: str, work_dir: str, model: str
+    video_id: str,
+    work_dir: str,
+    model: str,
+    *,
+    ytdlp: str | Path | None = None,
 ) -> tuple[str | None, str | None, Iterable[object] | None]:
     """Download audio and return Whisper text, language, and timed segments."""
     url = f"https://www.youtube.com/watch?v={video_id}"
     audio: Path | None = None
     failures: list[str] = []
+    try:
+        executable = Path(ytdlp) if ytdlp is not None else resolve_ytdlp()
+    except YtDlpResolutionError as exc:
+        print(str(exc), file=sys.stderr)
+        return None, None, None
     # Each attempt downloads into its own directory. Sharing one path let a
     # refused attempt leave a partial file behind, and the next attempt's
     # "did the audio appear" check would accept those bytes as its own success
@@ -671,7 +684,7 @@ def fetch_whisper(
         attempt_dir = Path(work_dir) / f"download-{index}"
         attempt_dir.mkdir(parents=True, exist_ok=True)
         command = [
-            "yt-dlp",
+            str(executable),
             "-x",
             "--audio-format",
             "mp3",
@@ -690,8 +703,8 @@ def fetch_whisper(
             # emitting it is the same silent-failure shape the whole file
             # exists to prevent.
             print(
-                f"cannot run yt-dlp ({exc}) — install it with "
-                "`brew install yt-dlp` or `pip install yt-dlp`",
+                f"cannot run yt-dlp ({exc}) — install the pinned version with "
+                "`pip install .` or set YT_DLP to its path",
                 file=sys.stderr,
             )
             return None, None, None
@@ -1105,7 +1118,7 @@ def main(argv: list[str] | None = None) -> NoReturn:
     )
     parser.add_argument(
         "--existing-source",
-        choices=("youtube_auto", "whisper", "manual", "unknown"),
+        choices=("youtube_auto", "provider_auto", "whisper", "manual", "unknown"),
         default="unknown",
         help=(
             "owner-recorded provenance of an existing transcript; only "

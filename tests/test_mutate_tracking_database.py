@@ -1870,7 +1870,7 @@ def test_an_equivalence_with_a_foreign_generation_is_refused(
 # generation locked the correction out of the whole live catalog.
 
 
-@pytest.mark.parametrize("version", [1, 2, 3, 4, 5, 6, 7])
+@pytest.mark.parametrize("version", [1, 2, 3, 4, 5, 6, 7, 8])
 def test_a_catalog_repair_reaches_every_readable_talk_generation(
     mutate_tracking_database, version: int
 ) -> None:
@@ -1896,7 +1896,7 @@ def test_a_catalog_repair_leaves_the_records_generation_untouched(
     assert candidate["talks"][0]["schema_version"] == 1
 
 
-@pytest.mark.parametrize("version", [0, 8, "7", True])
+@pytest.mark.parametrize("version", [0, 9, "8", True])
 def test_a_catalog_repair_still_refuses_an_unreadable_generation(
     mutate_tracking_database, version: object
 ) -> None:
@@ -1932,7 +1932,7 @@ def test_other_writers_still_require_the_current_generation(
             ],
         )
 
-    assert "exact current talk schema 7" in str(excinfo.value)
+    assert "exact current talk schema 8" in str(excinfo.value)
 
 
 def test_a_retitled_catalog_entry_can_be_approved_again(

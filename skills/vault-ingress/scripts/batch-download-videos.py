@@ -54,16 +54,15 @@ the resolved path and version are announced before the first download.
 from __future__ import annotations
 
 import json
-import os
 import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 
 from failure_diagnostics import sanitized_frames
 from ingress_contract import YOUTUBE_ID_RE
+from ytdlp_runtime import YtDlpResolutionError, resolve_ytdlp
 
 USAGE = "usage: batch-download-videos.py <vault_root> ID1 [ID2 ...]"
 
@@ -113,55 +112,6 @@ VIDEO_FORMAT = (
     "/best[height<=720][ext=mp4]"
     "/best[height<=720]"
 )
-
-
-class YtDlpResolutionError(RuntimeError):
-    """No usable yt-dlp executable, reported with what to do about it."""
-
-    def __init__(self, code: str, message: str) -> None:
-        if code not in FAILURE_CODES:
-            raise ValueError("invalid yt-dlp resolution failure code")
-        super().__init__(message)
-        self.code = code
-
-
-def resolve_ytdlp() -> Path:
-    """Find the pinned yt-dlp, falling back to PATH only as a last resort.
-
-    An explicit override wins; then the console script beside the running
-    interpreter, which is the pinned one whenever the toolkit runs from the
-    environment that declares it; then the toolkit's own virtualenv, for a run
-    driven by a system interpreter; then PATH.
-    """
-    override = os.environ.get("YT_DLP")
-    if override:
-        candidate = Path(override)
-        if os.access(candidate, os.X_OK) and candidate.is_file():
-            return candidate
-        raise YtDlpResolutionError(
-            "ytdlp_override_invalid",
-            f"YT_DLP is set to {override!r}, which is not an executable file — "
-            "point it at a yt-dlp binary or unset it",
-        )
-
-    candidates = [Path(sys.executable).parent / "yt-dlp"]
-    virtual_env = os.environ.get("VIRTUAL_ENV")
-    if virtual_env:
-        candidates.append(Path(virtual_env) / "bin" / "yt-dlp")
-    toolkit_root = Path(__file__).resolve().parents[3]
-    candidates.append(toolkit_root / ".venv" / "bin" / "yt-dlp")
-    for candidate in candidates:
-        if os.access(candidate, os.X_OK) and candidate.is_file():
-            return candidate
-
-    found = shutil.which("yt-dlp")
-    if found:
-        return Path(found)
-    raise YtDlpResolutionError(
-        "ytdlp_not_found",
-        "cannot find yt-dlp — install the pinned version with `pip install .` "
-        "into the toolkit environment, or set YT_DLP to its path",
-    )
 
 
 def probe_version(ytdlp: Path) -> str:

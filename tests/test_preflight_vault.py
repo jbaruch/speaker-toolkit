@@ -3254,6 +3254,30 @@ def test_source_enums_are_closed(
     assert code in finding_codes(report, "blocking")
 
 
+def test_provider_auto_is_valid_only_on_the_current_talk_schema(
+    preflight_vault,
+    tracking_database,
+    vault_fixture,
+):
+    materialize_transcript(vault_fixture)
+    talk = base_talk(
+        schema_version=tracking_database.TALK_RECORD_SCHEMA_VERSION,
+        video_url=None,
+        youtube_id=None,
+        transcript_path=f"transcripts/{VIDEO_ID}.txt",
+        transcript_source="provider_auto",
+    )
+    write_database(vault_fixture, [talk])
+
+    current = preflight_vault.run_preflight(vault_fixture["root"])
+    assert "transcript_source_unsupported" not in finding_codes(current, "blocking")
+
+    talk["schema_version"] = tracking_database.TALK_RECORD_SCHEMA_VERSION - 1
+    write_database(vault_fixture, [talk])
+    legacy = preflight_vault.run_preflight(vault_fixture["root"])
+    assert "transcript_source_unsupported" in finding_codes(legacy, "blocking")
+
+
 @pytest.mark.parametrize("status", ["skipped_no_sources", "skipped_no_video"])
 def test_source_less_skip_status_cannot_hide_pdf_source(
     preflight_vault,

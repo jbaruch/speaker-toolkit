@@ -92,8 +92,13 @@ class TestSchemaBoundary:
         assert rv.WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION == 6
         assert rv.FLAT_PATTERN_SCORING_SCHEMA_VERSION == 5
 
-    def test_the_current_return_schema_is_the_weighted_one(self, rv) -> None:
-        assert rv.WEIGHTED_SCORE_RETURN_SCHEMA_VERSION == rv.RETURN_SCHEMA_VERSION
+    def test_the_current_return_keeps_the_weighted_scoring_contract(self, rv) -> None:
+        assert rv.WEIGHTED_SCORE_RETURN_SCHEMA_VERSION < rv.RETURN_SCHEMA_VERSION
+        assert rv.RETURN_SCHEMA_VERSION in rv.WEIGHTED_SCORE_RETURN_SCHEMA_VERSIONS
+        assert (
+            rv.scoring_schema_version_for_return(rv.RETURN_SCHEMA_VERSION)
+            == rv.WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION
+        )
 
     def test_the_flat_generation_keeps_its_own_name(self, rv) -> None:
         """The trap this exists to stop: the generation sets named v5 through

@@ -43,7 +43,10 @@ FLAT_SCORE_TALK_RECORD_SCHEMA_VERSION = 5
 PRE_TITLE_EQUIVALENCE_TALK_RECORD_SCHEMA_VERSION = 6
 # The weighted generation's record shape (#299): `pattern_observations` may
 # carry a `pattern_score_basis` and `pattern_score` may be fractional.
-TALK_RECORD_SCHEMA_VERSION = 7
+PRE_PROVIDER_AUTO_TALK_RECORD_SCHEMA_VERSION = 7
+# The provider-auto generation adds the non-YouTube automatic-caption
+# provenance value. Older record generations retain their closed enum.
+TALK_RECORD_SCHEMA_VERSION = 8
 LEGACY_CONFIG_RECORD_SCHEMA_VERSION = 1
 CONFIG_RECORD_SCHEMA_VERSION = 2
 LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION = 1
@@ -1689,6 +1692,7 @@ _RESTAMPABLE_TALK_RECORD_SCHEMA_VERSIONS = frozenset(
     {
         FLAT_SCORE_TALK_RECORD_SCHEMA_VERSION,
         PRE_TITLE_EQUIVALENCE_TALK_RECORD_SCHEMA_VERSION,
+        PRE_PROVIDER_AUTO_TALK_RECORD_SCHEMA_VERSION,
     }
 )
 
@@ -1779,10 +1783,11 @@ def _restamp_talk_records(candidate: dict[str, Any]) -> int:
 
     v6 to v7 (#333) was introduced for an owner ledger that has since moved to
     its own top-level collection, so v7 adds no field a v6 record lacks and the
-    restamp carries it forward untouched. Only records already holding the
-    analysis v7 implies are restampable; an earlier generation reaches the
-    current shape by being reanalysed, never by being stamped, which is why this
-    set is not simply "every version below current".
+    restamp carries it forward untouched. V8 widens only transcript provenance,
+    so a v7 record carries forward without relabeling its source. Only records
+    already holding the analysis v7 implies are restampable; an earlier
+    generation reaches the current shape by being reanalysed, never by being
+    stamped, which is why this set is not simply "every version below current".
     """
     talks = candidate.get("talks")
     if not isinstance(talks, list):
@@ -1793,6 +1798,11 @@ def _restamp_talk_records(candidate: dict[str, Any]) -> int:
             continue
         if talk.get("schema_version") not in _RESTAMPABLE_TALK_RECORD_SCHEMA_VERSIONS:
             continue
+        if talk.get("transcript_source") == "provider_auto":
+            raise TrackingDatabaseError(
+                "provider_auto transcript provenance requires talk schema v8; "
+                "correct the legacy record source before rerunning migration"
+            )
         talk["schema_version"] = TALK_RECORD_SCHEMA_VERSION
         restamped += 1
     return restamped

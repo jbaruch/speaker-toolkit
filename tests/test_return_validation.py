@@ -465,7 +465,7 @@ def test_return_schema_reads_every_supported_version(return_validation, version)
     return_validation.validate_batch([value])
 
 
-@pytest.mark.parametrize("version", [0, 7, True, "5"])
+@pytest.mark.parametrize("version", [0, 8, True, "5"])
 def test_return_schema_rejects_unknown_or_wrong_typed_versions(
     return_validation, version
 ):

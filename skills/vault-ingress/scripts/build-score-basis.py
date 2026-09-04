@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Complete v6 returns by filling in the pattern_score_basis they require.
+"""Complete weighted returns by filling in the pattern_score_basis they require.
 
 The basis is a pure function of a return's detection lanes and its
 not-evaluable ledger, and inserting it is a mechanical JSON edit, so both steps
@@ -7,7 +7,8 @@ belong in a script rather than in a worker's reasoning. `return_validation`
 owns the weight table and the object's shape; this is a thin entry point onto
 that owner, so no caller reproduces either or decides where the field goes.
 
-Usage:
+Return schemas v6 and v7 share scoring schema v6 and therefore require the same
+basis. Usage:
     build-score-basis.py <return.json> [...]
 
 Each input is one return object or an array of return objects. The output is

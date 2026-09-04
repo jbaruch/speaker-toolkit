@@ -6,7 +6,7 @@ returns the JSON shape in [schemas-db.md](schemas-db.md). The summary supports
 qualitative rhetoric analysis, but Section 15 is human narrative and MUST NOT be
 parsed for numeric adherence. The active claim's immutable
 `adherence_baseline` is the sole numeric authority.
-A successfully persisted v6 return is the only return generation eligible for pattern-scoring schema v6;
+A successfully persisted v7 return is the fresh return generation eligible for pattern-scoring schema v6;
 saved legacy claims remain replayable only with their
 same-numbered archival return generation.
 
@@ -50,6 +50,10 @@ Map the returned `method` to `transcript_source`:
 | `whisper` | `whisper` |
 | `existing` | leave the talk's current `transcript_source` unchanged; when the field is absent, leave it absent |
 
+An automatic caption track imported from a non-YouTube provider records
+`provider_auto`; it does not map from the fetcher's YouTube-only `captions`
+method.
+
 `existing` means a valid transcript was already on disk and no fetch ran, so the
 script learned nothing about where it came from — overwriting the recorded source
 would replace a known value with a guess, and inventing one where the field is
@@ -72,7 +76,8 @@ floor but cannot lower it; a short-talk floor comes only from the trusted probe.
 Treat `timed_path: null` literally. A hash-current `quality_path` still permits
 an ordinary `transcript` quote, but no opening/closing position, pause, or other
 timing-dependent claim. Missing or stale quality is unverified legacy input and
-cannot enter current v5 scoring; requeue it through this script. Never invent a
+cannot enter the current pattern-scoring generation; requeue it through this
+script. Never invent a
 timestamp, reuse an unverified receipt, or copy receipt fields into a return;
 persistence owns and verifies both artifacts.
 
@@ -134,6 +139,10 @@ The input must be a non-symlink regular file within the output transcript
 directory. The schema-v2 timing receipt binds its safe relative path, exact
 digest, and final cue extent. An existing output is preserved unless `--force`
 explicitly authorizes full transcript/receipt replacement.
+Record `transcript_source: provider_auto` when the imported VTT is known to be
+the provider's automatic caption track. A VTT authored by a human remains
+`manual`; the artifact receipt proves the file identity, not who produced its
+text.
 
 ### Slide acquisition (per `slide_source`)
 
@@ -227,9 +236,10 @@ explicitly authorizes full transcript/receipt replacement.
 
 ### `transcript_source` records known provenance
 
-Set `transcript_source` on the talk entry: `youtube_auto` (caption track),
-`whisper` (local transcription), or `manual`. Downstream tools use it to gauge
-transcript reliability.
+Set `transcript_source` on the talk entry: `youtube_auto` (YouTube caption
+track), `provider_auto` (another provider's automatic caption track), `whisper`
+(local transcription), or `manual`. Downstream tools use it to gauge transcript
+reliability.
 
 **One exception, and only one:** `method: "existing"` from the fetcher. No fetch
 ran, so provenance is unknown — leave the recorded value alone, and leave the
@@ -415,8 +425,10 @@ verified timed transcript or direct video review; sequence claims require the
 actual consecutive slides. Native-deck structure can support motion/build
 claims only when the entry's gate permits `native_deck`; observed playback and
 delivery claims require direct video review.
-Do not cite a video interval unless you inspected that interval. Compute per-talk score:
-`count(patterns) − count(antipatterns)`. Store in `pattern_observations`.
+Do not cite a video interval unless you inspected that interval. Compute the
+per-talk score with the owner-approved confidence weights: strong ±1.0,
+moderate ±0.5, and weak ±0.25. Store it in `pattern_observations`; the
+`build-score-basis.py` step below derives the matching evidence basis.
 See [processing-rules.md](processing-rules.md) for full tagging rules.
 
 Use `evaluable_from` for moderate/weak detections,
@@ -431,7 +443,7 @@ cannot replace its qualifying source/outcome gate.
 
 ### Record exact source inspection coverage
 
-Return v4/v5 requires a receipt for the material you actually inspected, not just
+Return v4-v7 requires a receipt for the material you actually inspected, not just
 a list of artifacts that happened to exist. `pattern_observations.evidence_sources`
 must be the exact source-name set represented by `source_inspection`:
 
@@ -481,14 +493,15 @@ them from the preclaim artifacts and rejects false bounds or source claims.
 Return exactly the shape in [schemas-db.md](schemas-db.md). `status`,
 `slide_source`, all five catalog-feedback lanes, and the complete pattern score
 object are mandatory. Match `return_schema_version` to the active claim:
-fresh claim-schema v6 with `required_return_schema_version: 6` emits return v6.
+fresh claim-schema v7 with `required_return_schema_version: 7` emits return v7.
 Saved claim schemas v1/v2 authorize only saved return schemas v1/v2; claim
 schema v3 authorizes only return schema v3, claim schema v4 authorizes only
-archival return schema v4, and claim schema v5 authorizes only return schema
-v5 — a saved legacy replay generation, never a fresh one.
-Recover a live legacy lease and issue a fresh v6 generation; never mutate its
+archival return schema v4, claim schema v5 authorizes only return schema v5,
+and claim schema v6 authorizes only return schema v6. These are saved legacy
+replay generations, never fresh ones.
+Recover a live legacy lease and issue a fresh v7 generation; never mutate its
 claim or attach a newer return to it.
-Snapshot versions 2–5 require `rhetoric_notes` and `areas_for_improvement` to
+Snapshot versions 2–7 require `rhetoric_notes` and `areas_for_improvement` to
 contain substantive non-whitespace analysis. Empty strings remain valid for
 `adherence_assessment`, `new_patterns`, and
 `summary_updates` where documented; the adherence no-assessment sentinel must be
@@ -500,7 +513,7 @@ never emit JSON `null`.
 Omit `processed_date`; the persistence writer owns one normalized timestamp for
 the complete queue batch and the analysis writer renders that stored value.
 
-For return v5 and v6, always return `"adherence_assessment": ""` exactly and omit
+For returns v5-v7, always return `"adherence_assessment": ""` exactly and omit
 `adherence_comparison`. The worker cannot know the canonical, engine-owned talk
 `opportunity_coverage_identity`. Only an owner-side consumer after persistence
 may compare a talk against a schema-v2 baseline, and only when the identities
@@ -523,7 +536,7 @@ slide, page, or asset; how one class wins when multiple images or sources occur;
 which provenance evidence supports the classes; and how unverified origins enter
 the `unknown` count.
 
-Version-2 through version-5 supplied fields are snapshots: an empty string, array,
+Version-2 through version-7 supplied fields are snapshots: an empty string, array,
 or declared map
 replaces an older value when that field permits emptiness, while an omitted field
 preserves it. Use `clear_fields`
@@ -539,12 +552,12 @@ nested dictionary union. Put genuinely additive experimental data under
 `structured_data.extensions.<producer_namespace>`; an undeclared top-level object
 is rejected until its replacement policy is documented and registered.
 
-Minimal processed structure for a fresh v6 claim:
+Minimal processed structure for a fresh v7 claim:
 
 ```json
 {
   "filename": "2026-01-01-example.md",
-  "return_schema_version": 6,
+  "return_schema_version": 7,
   "queue_claim": {
     "run_id": "reparse-2026-07",
     "batch_id": "25",
@@ -643,14 +656,14 @@ example, `"evidence_sources_used": ["static_slides", "native_deck"]`.
 The array is duplicate-free, excludes the `source_comparison` marker, and must
 exactly match one qualifying catalog group.
 
-Fresh work arrives only under a claim-v6 payload that explicitly requires return
-v6. Saved claims v1/v2 remain replayable only with saved returns v1/v2; claim v3
-requires return v3, claim v4 requires archival return v4, and claim v5 requires
-return v5. Recover a live legacy lease without rewriting it; otherwise issue a
-new v6 claim. Never alter a
+Fresh work arrives only under a claim-v7 payload that explicitly requires return
+v7. Saved claims v1/v2 remain replayable only with saved returns v1/v2; claim v3
+requires return v3, claim v4 requires archival return v4, claim v5 requires
+return v5, and claim v6 requires return v6. Recover a live legacy lease without
+rewriting it; otherwise issue a new v7 claim. Never alter a
 saved claim payload, invent a schema, or attach a newer return to a legacy claim.
 
-In raw v4/v5 citations, return only `source`, `channel`, and the locator you
+In raw v4-v7 citations, return only `source`, `channel`, and the locator you
 actually observed: transcript `quote` (plus optional `translation`), slide
 `slide_numbers`, video `start_seconds`/`end_seconds`, or metadata `field`.
 Never return transcript line/timestamp matches, artifact root/path/hash fields,

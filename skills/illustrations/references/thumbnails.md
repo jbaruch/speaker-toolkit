@@ -39,7 +39,7 @@ Read `tracking-database.json` through the vault path used by
 presentation-creator. Selection and composition may read legacy database schema
 0 or 1, or current schema 2, without mutation. Before copying the approved thumbnail or
 writing tracking state, require database schema 2, current independent records,
-and talk schema 7. Invoke `Skill(skill: "vault-ingress")` for schema 0 or 1 and stop
+and talk schema 8. Invoke `Skill(skill: "vault-ingress")` for schema 0 or 1 and stop
 this run. Unknown future generations are no usable prior state. Preserve every
 schema field and use the presentation-creator exact-generation atomic-write
 contract.
@@ -236,6 +236,6 @@ exact existing record for the slug or `{"$missing": true}`. In the same plan, us
 filename, expecting its current value. Dry-run the whole plan, review it, apply
 against the reported input SHA, and re-read as specified by the
 [owner mutation contract](../../vault-ingress/references/schemas-db.md#owner-read-and-mutation-contract).
-Keep that talk at `schema_version: 7`. illustrations is an authorized writer of
+Keep that talk at `schema_version: 8`. illustrations is an authorized writer of
 current thumbnail and talk records; vault-ingress remains their schema owner.
 Never rewrite `tracking-database.json` directly.

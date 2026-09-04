@@ -67,7 +67,7 @@ or antipattern must record concrete `evidence` and the qualifying
 duplicate-free `evidence_sources_used` array. It must exactly equal one
 qualifying all-of group, while the prose evidence names what was compared.
 
-Return v4/v5 makes "inspected" an artifact-bound statement. Alongside the exact
+Returns v4-v7 make "inspected" an artifact-bound statement. Alongside the exact
 `evidence_sources` set, return one closed raw `source_inspection` record per
 underlying source:
 
@@ -101,14 +101,14 @@ clarification notes, not the score.
 
 For an entry with no positive detection, use `absence_evaluable_from`
 (defaulting to `evaluable_from`) to decide whether completely inspected sources
-can support an undetected outcome. Return v4/v5 uses no prose waiver: every
+can support an undetected outcome. Returns v4-v7 use no prose waiver: every
 `not_evaluable` item contains exactly `pattern_id` and `reason_code`. Use
 `missing_required_source_coverage` when no effective absence group has complete
 coverage. Use `absence_not_authorized_by_catalog` when an explicit
 `absence_evaluable_from: null` makes the entry positive-only; this is intentional
 catalog policy, not unfinished owner work. Use `source_gate_pending_owner_review`
 only when the observable catalog entry has no owner-approved positive gate.
-That pending entry fails closed: it cannot be detected by a v4/v5 return and
+That pending entry fails closed: it cannot be detected by a v4-v7 return and
 cannot be silently counted as absent. A
 valid positive detection takes precedence for a gated entry; never add the same
 ID to `not_evaluable`. Do not guess and do not interpret `not_evaluable` as
@@ -116,7 +116,7 @@ absence. Exclude not-evaluable entries from the score. Persistence recomputes
 the exhaustive expected ID→reason map and rejects missing, extra, duplicate,
 prose-bearing, or blanket waivers.
 
-Return v5 additionally makes applicability exhaustive. For every nondetected
+Returns v5-v7 additionally make applicability exhaustive. For every nondetected
 entry with `not_applicable_when`, first evaluate the complete
 `applicability_evaluable_from` gate. Without complete canonical coverage, an
 assessment is forbidden and the outcome is `not_evaluable` with
@@ -128,7 +128,7 @@ catalog-authorized `condition_id` only for `not_applicable`. An `applicable`
 assessment forbids `condition_id` and then proceeds through the ordinary
 absence gate; there is no implicit applicable default.
 
-Persistence owns the exhaustive v5 projection. It writes exactly one sorted
+Persistence owns the exhaustive v5-v7 projection. It writes exactly one sorted
 `pattern_outcomes` row per observable entry using precedence: detection;
 validated applicability assessment; incomplete applicability/absence gate as
 `not_evaluable`; applicable plus complete absence gate as `undetected`.

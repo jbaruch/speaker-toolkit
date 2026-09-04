@@ -177,7 +177,7 @@ no-op.
 |---|---:|
 | database root | 2 (schema 1, the generation before `markdown_decks`, remains readable) |
 | config | 2 (schema 1 remains readable owner-migration input) |
-| talk | 7 (schemas 1-6 remain readable historical state; v5 and v6 restamp) |
+| talk | 8 (schemas 1-7 remain readable historical state; v5-v7 restamp) |
 | PPTX catalog | 3 (schemas 1 and 2 remain readable legacy state) |
 | QR code | 2 (schema 1 remains readable legacy state) |
 | resource summary | 1 |
@@ -276,8 +276,8 @@ customization, not the owner default. See the
       "verified_at": "timezone-aware ISO-8601 timestamp"
     }],
     "pptx_path": "Conference/Year/Talk Name.pptx  (optional — highest quality slide source when available)",
-    "schema_version": 7,
-    "transcript_source": "youtube_auto|whisper|manual|none  (how the transcript was obtained; MAY BE ABSENT — see below)",
+    "schema_version": 8,
+    "transcript_source": "youtube_auto|provider_auto|whisper|manual|none  (how the transcript was obtained; MAY BE ABSENT — see below)",
     "transcript_path": "transcripts/{id}.txt  (optional vault-relative path; required for non-YouTube transcript evidence)",
     "slide_source": "pptx|pdf|both|video_extracted|markdown|none  (set in Step 2 per slide source hierarchy)",
     "slides_local_path": "slides/<artifact>.pdf  (optional explicit local PDF; legacy readers also accept slides_pdf_path/pdf_path)",
@@ -286,13 +286,13 @@ customization, not the owner default. See the
     "reprocess_reason": "machine-readable reason for needs-reprocessing, or null (owner-set values: DELIBERATE_REPROCESS_REASONS in queue_claim_contract.py)",
     "reprocess_generation": 1,
     "_queue_claim": {
-      "schema_version": 5,
+      "schema_version": 7,
       "run_id": "reparse-2026-07",
       "batch_id": "25",
       "claimed_at": "2026-07-31T18:00:00+00:00",
       "previous_status": "needs-reprocessing",
       "reprocess_generation": 1,
-      "required_return_schema_version": 6,
+      "required_return_schema_version": 7,
       "adherence_baseline": {
         "schema_version": 2,
         "as_of": "2026-07-31T18:00:00+00:00",
@@ -354,7 +354,7 @@ customization, not the owner default. See the
       "not_evaluable": []
     }
   }],
-  "_comment_schema_version": "Database root schema v2 is owner-migrated by vault-ingress; root v1 is the generation before the top-level `markdown_decks` collection, and migration moves a v0 or v1 database to v2 without touching any record it already carries. A missing talk record version is the historical implicit-v1 lineage. v2 makes transcript_source optional. Two incompatible v3 lineages were emitted; v4 is their source-located union and remains archival with evidence ledger v1. V5 adds applicability assessments, exhaustive outcomes, opportunity-coverage identity, and evidence ledger v2. V6 adds `pattern_score_basis` and a possibly-fractional `pattern_score` at the weighted scoring generation; migration restamps a v5 record to v6 without rescoring it, because recomputing a score under arithmetic its worker never used would restate what the worker meant. V7 was introduced for the owner-reviewed title-equivalence ledger, which now lives in the top-level `source_title_equivalences` collection at record v2, so v7 adds no field a v6 record lacks; migration restamps a v5 or v6 record to v7 untouched and lifts a nested v1 ledger out of the talk into that collection. Root migration preserves all historical evidence and never synthesizes v5 outcomes.",
+  "_comment_schema_version": "Database root schema v2 is owner-migrated by vault-ingress; root v1 is the generation before the top-level `markdown_decks` collection, and migration moves a v0 or v1 database to v2 without touching any record it already carries. A missing talk record version is the historical implicit-v1 lineage. v2 makes transcript_source optional. Two incompatible v3 lineages were emitted; v4 is their source-located union and remains archival with evidence ledger v1. V5 adds applicability assessments, exhaustive outcomes, opportunity-coverage identity, and evidence ledger v2. V6 adds `pattern_score_basis` and a possibly-fractional `pattern_score` at the weighted scoring generation; migration restamps a v5 record to v6 without rescoring it, because recomputing a score under arithmetic its worker never used would restate what the worker meant. V7 was introduced for the owner-reviewed title-equivalence ledger, which now lives in the top-level `source_title_equivalences` collection at record v2, so v7 adds no field a v6 record lacks. V8 adds `provider_auto` to the transcript-source enum. Migration restamps v5-v7 records to v8 without relabeling their source and lifts a nested v1 title ledger into the top-level collection. Root migration preserves all historical evidence and never synthesizes v5 outcomes.",
   "_comment_absent_transcript_source": "Absent transcript_source: the key may be MISSING on a talk, and missing is meaningful — it means provenance is unknown, not that no transcript exists (that is the explicit value `none`). It arises on one path: fetch-transcript.py returning method `existing`, where a valid transcript was already on disk and no fetch ran, so nothing was learned about where it came from. Writers MUST NOT backfill a guess; `manual` in particular asserts a human produced it. Readers gauging transcript reliability MUST treat absent as unknown and MUST NOT default it to any value.",
   "pptx_catalog": [{
     "schema_version": 3,
@@ -842,7 +842,7 @@ mutually exclusive shape and omits both `pattern_scoring_schema_version` and
 }
 ```
 
-A fresh v6 worker uses the exact empty adherence sentinel and does not author a
+A fresh v7 worker uses the exact empty adherence sentinel and does not author a
 raw-score comparison. Only an owner-side consumer that sees the canonical talk
 outcomes may compare against a baseline carrying the same
 `opportunity_coverage_identity`. Baseline schema v2 keeps all fresh-v5 talks in
@@ -874,7 +874,7 @@ manual` is provenance only and does not prove an artifact exists. Legacy
 no-video/no-transcript statuses normalize to `skipped_no_sources` only when the
 shared verified-local plus remote-acquisition capability list is empty.
 
-Every fresh queue claim is schema v6 and carries exactly the
+Every fresh queue claim is schema v7 and carries exactly the
 `required_return_schema_version` and `adherence_baseline` fields shown above.
 The queue owner builds one baseline before mutating any selected talk, copies it
 unchanged to every batch member, and requires `adherence_baseline.as_of` to equal
@@ -905,12 +905,13 @@ The four version axes are deliberately explicit:
 | v1 or v2 | saved v1 or v2 only | migrated legacy record | never current v5 |
 | v3 | v3 only | migrated union-safe record | never current v5 |
 | v4 | v4 only | archival source-located v4 | never current v5 |
-| v5 | v5 only | v5 | never current v6 |
-| v6 | v6 only | v6 | v6 when canonical evidence/outcomes are fresh |
+| v5 | v5 only | migrated v8 | never current v6 |
+| v6 | v6 only | migrated v8 | v6 when canonical evidence/outcomes are fresh |
+| v7 | v7 only | v8 | v6 when canonical evidence/outcomes are fresh |
 
 Claim/return compatibility authorizes replay; it does not grant current scoring
-status. Only a v6 return canonicalized from current source artifacts can produce
-talk schema v6 with `pattern_scoring_schema_version: 6`, evidence ledger v2,
+status. A v6 or v7 return canonicalized from current source artifacts can produce
+talk schema v8 with `pattern_scoring_schema_version: 6`, evidence ledger v2,
 exhaustive outcomes, `pattern_score_basis`, and
 `pattern_scoring_generation_status: "current"`. A v5 return still validates and
 still persists, at the flat scoring generation; weighted and flat scores are not
@@ -934,7 +935,7 @@ Each subagent returns this JSON after processing one talk:
 ```json
 {
   "filename": "the .md filename",
-  "return_schema_version": 5,
+  "return_schema_version": 7,
   "queue_claim": {
     "run_id": "copied from talk._queue_claim.run_id",
     "batch_id": "copied from talk._queue_claim.batch_id",
@@ -948,7 +949,7 @@ Each subagent returns this JSON after processing one talk:
   ],
   "rhetoric_notes": "500-1000 words: qualitative observations across dimensions 1-13",
   "areas_for_improvement": "100-300 words: honest critical reflection (Dimension 14); name the related antipattern ID + severity per issue where a Dimension 14 antipattern applies",
-  "transcript_source": "youtube_auto|whisper|manual  (how the transcript was obtained; OMIT the key entirely when provenance is unknown — see Absent transcript_source in the DB schema above)",
+  "transcript_source": "youtube_auto|provider_auto|whisper|manual  (how the transcript was obtained; OMIT the key entirely when provenance is unknown — see Absent transcript_source in the DB schema above)",
   "transcript_path": "transcripts/{id}.txt  (optional exact repeat of a pre-registered non-YouTube path; cannot introduce citation authority)",
   "structured_data": {
     "delivery_language": "en|de|ru|etc  (primary language of the talk)",
@@ -1169,11 +1170,11 @@ classification rule including how a dominant class is selected, the provenance
 evidence used, and how unverified origins are counted as `unknown`. Both fields
 are authored-slide evidence and cannot be supplied from untrusted video context.
 
-The worker matches the active claim contract. Every fresh claim is schema v6
-with `required_return_schema_version: 6`, and only that exact claim authorizes a
-v6 return. Saved claim schemas v1/v2 authorize only return schemas v1/v2;
+The worker matches the active claim contract. Every fresh claim is schema v7
+with `required_return_schema_version: 7`, and only that exact claim authorizes a
+v7 return. Saved claim schemas v1/v2 authorize only return schemas v1/v2;
 schema v3 authorizes only v3; schema v4 authorizes only archival v4; schema v5
-authorizes only v5. Recover a live legacy lease and issue a new v6 generation;
+authorizes only v5; schema v6 authorizes only v6. Recover a live legacy lease and issue a new v7 generation;
 never mutate its claim to make a newer return appear compatible.
 
 For newly emitted work, `validate-returns.py` must report the processed talk's
@@ -1199,8 +1200,8 @@ table would restate what that worker meant rather than validate what it said. A
 v5 return carrying `pattern_score_basis` is rejected outright — the field cannot
 exist under its contract.
 
-**Writer.** Every fresh claim is schema v6 with
-`required_return_schema_version: 6`, so a worker is issued a v6 return.
+**Writer.** Saved claim schema v6 carries
+`required_return_schema_version: 6`, so its worker replays a v6 return.
 `PATTERN_SCORING_SCHEMA_VERSION` is 6; `FLAT_PATTERN_SCORING_SCHEMA_VERSION`
 names the flat generation, and `scoring_schema_version_for_return` maps a return
 to the generation its score belongs to. Weighted and flat scores are not
@@ -1226,6 +1227,15 @@ unmutatable, since the owner writer requires the exact current talk schema.
 Weights are part of the scoring schema version, so changing one is a
 scoring-generation bump, never a tuning knob.
 
+### Return schema v7 — provider automatic captions
+
+v7 keeps the complete v6 evidence and weighted-score contract and adds
+`provider_auto` to `transcript_source`. The value means a non-YouTube
+provider's automatic caption track. It has the same machine-ASR reliability as
+`youtube_auto`, but it never enters YouTube caption-timing enrichment. Fresh
+claims require v7; saved v6 claims and returns remain replayable and reject the
+new value.
+
 The basis a v6 return carries has this shape:
 
 ```json
@@ -1246,7 +1256,7 @@ recompute the score without consulting the engine. The per-lane counts cover eve
 confidence level the catalog admits; a level added without a weight fails the
 table's own exhaustiveness test rather than silently scoring as zero.
 
-Versions 2–6 share the complete-snapshot merge contract: supplied declared
+Versions 2–7 share the complete-snapshot merge contract: supplied declared
 scalar and list fields replace prior values, including empties only where the
 field contract permits emptiness; complete structured maps and each verbatim
 lane replace their prior snapshots; omitted fields remain untouched. The
@@ -1309,7 +1319,7 @@ batch in `claimed` state and closes it as `completed`; `write-analysis.py`
 requires that same whole batch in `completed` state. A genuinely one-member
 batch is complete and remains supported. A partially closed or stranded batch
 must be recovered into a fresh queue generation rather than finished piecemeal.
-For claim v3–v5, every live batch member must also share one canonical
+For claim v3–v7, every live batch member must also share one canonical
 `claimed_at`, one identical baseline, and an `excluded_filenames` array equal to
 the exact sorted batch. Persistence validates all of those conditions before
 the first candidate merge; one mismatch leaves both DB and analysis artifacts
@@ -1318,11 +1328,12 @@ unchanged.
 Queue-claim schema v2 adds `result_payload_sha256` to completed claims; schema
 v3 adds the required-return version and immutable adherence snapshot. Schema v4
 freezes those fields to the source-located return-v4/scoring-v4 contract. Schema
-v5 carries the v5 return/scoring contract and schema-v2 baseline. The
+v5 carries the v5 return/scoring contract and schema-v2 baseline, v6 introduces
+weighted scoring, and v7 adds provider-auto transcript provenance. The
 receipt hashes the exact return payload after stable JSON key/whitespace
-canonicalization. `persist-results.py` closes v1 as v2 and closes v2–v5 at
-their own versions, storing the receipt for every completed v2–v5 claim. The analysis writer
-recomputes it and rejects a substituted payload. `queue-state.py` reads v1–v5
+canonicalization. `persist-results.py` closes v1 as v2 and closes v2–v7 at
+their own versions, storing the receipt for every completed v2–v7 claim. The analysis writer
+recomputes it and rejects a substituted payload. `queue-state.py` reads v1–v7
 without mutating `inspect` or idempotent replay. An already completed v1 claim
 has no reconstructable receipt and therefore cannot authorize an analysis
 replacement until a fresh generation is processed. Unknown future claim
@@ -1330,7 +1341,7 @@ versions fail closed.
 
 Recovery never rewrites a claim snapshot. It marks the generation closed and
 restores its prior claimable status; reclaiming creates a new generation with a
-fresh pre-mutation baseline. A historical v3/v4/v5 batch may therefore be split across
+fresh pre-mutation baseline. A historical v3-v7 batch may therefore be split across
 current and history storage locations, but the combined `(run_id, batch_id,
 claimed_at)` epoch must still have exact membership and one baseline.
 
@@ -1408,14 +1419,14 @@ are top-level analysis prose/provenance scalars or leaves under
 `structured_data`, `verbatim_examples`, and `pattern_observations`. It cannot
 clear queue identity, source URLs, catalog metadata, or the talk record itself.
 Clearing a promoted structured scalar clears its top-level copy too. A supplied
-v2–v5 replacement wins after a clear; permitted empty values are real snapshots,
+v2–v7 replacement wins after a clear; permitted empty values are real snapshots,
 not no-ops. Legacy v1 empty values retain their historical additive no-op behavior.
 
 `evidence_source` uses the enum defined by the pattern index's Evidence-Source Contract.
 Detected entries must name a qualifying source. Strong detections use
 `strong_evaluable_from` (defaulting to `evaluable_from`); moderate/weak
 detections use the base gate. A `source_comparison` detection must name both
-sources in its evidence. Every v4/v5 return carries a
+sources in its evidence. Every v4-v7 return carries a
 duplicate-free `evidence_sources_used` array exactly equal to one qualifying
 underlying group. Saved v1–v3 replay may omit that array; persistence infers it
 only when exactly one pair qualifies. Zero or multiple qualifying groups remain
@@ -1452,7 +1463,7 @@ schema and aggregation contract are in
 
 ### Source Inspection Receipt Schema
 
-Every return v4/v5 carries `pattern_observations.source_inspection`. Its source-name
+Every return v4-v7 carries `pattern_observations.source_inspection`. Its source-name
 set exactly equals `evidence_sources`; comparison records may repeat the
 `source_comparison` name only for distinct underlying groups. Worker-authored
 records are closed objects:
@@ -1497,7 +1508,7 @@ must not return either absence-capability field.
 
 Workers never return canonical receipt enrichment. Persistence adds
 `artifact_root`, vault/root-relative `artifact_path`, `artifact_sha256`, optional
-timing-artifact identity, required quality-artifact identity for current v4/v5
+timing-artifact identity, required quality-artifact identity for current v4-v7
 transcript evidence, derived `line_count`/`page_count`/`duration_seconds`, and
 `coverage_complete`; comparison records add `artifact_identities`. Current
 cohort readers re-hash these identities and fail stale, missing, symlinked,
@@ -1550,7 +1561,7 @@ transcript `start_seconds`/`end_seconds`, artifact root/path/hash fields,
 timing/quality-artifact fields, metadata `value`/`owner_value_after_return`, or
 any other canonical enrichment from an earlier analysis. Unknown raw citation fields are
 rejected. Catalog dimensions are likewise engine-owned; workers should omit
-them, although a supplied v4/v5 `dimensions` array is accepted only when it exactly
+them, although a supplied v4-v7 `dimensions` array is accepted only when it exactly
 matches catalog order.
 
 For transcript citations, `quote` is always the exact source-language text needed
@@ -1579,7 +1590,7 @@ itself, and an irrelevant metadata field cannot stand in for pattern evidence.
 
 Historical v1–v3 records may contain `evidence_citations: []`. That is a deliberate
 legacy marker: readers may render the old `evidence` prose, but must not present
-it as source-verified. The v4/v5 writer never accepts an empty array for a new
+it as source-verified. The v4-v7 writer never accepts an empty array for a new
 detection. `evidence_schema_version` is writer-owned persisted state; workers
 must not return it, and legacy detections never acquire it by migration.
 

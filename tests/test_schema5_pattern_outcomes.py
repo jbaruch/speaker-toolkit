@@ -797,11 +797,11 @@ def test_opportunity_identity_binds_scoring_generation_independently(
     )
 
     assert v5 != v6
-    # The identity is bound to the generation it was built at, not to
-    # whichever generation happens to be current.
-    assert return_validation.RETURN_SCHEMA_VERSION == (
-        return_validation.WEIGHTED_SCORE_RETURN_SCHEMA_VERSION
-    )
+    # The identity is bound to the scoring generation it was built at, not to
+    # whichever return generation happens to be current.
+    assert return_validation.scoring_schema_version_for_return(
+        return_validation.RETURN_SCHEMA_VERSION
+    ) == (return_validation.WEIGHTED_PATTERN_SCORING_SCHEMA_VERSION)
 
 
 def test_v4_source_locations_survive_root_migration_without_v5_outcomes(
