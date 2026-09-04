@@ -1,5 +1,13 @@
 # Changelog
 
+### Clean usage errors for malformed reviewed-source digests
+
+Validate `--expected-source-sha256` at argument parsing as well as at the
+library boundary. Malformed direct CLI input now exits with a usage diagnostic
+before extraction, without a traceback or any source/output pipeline work.
+The exact lowercase SHA-256 contract and valid extraction behavior are unchanged
+(#394, follow-up to PR #393).
+
 ## 0.20.117 — 2026-09-04
 
 ### feat(vault-ingress) — package source-bound crop review (#382)

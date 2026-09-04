@@ -293,6 +293,27 @@ def parse_slide_region(value: str) -> str | NormalizedSlideRegion:
         raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
+def validate_expected_source_sha256(value: object) -> str:
+    """Validate an exact reviewed-source digest without normalizing caller input."""
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(char not in "0123456789abcdef" for char in value)
+    ):
+        raise ValueError(
+            "invalid expected source digest — supply the review manifest's SHA-256"
+        )
+    return value
+
+
+def parse_expected_source_sha256(value: str) -> str:
+    """Keep malformed CLI digests in argparse's usage-error contract."""
+    try:
+        return validate_expected_source_sha256(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
 def extract_frames(video_path, frames_dir, fps=0.5):
     """Extract frames into one empty workspace and enumerate them literally."""
     video_path = canonical_path(video_path)
@@ -1134,14 +1155,8 @@ def extract_slides_from_video(
     run's artifacts exactly as it found them.
     """
     youtube_id = validate_youtube_id(youtube_id)
-    if expected_source_sha256 is not None and (
-        not isinstance(expected_source_sha256, str)
-        or len(expected_source_sha256) != 64
-        or any(char not in "0123456789abcdef" for char in expected_source_sha256)
-    ):
-        raise ValueError(
-            "invalid expected source digest — supply the review manifest's SHA-256"
-        )
+    if expected_source_sha256 is not None:
+        validate_expected_source_sha256(expected_source_sha256)
     if fps <= 0:
         raise ValueError("fps must be greater than zero")
     output_dir = canonical_path(output_dir)
@@ -1238,6 +1253,7 @@ def main():
     )
     parser.add_argument(
         "--expected-source-sha256",
+        type=parse_expected_source_sha256,
         help="require the exact recording whose frames were reviewed before extraction",
     )
     parser.add_argument(
