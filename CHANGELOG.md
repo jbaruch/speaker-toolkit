@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.114 — 2026-09-04
+
 ### fix(vault-ingress) — decode recordings before accepting downloads (#381)
 
 The former corruption scan could miss H.264 NAL damage and describe a truncated
