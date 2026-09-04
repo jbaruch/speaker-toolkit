@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.117 — 2026-09-04
+
 ### feat(vault-ingress) — package source-bound crop review (#382)
 
 The formerly scratch-only contact-sheet and crop-review workflow now ships as
