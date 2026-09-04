@@ -1100,12 +1100,7 @@ Each subagent returns this JSON after processing one talk:
         "pattern_id": "conditional-pattern-with-incomplete-coverage",
         "reason_code": "missing_applicability_source_coverage"
       }
-    ],
-    "pattern_score": {
-      "patterns_used": 8,
-      "antipatterns_detected": 2,
-      "score": 6
-    }
+    ]
   },
   "catalog_feedback": {
     "unmatched_observations": [{
@@ -1135,6 +1130,12 @@ Each subagent returns this JSON after processing one talk:
   }
 }
 ```
+
+This is the raw worker shape. Before validation, pass it through
+`skills/vault-ingress/scripts/build-score-basis.py`; that canonical completion
+step inserts `pattern_score` and `pattern_score_basis` through the scoring
+owner. Do not calculate, author, or merge either field by hand. See
+[subagent-instructions.md](subagent-instructions.md) for the invocation.
 
 A `source_comparison` detection or applicability assessment adds
 `"evidence_sources_used": ["static_slides", "native_deck"]` (or another

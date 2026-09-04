@@ -23,6 +23,13 @@ def _docs() -> dict[str, str]:
     return {name: path.read_text(encoding="utf-8") for name, path in DOC_PATHS.items()}
 
 
+def _schema_current_return_example() -> dict:
+    text = DOC_PATHS["schemas"].read_text(encoding="utf-8")
+    section = text.split("## Per-Talk Subagent Return Schema", 1)[1]
+    payload = section.split("```json", 1)[1].split("```", 1)[0]
+    return json.loads(payload)
+
+
 def test_claim_issuance_is_live_and_version_bound() -> None:
     docs = _docs()
     for name, text in docs.items():
@@ -112,6 +119,16 @@ def test_threshold_and_structured_comparison_contract_is_documented() -> None:
     assert "Validators deliberately do not parse prose" in docs["processing"]
     assert "renderer generates this anchor mechanically" in docs["processing"]
     assert '"return_schema_version": 7' in docs["schemas"]
+
+
+def test_schema_worker_example_delegates_weighted_score_completion() -> None:
+    schemas = _docs()["schemas"]
+    example = _schema_current_return_example()
+
+    assert "pattern_score" not in example["pattern_observations"]
+    assert "pattern_score_basis" not in example["pattern_observations"]
+    assert "scripts/build-score-basis.py" in schemas
+    assert "inserts `pattern_score` and `pattern_score_basis`" in schemas
 
 
 def test_native_picture_render_threshold_is_script_owned() -> None:
