@@ -23,8 +23,15 @@ import tempfile
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, TypedDict
 
+from ytdlp_runtime import (
+    YTDLP_REQUIRED_VERSION,
+    YtDlpResolutionError,
+    normalized_ytdlp_version,
+    resolve_ytdlp,
+)
 
-REPORT_SCHEMA_VERSION = 2
+
+REPORT_SCHEMA_VERSION = 3
 MODULE_PROBE_SCHEMA_VERSION = 1
 MODULE_PROBE_TIMEOUT_SECONDS = 30
 MODULE_PROBE_MAX_OUTPUT_BYTES = 4096
@@ -120,6 +127,13 @@ DEFAULT_REQUIRED_LANES = ("core",)
 
 class ModuleProbeResult(TypedDict):
     """Parent-side result for one isolated dependency import."""
+
+    available: bool
+    failure: dict[str, object] | None
+
+
+class CommandProbeResult(TypedDict):
+    """Result for one executable dependency probe."""
 
     available: bool
     failure: dict[str, object] | None
@@ -361,6 +375,78 @@ def _command_available(command: str) -> bool:
     return shutil.which(command) is not None
 
 
+def _probe_command(
+    label: str,
+    command: str,
+    *,
+    runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+) -> CommandProbeResult:
+    """Probe presence, plus the pinned version for versioned commands."""
+    if label != "yt-dlp":
+        available = _command_available(command)
+        return {
+            "available": available,
+            "failure": None if available else {"reason": "not_found"},
+        }
+
+    try:
+        executable = resolve_ytdlp()
+    except YtDlpResolutionError as exc:
+        return {
+            "available": False,
+            "failure": {"reason": exc.code},
+        }
+
+    run = subprocess.run if runner is None else runner
+    try:
+        completed = run(
+            [str(executable), "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=MODULE_PROBE_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "available": False,
+            "failure": {
+                "reason": "timeout",
+                "timeout_seconds": MODULE_PROBE_TIMEOUT_SECONDS,
+            },
+        }
+    except OSError as exc:
+        return {
+            "available": False,
+            "failure": {
+                "reason": "probe_start_failure",
+                "exception_type": type(exc).__name__,
+            },
+        }
+
+    raw_version = completed.stdout.strip()
+    actual_version = raw_version if raw_version and len(raw_version) <= 64 else None
+    if completed.returncode != 0 or actual_version is None:
+        return {
+            "available": False,
+            "failure": {
+                "reason": "version_unavailable",
+                "exit_code": completed.returncode,
+            },
+        }
+    if normalized_ytdlp_version(actual_version) != normalized_ytdlp_version(
+        YTDLP_REQUIRED_VERSION
+    ):
+        return {
+            "available": False,
+            "failure": {
+                "reason": "incompatible_version",
+                "required_version": YTDLP_REQUIRED_VERSION,
+                "actual_version": actual_version,
+            },
+        }
+    return {"available": True, "failure": None}
+
+
 def _parse_lanes(value: str) -> tuple[str, ...]:
     lanes = tuple(dict.fromkeys(part.strip() for part in value.split(",")))
     if not lanes or any(not lane for lane in lanes):
@@ -399,9 +485,17 @@ def build_report(
             for distribution, probe in module_probes.items()
             if probe["failure"] is not None
         }
-        commands = {
-            label: _command_available(command)
+        command_probes = {
+            label: _probe_command(label, command)
             for label, command in requirements["commands"].items()
+        }
+        commands = {
+            label: probe["available"] for label, probe in command_probes.items()
+        }
+        command_failures = {
+            label: probe["failure"]
+            for label, probe in command_probes.items()
+            if probe["failure"] is not None
         }
         missing_modules = sorted(
             name for name, available in modules.items() if not available
@@ -423,6 +517,12 @@ def build_report(
                 if import_name in REQUIRED_MODULE_VERSIONS
             },
             "commands": commands,
+            "command_failures": command_failures,
+            "required_command_versions": (
+                {"yt-dlp": YTDLP_REQUIRED_VERSION}
+                if "yt-dlp" in requirements["commands"]
+                else {}
+            ),
             "missing_modules": missing_modules,
             "missing_commands": missing_commands,
         }

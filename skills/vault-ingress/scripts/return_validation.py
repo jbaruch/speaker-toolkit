@@ -115,7 +115,10 @@ SLIDE_SOURCES = frozenset(
 # The complement of `pattern_evidence.USABLE_SLIDE_SOURCES` within
 # SLIDE_SOURCES, pinned by a test so the two cannot drift apart.
 SLIDE_SOURCES_WITHOUT_READABLE_SLIDES = frozenset({"none", "markdown"})
-TRANSCRIPT_SOURCES = frozenset({"youtube_auto", "whisper", "manual", "none"})
+PRE_PROVIDER_AUTO_TRANSCRIPT_SOURCES = frozenset(
+    {"youtube_auto", "whisper", "manual", "none"}
+)
+TRANSCRIPT_SOURCES = PRE_PROVIDER_AUTO_TRANSCRIPT_SOURCES | {"provider_auto"}
 CONFIDENCE_LEVELS = frozenset({"strong", "moderate", "weak"})
 EVIDENCE_SOURCE_ORDER = (
     "static_slides",
@@ -275,7 +278,7 @@ SUBSTANTIVE_PROSE_FIELDS = frozenset(
 LANGUAGE_RE = re.compile(r"^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$")
 CONDITION_ID_RE = re.compile(r"^[a-z0-9]+(?:[-_][a-z0-9]+)*$")
 VIDEO_SOURCE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-QUEUE_CLAIM_SCHEMA_VERSION = 6
+QUEUE_CLAIM_SCHEMA_VERSION = 7
 SOURCE_LOCATED_QUEUE_CLAIM_SCHEMA_VERSION = 4
 BASELINE_QUEUE_CLAIM_SCHEMA_VERSION = 3
 PREVIOUS_QUEUE_CLAIM_SCHEMA_VERSION = 2
@@ -289,12 +292,13 @@ EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION = 5
 # contract stands, because that is the arithmetic its worker used. v6 keeps
 # every v5 semantic and adds weighting, so it joins each set v5 belongs to.
 WEIGHTED_SCORE_RETURN_SCHEMA_VERSION = 6
+PROVIDER_AUTO_RETURN_SCHEMA_VERSION = 7
 # The generation a fresh claim issues, derived rather than written. Every set
 # below names the generation it means; if they named THIS pointer instead,
 # advancing it would silently drop the generation it used to point at from
 # each of those sets — a validation set that quietly stops accepting v5 the
 # moment v6 becomes current.
-RETURN_SCHEMA_VERSION = WEIGHTED_SCORE_RETURN_SCHEMA_VERSION
+RETURN_SCHEMA_VERSION = PROVIDER_AUTO_RETURN_SCHEMA_VERSION
 SUPPORTED_RETURN_SCHEMA_VERSIONS = frozenset(
     {
         LEGACY_RETURN_SCHEMA_VERSION,
@@ -303,6 +307,7 @@ SUPPORTED_RETURN_SCHEMA_VERSIONS = frozenset(
         SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
         EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION,
         WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
+        PROVIDER_AUTO_RETURN_SCHEMA_VERSION,
     }
 )
 SNAPSHOT_RETURN_SCHEMA_VERSIONS = frozenset(
@@ -312,6 +317,7 @@ SNAPSHOT_RETURN_SCHEMA_VERSIONS = frozenset(
         SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
         EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION,
         WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
+        PROVIDER_AUTO_RETURN_SCHEMA_VERSION,
     }
 )
 OUTCOME_GATE_RETURN_SCHEMA_VERSIONS = frozenset(
@@ -320,6 +326,7 @@ OUTCOME_GATE_RETURN_SCHEMA_VERSIONS = frozenset(
         SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
         EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION,
         WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
+        PROVIDER_AUTO_RETURN_SCHEMA_VERSION,
     }
 )
 SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS = frozenset(
@@ -327,17 +334,22 @@ SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS = frozenset(
         SOURCE_LOCATED_RETURN_SCHEMA_VERSION,
         EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION,
         WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
+        PROVIDER_AUTO_RETURN_SCHEMA_VERSION,
     }
 )
 EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSIONS = frozenset(
-    {EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION, WEIGHTED_SCORE_RETURN_SCHEMA_VERSION}
+    {
+        EXHAUSTIVE_OUTCOME_RETURN_SCHEMA_VERSION,
+        WEIGHTED_SCORE_RETURN_SCHEMA_VERSION,
+        PROVIDER_AUTO_RETURN_SCHEMA_VERSION,
+    }
 )
 # The returns whose aggregate is weighted, and which therefore carry a
 # `pattern_score_basis`. Separate from the exhaustive-outcome set because the two
 # properties are independent: v5 is exhaustive and flat, v6 is exhaustive and
 # weighted, and a later schema could be one without the other.
 WEIGHTED_SCORE_RETURN_SCHEMA_VERSIONS = frozenset(
-    {WEIGHTED_SCORE_RETURN_SCHEMA_VERSION}
+    {WEIGHTED_SCORE_RETURN_SCHEMA_VERSION, PROVIDER_AUTO_RETURN_SCHEMA_VERSION}
 )
 
 FLAT_PATTERN_SCORING_SCHEMA_VERSION = 5
@@ -2522,7 +2534,8 @@ def _validate_source_inspection(
     if return_schema_version not in SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS:
         if inspection is not None:
             raise ReturnValidationError(
-                "source_inspection is supported only by return schemas v4/v5"
+                "source_inspection is supported only by return schemas "
+                f"{sorted(SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS)}"
             )
         return
     if not isinstance(inspection, list) or not inspection:
@@ -3046,7 +3059,8 @@ def _validate_adherence_comparison(
     if return_schema_version not in OUTCOME_GATE_RETURN_SCHEMA_VERSIONS:
         if "adherence_comparison" in ret:
             raise ReturnValidationError(
-                "adherence_comparison is supported only by return schemas v3/v4/v5"
+                "adherence_comparison is supported only by return schemas "
+                f"{sorted(OUTCOME_GATE_RETURN_SCHEMA_VERSIONS)}"
             )
         return
     if comparison is None:
@@ -4869,6 +4883,11 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
     slides_local_path = _validate_slides_local_path(ret)
 
     transcript_source = ret.get("transcript_source")
+    allowed_transcript_sources = (
+        TRANSCRIPT_SOURCES
+        if return_schema_version == PROVIDER_AUTO_RETURN_SCHEMA_VERSION
+        else PRE_PROVIDER_AUTO_TRANSCRIPT_SOURCES
+    )
     if "transcript_path" in ret:
         try:
             validate_transcript_path(ret["transcript_path"])
@@ -4877,20 +4896,21 @@ def validate_return(ret, catalog: PatternCatalog | None = None) -> None:
     if (
         return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS
         and "transcript_source" in ret
-        and transcript_source not in TRANSCRIPT_SOURCES
+        and transcript_source not in allowed_transcript_sources
     ):
         raise ReturnValidationError(
             "snapshot return transcript_source must be omitted when provenance "
-            f"is unknown or be one of {sorted(TRANSCRIPT_SOURCES)}, got "
+            f"is unknown or be one of {sorted(allowed_transcript_sources)}, got "
             f"{transcript_source!r}"
         )
     if (
         return_schema_version not in SNAPSHOT_RETURN_SCHEMA_VERSIONS
         and transcript_source is not None
-        and transcript_source not in TRANSCRIPT_SOURCES
+        and transcript_source not in allowed_transcript_sources
     ):
         raise ReturnValidationError(
-            f"transcript_source must be one of {sorted(TRANSCRIPT_SOURCES)}, "
+            "transcript_source must be one of "
+            f"{sorted(allowed_transcript_sources)}, "
             f"got {transcript_source!r}"
         )
 

@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""Complete v6 returns by filling in the pattern_score_basis they require.
+"""Complete weighted returns by filling in their score and score basis.
 
-The basis is a pure function of a return's detection lanes and its
-not-evaluable ledger, and inserting it is a mechanical JSON edit, so both steps
-belong in a script rather than in a worker's reasoning. `return_validation`
-owns the weight table and the object's shape; this is a thin entry point onto
-that owner, so no caller reproduces either or decides where the field goes.
+The score and basis are pure functions of a return's detection lanes and its
+not-evaluable ledger, and inserting them is a mechanical JSON edit, so every
+step belongs in a script rather than in a worker's reasoning.
+`return_validation` owns the arithmetic, weight table, and basis shape; this is
+a thin entry point onto that owner, so no caller reproduces them or decides
+where the fields go.
 
-Usage:
+Return schemas v6 and v7 share scoring schema v6 and therefore require the same
+basis. Usage:
     build-score-basis.py <return.json> [...]
 
 Each input is one return object or an array of return objects. The output is
-those same returns with `pattern_observations.pattern_score_basis` set — one
-object for a single return, an array for several — ready to pass straight to
-`validate-returns.py`.
+those same returns with `pattern_observations.pattern_score` and
+`pattern_observations.pattern_score_basis` set — one object for a single
+return, an array for several — ready to pass straight to `validate-returns.py`.
 
 Exit 0 on success. Exit 2 on unreadable, malformed, or duplicate-filename
 input, with a diagnostic on stderr and nothing on stdout; callers must stop on
@@ -28,7 +30,7 @@ import json
 import sys
 from pathlib import Path
 
-from return_validation import pattern_score_basis
+from return_validation import expected_weighted_score, pattern_score_basis
 
 
 def _observations(ret: object, label: str) -> dict:
@@ -40,15 +42,23 @@ def _observations(ret: object, label: str) -> dict:
     return observations
 
 
-def basis_for(ret: object, label: str) -> dict:
-    """Return the exact basis this return's own lanes require."""
+def _required_lanes(ret: object, label: str) -> dict[str, list]:
+    """Return every required detection lane, rejecting omissions as malformed."""
     observations = _observations(ret, label)
-    lanes = {}
+    lanes: dict[str, list] = {}
     for name in ("patterns_detected", "antipatterns_detected", "not_evaluable"):
-        value = observations.get(name, [])
+        if name not in observations:
+            raise ValueError(f"{label} pattern_observations.{name} is required")
+        value = observations[name]
         if not isinstance(value, list):
             raise ValueError(f"{label} pattern_observations.{name} must be an array")
         lanes[name] = value
+    return lanes
+
+
+def basis_for(ret: object, label: str) -> dict:
+    """Return the exact basis this return's own lanes require."""
+    lanes = _required_lanes(ret, label)
     try:
         return pattern_score_basis(
             lanes["patterns_detected"],
@@ -65,10 +75,25 @@ def basis_for(ret: object, label: str) -> dict:
         ) from exc
 
 
+def score_for(ret: object, label: str) -> float:
+    """Return the exact weighted score this return's own lanes require."""
+    lanes = _required_lanes(ret, label)
+    try:
+        return expected_weighted_score(
+            lanes["patterns_detected"], lanes["antipatterns_detected"]
+        )
+    except (TypeError, KeyError) as exc:
+        raise ValueError(
+            f"{label} has a malformed detection entry ({exc}); every detection "
+            "needs an object with a confidence of strong, moderate, or weak"
+        ) from exc
+
+
 def completed(ret: object, label: str) -> dict:
-    """Return a copy of this return with its required basis filled in."""
+    """Return a copy with its owner-computed score and basis filled in."""
     filled = copy.deepcopy(ret)
     assert isinstance(filled, dict)
+    filled["pattern_observations"]["pattern_score"] = score_for(ret, label)
     filled["pattern_observations"]["pattern_score_basis"] = basis_for(ret, label)
     return filled
 

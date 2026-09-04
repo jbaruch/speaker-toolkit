@@ -1,5 +1,45 @@
 # Changelog
 
+### fix(vault-ingress) — every yt-dlp caller uses the pinned runtime (#371)
+
+Provider metadata, transcript duration probes, Whisper audio fallback, video
+downloads, and the runtime check now share one executable resolver. It prefers
+an explicit `YT_DLP`, then the console script beside the configured Python
+interpreter and the toolkit environments, with PATH retained only as a
+compatibility fallback. A stale system yt-dlp can no longer shadow the pinned
+project dependency during one of the previously bare invocations.
+
+Runtime report schema v3 also checks the resolved yt-dlp version against the
+exact `pyproject.toml` pin. A mismatch makes only the `youtube-download` lane
+unavailable and reports both versions in the structured command failure.
+
+### fix(vault-ingress) — preserve non-YouTube automatic-caption provenance (#386)
+
+Fresh queue claims and returns advance to schema v7, and persisted talk records
+advance to schema v8. The new `provider_auto` transcript source distinguishes a
+non-YouTube provider's automatic captions from both YouTube captions and human
+transcription without changing weighted scoring schema v6.
+
+Validation, preflight, evidence canonicalization, VTT timing ownership,
+fetcher enrichment, migrations, and downstream current-record writers all read
+the new generation. Saved v6 returns and pre-v8 talk records keep their closed
+historical enums; migration restamps eligible v5-v7 records without relabeling
+their source and refuses an impossible legacy `provider_auto` claim.
+
+### fix(ci) — renew both Tessl CLI gates together (#347)
+
+The lint and test jobs now install Tessl CLI 0.105.0, matching the current local
+tool used by the plugin-lint regression suite instead of the expired 0.95.0 CI
+pin. The four reported local regressions—including an ambient `FORCE_COLOR`
+run—now pass under the pinned toolchain.
+
+### docs(vault-ingress) — keep one video-downloader outcome contract (#376)
+
+The video-extraction reference now links to the canonical per-talk worker
+instructions before invoking the extractor. It no longer duplicates the
+downloader result and exit-code predicate, so future contract changes have one
+owner.
+
 ## 0.20.111 — 2026-09-01
 
 ### fix(vault-ingress) — a source group's order no longer reads as model drift

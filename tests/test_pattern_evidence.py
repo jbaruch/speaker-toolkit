@@ -379,6 +379,31 @@ def _canonical_transcript_talk(
     return vault, raw, persisted
 
 
+def test_provider_auto_transcript_is_canonical_evidence(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    transcript, lines = _write_transcript(vault, timed=False)
+    talk = {
+        "filename": "synthetic-talk.md",
+        "title": "Synthetic Talk",
+        "transcript_path": transcript.relative_to(vault).as_posix(),
+        "transcript_source": "provider_auto",
+        "slide_source": "none",
+    }
+    raw = _raw_transcript_return(len(lines), timed=False)
+    raw["return_schema_version"] = pattern_evidence.PROVIDER_AUTO_RETURN_SCHEMA_VERSION
+    raw["transcript_source"] = "provider_auto"
+
+    canonical = pattern_evidence.canonicalize_return_evidence(
+        raw,
+        talk,
+        vault,
+        _catalog(_entry()),
+    )
+
+    assert canonical["transcript_source"] == "provider_auto"
+    assert canonical["pattern_observations"]["evidence_schema_version"] == 2
+
+
 def test_artifact_root_kinds_are_canonical_and_owner_bound(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     source_root = tmp_path / "pptx-source"

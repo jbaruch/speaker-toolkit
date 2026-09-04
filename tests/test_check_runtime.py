@@ -24,6 +24,8 @@ SCRIPT = (
     / "scripts"
     / "check-runtime.py"
 )
+if str(SCRIPT.parent) not in sys.path:
+    sys.path.insert(0, str(SCRIPT.parent))
 SPEC = importlib.util.spec_from_file_location("check_runtime", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 check_runtime = importlib.util.module_from_spec(SPEC)
@@ -1080,13 +1082,14 @@ def test_outer_boundary_emits_one_json_failure_for_unexpected_probe_fault(
 def test_lane_requirements_match_the_configured_interpreter_contract() -> None:
     requirements = check_runtime.LANE_REQUIREMENTS
 
-    assert check_runtime.REPORT_SCHEMA_VERSION == 2
+    assert check_runtime.REPORT_SCHEMA_VERSION == 3
     assert check_runtime.MODULE_PROBE_SCHEMA_VERSION == 1
     assert check_runtime.PSUTIL_REQUIRED_VERSION == "7.2.2"
     assert check_runtime.FILELOCK_REQUIRED_VERSION == "3.32.2"
     assert check_runtime.IMAGEHASH_REQUIRED_VERSION == "4.3.2"
     assert check_runtime.NUMPY_REQUIRED_VERSION == "2.2.6"
     assert check_runtime.PILLOW_REQUIRED_VERSION == "12.3.0"
+    assert check_runtime.YTDLP_REQUIRED_VERSION == "2026.8.19"
     assert check_runtime.REQUIRED_MODULE_VERSIONS == {
         "PIL": "12.3.0",
         "filelock": "3.32.2",
@@ -1163,6 +1166,71 @@ def test_psutil_version_authorities_are_synchronized() -> None:
         artifact_supervisor.PSUTIL_REQUIRED_VERSION
         == check_runtime.PSUTIL_REQUIRED_VERSION
     )
+
+
+def test_ytdlp_version_authority_is_synchronized() -> None:
+    manifest = PYPROJECT.read_text(encoding="utf-8")
+    manifest_versions = re.findall(
+        r'^\s*"yt-dlp==([^"\s]+)",\s*$',
+        manifest,
+        flags=re.MULTILINE,
+    )
+
+    assert manifest_versions == [check_runtime.YTDLP_REQUIRED_VERSION]
+
+
+def test_ytdlp_probe_accepts_the_pinned_zero_padded_version(monkeypatch) -> None:
+    monkeypatch.setattr(
+        check_runtime, "resolve_ytdlp", lambda: Path("/runtime/bin/yt-dlp")
+    )
+
+    probe = check_runtime._probe_command(
+        "yt-dlp",
+        "yt-dlp",
+        runner=lambda command, **kwargs: subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="2026.08.19\n",
+            stderr="",
+        ),
+    )
+
+    assert probe == {"available": True, "failure": None}
+
+
+def test_stale_ytdlp_version_degrades_the_download_lane(monkeypatch) -> None:
+    monkeypatch.setattr(
+        check_runtime, "_probe_module", lambda _name: _available_probe()
+    )
+    monkeypatch.setattr(
+        check_runtime, "resolve_ytdlp", lambda: Path("/runtime/bin/yt-dlp")
+    )
+    monkeypatch.setattr(
+        check_runtime.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="2026.06.09\n",
+            stderr="",
+        ),
+    )
+
+    report = check_runtime.build_report(("youtube-download",), ("core",))
+    lane = report["lanes"]["youtube-download"]
+
+    assert lane["available"] is False
+    assert lane["commands"] == {"yt-dlp": False}
+    assert lane["missing_commands"] == ["yt-dlp"]
+    assert lane["required_command_versions"] == {"yt-dlp": "2026.8.19"}
+    assert lane["command_failures"] == {
+        "yt-dlp": {
+            "reason": "incompatible_version",
+            "required_version": "2026.8.19",
+            "actual_version": "2026.06.09",
+        }
+    }
+    assert report["degraded_lanes"] == ["youtube-download"]
 
 
 def test_video_dependency_version_authorities_are_synchronized() -> None:

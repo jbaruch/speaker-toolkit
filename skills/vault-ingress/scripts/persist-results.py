@@ -183,7 +183,9 @@ def normalize_stamp(value):
 # clear semantics. Existing readers ignore the new metadata; older records stay
 # readable and acquire generation identity on their next validated analysis. The
 # two historical v3 lineages are unified by v4's source-located evidence ledger.
-# V5 adds exhaustive applicability/outcome state and opportunity identity. The
+# V5 adds exhaustive applicability/outcome state and opportunity identity. V6
+# adds weighted scoring, v7 the title-equivalence generation, and v8 the
+# provider-auto transcript-source value. The
 # shared constant lives in ingress_contract.py so readers reject future records
 # against the same boundary this owner migrates.
 
@@ -306,7 +308,7 @@ def merge_structured_v2(existing, incoming):
 
 
 def merge_verbatim_v2(existing, incoming):
-    """Snapshot-replace each supplied v2–v5 verbatim lane, including []."""
+    """Snapshot-replace each supplied v2–v7 verbatim lane, including []."""
     validate_verbatim_examples(incoming, reject_unknown=True)
     merged = copy.deepcopy(existing)
     for field, value in incoming.items():
@@ -341,7 +343,7 @@ def _sync_v2_promotions(talk, incoming_structured):
 def validate_effective_v2_state(
     talk, incoming_structured, *, pattern_snapshot_replaced
 ):
-    """Validate a post-v2–v5 snapshot candidate before publication."""
+    """Validate a post-v2–v7 snapshot candidate before publication."""
     validate_talk_record_schemas([talk])
     try:
         validate_persisted_v2_analysis_state(talk)
@@ -704,7 +706,7 @@ def merge_talk(
     if return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS:
         # Validate persisted block types before a clear could conceal malformed
         # structured state, then apply every operation to the isolated candidate.
-        # Verbatim and pattern blocks are supplied snapshots in every valid v2–v5
+        # Verbatim and pattern blocks are supplied snapshots in every valid v2–v7
         # analysis, so they may repair legacy array containers atomically.
         require_stored_mapping(candidate, "structured_data")
 

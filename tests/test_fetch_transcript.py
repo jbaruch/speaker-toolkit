@@ -344,6 +344,38 @@ def test_a_refused_attempt_that_left_bytes_behind_is_not_reused(
     assert transcribed == [b"real-audio"], "the failure's bytes must never be read"
 
 
+def test_whisper_download_uses_the_resolved_executable(
+    fetch_transcript, monkeypatch, tmp_path
+):
+    commands: list[list[str]] = []
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        target = pathlib.Path(
+            command[command.index("-o") + 1].replace("%(ext)s", "mp3")
+        )
+        target.write_bytes(b"audio")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(fetch_transcript.subprocess, "run", run)
+    monkeypatch.setattr(
+        fetch_transcript,
+        "transcribe_audio",
+        lambda *_args: ("spoken words here", "en", None),
+    )
+
+    executable = tmp_path / "runtime" / "yt-dlp"
+    text, _language, _segments = fetch_transcript.fetch_whisper(
+        "Kl6tLcQ5hGI",
+        str(tmp_path),
+        "tiny",
+        ytdlp=executable,
+    )
+
+    assert text == "spoken words here"
+    assert commands[0][0] == str(executable)
+
+
 def test_a_zero_byte_download_is_not_a_success(fetch_transcript, monkeypatch, tmp_path):
     """An empty artifact is a failed extraction wearing a filename."""
     attempts: list[str | None] = []
@@ -799,14 +831,17 @@ def test_youtube_duration_probe_is_bound_to_the_exact_video_id(
 
     monkeypatch.setattr(fetch_transcript.subprocess, "run", completed)
 
-    duration, reason = fetch_transcript.probe_youtube_duration("eg6gqvUFh6Q")
+    ytdlp = Path("/runtime/bin/yt-dlp")
+    duration, reason = fetch_transcript.probe_youtube_duration(
+        "eg6gqvUFh6Q", ytdlp=ytdlp
+    )
 
     assert duration == 179.625
     assert "trusted yt-dlp duration" in reason
     assert seen == [
         (
             [
-                "yt-dlp",
+                str(ytdlp),
                 "--dump-single-json",
                 "--skip-download",
                 "--no-playlist",
@@ -1903,6 +1938,32 @@ def test_manual_existing_transcript_is_never_relabelled_as_captions(
         "eg6gqvUFh6Q",
         ["en"],
         existing_source="manual",
+    )
+
+    assert timed_path is None
+    assert "not 'youtube_auto'" in reason
+    assert not out.with_suffix(".segments.json").exists()
+
+
+def test_provider_auto_existing_transcript_never_fetches_youtube_captions(
+    fetch_transcript,
+    monkeypatch,
+    tmp_path,
+):
+    out = tmp_path / "provider.txt"
+    existing = _talk(450)
+    out.write_text(existing, encoding="utf-8")
+
+    def must_not_fetch(_video_id, _languages):
+        raise AssertionError("provider captions must not enter the YouTube lane")
+
+    monkeypatch.setattr(fetch_transcript, "fetch_captions", must_not_fetch)
+    timed_path, reason = fetch_transcript.enrich_existing_caption_timing(
+        out,
+        existing,
+        "eg6gqvUFh6Q",
+        ["en"],
+        existing_source="provider_auto",
     )
 
     assert timed_path is None

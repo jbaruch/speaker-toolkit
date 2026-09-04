@@ -657,6 +657,35 @@ def test_vtt_provenance_is_portable_and_rejects_unsafe_paths(
         )
 
 
+def test_provider_auto_owns_a_matching_vtt_timing_receipt(transcript_timing, tmp_path):
+    transcript = tmp_path / "talk.txt"
+    source = tmp_path / "talk.en-x-autogen.vtt"
+    source.write_bytes(b"WEBVTT synthetic")
+    text = "Provider caption text."
+    provenance = transcript_timing.vtt_timing_provenance(
+        transcript,
+        source,
+        transcript_timing.hashlib.sha256(source.read_bytes()).hexdigest(),
+        4.0,
+    )
+    transcript_timing.write_transcript_bundle(
+        transcript,
+        text,
+        [{"text": text, "start": 0.0, "end": 4.0}],
+        source="vtt",
+        timing_provenance=provenance,
+    )
+
+    segments, reason = transcript_timing.load_verified_segments(
+        transcript,
+        text,
+        owner_source="provider_auto",
+    )
+
+    assert len(segments) == 1
+    assert "verified owner-bound timed segments" in reason
+
+
 def test_bundle_failure_rolls_back_exact_transcript_and_receipts(
     transcript_timing, tmp_path, monkeypatch
 ):

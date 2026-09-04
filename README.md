@@ -370,8 +370,9 @@ notes which named patterns and antipatterns are detected per talk.
   native-deck evidence. Preserved source-video evidence uses the separate
   `source-video` runtime lane with exactly `psutil==7.2.2` plus `ffprobe`
 - Lane-specific runtime: importable `gdown` for Google Drive acquisition,
-  `youtube-transcript-api` for captions, `yt-dlp` for provider probing/audio
-  download, `pdftoppm` for rendered-PDF inspection, Pillow + `imagehash` +
+  `youtube-transcript-api` for captions, exactly `yt-dlp==2026.8.19` for
+  provider probing/audio download, `pdftoppm` for rendered-PDF inspection,
+  Pillow + `imagehash` +
   `ffmpeg`/`ffprobe` for video extraction, and optional `mlx-whisper` for local
   Whisper fallback
 - Markdown-authored decks (Slidev, presenterm, Marp, reveal-md) render through
@@ -386,9 +387,12 @@ dependency absence is isolated: missing pypdf cannot erase transcript/PPTX
 capability, and missing python-pptx cannot erase transcript/PDF capability.
 Dependency initializer exceptions, native crashes, timeouts, and invalid child
 results remain lane-local and carry machine-readable failure reasons.
-The checker emits report schema v2; each lane's `required_module_versions`
-declares exact runtime pins, and an incompatible installed version is unavailable
-rather than silently accepted.
+The checker emits report schema v3; each lane's `required_module_versions`
+declares exact Python pins, while `required_command_versions` declares the
+`youtube-download` lane's yt-dlp pin. An incompatible installed version is
+unavailable rather than silently accepted. The yt-dlp probe and every ingress
+caller resolve the configured interpreter's console script before falling back
+to PATH.
 
 ## Generation & Publishing Skills Details
 

@@ -1,4 +1,4 @@
-"""The v5/v6 scoring boundary, asserted through the public validator (#153).
+"""The v5/weighted scoring boundary, asserted through the public validator.
 
 These drive `validate_return`, the entry point that owns schema resolution — a
 test calling the private score helper proves the arithmetic but not that any
@@ -118,6 +118,29 @@ class TestV6IsAcceptedEndToEnd:
             return_validation.validate_return(
                 _v6(return_validation, basis=basis), catalog
             )
+
+
+class TestV7AddsProviderAutoProvenance:
+    def test_provider_auto_validates_at_the_new_generation(
+        self, return_validation, catalog
+    ) -> None:
+        ret = _v6(return_validation)
+        ret["return_schema_version"] = return_validation.RETURN_SCHEMA_VERSION
+        ret["transcript_source"] = "provider_auto"
+
+        return_validation.validate_return(ret, catalog)
+
+    def test_provider_auto_is_not_backported_to_v6(
+        self, return_validation, catalog
+    ) -> None:
+        ret = _v6(return_validation)
+        ret["transcript_source"] = "provider_auto"
+
+        with pytest.raises(
+            return_validation.ReturnValidationError,
+            match="snapshot return transcript_source",
+        ):
+            return_validation.validate_return(ret, catalog)
 
 
 class TestTheBasisIsRequiredByTheScoreNotItsShape:

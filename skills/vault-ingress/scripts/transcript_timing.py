@@ -74,7 +74,7 @@ TIMING_PROVENANCE_KINDS = frozenset(
     {"youtube_captions", "youtube_whisper", "local_media_whisper", "vtt_artifact"}
 )
 TIMING_OWNER_SOURCES = frozenset(
-    {"youtube_auto", "whisper", "manual", "unknown", "vtt"}
+    {"youtube_auto", "provider_auto", "whisper", "manual", "unknown", "vtt"}
 )
 # A caption cue carries display time, not speech time, so the final cue
 # routinely outlives the recording by a second or two. Measured across a

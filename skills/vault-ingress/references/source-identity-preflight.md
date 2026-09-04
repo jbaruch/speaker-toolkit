@@ -329,8 +329,8 @@ return, but budget, availability, change, placeholder, probe, or extraction
 reasons leave coverage incomplete. Legacy unversioned batch output has unknown
 completeness and must be rerun before an absence conclusion.
 
-- Transcript source enum: `youtube_auto`, `whisper`, `manual`, `none`. Absence
-  remains valid “unknown provenance.” Unless the value is `none`, the expected
+- Transcript source enum: `youtube_auto`, `provider_auto`, `whisper`, `manual`,
+  `none`. Absence remains valid “unknown provenance.” Unless the value is `none`, the expected
   file is `transcripts/{youtube_id}.txt`; an explicit relative
   `transcript_path` is resolved from the vault root.
 - Slide source enum: `pptx`, `pdf`, `both`, `video_extracted`, `markdown`, `none`.

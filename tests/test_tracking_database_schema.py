@@ -1726,16 +1726,15 @@ def test_a_database_with_nothing_stale_still_reports_no_change(tracking_database
     assert not any(migration.record_counts.values())
 
 
-def test_v6_restamps_to_the_title_equivalence_record_shape(tracking_database) -> None:
-    """#333: v7 adds the optional equivalence ledger, a pure shape addition.
+def test_restampable_talk_generations_advance_to_current(tracking_database) -> None:
+    """The additive v7 and v8 generations preserve existing analysis.
 
-    A v6 record already holds the analysis v7 implies, so it carries forward
-    untouched. Generations below v5 still stay put — they reach the current
-    shape by being reanalysed, never by being stamped.
+    Records at v5-v7 already hold the analysis the current record implies, so
+    they carry forward untouched. Earlier generations still stay put.
     """
     database = _legacy_database()
     database["talks"] = []
-    for version in (1, 4, 5, 6):
+    for version in (1, 4, 5, 6, 7):
         talk = _legacy_talk(filename=f"v{version}.md")
         talk["schema_version"] = version
         database["talks"].append(talk)
@@ -1748,7 +1747,24 @@ def test_v6_restamps_to_the_title_equivalence_record_shape(tracking_database) ->
         4,
         current,
         current,
+        current,
     ]
+
+
+def test_migration_rejects_provider_auto_on_a_pre_v8_record(
+    tracking_database,
+) -> None:
+    database = _legacy_database()
+    talk = _legacy_talk(filename="invalid-v7.md")
+    talk["schema_version"] = 7
+    talk["transcript_source"] = "provider_auto"
+    database["talks"] = [talk]
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError,
+        match="provider_auto transcript provenance requires talk schema v8",
+    ):
+        tracking_database.migrate_tracking_database(database)
 
 
 def test_a_restamped_record_keeps_its_equivalence_ledger_absent(

@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -498,11 +499,12 @@ def test_yt_dlp_fetch_is_dependency_injected_and_download_free(audit_source_iden
     result = audit_source_identities.fetch_youtube_metadata(
         VIDEO_ID,
         runner=runner,
+        ytdlp=Path("/runtime/bin/yt-dlp"),
     )
 
     assert result["id"] == VIDEO_ID
     command, kwargs = calls[0]
-    assert command[0] == "yt-dlp"
+    assert command[0] == "/runtime/bin/yt-dlp"
     assert "--skip-download" in command
     assert "--no-playlist" in command
     assert command[-1].endswith(VIDEO_ID)

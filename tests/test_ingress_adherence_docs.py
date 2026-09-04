@@ -1,4 +1,4 @@
-"""Documentation guards for live claim-v5 and archival-v4 adherence."""
+"""Documentation guards for current and archival claim generations."""
 
 import json
 from pathlib import Path
@@ -23,23 +23,30 @@ def _docs() -> dict[str, str]:
     return {name: path.read_text(encoding="utf-8") for name, path in DOC_PATHS.items()}
 
 
+def _schema_current_return_example() -> dict:
+    text = DOC_PATHS["schemas"].read_text(encoding="utf-8")
+    section = text.split("## Per-Talk Subagent Return Schema", 1)[1]
+    payload = section.split("```json", 1)[1].split("```", 1)[0]
+    return json.loads(payload)
+
+
 def test_claim_issuance_is_live_and_version_bound() -> None:
     docs = _docs()
     for name, text in docs.items():
         assert "#157" not in text, f"{name} still carries the temporary issue gate"
         assert "issuance pause" not in text.lower()
 
-    assert '"schema_version": 6' in docs["queue"]
-    assert '"required_return_schema_version": 6' in docs["queue"]
+    assert '"schema_version": 7' in docs["queue"]
+    assert '"required_return_schema_version": 7' in docs["queue"]
     assert '"adherence_baseline": {"schema_version": 2' in docs["queue"]
-    assert "Fresh claims always use schema v6 and require return v6" in docs["queue"]
+    assert "Fresh claims always use schema v7 and require return v7" in docs["queue"]
     assert (
         "Saved claim schemas v1/v2 authorize only return schemas v1/v2"
         in docs["schemas"]
     )
     assert (
         "schema v3 authorizes only v3; schema v4 authorizes only archival v4; "
-        "schema v5\nauthorizes only v5" in docs["schemas"]
+        "schema v5\nauthorizes only v5; schema v6 authorizes only v6" in docs["schemas"]
     )
     assert "Recover a live legacy lease" in docs["worker"]
 
@@ -111,10 +118,17 @@ def test_threshold_and_structured_comparison_contract_is_documented() -> None:
     assert "2–4 punctuation-terminated sentences" in docs["processing"]
     assert "Validators deliberately do not parse prose" in docs["processing"]
     assert "renderer generates this anchor mechanically" in docs["processing"]
-    # schemas-db documents the v5 shape deliberately: the compatibility table
-    # above that example states a v5 return "still validates and still
-    # persists, at the flat scoring generation".
-    assert '"return_schema_version": 5' in docs["schemas"]
+    assert '"return_schema_version": 7' in docs["schemas"]
+
+
+def test_schema_worker_example_delegates_weighted_score_completion() -> None:
+    schemas = _docs()["schemas"]
+    example = _schema_current_return_example()
+
+    assert "pattern_score" not in example["pattern_observations"]
+    assert "pattern_score_basis" not in example["pattern_observations"]
+    assert "scripts/build-score-basis.py" in schemas
+    assert "inserts `pattern_score` and `pattern_score_basis`" in schemas
 
 
 def test_native_picture_render_threshold_is_script_owned() -> None:
@@ -148,7 +162,7 @@ def test_claim_replay_recovery_and_closure_matrix_are_documented() -> None:
         in docs["schemas"]
     )
     assert "Recovery never rewrites a claim snapshot" in docs["schemas"]
-    assert "closes v1 as v2 and closes v2–v5 at\ntheir own versions" in docs["schemas"]
+    assert "closes v1 as v2 and closes v2–v7 at\ntheir own versions" in docs["schemas"]
     assert "receiptless completed v1 claim" in docs["persistence"]
     assert "takes a fresh pre-mutation snapshot" in docs["selection"]
 
@@ -243,7 +257,7 @@ def test_source_located_worker_and_engine_evidence_ownership_is_explicit() -> No
     )
     worker_example = (
         docs["worker"]
-        .split("Minimal processed structure for a fresh v6 claim", 1)[1]
+        .split("Minimal processed structure for a fresh v7 claim", 1)[1]
         .split("```json", 1)[1]
         .split("```", 1)[0]
     )
@@ -286,14 +300,18 @@ def test_claim_return_talk_and_scoring_axes_preserve_archival_v4() -> None:
         "| v4 | v4 only | archival source-located v4 | never current v5 |"
         in docs["schemas"]
     )
-    assert "| v5 | v5 only | v5 | never current v6 |" in docs["schemas"]
+    assert "| v5 | v5 only | migrated v8 | never current v6 |" in docs["schemas"]
     assert (
-        "| v6 | v6 only | v6 | v6 when canonical evidence/outcomes are fresh |"
+        "| v6 | v6 only | migrated v8 | v6 when canonical evidence/outcomes are fresh |"
         in docs["schemas"]
     )
-    assert "Fresh queue work uses claim schema v6" in docs["selection"]
     assert (
-        "only return generation eligible for pattern-scoring schema v6"
+        "| v7 | v7 only | v8 | v6 when canonical evidence/outcomes are fresh |"
+        in docs["schemas"]
+    )
+    assert "Fresh queue work uses claim schema v7" in docs["selection"]
+    assert (
+        "fresh return generation eligible for pattern-scoring schema v6"
         in docs["worker"]
     )
 
@@ -307,7 +325,7 @@ def test_transcript_freshness_revalidates_quality_provenance() -> None:
     assert "transcript_quality_context_drift" in docs["schemas"]
 
 
-def _worker_v6_example() -> dict:
+def _worker_current_example() -> dict:
     """Parse the fenced return example the per-talk workers copy."""
     doc = DOC_PATHS["worker"].read_text(encoding="utf-8")
     marker = '{\n  "filename": "2026-01-01-example.md"'
@@ -318,22 +336,19 @@ def _worker_v6_example() -> dict:
 def test_worker_example_declares_the_version_its_heading_claims(
     return_validation,
 ) -> None:
-    """The block every subagent copies is headed "fresh v6 claim".
+    """The block every subagent copies is headed with the current claim.
 
     It previously declared version 5, which a v6 claim rejects outright, and the
     rejection read as the worker analysing badly rather than the instruction
     being wrong.
     """
-    example = _worker_v6_example()
-    assert (
-        example["return_schema_version"]
-        == return_validation.WEIGHTED_SCORE_RETURN_SCHEMA_VERSION
-    )
+    example = _worker_current_example()
+    assert example["return_schema_version"] == return_validation.RETURN_SCHEMA_VERSION
 
 
 def test_worker_example_uses_only_declared_verbatim_lanes(return_validation) -> None:
     """Invented lane names are rejected as unknown snapshot lanes."""
-    example = _worker_v6_example()
+    example = _worker_current_example()
     assert (
         set(example.get("verbatim_examples", {}))
         <= return_validation.VERBATIM_EXAMPLE_FIELDS
@@ -343,16 +358,19 @@ def test_worker_example_uses_only_declared_verbatim_lanes(return_validation) -> 
 def test_the_documented_flow_turns_the_example_into_a_valid_return() -> None:
     """Example plus basis builder must equal something the validator accepts.
 
-    The block deliberately omits `pattern_score_basis`; the reference tells the
-    worker to generate it. This exercises that sequence end to end, so the
-    documented flow is what is under test rather than a copy of the script's
-    output pasted into the page.
+    The block deliberately omits `pattern_score` and `pattern_score_basis`; the
+    reference tells the worker to generate both. This exercises that sequence
+    end to end, so the documented flow is what is under test rather than a copy
+    of the script's output pasted into the page.
     """
     import subprocess
     import sys
     import tempfile
 
-    example = _worker_v6_example()
+    example = _worker_current_example()
+    assert "pattern_score" not in example["pattern_observations"], (
+        "the example must not restate script-owned arithmetic"
+    )
     assert "pattern_score_basis" not in example["pattern_observations"], (
         "the example must not restate script-owned output"
     )

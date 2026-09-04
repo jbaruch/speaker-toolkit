@@ -61,7 +61,7 @@ whether to run the gate.
   resolves every `evidence_citations` source location and refuses the whole
   batch when proof is absent or unverifiable. Comparison detections must locate
   proof from every underlying member of `evidence_sources_used`.
-  Version-2 through version-5 returns snapshot-replace every supplied declared
+  Version-2 through version-7 returns snapshot-replace every supplied declared
   field, including empty values where that field contract permits emptiness,
   and complete structured maps; omission preserves a field. Saved returns with
   missing/version-1 metadata retain their legacy
@@ -72,8 +72,9 @@ whether to run the gate.
   authored-slide evidence. The script
   persists that path when a trusted artifact is promoted, replaces a complete
   video-extraction manifest atomically, and clears matching promoted scalars.
-  Returns satisfying the current evidence contract receive the exact catalog
-  fingerprint and scoring-schema version 5. Replayable v1–v4 returns that cannot
+  Weighted v6/v7 returns satisfying the current evidence contract receive the
+  exact catalog fingerprint and scoring-schema version 6. Replayable v1–v5
+  returns that cannot
   prove it are retained with
   `pattern_scoring_generation_status: legacy_unbaselineable`, exact machine reasons, and no current fingerprint or
   scoring version. The DB write remains atomic.
@@ -89,8 +90,8 @@ whether to run the gate.
   timestamp is treated as an explicit identity assertion and must normalize to
   the same batch stamp or the entire write fails.
   A successful merge closes the matching queue lease as `completed`; it never
-  deletes claim history. Claims v2 through v5 close at their own versions, and
-  an active v1 lease upgrades to v2. Every completed v2–v5 claim stores a canonical
+  deletes claim history. Claims v2 through v7 close at their own versions, and
+  an active v1 lease upgrades to v2. Every completed v2–v7 claim stores a canonical
   SHA-256 receipt of the exact return payload; a receiptless completed v1 claim
   cannot authorize analysis replacement. Unknown future claim versions fail
   closed. An

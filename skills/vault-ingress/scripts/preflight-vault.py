@@ -93,6 +93,7 @@ from tracking_database import (
     CONFIG_RECORD_SCHEMA_VERSION,
     LEGACY_CONFIG_RECORD_SCHEMA_VERSION,
     PPTX_EVIDENCE_CURRENT,
+    TALK_RECORD_SCHEMA_VERSION,
     TrackingDatabaseConfigExclusionsError,
     TrackingDatabaseError,
     assess_tracking_database,
@@ -128,7 +129,12 @@ _DATABASE_READ_FALLBACK = DATABASE_READ_FALLBACK
 
 
 SOURCE_IDENTITY_SCHEMA_VERSION = 1
-TRANSCRIPT_SOURCES = frozenset({"youtube_auto", "whisper", "manual", "none"})
+PRE_PROVIDER_AUTO_TRANSCRIPT_SOURCES = frozenset(
+    {"youtube_auto", "whisper", "manual", "none"}
+)
+TRANSCRIPT_SOURCES = frozenset(
+    {"youtube_auto", "provider_auto", "whisper", "manual", "none"}
+)
 # A markdown-authored deck (Slidev, presenterm, Marp, reveal-md, remark).
 # Admitted as PROVENANCE, deliberately absent from USABLE_SLIDE_SOURCES: the
 # deck exists and the record says so, but nothing here renders markdown, so it
@@ -777,9 +783,14 @@ class VaultPreflight:
     def _validate_sources(self, index: int) -> None:
         talk = self.talks[index]
         transcript_source = talk.get("transcript_source")
+        allowed_transcript_sources = (
+            TRANSCRIPT_SOURCES
+            if talk.get("schema_version") == TALK_RECORD_SCHEMA_VERSION
+            else PRE_PROVIDER_AUTO_TRANSCRIPT_SOURCES
+        )
         if transcript_source is not None and (
             not isinstance(transcript_source, str)
-            or transcript_source not in TRANSCRIPT_SOURCES
+            or transcript_source not in allowed_transcript_sources
         ):
             self.talk_add(
                 index,
@@ -787,7 +798,7 @@ class VaultPreflight:
                 "transcript_source_unsupported",
                 "transcript_source is outside the supported enum",
                 field="transcript_source",
-                expected=sorted(TRANSCRIPT_SOURCES),
+                expected=sorted(allowed_transcript_sources),
                 actual=transcript_source,
             )
 

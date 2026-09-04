@@ -73,8 +73,8 @@ description: Authority of record for the Whisper transcription layer's Platform-
   `ffprobe` duration for the exact local-media digest. Worker-returned or talk
   analysis metadata can never lower a threshold.
 - Missing timing does not invalidate a current quality receipt. Missing or
-  stale quality authority does make a transcript ineligible for current v5
-  scoring until the fetcher validates it and writes a receipt.
+  stale quality authority does make a transcript ineligible for the current
+  pattern-scoring generation until the fetcher validates it and writes a receipt.
 - Both receipt readers hash raw transcript bytes. Any byte replacement,
   including CRLF→LF with identical decoded words, invalidates both receipts.
 - The talk's recorded `transcript_source` is canonical. A sidecar may confirm
@@ -110,7 +110,12 @@ Run against a talk whose caption track is disabled, on Apple Silicon with the
 4. `test "$(jq -r .transcript_sha256 /tmp/{youtube_id}.segments.json)" = "$(shasum -a 256 /tmp/{youtube_id}.txt | awk '{print $1}')"` exits 0.
 5. `jq -e '.schema_version == 1 and (.transcript_sha256 | length == 64) and .policy.schema_version == 1 and (.policy.min_words >= 1) and ((.policy.duration_seconds == null and .provenance == {"kind":"fixed_default"}) or (.policy.duration_seconds == .provenance.duration_seconds))' /tmp/{youtube_id}.quality.json` exits 0, and its `transcript_sha256` equals `shasum -a 256 /tmp/{youtube_id}.txt`.
 6. Confirm `/tmp/{youtube_id}.txt` holds prose, not `[Music]` markers or a traceback.
-7. Re-run with `yt-dlp` removed from `PATH` and a fresh output path. Expect exit 1, a stderr line naming the install command, one JSON object with `"ok": false`, and no transcript or receipt at that output path.
+7. Re-run with `YT_DLP` set to a nonexistent absolute path and a fresh output
+   path. Expect exit 1, a stderr line explaining how to correct or unset the
+   override, one JSON object with `"ok": false`, and no transcript or receipt
+   at that output path. Removing only `yt-dlp` from `PATH` is insufficient: the
+   fetcher deliberately resolves the configured interpreter's console script
+   before the compatibility PATH fallback.
 8. `"{python_path}" skills/vault-ingress/scripts/fetch-transcript.py local-talk-label --audio <local-file> --out /tmp/a.txt --existing-source unknown` on a non-YouTube recording: exit 0, `"method": "whisper"`, `"timed_path": "/tmp/a.segments.json"`, `"quality_path": "/tmp/a.quality.json"`, prose at the output path, timing schema v2 with `local_media_whisper` provenance, and timing plus quality provenance whose `media_sha256` equals the exact input-media digest.
 
 A pass requires all eight checks.

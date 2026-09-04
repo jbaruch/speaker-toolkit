@@ -27,7 +27,7 @@ from adherence_baseline import (
 )
 
 
-CURRENT_QUEUE_CLAIM_SCHEMA_VERSION = 6
+CURRENT_QUEUE_CLAIM_SCHEMA_VERSION = 7
 LEGACY_QUEUE_CLAIM_SCHEMA_VERSION = 1
 RECEIPT_QUEUE_CLAIM_SCHEMA_VERSION = 2
 ADHERENCE_QUEUE_CLAIM_SCHEMA_VERSION = 3
@@ -538,7 +538,7 @@ def validate_queue_claim_database(
 def _validate_adherence_claim_batches(
     talks: Sequence[Mapping[str, object]],
 ) -> None:
-    """Require every stored v3/v4/v5 batch snapshot to be exact and shared."""
+    """Require every stored v3-v7 batch snapshot to be exact and shared."""
     current_batches: dict[
         tuple[object, object], list[tuple[str, Mapping[str, object]]]
     ] = {}

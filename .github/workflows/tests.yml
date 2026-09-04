@@ -45,7 +45,7 @@ jobs:
           # Tessl CLI pin. No Dependabot ecosystem tracks the CLI version an
           # action input names; renew quarterly, or when the publish workflow's
           # own lint disagrees with this gate. Keep both jobs on one version.
-          version: "0.95.0"
+          version: "0.105.0"
       - name: Verify no conflict marker was committed
         # Fails the build on any of the four merge markers in a tracked text
         # file. A diff3 base marker (|||||||) survived a resolution and shipped
@@ -81,7 +81,7 @@ jobs:
           # Tessl CLI pin. No Dependabot ecosystem tracks the CLI version an
           # action input names; renew quarterly, or when the publish workflow's
           # own lint disagrees with this gate. Keep both jobs on one version.
-          version: "0.95.0"
+          version: "0.105.0"
       - name: Enforce tessl-version-floating carve-out
         # See rules/tessl-version-floating.md. Fails the build if any
         # dependency in a covered manifest uses a specifier other than

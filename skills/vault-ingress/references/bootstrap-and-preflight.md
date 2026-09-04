@@ -143,8 +143,10 @@ boundary maps that trusted root to storage while still rejecting every
 descendant symlink/reparse redirect. Trusted-root bindings retain the directory
 object's stable identity and policy attributes, not mutable child-content size or
 timestamps; PDF and PPTX leaf generations remain exact. The checker emits report
-schema v2 and records exact pins under
-each lane's `required_module_versions`; a mismatched version is unavailable. A
+schema v3 and records exact Python pins under each lane's
+`required_module_versions`. The `youtube-download` lane also resolves `yt-dlp`
+from the configured interpreter before PATH, records its exact pin under
+`required_command_versions`, and makes a mismatched version unavailable. A
 missing optional lane is reported as degraded and must not erase a healthy
 transcript or alternate slide lane.
 Require a lane before using it, for example `--require-lanes core,pdf`. Remote

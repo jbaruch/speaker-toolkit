@@ -43,6 +43,7 @@ from tracking_database_io import (
     decode_json_object,
     snapshot_tracking_database,
 )
+from ytdlp_runtime import YtDlpResolutionError, resolve_ytdlp
 
 
 REPORT_SCHEMA_VERSION = 2
@@ -195,12 +196,18 @@ def normalize_captured_at(value: str | datetime | None = None) -> str:
 def fetch_youtube_metadata(
     video_id: str,
     runner: Callable[..., Any] = subprocess.run,
+    *,
+    ytdlp: str | Path | None = None,
 ) -> dict[str, Any]:
     """Fetch one video's metadata through the yt-dlp CLI without downloading it."""
     if not YOUTUBE_ID_RE.fullmatch(video_id):
         raise MetadataFetchError(f"invalid YouTube ID: {video_id!r}")
+    try:
+        executable = Path(ytdlp) if ytdlp is not None else resolve_ytdlp()
+    except YtDlpResolutionError as exc:
+        raise MetadataFetchError(str(exc)) from exc
     command = [
-        "yt-dlp",
+        str(executable),
         "--ignore-config",
         "--no-playlist",
         "--skip-download",

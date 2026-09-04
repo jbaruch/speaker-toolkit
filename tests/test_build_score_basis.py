@@ -97,8 +97,21 @@ def test_a_non_array_lane_is_rejected(build_score_basis):
         build_score_basis.basis_for(broken, "talk.md")
 
 
+def test_a_missing_required_lane_is_rejected(build_score_basis, tmp_path, capsys):
+    for missing in ("patterns_detected", "antipatterns_detected", "not_evaluable"):
+        broken = _return()
+        del broken["pattern_observations"][missing]
+        path = tmp_path / f"missing-{missing}.json"
+        path.write_text(json.dumps(broken), encoding="utf-8")
+
+        assert build_score_basis.main([str(path)]) == 2
+        captured = capsys.readouterr()
+        assert f"pattern_observations.{missing} is required" in captured.err
+        assert captured.out == ""
+
+
 def test_cli_emits_the_completed_return(build_score_basis, tmp_path, capsys):
-    """Output is the return itself, so no caller decides where the field goes."""
+    """Output is the return itself, so no caller computes or places either field."""
     path = tmp_path / "r.json"
     path.write_text(
         json.dumps(_return(patterns=[_detection("moderate")])), encoding="utf-8"
@@ -106,6 +119,7 @@ def test_cli_emits_the_completed_return(build_score_basis, tmp_path, capsys):
     assert build_score_basis.main([str(path)]) == 0
     printed = json.loads(capsys.readouterr().out)
     assert printed["filename"] == "talk.md"
+    assert printed["pattern_observations"]["pattern_score"] == 0.5
     assert (
         printed["pattern_observations"]["pattern_score_basis"]["patterns"]["moderate"]
         == 1
@@ -123,10 +137,25 @@ def test_cli_emits_an_array_for_several_returns(build_score_basis, tmp_path, cap
 
 
 def test_the_input_return_is_not_mutated(build_score_basis):
-    """A caller reusing its own object must not find a field it did not add."""
+    """A caller reusing its own object must not find fields it did not add."""
     original = _return(patterns=[_detection("strong")])
     build_score_basis.completed(original, "talk.md")
+    assert "pattern_score" not in original["pattern_observations"]
     assert "pattern_score_basis" not in original["pattern_observations"]
+
+
+def test_completed_overwrites_a_worker_supplied_score_from_owner_math(
+    build_score_basis,
+):
+    ret = _return(
+        patterns=[_detection("strong"), _detection("moderate")],
+        antipatterns=[_detection("weak")],
+    )
+    ret["pattern_observations"]["pattern_score"] = 999
+
+    completed = build_score_basis.completed(ret, "talk.md")
+
+    assert completed["pattern_observations"]["pattern_score"] == 1.25
 
 
 def test_a_malformed_detection_exits_two_without_a_traceback(
