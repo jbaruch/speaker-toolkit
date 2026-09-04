@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.112 — 2026-09-04
+
 ### fix(vault-ingress) — every yt-dlp caller uses the pinned runtime (#371)
 
 Provider metadata, transcript duration probes, Whisper audio fallback, video
