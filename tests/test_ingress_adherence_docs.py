@@ -341,16 +341,19 @@ def test_worker_example_uses_only_declared_verbatim_lanes(return_validation) -> 
 def test_the_documented_flow_turns_the_example_into_a_valid_return() -> None:
     """Example plus basis builder must equal something the validator accepts.
 
-    The block deliberately omits `pattern_score_basis`; the reference tells the
-    worker to generate it. This exercises that sequence end to end, so the
-    documented flow is what is under test rather than a copy of the script's
-    output pasted into the page.
+    The block deliberately omits `pattern_score` and `pattern_score_basis`; the
+    reference tells the worker to generate both. This exercises that sequence
+    end to end, so the documented flow is what is under test rather than a copy
+    of the script's output pasted into the page.
     """
     import subprocess
     import sys
     import tempfile
 
     example = _worker_current_example()
+    assert "pattern_score" not in example["pattern_observations"], (
+        "the example must not restate script-owned arithmetic"
+    )
     assert "pattern_score_basis" not in example["pattern_observations"], (
         "the example must not restate script-owned output"
     )

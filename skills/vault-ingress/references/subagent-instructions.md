@@ -426,9 +426,10 @@ actual consecutive slides. Native-deck structure can support motion/build
 claims only when the entry's gate permits `native_deck`; observed playback and
 delivery claims require direct video review.
 Do not cite a video interval unless you inspected that interval. Compute the
-per-talk score with the owner-approved confidence weights: strong ±1.0,
-moderate ±0.5, and weak ±0.25. Store it in `pattern_observations`; the
-`build-score-basis.py` step below derives the matching evidence basis.
+per-talk score only through the `build-score-basis.py` step below. Record each
+detection's confidence, but do not calculate or write `pattern_score` or
+`pattern_score_basis` yourself; the script derives both through the scoring
+owner.
 See [processing-rules.md](processing-rules.md) for full tagging rules.
 
 Use `evaluable_from` for moderate/weak detections,
@@ -608,12 +609,7 @@ Minimal processed structure for a fresh v7 claim:
     ],
     "antipatterns_detected": [],
     "applicability_assessments": [],
-    "not_evaluable": [],
-    "pattern_score": {
-      "patterns_used": 1,
-      "antipatterns_detected": 0,
-      "score": 1
-    }
+    "not_evaluable": []
   },
   "catalog_feedback": {
     "unmatched_observations": [],
@@ -625,8 +621,9 @@ Minimal processed structure for a fresh v7 claim:
 }
 ```
 
-This block is complete except for `pattern_observations.pattern_score_basis`,
-which a script fills in. Do not write or merge it by hand:
+This block is complete except for `pattern_observations.pattern_score` and
+`pattern_observations.pattern_score_basis`, which a script fills in. Do not
+write, calculate, or merge either field by hand:
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/build-score-basis.py" \
@@ -634,11 +631,12 @@ which a script fills in. Do not write or merge it by hand:
 ```
 
 Input is one return object or an array of them; output is those same returns
-with the field set, ready for `validate-returns.py`. Exit `0` means the batch
+with both fields set, ready for `validate-returns.py`. Exit `0` means the batch
 is complete. Exit `2` means unreadable, malformed, or duplicate-filename input:
 a diagnostic goes to stderr, stdout stays empty, and you must stop rather than
-validate a partial batch. The weight table and the object's shape belong to
-`skills/vault-ingress/scripts/return_validation.py`; nothing here restates them.
+validate a partial batch. The arithmetic, weight table, and basis shape belong
+to `skills/vault-ingress/scripts/return_validation.py`; nothing here restates
+them.
 
 The example claims one inspected source. Add a source only with the audit
 behind it: `native_deck` requires the current

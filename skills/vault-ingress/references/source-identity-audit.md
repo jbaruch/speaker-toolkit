@@ -13,11 +13,10 @@ plan:
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/audit-source-identities.py" {vault_root}
 ```
 
-The audit requires the pinned `yt-dlp` executable and network access. It uses
-the shared ingress resolver: `YT_DLP` when explicitly set, the configured
-Python interpreter's console script, the active/toolkit virtual environment,
-then PATH only as a compatibility fallback. An **active talk** for this helper
-is a record with a nonempty `video_url`. Only supported YouTube
+The audit requires the pinned `yt-dlp` executable and network access. Executable
+selection belongs to
+`skills/vault-ingress/scripts/ytdlp_runtime.py` — `resolve_ytdlp`. An **active
+talk** for this helper is a record with a nonempty `video_url`. Only supported YouTube
 URL forms are fetched. The helper parses their 11-character IDs, groups every
 record naming the same ID, and makes exactly one metadata request per group.
 Records with a stored `youtube_id` but no active URL are not resurrected or
