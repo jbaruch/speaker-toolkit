@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.113 — 2026-09-04
+
 ### fix(vault-ingress) — block claims on cloud-placeholder evidence (#354)
 
 Pending and legacy talks no longer enter a fresh batch while their declared
