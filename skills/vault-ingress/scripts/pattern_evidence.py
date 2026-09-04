@@ -31,6 +31,7 @@ from ingress_contract import (
     has_remote_video_acquisition,
 )
 from artifact_metadata import canonicalize_trusted_artifact_locator
+from cloud_artifacts import unavailable_cloud_artifacts
 from pdf_evidence import PdfArtifactProbe, PdfEvidenceError, probe_pdf_artifact
 from transcript_quality import validate_transcript
 from transcript_timing import (
@@ -1618,7 +1619,7 @@ def build_evidence_context(
     transcript_policy_bound = False
     canonical_transcript_source: str | None = None
     recorded_transcript_source = talk.get("transcript_source")
-    if recorded_transcript_source in {
+    if isinstance(recorded_transcript_source, str) and recorded_transcript_source in {
         "youtube_auto",
         "provider_auto",
         "whisper",
@@ -1825,6 +1826,9 @@ def build_evidence_context(
         except PatternEvidenceError as exc:
             source_reasons["static_slides"] = str(exc)
 
+    # Preserve declared cloud files even if a different manifest-selected PDF
+    # later supplies the same source lane. A fallback does not hydrate them.
+    declared_cloud_artifacts = unavailable_cloud_artifacts(source_unavailable)
     slide_source = talk.get("slide_source")
     if slide_source == "video_extracted":
         # A predeclared PDF is not interchangeable with the manifest-selected
@@ -2157,6 +2161,7 @@ def build_evidence_context(
         "source_reasons": source_reasons,
         "degraded_evidence_sources": source_degradations,
         "unavailable_evidence_sources": source_unavailable,
+        "cloud_artifacts": declared_cloud_artifacts,
         "metadata": metadata,
         "delivery_language": delivery_language,
     }
@@ -2313,6 +2318,7 @@ def assess_talk_artifact_capabilities(
         "source_reasons": source_reasons,
         "degraded_evidence_sources": degraded_sources,
         "unavailable_evidence_sources": unavailable_sources,
+        "cloud_artifacts": context.get("cloud_artifacts", []) if context else [],
     }
 
 

@@ -314,6 +314,7 @@ def test_platform_offline_facts_reject_before_probe_open(
     assert isinstance(availability, dict)
     assert availability["state"] == "unavailable"
     assert availability[expected_flag] is True
+    assert caught.value.details["size_bytes"] == generation.size
 
 
 def test_success_with_any_parser_diagnostic_is_a_cached_repair_fact(

@@ -105,6 +105,12 @@ from pattern_evidence import (
     required_pptx_evidence_blocking_reason,
 )
 from video_evidence import VideoEvidenceAssessment
+from cloud_artifacts import (
+    ARTIFACT_DATALESS,
+    cloud_artifacts,
+    cloud_artifact_blocking_reason,
+    summarize_cloud_artifacts,
+)
 from return_validation import (
     PATTERN_SCORING_SCHEMA_VERSION,
     QUEUE_CLAIM_SCHEMA_VERSION,
@@ -149,6 +155,10 @@ CAPABILITY_ORDER = ("video", "slides", "transcript")
 
 class QueueStateError(ValueError):
     """A deterministic input or state-contract failure."""
+
+    def __init__(self, message, *, reason_code=None):
+        super().__init__(message)
+        self.reason_code = reason_code
 
 
 class JsonArgumentParser(argparse.ArgumentParser):
@@ -323,7 +333,9 @@ def claim_blocking_artifact_reason(talk, *, capability_assessor):
             f"{talk.get('filename')}: artifact capability assessor returned "
             "a non-object result"
         )
-    return required_pptx_evidence_blocking_reason(talk, assessment)
+    return cloud_artifact_blocking_reason(
+        assessment
+    ) or required_pptx_evidence_blocking_reason(talk, assessment)
 
 
 def has_claimable_source(talk, *, capability_assessor):
@@ -511,9 +523,12 @@ def normalize_legacy_statuses(database, *, capability_assessor):
         previous = talk["status"]
         if previous not in LEGACY_STATUSES:
             continue
+        assessment = capability_assessor(talk)
+        if cloud_artifact_blocking_reason(assessment) is not None:
+            continue
         capabilities = processable_capabilities(
             talk,
-            capability_assessor=capability_assessor,
+            capability_assessor=lambda _talk: assessment,
         )
         current = "pending" if capabilities else "skipped_no_sources"
         talk["status"] = current
@@ -661,7 +676,12 @@ def claim_talk(
         capability_assessor=final_capability_assessor,
     )
     if blocking_reason is not None:
-        raise QueueStateError(f"{talk['filename']}: cannot claim: {blocking_reason}")
+        raise QueueStateError(
+            f"{talk['filename']}: cannot claim: {blocking_reason}",
+            reason_code=ARTIFACT_DATALESS
+            if cloud_artifacts(final_assessment)
+            else None,
+        )
     if not has_processable_source(
         talk,
         capability_assessor=final_capability_assessor,
@@ -833,7 +853,10 @@ def command_claim(
             )
             if blocking_reason is not None:
                 raise QueueStateError(
-                    f"{talk['filename']}: cannot claim: {blocking_reason}"
+                    f"{talk['filename']}: cannot claim: {blocking_reason}",
+                    reason_code=ARTIFACT_DATALESS
+                    if cloud_artifacts(provisional_assessment)
+                    else None,
                 )
             if not has_processable_source(
                 talk,
@@ -894,6 +917,11 @@ def command_claim(
         )
         for talk in candidate["talks"]
     )
+    cloud_report = summarize_cloud_artifacts(
+        (talk["filename"], capability_assessor(talk))
+        for talk in candidate["talks"]
+        if talk["status"] in CLAIMABLE_STATUSES | LEGACY_STATUSES
+    )
     if normalizations or claimed:
         validate_database(candidate)
         write_result = write_database_atomically(
@@ -914,6 +942,7 @@ def command_claim(
         "normalizations": normalizations,
         "claimed": claimed,
         "remaining_eligible": remaining,
+        "cloud_artifacts": cloud_report,
         **write_result_fields(write_result),
     }
 
@@ -1083,6 +1112,8 @@ def main(argv=None):
             )
     except (QueueStateError, VaultRootAuthorityError) as exc:
         payload = {"ok": False, "error": str(exc)}
+        if isinstance(exc, QueueStateError) and exc.reason_code is not None:
+            payload["reason_code"] = exc.reason_code
         print(str(exc), file=sys.stderr)
         print(json.dumps(payload, ensure_ascii=False))
         return 2

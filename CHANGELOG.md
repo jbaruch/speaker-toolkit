@@ -1,5 +1,19 @@
 # Changelog
 
+### fix(vault-ingress) — block claims on cloud-placeholder evidence (#354)
+
+Pending and legacy talks no longer enter a fresh batch while their declared
+slide or recording artifacts are cloud placeholders. Preflight reports a blocking
+`artifact_dataless` finding and a distinct-file download inventory with apparent
+bytes and affected talks. Missing files retain their separate diagnosis.
+
+The inventory uses existing metadata receipts without opening or hydrating a
+placeholder. An owner can download the listed files through the cloud provider
+and rerun preflight. The queue rechecks at the lease boundary, preserves
+cloud-only legacy statuses, and reports files withheld from automatic selection.
+An independent transcript or fallback deck remains available evidence without
+silently making the declared cloud artifact disappear from the readiness gate.
+
 ## 0.20.112 — 2026-09-04
 
 ### fix(vault-ingress) — every yt-dlp caller uses the pinned runtime (#371)

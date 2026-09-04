@@ -1308,6 +1308,7 @@ def test_dataless_cloud_placeholder_never_starts_worker_io(
     with pytest.raises(pptx_evidence.PptxEvidenceError) as caught:
         pptx_evidence.probe_pptx_artifact(deck)
     assert caught.value.reason_code == "pptx_cloud_placeholder_unavailable"
+    assert caught.value.details["size_bytes"] == actual.st_size
 
 
 def test_dataless_flag_uses_explicit_darwin_fallback(pptx_evidence) -> None:

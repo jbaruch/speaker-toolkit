@@ -473,6 +473,7 @@ def test_placeholder_short_circuits_before_probe_or_digest(
     assert caught.value.reason_code == "video_cloud_placeholder_unavailable"
     assert caught.value.details["availability"]["state"] == "unavailable"
     assert caught.value.details["reparse_tag"] is None
+    assert caught.value.details["size_bytes"] == generation.size
 
 
 def test_windows_cloud_reparse_placeholder_stops_before_probe_or_digest(

@@ -16,6 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 import zipfile
+from dataclasses import replace
 
 import pytest
 from PIL import Image
@@ -38,6 +39,119 @@ if str(SCRIPT.parent) not in sys.path:
 queue_claim_contract = importlib.import_module("queue_claim_contract")
 return_validation = importlib.import_module("return_validation")
 NOW = "2026-07-31T18:00:00+00:00"
+
+
+def test_cloud_pdf_blocks_claim_without_byte_io_then_hydration_allows_it(
+    queue_state,
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    talk = _talk("abcdefghijk")
+    talk.update({"slide_source": "pdf", "slides_local_path": "slides/cloud.pdf"})
+    path = _write_db(tmp_path, [talk])
+    slides = tmp_path / "slides"
+    slides.mkdir()
+    artifact = slides / "cloud.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=640, height=480)
+    with artifact.open("wb") as stream:
+        writer.write(stream)
+    pdf = importlib.import_module("pdf_evidence")
+    metadata_worker = pdf._run_bounded_metadata_worker
+    probe_worker = pdf._invoke_probe_worker
+    hydrated = False
+
+    def metadata(*args, **kwargs):
+        receipt = metadata_worker(*args, **kwargs)
+        if not hydrated:
+            return replace(
+                receipt, generation=replace(receipt.generation, flags=0x40000000)
+            )
+        return receipt
+
+    def probe(*args, **kwargs):
+        assert hydrated, "cloud PDF reached byte-reading worker"
+        return probe_worker(*args, **kwargs)
+
+    monkeypatch.setattr(pdf, "PDF_MACOS_DATALESS_FLAG", 0x40000000)
+    monkeypatch.setattr(pdf, "_run_bounded_metadata_worker", metadata)
+    monkeypatch.setattr(pdf, "_invoke_probe_worker", probe)
+    before = path.read_bytes()
+    command = [
+        str(path),
+        "claim",
+        "--run-id",
+        "cloud",
+        "--batch-id",
+        "one",
+        "--now",
+        NOW,
+    ]
+    assert queue_state.main(command + ["--filename", str(talk["filename"])]) == 2
+    report = json.loads(capsys.readouterr().out)
+    assert report["reason_code"] == "artifact_dataless"
+    assert path.read_bytes() == before
+    assert queue_state.main(command) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["claimed"] == []
+    assert report["cloud_artifacts"]["artifact_count"] == 1
+    assert report["cloud_artifacts"]["total_bytes"] == artifact.stat().st_size
+    assert path.read_bytes() == before
+    hydrated = True
+    assert queue_state.main(command) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert [item["filename"] for item in report["claimed"]] == [talk["filename"]]
+    assert report["cloud_artifacts"]["artifact_count"] == 0
+
+
+def test_cloud_only_legacy_talk_is_never_normalized_to_no_sources(queue_state):
+    talk = _talk("abcdefghijk", status="skipped_no_transcript")
+    database = {"talks": [talk]}
+    before = copy.deepcopy(database)
+    assessment = {
+        "verified_capabilities": (),
+        "acquisition_capabilities": (),
+        "unavailable_evidence_sources": {
+            "static_slides": {
+                "reason_code": "pdf_cloud_placeholder_unavailable",
+                "artifact_path": "/vault/slides/cloud.pdf",
+            }
+        },
+    }
+    assert (
+        queue_state.normalize_legacy_statuses(
+            database, capability_assessor=lambda _talk: assessment
+        )
+        == []
+    )
+    assert database == before
+
+
+def test_cloud_eviction_between_selection_and_claim_cannot_write_a_lease(queue_state):
+    talk = _talk("abcdefghijk")
+    clean = {"verified_capabilities": ("slides",), "acquisition_capabilities": ()}
+    unavailable = {
+        **clean,
+        "unavailable_evidence_sources": {
+            "static_slides": {
+                "reason_code": "pdf_cloud_placeholder_unavailable",
+                "artifact_path": "/vault/slides/cloud.pdf",
+            }
+        },
+    }
+    snapshots = iter([clean, unavailable])
+
+    def assessor(_talk):
+        return next(snapshots)
+
+    assert queue_state.has_claimable_source(talk, capability_assessor=assessor)
+    before = copy.deepcopy(talk)
+    with pytest.raises(queue_state.QueueStateError, match="artifact_dataless"):
+        queue_state.claim_talk(
+            talk, "cloud", "one", NOW, {}, capability_assessor=assessor
+        )
+    assert talk == before
 
 
 def _talk(
