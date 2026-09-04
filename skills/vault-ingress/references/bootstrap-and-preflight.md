@@ -28,6 +28,10 @@ require the same SHA-256; restart discovery if the generation changed. Use the
 configured interpreter for migration, queue commands, and every later toolkit
 command.
 
+If an unusable QR schema blocks that initial read, follow the speaker-authorized
+[explicit QR-version recovery](schemas-db.md#explicit-qr-version-recovery)
+contract. Stop on refusal; never lower the root version to force a migration.
+
 Before that migration runs, and only when this run is a migration or a reparse,
 capture the corpus-wide persisted-observation audit against a COPY of the
 database:

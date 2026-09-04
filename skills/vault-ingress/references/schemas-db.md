@@ -500,6 +500,39 @@ interpreter and require the same SHA-256; restart if the generation changed. Use
 the configured interpreter for initialization, migration, queue recovery, typed
 mutation, and every later toolkit command.
 
+### Explicit QR-version recovery
+
+When the strict reader refuses the database and the speaker authorizes QR-version
+recovery, use the owner's separate preservation-only repair mode:
+
+```bash
+"{bootstrap_python}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/migrate-tracking-database.py" \
+  "{vault_root}/tracking-database.json" --repair-missing-qr-versions
+```
+
+This dry run is the only additional host-interpreter bootstrap operation. It
+returns no database payload. On success, read `repair.python_path` from the
+fully validated candidate; if absent, ask the speaker for the interpreter.
+Repeat the same dry run with that configured interpreter and require matching
+`input_sha256` and `output_sha256`. Review `record_counts` before applying:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/migrate-tracking-database.py" \
+  "{vault_root}/tracking-database.json" --repair-missing-qr-versions \
+  --apply --expected-sha256 "{input_sha256}"
+```
+
+The repair's exact eligibility and preservation contract lives in
+`skills/vault-ingress/scripts/tracking_database.py::repair_missing_qr_schema_versions`;
+its CLI report and failure contract is in
+`skills/vault-ingress/scripts/migrate-tracking-database.py`'s docstring.
+It does not run the normal migration or its persisted-observation changes.
+Its exact backup and digest-bound replacement use the existing migration
+transaction. After success, repeat the ordinary strict owner read with the
+configured interpreter and require the repair's `output_sha256`. Resume the
+normal bootstrap gates only then. A refusal authorizes no manual restamping,
+raw database read, or bypass of another schema gate.
+
 Agent-owned config and catalog changes use a typed plan:
 
 ```json

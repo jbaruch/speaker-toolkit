@@ -1,5 +1,20 @@
 # Changelog
 
+### fix(vault-ingress) — repair unstamped legacy QR records through the owner
+
+An explicit `--repair-missing-qr-versions` migration mode recovers valid legacy
+QR records accidentally left unversioned under a current root. Ordinary reads
+and migration still refuse that state. The repair validates the exact legacy
+shape, stamps only missing QR versions, and validates the complete candidate.
+It refuses unknown generations, ambiguous artifact receipts, other schema
+defects, and active writers without changing the database.
+
+The dry run exposes the configured interpreter only after candidate validation.
+Apply requires its exact digest, preserves an exact backup through the shared
+transaction, and leaves talks, observations, and queue status untouched. This
+unblocks catalog-only operations without forcing a reparse or running the
+normal migration's observation repairs.
+
 ## 0.20.115 — 2026-09-04
 
 ### fix(vault-ingress) — count unnamed cloud-blocked talks separately (#389)

@@ -287,6 +287,17 @@ class TrackingDatabaseConfigExclusionsError(TrackingDatabaseError):
     """The config-owned PPTX directory-exclusion field is invalid."""
 
 
+class TrackingDatabaseRepairError(TrackingDatabaseError):
+    """Closed repair diagnostic; details contain no rejected database values."""
+
+    def __init__(self, reason_code: str, details: dict[str, object]):
+        self.reason_code = reason_code
+        self.details = details
+        super().__init__(
+            "owner QR repair refused; resolve the reported defect and retry"
+        )
+
+
 class PptxVisualEvidenceError(TrackingDatabaseError):
     """A persisted extraction receipt is malformed.
 
@@ -1855,6 +1866,80 @@ def _migrate_pptx_catalog_records(candidate: dict[str, Any]) -> int:
         )
         migrated += 1
     return migrated
+
+
+def repair_missing_qr_schema_versions(database: object) -> TrackingDatabaseMigration:
+    """Explicit, preservation-only repair of unstamped legacy QR records.
+
+    Ordinary readers/migration remain closed on missing child versions. This
+    opt-in owner operation accepts only a current root/config whose sole version
+    defect is a missing QR stamp. Every unstamped record must satisfy the exact
+    legacy-v1 shape before stamping; v2 artifact receipts are never invented or
+    inferred. The complete candidate must validate before it is returned. No
+    talk, evidence, queue, config, or other record migration runs here.
+    """
+    try:
+        assessment = assess_tracking_database(database)
+    except TrackingDatabaseError as exc:
+        raise TrackingDatabaseRepairError(
+            "qr_repair_input_invalid", {"stage": "initial_owner_validation"}
+        ) from exc
+    if (
+        not isinstance(database, dict)
+        or assessment.schema_version != TRACKING_DATABASE_SCHEMA_VERSION
+        or (
+            not assessment.usable
+            and assessment.reason_codes != ("qr_codes_schema_version_missing",)
+        )
+    ):
+        raise TrackingDatabaseRepairError(
+            "qr_repair_input_unsupported",
+            {"reason_codes": list(assessment.reason_codes)},
+        )
+    candidate = copy.deepcopy(database)
+    records = _object_collection(candidate, "qr_codes", required=True)
+    counts = _empty_record_counts()
+    for index, record in enumerate(records):
+        if "schema_version" in record:
+            continue
+        try:
+            _validate_collection_record("qr_codes", record, label=f"qr_codes[{index}]")
+        except TrackingDatabaseError as exc:
+            raise TrackingDatabaseRepairError(
+                "qr_repair_record_invalid",
+                {
+                    "record_index": index,
+                    "missing_fields": sorted(QR_CODE_REQUIRED_FIELDS - set(record)),
+                    "unexpected_field_count": len(
+                        set(record) - QR_CODE_REQUIRED_FIELDS
+                    ),
+                    "has_artifacts": "artifacts" in record,
+                },
+            ) from exc
+        record["schema_version"] = LEGACY_QR_CODE_RECORD_SCHEMA_VERSION
+        counts["qr_codes"] += 1
+    try:
+        require_current_tracking_database(candidate)
+    except TrackingDatabaseError as exc:
+        raise TrackingDatabaseRepairError(
+            "qr_repair_candidate_invalid", {"stage": "complete_owner_validation"}
+        ) from exc
+    if counts["qr_codes"]:
+        talks = _object_collection(candidate, "talks", required=True)
+        try:
+            _require_no_active_writers(talks)
+        except TrackingDatabaseError as exc:
+            raise TrackingDatabaseRepairError(
+                "qr_repair_active_writers",
+                {"active_talk_count": len(_active_claim_filenames(talks))},
+            ) from exc
+    return TrackingDatabaseMigration(
+        database=candidate,
+        changed=bool(counts["qr_codes"]),
+        from_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
+        to_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
+        record_counts=counts,
+    )
 
 
 def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:

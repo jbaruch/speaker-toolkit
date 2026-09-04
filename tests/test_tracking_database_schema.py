@@ -1631,6 +1631,197 @@ def test_qr_v1_records_still_validate(tracking_database):
     _validate_qr(tracking_database, _qr_v1_record())
 
 
+def _missing_qr_version_database(tracking_database):
+    database = tracking_database.migrate_tracking_database(_legacy_database()).database
+    database["qr_codes"][0].pop("schema_version")
+    return database
+
+
+def test_qr_repair_is_opt_in_and_preserves_every_other_record(tracking_database):
+    database = _missing_qr_version_database(tracking_database)
+    database["qr_codes"].append(_qr_v2_record())
+    before = copy.deepcopy(database)
+    with pytest.raises(tracking_database.TrackingDatabaseError):
+        tracking_database.migrate_tracking_database(database)
+    assert tracking_database.assess_tracking_database(database).usable is False
+
+    repaired = tracking_database.repair_missing_qr_schema_versions(database)
+
+    expected = copy.deepcopy(before)
+    expected["qr_codes"][0]["schema_version"] = 1
+    assert database == before
+    assert repaired.database == expected
+    assert repaired.changed is True
+    assert repaired.record_counts["qr_codes"] == 1
+    assert sum(repaired.record_counts.values()) == 1
+    assert (
+        tracking_database.assess_tracking_database(repaired.database).state == "current"
+    )
+    repeated = tracking_database.repair_missing_qr_schema_versions(repaired.database)
+    assert repeated.database == repaired.database
+    assert repeated.changed is False
+    assert sum(repeated.record_counts.values()) == 0
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "future_root",
+        "legacy_root",
+        "legacy_config",
+        "future_qr",
+        "null_qr",
+        "bool_qr",
+        "unstamped_v2",
+        "unknown_field",
+        "missing_field",
+        "invalid_date",
+        "duplicate_identity",
+        "missing_talk_version",
+        "active_writer",
+    ],
+)
+def test_qr_repair_refuses_ambiguous_or_unrelated_state(tracking_database, change):
+    database = _missing_qr_version_database(tracking_database)
+    if change == "future_root":
+        database["schema_version"] = CURRENT_ROOT + 1
+    elif change == "legacy_root":
+        database.pop("schema_version")
+    elif change == "legacy_config":
+        database["config"]["schema_version"] = 1
+    elif change in {"future_qr", "null_qr", "bool_qr"}:
+        extra = _qr_v1_record()
+        extra["schema_version"] = {"future_qr": 99, "null_qr": None, "bool_qr": True}[
+            change
+        ]
+        database["qr_codes"].append(extra)
+    elif change == "unstamped_v2":
+        database["qr_codes"][0] = _qr_v2_record()
+        database["qr_codes"][0].pop("schema_version")
+    elif change == "unknown_field":
+        database["qr_codes"][0]["unknown"] = "never discard me"
+    elif change == "missing_field":
+        database["qr_codes"][0].pop("target_url")
+    elif change == "invalid_date":
+        database["qr_codes"][0]["created_at"] = "not-a-date"
+    elif change == "duplicate_identity":
+        database["qr_codes"].append(copy.deepcopy(database["qr_codes"][0]))
+    elif change == "missing_talk_version":
+        database["talks"][0].pop("schema_version")
+    elif change == "active_writer":
+        database["talks"][0]["status"] = "reprocessing-inflight"
+        database["talks"][0]["reprocess_generation"] = 1
+        database["talks"][0]["_queue_claim"] = _claim_for_version(
+            1, generation=1, state="claimed", batch_id="active"
+        )
+    before = copy.deepcopy(database)
+
+    with pytest.raises(tracking_database.TrackingDatabaseError):
+        tracking_database.repair_missing_qr_schema_versions(database)
+    assert database == before
+
+
+def test_qr_repair_dry_run_apply_and_backup_preserve_talk_evidence(
+    tracking_database, migrate_tracking_database, tmp_path, monkeypatch
+):
+    path = tmp_path / "tracking-database.json"
+    original = _missing_qr_version_database(tracking_database)
+    raw = _write_database(path, original)
+    monkeypatch.setattr(
+        migrate_tracking_database,
+        "gate_persisted_observations",
+        lambda *_: pytest.fail("QR repair must not migrate or requeue observations"),
+    )
+    options = {"repair_missing_qr_versions": True}
+    dry = migrate_tracking_database.execute(
+        path, apply=False, expected_sha256=None, **options
+    )
+    assert path.read_bytes() == raw
+    assert not (tmp_path / ".backups").exists()
+    assert dry["repair"] == {
+        "kind": "missing_qr_schema_versions",
+        "python_path": "/opt/python",
+    }
+    assert dry["persisted_observations"] == {"repaired": 0, "requeued": 0}
+
+    for digest in (None, "0" * 64):
+        with pytest.raises(migrate_tracking_database.TrackingDatabaseMigrationError):
+            migrate_tracking_database.execute(
+                path, apply=True, expected_sha256=digest, **options
+            )
+        assert path.read_bytes() == raw
+        assert not (tmp_path / ".backups").exists()
+    applied = migrate_tracking_database.execute(
+        path, apply=True, expected_sha256=dry["input_sha256"], **options
+    )
+    assert Path(applied["backup"]).read_bytes() == raw
+    assert applied["database_written"] is True
+    assert applied["output_sha256"] == dry["output_sha256"]
+    expected = copy.deepcopy(original)
+    expected["qr_codes"][0]["schema_version"] = 1
+    assert json.loads(path.read_bytes()) == expected
+    installed = path.read_bytes()
+    replay = migrate_tracking_database.execute(
+        path, apply=True, expected_sha256=applied["output_sha256"], **options
+    )
+    assert replay["changed"] is False
+    assert replay["backup"] is None
+    assert path.read_bytes() == installed
+
+
+@pytest.mark.parametrize("invalid", [False, True])
+@pytest.mark.parametrize("flag", ["--repair-missing-qr-versions", "--repair-missing"])
+def test_qr_repair_cli_reports_json_without_rejected_values(
+    tracking_database, migrate_tracking_database, tmp_path, capsys, invalid, flag
+):
+    path = tmp_path / "private-catalog.json"
+    database = _missing_qr_version_database(tracking_database)
+    if invalid:
+        database["qr_codes"][0]["created_at"] = "secret-rejected-value"
+    raw = _write_database(path, database)
+    code = migrate_tracking_database.main([str(path), flag])
+    captured = capsys.readouterr()
+    report = json.loads(captured.out)
+    assert code == (2 if invalid else 0)
+    assert report["ok"] is not invalid
+    assert "secret-rejected-value" not in captured.out + captured.err
+    if invalid:
+        assert str(path) not in captured.out + captured.err
+        assert "retry" in report["error"]
+        assert report["code"] == "qr_repair_record_invalid"
+        assert report["details"] == {
+            "record_index": 0,
+            "missing_fields": [],
+            "unexpected_field_count": 0,
+            "has_artifacts": False,
+        }
+    assert path.read_bytes() == raw
+
+
+def test_qr_repair_active_writer_diagnostic_has_no_database_values(
+    tracking_database, migrate_tracking_database, tmp_path, capsys
+):
+    path = tmp_path / "private.json"
+    database = _missing_qr_version_database(tracking_database)
+    database["talks"][0]["status"] = "reprocessing-inflight"
+    database["talks"][0]["reprocess_generation"] = 1
+    database["talks"][0]["_queue_claim"] = _claim_for_version(
+        1, generation=1, state="claimed", batch_id="active"
+    )
+    raw = _write_database(path, database)
+    assert (
+        migrate_tracking_database.main([str(path), "--repair-missing-qr-versions"]) == 2
+    )
+    captured = capsys.readouterr()
+    report = json.loads(captured.out)
+    assert report["code"] == "qr_repair_active_writers"
+    assert report["details"] == {"active_talk_count": 1}
+    assert "one.md" not in captured.out + captured.err
+    assert str(path) not in captured.out + captured.err
+    assert path.read_bytes() == raw
+    assert not (tmp_path / ".backups").exists()
+
+
 def test_qr_v2_record_validates(tracking_database):
     _validate_qr(tracking_database, _qr_v2_record())
 
