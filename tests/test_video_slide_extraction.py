@@ -1737,6 +1737,68 @@ def test_invalid_review_source_digest_fails_before_io(
     assert not (tmp_path / "output").exists()
 
 
+@pytest.mark.parametrize(
+    "digest", ["", "abc", "A" * 64, "0" * 63, "0" * 65, " " + "0" * 64]
+)
+def test_invalid_review_digest_cli_is_clean_usage_error(tmp_path, digest):
+    output = tmp_path / "existing-output"
+    output.mkdir()
+    prior = output / "keep.pdf"
+    prior.write_bytes(b"prior verified artifact")
+    result = subprocess.run(
+        [
+            sys.executable,
+            SCRIPT_PATH,
+            str(tmp_path / "absent.mp4"),
+            str(output),
+            YOUTUBE_ID,
+            "--expected-source-sha256",
+            digest,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert not result.stdout
+    assert "--expected-source-sha256" in result.stderr
+    assert "invalid expected source digest" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert prior.read_bytes() == b"prior verified artifact"
+    assert list(output.iterdir()) == [prior]
+
+
+def test_invalid_digest_cli_never_enters_extraction(
+    video_slide_extraction, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            SCRIPT_PATH,
+            "source.mp4",
+            "output",
+            YOUTUBE_ID,
+            "--expected-source-sha256",
+            "malformed",
+        ],
+    )
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("invalid CLI input entered the source/output pipeline")
+
+    monkeypatch.setattr(video_slide_extraction, "extract_slides_from_video", forbidden)
+    with pytest.raises(SystemExit) as error:
+        video_slide_extraction.main()
+    assert error.value.code == 2
+    assert "invalid expected source digest" in capsys.readouterr().err
+
+
+def test_valid_cli_digest_preserves_exact_value(video_slide_extraction):
+    digest = "0123456789abcdef" * 4
+    assert video_slide_extraction.parse_expected_source_sha256(digest) == digest
+
+
 def test_source_replaced_during_extraction_discards_every_derivative(
     video_slide_extraction, tmp_path, monkeypatch
 ):
