@@ -44,6 +44,16 @@ def test_ingress_delegates_section15_assessment_and_replacement() -> None:
         assert classifier_owned_predicate not in rules
 
 
+def test_video_extractor_delegates_downloader_outcomes_to_the_worker_contract() -> None:
+    extractor = _read("skills/vault-ingress/references/video-slide-extraction.md")
+    worker = _read("skills/vault-ingress/references/subagent-instructions.md")
+
+    assert "subagent-instructions.md#slide-acquisition-per-slide_source" in extractor
+    assert "Branch on this id's `results` entry" in worker
+    assert "only for an `ok` or `skip` entry" not in extractor
+    assert "report with no `results` at all" not in extractor
+
+
 def test_speaker_profile_eval_requires_opaque_loader_outputs() -> None:
     task = _read("evals/speaker-profile-from-vault/task.md")
     criteria = json.loads(_read("evals/speaker-profile-from-vault/criteria.json"))

@@ -119,6 +119,10 @@ device/current-drive, foreign absolute, raw-dot-segment, and dual-flavor `//`
 forms fail closed; paths are never translated between operating-system
 grammars.
 
+The downloader result and exit-code contract lives in
+[subagent-instructions.md](subagent-instructions.md#slide-acquisition-per-slide_source),
+under `video_extracted`. Follow it before invoking the extractor.
+
 `youtube_id` must match the shared ingress grammar exactly:
 `[A-Za-z0-9_-]{11}`. It is validated before any filesystem or process boundary,
 is never normalized, and is the only component used to derive the frame
@@ -129,15 +133,11 @@ shell interpolation, so shell metacharacters in valid native POSIX filenames do
 not become commands.
 
 ```bash
-# Download video at 720p. Read the report before going further: extraction runs
-# only when this id's `results` entry is `ok` or `skip`. A `fail` entry, or a
-# report with no `results` at all (exits 2 and 3), means there is no video to
-# extract — stop here rather than running the extractor against an absent or
-# stale MP4.
+# Download video at 720p under the prerequisite above.
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/batch-download-videos.py" \
   "{vault_root}" "{youtube_id}"
 
-# Extract slides — only for an `ok` or `skip` entry
+# Extract slides after the prerequisite confirms this video's artifact.
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/video-slide-extraction.py" \
   "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \
   "{vault_root}/slides-rebuild/{youtube_id}" \
@@ -345,9 +345,7 @@ In Step 3 of the skill (per-talk subagent):
 
 ```
 if slide_source == "video_extracted":
-    1. Download video: skills/vault-ingress/scripts/batch-download-videos.py
-       "{vault_root}" "{youtube_id}" — and stop unless this id's `results`
-       entry is `ok` or `skip`
+    1. Run the downloader under the Usage prerequisite above
     2. Run extract_slides_from_video()
     3. Store the complete artifact manifest in structured_data
     4. If review_required, inspect source + context + candidate and rerun with a
