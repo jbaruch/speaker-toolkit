@@ -42,15 +42,23 @@ def _observations(ret: object, label: str) -> dict:
     return observations
 
 
-def basis_for(ret: object, label: str) -> dict:
-    """Return the exact basis this return's own lanes require."""
+def _required_lanes(ret: object, label: str) -> dict[str, list]:
+    """Return every required detection lane, rejecting omissions as malformed."""
     observations = _observations(ret, label)
-    lanes = {}
+    lanes: dict[str, list] = {}
     for name in ("patterns_detected", "antipatterns_detected", "not_evaluable"):
-        value = observations.get(name, [])
+        if name not in observations:
+            raise ValueError(f"{label} pattern_observations.{name} is required")
+        value = observations[name]
         if not isinstance(value, list):
             raise ValueError(f"{label} pattern_observations.{name} must be an array")
         lanes[name] = value
+    return lanes
+
+
+def basis_for(ret: object, label: str) -> dict:
+    """Return the exact basis this return's own lanes require."""
+    lanes = _required_lanes(ret, label)
     try:
         return pattern_score_basis(
             lanes["patterns_detected"],
@@ -69,13 +77,7 @@ def basis_for(ret: object, label: str) -> dict:
 
 def score_for(ret: object, label: str) -> float:
     """Return the exact weighted score this return's own lanes require."""
-    observations = _observations(ret, label)
-    lanes = {}
-    for name in ("patterns_detected", "antipatterns_detected"):
-        value = observations.get(name, [])
-        if not isinstance(value, list):
-            raise ValueError(f"{label} pattern_observations.{name} must be an array")
-        lanes[name] = value
+    lanes = _required_lanes(ret, label)
     try:
         return expected_weighted_score(
             lanes["patterns_detected"], lanes["antipatterns_detected"]

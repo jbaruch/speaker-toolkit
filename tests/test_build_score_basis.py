@@ -97,6 +97,19 @@ def test_a_non_array_lane_is_rejected(build_score_basis):
         build_score_basis.basis_for(broken, "talk.md")
 
 
+def test_a_missing_required_lane_is_rejected(build_score_basis, tmp_path, capsys):
+    for missing in ("patterns_detected", "antipatterns_detected", "not_evaluable"):
+        broken = _return()
+        del broken["pattern_observations"][missing]
+        path = tmp_path / f"missing-{missing}.json"
+        path.write_text(json.dumps(broken), encoding="utf-8")
+
+        assert build_score_basis.main([str(path)]) == 2
+        captured = capsys.readouterr()
+        assert f"pattern_observations.{missing} is required" in captured.err
+        assert captured.out == ""
+
+
 def test_cli_emits_the_completed_return(build_score_basis, tmp_path, capsys):
     """Output is the return itself, so no caller computes or places either field."""
     path = tmp_path / "r.json"

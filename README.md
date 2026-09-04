@@ -392,7 +392,7 @@ declares exact Python pins, while `required_command_versions` declares the
 `youtube-download` lane's yt-dlp pin. An incompatible installed version is
 unavailable rather than silently accepted. The yt-dlp probe and every ingress
 caller resolve the configured interpreter's console script before falling back
-to PATH, so a stale system installation cannot shadow the project dependency.
+to PATH.
 
 ## Generation & Publishing Skills Details
 
