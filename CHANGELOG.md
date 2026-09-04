@@ -1,5 +1,22 @@
 # Changelog
 
+### fix(vault-ingress) — decode recordings before accepting downloads (#381)
+
+The former corruption scan could miss H.264 NAL damage and describe a truncated
+recording as clean. `video_integrity.py` now decodes each non-cover audio/video
+stream with strict error handling and compares terminal decode timestamps with
+the declared stream and container extents. Healthy audio cannot mask damaged
+video, and unfamiliar decoder diagnostics cannot escape a keyword list.
+
+The gate runs in the shared supervised worker boundary against an immutable
+snapshot and binds its receipt to the original digest and file generation.
+Timeouts, process/resource limits, missing tools, parser failures, and changing
+files fail visibly without promoting evidence. The downloader verifies both
+new staging files and existing resume candidates; damaged existing recordings
+are preserved for the owner to inspect or move aside. Synthetic fixtures cover
+late NAL corruption that passes metadata inspection, duration gaps, and the
+download promotion and retry boundaries.
+
 ## 0.20.113 — 2026-09-04
 
 ### fix(vault-ingress) — block claims on cloud-placeholder evidence (#354)

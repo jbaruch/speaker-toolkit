@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -28,13 +29,13 @@ PRESENT_ID = "EfGhIjKlMn4"
 STUB_ID = "OpQrStUvWx5"
 DASH_ID = "-YzAbCdEfG6"
 
-# Writes a non-empty file at the -o path, so the script sees a usable download.
+# Copies a locally generated complete recording to the requested output path.
 FAKE_OK = """\
 #!/usr/bin/env bash
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --version) echo "9999.12.31"; exit 0 ;;
-        -o) shift; printf 'video-bytes' > "$1" ;;
+        -o) shift; cp "$FAKE_VIDEO_SOURCE" "$1" ;;
         *) ;;
     esac
     shift
@@ -151,8 +152,44 @@ def _fake_ytdlp(tmp_path, body, name="yt-dlp"):
     return fake
 
 
+def _video_fixture(path):
+    ffmpeg = shutil.which("ffmpeg")
+    assert ffmpeg, "install ffmpeg; download integrity tests must not skip decoding"
+    subprocess.run(
+        [
+            ffmpeg,
+            "-v",
+            "error",
+            "-nostdin",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=blue:size=64x48:rate=10",
+            "-t",
+            "1",
+            "-c:v",
+            "libx264",
+            "-threads",
+            "1",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    return path.read_bytes()
+
+
 def _run(vault, ids, ytdlp=None, path_dir=None):
     env = os.environ.copy()
+    source = vault.parent / "fixture-video.mp4"
+    if not source.exists():
+        _video_fixture(source)
+    env["FAKE_VIDEO_SOURCE"] = str(source)
     env.pop("VIRTUAL_ENV", None)
     if ytdlp is not None:
         env["YT_DLP"] = str(ytdlp)
@@ -161,7 +198,7 @@ def _run(vault, ids, ytdlp=None, path_dir=None):
     if path_dir is not None:
         env["PATH"] = f"{path_dir}:{env['PATH']}"
     return subprocess.run(
-        [SCRIPT, str(vault), *ids],
+        [sys.executable, SCRIPT, str(vault), *ids],
         capture_output=True,
         text=True,
         env=env,
@@ -185,11 +222,16 @@ def test_downloads_to_correct_path(tmp_path):
 
     assert result.returncode == 0, result.stderr
     target = vault / "slides-rebuild" / OK_ID / f"{OK_ID}.mp4"
-    assert target.read_text() == "video-bytes"
+    assert target.read_bytes() == (tmp_path / "fixture-video.mp4").read_bytes()
     entry = _by_id(result)[OK_ID]
     assert entry["outcome"] == "ok"
     assert entry["path"] == str(target)
-    assert entry["bytes"] == len("video-bytes")
+    assert entry["bytes"] == target.stat().st_size
+    assert entry["integrity"]["ok"] is True
+    assert (
+        entry["integrity"]["source_generation"]
+        == downloader.FileGeneration.from_stat(target.stat()).to_dict()
+    )
 
 
 def test_creates_directory_structure(tmp_path):
@@ -252,7 +294,7 @@ def test_one_failure_does_not_stop_the_others(tmp_path):
     vault = tmp_path / "vault"
     present = vault / "slides-rebuild" / PRESENT_ID
     present.mkdir(parents=True)
-    (present / f"{PRESENT_ID}.mp4").write_text("prior-bytes")
+    _video_fixture(present / f"{PRESENT_ID}.mp4")
 
     result = _run(
         vault, [PRESENT_ID, BLOCKED_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_403, "403")
@@ -271,13 +313,80 @@ def test_existing_video_is_skipped_not_redownloaded(tmp_path):
     target_dir = vault / "slides-rebuild" / PRESENT_ID
     target_dir.mkdir(parents=True)
     target = target_dir / f"{PRESENT_ID}.mp4"
-    target.write_text("prior-bytes")
+    before = _video_fixture(target)
 
     result = _run(vault, [PRESENT_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_OK))
 
     assert result.returncode == 0, result.stderr
-    assert target.read_text() == "prior-bytes"
+    assert target.read_bytes() == before
     assert _by_id(result)[PRESENT_ID]["outcome"] == "skip"
+
+
+def test_nonempty_corrupt_existing_video_never_counts_as_verified(tmp_path):
+    vault = tmp_path / "vault"
+    target = vault / "slides-rebuild" / PRESENT_ID / f"{PRESENT_ID}.mp4"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"damaged prior recording")
+    result = _run(vault, [PRESENT_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_OK))
+    assert result.returncode == 1
+    entry = _by_id(result)[PRESENT_ID]
+    assert entry["outcome"] == "fail"
+    assert "reason_code" in entry
+    assert "move the damaged file aside" in entry["reason"]
+    assert target.read_bytes() == b"damaged prior recording"
+
+
+def test_zero_exit_with_corrupt_file_is_not_promoted(tmp_path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    corrupt = FAKE_OK.replace('cp "$FAKE_VIDEO_SOURCE" "$1"', 'printf damaged > "$1"')
+    result = _run(vault, [OK_ID], ytdlp=_fake_ytdlp(tmp_path, corrupt))
+    assert result.returncode == 1
+    entry = _by_id(result)[OK_ID]
+    assert entry["outcome"] == "fail"
+    assert entry["exit_code"] == 0
+    assert "integrity verification" in entry["reason"]
+    assert not (vault / "slides-rebuild" / OK_ID / f"{OK_ID}.mp4").exists()
+    staging = vault / "slides-rebuild" / OK_ID / f"{OK_ID}.incomplete.mp4"
+    assert staging.read_bytes() == b"damaged"
+    retried = _run(vault, [OK_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_OK))
+    assert _by_id(retried)[OK_ID]["outcome"] == "ok"
+
+
+def test_decode_failure_cannot_promote_a_nonempty_download(tmp_path, monkeypatch):
+    def reject(_path):
+        raise downloader.VideoIntegrityError("integrity_decode_failed")
+
+    monkeypatch.setattr(downloader, "_verify_download", reject)
+    source = tmp_path / "source.mp4"
+    _video_fixture(source)
+    monkeypatch.setenv("FAKE_VIDEO_SOURCE", str(source))
+    result = downloader.download_one(_fake_ytdlp(tmp_path, FAKE_OK), tmp_path, OK_ID)
+    assert result["outcome"] == "fail"
+    assert result["reason_code"] == "integrity_decode_failed"
+    assert not (tmp_path / "slides-rebuild" / OK_ID / f"{OK_ID}.mp4").exists()
+
+
+def test_changed_promoted_object_cannot_reuse_verified_receipt(tmp_path):
+    source = tmp_path / "source.mp4"
+    _video_fixture(source)
+    receipt = downloader._verify_download(source)
+    source.write_bytes(source.read_bytes() + b"changed")
+    with pytest.raises(downloader.VideoIntegrityError, match="source_changed"):
+        downloader._bind_promoted_integrity(source, receipt)
+
+
+def test_same_size_change_with_restored_mtime_cannot_hide_as_rename(tmp_path):
+    source = tmp_path / "source.mp4"
+    _video_fixture(source)
+    receipt = downloader._verify_download(source)
+    before = source.stat()
+    data = bytearray(source.read_bytes())
+    data[-1] ^= 1
+    source.write_bytes(data)
+    os.utime(source, ns=(before.st_atime_ns, before.st_mtime_ns))
+    with pytest.raises(downloader.VideoIntegrityError):
+        downloader._bind_promoted_integrity(source, receipt)
 
 
 def test_empty_existing_file_is_redownloaded(tmp_path):
@@ -290,7 +399,9 @@ def test_empty_existing_file_is_redownloaded(tmp_path):
     result = _run(vault, [STUB_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_OK))
 
     assert result.returncode == 0, result.stderr
-    assert (target_dir / f"{STUB_ID}.mp4").read_text() == "video-bytes"
+    assert (target_dir / f"{STUB_ID}.mp4").read_bytes() == (
+        tmp_path / "fixture-video.mp4"
+    ).read_bytes()
     assert _by_id(result)[STUB_ID]["outcome"] == "ok"
 
 
@@ -487,7 +598,7 @@ def test_a_partial_download_never_lands_on_the_target_path(tmp_path):
 
     retried = _run(vault, [OK_ID], ytdlp=_fake_ytdlp(tmp_path, FAKE_OK))
     assert _by_id(retried)[OK_ID]["outcome"] == "ok"
-    assert target.read_text() == "video-bytes"
+    assert target.read_bytes() == (tmp_path / "fixture-video.mp4").read_bytes()
 
 
 def test_a_signed_url_never_reaches_the_report_or_the_log(tmp_path):

@@ -8,7 +8,7 @@ This is the fourth slide acquisition path — used when a talk has `video_url` b
 
 - `yt-dlp` (video download) — invoked only through
   `skills/vault-ingress/scripts/batch-download-videos.py`, never by bare name
-- `ffmpeg` (frame extraction)
+- `ffmpeg` and `ffprobe` (full decode verification and frame extraction)
 - Python packages: `imagehash`, NumPy, `Pillow` (perceptual deduplication), and
   `filelock` (same-video run coordination)
 
@@ -57,6 +57,30 @@ owns are in `references/subagent-instructions.md` under `video_extracted` and in
 the script's own docstring — not restated here.
 
 For talks where 720p is unavailable, yt-dlp will fall back to the best available.
+
+### Integrity of preserved recordings
+
+The downloader fully decodes new files before promotion and existing files
+before reporting a resume skip. Its `integrity` receipt comes from
+`scripts/video_integrity.py`; use that script for a recording acquired outside
+the downloader or for an explicit corruption audit:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/video_integrity.py" \
+  "{recording_path}"
+```
+
+Read its JSON report and require `ok: true` before declaring the recording
+verified. The script owns exit codes, resource limits, stream-duration
+tolerances, and receipt fields; see its docstring. A timeout is not proof of
+corruption or completeness. Inspect the runtime, then explicitly increase
+`--timeout-seconds` when needed. A failed existing download remains untouched;
+move a damaged file aside before downloading a replacement. Failed new files
+remain staging files and never satisfy the resume gate.
+
+Do not substitute stream-copy scans, stderr keyword counts, successful seeks,
+or a few extracted frames for decode verification. A clean integrity receipt
+does not establish speaker identity, delivery identity, or the slide crop.
 
 ## Step 2: Extract Frames
 
