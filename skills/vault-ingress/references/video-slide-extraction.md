@@ -103,6 +103,11 @@ Conference videos have varying layouts — slides may occupy the full frame, or
 share space with a speaker camera (PiP), conference branding bars, or lower-third
 titles. The script auto-detects the slide region.
 
+For reproducible human review of proposed regions, follow
+[crop-review.md](crop-review.md). That workflow preserves individual sample
+frames, separates classification sheets from crop inputs, and exports commands
+only for owner-approved decisions. Building a reviewer does not run extraction.
+
 ## Step 4: Deduplicate by Perceptual Hash
 
 Adjacent frames showing the same slide produce near-identical perceptual hashes.
@@ -225,6 +230,10 @@ outcomes:
   hydrated — the extractor never substitutes a stub.
 - **Source replaced while the run was producing derivatives**: exit 1 with
   `reason_code` `video_source_replaced_during_extraction`, and no record.
+- **Source differs from `--expected-source-sha256`**: exit 1 with
+  `reason_code` `video_review_source_mismatch`; no frames are sampled or prior
+  derivatives changed. Rebuild the reviewer for the current recording and
+  obtain a new approval.
 - **Any failed run, for any reason including an interrupt**: the destination
   PDFs hold exactly what they held before the run started. A failed
   re-extraction never destroys or half-replaces what an earlier bound run

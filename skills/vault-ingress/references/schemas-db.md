@@ -1773,7 +1773,7 @@ Stored in `structured_data.video_extraction` on the talk entry:
 {
   "slide_source": "video_extracted",
   "schema_version": 4,
-  "pipeline_version": "0.13.0",
+  "pipeline_version": "0.14.0",
   "source_video_id": "AbCdEfGhI_1",
   "source_video_path": "/vault/slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.mp4",
   "source_receipt": {

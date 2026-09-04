@@ -55,7 +55,7 @@ from video_evidence import (
 # the download tier, region-detection logic, dedup hashing, or PDF assembly.
 # See skills/vault-ingress/references/video-slide-extraction.md ("Pipeline
 # Versioning") for the policy.
-PIPELINE_VERSION = "0.13.0"
+PIPELINE_VERSION = "0.14.0"
 
 # Shape version of the structured_data.video_extraction record (distinct from
 # PIPELINE_VERSION, which tracks extractor behavior — this tracks the record's
@@ -1119,6 +1119,7 @@ def extract_slides_from_video(
     slide_region: str | NormalizedSlideRegion = "auto",
     slide_region_verified=False,
     include_context_pdf=True,
+    expected_source_sha256=None,
 ):
     """Run one extraction bound end to end to one exact source generation.
 
@@ -1133,6 +1134,14 @@ def extract_slides_from_video(
     run's artifacts exactly as it found them.
     """
     youtube_id = validate_youtube_id(youtube_id)
+    if expected_source_sha256 is not None and (
+        not isinstance(expected_source_sha256, str)
+        or len(expected_source_sha256) != 64
+        or any(char not in "0123456789abcdef" for char in expected_source_sha256)
+    ):
+        raise ValueError(
+            "invalid expected source digest — supply the review manifest's SHA-256"
+        )
     if fps <= 0:
         raise ValueError("fps must be greater than zero")
     output_dir = canonical_path(output_dir)
@@ -1143,6 +1152,14 @@ def extract_slides_from_video(
     with _video_run_lock(run_lock):
         assessment = VideoEvidenceAssessment()
         source_receipt = _capture_source_receipt(assessment, source_video_path)
+        if (
+            expected_source_sha256 is not None
+            and source_receipt["source_sha256"] != expected_source_sha256
+        ):
+            raise VideoSourceLineageError(
+                "recording differs from the reviewed frames — rebuild the crop reviewer and obtain a new approval",
+                reason_code="video_review_source_mismatch",
+            )
         for filename in (
             f"{youtube_id}.slide-region.pdf",
             f"{youtube_id}.context.pdf",
@@ -1220,6 +1237,10 @@ def main():
         help="mark a manually supplied --region as visually verified",
     )
     parser.add_argument(
+        "--expected-source-sha256",
+        help="require the exact recording whose frames were reviewed before extraction",
+    )
+    parser.add_argument(
         "--no-context-pdf",
         action="store_false",
         dest="include_context_pdf",
@@ -1261,6 +1282,7 @@ def main():
             slide_region=args.region,
             slide_region_verified=args.region_verified,
             include_context_pdf=args.include_context_pdf,
+            expected_source_sha256=args.expected_source_sha256,
         )
     except VideoSourceLineageError as exc:
         print(

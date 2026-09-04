@@ -1680,6 +1680,7 @@ def test_run_records_the_source_receipt_on_the_manifest_and_every_derivative(
         YOUTUBE_ID,
         slide_region=(0.2, 0.1, 0.9, 0.8),
         slide_region_verified=True,
+        expected_source_sha256=hashlib.sha256(video.read_bytes()).hexdigest(),
     )
 
     receipt = result["source_receipt"]
@@ -1694,6 +1695,46 @@ def test_run_records_the_source_receipt_on_the_manifest_and_every_derivative(
     assert all(
         artifact["source_receipt"] is not receipt for artifact in result["artifacts"]
     )
+
+
+def test_reviewed_source_digest_rejects_replacement_before_extraction(
+    video_slide_extraction, tmp_path, monkeypatch
+):
+    video = write_tiny_video(tmp_path / "source.mp4")
+    outdir = tmp_path / "output"
+    outdir.mkdir()
+    prior = outdir / f"{YOUTUBE_ID}.slide-region.pdf"
+    prior.write_bytes(b"previous verified output")
+    monkeypatch.setattr(
+        video_slide_extraction,
+        "extract_frames",
+        lambda *a, **k: pytest.fail("sampled replacement"),
+    )
+    with pytest.raises(video_slide_extraction.VideoSourceLineageError) as caught:
+        video_slide_extraction.extract_slides_from_video(
+            str(video),
+            str(outdir),
+            YOUTUBE_ID,
+            slide_region=(0, 0, 1, 1),
+            slide_region_verified=True,
+            expected_source_sha256="0" * 64,
+        )
+    assert caught.value.reason_code == "video_review_source_mismatch"
+    assert prior.read_bytes() == b"previous verified output"
+
+
+@pytest.mark.parametrize("digest", ["", "abc", "A" * 64, True, 1, "0" * 63])
+def test_invalid_review_source_digest_fails_before_io(
+    video_slide_extraction, tmp_path, digest
+):
+    with pytest.raises(ValueError, match="invalid expected source digest"):
+        video_slide_extraction.extract_slides_from_video(
+            str(tmp_path / "absent.mp4"),
+            str(tmp_path / "output"),
+            YOUTUBE_ID,
+            expected_source_sha256=digest,
+        )
+    assert not (tmp_path / "output").exists()
 
 
 def test_source_replaced_during_extraction_discards_every_derivative(

@@ -13,6 +13,8 @@
 skills/**/*.bas.txt linguist-generated=true merge=ours
 skills/**/*.applescript.txt linguist-generated=true merge=ours
 skills/**/*.yaml.txt linguist-generated=true merge=ours
+skills/**/*.html.txt linguist-generated=true merge=ours
+skills/**/*.js.txt linguist-generated=true merge=ours
 
 # Renderer dependency lock. Committed under the generated-artifact exception in
 # coding-policy: file-hygiene — pinning four top-level versions leaves the
