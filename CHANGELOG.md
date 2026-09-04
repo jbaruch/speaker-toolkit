@@ -1,5 +1,23 @@
 # Changelog
 
+### feat(vault-ingress) — package source-bound crop review (#382)
+
+The formerly scratch-only contact-sheet and crop-review workflow now ships as
+bounded scripts and an offline reviewer shell. Sampling preserves individual
+frames alongside a separate classification sheet, binds them to the recording,
+and rejects incomplete or changed inputs without replacing existing outputs.
+
+The TSV builder validates every talk's frames and reports their counts. The
+reviewer keeps the supplied photographic proofing layout, exposes every sampled
+timestamp, isolates saved decisions by batch/source/proposal identity, and
+clears approval after edits. Proposed no-slides decisions remain unapproved.
+Copying produces shell-quoted commands or no-slides comments and never runs them.
+
+Extraction pipeline 0.14.0 adds an optional reviewed-source digest guard, used
+by exported commands, to reject a replacement recording before sampling or
+changing prior derivatives. No database change or reparse is part of building
+the reviewer. HTML/JavaScript mirrors preserve installation compatibility.
+
 ## 0.20.116 — 2026-09-04
 
 ### fix(vault-ingress) — repair unstamped legacy QR records through the owner

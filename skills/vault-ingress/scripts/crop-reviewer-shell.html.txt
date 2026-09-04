@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slide Region Review</title>
+<style>
+:root{
+  --ground:#F2F3F5; --panel:#FFFFFF; --sunk:#E7E9ED; --line:#D3D7DE;
+  --text:#16181C; --muted:#5D646E; --accent:#B5731A; --accent-soft:#F0E0C6;
+  --good:#2F7D53; --warn:#9A5B12; --stop:#A33A3A;
+  --shadow:0 1px 2px rgba(20,22,26,.08),0 8px 24px rgba(20,22,26,.06);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#14161A; --panel:#1D2026; --sunk:#101216; --line:#2C3038;
+  --text:#E6E8EC; --muted:#8A9099; --accent:#E8A33D; --accent-soft:#3A2E1B;
+  --good:#5BC08C; --warn:#E8A33D; --stop:#E06C6C;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+}}
+:root[data-theme="dark"]{
+  --ground:#14161A; --panel:#1D2026; --sunk:#101216; --line:#2C3038;
+  --text:#E6E8EC; --muted:#8A9099; --accent:#E8A33D; --accent-soft:#3A2E1B;
+  --good:#5BC08C; --warn:#E8A33D; --stop:#E06C6C;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--text);
+  font-family:Aptos,"Segoe UI",sans-serif;font-size:15px;line-height:1.5}
+h1,h2,h3,.lbl{font-family:"Arial Narrow","Aptos Display",Aptos,sans-serif}
+.mono{font-family:Aptos,"Segoe UI",sans-serif;
+  font-variant-numeric:tabular-nums}
+.lbl{font-size:13px;font-weight:600;color:var(--muted)}
+header{display:flex;flex-wrap:wrap;gap:16px;align-items:baseline;
+  padding:18px 22px;border-bottom:1px solid var(--line);background:var(--panel)}
+header h1{margin:0;font-size:21px;font-weight:700;letter-spacing:-.01em}
+header .sub{color:var(--muted);font-size:14px;max-width:62ch}
+.counts{margin-left:auto;display:flex;gap:14px;align-items:center}
+.count{display:flex;gap:6px;align-items:baseline}
+.count b{font-size:19px;font-weight:600}
+.wrap{display:grid;grid-template-columns:290px minmax(0,1fr);gap:0;min-height:calc(100vh - 74px)}
+@media (max-width:900px){.wrap{grid-template-columns:1fr}}
+aside{border-right:1px solid var(--line);background:var(--panel);overflow-y:auto;max-height:calc(100vh - 74px)}
+@media (max-width:900px){aside{max-height:none;border-right:0;border-bottom:1px solid var(--line)}}
+.row{display:flex;gap:10px;align-items:center;width:100%;text-align:left;
+  padding:10px 14px;background:none;border:0;border-bottom:1px solid var(--line);
+  color:inherit;font:inherit;cursor:pointer}
+.row:hover{background:var(--sunk)}
+.row[aria-current="true"]{background:var(--sunk);box-shadow:inset 3px 0 0 var(--accent)}
+.row .nm{flex:1;min-width:0}
+.row .t{display:block;font-weight:500;font-size:13.5px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.row .c{display:block;color:var(--muted);font-size:11.5px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.chip{flex:none;width:9px;height:9px;border-radius:50%;background:var(--line)}
+.chip.ok{background:var(--good)} .chip.no{background:var(--stop)} .chip.ed{background:var(--accent)}
+main{padding:20px 22px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.stage{background:var(--sunk);border:1px solid var(--line);border-radius:6px;padding:14px}
+.frame{position:relative;width:100%;max-width:940px;margin:0 auto;user-select:none;
+  touch-action:none;line-height:0}
+.frame img{width:100%;height:auto;display:block;border-radius:3px}
+.veil{position:absolute;inset:0;background:rgba(10,11,14,.62);pointer-events:none;border-radius:3px}
+.crop{position:absolute;border:1.5px solid var(--accent);cursor:move;
+  box-shadow:0 0 0 9999px rgba(0,0,0,0);}
+.crop::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(var(--accent),var(--accent)) no-repeat,
+             linear-gradient(var(--accent),var(--accent)) no-repeat;
+  background-size:100% 1px,1px 100%;background-position:0 33.3%,33.3% 0;opacity:.18}
+.h{position:absolute;width:13px;height:13px;background:var(--accent);border-radius:2px}
+.h[data-h="nw"]{left:-7px;top:-7px;cursor:nwse-resize}
+.h[data-h="ne"]{right:-7px;top:-7px;cursor:nesw-resize}
+.h[data-h="sw"]{left:-7px;bottom:-7px;cursor:nesw-resize}
+.h[data-h="se"]{right:-7px;bottom:-7px;cursor:nwse-resize}
+.h[data-h="n"]{left:50%;top:-7px;margin-left:-6px;cursor:ns-resize}
+.h[data-h="s"]{left:50%;bottom:-7px;margin-left:-6px;cursor:ns-resize}
+.h[data-h="w"]{left:-7px;top:50%;margin-top:-6px;cursor:ew-resize}
+.h[data-h="e"]{right:-7px;top:50%;margin-top:-6px;cursor:ew-resize}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:12px}
+.tab{padding:5px 13px;border:1px solid var(--line);background:var(--panel);color:var(--muted);
+  border-radius:999px;cursor:pointer;font:inherit;font-size:12.5px}
+.tab[aria-pressed="true"]{border-color:var(--accent);color:var(--text);background:var(--accent-soft)}
+.hint{text-align:center;color:var(--muted);font-size:12.5px;margin-top:8px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:12px}
+.fld{display:flex;flex-direction:column;gap:5px}
+input[type=number]{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:4px;
+  background:var(--sunk);color:var(--text);font-family:Aptos,"Segoe UI",sans-serif;font-size:13px;
+  font-variant-numeric:tabular-nums}
+input[type=number]:focus-visible,button:focus-visible,.row:focus-visible,.frame:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button.b{padding:8px 15px;border-radius:5px;border:1px solid var(--line);background:var(--panel);
+  color:var(--text);font:inherit;font-weight:500;cursor:pointer}
+button.b:hover{border-color:var(--muted)}
+button.b.pri{background:var(--accent);border-color:var(--accent);color:#14161A;font-weight:600}
+button.b.danger{color:var(--stop)}
+.meta{display:flex;flex-wrap:wrap;gap:18px;color:var(--muted);font-size:12.5px}
+pre{margin:0;padding:12px;background:var(--sunk);border:1px solid var(--line);border-radius:5px;
+  overflow-x:auto;font-family:Aptos,"Segoe UI",sans-serif;font-size:12.5px;line-height:1.7}
+.note{color:var(--muted);font-size:13px;max-width:70ch}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style></head><body>
+<header>
+  <div>
+    <h1>Slide Region Review</h1>
+    <div class="sub">Check the proposed region against every sampled timestamp. Drag the box to include only the slide. A proposal is not an approval; editing any decision clears its approval.</div>
+  </div>
+  <div class="counts">
+    <div class="count"><b id="cOk">0</b><span class="lbl">approved</span></div>
+    <div class="count"><b id="cNo">0</b><span class="lbl">no slides</span></div>
+    <div class="count"><b id="cLeft">0</b><span class="lbl">left</span></div>
+  </div>
+</header>
+<div class="wrap">
+  <aside id="list" aria-label="Talks to review"></aside>
+  <main>
+    <p id="notice" role="status" hidden></p>
+    <div>
+      <h2 id="tTitle" style="margin:0 0 2px;font-size:18px"></h2>
+      <div class="meta">
+        <span id="tConf"></span>
+        <span class="mono" id="tId"></span>
+        <span id="tFrames"></span>
+        <span id="tRatio"></span>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="frame" id="frame" tabindex="0" aria-label="Crop canvas. Arrow keys move the crop; Shift moves faster.">
+        <img id="img" alt="Individual video frame for slide crop review">
+        <div class="veil" id="veil"></div>
+        <div class="crop" id="crop">
+          <span class="h" data-h="nw"></span><span class="h" data-h="n"></span><span class="h" data-h="ne"></span>
+          <span class="h" data-h="w"></span><span class="h" data-h="e"></span>
+          <span class="h" data-h="sw"></span><span class="h" data-h="s"></span><span class="h" data-h="se"></span>
+        </div>
+      </div>
+      <div class="tabs" id="tabs"></div>
+      <div class="hint">Drag inside the box to move it, the handles to resize. Focus the frame to nudge with arrow keys; Shift+Arrow moves faster.</div>
+    </div>
+
+    <div class="panel">
+      <div class="grid">
+        <label class="fld"><span class="lbl">Left</span><input type="number" id="iL" step="0.001" min="0" max="1"></label>
+        <label class="fld"><span class="lbl">Top</span><input type="number" id="iT" step="0.001" min="0" max="1"></label>
+        <label class="fld"><span class="lbl">Right</span><input type="number" id="iR" step="0.001" min="0" max="1"></label>
+        <label class="fld"><span class="lbl">Bottom</span><input type="number" id="iB" step="0.001" min="0" max="1"></label>
+      </div>
+      <div class="acts" style="margin-top:14px">
+        <button class="b pri" id="bOk">Approve crop</button>
+        <button class="b" id="bReset">Reset to proposal</button>
+        <button class="b" id="bFull">Use full frame</button>
+        <button class="b danger" id="bNo">Confirm no slides</button>
+        <span class="mono" id="stateNote" role="status" style="color:var(--muted);font-size:12.5px"></span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="lbl" style="margin-bottom:8px">Commands for approved talks</div>
+      <p class="note" style="margin:0 0 10px">These commands use your explicitly approved region and require the exact sampled recording. Copying does not execute them. They are POSIX-shell commands; run only when you intend to re-extract.</p>
+      <pre id="out">Approve a crop to see its command.</pre>
+      <div class="acts" style="margin-top:10px">
+        <button class="b" id="bCopy">Copy commands</button>
+        <button class="b" id="bClear">Clear all decisions</button>
+      </div>
+    </div>
+  </main>
+</div>
+<script>
+const TALKS = __TALKS_JSON__;
+const BATCH = __BATCH_JSON__;
+__REVIEWER_JS__
+</script>
+</body></html>
