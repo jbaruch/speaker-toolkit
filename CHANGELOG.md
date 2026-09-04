@@ -1,5 +1,13 @@
 # Changelog
 
+### fix(vault-ingress) — count unnamed cloud-blocked talks separately (#389)
+
+Preflight uses the existing indexed diagnostic label for missing or malformed
+talk filenames in its cloud download inventory. Multiple unnamed talks sharing
+one placeholder remain two affected talks and one distinct file. Invalid
+filenames still block preflight, and inventory generation never hydrates a file
+or rewrites the database.
+
 ## 0.20.114 — 2026-09-04
 
 ### fix(vault-ingress) — decode recordings before accepting downloads (#381)

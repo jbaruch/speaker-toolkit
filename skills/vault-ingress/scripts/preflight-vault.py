@@ -2481,7 +2481,11 @@ class VaultPreflight:
             "blocking_count": blocking,
             "warning_count": warnings,
             "cloud_artifacts": summarize_cloud_artifacts(
-                (str(self.talks[index].get("filename", "")), assessment)
+                (
+                    _nonempty_string(self.talks[index].get("filename"))
+                    or f"talk[{index}]",
+                    assessment,
+                )
                 for index, assessment in self.artifact_capabilities.items()
             ),
             "summary": {
