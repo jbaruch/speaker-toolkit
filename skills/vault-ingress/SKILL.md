@@ -42,6 +42,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | 7 | Regenerate an existing speaker profile |
 | 8 | Verify active improvement goals against current provenance |
 | 9 | Hand fresh findings to clarification using the delivery-recency policy |
+| 10 | Offer opt-in contribution of new visually evidenced styles |
 
 ## Key Files & References
 
@@ -249,6 +250,16 @@ If no talk was processed, finish. Otherwise compute candidate topics and follow
   acceptance, invoke it with the candidate topics as handoff context.
 - **7–30 days:** recommend the full session with topics; do not auto-invoke.
 - **30+ days:** recommend the compressed session; do not auto-invoke.
+
+After any clarification interaction finishes, proceed immediately to Step 10.
+
+## Step 10 — Offer Style Contribution
+
+For a newly discovered, visually evidenced reusable style, follow
+[skills/illustrations/references/style-catalog.md](../illustrations/references/style-catalog.md#discoveries-and-opt-in-contribution).
+Offer contribution as one separate question; never upload automatically.
+If no new reusable style was observed, finish silently. Otherwise finish after
+the contribution decision and any explicitly approved submission.
 
 ## Error Handling
 

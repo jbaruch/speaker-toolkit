@@ -8,11 +8,12 @@ and `rendered.json` (output the script writes). One doc owns both.
 
 ## candidates.json — input
 
-- **Writer**: the agent, after proposing candidate styles (Step 7) and computing
-  the model shortlist (Step 6)
+- **Writers**: the catalog owner script emits v2 from selected catalog entries;
+  legacy agent-authored v1 files remain readable. Both follow Step 7 proposals
+  and the Step 6 model shortlist.
 - **Reader**: `generate-illustrations.py --style-explore`
 
-## Schema (schema_version 1)
+## Legacy schema (schema_version 1)
 
 ```json
 {
@@ -44,10 +45,26 @@ and `rendered.json` (output the script writes). One doc owns both.
 - `styles` — candidate styles. Each needs a `name` and an `anchors` map of
   format → anchor text. A style that omits a format is skipped for that format.
 
-Only `schema_version` 1 is accepted today — the reader rejects any other value.
+The reader accepts legacy v1 and catalog-backed v2 — other versions are refused.
 `candidates.json` is a transient per-talk input, not a persisted record, so
 there is no on-read migration. A future schema change bumps the version and
 teaches the reader to handle the new shape.
+
+## Catalog-backed schema (schema_version 2)
+
+The root has exactly `schema_version: 2`, `slides`, `models`, and `styles`.
+Every style is a complete closed catalog-v1 entry plus its versioned
+`catalog_source` receipt. The entry retains both anchors, conventions,
+composition, text treatment, tags, sample, and provenance; none is dropped
+during projection. The exact shape, bounds, and selection command are owned by
+[skills/illustrations/references/style-catalog.md](style-catalog.md).
+
+The generator validates the v2 shape before loading credentials or rendering.
+One grid uses one composition; posters use FULL only, require an actual
+representative-slide `text_overlay`, and reject safe zones. Poster prompts use
+the candidate's text treatment, not a previously baked style's lettering. The
+normal compose-only guard and render-before-bake gate still apply. Reads of
+either version do not migrate or rewrite the input.
 
 ## rendered.json — output
 

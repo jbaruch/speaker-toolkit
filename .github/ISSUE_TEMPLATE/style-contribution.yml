@@ -1,0 +1,42 @@
+name: Style contribution
+description: Propose a reusable, style-only entry for the public catalog.
+title: "style: "
+labels: [style-contribution]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is a public proposal, not automatic catalog admission. Do not share
+        private vault paths, unapproved talk content, or credentials. A maintainer
+        will review the style-only anchors, evidence, and sharing permissions.
+  - type: textarea
+    id: entry
+    attributes:
+      label: Complete catalog entry
+      description: Paste one schema-v1 entry including slug, name, FULL/IMG+TXT anchors, text_treatment, conventions, composition, tags, sample, and provenance.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: Representative sample
+      description: Attach a consented image or public image link. Identify the source slide and explain what style features it demonstrates. An unbundled reference must be stated explicitly.
+    validations:
+      required: true
+  - type: textarea
+    id: provenance
+    attributes:
+      label: Source attribution and reuse
+      description: Name the originating talk, exploration, or contributor and link the public source. Explain why this is reusable rather than a private signature or a per-slide scene.
+    validations:
+      required: true
+  - type: checkboxes
+    id: consent
+    attributes:
+      label: Sharing consent
+      options:
+        - label: I am authorized to publish this entry, sample, and provenance for review in this public repository.
+          required: true
+        - label: I reviewed the anchors and conventions as style-only; they do not require scene content or recurring page furniture on every slide.
+          required: true

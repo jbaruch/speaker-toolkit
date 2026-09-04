@@ -897,7 +897,7 @@ def test_parse_candidates_valid(generate_illustrations, tmp_path):
 def test_parse_candidates_bad_version(generate_illustrations, tmp_path):
     import pytest
 
-    path = _write_candidates(tmp_path, _candidates(schema_version=2))
+    path = _write_candidates(tmp_path, _candidates(schema_version=3))
     with pytest.raises(ValueError) as exc:
         generate_illustrations.parse_candidates(path)
     assert "schema_version" in str(exc.value)
@@ -1003,7 +1003,7 @@ def test_run_style_explore_bad_candidates_exits_cleanly(
     # A malformed candidates file surfaces the ValueError as a clean stderr
     # message + non-zero exit, not a traceback.
     p = tmp_path / "candidates.json"
-    p.write_text(json.dumps({"schema_version": 2}))
+    p.write_text(json.dumps({"schema_version": 3}))
     with pytest.raises(SystemExit) as exc:
         generate_illustrations.run_style_explore(str(tmp_path / "outline.yaml"), str(p))
     assert exc.value.code == 1

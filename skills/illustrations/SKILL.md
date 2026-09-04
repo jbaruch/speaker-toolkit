@@ -54,6 +54,7 @@ Do not restate them here — apply them.
 | [skills/illustrations/references/thumbnails.md](references/thumbnails.md) | Phase 7 thumbnail composition + slide selection |
 | [skills/illustrations/references/style-explore-candidates-schema.md](references/style-explore-candidates-schema.md) | `--style-explore` contract — `candidates.json` input + `rendered.json` output |
 | `skills/illustrations/scripts/model_registry.py` | Model roster, aliases, attributes; `--check-freshness` + `--shortlist` |
+| [skills/illustrations/references/style-catalog.md](references/style-catalog.md) | Packaged/public + personal style catalog, selection, owner writes, and opt-in contributions |
 | `skills/illustrations/scripts/generate-illustrations.py` | Deck illustrations, edits, fixes, builds, model comparison, style exploration |
 | `skills/illustrations/scripts/apply-illustrations-to-deck.py` | Insert illustrations + builds into a .pptx |
 | `skills/illustrations/scripts/generate-thumbnail.py` | YouTube thumbnail composition |
@@ -179,6 +180,11 @@ Proceed immediately to Step 7.
 
 ## Step 7 — Propose Styles Across the Checked Sources
 
+Read the merged catalog using
+[skills/illustrations/references/style-catalog.md](references/style-catalog.md).
+Use its reusable entries across the checked sources; personal styles shadow
+public styles by slug. Surface unavailable catalog layers before proposing.
+
 Propose 3-4 style options spanning the Step 3 sources, grounded in concept fit +
 vault context (the speaker's `visual_style_history`, `rhetoric-style-summary.md`
 Section 13). These are candidates for the render, not a commitment — the speaker
@@ -189,8 +195,10 @@ Proceed immediately to Step 8.
 
 ## Step 8 — Render the Exploration Grid
 
-Write `style-explore/candidates.json` (styles × shortlist × formats per the
-schema), then render:
+For catalog styles, generate `style-explore/candidates.json` with the catalog
+owner's selection command in
+[skills/illustrations/references/style-catalog.md](references/style-catalog.md).
+Use the Step 6 shortlist and representative slides, then render:
 
 ```bash
 python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-illustrations.py" \
@@ -242,8 +250,9 @@ model cannot generate.
 Full protocol — the option template, continuity options, the gate contract:
 [skills/illustrations/references/strategy.md](references/strategy.md).
 
-Proceed immediately to Step 10 if generation was also requested; otherwise finish
-here.
+For a newly discovered reusable style, follow the separate opt-in contribution
+offer in [skills/illustrations/references/style-catalog.md](references/style-catalog.md).
+Proceed immediately to Step 10 if generation was also requested; otherwise finish here.
 
 ## Step 10 — Generate Deck Illustrations
 

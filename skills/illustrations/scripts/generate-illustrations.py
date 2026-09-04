@@ -51,6 +51,7 @@ import urllib.error
 import urllib.request
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from model_registry import (
     COMPARE_MODELS,
@@ -58,6 +59,12 @@ from model_registry import (
     OPENAI_API_BASE,
     is_supported_model,
     resolve_model_id,
+)
+from style_catalog import (
+    CatalogError,
+    decode as decode_catalog_json,
+    read_bytes as read_catalog_bytes,
+    validate_candidates as validate_catalog_candidates,
 )
 
 # outline.yaml is the single source of truth; its pydantic schema + loader live
@@ -1623,22 +1630,27 @@ def _format_slug(fmt):
 def parse_candidates(path):
     """Parse + validate a style-explore candidates.json file.
 
-    Schema (schema_version 1) is documented in
+    Schemas (legacy version 1 and catalog-backed version 2) are documented in
     skills/illustrations/references/style-explore-candidates-schema.md.
 
     Returns the parsed dict. Raises ValueError with an actionable message on a
     malformed file.
     """
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"{path} is not valid JSON ({e}).")
+        data = decode_catalog_json(read_catalog_bytes(Path(path)))
+    except CatalogError as exc:
+        if exc.code == "catalog_file_missing":
+            raise FileNotFoundError(path) from exc
+        raise
 
-    if data.get("schema_version") != 1:
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: candidates must be a JSON object.")
+    if type(data.get("schema_version")) is int and data["schema_version"] == 2:
+        return validate_catalog_candidates(data)
+    if type(data.get("schema_version")) is not int or data["schema_version"] != 1:
         raise ValueError(
             f"{path}: unsupported schema_version {data.get('schema_version')!r}; "
-            "expected 1."
+            "expected legacy version 1 or catalog-backed version 2."
         )
     slides = data.get("slides")
     if not isinstance(slides, dict) or not slides:
@@ -1776,6 +1788,10 @@ def run_style_explore(outline_path, candidates_path):
         os.path.dirname(os.path.abspath(outline_path)), "style-explore"
     )
     os.makedirs(base_dir, exist_ok=True)
+    catalog_backed = candidates["schema_version"] == 2
+    poster = (
+        catalog_backed and candidates["styles"][0]["composition"] == "poster-theatrical"
+    )
 
     # Resolve each format's representative scene prompt from the outline.
     targets = []
@@ -1789,6 +1805,13 @@ def run_style_explore(outline_path, candidates_path):
             )
             continue
         safe_zone = slide.get("safe_zone")
+        if poster and (safe_zone or not slide.get("text")):
+            print(
+                "ERROR: poster catalog exploration requires a FULL representative "
+                "slide with text_overlay and no safe zone. Update the outline and retry.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         # A safe zone forces FULL sizing/anchor downstream; if that disagrees
         # with the format being explored, the cell would render at the wrong
         # geometry. Skip it so every rendered cell keys consistently on `fmt`.
@@ -1800,7 +1823,7 @@ def run_style_explore(outline_path, candidates_path):
                 file=sys.stderr,
             )
             continue
-        targets.append((fmt, slide["prompt"], safe_zone))
+        targets.append((fmt, slide["prompt"], safe_zone, slide.get("text")))
 
     if not targets:
         print(
@@ -1814,7 +1837,7 @@ def run_style_explore(outline_path, candidates_path):
     # Build the full render plan up front so the progress count is exact.
     plan = []
     for style in candidates["styles"]:
-        for fmt, scene_prompt, safe_zone in targets:
+        for fmt, scene_prompt, safe_zone, title_text in targets:
             eff_format = effective_slide_format(fmt, safe_zone)
             # When a safe zone forces FULL, prefer the style's eff_format anchor
             # so anchor text, substitution, and sizing all agree; fall back to
@@ -1822,9 +1845,19 @@ def run_style_explore(outline_path, candidates_path):
             anchor = style["anchors"].get(eff_format) or style["anchors"].get(fmt)
             if not anchor:
                 continue
+            if catalog_backed:
+                anchor = f"{anchor} {style['conventions']}".strip()
+            prompt = resolve_prompt(scene_prompt, eff_format, {eff_format: anchor})
+            if poster:
+                prompt = apply_poster_embed_directive(
+                    prompt,
+                    title_text,
+                    outline.get("embedded_footer"),
+                    style["text_treatment"],
+                )
             prompt = apply_compose_only_directive(
                 apply_safe_zone_directive(
-                    resolve_prompt(scene_prompt, eff_format, {eff_format: anchor}),
+                    prompt,
                     safe_zone,
                 )
             )
