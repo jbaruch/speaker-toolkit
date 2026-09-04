@@ -15,6 +15,10 @@ import shutil
 import sys
 
 
+# Dependabot renews the pyproject.toml pin weekly. Every such manifest update
+# must renew this runtime mirror in the same PR;
+# tests/test_check_runtime.py::test_ytdlp_version_authority_is_synchronized
+# enforces that the two pins stay identical.
 YTDLP_REQUIRED_VERSION = "2026.8.19"
 YTDLP_RESOLUTION_FAILURE_CODES = frozenset(
     {
