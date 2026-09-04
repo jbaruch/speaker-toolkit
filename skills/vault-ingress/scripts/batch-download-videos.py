@@ -11,8 +11,9 @@ beginning with `-` needs no escaping; a `--` separator is accepted and ignored.
 Each video lands at `<vault_root>/slides-rebuild/<youtube_id>/<youtube_id>.mp4`
 at 720p, with yt-dlp's combined output kept beside it as `<youtube_id>.yt-dlp.log`.
 
-An id already carrying a non-empty video is skipped, so a large batch resumes
-rather than restarting.
+An id already carrying a complete, decode-verified video is skipped, so a large
+batch resumes rather than restarting. Non-empty but damaged files fail visibly;
+the owner can move them aside and retry. They are never silently overwritten.
 
 Stdout: one JSON object.
 
@@ -23,8 +24,9 @@ Stdout: one JSON object.
 
 `results` holds one entry per requested id, in the order given; an id repeated
 in one invocation is rejected rather than downloaded twice. An `ok` or `skip`
-entry carries `path` and `bytes`; a `fail` entry carries `exit_code`, `reason`,
-and `log`. An `ok` requires both a zero exit and a non-empty file — a run that
+entry carries `path`, `bytes`, and `integrity`; a `fail` entry carries `exit_code`,
+`reason`, and `log`. An `ok` requires a zero exit, a non-empty file, and full
+decode verification by video_integrity.py before promotion — a run that
 exits non-zero having left a truncated file behind fails, and its partial output
 is discarded so the next run retries rather than skipping it.
 
@@ -56,12 +58,16 @@ from __future__ import annotations
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 import subprocess
 import sys
 
 from failure_diagnostics import sanitized_frames
+from artifact_supervisor import FileGeneration, SupervisorError
 from ingress_contract import YOUTUBE_ID_RE
+from video_evidence import VideoEvidenceError, probe_video_artifact
+from video_integrity import VideoIntegrityError, verify_video_integrity
 from ytdlp_runtime import YtDlpResolutionError, resolve_ytdlp
 
 USAGE = "usage: batch-download-videos.py <vault_root> ID1 [ID2 ...]"
@@ -163,6 +169,44 @@ def failure_reason(output: str) -> str:
     return "no output file and no yt-dlp diagnostic"
 
 
+def _verify_download(path: Path) -> dict[str, object]:
+    try:
+        receipt = verify_video_integrity(path)
+        if (
+            FileGeneration.from_stat(path.lstat()).to_dict()
+            != receipt["source_generation"]
+        ):
+            raise VideoIntegrityError("integrity_source_changed")
+        return receipt
+    except (SupervisorError, VideoEvidenceError) as exc:
+        raise VideoIntegrityError(exc.reason_code, exc.details) from exc
+    except OSError as exc:
+        raise VideoIntegrityError("integrity_source_unavailable") from exc
+
+
+def _bind_promoted_integrity(path: Path, receipt: dict[str, object]) -> None:
+    """A rename changes ctime, not the verified object, bytes, or other metadata."""
+    raw = receipt["source_generation"]
+    if not isinstance(raw, dict):
+        raise VideoIntegrityError("integrity_source_changed")
+    expected = FileGeneration.from_dict(raw)
+    try:
+        observed = FileGeneration.from_stat(path.lstat())
+    except OSError as exc:
+        raise VideoIntegrityError("integrity_source_changed") from exc
+    if replace(observed, ctime_ns=expected.ctime_ns) != expected:
+        raise VideoIntegrityError("integrity_source_changed")
+    # A rename and an in-place write both change ctime. Re-probe the promoted
+    # bytes so a same-size write with restored mtime cannot hide in that carve-out.
+    try:
+        probe = probe_video_artifact(path)
+    except (VideoEvidenceError, SupervisorError) as exc:
+        raise VideoIntegrityError(exc.reason_code, exc.details) from exc
+    if probe.generation != observed or probe.source_sha256 != receipt["source_sha256"]:
+        raise VideoIntegrityError("integrity_source_changed")
+    receipt["source_generation"] = probe.generation.to_dict()
+
+
 def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, object]:
     """Download one video, returning its outcome rather than raising."""
     target_dir = vault_root / "slides-rebuild" / youtube_id
@@ -175,11 +219,25 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
     log_path = target_dir / f"{youtube_id}.yt-dlp.log"
 
     if target.is_file() and target.stat().st_size > 0:
+        try:
+            integrity = _verify_download(target)
+        except VideoIntegrityError as exc:
+            return {
+                "youtube_id": youtube_id,
+                "outcome": "fail",
+                "exit_code": None,
+                "reason_code": exc.code,
+                "reason": f"existing recording failed integrity verification ({exc.code}) — "
+                "check the runtime or move the damaged file aside, then rerun this id",
+                "log": None,
+                "integrity_details": exc.details,
+            }
         return {
             "youtube_id": youtube_id,
             "outcome": "skip",
             "path": str(target),
             "bytes": target.stat().st_size,
+            "integrity": integrity,
         }
 
     try:
@@ -273,7 +331,20 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
     # truncated file behind.
     written = staging.is_file() and staging.stat().st_size > 0
     if exit_code == 0 and written:
-        size = staging.stat().st_size
+        try:
+            integrity = _verify_download(staging)
+        except VideoIntegrityError as exc:
+            return {
+                "youtube_id": youtube_id,
+                "outcome": "fail",
+                "exit_code": exit_code,
+                "reason_code": exc.code,
+                "reason": f"download failed integrity verification ({exc.code}) — "
+                "check the runtime and retry; unverified staging output was not promoted",
+                "integrity_details": exc.details,
+                **log_fields,
+            }
+        size = integrity["source_size_bytes"]
         try:
             staging.replace(target)
         except OSError as exc:
@@ -289,11 +360,24 @@ def download_one(ytdlp: Path, vault_root: Path, youtube_id: str) -> dict[str, ob
                 ),
                 **log_fields,
             }
+        try:
+            _bind_promoted_integrity(target, integrity)
+        except VideoIntegrityError as exc:
+            return {
+                "youtube_id": youtube_id,
+                "outcome": "fail",
+                "exit_code": exit_code,
+                "reason_code": exc.code,
+                "reason": "recording changed during promotion — inspect the target and "
+                "rerun verification before using it as evidence",
+                **log_fields,
+            }
         return {
             "youtube_id": youtube_id,
             "outcome": "ok",
             "path": str(target),
             "bytes": size,
+            "integrity": integrity,
             **log_fields,
         }
 
