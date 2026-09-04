@@ -1770,15 +1770,16 @@ def test_qr_repair_dry_run_apply_and_backup_preserve_talk_evidence(
 
 
 @pytest.mark.parametrize("invalid", [False, True])
+@pytest.mark.parametrize("flag", ["--repair-missing-qr-versions", "--repair-missing"])
 def test_qr_repair_cli_reports_json_without_rejected_values(
-    tracking_database, migrate_tracking_database, tmp_path, capsys, invalid
+    tracking_database, migrate_tracking_database, tmp_path, capsys, invalid, flag
 ):
     path = tmp_path / "private-catalog.json"
     database = _missing_qr_version_database(tracking_database)
     if invalid:
         database["qr_codes"][0]["created_at"] = "secret-rejected-value"
     raw = _write_database(path, database)
-    code = migrate_tracking_database.main([str(path), "--repair-missing-qr-versions"])
+    code = migrate_tracking_database.main([str(path), flag])
     captured = capsys.readouterr()
     report = json.loads(captured.out)
     assert code == (2 if invalid else 0)

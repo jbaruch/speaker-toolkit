@@ -246,8 +246,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--expected-sha256")
     parser.add_argument("--repair-missing-qr-versions", action="store_true")
+    repair_requested = False
     try:
         args = parser.parse_args(argv)
+        repair_requested = args.repair_missing_qr_versions
         report = execute(
             args.database,
             apply=args.apply,
@@ -257,7 +259,7 @@ def main(argv: list[str] | None = None) -> int:
     except TrackingDatabaseMigrationError as exc:
         # Repair is a bootstrap boundary over an unreadable database; neither
         # decoder nor schema errors may echo rejected values or host paths.
-        repair_requested = "--repair-missing-qr-versions" in (
+        repair_requested = repair_requested or "--repair-missing-qr-versions" in (
             sys.argv[1:] if argv is None else argv
         )
         message = (
