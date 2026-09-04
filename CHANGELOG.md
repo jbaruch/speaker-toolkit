@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.118 — 2026-09-04
+
 ### Clean usage errors for malformed reviewed-source digests
 
 Validate `--expected-source-sha256` at argument parsing as well as at the
