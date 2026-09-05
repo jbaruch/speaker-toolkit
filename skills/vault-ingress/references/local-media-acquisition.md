@@ -38,6 +38,14 @@ pins. A failed optional lane does not invalidate independent captions or slides.
   exits. It does not register or preserve a recording in the vault.
 - Worker arguments contain no source locator or model path. Authenticated
   private request payloads carry them; diagnostics remain bounded and redacted.
+- Full Whisper acquisition uses greedy decoding without previous-window text
+  prompts. Its bounded result gate rejects extreme unspaced periodic letter
+  runs with `whisper_repetitive_text`; see
+  `skills/vault-ingress/scripts/local_media_contract.py` —
+  `WHISPER_REPETITION_POLICY_VERSION` and `_reject_repetitive_whisper_text`.
+  This is a decoder-loop guard, not a complete hallucination detector. A refusal
+  returns no truncated transcript and preserves the prior bundle. It does not
+  migrate an existing quality receipt or authenticate a recording's catalog identity.
 
 ## Refusal and Recovery
 
