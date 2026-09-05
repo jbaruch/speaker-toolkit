@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.122 — 2026-09-05
+
 ### Typed failures for invalid speech-rate serialization inputs
 
 Make the speech-rate owner's direct-library serializer reject non-JSON values,
