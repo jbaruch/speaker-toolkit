@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.121 — 2026-09-05
+
 ### Preserve active claims during the QR-version-only owner repair
 
 Allow the explicit missing-QR-version repair to preserve valid active queue
