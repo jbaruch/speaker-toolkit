@@ -19,7 +19,7 @@ dependencies = [
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
     "psutil==7.2.2",
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
-    "pypdf==6.15.0",
+    "pypdf==6.16.2",
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
     "lxml==6.1.1",
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
