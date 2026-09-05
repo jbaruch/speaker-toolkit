@@ -11,9 +11,9 @@ in CI without a network, without YouTube, and without Apple-Silicon Whisper.
 """
 
 import hashlib
+from contextlib import contextmanager
 import json
 import os
-import pathlib
 import subprocess
 import sys
 from pathlib import Path
@@ -275,188 +275,109 @@ def test_a_receipt_with_no_media_digest_never_matches(fetch_transcript):
     )
 
 
-def _blocking_yt_dlp(fetch_transcript, monkeypatch, serving_client, attempts):
-    """Mock yt-dlp as YouTube currently behaves: one client works, others 403.
+def _mock_media_probe(fetch_transcript, monkeypatch, path, duration=600.0):
+    """Supply trusted synthetic facts; real worker admission has its own suite."""
+    from artifact_supervisor import DiagnosticReceipt, FileGeneration
 
-    Writes the audio file only for `serving_client`, exactly as a real download
-    does, so the caller's "did a file appear" check decides the outcome.
-    """
-
-    def run(command, **_kwargs):
-        client = None
-        if "--extractor-args" in command:
-            client = command[command.index("--extractor-args") + 1].split("=")[-1]
-        attempts.append(client)
-        if client != serving_client:
-            return subprocess.CompletedProcess(
-                command, 1, stdout="", stderr="HTTP Error 403: Forbidden"
-            )
-        target = command[command.index("-o") + 1]
-        pathlib.Path(target.replace("%(ext)s", "mp3")).write_bytes(b"audio")
-        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
-
-    monkeypatch.setattr(fetch_transcript.subprocess, "run", run)
-
-
-def test_a_refused_attempt_that_left_bytes_behind_is_not_reused(
-    fetch_transcript, monkeypatch, tmp_path
-):
-    """A partial file from a failed client must not end the retry chain.
-
-    yt-dlp can exit nonzero having already written something. If every attempt
-    shared one output path, the next attempt's existence check would accept
-    those bytes as its own success and transcribe the failure's leftovers.
-    """
-    attempts: list[str | None] = []
-
-    def run(command, **_kwargs):
-        client = None
-        if "--extractor-args" in command:
-            client = command[command.index("--extractor-args") + 1].split("=")[-1]
-        attempts.append(client)
-        target = pathlib.Path(
-            command[command.index("-o") + 1].replace("%(ext)s", "mp3")
-        )
-        if client != "mweb":
-            # the failure leaves a truncated artifact behind
-            target.write_bytes(b"partial-garbage")
-            return subprocess.CompletedProcess(
-                command, 1, stdout="", stderr="HTTP Error 403: Forbidden"
-            )
-        target.write_bytes(b"real-audio")
-        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
-
-    monkeypatch.setattr(fetch_transcript.subprocess, "run", run)
-    transcribed: list[bytes] = []
-
-    def transcribe(audio_path, *_a, **_k):
-        transcribed.append(pathlib.Path(audio_path).read_bytes())
-        return "spoken words here", "en", None
-
-    monkeypatch.setattr(fetch_transcript, "transcribe_audio", transcribe)
-
-    text, _language, _segments = fetch_transcript.fetch_whisper(
-        "Kl6tLcQ5hGI", str(tmp_path), "tiny"
+    probe = fetch_transcript.MediaArtifactProbe(
+        generation=FileGeneration.from_stat(path.lstat()),
+        root_generation=None,
+        source_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+        source_size_bytes=path.stat().st_size,
+        duration_seconds=duration,
+        duration_source="format",
+        container_family="iso_bmff",
+        stream_count=2,
+        video_stream_count=1,
+        audio_stream_count=1,
+        attached_picture_count=0,
+        other_stream_count=0,
+        parser_diagnostics=DiagnosticReceipt.empty(),
     )
-
-    assert text == "spoken words here"
-    assert "mweb" in attempts, "a leftover file must not end the chain early"
-    assert transcribed == [b"real-audio"], "the failure's bytes must never be read"
+    monkeypatch.setattr(fetch_transcript, "probe_local_media", lambda *a, **kw: probe)
+    return probe
 
 
-def test_whisper_download_uses_the_resolved_executable(
-    fetch_transcript, monkeypatch, tmp_path
+def test_whisper_download_reuses_the_bound_probe_and_cleans_before_return(
+    fetch_transcript,
+    monkeypatch,
+    tmp_path,
 ):
-    commands: list[list[str]] = []
+    media = tmp_path / "audio.mp4"
+    media.write_bytes(b"synthetic audio")
+    probe = _mock_media_probe(fetch_transcript, monkeypatch, media)
+    seen = []
 
-    def run(command, **_kwargs):
-        commands.append(command)
-        target = pathlib.Path(
-            command[command.index("-o") + 1].replace("%(ext)s", "mp3")
-        )
-        target.write_bytes(b"audio")
-        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+    @contextmanager
+    def downloaded(video_id, *, ytdlp):
+        seen.append((video_id, ytdlp))
+        try:
+            yield media, 600.0
+        finally:
+            seen.append("cleaned")
 
-    monkeypatch.setattr(fetch_transcript.subprocess, "run", run)
+    def transcribed(path, model, *, probe, trusted_root):
+        assert path == media
+        assert trusted_root == media.parent
+        assert probe.source_sha256 == hashlib.sha256(b"synthetic audio").hexdigest()
+        return probe, {"text": "spoken words", "language": "en", "segments": None}
+
+    monkeypatch.setattr(fetch_transcript, "download_youtube_audio", downloaded)
+    monkeypatch.setattr(fetch_transcript, "transcribe_local_media", transcribed)
+    executable = tmp_path / "yt-dlp"
+    result = fetch_transcript.fetch_whisper(
+        "Kl6tLcQ5hGI", str(tmp_path), "tiny", ytdlp=executable
+    )
+    assert tuple(result) == ("spoken words", "en", None)
+    assert result.duration_seconds == probe.duration_seconds
+    assert seen == [("Kl6tLcQ5hGI", executable), "cleaned"]
+
+
+def test_whisper_download_duration_must_match_probed_media(
+    fetch_transcript,
+    monkeypatch,
+    tmp_path,
+):
+    media = tmp_path / "audio.mp4"
+    media.write_bytes(b"synthetic audio")
+    _mock_media_probe(fetch_transcript, monkeypatch, media)
+
+    @contextmanager
+    def downloaded(*args, **kwargs):
+        yield media, 900.0
+
+    monkeypatch.setattr(fetch_transcript, "download_youtube_audio", downloaded)
     monkeypatch.setattr(
         fetch_transcript,
-        "transcribe_audio",
-        lambda *_args: ("spoken words here", "en", None),
+        "transcribe_local_media",
+        lambda *a, **kw: pytest.fail("mismatched source was transcribed"),
     )
-
-    executable = tmp_path / "runtime" / "yt-dlp"
-    text, _language, _segments = fetch_transcript.fetch_whisper(
-        "Kl6tLcQ5hGI",
-        str(tmp_path),
-        "tiny",
-        ytdlp=executable,
-    )
-
-    assert text == "spoken words here"
-    assert commands[0][0] == str(executable)
+    with pytest.raises(
+        fetch_transcript.LocalMediaError, match="ytdlp_media_duration_mismatch"
+    ):
+        fetch_transcript.fetch_whisper("Kl6tLcQ5hGI", str(tmp_path), "tiny")
 
 
-def test_a_zero_byte_download_is_not_a_success(fetch_transcript, monkeypatch, tmp_path):
-    """An empty artifact is a failed extraction wearing a filename."""
-    attempts: list[str | None] = []
-
-    def run(command, **_kwargs):
-        client = None
-        if "--extractor-args" in command:
-            client = command[command.index("--extractor-args") + 1].split("=")[-1]
-        attempts.append(client)
-        pathlib.Path(
-            command[command.index("-o") + 1].replace("%(ext)s", "mp3")
-        ).write_bytes(b"")
-        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
-
-    monkeypatch.setattr(fetch_transcript.subprocess, "run", run)
-
-    text, language, segments = fetch_transcript.fetch_whisper(
-        "Kl6tLcQ5hGI", str(tmp_path), "tiny"
-    )
-
-    assert (text, language, segments) == (None, None, None)
-    assert len(attempts) == len(fetch_transcript.YOUTUBE_PLAYER_CLIENTS)
-
-
-def test_a_refused_player_client_advances_to_the_next(
-    fetch_transcript, monkeypatch, tmp_path
+def test_whisper_download_refusal_stops_before_transcription(
+    fetch_transcript,
+    monkeypatch,
+    tmp_path,
 ):
-    """The 403 that killed the fallback: a later client must still be tried."""
-    attempts: list[str | None] = []
-    _blocking_yt_dlp(fetch_transcript, monkeypatch, "mweb", attempts)
+    @contextmanager
+    def refused(*args, **kwargs):
+        raise fetch_transcript.LocalMediaError("ytdlp_provider_rejected")
+        yield  # pragma: no cover - context manager protocol
+
+    monkeypatch.setattr(fetch_transcript, "download_youtube_audio", refused)
     monkeypatch.setattr(
         fetch_transcript,
-        "transcribe_audio",
-        lambda *a, **k: ("spoken words here", "en", None),
+        "transcribe_local_media",
+        lambda *a, **kw: pytest.fail("refused download was transcribed"),
     )
-
-    text, language, _segments = fetch_transcript.fetch_whisper(
-        "Kl6tLcQ5hGI", str(tmp_path), "tiny"
-    )
-
-    assert text == "spoken words here"
-    assert language == "en"
-    assert attempts[0] is None, "the default chain must be tried first"
-    assert "mweb" in attempts, "the serving client must be reached"
-
-
-def test_a_working_default_client_never_pays_for_the_fallbacks(
-    fetch_transcript, monkeypatch, tmp_path
-):
-    attempts: list[str | None] = []
-    _blocking_yt_dlp(fetch_transcript, monkeypatch, None, attempts)
-    monkeypatch.setattr(
-        fetch_transcript,
-        "transcribe_audio",
-        lambda *a, **k: ("spoken words here", "en", None),
-    )
-
-    text, _language, _segments = fetch_transcript.fetch_whisper(
-        "Kl6tLcQ5hGI", str(tmp_path), "tiny"
-    )
-
-    assert text == "spoken words here"
-    assert attempts == [None], "a healthy environment must make exactly one attempt"
-
-
-def test_every_player_client_refusing_reports_failure(
-    fetch_transcript, monkeypatch, tmp_path, capsys
-):
-    """Exhaustion is a failure that names what was tried, not a traceback."""
-    attempts: list[str | None] = []
-    _blocking_yt_dlp(fetch_transcript, monkeypatch, "no-such-client", attempts)
-
-    text, language, segments = fetch_transcript.fetch_whisper(
-        "Kl6tLcQ5hGI", str(tmp_path), "tiny"
-    )
-
-    assert (text, language, segments) == (None, None, None)
-    assert len(attempts) == len(fetch_transcript.YOUTUBE_PLAYER_CLIENTS)
-    stderr = capsys.readouterr().err
-    assert "under any player client" in stderr
-    assert "403" in stderr
+    with pytest.raises(
+        fetch_transcript.LocalMediaError, match="ytdlp_provider_rejected"
+    ):
+        fetch_transcript.fetch_whisper("Kl6tLcQ5hGI", str(tmp_path), "tiny")
 
 
 def test_plausible_transcript_passes(fetch_transcript):
@@ -749,40 +670,40 @@ def test_unenumerated_provider_exception_reaches_the_process_boundary(
         )
 
 
-def test_direct_whisper_call_propagates_an_unisolated_import_failure(
-    fetch_transcript, monkeypatch, tmp_path
+def test_direct_whisper_call_uses_the_bounded_owner(
+    fetch_transcript,
+    monkeypatch,
+    tmp_path,
 ):
-    audio = tmp_path / "audio.mp3"
+    audio = tmp_path / "audio.mp4"
     audio.write_bytes(b"synthetic")
+    probe = _mock_media_probe(fetch_transcript, monkeypatch, audio)
+    calls = []
 
-    def broken_import(_name):
-        raise TypeError("synthetic optional dependency import failure")
+    def transcribed(path, model, **kwargs):
+        calls.append((path, model, kwargs["probe"]))
+        return probe, {"text": "spoken words", "language": "en", "segments": None}
 
-    monkeypatch.setattr(fetch_transcript.importlib, "import_module", broken_import)
+    monkeypatch.setattr(fetch_transcript, "transcribe_local_media", transcribed)
+    assert fetch_transcript.transcribe_audio(
+        audio, "local-talk", "model", probe=probe
+    ) == ("spoken words", "en", None)
+    assert calls == [(audio, "model", probe)]
 
-    with pytest.raises(TypeError, match="synthetic optional dependency"):
-        fetch_transcript.transcribe_audio(audio, "local-talk", "model")
 
-
-def test_direct_whisper_call_propagates_an_unisolated_api_failure(
-    fetch_transcript, monkeypatch, tmp_path
+def test_direct_whisper_call_preserves_a_typed_provider_failure(
+    fetch_transcript,
+    monkeypatch,
+    tmp_path,
 ):
-    audio = tmp_path / "audio.mp3"
-    audio.write_bytes(b"synthetic")
+    def failed(*args, **kwargs):
+        raise fetch_transcript.LocalMediaError("whisper_provider_failed")
 
-    class BrokenWhisper:
-        @staticmethod
-        def transcribe(*_args, **_kwargs):
-            raise KeyError("synthetic result-shape failure")
-
-    monkeypatch.setattr(
-        fetch_transcript.importlib,
-        "import_module",
-        lambda _name: BrokenWhisper,
-    )
-
-    with pytest.raises(KeyError, match="synthetic result-shape failure"):
-        fetch_transcript.transcribe_audio(audio, "local-talk", "model")
+    monkeypatch.setattr(fetch_transcript, "transcribe_local_media", failed)
+    with pytest.raises(
+        fetch_transcript.LocalMediaError, match="whisper_provider_failed"
+    ):
+        fetch_transcript.transcribe_audio(tmp_path / "audio.mp3", "local-talk", "model")
 
 
 def test_captions_report_the_track_language(fetch_transcript, monkeypatch):
@@ -816,44 +737,25 @@ def test_captions_report_the_track_language(fetch_transcript, monkeypatch):
 
 
 def test_youtube_duration_probe_is_bound_to_the_exact_video_id(
-    fetch_transcript, monkeypatch
+    fetch_transcript,
+    monkeypatch,
+    tmp_path,
 ):
     seen = []
 
-    def completed(command, **kwargs):
-        seen.append((command, kwargs))
-        return subprocess.CompletedProcess(
-            command,
-            0,
-            stdout=json.dumps({"id": "eg6gqvUFh6Q", "duration": 179.625}),
-            stderr="",
-        )
+    def bounded(video_id, *, ytdlp):
+        seen.append((video_id, ytdlp))
+        return 179.625
 
-    monkeypatch.setattr(fetch_transcript.subprocess, "run", completed)
-
-    ytdlp = Path("/runtime/bin/yt-dlp")
+    monkeypatch.setattr(fetch_transcript, "probe_youtube_media_duration", bounded)
+    executable = tmp_path / "yt-dlp"
     duration, reason = fetch_transcript.probe_youtube_duration(
-        "eg6gqvUFh6Q", ytdlp=ytdlp
+        "eg6gqvUFh6Q", ytdlp=executable
     )
-
     assert duration == 179.625
-    assert "trusted yt-dlp duration" in reason
-    assert seen == [
-        (
-            [
-                str(ytdlp),
-                "--dump-single-json",
-                "--skip-download",
-                "--no-playlist",
-                "https://www.youtube.com/watch?v=eg6gqvUFh6Q",
-            ],
-            {"capture_output": True, "text": True},
-        )
-    ]
-    assert fetch_transcript.youtube_quality_provenance(
-        "eg6gqvUFh6Q",
-        duration,
-    ) == {
+    assert "bounded yt-dlp duration" in reason
+    assert seen == [("eg6gqvUFh6Q", executable)]
+    assert fetch_transcript.youtube_quality_provenance("eg6gqvUFh6Q", duration) == {
         "kind": "youtube_duration",
         "video_id": "eg6gqvUFh6Q",
         "duration_seconds": 179.625,
@@ -863,52 +765,27 @@ def test_youtube_duration_probe_is_bound_to_the_exact_video_id(
 def test_youtube_duration_probe_rejects_provider_identity_drift(
     fetch_transcript, monkeypatch
 ):
-    monkeypatch.setattr(
-        fetch_transcript.subprocess,
-        "run",
-        lambda command, **kwargs: subprocess.CompletedProcess(
-            command,
-            0,
-            stdout=json.dumps({"id": "wb2C2ju_xRg", "duration": 179.625}),
-            stderr="",
-        ),
-    )
+    def rejected(*args, **kwargs):
+        raise fetch_transcript.LocalMediaError("ytdlp_identity_mismatch")
 
+    monkeypatch.setattr(fetch_transcript, "probe_youtube_media_duration", rejected)
     duration, reason = fetch_transcript.probe_youtube_duration("eg6gqvUFh6Q")
-
     assert duration is None
-    assert "identity mismatch" in reason
+    assert "ytdlp_identity_mismatch" in reason
 
 
-def test_local_duration_provenance_hashes_the_exact_media(
+def test_local_duration_provenance_uses_established_exact_media_facts(
     fetch_transcript, monkeypatch, tmp_path
 ):
     media = tmp_path / "recording.mp4"
     media.write_bytes(b"synthetic local media bytes")
-    monkeypatch.setattr(
-        fetch_transcript.subprocess,
-        "run",
-        lambda command, **kwargs: subprocess.CompletedProcess(
-            command,
-            0,
-            stdout="61.250000\n",
-            stderr="",
-        ),
-    )
-
-    duration, reason = fetch_transcript.probe_local_media_duration(media)
-
-    assert duration == 61.25
-    assert "trusted ffprobe duration" in reason
-    provenance = fetch_transcript.local_media_quality_provenance(
-        fetch_transcript.media_sha256(media),
-        duration,
-    )
-    assert provenance == {
+    probe = _mock_media_probe(fetch_transcript, monkeypatch, media, duration=61.25)
+    source = fetch_transcript.AssessedMediaSource(media, probe)
+    assert fetch_transcript.local_media_quality_provenance(
+        source.sha256, probe.duration_seconds
+    ) == {
         "kind": "local_media_duration",
-        "media_sha256": (
-            "2d252575385bde1cab2b5ee3f23e77129478a0412fef2ddecd53a07b650b9e14"
-        ),
+        "media_sha256": "2d252575385bde1cab2b5ee3f23e77129478a0412fef2ddecd53a07b650b9e14",
         "duration_seconds": 61.25,
     }
 
@@ -939,48 +816,35 @@ def _existing_local_audio_bundle(fetch_transcript, tmp_path, receipt_digest):
     return media, out
 
 
-def test_a_failed_probe_keeps_a_receipt_that_still_names_these_media_bytes(
-    fetch_transcript, monkeypatch, tmp_path, capsys
+@pytest.mark.parametrize(
+    "stored_digest",
+    [
+        hashlib.sha256(b"stable local media bytes").hexdigest(),
+        "f" * 64,
+    ],
+)
+def test_failed_local_probe_preserves_every_receipt_without_fallback_relabeling(
+    fetch_transcript,
+    monkeypatch,
+    tmp_path,
+    capsys,
+    stored_digest,
 ):
-    """ffprobe unavailable must not cost the duration a later bound needs."""
-    digest = hashlib.sha256(b"stable local media bytes").hexdigest()
-    media, out = _existing_local_audio_bundle(fetch_transcript, tmp_path, digest)
-    before = out.with_suffix(".quality.json").read_text(encoding="utf-8")
-    monkeypatch.setattr(
-        fetch_transcript,
-        "probe_local_media_duration",
-        lambda _path: (None, "ffprobe unavailable"),
-    )
+    media, out = _existing_local_audio_bundle(fetch_transcript, tmp_path, stored_digest)
+    timing = out.with_suffix(".segments.json")
+    timing.write_bytes(b"existing timing")
+    paths = [out, out.with_suffix(".quality.json"), timing]
+    before = {path: path.read_bytes() for path in paths}
 
+    def unavailable(*args, **kwargs):
+        raise fetch_transcript.LocalMediaError("media_dependency_unavailable")
+
+    monkeypatch.setattr(fetch_transcript, "probe_local_media", unavailable)
     with pytest.raises(SystemExit) as exited:
         fetch_transcript.main(["local-talk", "--audio", str(media), "--out", str(out)])
-
-    assert exited.value.code == 0
-    assert json.loads(capsys.readouterr().out)["ok"] is True
-    after = json.loads(out.with_suffix(".quality.json").read_text(encoding="utf-8"))
-    assert after == json.loads(before), "the source-owned receipt must survive"
-    assert after["provenance"]["kind"] == "local_media_duration"
-    assert after["policy"]["duration_seconds"] == 600.0
-
-
-def test_a_failed_probe_replaces_a_receipt_describing_other_media(
-    fetch_transcript, monkeypatch, tmp_path, capsys
-):
-    """A receipt for bytes nobody is reading is stale, not strong."""
-    media, out = _existing_local_audio_bundle(fetch_transcript, tmp_path, "f" * 64)
-    monkeypatch.setattr(
-        fetch_transcript,
-        "probe_local_media_duration",
-        lambda _path: (None, "ffprobe unavailable"),
-    )
-
-    with pytest.raises(SystemExit) as exited:
-        fetch_transcript.main(["local-talk", "--audio", str(media), "--out", str(out)])
-
-    assert exited.value.code == 0
-    after = json.loads(out.with_suffix(".quality.json").read_text(encoding="utf-8"))
-    assert after["provenance"] == {"kind": "fixed_default"}
-    assert after["policy"]["duration_seconds"] is None
+    assert exited.value.code == 2
+    assert json.loads(capsys.readouterr().out)["ok"] is False
+    assert {path: path.read_bytes() for path in paths} == before
 
 
 def test_a_foreign_caption_track_falls_through_to_whisper(
@@ -1140,139 +1004,276 @@ def test_a_caption_track_within_its_recording_is_kept(
     assert json.loads(capsys.readouterr().out)["method"] == "captions"
 
 
-def test_local_audio_probe_transcription_and_receipts_share_one_snapshot(
-    fetch_transcript, monkeypatch, tmp_path, capsys
-):
-    media = tmp_path / "recording.mp4"
-    media_bytes = b"stable local media bytes"
-    media.write_bytes(media_bytes)
-    text = _talk(600)
-    seen: dict[str, Path] = {}
-
-    def probe(path):
-        seen["probe"] = path
-        return 600.0, "trusted synthetic duration"
-
-    def transcribe(path, _label, _model):
-        seen["transcribe"] = path
-        return text, "en", [{"text": text, "start": 0.0, "end": 600.0}]
-
-    monkeypatch.setattr(fetch_transcript, "probe_local_media_duration", probe)
-    monkeypatch.setattr(fetch_transcript, "transcribe_audio", transcribe)
-    out = tmp_path / "local-talk.txt"
-
-    with pytest.raises(SystemExit) as exited:
-        fetch_transcript.main(
-            [
-                "local-talk",
-                "--audio",
-                str(media),
-                "--out",
-                str(out),
-            ]
-        )
-
-    assert exited.value.code == 0
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["ok"] is True
-    assert seen["probe"] == seen["transcribe"]
-    assert seen["probe"] != media
-    digest = hashlib.sha256(media_bytes).hexdigest()
-    quality = json.loads(out.with_suffix(".quality.json").read_text(encoding="utf-8"))
-    timing = json.loads(out.with_suffix(".segments.json").read_text(encoding="utf-8"))
-    assert quality["provenance"]["media_sha256"] == digest
-    assert timing["provenance"]["media_sha256"] == digest
-
-
-@pytest.mark.parametrize("mutation_phase", ["probe", "transcription"])
-def test_local_audio_snapshot_mutation_fails_closed_without_a_bundle(
-    fetch_transcript, monkeypatch, tmp_path, capsys, mutation_phase
+def test_local_audio_transcription_and_receipts_reuse_one_assessment(
+    fetch_transcript,
+    monkeypatch,
+    tmp_path,
+    capsys,
 ):
     media = tmp_path / "recording.mp4"
     media.write_bytes(b"stable local media bytes")
+    probe = _mock_media_probe(fetch_transcript, monkeypatch, media)
     text = _talk(600)
+    seen = []
 
-    def mutate(path):
-        path.chmod(0o600)
-        path.write_bytes(b"provider-mutated snapshot")
-
-    def probe(path):
-        if mutation_phase == "probe":
-            mutate(path)
-        return 600.0, "trusted synthetic duration"
-
-    def transcribe(path, _label, _model):
-        if mutation_phase == "transcription":
-            mutate(path)
+    def transcribe(path, _label, _model, *, probe):
+        seen.append((path, probe))
         return text, "en", [{"text": text, "start": 0.0, "end": 600.0}]
 
-    monkeypatch.setattr(fetch_transcript, "probe_local_media_duration", probe)
     monkeypatch.setattr(fetch_transcript, "transcribe_audio", transcribe)
     out = tmp_path / "local-talk.txt"
+    with pytest.raises(SystemExit) as exited:
+        fetch_transcript.main(["local-talk", "--audio", str(media), "--out", str(out)])
+    assert exited.value.code == 0
+    assert json.loads(capsys.readouterr().out)["ok"] is True
+    assert seen == [(media, probe)]
+    for suffix in (".quality.json", ".segments.json"):
+        receipt = json.loads(out.with_suffix(suffix).read_text())
+        assert receipt["provenance"]["media_sha256"] == probe.source_sha256
+        assert receipt["provenance"]["duration_seconds"] == 600.0
 
+
+@pytest.mark.parametrize("phase", ["after_probe", "transcription", "bundle_staging"])
+def test_local_media_generation_changes_preserve_the_entire_prior_bundle(
+    fetch_transcript,
+    transcript_timing,
+    monkeypatch,
+    tmp_path,
+    capsys,
+    phase,
+):
+    media = tmp_path / "recording.mp4"
+    media.write_bytes(b"stable local media bytes")
+    probe = _mock_media_probe(fetch_transcript, monkeypatch, media)
+    text = _talk(600)
+    out = tmp_path / "local-talk.txt"
+    paths = [out, out.with_suffix(".quality.json"), out.with_suffix(".segments.json")]
+    for path in paths:
+        path.write_bytes(b"prior " + path.suffix.encode())
+    before = {path: path.read_bytes() for path in paths}
+
+    def mutate():
+        media.write_bytes(b"changed source bytes")
+
+    if phase == "after_probe":
+
+        def changed_probe(*args, **kwargs):
+            mutate()
+            return probe
+
+        monkeypatch.setattr(fetch_transcript, "probe_local_media", changed_probe)
+
+    def transcribe(path, _label, _model, **kwargs):
+        if phase == "transcription":
+            mutate()
+        return text, "en", [{"text": text, "start": 0.0, "end": 600.0}]
+
+    monkeypatch.setattr(fetch_transcript, "transcribe_audio", transcribe)
+    if phase == "bundle_staging":
+        stage = transcript_timing._stage_bytes
+
+        def changed_during_stage(*args, **kwargs):
+            result = stage(*args, **kwargs)
+            mutate()
+            return result
+
+        monkeypatch.setattr(transcript_timing, "_stage_bytes", changed_during_stage)
     with pytest.raises(SystemExit) as exited:
         fetch_transcript.main(
-            [
-                "local-talk",
-                "--audio",
-                str(media),
-                "--out",
-                str(out),
-            ]
+            ["local-talk", "--audio", str(media), "--out", str(out), "--force"]
         )
-
     assert exited.value.code == 2
-    payload = json.loads(capsys.readouterr().out)
-    assert "snapshot changed" in payload["reason"]
-    assert not out.exists()
-    assert not out.with_suffix(".quality.json").exists()
-    assert not out.with_suffix(".segments.json").exists()
+    assert "media_generation_changed" in json.loads(capsys.readouterr().out)["reason"]
+    assert {path: path.read_bytes() for path in paths} == before
+    assert not list(tmp_path.glob("*.partial"))
 
 
 def test_local_audio_source_replacement_during_transcription_fails_closed(
-    fetch_transcript, monkeypatch, tmp_path, capsys
+    fetch_transcript,
+    monkeypatch,
+    tmp_path,
+    capsys,
 ):
     media = tmp_path / "recording.mp4"
     media.write_bytes(b"stable local media bytes")
+    _mock_media_probe(fetch_transcript, monkeypatch, media)
     text = _talk(600)
 
-    monkeypatch.setattr(
-        fetch_transcript,
-        "probe_local_media_duration",
-        lambda _path: (600.0, "trusted synthetic duration"),
-    )
-
-    def replace_source(_snapshot_path, _label, _model):
+    def replace_source(*args, **kwargs):
         replacement = tmp_path / "replacement.mp4"
         replacement.write_bytes(b"different media bytes")
         os.replace(replacement, media)
-        return text, "en", [{"text": text, "start": 0.0, "end": 600.0}]
+        return text, "en", [{"text": text, "start": 0, "end": 600}]
 
     monkeypatch.setattr(fetch_transcript, "transcribe_audio", replace_source)
     out = tmp_path / "local-talk.txt"
-
     with pytest.raises(SystemExit) as exited:
-        fetch_transcript.main(
-            [
-                "local-talk",
-                "--audio",
-                str(media),
-                "--out",
-                str(out),
-            ]
-        )
-
+        fetch_transcript.main(["local-talk", "--audio", str(media), "--out", str(out)])
     assert exited.value.code == 2
-    payload = json.loads(capsys.readouterr().out)
-    assert "source changed or was replaced" in payload["reason"]
-    assert not out.exists()
-    assert not out.with_suffix(".quality.json").exists()
-    assert not out.with_suffix(".segments.json").exists()
+    assert "media_generation_changed" in json.loads(capsys.readouterr().out)["reason"]
+    assert not any(
+        path.exists()
+        for path in [
+            out,
+            out.with_suffix(".quality.json"),
+            out.with_suffix(".segments.json"),
+        ]
+    )
 
 
 def test_expected_duration_must_match_source_probe(fetch_transcript):
     assert fetch_transcript.duration_matches_expected(180, 179.625) is True
     assert fetch_transcript.duration_matches_expected(60, 179.625) is False
+
+
+@pytest.mark.parametrize("change", ["source", "transcript"])
+def test_existing_local_quality_refresh_rechecks_after_staging(
+    fetch_transcript,
+    transcript_timing,
+    monkeypatch,
+    tmp_path,
+    capsys,
+    change,
+):
+    media, out = _existing_local_audio_bundle(fetch_transcript, tmp_path, "f" * 64)
+    _mock_media_probe(fetch_transcript, monkeypatch, media)
+    quality, timing = (
+        out.with_suffix(".quality.json"),
+        out.with_suffix(".segments.json"),
+    )
+    timing.write_bytes(b"prior timing")
+    before = {path: path.read_bytes() for path in (out, quality, timing)}
+    original_stage = transcript_timing._stage_bytes
+
+    def stage(*args, **kwargs):
+        result = original_stage(*args, **kwargs)
+        if change == "source":
+            media.write_bytes(b"replaced source")
+        else:
+            out.write_bytes(b"new user transcript")
+        return result
+
+    monkeypatch.setattr(transcript_timing, "_stage_bytes", stage)
+    with pytest.raises(SystemExit) as exited:
+        fetch_transcript.main(["local-talk", "--audio", str(media), "--out", str(out)])
+    assert exited.value.code == 2
+    assert json.loads(capsys.readouterr().out)["ok"] is False
+    assert quality.read_bytes() == before[quality]
+    assert timing.read_bytes() == before[timing]
+    assert out.read_bytes() == (
+        before[out] if change == "source" else b"new user transcript"
+    )
+    assert not list(tmp_path.glob("*.partial"))
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "whisper_worker_timeout",
+        "whisper_worker_resource_limit",
+        "whisper_worker_failed",
+        "whisper_provider_failed",
+        "whisper_result_invalid",
+        "whisper_text_limit",
+        "whisper_language_invalid",
+        "whisper_segment_limit",
+        "whisper_segment_text_limit",
+        "media_cleanup_failed",
+        "media_generation_changed",
+    ],
+)
+def test_local_worker_failure_retains_prior_bundle_and_one_json(
+    fetch_transcript,
+    monkeypatch,
+    tmp_path,
+    capsys,
+    reason,
+):
+    media, out = _existing_local_audio_bundle(fetch_transcript, tmp_path, "f" * 64)
+    _mock_media_probe(fetch_transcript, monkeypatch, media)
+    paths = [out, out.with_suffix(".quality.json"), out.with_suffix(".segments.json")]
+    paths[-1].write_bytes(b"prior timing")
+    before = {path: path.read_bytes() for path in paths}
+
+    def failed(*args, **kwargs):
+        raise fetch_transcript.LocalMediaError(reason)
+
+    monkeypatch.setattr(fetch_transcript, "transcribe_audio", failed)
+    with pytest.raises(SystemExit) as exited:
+        fetch_transcript.main(
+            ["local-talk", "--audio", str(media), "--out", str(out), "--force"]
+        )
+    assert exited.value.code == 1
+    captured = capsys.readouterr()
+    assert len(captured.out.splitlines()) == 1
+    assert reason in json.loads(captured.out)["reason"]
+    assert {path: path.read_bytes() for path in paths} == before
+    assert not list(tmp_path.glob("*.partial"))
+
+
+def test_downloaded_whisper_duration_supplies_its_own_quality_provenance(
+    fetch_transcript,
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    video_id = "eg6gqvUFh6Q"
+    out = tmp_path / f"{video_id}.txt"
+    text = _talk(150)
+    monkeypatch.setattr(
+        fetch_transcript,
+        "probe_youtube_duration",
+        lambda *a, **kw: (None, "transient metadata refusal"),
+    )
+    monkeypatch.setattr(
+        fetch_transcript,
+        "fetch_whisper",
+        lambda *a, **kw: fetch_transcript.WhisperAcquisition(text, "en", None, 180.0),
+    )
+    with pytest.raises(SystemExit) as exited:
+        fetch_transcript.main([video_id, "--out", str(out), "--method", "whisper"])
+    assert exited.value.code == 0
+    assert json.loads(capsys.readouterr().out)["ok"] is True
+    receipt = json.loads(out.with_suffix(".quality.json").read_text())
+    assert receipt["provenance"] == {
+        "kind": "youtube_duration",
+        "video_id": video_id,
+        "duration_seconds": 180.0,
+    }
+    assert receipt["policy"]["duration_seconds"] == 180.0
+
+
+def test_downloaded_whisper_duration_drift_preserves_prior_bundle(
+    fetch_transcript,
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    video_id = "eg6gqvUFh6Q"
+    out = tmp_path / f"{video_id}.txt"
+    paths = [out, out.with_suffix(".quality.json"), out.with_suffix(".segments.json")]
+    for path in paths:
+        path.write_bytes(b"prior " + path.suffix.encode())
+    before = {path: path.read_bytes() for path in paths}
+    monkeypatch.setattr(
+        fetch_transcript,
+        "probe_youtube_duration",
+        lambda *a, **kw: (600.0, "trusted duration"),
+    )
+    monkeypatch.setattr(
+        fetch_transcript,
+        "fetch_whisper",
+        lambda *a, **kw: fetch_transcript.WhisperAcquisition(
+            _talk(600), "en", None, 900.0
+        ),
+    )
+    with pytest.raises(SystemExit) as exited:
+        fetch_transcript.main(
+            [video_id, "--out", str(out), "--method", "whisper", "--force"]
+        )
+    assert exited.value.code == 1
+    assert "duration changed" in json.loads(capsys.readouterr().out)["reason"]
+    assert {path: path.read_bytes() for path in paths} == before
 
 
 def test_transcript_receipt_docs_keep_quality_separate_from_timing(
@@ -1490,7 +1491,7 @@ def test_cli_rejects_a_missing_audio_file(fetch_transcript, tmp_path):
     assert result.returncode == 2
     payload = json.loads(result.stdout)
     assert payload["ok"] is False
-    assert "does not exist" in payload["reason"]
+    assert "media_artifact_unavailable" in payload["reason"]
     assert not (tmp_path / "x.txt").exists()
 
 
@@ -1599,11 +1600,7 @@ def test_stricter_minimum_cannot_authorize_local_audio_overwrite(
         quality: quality.read_bytes(),
         timing: timing.read_bytes(),
     }
-    monkeypatch.setattr(
-        fetch_transcript,
-        "probe_local_media_duration",
-        lambda _path: (600.0, "trusted synthetic duration"),
-    )
+    _mock_media_probe(fetch_transcript, monkeypatch, audio)
 
     def must_not_transcribe(*_args, **_kwargs):
         raise AssertionError("local transcription must require --force")
@@ -1644,15 +1641,11 @@ def test_failed_forced_local_transcription_preserves_existing_bundle(
         quality: quality.read_bytes(),
         timing: timing.read_bytes(),
     }
-    monkeypatch.setattr(
-        fetch_transcript,
-        "probe_local_media_duration",
-        lambda _path: (600.0, "trusted synthetic duration"),
-    )
+    _mock_media_probe(fetch_transcript, monkeypatch, audio)
     monkeypatch.setattr(
         fetch_transcript,
         "transcribe_audio",
-        lambda *_args: (None, None, None),
+        lambda *_args, **_kwargs: (None, None, None),
     )
 
     with pytest.raises(SystemExit) as exited:
@@ -1682,15 +1675,11 @@ def test_mismatched_whisper_timing_does_not_poison_semantic_bundle(
     stale_timing = out.with_suffix(".segments.json")
     stale_timing.write_bytes(b"stale timing")
     text = _talk(600)
-    monkeypatch.setattr(
-        fetch_transcript,
-        "probe_local_media_duration",
-        lambda _path: (600.0, "trusted synthetic duration"),
-    )
+    _mock_media_probe(fetch_transcript, monkeypatch, audio)
     monkeypatch.setattr(
         fetch_transcript,
         "transcribe_audio",
-        lambda *_args: (
+        lambda *_args, **_kwargs: (
             text,
             "en",
             [{"text": "different optional segment text", "start": 0.0, "end": 1.0}],

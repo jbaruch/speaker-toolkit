@@ -77,7 +77,9 @@ Never infer commit position from the exit code; read the field.
 
 ## Worker Protocol Boundaries
 
-`pptx_evidence.py`, `pptx-extraction.py`, and `pdf_evidence.py` — same
+`pptx_evidence.py`, `pptx-extraction.py`, `pdf_evidence.py`,
+`local_media_evidence.py`, `local_media_download.py`, and
+`local_media_transcription.py` — same
 directory — run supervised worker children whose stdout is reserved for one
 authenticated frame. Their boundaries emit a path-neutral
 `<kind> worker failed: <reason>` line on stderr and exit 2; the supervisor

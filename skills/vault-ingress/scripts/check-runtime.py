@@ -73,11 +73,15 @@ LANE_REQUIREMENTS: dict[str, dict[str, dict[str, str]]] = {
         "commands": {},
     },
     "youtube-download": {
-        "modules": {},
+        "modules": {"psutil": "psutil"},
         "commands": {"yt-dlp": "yt-dlp"},
     },
     "whisper": {
-        "modules": {"mlx-whisper": "mlx_whisper"},
+        "modules": {"mlx-whisper": "mlx_whisper", "psutil": "psutil"},
+        "commands": {"ffmpeg": "ffmpeg", "ffprobe": "ffprobe"},
+    },
+    "source-media": {
+        "modules": {"psutil": "psutil"},
         "commands": {"ffprobe": "ffprobe"},
     },
     "source-video": {

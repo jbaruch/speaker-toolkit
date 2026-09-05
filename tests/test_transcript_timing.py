@@ -977,3 +977,54 @@ def test_overlong_whisper_timestamps_are_sloppy_not_foreign(
 
     assert "different, longer recording" not in reason
     assert "1.40x" not in reason
+
+
+@pytest.mark.parametrize(
+    "error", [ValueError, OSError, RuntimeError, KeyboardInterrupt, SystemExit]
+)
+@pytest.mark.parametrize("quality_only", [False, True])
+def test_precommit_guard_runs_after_staging_and_preserves_all_prior_bytes(
+    transcript_timing,
+    tmp_path,
+    error,
+    quality_only,
+):
+    transcript = tmp_path / "talk.txt"
+    paths = [
+        transcript,
+        transcript.with_suffix(".quality.json"),
+        transcript.with_suffix(".segments.json"),
+    ]
+    for path in paths:
+        path.write_bytes(b"prior " + path.suffix.encode())
+    before = {path: path.read_bytes() for path in paths}
+    policy = {"schema_version": 1, "min_words": 400, "duration_seconds": None}
+
+    def guard():
+        assert list(tmp_path.glob("*.partial")), "guard must run after staging"
+        assert {path: path.read_bytes() for path in paths} == before
+        raise error("source generation changed")
+
+    with pytest.raises(error):
+        if quality_only:
+            transcript_timing.write_quality_receipt(
+                transcript,
+                "new text",
+                policy,
+                {"kind": "fixed_default"},
+                before_commit=guard,
+            )
+        else:
+            transcript_timing.write_transcript_bundle(
+                transcript,
+                "new text",
+                None,
+                source="whisper",
+                timing_provenance=None,
+                quality_policy=policy,
+                quality_policy_provenance={"kind": "fixed_default"},
+                force=True,
+                before_commit=guard,
+            )
+    assert {path: path.read_bytes() for path in paths} == before
+    assert not list(tmp_path.glob("*.partial"))

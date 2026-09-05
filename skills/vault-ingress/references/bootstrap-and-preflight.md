@@ -149,7 +149,10 @@ descendant symlink/reparse redirect. Trusted-root bindings retain the directory
 object's stable identity and policy attributes, not mutable child-content size or
 timestamps; PDF and PPTX leaf generations remain exact. The checker emits report
 schema v3 and records exact Python pins under each lane's
-`required_module_versions`. The `youtube-download` lane also resolves `yt-dlp`
+`required_module_versions`. Generic audio/video acquisition uses `source-media`;
+its runtime and owner boundaries are documented in
+[Bounded Local-Media Acquisition](local-media-acquisition.md).
+The `youtube-download` lane also requires psutil and resolves `yt-dlp`
 from the configured interpreter before PATH, records its exact pin under
 `required_command_versions`, and makes a mismatched version unavailable. A
 missing optional lane is reported as degraded and must not erase a healthy
@@ -159,7 +162,7 @@ Drive acquisition additionally needs the `gdown` module; captions need
 `youtube-transcript-api`; audio download fallback needs `yt-dlp`; rendered PDF
 inspection needs `pdftoppm`; video extraction needs exactly `Pillow==12.3.0`,
 `ImageHash==4.3.2`, `numpy==2.2.6`, and `filelock==3.32.2`, plus `ffmpeg` and
-`ffprobe`; local Whisper needs `mlx-whisper` and `ffprobe`; rendering a
+`ffprobe`; local Whisper needs `mlx-whisper`, psutil, `ffmpeg`, and `ffprobe`; rendering a
 markdown-authored deck needs that deck's own tool, one lane per flavor (see
 [markdown-decks.md](markdown-decks.md)).
 Inspect those with the checker's `google-drive`, `captions`,

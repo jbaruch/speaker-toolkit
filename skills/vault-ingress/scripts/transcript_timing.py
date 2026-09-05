@@ -57,7 +57,7 @@ import stat
 import tempfile
 import unicodedata
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from transcript_quality import (
     build_quality_policy,
@@ -368,7 +368,11 @@ def _stage_bytes(destination: Path, raw: bytes) -> Path:
     return temporary_path
 
 
-def _replace_transactionally(replacements: list[tuple[Path, bytes | None]]) -> None:
+def _replace_transactionally(
+    replacements: list[tuple[Path, bytes | None]],
+    *,
+    before_commit: Callable[[], None] | None = None,
+) -> None:
     """Replace a small artifact set and restore exact prior bytes on failure.
 
     There is no portable multi-file rename transaction. New files and exact
@@ -376,6 +380,10 @@ def _replace_transactionally(replacements: list[tuple[Path, bytes | None]]) -> N
     already attempted. A process death between renames can still leave a
     partial bundle. Hash checks reject changed-text mixtures; byte-identical
     replacement can expose an already valid new receipt before restart.
+
+    The optional before_commit guard runs after staging and before the first
+    replacement. Any guard failure or process-control signal leaves originals
+    untouched and removes staged files; the guard must perform no bundle writes.
     """
     destinations = [destination for destination, _raw in replacements]
     if len(destinations) != len(set(destinations)):
@@ -399,6 +407,9 @@ def _replace_transactionally(replacements: list[tuple[Path, bytes | None]]) -> N
                 staged_old[destination] = _stage_bytes(destination, original)
             if raw is not None:
                 staged_new[destination] = _stage_bytes(destination, raw)
+
+        if before_commit is not None:
+            before_commit()
 
         for destination, raw in replacements:
             if destination.is_symlink():
@@ -602,6 +613,7 @@ def write_transcript_bundle(
     quality_policy: dict[str, object] | None = None,
     quality_policy_provenance: dict[str, object] | None = None,
     force: bool = False,
+    before_commit: Callable[[], None] | None = None,
 ) -> Path | None:
     """Transactionally replace transcript text plus independent receipts.
 
@@ -659,7 +671,7 @@ def write_transcript_bundle(
             )
         )
     replacements.append((transcript, text.encode("utf-8")))
-    _replace_transactionally(replacements)
+    _replace_transactionally(replacements, before_commit=before_commit)
     return timing_path if normalized_segments else None
 
 
@@ -911,14 +923,18 @@ def write_quality_receipt(
     text: str,
     policy: dict[str, object],
     provenance: dict[str, object],
+    *,
+    before_commit: Callable[[], None] | None = None,
 ) -> Path:
-    """Atomically write one exact, transcript-hash-bound quality receipt."""
+    """Write one exact quality receipt after the optional precommit guard.
+
+    The guard runs after staging, before replacement; failure preserves the
+    current receipt. See _replace_transactionally for the transaction boundary.
+    """
     payload = _build_quality_receipt(text, policy, provenance)
     receipt_path = quality_sidecar_path(transcript_path)
-    write_atomically(
-        receipt_path,
-        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
-    )
+    raw = (json.dumps(payload, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    _replace_transactionally([(receipt_path, raw)], before_commit=before_commit)
     return receipt_path
 
 

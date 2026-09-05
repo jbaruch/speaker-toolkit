@@ -14,6 +14,10 @@ same-numbered archival return generation.
 
 ### Transcript download
 
+Before local-media acquisition or the YouTube Whisper fallback, follow
+[Bounded Local-Media Acquisition](local-media-acquisition.md). Require its
+runtime lanes and pass the source locator to the owner; do not pre-read media.
+
 One command. Do NOT hand-roll a fetch — an inline `python3 -c` fetch here is
 what wrote four Python tracebacks into `transcripts/` when the upstream library
 renamed a method, and nothing noticed because nothing validated the output.
@@ -126,6 +130,9 @@ reclaim after source registration if the path was missing. YouTube talks may
 omit the field because `youtube_id` remains the canonical fallback.
 The local-media quality receipt binds trusted duration to SHA-256 of the exact
 input media; moving a policy to another recording does not authorize it.
+An acquisition failure preserves prior transcript and receipt bytes, including
+stale quality. Do not weaken provenance or bypass the owner-binding preflight
+gate to make an existing transcript eligible.
 
 For an existing WebVTT artifact, provide an explicit collision-free output:
 
