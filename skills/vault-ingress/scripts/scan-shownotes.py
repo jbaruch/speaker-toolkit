@@ -37,6 +37,7 @@ from ingress_contract import (
     validate_talk_record_schemas,
 )
 from source_identity_matching import shownotes_titles_agree
+from source_alias_contract import matched_alias
 from tracking_database import (
     TrackingDatabaseError,
     assess_tracking_database,
@@ -799,6 +800,8 @@ def _existing_entry(
     talk: dict[str, Any],
     proposal: dict[str, Any],
     parse_issues: list[dict[str, Any]],
+    *,
+    accepted_alias: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
     issues = list(parse_issues)
     patch: dict[str, Any] = {}
@@ -806,6 +809,11 @@ def _existing_entry(
     stored_date = talk.get("date")
     for field in TRACKED_FIELDS:
         if field not in proposal:
+            continue
+        # The URL and derived ID are one source claim. Suppressing only the URL
+        # conflict would either reopen the ID conflict or backfill the alias ID
+        # into a canonical record whose redundant ID is absent.
+        if accepted_alias is not None and field in {"video_url", "youtube_id"}:
             continue
         candidate = proposal[field]
         if field in {"video_url", "slides_url"}:
@@ -935,7 +943,13 @@ def build_scan_report(
         patch: dict[str, Any] = {}
         if filename in exact:
             index, talk = exact[filename]
-            disposition, patch, issues = _existing_entry(talk, proposal, parse_issues)
+            alias = matched_alias(database, talk, proposal.get("video_url"))
+            disposition, patch, issues = _existing_entry(
+                talk,
+                proposal,
+                parse_issues,
+                accepted_alias=dict(alias) if alias is not None else None,
+            )
             if disposition == "update":
                 updates.append((index, patch))
         else:
@@ -1038,6 +1052,12 @@ def execute(database_path: Path, *, apply_requested: bool) -> dict[str, Any]:
         apply_requested=apply_requested,
     )
     if apply_requested:
+        try:
+            require_current_tracking_database(candidate)
+        except TrackingDatabaseError as exc:
+            raise ShownotesScanError(
+                f"scan candidate violates the owner schema: {exc}"
+            ) from exc
         if report["mutation_count"]:
             write_result = _atomic_write_database(
                 database_path,

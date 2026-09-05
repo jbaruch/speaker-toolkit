@@ -17,7 +17,11 @@ import pytest
 from pypdf import PdfWriter
 from pptx import Presentation
 
-from conftest import current_tracking_config, video_source_receipt_for
+from conftest import (
+    CURRENT_ROOT_SCHEMA_VERSION,
+    current_tracking_config,
+    video_source_receipt_for,
+)
 
 
 def test_atomic_json_write_cleans_stage_and_propagates_interrupt(
@@ -199,7 +203,7 @@ def _write_tiny_mp4(path):
 
 def _db_json(database):
     """Render a current tracking database around one test's talk fixtures."""
-    database["schema_version"] = 2
+    database["schema_version"] = CURRENT_ROOT_SCHEMA_VERSION
     config = database.setdefault("config", {})
     if isinstance(config, dict):
         existing = dict(config)

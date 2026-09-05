@@ -69,7 +69,7 @@ def _database(talks: list[dict], **config_extra) -> dict:
     config = {"schema_version": 2, "pptx_directory_exclusions": []}
     config.update(config_extra)
     return {
-        "schema_version": 2,
+        "schema_version": CURRENT_ROOT,
         "config": config,
         "talks": talks,
         "pptx_catalog": [],

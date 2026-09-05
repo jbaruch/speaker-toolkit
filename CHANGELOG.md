@@ -1,5 +1,16 @@
 # Changelog
 
+### Preserve reviewed inactive recording aliases
+
+Add an owner-reviewed YouTube alias ledger outside talk analysis generations,
+with independent delivery evidence, provider facts, comparison hashes, reviewer,
+and verification time. Bind append to both the reviewed database and candidate
+digests. Shownotes reconciliation preserves the canonical URL/ID and treats an
+accepted alternate as resolved. Reject conflicting ownership, rejected-source
+overlap, cycles, and unknown schemas. Root v3 introduces the optional collection;
+older roots remain readable, and QR-only recovery preserves v2/v3 roots and
+active claims. Atomic canonical promotion remains separate work in #175.
+
 ## 0.20.122 — 2026-09-05
 
 ### Typed failures for invalid speech-rate serialization inputs

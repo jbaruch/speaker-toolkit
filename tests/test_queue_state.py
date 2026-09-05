@@ -24,7 +24,7 @@ from pptx import Presentation
 from pptx.util import Inches
 from pypdf import PdfWriter
 
-from conftest import current_tracking_config
+from conftest import CURRENT_ROOT_SCHEMA_VERSION, current_tracking_config
 
 
 SCRIPT = (
@@ -360,7 +360,7 @@ def _write_db(tmp_path, talks, *, config=None, current=True):
         "improvement_goals": [],
     }
     if current:
-        database["schema_version"] = 2
+        database["schema_version"] = CURRENT_ROOT_SCHEMA_VERSION
         database["config"] = current_tracking_config(**database["config"])
     else:
         for talk in talks:

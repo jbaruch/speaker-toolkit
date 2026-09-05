@@ -10,7 +10,7 @@ shape, and all migrations. vault-clarification may write current config,
 confirmed-intent, and improvement-goal records. presentation-creator may write
 current QR records. vault-profile and the remaining presentation consumers are
 read-only. Non-owner readers accept every readable database generation during
-rollout — legacy 0, pre-`markdown_decks` 1, and current 2. They never rewrite
+rollout — legacy 0, pre-`markdown_decks` 1, pre-`source_aliases` 2, and current 3. They never rewrite
 legacy state. An unsupported future database or record version is no usable
 prior state.
 
@@ -152,17 +152,17 @@ v1 and v2 for the rollout window.
   legacy record has no `artifacts` and cannot satisfy the v2 shape. Only the QR
   writer produces v2 records, and it writes them complete.
 
-A schema-v2 database with config v2 is an idempotent no-op. A schema-v1 database
-is not: its root advances to v2, and a config v1 is upgraded in the same pass.
-A schema-v2 database with config v1 receives only the config-v2 migration; the
-root generation and every other record remain unchanged. Before migration, queue `inspect` may read
+A schema-v3 database with current child records is an idempotent no-op.
+Earlier roots advance to v3; config v1 advances to v2 in the same pass.
+The root-only v2-to-v3 transition preserves every child value and does not
+create or infer any source alias. Before migration, queue `inspect` may read
 schema 0 and queue `recover` may close an active schema-0 lease in place.
 Recovery changes only queue lease/status state and never stamps database or talk
 schema fields; the established queue transition may advance a recovered claim
 receipt from v1 to v2 while adding its release fields.
 
 The owner migration is a preservation migration. Its only allowed semantic
-changes are advancing the root to schema v2, adding the validated historical
+changes are advancing the root to schema v3, adding the validated historical
 version to an unversioned owner record, creating absent owned arrays as empty
 arrays, and upgrading config v1 to v2. A missing exclusion list receives the canonical
 defaults; a valid owner-supplied list is preserved exactly. It
@@ -175,7 +175,7 @@ no-op.
 
 | Independent record | Current schema |
 |---|---:|
-| database root | 2 (schema 1, the generation before `markdown_decks`, remains readable) |
+| database root | 3 (schemas 0-2 remain readable migration inputs) |
 | config | 2 (schema 1 remains readable owner-migration input) |
 | talk | 8 (schemas 1-7 remain readable historical state; v5-v7 restamp) |
 | PPTX catalog | 3 (schemas 1 and 2 remain readable legacy state) |
@@ -185,22 +185,24 @@ no-op.
 | confirmed intent | 1 |
 | source rejection | 1 |
 | source title equivalence | 2 (own top-level collection; v1 nested entries are migrated) |
+| accepted source alias | 1 (optional top-level collection; never inferred by migration) |
 | improvement goal | 2 (schema 1 remains readable historical state) |
 
 | Component | Access | Contract |
 |---|---|---|
-| vault-ingress migration | owner read/write | Accept root schema 0/1/2 and config schema 1/2; migrate to root v2/config v2; never downgrade future state |
-| vault-ingress queue inspection/recovery | owner compatibility transition | Inspect schema 0/1/2; recover active leases in schema 0/1/2; never stamp artifact or talk schema versions |
-| vault-ingress queue normalization/claim, persistence, shownotes apply, source repair | current read/write | Require database schema 2, config schema 2, and supported explicit owner-record versions; targeted writers emit their current record generation and never migrate the root implicitly |
-| vault-ingress preflight, source audit, analysis rendering, shownotes dry-run | dual reader | Parse schemas 0, 1, and 2; gate through existing finding/error channels; never rewrite |
+| vault-ingress migration | owner read/write | Accept root schema 0/1/2/3 and config schema 1/2; migrate to root v3/config v2; never downgrade future state |
+| vault-ingress queue inspection/recovery | owner compatibility transition | Inspect schema 0/1/2/3; recover active leases in readable roots; never stamp artifact or talk schema versions |
+| vault-ingress queue normalization/claim, persistence, shownotes apply, source repair | current read/write | Require database schema 3, config schema 2, and supported explicit owner-record versions; targeted writers emit their current record generation and never migrate the root implicitly |
+| vault-ingress preflight, source audit, analysis rendering, shownotes dry-run | dual reader | Parse schemas 0-3; gate through existing finding/error channels; never rewrite |
 | vault-clarification | current read/write | Route schema migration to vault-ingress; preserve config v2 and stamp confirmed intent v1/improvement goal v2 |
-| presentation-creator QR writer | dual reader/current writer | Read schemas 0, 1, and 2; require schema 2 before URL creation or QR metadata persistence; stamp QR v2 |
-| presentation-creator publishing/post-event | authorized current writer | Require schema 2 before tracking writes; stamp resource v1 and preserve talk v7 |
-| illustrations thumbnail workflow | authorized current writer | Require schema 2 before tracking writes; stamp thumbnail v1 and preserve talk v7 |
-| vault-profile | dual reader | Parse schemas 0, 1, and 2; treat unsupported generations as unavailable; never migrate |
+| presentation-creator QR writer | dual reader/current writer | Read schemas 0-3; require schema 3 before URL creation or QR metadata persistence; stamp QR v2 |
+| presentation-creator publishing/post-event | authorized current writer | Require schema 3 before tracking writes; stamp resource v1 and preserve talk v8 |
+| illustrations thumbnail workflow | authorized current writer | Require schema 3 before tracking writes; stamp thumbnail v1 and preserve talk v8 |
+| vault-profile | dual reader | Parse schemas 0-3; treat unsupported generations as unavailable; never migrate |
 
-Current database schema 2 with config schema 2 requires all eight top-level
-state fields shown below. `markdown_decks` is the ninth key and is optional:
+Current database schema 3 with config schema 2 requires all eight top-level
+state fields shown below. `source_title_equivalences`, `source_aliases`, and
+`markdown_decks` are optional owner collections. For `markdown_decks`,
 absent means no talk has a registered markdown deck, which is what every
 database written before root v2 says.
 Missing legacy arrays become empty during owner migration. Current writers do
@@ -227,7 +229,7 @@ customization, not the owner default. See the
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "config": {
     "schema_version": 2,
     "vault_root": "~/.claude/rhetoric-knowledge-vault",
@@ -354,7 +356,7 @@ customization, not the owner default. See the
       "not_evaluable": []
     }
   }],
-  "_comment_schema_version": "Database root schema v2 is owner-migrated by vault-ingress; root v1 is the generation before the top-level `markdown_decks` collection, and migration moves a v0 or v1 database to v2 without touching any record it already carries. A missing talk record version is the historical implicit-v1 lineage. v2 makes transcript_source optional. Two incompatible v3 lineages were emitted; v4 is their source-located union and remains archival with evidence ledger v1. V5 adds applicability assessments, exhaustive outcomes, opportunity-coverage identity, and evidence ledger v2. V6 adds `pattern_score_basis` and a possibly-fractional `pattern_score` at the weighted scoring generation; migration restamps a v5 record to v6 without rescoring it, because recomputing a score under arithmetic its worker never used would restate what the worker meant. V7 was introduced for the owner-reviewed title-equivalence ledger, which now lives in the top-level `source_title_equivalences` collection at record v2, so v7 adds no field a v6 record lacks. V8 adds `provider_auto` to the transcript-source enum. Migration restamps v5-v7 records to v8 without relabeling their source and lifts a nested v1 title ledger into the top-level collection. Root migration preserves all historical evidence and never synthesizes v5 outcomes.",
+  "_comment_schema_version": "Database root schema v3 is owner-migrated by vault-ingress and introduces the optional top-level source_aliases collection. Root v2 introduced markdown_decks. Root migration infers neither deck registrations nor aliases. A missing talk record version is the historical implicit-v1 lineage. Talk v2 makes transcript_source optional. Two incompatible v3 lineages were emitted; v4 is their source-located union and remains archival with evidence ledger v1. V5 adds applicability assessments, exhaustive outcomes, opportunity-coverage identity, and evidence ledger v2. V6 adds pattern_score_basis and a possibly-fractional pattern_score at the weighted scoring generation. V7 was introduced for the owner-reviewed title-equivalence ledger, which now lives in the top-level source_title_equivalences collection at record v2, so v7 adds no field a v6 record lacks. V8 adds provider_auto to the transcript-source enum. Migration restamps v5-v7 records to v8 without rescoring or relabeling their source and lifts a nested v1 title ledger into the top-level collection. It preserves historical evidence and never synthesizes v5 outcomes.",
   "_comment_absent_transcript_source": "Absent transcript_source: the key may be MISSING on a talk, and missing is meaningful — it means provenance is unknown, not that no transcript exists (that is the explicit value `none`). It arises on one path: fetch-transcript.py returning method `existing`, where a valid transcript was already on disk and no fetch ran, so nothing was learned about where it came from. Writers MUST NOT backfill a guess; `manual` in particular asserts a human produced it. Readers gauging transcript reliability MUST treat absent as unknown and MUST NOT default it to any value.",
   "pptx_catalog": [{
     "schema_version": 3,
@@ -602,6 +604,7 @@ exact-type rule. The supported mutation kinds are:
 | `upsert_thumbnail` | Replace/add one complete schema-v1 record identified by `talk_slug` |
 | `apply_reviewed_metadata` | Install one human-reviewed shownotes catalog-conflict decision on one exact talk filename, over a closed identity field set, with `expect` covering exactly the same fields |
 | `record_source_title_equivalence` | Append one owner-reviewed provider-title equivalence to one exact talk filename; append-only and refuses a duplicate |
+| `record_source_alias` | Append a reviewed inactive YouTube identity; exact canonical/ledger expectations and both input/output hashes bind apply; see [source-aliases.md](source-aliases.md) |
 | `record_markdown_deck` | Register (or re-point) the markdown file one exact talk's deck was authored in, with `expect` naming the currently registered `deck_source_path` or the missing marker; upsert, one deck per talk |
 | `update_talk_publishing` | Set supported publishing fields on one exact talk filename, with `expect` covering exactly the same fields |
 | `update_talk_clarification` | Set complete object/array `blind_spot_observations` or `humor_postmortem` values on one exact talk, with matching field expectations |

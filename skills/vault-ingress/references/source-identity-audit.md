@@ -112,6 +112,11 @@ keeps its blocking code and fails the run.
 promoted or persisted here — reviewing this evidence and applying a decision are
 separate steps.
 
+When both identities are valid uploads of the same delivery, review the two
+provider-fact blocks with independent event evidence and a recording/transcript
+comparison. Follow [source-aliases.md](source-aliases.md) to retain the inactive
+identity without rejecting it or replacing the canonical recording.
+
 ## Report contract (v2)
 
 ```json

@@ -21,7 +21,7 @@ def _write(path: Path, value: object) -> bytes:
 
 def _current_database() -> dict[str, object]:
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "config": current_tracking_config(),
         "talks": [],
         "pptx_catalog": [],

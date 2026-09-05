@@ -22,7 +22,7 @@ from conftest import (
 
 def _current_tracking_database():
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "config": current_tracking_config(),
         "talks": [],
         "pptx_catalog": [],
