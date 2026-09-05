@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.129 — 2026-09-05
+
 ### Seed reusable styles from twenty delivered-talk decks
 
 Complete #92's separate delivered-talk evidence pass across all twenty public
