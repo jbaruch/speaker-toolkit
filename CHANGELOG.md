@@ -1,5 +1,13 @@
 # Changelog
 
+### Preserve active claims during the QR-version-only owner repair
+
+Allow the explicit missing-QR-version repair to preserve valid active queue
+claims and their histories unchanged. Keep normal migration's inactive-writer
+requirement. The shared locked transaction rejects stale repair or writer
+snapshots, retaining exact backups and all talk evidence; owner readers can
+resume after repair without cancelling claims or reparsing talks.
+
 ## 0.20.120 — 2026-09-05
 
 ### Separate recorded speech rates from narration-planning assumptions

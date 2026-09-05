@@ -1877,6 +1877,13 @@ def repair_missing_qr_schema_versions(database: object) -> TrackingDatabaseMigra
     legacy-v1 shape before stamping; v2 artifact receipts are never invented or
     inferred. The complete candidate must validate before it is returned. No
     talk, evidence, queue, config, or other record migration runs here.
+
+    Supported active claims are preserved unchanged. Unlike a normal migration,
+    this operation changes no claim/return contract, talk generation, or analysis
+    state. The CLI commits through the shared locked generation transaction: a
+    competing writer invalidates this repair's snapshot, and this repair
+    invalidates a pre-repair writer's snapshot. That writer must reload and
+    retry its ordinary owner operation, not recover or cancel the claim.
     """
     try:
         assessment = assess_tracking_database(database)
@@ -1924,15 +1931,6 @@ def repair_missing_qr_schema_versions(database: object) -> TrackingDatabaseMigra
         raise TrackingDatabaseRepairError(
             "qr_repair_candidate_invalid", {"stage": "complete_owner_validation"}
         ) from exc
-    if counts["qr_codes"]:
-        talks = _object_collection(candidate, "talks", required=True)
-        try:
-            _require_no_active_writers(talks)
-        except TrackingDatabaseError as exc:
-            raise TrackingDatabaseRepairError(
-                "qr_repair_active_writers",
-                {"active_talk_count": len(_active_claim_filenames(talks))},
-            ) from exc
     return TrackingDatabaseMigration(
         database=candidate,
         changed=bool(counts["qr_codes"]),
