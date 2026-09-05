@@ -1831,14 +1831,14 @@ def build_candidate(
     return candidate, changes
 
 
-def _validate_digest(value: str) -> None:
+def _validate_digest(value: str, *, flag: str = "--expected-sha256") -> None:
     if value == "missing":
         return
     if len(value) != 64 or any(
         character not in "0123456789abcdef" for character in value
     ):
         raise TrackingDatabaseMutationError(
-            "--expected-sha256 must be `missing` or 64 lowercase hexadecimal characters"
+            f"{flag} must be `missing` or 64 lowercase hexadecimal characters"
         )
 
 
@@ -1862,7 +1862,7 @@ def execute(
         mutation.get("kind") == "record_source_alias" for mutation in mutations
     )
     if expected_output_sha256 is not None:
-        _validate_digest(expected_output_sha256)
+        _validate_digest(expected_output_sha256, flag="--expected-output-sha256")
         if expected_output_sha256 == "missing":
             raise TrackingDatabaseMutationError(
                 "--expected-output-sha256 must be a candidate digest, not missing"

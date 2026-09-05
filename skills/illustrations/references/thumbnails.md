@@ -36,10 +36,11 @@ owner-reader invocation. Every command below uses the configured interpreter;
 never fall back to a PATH interpreter.
 
 Read `tracking-database.json` through the vault path used by
-presentation-creator. Selection and composition may read legacy database schema
-0 or 1, or current schema 2, without mutation. Before copying the approved thumbnail or
-writing tracking state, require database schema 2, current independent records,
-and talk schema 8. Invoke `Skill(skill: "vault-ingress")` for schema 0 or 1 and stop
+presentation-creator. Selection and composition may read the generations in the
+[owner compatibility contract](../../vault-ingress/references/schemas-db.md#schema-versioning)
+without mutation. Before copying the approved thumbnail or writing tracking
+state, require the owner-current database, current independent records, and talk
+schema 8. Invoke `Skill(skill: "vault-ingress")` for legacy generations and stop
 this run. Unknown future generations are no usable prior state. Preserve every
 schema field and use the presentation-creator exact-generation atomic-write
 contract.

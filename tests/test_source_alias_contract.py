@@ -6,6 +6,7 @@ import copy
 import hashlib
 import importlib
 import json
+from pathlib import Path
 
 import pytest
 
@@ -556,3 +557,59 @@ def test_calendar_dates_have_one_portable_valid_spelling(
     database["source_aliases"] = [record]
     with pytest.raises(tracking_database.TrackingDatabaseError, match="calendar date"):
         tracking_database.assess_tracking_database(database)
+
+
+@pytest.mark.parametrize("value", ["typo", "A" * 64, "f" * 63, "missing"])
+def test_invalid_candidate_digest_names_its_own_flag(
+    mutate_tracking_database, tmp_path, value
+):
+    database = _database()
+    path = tmp_path / "tracking-database.json"
+    plan = tmp_path / "alias-plan.json"
+    _write(path, database)
+    original = path.read_bytes()
+    _write(plan, {"schema_version": 1, "mutations": [_mutation(database, _record())]})
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="--expected-output-sha256",
+    ) as error:
+        mutate_tracking_database.execute(
+            path,
+            plan,
+            apply=True,
+            expected_sha256=hashlib.sha256(original).hexdigest(),
+            expected_output_sha256=value,
+        )
+    assert "--expected-sha256" not in str(error.value)
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    "relative",
+    [
+        "vault-clarification/SKILL.md",
+        "presentation-creator/SKILL.md",
+        "presentation-creator/references/phase7-post-event.md",
+        "illustrations/references/thumbnails.md",
+        "vault-ingress/references/bootstrap-and-preflight.md",
+        "vault-ingress/references/batch-persistence.md",
+        "vault-profile/references/profile-construction-rules.md",
+    ],
+)
+def test_catalog_rollout_consumers_reference_owner_schema(relative):
+    root = Path(__file__).resolve().parents[1]
+    document = (root / "skills" / relative).read_text(encoding="utf-8")
+    assert "schemas-db.md#schema-versioning" in document
+    for obsolete in (
+        "database schema 2",
+        "database schema v2",
+        "current schema 2",
+        "writes require schema 2",
+        "schemas 0 and 1",
+        "schema 0 or 1",
+    ):
+        assert obsolete not in document
+    owner = (root / "skills/vault-ingress/references/schemas-db.md").read_text(
+        encoding="utf-8"
+    )
+    assert "### Schema versioning" in owner

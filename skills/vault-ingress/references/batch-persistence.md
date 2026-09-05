@@ -43,7 +43,8 @@ whether to run the gate.
   `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/persist-results.py" {vault_root}/tracking-database.json batch-returns.json`.
   The script first requires the return filenames to equal every live member of one
   run/batch claim; partial, extra, mixed-identity, duplicate, closed, or stranded
-  batches fail before merge. The script requires database schema v2 and current
+  batches fail before merge. The script requires the current database generation
+  from the [owner compatibility contract](schemas-db.md#schema-versioning) and current
   independent record versions; Step 1 is the sole migration path. It then merges each return into its matching
   talk entry, promotes the declared queryable scalars to the talk top level, and
   rewrites the DB in place. Do NOT hand-copy fields one at a time — that is what

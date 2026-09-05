@@ -152,6 +152,8 @@ v1 and v2 for the rollout window.
   legacy record has no `artifacts` and cannot satisfy the v2 shape. Only the QR
   writer produces v2 records, and it writes them complete.
 
+### Schema versioning
+
 A schema-v3 database with current child records is an idempotent no-op.
 Earlier roots advance to v3; config v1 advances to v2 in the same pass.
 The root-only v2-to-v3 transition preserves every child value and does not
@@ -2233,9 +2235,9 @@ receipt behavior changes; current is `1.5.0`. Pipeline 1.5 applies the shared
 bounded PDF ceiling, complete page-tree walk, and repair-diagnostic rejection to
 render receipts produced inside the already-contained PPTX extraction worker.
 
-Extractor schema v4 is independent of persisted pattern-evidence schema v2,
-return schema v5, queue-claim schema v5, and tracking-database schema v2. Those
-downstream generations do not advance here; their current readers bind or
+Extractor schema v4 is independent of persisted pattern-evidence, return,
+queue-claim, and tracking-database generations. Those downstream generations
+do not advance with the extractor; their current readers bind or
 validate the new nested records inside their existing contracts.
 
 These records are transient per-invocation output, not a persisted artifact with
