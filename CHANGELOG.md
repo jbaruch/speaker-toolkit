@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.125 — 2026-09-05
+
 ### Bound transcript media acquisition to supervised source generations
 
 Address #219's acquisition boundary with authenticated metadata, generic-media
