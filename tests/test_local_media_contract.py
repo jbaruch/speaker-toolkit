@@ -319,3 +319,63 @@ def test_optional_timing_downgrade_still_checks_every_segment_ceiling(contract):
     value["segments"].append({"text": "x" * 16385, "start": 2, "end": 3})
     with pytest.raises(contract.LocalMediaError, match="whisper_segment_text_limit"):
         contract.bounded_whisper_result(value)
+
+
+@pytest.mark.parametrize(
+    "unit",
+    [
+        "a",
+        "ed",
+        "eda",
+        "абв",
+        "你好",
+        "abcdefghijklmnop",
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+    ],
+)
+def test_whisper_rejects_long_unspaced_periodic_runs(contract, unit):
+    # Synthetic shape of the native #219 suffix, never a copied talk transcript.
+    repeated = (unit * 256)[:256]
+    text = "Ordinary speech before. prefix" + repeated + "suffix. Speech after."
+    with pytest.raises(contract.LocalMediaError) as caught:
+        contract.bounded_whisper_result({"text": text, "language": "en"})
+    assert caught.value.reason_code == "whisper_repetitive_text"
+    assert repeated not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "a" * 255,
+        "eda " * 100,
+        "Long paragraphs may contain ordinary repeated words. " * 100,
+        " ".join("eda" * 70 for _ in range(10)),
+        "\n" * 1000 + "Actual speech",
+        "".join(chr(0x4E00 + index) for index in range(1024)),
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefg" * 20,  # period 33, outside policy
+    ],
+)
+def test_whisper_preserves_text_outside_the_bounded_repetition_policy(contract, text):
+    assert contract.bounded_whisper_result({"text": text})["text"] == text
+
+
+def test_whisper_repetition_failure_never_returns_a_trimmed_prefix(contract):
+    value = {
+        "text": "Complete useful speech. " + "eda" * 220,
+        "segments": [{"text": "Complete useful speech.", "start": 0, "end": 2}],
+    }
+    with pytest.raises(contract.LocalMediaError, match="whisper_repetitive_text"):
+        contract.bounded_whisper_result(value)
+    assert value["text"].endswith("eda" * 220)
+
+
+def test_repetition_guard_keeps_optional_timing_mismatch_independent(contract):
+    value = {
+        "text": "Complete useful speech.",
+        "segments": [{"text": "Different optional timing.", "start": 0, "end": 2}],
+    }
+    assert contract.bounded_whisper_result(value) == {
+        "text": value["text"],
+        "language": None,
+        "segments": value["segments"],
+    }

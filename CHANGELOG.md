@@ -1,5 +1,17 @@
 # Changelog
 
+### Refuse pathological unspaced Whisper output before transcript replacement
+
+Native #219 validation exposed an intermittent repetitive syllable suffix that
+passed the word/duration floor while its timing was correctly withheld. Add a
+bounded acquisition-only periodic-letter-run guard with a path-neutral refusal,
+preserving the entire prior transcript bundle instead of trimming or inventing
+timing. Long nonrepetitive words and unspaced languages remain admissible.
+Use greedy decoding without previous-window text prompts for full transcription;
+Whisper documents previous-text conditioning as a repetition-loop risk. Retain
+the independent optional timing downgrade and all existing receipt schemas.
+Advance the transient media pipeline version for the changed acquisition gate.
+
 ## 0.20.127 — 2026-09-05
 
 ### Derive family-balanced narration calibration from fresh audio samples

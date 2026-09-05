@@ -68,6 +68,7 @@ WHISPER_FAILURES = frozenset(
         "whisper_dependency_unavailable",
         "whisper_provider_failed",
         "whisper_result_invalid",
+        "whisper_repetitive_text",
         "whisper_text_limit",
         "whisper_language_invalid",
         "whisper_segments_invalid",
@@ -284,7 +285,13 @@ def _transcribe_with_mlx(
         raise LocalMediaError("whisper_dependency_unavailable") from exc
     try:
         if not word_timestamps:
-            value = provider.transcribe(str(path), path_or_hf_repo=model)
+            value = provider.transcribe(
+                str(path),
+                path_or_hf_repo=model,
+                temperature=0.0,
+                condition_on_previous_text=False,
+                verbose=None,
+            )
         else:
             value = provider.transcribe(
                 str(path),

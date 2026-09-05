@@ -16,10 +16,11 @@ from typing import Any, NoReturn
 
 from artifact_metadata import ArtifactAvailability, WINDOWS_REPARSE_POINT_ATTRIBUTE
 from artifact_supervisor import DiagnosticReceipt, FileGeneration, SupervisorLimits
+from transcript_quality import WORD
 
 
 MEDIA_SCHEMA_VERSION = 1
-MEDIA_PIPELINE_VERSION = "1.0.0"
+MEDIA_PIPELINE_VERSION = "1.1.0"
 MEDIA_MAX_INPUT_BYTES = 8 * 1024**3
 MEDIA_MAX_DURATION_SECONDS = 8 * 60 * 60
 MEDIA_MAX_STREAMS = 64
@@ -30,6 +31,15 @@ WHISPER_MAX_TEXT_BYTES = 2 * 1024 * 1024
 WHISPER_MAX_SEGMENTS = 20000
 WHISPER_MAX_SEGMENT_TEXT_BYTES = 16384
 WHISPER_MAX_LANGUAGE_LENGTH = 32
+# Acquisition-only decoder-loop guard, not a complete hallucination detector.
+# Native #219 evidence appended hundreds of unspaced repeated syllables to
+# otherwise plausible speech, hiding the defect from duration/word-count floors.
+# A run must span at least 256 letters with a period no longer than 32 letters:
+# at least eight cycles, far beyond ordinary stuttering or a long technical word.
+# Never truncate the output or infer what the speaker actually said.
+WHISPER_REPETITION_POLICY_VERSION = "unspaced-periodic-text-v1"
+WHISPER_REPETITION_MIN_CHARACTERS = 256
+WHISPER_REPETITION_MAX_PERIOD = 32
 
 MEDIA_METADATA_LIMITS = SupervisorLimits(
     profile_id="local-media-metadata-v1",
@@ -385,6 +395,7 @@ def bounded_whisper_result(value: Any) -> dict[str, Any]:
     if not isinstance(text, str) or not text.strip():
         refuse("whisper_result_invalid")
     _bounded_text(text, WHISPER_MAX_TEXT_BYTES, "whisper_text_limit")
+    _reject_repetitive_whisper_text(text)
     language = value.get("language")
     if language is not None and (
         not isinstance(language, str)
@@ -425,6 +436,26 @@ def bounded_whisper_result(value: Any) -> dict[str, Any]:
         if not timing_valid:
             segments = None
     return {"text": text, "language": language, "segments": segments}
+
+
+def _reject_repetitive_whisper_text(text: str) -> None:
+    """Refuse long periodic letter runs in bounded text, without rewriting it.
+
+    Reuse the transcript owner's Unicode lexical boundaries. Ordinary long
+    words and unspaced nonrepetitive languages remain valid. Work is linear in
+    text length times the fixed maximum period; there is no backtracking regex,
+    model call, or growing substring table. Short words cost one length check.
+    """
+    for word in WORD.finditer(text):
+        start, end = word.span()
+        if end - start < WHISPER_REPETITION_MIN_CHARACTERS:
+            continue
+        for period in range(1, WHISPER_REPETITION_MAX_PERIOD + 1):
+            run = period
+            for index in range(start + period, end):
+                run = run + 1 if text[index] == text[index - period] else period
+                if run >= WHISPER_REPETITION_MIN_CHARACTERS:
+                    refuse("whisper_repetitive_text")
 
 
 def _segment_offset(value: Any) -> bool:

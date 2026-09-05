@@ -89,6 +89,10 @@ def test_real_protocol_keeps_provider_stdout_out_of_result(
     [
         ("raise OSError('private/path provider failure')", "whisper_provider_failed"),
         ("return {'text': ''}", "whisper_result_invalid"),
+        (
+            "return {'text': 'Complete useful speech. ' + 'eda' * 220}",
+            "whisper_repetitive_text",
+        ),
         ("return {'text': 'x' * (2 * 1024 * 1024 + 1)}", "whisper_text_limit"),
         (
             "return {'text': 'speech', 'language': 'private/path'}",
@@ -151,7 +155,11 @@ def test_worker_result_serialization_limit_is_preserved_as_resource_failure(
     whisper, speech_file, tmp_path, monkeypatch
 ):
     _fake_provider_worker(
-        whisper, tmp_path, monkeypatch, "return {'text': 'x' * 8192}", result_limit=4096
+        whisper,
+        tmp_path,
+        monkeypatch,
+        "return {'text': 'speech ' * 1200}",
+        result_limit=4096,
     )
     with pytest.raises(whisper.LocalMediaError, match="whisper_worker_resource_limit"):
         whisper.transcribe_local_media(
@@ -304,3 +312,26 @@ def test_process_control_signals_are_not_swallowed(whisper, monkeypatch, signal)
     )
     with pytest.raises(signal):
         whisper._transcribe_with_mlx(Path("unused.wav"), "model")
+
+
+def test_native_full_transcription_uses_greedy_independent_windows(
+    whisper, monkeypatch
+):
+    def transcribe(
+        path, *, path_or_hf_repo, temperature, condition_on_previous_text, verbose
+    ):
+        assert path == "speech.wav"
+        assert path_or_hf_repo == "model"
+        assert temperature == 0.0
+        assert condition_on_previous_text is False
+        assert verbose is None
+        return {"text": "Complete useful speech.", "language": "en"}
+
+    monkeypatch.setitem(
+        sys.modules, "mlx_whisper", SimpleNamespace(transcribe=transcribe)
+    )
+    assert whisper._transcribe_with_mlx(Path("speech.wav"), "model") == {
+        "text": "Complete useful speech.",
+        "language": "en",
+        "segments": None,
+    }

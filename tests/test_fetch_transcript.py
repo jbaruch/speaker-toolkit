@@ -1174,6 +1174,7 @@ def test_existing_local_quality_refresh_rechecks_after_staging(
         "whisper_worker_failed",
         "whisper_provider_failed",
         "whisper_result_invalid",
+        "whisper_repetitive_text",
         "whisper_text_limit",
         "whisper_language_invalid",
         "whisper_segment_limit",
