@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.123 — 2026-09-05
+
 ### Preserve reviewed inactive recording aliases
 
 Add an owner-reviewed YouTube alias ledger outside talk analysis generations,
