@@ -419,6 +419,60 @@ def test_utf16_is_not_accepted_as_utf8_json(rates):
         rates.decode('{"schema_version":1}'.encode("utf-16le"))
 
 
+@pytest.mark.parametrize("value", [object(), float("nan"), float("inf"), -float("inf")])
+def test_encoder_rejects_non_json_values_with_typed_errors(rates, value):
+    with pytest.raises(rates.SpeechRateError) as caught:
+        rates.encode({"private-label": value})
+    assert caught.value.code == "speech_json_invalid"
+    assert "private-label" not in str(caught.value)
+    assert caught.value.__suppress_context__ is True
+
+
+def test_encoder_rejects_circular_structures(rates):
+    value = []
+    value.append(value)
+    with pytest.raises(rates.SpeechRateError) as caught:
+        rates.encode(value)
+    assert caught.value.code == "speech_json_invalid"
+
+
+@pytest.mark.parametrize("failure", [TypeError, ValueError, RecursionError])
+def test_encoder_failure_is_redacted_and_unchained(rates, monkeypatch, failure):
+    import traceback
+
+    def reject_input(*args, **kwargs):
+        raise failure("private input value")
+
+    monkeypatch.setattr(rates.json, "dumps", reject_input)
+    with pytest.raises(rates.SpeechRateError) as caught:
+        rates.encode({})
+    assert caught.value.code == "speech_json_invalid"
+    assert "private input value" not in "".join(
+        traceback.format_exception(caught.value)
+    )
+
+
+@pytest.mark.parametrize("interrupt", [KeyboardInterrupt, SystemExit])
+def test_encoder_does_not_swallow_interrupts(rates, monkeypatch, interrupt):
+    def stop(*args, **kwargs):
+        raise interrupt
+
+    monkeypatch.setattr(rates.json, "dumps", stop)
+    with pytest.raises(interrupt):
+        rates.encode({})
+
+
+def test_encoder_preserves_canonical_bytes_and_size_failure(rates, monkeypatch):
+    value = {"schema_version": 1, "a": [1, True, None, "text"]}
+    encoded = rates.encode(value)
+    assert encoded == b'{"a":[1,true,null,"text"],"schema_version":1}'
+    assert rates.decode(encoded) == value
+    monkeypatch.setattr(rates, "MAX_JSON_BYTES", len(encoded) - 1)
+    with pytest.raises(rates.SpeechRateError) as caught:
+        rates.encode(value)
+    assert caught.value.code == "speech_json_too_large"
+
+
 def test_outline_legacy_range_is_explicitly_unverified(outline, extract_script):
     rate = outline.talk.narration_rate
     assert rate["basis"] == "assumption"
