@@ -1,5 +1,23 @@
 # Changelog
 
+### Route compatible image requests through subscription Codex
+
+Add per-render CLI/API selection shared by both generators (#385), explicit
+lane overrides, lazy API credentials, bounded authenticated native execution,
+and visible failures without metered retries. Declare a locked optional Codex
+runtime with weekly Dependabot renewal; enforce its exact version and check
+capability/authentication per use. Preserve dated aliases and exact geometry on API;
+native output requires explicit opt-in and reports its unpinned identity,
+observed dimensions, and digest. Gemini, Imagen, masks, and thumbnail composition
+retain their verified API paths. Unmasked native builds edit the preceding frame.
+
+Version the exploration manifest to v2 with requested/served lane provenance;
+keep historical API-only v1 readable and refuse native cells as evidence for a
+dated API model. Label native comparison files and contact sheets explicitly.
+Test routing, subprocess/resource failures, output/reference validation, chain
+behavior, and the bake gate with fake vendors. No catalog reparse or live-vault
+mutation is part of this change.
+
 ## 0.20.125 — 2026-09-05
 
 ### Bound transcript media acquisition to supervised source generations

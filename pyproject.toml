@@ -126,10 +126,11 @@ pythonVersion = "3.10"
 include = ["scripts", "skills", "tests"]
 exclude = ["**/__pycache__", ".venv", ".tessl"]
 executionEnvironments = [
-    # illustrations reads the outline schema from presentation-creator.
+    # illustrations reads the outline schema and the shared artifact supervisor.
     { root = "skills/illustrations/scripts", extraPaths = [
         "skills/illustrations/scripts",
         "skills/presentation-creator/scripts",
+        "skills/vault-ingress/scripts",
     ] },
     # The outline reader consumes the vault-profile-owned speech-rate contract.
     { root = "skills/presentation-creator/scripts", extraPaths = [

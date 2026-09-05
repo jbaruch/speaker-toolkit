@@ -8,7 +8,15 @@ are auto-loaded — apply them, don't restate them.
 
 Before generating, ensure:
 
-1. **API key(s)** — the script dispatches by model-name prefix:
+1. **Lane and credentials** — `--image-lane auto` prefers a compatible
+   subscription CLI. Existing pinned-model/exact-size requests use API;
+   `--allow-cli-native` explicitly permits OpenAI's unpinned native model and
+   observed dimensions. Force HTTP with `--image-lane api`, or require native
+   Codex with `--image-lane cli --allow-cli-native`. Gemini and Imagen remain
+   API-only. See [image-provider-lanes.md](image-provider-lanes.md) for the
+   capability/authentication boundary and diagnostics.
+
+   API requests dispatch by model-name prefix:
    `gpt-image-*` → OpenAI; `imagen-*` and `gemini-*` / `nano-banana-*` →
    Google. Add whichever keys the run will actually use to
    `{vault}/secrets.json` (preferred):
@@ -18,12 +26,10 @@ Before generating, ensure:
      "openai": { "api_key": "your-openai-key" }
    }
    ```
-   For single-model generation (`generate`, `--edit`, `--build`, `--fix`),
-   only the key for the outline's baked `style_anchor.model` vendor is required —
-   the other can be omitted. For `--compare`, every vendor in `COMPARE_MODELS`
-   is hit; for `--style-explore`, every vendor among the `candidates.json`
-   models is hit — provide all corresponding keys (the current roster spans
-   both Google and OpenAI, so both are usually needed).
+   Only vendors that select API need keys. Native-only runs never read
+   `secrets.json` or require an API key. Mixed comparison/exploration runs check
+   each API vendor on first use; provide those keys before starting to avoid
+   a partially rendered grid. A present but failing CLI never retries API.
    Env-var fallbacks: `GEMINI_API_KEY`, `OPENAI_API_KEY`. Get keys from
    https://aistudio.google.com/app/apikey (Google) and
    https://platform.openai.com/api-keys (OpenAI).
@@ -33,8 +39,10 @@ Before generating, ensure:
    Imagen models have no edit endpoint — `--edit`, `--build`, and `--fix`
    require a Gemini or OpenAI model.
 
-3. **Python 3** — stdlib only (`urllib`, `json`, `base64`, `uuid`). No pip
-   install needed.
+3. **Python 3.10+** — install the project's declared dependencies from
+   `pyproject.toml`. API-only plain generation uses the standard library;
+   masked edits need Pillow. The native lane also uses the co-shipped process
+   supervisor and its declared psutil dependency.
 
 ## Slide Selection Modes
 

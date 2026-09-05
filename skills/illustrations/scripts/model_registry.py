@@ -22,6 +22,15 @@ import json
 import sys
 from datetime import date, datetime
 
+from image_lane_contract import (
+    CliProbe,
+    FAMILY_PREFIXES,
+    ImageLane,
+    ImageLaneError,
+    ImageRequest,
+    resolve_image_lane as _resolve_image_lane,
+)
+
 # --- Vendor endpoints ---
 #
 # Single source of truth for the API bases. Both generate-illustrations.py and
@@ -158,7 +167,59 @@ def resolve_model_id(name):
 # Model-id prefixes we ship a vendor adapter for (Google generateContent /
 # Imagen :predict, OpenAI images). model_family() falls back to "gemini" for any
 # unknown prefix, so it can't tell a real Gemini id from an unsupported vendor.
-SUPPORTED_MODEL_PREFIXES = ("gpt-image", "imagen", "gemini", "nano-banana")
+SUPPORTED_MODEL_PREFIXES = tuple(
+    prefix for prefixes in FAMILY_PREFIXES.values() for prefix in prefixes
+)
+
+
+def resolve_image_lane(
+    model: str,
+    probe: CliProbe | None = None,
+    *,
+    forced_lane: str = "auto",
+    operation: str = "generate",
+    requested_size: tuple[int, int] | None = None,
+    reference_count: int = 0,
+    masked: bool = False,
+    allow_native_model: bool = False,
+    allow_native_geometry: bool = False,
+) -> ImageLane:
+    """Resolve aliases and family once before the shared pure lane decision.
+
+    This is a dispatch plan, not a render or receipt. The adapter must supply a
+    fresh CLI probe when native output is permitted and must never fall back to
+    another provider after a selected lane fails. Snapshot aliases keep their
+    existing meaning; native output requires separate, explicit permissions.
+    """
+    if not isinstance(model, str):
+        raise ImageLaneError("invalid_image_model", "supply a model name")
+    canonical = resolve_model_id(model)
+    family = next(
+        (
+            family
+            for family, prefixes in FAMILY_PREFIXES.items()
+            if canonical.lower().startswith(prefixes)
+        ),
+        None,
+    )
+    if family is None:
+        raise ImageLaneError(
+            "unsupported_image_family", "select a supported image model"
+        )
+    return _resolve_image_lane(
+        ImageRequest(
+            family=family,
+            model=canonical,
+            operation=operation,
+            requested_size=requested_size,
+            reference_count=reference_count,
+            masked=masked,
+            allow_native_model=allow_native_model,
+            allow_native_geometry=allow_native_geometry,
+        ),
+        probe,
+        forced_lane=forced_lane,
+    )
 
 
 def is_supported_model(name):

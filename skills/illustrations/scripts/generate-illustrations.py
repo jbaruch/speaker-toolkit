@@ -3,9 +3,8 @@
 Generate illustrations for a presentation outline.
 
 Reads outline.yaml (the single source of truth) for the baked model, per-format
-style anchors, and per-slide image prompts, generates images via the
-appropriate vendor API (Google Gemini, Google Imagen, or OpenAI — dispatched by
-model-name prefix), and saves them to an illustrations/ directory.
+style anchors, and per-slide image prompts, selects a compatible subscription
+CLI or vendor API, and saves images to an illustrations/ directory.
 
 Usage:
     python3 generate-illustrations.py <outline.yaml> all
@@ -20,7 +19,12 @@ Usage:
     python3 generate-illustrations.py <outline.yaml> --fix 5 "Make the road wider"
     python3 generate-illustrations.py <outline.yaml> -v 2 5 9
 
-Requires:
+Lane options:
+    --image-lane auto|api|cli (default: auto)
+    --allow-cli-native permits unpinned OpenAI native output and observed geometry.
+    A failing CLI never retries API. Pinned/exact requests remain on API.
+
+Requires for API-selected renders only:
     - For Google models (gemini-*, nano-banana-*, imagen-*):
         Gemini API key in {vault}/secrets.json (preferred) or
         GEMINI_API_KEY env var (fallback).
@@ -28,11 +32,9 @@ Requires:
         OpenAI API key in {vault}/secrets.json under "openai".api_key
         or OPENAI_API_KEY env var (fallback).
     - Python 3.10+ (matches the project's requires-python in pyproject.toml;
-      uses union-type syntax via the shared outline_schema). The core
-      generation paths are stdlib-only. The masked-edit build path
-      (`--build` with a step `erase_region`) needs Pillow, a declared project
-      dependency (pyproject.toml); it is imported lazily only when a region is
-      used, so plain generation still runs without it.
+      uses union-type syntax via the shared outline_schema). Install the project's
+      declared dependencies; masked edits use Pillow and the native lane uses
+      Pillow plus the co-shipped process supervisor and psutil.
 """
 
 import argparse
@@ -53,6 +55,14 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from image_lane_contract import ImageLaneError
+from image_provider import (
+    ImageProviderOptions,
+    ImageRender,
+    add_image_lane_arguments,
+    render_cli,
+    select_image_lane,
+)
 from model_registry import (
     COMPARE_MODELS,
     GEMINI_API_BASE,
@@ -733,40 +743,47 @@ def _require_keys_for_families(keys, families, secrets_path):
     sys.exit(1)
 
 
+class ImageKeys:
+    """Per-run credentials, loaded only after a render selects the API lane."""
+
+    def __init__(self, vault_path=None, options=None):
+        self.vault_path = vault_path
+        self.options = options or ImageProviderOptions()
+        self._loaded = None
+
+    def require(self, family):
+        if self._loaded is None:
+            self._loaded = load_secrets(self.vault_path)
+        keys, _ = self._loaded
+        key_name = family_key_name(family)
+        if not keys.get(key_name):
+            variable = "OPENAI_API_KEY" if key_name == "openai" else "GEMINI_API_KEY"
+            raise ImageLaneError(
+                "image_api_key_missing",
+                f"configure {key_name}.api_key in the vault secrets.json or set {variable}",
+            )
+        return keys
+
+
 def _load_context(
-    outline_path, require_model=True, vault_path=None, compare_mode=False
+    outline_path,
+    require_model=True,
+    vault_path=None,
+    compare_mode=False,
+    lane_options=None,
 ):
-    """Common preamble: load API keys, parse outline, compute paths.
+    """Parse the outline and paths without reading provider credentials.
 
-    Determines which vendor families need keys based on:
-        - compare_mode=True → every family in COMPARE_MODELS + outline's
-          baked Model (if any)
-        - compare_mode=False → just the outline's Model family
-
-    Returns:
-        tuple (keys, outline, output_dir) where keys is a dict
-        {"gemini": str|None, "openai": str|None}.
+    Compare mode may select different lanes per cell. Each API render checks only
+    its own vendor key; native-only runs never read secrets.json or API keys.
     """
-    keys, secrets_path = load_secrets(vault_path)
+    keys = ImageKeys(vault_path, lane_options)
     outline = parse_outline(outline_path)
 
     if require_model and not outline["model"]:
         print("ERROR: No model found in outline. Add a `style_anchor.model` field")
         print("to outline.yaml.")
         sys.exit(1)
-
-    families = set()
-    if compare_mode:
-        for m in COMPARE_MODELS:
-            families.add(model_family(m))
-        if outline["model"]:
-            families.add(model_family(outline["model"]))
-    elif outline["model"]:
-        families.add(model_family(outline["model"]))
-    else:
-        families.add("gemini")
-
-    _require_keys_for_families(keys, families, secrets_path)
 
     output_dir = os.path.join(
         os.path.dirname(os.path.abspath(outline_path)), "illustrations"
@@ -1116,20 +1133,41 @@ def generate_image(prompt, model, keys, slide_format=None):
     model = resolve_model_id(model)
     family = model_family(model)
     sizing = sizing_for(slide_format)
+    width, height = sizing["openai_size"].split("x")
+    size = (int(width), int(height))
+    try:
+        lane = select_image_lane(
+            model,
+            getattr(keys, "options", None),
+            requested_size=size if family == "openai" else None,
+        )
+    except ImageLaneError as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return ImageRender(None, str(error), None)
+    if lane.lane == "cli":
+        return render_cli(lane, prompt)
+    if isinstance(keys, ImageKeys):
+        try:
+            keys = keys.require(family)
+        except ImageLaneError as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return ImageRender(None, str(error), lane)
     if family == "openai":
-        return _call_openai_generate(
+        data, detail = _call_openai_generate(
             prompt, model, keys["openai"], size=sizing["openai_size"]
         )
-    if family == "imagen":
-        return _call_imagen(
+    elif family == "imagen":
+        data, detail = _call_imagen(
             prompt, model, keys["gemini"], aspect_ratio=sizing["imagen_aspect"]
         )
-    return _call_gemini([{"text": prompt}], model, keys["gemini"])
+    else:
+        data, detail = _call_gemini([{"text": prompt}], model, keys["gemini"])
+    return ImageRender(data, detail, lane)
 
 
 def edit_image(
     input_path, edit_prompt, model, keys, slide_format=None, erase_region=None
-):
+) -> ImageRender:
     """Edit an existing image via the appropriate vendor endpoint.
 
     Auto-appends vendor-agnostic safety suffixes to the prompt to prevent
@@ -1145,7 +1183,8 @@ def edit_image(
             When None, the historical whole-frame regeneration is used.
 
     Returns:
-        tuple (image_bytes, mime_type) on success, or (None, error_message) on failure.
+        ImageRender with bytes/MIME type or a failure message, plus lane provenance.
+        Two-value unpacking remains compatible with the historical tuple result.
     """
     suffixes = []
     lower_prompt = edit_prompt.lower()
@@ -1161,11 +1200,36 @@ def edit_image(
     sizing = sizing_for(slide_format)
 
     if family == "imagen":
-        return None, (
+        return ImageRender(
+            None,
             f"Image editing is not supported for Imagen models ({model}). "
             "Imagen has no public edit endpoint — use a Gemini or OpenAI "
-            "model for --edit / --build / --fix workflows."
+            "model for --edit / --build / --fix workflows.",
+            None,
         )
+
+    width, height = sizing["openai_size"].split("x")
+    size = (int(width), int(height))
+    try:
+        lane = select_image_lane(
+            model,
+            getattr(keys, "options", None),
+            operation="edit",
+            requested_size=size if family == "openai" else None,
+            reference_count=1,
+            masked=erase_region is not None,
+        )
+    except ImageLaneError as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return ImageRender(None, str(error), None)
+    if lane.lane == "cli":
+        return render_cli(lane, edit_prompt, input_path)
+    if isinstance(keys, ImageKeys):
+        try:
+            keys = keys.require(family)
+        except ImageLaneError as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return ImageRender(None, str(error), lane)
 
     if family == "openai":
         # A mask lets the model edit in-place with surrounding context; the
@@ -1198,8 +1262,8 @@ def edit_image(
     # Confine the change to the erase box: paste the edited region back over the
     # prior frame so everything outside it is the source pixels exactly (#90).
     if erase_region and image_bytes is not None:
-        return composite_region(input_path, image_bytes, erase_region)
-    return image_bytes, result
+        image_bytes, result = composite_region(input_path, image_bytes, erase_region)
+    return ImageRender(image_bytes, result, lane)
 
 
 # --- Style-explore manifest + render-before-bake gate ---
@@ -1224,22 +1288,27 @@ def write_rendered_manifest(base_dir, outline_path, results):
     ok_models = []
     for r in results:
         resolved = resolve_model_id(r["model"])
+        provenance = r.get("provenance")
+        lane = provenance.get("lane") if isinstance(provenance, dict) else None
+        served = lane.get("served_model") if isinstance(lane, dict) else None
         cell = {
             "style": r["style"],
             "format": r["format"],
             "model": r["model"],
             "model_resolved": resolved,
             "status": r["status"],
+            "provenance": provenance,
         }
         if r["status"] == "OK":
             cell["rel_path"] = r.get("rel_path")
-            ok_models.append(resolved)
+            if isinstance(served, str):
+                ok_models.append(served)
         else:
             cell["error"] = r.get("error")
         cells.append(cell)
 
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "outline": os.path.basename(outline_path),
         # Talk-directory name — a per-talk discriminator. Outline filenames are
         # identical across talks (outline.yaml), so the basename alone can't
@@ -1320,10 +1389,11 @@ def check_style_explore(outline_path):
     # Fail closed on a manifest we can't trust: an unsupported schema, or one
     # copied in from a different talk (basename AND talk-dir must match — see
     # rules/stateful-artifacts.md, "stale state is the default").
-    if manifest.get("schema_version") != 1:
+    schema_version = manifest.get("schema_version")
+    if type(schema_version) is not int or schema_version not in (1, 2):
         verdict["error"] = (
             f"{manifest_path} has unsupported schema_version "
-            f"{manifest.get('schema_version')!r} (expected 1) — re-run "
+            f"{schema_version!r} (expected 1 or 2) — re-run "
             "--style-explore to regenerate it."
         )
         return verdict
@@ -1377,6 +1447,19 @@ def check_style_explore(outline_path):
         if not isinstance(cell_model_raw, str):
             continue
         cell_model = resolve_model_id(cell_model_raw)
+        if schema_version == 2:
+            provenance = cell.get("provenance")
+            lane = provenance.get("lane") if isinstance(provenance, dict) else None
+            # Native CLI output cannot prove that a dated API model was seen.
+            # Missing provenance is unusable, never inferred from a filename.
+            if (
+                not isinstance(lane, dict)
+                or lane.get("lane") != "api"
+                or lane.get("requested_model") != cell_model
+                or lane.get("served_model") != cell_model
+                or lane.get("geometry") != "requested"
+            ):
+                continue
         if cell_model:
             verified.add(cell_model)
     rendered = sorted(verified)
@@ -1423,9 +1506,9 @@ def enforce_render_gate(outline_path):
 # --- Main Commands ---
 
 
-def run_generate(outline_path, slide_args, versioned=False):
+def run_generate(outline_path, slide_args, versioned=False, *, lane_options=None):
     """Generate illustrations for selected slides."""
-    keys, outline, output_dir = _load_context(outline_path)
+    keys, outline, output_dir = _load_context(outline_path, lane_options=lane_options)
     model = outline["model"]
     os.makedirs(output_dir, exist_ok=True)
 
@@ -1535,12 +1618,14 @@ def run_generate(outline_path, slide_args, versioned=False):
     print(
         f"Done: {success} generated, {failed} failed, out of {len(to_generate)} requested."
     )
+    if failed:
+        sys.exit(1)
 
 
-def run_compare(outline_path, slide_num):
+def run_compare(outline_path, slide_num, *, lane_options=None):
     """Generate the same prompt across multiple models for comparison."""
     keys, outline, _ = _load_context(
-        outline_path, require_model=False, compare_mode=True
+        outline_path, require_model=False, compare_mode=True, lane_options=lane_options
     )
 
     slides_by_num = {s["slide_num"]: s for s in outline["slides"]}
@@ -1580,21 +1665,26 @@ def run_compare(outline_path, slide_num):
     for i, model in enumerate(models):
         print(f"[{i + 1}/{len(models)}] {model}...", end=" ", flush=True)
 
-        image_bytes, result = generate_image(prompt, model, keys, eff_format)
+        render = generate_image(prompt, model, keys, eff_format)
+        image_bytes, result = render
+        selected = render.lane if isinstance(render, ImageRender) else None
+        label = f"{selected.served_model} [{selected.lane}]" if selected else model
 
         if image_bytes is None:
             print(f"FAILED: {result[:100]}")
-            results.append((model, "FAIL", "-", "-"))
+            results.append((label, "FAIL", "-", "-"))
         else:
             ext = mime_to_ext(result)
             safe_model = model.replace("/", "_")
+            if selected and selected.lane == "cli":
+                safe_model += "-cli-native-unpinned"
             filename = f"slide-{slide_num:02d}-{safe_model}{ext}"
             filepath = os.path.join(output_dir, filename)
             with open(filepath, "wb") as f:
                 f.write(image_bytes)
             size_kb = len(image_bytes) / 1024
             print(f"OK ({size_kb:.0f} KB)")
-            results.append((model, "OK", f"{size_kb:.0f} KB", filepath))
+            results.append((label, "OK", f"{size_kb:.0f} KB", filepath))
 
         if i < len(models) - 1:
             time.sleep(RATE_LIMIT_DELAY)
@@ -1611,6 +1701,11 @@ def run_compare(outline_path, slide_num):
     print()
     print(f"Review images in: {output_dir}/")
     print("Set your chosen model in outline.yaml: `style_anchor.model: model-name`")
+    print(
+        "Native CLI comparisons are unpinned previews, not dated-model bake evidence."
+    )
+    if any(status == "FAIL" for _, status, _, _ in results):
+        sys.exit(1)
 
 
 # --- Style Exploration (Phase 2 strategy: style x model x format grid) ---
@@ -1732,6 +1827,10 @@ def render_explore_index(candidates, results):
         lines.append("")
         for r in by_style.get(name, []):
             label = f"**{r['format']}** · `{r['model']}`"
+            provenance = r.get("provenance")
+            lane = provenance.get("lane") if isinstance(provenance, dict) else None
+            if isinstance(lane, dict):
+                label += f" → `{lane['served_model']}` ({lane['lane']})"
             if r["status"] == "OK":
                 lines.append(f"- {label} — [{r['rel_path']}]({r['rel_path']})")
             else:
@@ -1740,7 +1839,7 @@ def render_explore_index(candidates, results):
     return "\n".join(lines).rstrip() + "\n"
 
 
-def run_style_explore(outline_path, candidates_path):
+def run_style_explore(outline_path, candidates_path, *, lane_options=None):
     """Render a style x model x format exploration grid for Phase 2 strategy.
 
     Reads candidate styles + a model shortlist from candidates.json, pulls each
@@ -1762,7 +1861,7 @@ def run_style_explore(outline_path, candidates_path):
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
 
-    keys, secrets_path = load_secrets()
+    keys = ImageKeys(options=lane_options)
     outline = parse_outline(outline_path)
     slides_by_num = {s["slide_num"]: s for s in outline["slides"]}
 
@@ -1780,9 +1879,6 @@ def run_style_explore(outline_path, candidates_path):
             file=sys.stderr,
         )
         sys.exit(1)
-
-    families = {model_family(resolve_model_id(m)) for m in candidates["models"]}
-    _require_keys_for_families(keys, families, secrets_path)
 
     base_dir = os.path.join(
         os.path.dirname(os.path.abspath(outline_path)), "style-explore"
@@ -1889,7 +1985,9 @@ def run_style_explore(outline_path, candidates_path):
     results = []
     for i, (style_name, fmt, model, prompt, eff_format) in enumerate(plan, 1):
         print(f"[{i}/{total}] {style_name} · {fmt} · {model}...", end=" ", flush=True)
-        image_bytes, result = generate_image(prompt, model, keys, eff_format)
+        render = generate_image(prompt, model, keys, eff_format)
+        image_bytes, result = render
+        provenance = render.provenance() if isinstance(render, ImageRender) else None
         if image_bytes is None:
             print(f"FAILED: {result[:80]}")
             results.append(
@@ -1899,11 +1997,19 @@ def run_style_explore(outline_path, candidates_path):
                     "model": model,
                     "status": "FAIL",
                     "error": result[:200],
+                    "provenance": provenance,
                 }
             )
         else:
             ext = mime_to_ext(result)
-            dest = explore_dest(base_dir, style_name, fmt, model, ext)
+            output_model = model
+            if (
+                isinstance(render, ImageRender)
+                and render.lane
+                and render.lane.lane == "cli"
+            ):
+                output_model += "-cli-native-unpinned"
+            dest = explore_dest(base_dir, style_name, fmt, output_model, ext)
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             with open(dest, "wb") as fh:
                 fh.write(image_bytes)
@@ -1915,6 +2021,7 @@ def run_style_explore(outline_path, candidates_path):
                     "model": model,
                     "status": "OK",
                     "rel_path": os.path.relpath(dest, base_dir),
+                    "provenance": provenance,
                 }
             )
         if i < total:
@@ -1932,11 +2039,16 @@ def run_style_explore(outline_path, candidates_path):
     print(
         "Review the grid, pick a style + model, then bake them into outline.yaml's style_anchor."
     )
+    print(
+        "Native CLI cells are unpinned previews and do not pass the dated-model bake gate."
+    )
+    if any(r["status"] == "FAIL" for r in results):
+        sys.exit(1)
 
 
-def run_edit(outline_path, slide_num, edit_prompt):
+def run_edit(outline_path, slide_num, edit_prompt, *, lane_options=None):
     """Edit an existing slide illustration via the model's edit endpoint."""
-    keys, outline, output_dir = _load_context(outline_path)
+    keys, outline, output_dir = _load_context(outline_path, lane_options=lane_options)
     model = outline["model"]
 
     input_path = find_base_image(output_dir, slide_num)
@@ -1977,9 +2089,9 @@ def run_edit(outline_path, slide_num, edit_prompt):
     )
 
 
-def run_build(outline_path, slide_arg):
+def run_build(outline_path, slide_arg, *, lane_options=None):
     """Generate progressive-reveal build images using backwards-chaining."""
-    keys, outline, output_dir = _load_context(outline_path)
+    keys, outline, output_dir = _load_context(outline_path, lane_options=lane_options)
     model = outline["model"]
     builds_dir = os.path.join(output_dir, "builds")
     os.makedirs(builds_dir, exist_ok=True)
@@ -2149,9 +2261,9 @@ def run_build(outline_path, slide_arg):
     print("Done. Review build images in:", builds_dir)
 
 
-def run_fix(outline_path, slide_num, fix_prompt):
+def run_fix(outline_path, slide_num, fix_prompt, *, lane_options=None):
     """Apply a targeted fix to an existing slide image, saving as a new version."""
-    keys, outline, output_dir = _load_context(outline_path)
+    keys, outline, output_dir = _load_context(outline_path, lane_options=lane_options)
     model = outline["model"]
 
     input_path = find_latest_image(output_dir, slide_num)
@@ -2262,7 +2374,9 @@ def main():
         help="Slide selection: 'all', 'remaining', or slide numbers (e.g., 2 5 9, 2-10)",
     )
 
+    add_image_lane_arguments(parser)
     args = parser.parse_args()
+    lane_options = ImageProviderOptions(args.image_lane, args.allow_cli_native)
 
     if not os.path.isfile(args.outline):
         print(f"ERROR: Outline file not found: {args.outline}")
@@ -2273,19 +2387,23 @@ def main():
     _cli_vault_path = args.vault
 
     if args.edit:
-        run_edit(args.outline, int(args.edit[0]), args.edit[1])
+        run_edit(
+            args.outline, int(args.edit[0]), args.edit[1], lane_options=lane_options
+        )
     elif args.build:
-        run_build(args.outline, args.build)
+        run_build(args.outline, args.build, lane_options=lane_options)
     elif args.fix:
-        run_fix(args.outline, int(args.fix[0]), args.fix[1])
+        run_fix(args.outline, int(args.fix[0]), args.fix[1], lane_options=lane_options)
     elif args.compare:
-        run_compare(args.outline, args.compare)
+        run_compare(args.outline, args.compare, lane_options=lane_options)
     elif args.style_explore:
-        run_style_explore(args.outline, args.style_explore)
+        run_style_explore(args.outline, args.style_explore, lane_options=lane_options)
     elif args.check_style_explore:
         run_check_style_explore(args.outline)
     else:
-        run_generate(args.outline, args.slides, versioned=args.version)
+        run_generate(
+            args.outline, args.slides, versioned=args.version, lane_options=lane_options
+        )
 
 
 if __name__ == "__main__":

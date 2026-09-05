@@ -50,6 +50,7 @@ Do not restate them here — apply them.
 | `style-explore/` (alongside outline) | Phase 2 exploration grid (style × model × format) + `index.md` + `rendered.json` manifest |
 | [skills/illustrations/references/strategy.md](references/strategy.md) | Phase 2 detail — idea-sourcing wizard, optimization priorities, model shortlist, style proposals, exploration render, the render-before-bake gate, continuity devices |
 | [skills/illustrations/references/generation.md](references/generation.md) | Deck generation, edit/fix workflow, model comparison |
+| [skills/illustrations/references/image-provider-lanes.md](references/image-provider-lanes.md) | Subscription CLI capability, authentication, failure handling, and renewal |
 | [skills/illustrations/references/builds.md](references/builds.md) | Backwards-chained build generation |
 | [skills/illustrations/references/thumbnails.md](references/thumbnails.md) | Phase 7 thumbnail composition + slide selection |
 | [skills/illustrations/references/style-explore-candidates-schema.md](references/style-explore-candidates-schema.md) | `--style-explore` contract — `candidates.json` input + `rendered.json` output |
@@ -118,6 +119,15 @@ that to the speaker — they keep the baked model or re-run the exploration
 (OpenAI). A model from a new vendor family needs a `model_family()` +
 `_call_<vendor>` adapter before it can render — surface that as a follow-up
 script change.
+
+Both generators default to `--image-lane auto`: prefer a compatible subscription
+CLI; preserve pinned models and exact geometry on API. Use `--image-lane api`
+to force HTTP. Use `--image-lane cli --allow-cli-native` for OpenAI native,
+unpinned output at observed dimensions. Gemini, Imagen, masked edits, and
+multi-reference thumbnails remain API-only. Report the emitted lane and any
+failure; never retry a failing CLI through API without an explicit API choice.
+Read [skills/illustrations/references/image-provider-lanes.md](references/image-provider-lanes.md)
+before selecting native output. Native previews are not dated-model bake evidence.
 
 Proceed immediately to Step 3 or Step 10 per Step 1's routing.
 

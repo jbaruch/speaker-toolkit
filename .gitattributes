@@ -22,3 +22,4 @@ skills/**/*.js.txt linguist-generated=true merge=ours
 # install the graph that was reviewed. Regenerate with
 # `npm install --package-lock-only`, never by hand.
 scripts/deck-renderers/package-lock.json linguist-generated=true merge=ours
+skills/illustrations/scripts/codex-cli/package-lock.json linguist-generated=true merge=ours
