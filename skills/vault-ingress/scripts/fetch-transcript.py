@@ -58,24 +58,31 @@ receipts hash exact transcript bytes, so replacement invalidates both.
 ``--duration-seconds`` is only an expected value: it must match a YouTube
 provider probe or ``ffprobe`` of the exact local media before it can authorize a
 short-talk threshold.
+
+Local-media admission, snapshot hashing/ffprobe, yt-dlp and Whisper run in
+authenticated resource-bounded workers. Source paths travel in private payloads,
+not worker command lines. A probe's exact generation and digest are reused for
+transcription, then checked again after staging and before bundle replacement.
+A failed local probe preserves even a stale prior quality receipt; it never
+substitutes weaker fixed-default provenance. See local_media_contract.py for
+media admission and resource profiles, and local_media_evidence.py for cleanup.
 """
 
 import argparse
-import hashlib
-import importlib
 import json
-import math
 import os
 import re
-import stat
-import subprocess
 import sys
-import tempfile
 from collections.abc import Callable, Iterable, Iterator
-from contextlib import contextmanager, redirect_stdout
+from contextlib import redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NoReturn, TypeVar
+
+from local_media_contract import LocalMediaError, MediaArtifactProbe
+from local_media_download import download_youtube_audio, probe_youtube_media_duration
+from local_media_evidence import check_media_generation, probe_local_media
+from local_media_transcription import transcribe_local_media
 
 from transcript_timing import (
     ensure_bundle_destinations_are_not_symlinks,
@@ -103,29 +110,11 @@ from transcript_quality import (
     normalize_duration,
     receipt_claims_source_duration,
     receipt_duration_cannot_hold,
-    receipt_matches_media_digest,
+    receipt_matches_media_digest as receipt_matches_media_digest,
     validate_transcript,
 )
-from ytdlp_runtime import YtDlpResolutionError, resolve_ytdlp
 
 __all__ = ["VTT_TIMING_TAG", "write_atomically"]
-
-
-# YouTube serves media per player client, and it blocks them unevenly: a client
-# that 403s today may work tomorrow and the reverse. Trying one client and
-# giving up turns a transient block into "this talk has no transcript", which
-# is how the Whisper fallback went silently dead while mlx-whisper sat
-# installed and working. `None` runs yt-dlp's own default chain first, so a
-# healthy environment pays nothing; the named clients are only reached after it
-# fails. Order is cheapest-first, not preference — every entry produces the
-# same audio when it works.
-YOUTUBE_PLAYER_CLIENTS: tuple[str | None, ...] = (
-    None,
-    "mweb",
-    "web_safari",
-    "ios",
-    "tv",
-)
 
 
 VIDEO_ID = re.compile(r"(?:v=|youtu\.be/|/embed/|/shorts/)([A-Za-z0-9_-]{11})")
@@ -158,125 +147,35 @@ TIMING_PAYLOAD_ERRORS = (
 )
 
 
-def _stat_identity(value: os.stat_result) -> tuple[int, int, int, int, int]:
-    return (
-        value.st_dev,
-        value.st_ino,
-        value.st_size,
-        value.st_mtime_ns,
-        value.st_ctime_ns,
-    )
+@dataclass(frozen=True)
+class AssessedMediaSource:
+    """One source generation whose byte facts came from the bounded owner."""
+
+    path: Path
+    probe: MediaArtifactProbe
+
+    @property
+    def sha256(self) -> str:
+        return self.probe.source_sha256
+
+    def assert_unchanged(self) -> None:
+        check_media_generation(self.path, self.probe)
 
 
 @dataclass(frozen=True)
-class MediaSnapshot:
-    """One private local-media snapshot used by every acquisition step."""
+class WhisperAcquisition:
+    """Speech plus the provider duration verified against its downloaded media."""
 
-    source_path: Path
-    source_descriptor: int
-    source_identity: tuple[int, int, int, int, int]
-    path: Path
-    sha256: str
-    identity: tuple[int, int, int, int, int]
+    text: str
+    language: str | None
+    segments: list[dict[str, Any]] | None
+    duration_seconds: float
 
-    def assert_unchanged(self, *, verify_source_digest: bool = False) -> None:
-        """Fail before a write when the source binding or snapshot drifted."""
-        try:
-            source_entry = self.source_path.lstat()
-            source_descriptor_state = os.fstat(self.source_descriptor)
-            current = self.path.lstat()
-        except OSError as exc:
-            raise ValueError(
-                f"local-media source or snapshot became unavailable: {exc}; "
-                "no transcript bundle was written"
-            ) from exc
-        if (
-            not stat.S_ISREG(source_entry.st_mode)
-            or _stat_identity(source_entry) != self.source_identity
-            or _stat_identity(source_descriptor_state) != self.source_identity
-        ):
-            raise ValueError(
-                "local-media source changed or was replaced during acquisition; "
-                "no transcript bundle was written"
-            )
-        if verify_source_digest:
-            os.lseek(self.source_descriptor, 0, os.SEEK_SET)
-            source_digest = hashlib.sha256()
-            while chunk := os.read(self.source_descriptor, 1024 * 1024):
-                source_digest.update(chunk)
-            source_after_hash = os.fstat(self.source_descriptor)
-            if (
-                _stat_identity(source_after_hash) != self.source_identity
-                or source_digest.hexdigest() != self.sha256
-            ):
-                raise ValueError(
-                    "local-media source changed during acquisition; no transcript "
-                    "bundle was written"
-                )
-        if (
-            not stat.S_ISREG(current.st_mode)
-            or _stat_identity(current) != self.identity
-            or media_sha256(self.path) != self.sha256
-        ):
-            raise ValueError(
-                "local-media snapshot changed during probe or transcription; "
-                "no transcript bundle was written"
-            )
-
-
-@contextmanager
-def immutable_media_snapshot(source: Path) -> Iterator[MediaSnapshot]:
-    """Copy a stable regular source twice-verified through one open descriptor."""
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-    flags |= getattr(os, "O_NOFOLLOW", 0)
-    try:
-        descriptor = os.open(source, flags)
-    except OSError as exc:
-        raise ValueError(
-            f"cannot open --audio media as a non-symlink regular file: {exc}"
-        ) from exc
-    try:
-        before = os.fstat(descriptor)
-        if not stat.S_ISREG(before.st_mode):
-            raise ValueError("--audio media must be a regular file")
-        with tempfile.TemporaryDirectory(prefix="speaker-toolkit-media-") as work_dir:
-            snapshot_path = Path(work_dir) / source.name
-            first_digest = hashlib.sha256()
-            with snapshot_path.open("xb") as snapshot_stream:
-                while chunk := os.read(descriptor, 1024 * 1024):
-                    first_digest.update(chunk)
-                    snapshot_stream.write(chunk)
-                snapshot_stream.flush()
-                os.fsync(snapshot_stream.fileno())
-            after_copy = os.fstat(descriptor)
-            os.lseek(descriptor, 0, os.SEEK_SET)
-            second_digest = hashlib.sha256()
-            while chunk := os.read(descriptor, 1024 * 1024):
-                second_digest.update(chunk)
-            after_verify = os.fstat(descriptor)
-            if (
-                _stat_identity(before) != _stat_identity(after_copy)
-                or _stat_identity(before) != _stat_identity(after_verify)
-                or first_digest.digest() != second_digest.digest()
-            ):
-                raise ValueError(
-                    "--audio media changed while its immutable snapshot was being "
-                    "created; no transcript bundle was written"
-                )
-            snapshot_path.chmod(stat.S_IRUSR)
-            snapshot_stat = snapshot_path.lstat()
-            snapshot = MediaSnapshot(
-                source_path=source,
-                source_descriptor=descriptor,
-                source_identity=_stat_identity(after_verify),
-                path=snapshot_path,
-                sha256=first_digest.hexdigest(),
-                identity=_stat_identity(snapshot_stat),
-            )
-            snapshot.assert_unchanged()
-            yield snapshot
-    finally:
-        os.close(descriptor)
+    def __iter__(self) -> Iterator[Any]:
+        # Keep the historical three-value programmatic unpacking contract.
+        yield self.text
+        yield self.language
+        yield self.segments
 
 
 def _call_with_provider_stdout_isolated(
@@ -321,104 +220,15 @@ def resolve_video_id(value):
     return match.group(1) if match else None
 
 
-def media_sha256(path: Path) -> str:
-    """Hash the exact local media bytes that owned a duration probe."""
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        while chunk := stream.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _positive_duration(value: object) -> float | None:
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(float(value))
-        or float(value) <= 0
-    ):
-        return None
-    return normalize_duration(value)
-
-
 def probe_youtube_duration(
     video_id: str, *, ytdlp: str | Path | None = None
 ) -> tuple[float | None, str]:
-    """Read source-owned duration for one exact YouTube identity via yt-dlp."""
-    url = f"https://www.youtube.com/watch?v={video_id}"
+    """Read identity-bound duration through the bounded provider worker."""
     try:
-        executable = Path(ytdlp) if ytdlp is not None else resolve_ytdlp()
-        completed = subprocess.run(
-            [
-                str(executable),
-                "--dump-single-json",
-                "--skip-download",
-                "--no-playlist",
-                url,
-            ],
-            capture_output=True,
-            text=True,
-        )
-    except (YtDlpResolutionError, OSError) as exc:
-        return None, (
-            f"cannot probe trusted YouTube duration ({exc}) — install the pinned "
-            "yt-dlp with `pip install .` or set YT_DLP to its path"
-        )
-    if completed.returncode != 0:
-        detail = completed.stderr.strip()[:400] or "provider metadata unavailable"
-        return None, f"yt-dlp could not probe duration for {video_id}: {detail}"
-    try:
-        payload = json.loads(completed.stdout)
-    except json.JSONDecodeError as exc:
-        return None, f"yt-dlp returned invalid duration metadata for {video_id}: {exc}"
-    if not isinstance(payload, dict) or payload.get("id") != video_id:
-        returned_id = payload.get("id") if isinstance(payload, dict) else None
-        return None, (
-            "yt-dlp duration metadata identity mismatch: requested "
-            f"{video_id}, received {returned_id!r}"
-        )
-    duration = _positive_duration(payload.get("duration"))
-    if duration is None:
-        return None, (
-            f"yt-dlp metadata for {video_id} has no positive finite duration; "
-            "cannot authorize a short-talk threshold"
-        )
-    return duration, f"trusted yt-dlp duration for YouTube video {video_id}"
-
-
-def probe_local_media_duration(path: Path) -> tuple[float | None, str]:
-    """Read duration from the exact local media bytes via ffprobe."""
-    try:
-        completed = subprocess.run(
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "default=noprint_wrappers=1:nokey=1",
-                str(path),
-            ],
-            capture_output=True,
-            text=True,
-        )
-    except (FileNotFoundError, OSError) as exc:
-        return None, (
-            f"cannot probe trusted local-media duration ({exc}) — install "
-            "ffprobe with `brew install ffmpeg`"
-        )
-    if completed.returncode != 0:
-        detail = completed.stderr.strip()[:400] or "media duration unavailable"
-        return None, f"ffprobe could not read duration from {path}: {detail}"
-    try:
-        raw_duration = float(completed.stdout.strip())
-    except ValueError:
-        return None, f"ffprobe returned an invalid duration for {path}"
-    duration = _positive_duration(raw_duration)
-    if duration is None:
-        return None, f"ffprobe returned no positive finite duration for {path}"
-    return duration, f"trusted ffprobe duration for local media {path}"
+        duration = probe_youtube_media_duration(video_id, ytdlp=ytdlp)
+    except LocalMediaError as exc:
+        return None, str(exc)
+    return duration, f"trusted bounded yt-dlp duration for YouTube video {video_id}"
 
 
 def duration_matches_expected(expected: int, trusted: float) -> bool:
@@ -614,49 +424,21 @@ def enrich_existing_caption_timing(
 
 
 def transcribe_audio(
-    audio_path: Path, video_id: str, model: str
-) -> tuple[str | None, str | None, Iterable[object] | None]:
-    """Call local Whisper; the caller owns enumerated lane isolation."""
-    return _transcribe_audio_with_mlx(audio_path, video_id, model)
-
-
-def _transcribe_audio_with_mlx(
-    audio_path: Path, video_id: str, model: str
-) -> tuple[str | None, str | None, Iterable[object] | None]:
-    """Return ``(text, language, timed segments)`` from local Whisper."""
-    try:
-        mlx_whisper = importlib.import_module("mlx_whisper")
-    except (ImportError, AttributeError, OSError, RuntimeError) as exc:
-        print(
-            "mlx-whisper lane is unavailable "
-            f"({type(exc).__name__}: {exc}) (Apple Silicon only) — "
-            "`pip install 'speaker-toolkit[whisper]'`, or supply the transcript "
-            "by hand. On other platforms use a caption track or an external "
-            "transcription service.",
-            file=sys.stderr,
-        )
-        return None, None, None
-
-    try:
-        result = mlx_whisper.transcribe(str(audio_path), path_or_hf_repo=model)
-    except (AttributeError, OSError, TypeError, ValueError, RuntimeError) as exc:
-        # Model download failure, unreadable audio, or an unsupported runtime.
-        # Must not escape as a traceback — callers parse this script's stdout.
-        print(
-            f"mlx_whisper could not transcribe {video_id}: {type(exc).__name__}: {exc}",
-            file=sys.stderr,
-        )
-        return None, None, None
-    text = result.get("text") if isinstance(result, dict) else None
-    if not isinstance(text, str) or not text.strip():
-        print(f"mlx_whisper returned no text for {video_id}", file=sys.stderr)
-        return None, None, None
-    # Whisper detects the spoken language; this is the only language signal on
-    # the audio path, and `delivery_language` is derived from it.
-    raw_language = result.get("language") if isinstance(result, dict) else None
-    language = raw_language if isinstance(raw_language, str) else None
-    segments = result.get("segments") if isinstance(result, dict) else None
-    return text, language, segments if isinstance(segments, Iterable) else None
+    audio_path: Path,
+    video_id: str,
+    model: str,
+    *,
+    probe: MediaArtifactProbe | None = None,
+    trusted_root: Path | None = None,
+) -> tuple[str, str | None, Iterable[object] | None]:
+    """Use bounded Whisper, reusing established media facts without more byte I/O."""
+    _established, speech = transcribe_local_media(
+        audio_path,
+        model,
+        probe=probe,
+        trusted_root=trusted_root,
+    )
+    return speech["text"], speech["language"], speech["segments"]
 
 
 def fetch_whisper(
@@ -665,68 +447,28 @@ def fetch_whisper(
     model: str,
     *,
     ytdlp: str | Path | None = None,
-) -> tuple[str | None, str | None, Iterable[object] | None]:
-    """Download audio and return Whisper text, language, and timed segments."""
-    url = f"https://www.youtube.com/watch?v={video_id}"
-    audio: Path | None = None
-    failures: list[str] = []
-    try:
-        executable = Path(ytdlp) if ytdlp is not None else resolve_ytdlp()
-    except YtDlpResolutionError as exc:
-        print(str(exc), file=sys.stderr)
-        return None, None, None
-    # Each attempt downloads into its own directory. Sharing one path let a
-    # refused attempt leave a partial file behind, and the next attempt's
-    # "did the audio appear" check would accept those bytes as its own success
-    # — the retry chain would stop early and transcribe whatever the failure
-    # left. Isolation makes the check answer only for the attempt that ran.
-    for index, client in enumerate(YOUTUBE_PLAYER_CLIENTS):
-        attempt_dir = Path(work_dir) / f"download-{index}"
-        attempt_dir.mkdir(parents=True, exist_ok=True)
-        command = [
-            str(executable),
-            "-x",
-            "--audio-format",
-            "mp3",
-            "--no-playlist",
-            "-o",
-            str(attempt_dir / "audio.%(ext)s"),
-        ]
-        if client is not None:
-            command += ["--extractor-args", f"youtube:player_client={client}"]
-        command.append(url)
-        try:
-            download = subprocess.run(command, capture_output=True, text=True)
-        except (FileNotFoundError, OSError) as exc:
-            # A missing yt-dlp must not escape as a traceback: this script's
-            # callers parse its stdout JSON, and a script that dies without
-            # emitting it is the same silent-failure shape the whole file
-            # exists to prevent.
-            print(
-                f"cannot run yt-dlp ({exc}) — install the pinned version with "
-                "`pip install .` or set YT_DLP to its path",
-                file=sys.stderr,
-            )
-            return None, None, None
-        candidate = attempt_dir / "audio.mp3"
-        # A zero-byte artifact is a failed extraction wearing a filename.
-        if (
-            download.returncode == 0
-            and candidate.exists()
-            and candidate.stat().st_size > 0
-        ):
-            audio = candidate
-            break
-        failures.append(f"{client or 'default'}: {download.stderr.strip()[:200]}")
-    else:
-        print(
-            f"yt-dlp could not download audio for {video_id} under any player "
-            f"client — {'; '.join(failures)}",
-            file=sys.stderr,
-        )
-        return None, None, None
+) -> WhisperAcquisition:
+    """Download and transcribe within bounded, separately supervised operations.
 
-    return transcribe_audio(audio, video_id, model)
+    work_dir remains a compatibility argument; it cannot select or reuse a
+    workspace. The download owner creates and cleans its own private directory.
+    """
+    with download_youtube_audio(video_id, ytdlp=ytdlp) as (audio, duration):
+        probe = probe_local_media(audio, trusted_root=audio.parent)
+        if abs(probe.duration_seconds - duration) > 1.0:
+            raise LocalMediaError("ytdlp_media_duration_mismatch")
+        _established, speech = transcribe_local_media(
+            audio,
+            model,
+            probe=probe,
+            trusted_root=audio.parent,
+        )
+        return WhisperAcquisition(
+            speech["text"],
+            speech["language"],
+            speech["segments"],
+            duration,
+        )
 
 
 def prepare_optional_timing(
@@ -818,285 +560,174 @@ def _handle_local_audio(
     args: argparse.Namespace,
     requested_min_words: int | None,
 ) -> NoReturn:
-    """Process ``--audio`` through one private, byte-stable media snapshot."""
-    audio_path = Path(args.audio)
-    if not audio_path.is_file():
+    """Acquire local speech without reading media bytes in the CLI process."""
+    audio_path = Path(args.audio).absolute()
+    out = Path(args.out)
+    ensure_bundle_destinations_are_not_symlinks(out)
+    media = AssessedMediaSource(audio_path, probe_local_media(audio_path))
+    duration = media.probe.duration_seconds
+    if args.duration_seconds is not None and not duration_matches_expected(
+        args.duration_seconds,
+        duration,
+    ):
         emit(
             False,
             args.video,
             "none",
             0,
-            args.out,
-            f"--audio file does not exist or is not a file: {audio_path}",
+            out,
+            "--duration-seconds does not match the bounded local-media probe; "
+            "verify the recording and correct the expectation",
             2,
         )
-    out = Path(args.out)
-    ensure_bundle_destinations_are_not_symlinks(out)
+    quality_policy = build_quality_policy(
+        requested_min_words,
+        trusted_duration_seconds=duration,
+    )
+    quality_provenance = local_media_quality_provenance(media.sha256, duration)
+    timing_provenance = local_media_timing_provenance(media.sha256, duration)
+    minimum = quality_policy["min_words"]
+    if not isinstance(minimum, int):
+        raise ValueError("internal quality policy has no integer word floor")
 
-    with immutable_media_snapshot(audio_path) as media:
-        trusted_duration, duration_reason = probe_local_media_duration(media.path)
-        media.assert_unchanged()
-        if args.duration_seconds is not None:
-            if trusted_duration is None:
-                emit(
-                    False,
-                    args.video,
-                    "none",
-                    0,
-                    out,
-                    f"cannot verify --duration-seconds: {duration_reason}",
-                    2,
-                )
-            if not duration_matches_expected(
-                args.duration_seconds,
-                trusted_duration,
-            ):
-                emit(
-                    False,
-                    args.video,
-                    "none",
-                    0,
-                    out,
-                    "--duration-seconds does not match ffprobe for the immutable "
-                    f"local-media snapshot (expected {args.duration_seconds}, "
-                    f"source reports {trusted_duration})",
-                    2,
-                )
-        if trusted_duration is None:
-            print(
-                f"{duration_reason}; applying the fixed "
-                f"{DEFAULT_MIN_WORDS}-word quality floor",
-                file=sys.stderr,
-            )
-            quality_provenance = fixed_quality_provenance()
-        else:
-            quality_provenance = local_media_quality_provenance(
-                media.sha256,
-                trusted_duration,
-            )
-        quality_policy = build_quality_policy(
-            requested_min_words,
-            trusted_duration_seconds=trusted_duration,
-        )
-        timing_provenance = (
-            local_media_timing_provenance(media.sha256, trusted_duration)
-            if trusted_duration is not None
-            else None
-        )
-
-        if out.exists() and not args.force:
-            try:
-                existing = out.read_bytes().decode("utf-8")
-            except UnicodeDecodeError as exc:
-                emit(
-                    False,
-                    args.video,
-                    "none",
-                    0,
-                    out,
-                    f"existing transcript is not valid UTF-8: {exc}",
-                    2,
-                )
-            except OSError as exc:
-                emit(
-                    False,
-                    args.video,
-                    "none",
-                    0,
-                    out,
-                    f"existing transcript unreadable: {exc}",
-                    2,
-                )
-            policy_min_words = quality_policy["min_words"]
-            if not isinstance(policy_min_words, int):
-                emit(
-                    False,
-                    args.video,
-                    "none",
-                    0,
-                    out,
-                    "internal quality policy has no integer word floor",
-                    2,
-                )
-            ok, reason = validate_transcript(
-                existing,
-                min_words=policy_min_words,
-                duration_seconds=trusted_duration,
-            )
-            if not ok:
-                emit(
-                    False,
-                    args.video,
-                    "existing",
-                    count_words(existing),
-                    out,
-                    f"existing transcript is not usable: {reason}; inspect it and "
-                    "pass --force to authorize replacement",
-                    1,
-                )
-            receipt, _receipt_reason = load_verified_quality_receipt(out, existing)
-            expected_receipt = {
-                "policy": quality_policy,
-                "provenance": quality_provenance,
-            }
-            # Same rule as the YouTube branch: a probe that could not read the
-            # media leaves the fixed default in hand, and writing that over a
-            # receipt already recording a source-owned duration trades evidence
-            # for its absence. One condition this branch adds — the stored
-            # receipt is only the stronger one while it still describes these
-            # bytes. A receipt for different media is stale, not strong, so the
-            # digest must match before it is preserved.
-            would_discard_source_duration = (
-                trusted_duration is None
-                and receipt_claims_source_duration(receipt)
-                and receipt_matches_media_digest(receipt, media.sha256)
-            )
-            if receipt != expected_receipt and not would_discard_source_duration:
-                media.assert_unchanged(verify_source_digest=True)
-                try:
-                    write_quality_receipt(
-                        out,
-                        existing,
-                        quality_policy,
-                        quality_provenance,
-                    )
-                except (OSError, ValueError) as exc:
-                    emit(
-                        False,
-                        args.video,
-                        "existing",
-                        count_words(existing),
-                        out,
-                        "existing transcript is valid but its quality receipt "
-                        f"could not be written: {exc}",
-                        2,
-                    )
-            timed_segments, timing_reason = load_verified_segments(
-                out,
-                existing,
-                owner_source=args.existing_source,
-                owner_media_sha256=media.sha256,
-                owner_duration_seconds=trusted_duration,
-            )
-            media.assert_unchanged(verify_source_digest=True)
+    if out.exists() and not args.force:
+        try:
+            raw_existing = out.read_bytes()
+            existing = raw_existing.decode("utf-8")
+        except UnicodeDecodeError:
             emit(
-                True,
+                False,
+                args.video,
+                "none",
+                0,
+                out,
+                "existing transcript is not valid UTF-8; inspect it before "
+                "authorizing replacement with --force",
+                2,
+            )
+        ok, reason = validate_transcript(
+            existing,
+            min_words=minimum,
+            duration_seconds=duration,
+        )
+        if not ok:
+            emit(
+                False,
                 args.video,
                 "existing",
                 count_words(existing),
                 out,
-                f"kept existing transcript ({reason}); {timing_reason}",
-                0,
-                timed_path=sidecar_path(out) if timed_segments else None,
-                quality_path=quality_sidecar_path(out),
+                f"existing transcript is not usable: {reason}; inspect it and "
+                "pass --force to authorize replacement",
+                1,
             )
+        receipt, _receipt_reason = load_verified_quality_receipt(out, existing)
+        timed_segments, timing_reason = load_verified_segments(
+            out,
+            existing,
+            owner_source=args.existing_source,
+            owner_media_sha256=media.sha256,
+            owner_duration_seconds=duration,
+        )
 
-        transcription, lane_reason = run_optional_lane(
-            "mlx-whisper transcription lane",
-            lambda: transcribe_audio(media.path, args.video, args.whisper_model),
-            expected_errors=WHISPER_LANE_ERRORS,
-        )
-        if transcription is None:
-            emit(
-                False,
-                args.video,
-                "none",
-                0,
-                out,
-                f"local transcription failed — {lane_reason}; inspect stderr and "
-                "install or repair the whisper lane before retrying",
-                1,
-            )
-        text, language, segments = transcription
-        if text is None:
-            emit(
-                False,
-                args.video,
-                "none",
-                0,
-                out,
-                "local transcription produced no text — inspect stderr, then "
-                "repair the audio or whisper runtime before retrying",
-                1,
-            )
-        policy_min_words = quality_policy["min_words"]
-        if not isinstance(policy_min_words, int):
-            emit(
-                False,
-                args.video,
-                "none",
-                0,
-                out,
-                "internal quality policy has no integer word floor",
-                2,
-            )
-        ok, reason = validate_transcript(
-            text,
-            min_words=policy_min_words,
-            duration_seconds=trusted_duration,
-        )
-        if not ok:
-            if trusted_duration is None and count_words(text) < DEFAULT_MIN_WORDS:
-                reason += (
-                    "; a lower short-talk floor is unavailable because no "
-                    f"trusted media duration was available ({duration_reason})"
+        def before_quality_commit() -> None:
+            media.assert_unchanged()
+            ensure_bundle_destinations_are_not_symlinks(out)
+            if out.read_bytes() != raw_existing:
+                raise ValueError(
+                    "existing transcript changed during acquisition; retry "
+                    "against the current transcript without replacing it"
                 )
-            emit(
-                False,
-                args.video,
-                "whisper",
-                count_words(text),
+
+        expected_receipt = {"policy": quality_policy, "provenance": quality_provenance}
+        if receipt != expected_receipt:
+            write_quality_receipt(
                 out,
-                reason,
-                1,
-                language,
+                existing,
+                quality_policy,
+                quality_provenance,
+                before_commit=before_quality_commit,
             )
-        bundle_segments, bundle_timing_provenance, timing_reason = (
-            prepare_optional_timing_safely(
-                text,
-                segments,
-                source="whisper",
-                provenance=timing_provenance,
-            )
-        )
-        media.assert_unchanged(verify_source_digest=True)
-        try:
-            timed_path = write_transcript_bundle(
-                out,
-                text,
-                bundle_segments,
-                source="whisper",
-                timing_provenance=bundle_timing_provenance,
-                quality_policy=quality_policy,
-                quality_policy_provenance=quality_provenance,
-                force=args.force,
-            )
-        except (OSError, ValueError) as exc:
-            print(
-                f"cannot write the transcript bundle to {out}: {exc}", file=sys.stderr
-            )
-            emit(
-                False,
-                args.video,
-                "whisper",
-                count_words(text),
-                out,
-                f"transcript produced but its bundle could not be written: {exc}",
-                2,
-                language,
-            )
+        else:
+            before_quality_commit()
+        # No fallible media or timing check follows a committed quality refresh.
         emit(
             True,
             args.video,
-            "whisper",
-            count_words(text),
+            "existing",
+            count_words(existing),
             out,
-            reason if timed_path else f"{reason}; {timing_reason}",
+            f"kept existing transcript ({reason}); {timing_reason}",
             0,
-            language,
-            timed_path,
-            quality_sidecar_path(out),
+            timed_path=sidecar_path(out) if timed_segments else None,
+            quality_path=quality_sidecar_path(out),
         )
+
+    transcription, lane_reason = run_optional_lane(
+        "mlx-whisper transcription lane",
+        lambda: transcribe_audio(
+            media.path,
+            args.video,
+            args.whisper_model,
+            probe=media.probe,
+        ),
+        expected_errors=WHISPER_LANE_ERRORS,
+    )
+    if transcription is None:
+        emit(
+            False,
+            args.video,
+            "none",
+            0,
+            out,
+            f"local transcription failed — {lane_reason}; repair the Whisper "
+            "lane before retrying",
+            1,
+        )
+    text, language, segments = transcription
+    if text is None:
+        emit(
+            False,
+            args.video,
+            "none",
+            0,
+            out,
+            "local transcription produced no text; repair the audio or "
+            "Whisper runtime before retrying",
+            1,
+        )
+    ok, reason = validate_transcript(text, min_words=minimum, duration_seconds=duration)
+    if not ok:
+        emit(False, args.video, "whisper", count_words(text), out, reason, 1, language)
+    bundle_segments, bundle_provenance, timing_reason = prepare_optional_timing_safely(
+        text,
+        segments,
+        source="whisper",
+        provenance=timing_provenance,
+    )
+    timed_path = write_transcript_bundle(
+        out,
+        text,
+        bundle_segments,
+        source="whisper",
+        timing_provenance=bundle_provenance,
+        quality_policy=quality_policy,
+        quality_policy_provenance=quality_provenance,
+        force=args.force,
+        before_commit=media.assert_unchanged,
+    )
+    emit(
+        True,
+        args.video,
+        "whisper",
+        count_words(text),
+        out,
+        reason if timed_path else f"{reason}; {timing_reason}",
+        0,
+        language,
+        timed_path,
+        quality_sidecar_path(out),
+    )
 
 
 def main(argv: list[str] | None = None) -> NoReturn:
@@ -1171,6 +802,7 @@ def main(argv: list[str] | None = None) -> NoReturn:
         try:
             _handle_local_audio(args, requested_min_words)
         except (OSError, ValueError) as exc:
+            print(f"local-media acquisition failed: {exc}", file=sys.stderr)
             emit(
                 False,
                 args.video,
@@ -1509,15 +1141,33 @@ def main(argv: list[str] | None = None) -> NoReturn:
                 expected_errors=CAPTION_LANE_ERRORS,
             )
         else:
-            with tempfile.TemporaryDirectory() as work_dir:
-                lane_result, lane_reason = run_optional_lane(
-                    "YouTube Whisper lane",
-                    lambda: fetch_whisper(video_id, work_dir, args.whisper_model),
-                    expected_errors=WHISPER_LANE_ERRORS,
-                )
+            lane_result, lane_reason = run_optional_lane(
+                "YouTube Whisper lane",
+                lambda: fetch_whisper(video_id, "", args.whisper_model),
+                expected_errors=WHISPER_LANE_ERRORS,
+            )
         if lane_result is None:
             failures.append(f"{name}: {lane_reason}")
             continue
+        if isinstance(lane_result, WhisperAcquisition):
+            duration = lane_result.duration_seconds
+            if trusted_duration is not None and abs(duration - trusted_duration) > 1.0:
+                failures.append(
+                    "whisper: provider duration changed between metadata and download; verify the source and retry"
+                )
+                continue
+            if args.duration_seconds is not None and not duration_matches_expected(
+                args.duration_seconds, duration
+            ):
+                failures.append(
+                    "whisper: --duration-seconds does not match the downloaded recording; correct the expectation"
+                )
+                continue
+            trusted_duration = duration
+            quality_policy = build_quality_policy(
+                requested_min_words, trusted_duration_seconds=duration
+            )
+            quality_provenance = youtube_quality_provenance(video_id, duration)
         text, language, segments = lane_result
         if text is None:
             failures.append(f"{name}: unavailable")

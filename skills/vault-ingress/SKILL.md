@@ -59,6 +59,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | [references/clarification-handoff.md](references/clarification-handoff.md) | Step 9 topic selection and recency-bucket handoff contract |
 | [references/rhetoric-dimensions.md](references/rhetoric-dimensions.md) | 14 analysis dimensions |
 | [references/subagent-instructions.md](references/subagent-instructions.md) | Step 3 per-talk procedure — transcript download, slide acquisition, fallback chains, return-JSON shape |
+| [references/local-media-acquisition.md](references/local-media-acquisition.md) | Bounded audio/video acquisition, runtime gates, fact reuse, and failure preservation |
 | [references/video-slide-extraction.md](references/video-slide-extraction.md) | Video-to-slides pipeline — layout heuristics, tuning, limitations |
 | [references/crop-review.md](references/crop-review.md) | Reproducible contact sheets, individual-frame proposals, and owner crop approval |
 | [references/markdown-decks.md](references/markdown-decks.md) | Slidev/presenterm/Marp/reveal-md decks — render lanes, register-and-requeue, reveal structure |

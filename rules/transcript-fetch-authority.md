@@ -1,6 +1,6 @@
 ---
 alwaysApply: false
-applyTo: "skills/vault-ingress/scripts/fetch-transcript.py, skills/vault-ingress/scripts/transcript_quality.py, skills/vault-ingress/scripts/transcript_timing.py, skills/vault-ingress/scripts/vtt-cleanup.py, pyproject.toml — when changing transcript acquisition, VTT import, quality/timing receipts, or the mlx-whisper dependency"
+applyTo: "skills/vault-ingress/scripts/fetch-transcript.py, skills/vault-ingress/scripts/local_media_*.py, skills/vault-ingress/scripts/transcript_quality.py, skills/vault-ingress/scripts/transcript_timing.py, skills/vault-ingress/scripts/vtt-cleanup.py, pyproject.toml — when changing transcript acquisition, VTT import, quality/timing receipts, or the mlx-whisper dependency"
 description: Authority of record for the Whisper transcription layer's Platform-Bound Untestable Carve-Out
 ---
 
@@ -14,9 +14,15 @@ description: Authority of record for the Whisper transcription layer's Platform-
 
 ## Covered Artifact
 
-- `transcribe_audio()` in `skills/vault-ingress/scripts/fetch-transcript.py` — the `mlx_whisper.transcribe()` call — and `fetch_whisper()`, which downloads audio and delegates to it. Both the YouTube `--method whisper` path and the non-YouTube `--audio` path reach the exemption through `transcribe_audio()`; nothing else in the file is exempt.
+- The `mlx_whisper` import and actual `provider.transcribe()` call inside
+  `_transcribe_with_mlx()` in
+  `skills/vault-ingress/scripts/local_media_transcription.py` are exempt.
+- Both YouTube `--method whisper` and non-YouTube `--audio` delegate to that
+  worker. Their orchestration, media admission, resource supervision, download,
+  result validation, cleanup, and receipt writes are not exempt.
 - `mlx-whisper` is declared as the optional `whisper` extra in `pyproject.toml`, never a base dependency. The caption path and every validator work without it.
-- Non-YouTube talks route through `--audio` on this same script. Transcription is deterministic script work per `jbaruch/coding-policy: script-delegation`, so no skill prose may call `mlx_whisper.transcribe()` directly — a hand-rolled call carries none of the validation, atomic write, or JSON contract, which is the defect class this script was written to end.
+- Route non-YouTube talks through `fetch-transcript.py --audio`. Never call
+  `mlx_whisper.transcribe()` from skill prose.
 
 ## Precondition 1 — CI-Runnable Pieces Are Extracted and Tested
 
@@ -24,16 +30,19 @@ description: Authority of record for the Whisper transcription layer's Platform-
   `resolve_video_id()`, `segments_to_text()`, receipt validation, and atomic
   writers are deterministic and carry tests in `tests/test_fetch_transcript.py`
   and `tests/test_transcript_timing.py`.
-- Duration probes are subprocess wrappers with synthetic CI tests. YouTube
-  duration comes from provider metadata returned by `yt-dlp`; local-media
-  duration comes from `ffprobe` over the exact file and is bound to its SHA-256.
+- `local_media_contract.py`, `local_media_evidence.py`, `local_media_process.py`,
+  `local_media_download.py`, and `local_media_transcription.py` each have a
+  corresponding `tests/test_local_media_*.py` suite. Native synthetic workers
+  exercise authenticated framing, process limits, capped pipes, container
+  inspection, source-generation changes, and cleanup without provider access.
+- YouTube duration comes from identity-bound `yt-dlp` metadata. Local duration
+  comes from supervised `ffprobe` and binds the exact source SHA-256.
 - Tests cover empty/error/VTT/non-speech artifacts, the fixed and WPM floors,
   low-`--min-words` bypass attempts, source-duration matching, Unicode word
   counting, both segment shapes, invalid UTF-8, exact provenance, no-segment
   quality receipts, CRLF/LF byte drift, transactional rollback, enumerated
   optional-library failures, malformed-timing downgrade, media
   snapshot mutation, destination symlinks, VTT path safety, and caption fall-through.
-- Only the audio-download-and-transcribe wrapper is exempt.
 - Caption and Whisper imports, constructors, API calls, and provider result
   objects are optional-lane boundaries. `ImportError`, `OSError`,
   `RuntimeError`, `AttributeError`, `TypeError`, `ValueError`, and `KeyError`
@@ -85,12 +94,16 @@ description: Authority of record for the Whisper transcription layer's Platform-
   bundle-write failure restores the prior transcript and both receipts exactly.
   Missing, malformed, mismatched, or over-bound optional timing removes stale
   timing while valid transcript text and its quality receipt still commit.
-- Local `--audio` acquisition copies one twice-verified regular source into a
-  private read-only snapshot. Hashing, `ffprobe`, Whisper, quality provenance,
-  and timing provenance all use that snapshot. The original pathname identity
-  and open-descriptor digest are revalidated immediately before commit.
-  Original-source replacement, in-place mutation, or snapshot drift fails with
-  no bundle write.
+- Local `--audio` admission rejects unavailable or unsupported source metadata
+  before byte I/O. A bounded worker copies and hashes one admitted generation
+  into an owner-cleaned private read-only snapshot for `ffprobe`.
+- Whisper reuses established media or video probe facts without another copy,
+  hash, or probe. Its bounded worker checks the original source's pathname and
+  open-descriptor generation before and after transcription.
+- The fetcher checks source generation after staging and before replacing a
+  transcript bundle or refreshing existing quality. Source drift or worker
+  failure leaves prior artifacts untouched. Failed local probing never replaces
+  an existing quality receipt with fixed-default provenance.
 - Transcript, timing, and quality final-component symlinks are forbidden,
   including dangling links. VTT imports require lexical and resolved
   containment below the transcript directory, no symlink components below that
@@ -99,7 +112,11 @@ description: Authority of record for the Whisper transcription layer's Platform-
 ## Precondition 2 — Manual Validation Procedure
 
 Run against a talk whose caption track is disabled, on Apple Silicon with the
-`whisper` extra installed:
+`whisper` extra installed. First require the configured runtime:
+
+```bash
+"{python_path}" skills/vault-ingress/scripts/check-runtime.py --lanes core,whisper,youtube-download --require-lanes core,whisper,youtube-download
+```
 
 1. `"{python_path}" skills/vault-ingress/scripts/fetch-transcript.py {youtube_id} --out /tmp/{youtube_id}.txt --method whisper --existing-source unknown`
 2. Observe: exit 0, one JSON object on stdout with `"method": "whisper"`,
@@ -111,8 +128,8 @@ Run against a talk whose caption track is disabled, on Apple Silicon with the
 5. `jq -e '.schema_version == 1 and (.transcript_sha256 | length == 64) and .policy.schema_version == 1 and (.policy.min_words >= 1) and ((.policy.duration_seconds == null and .provenance == {"kind":"fixed_default"}) or (.policy.duration_seconds == .provenance.duration_seconds))' /tmp/{youtube_id}.quality.json` exits 0, and its `transcript_sha256` equals `shasum -a 256 /tmp/{youtube_id}.txt`.
 6. Confirm `/tmp/{youtube_id}.txt` holds prose, not `[Music]` markers or a traceback.
 7. Re-run with `YT_DLP` set to a nonexistent absolute path and a fresh output
-   path. Expect exit 1, a stderr line explaining how to correct or unset the
-   override, one JSON object with `"ok": false`, and no transcript or receipt
+   path. Expect exit 1, a path-neutral stderr failure with the
+   `ytdlp_dependency_unavailable` reason, one JSON object with `"ok": false`, and no transcript or receipt
    at that output path. Removing only `yt-dlp` from `PATH` is insufficient: the
    fetcher deliberately resolves the configured interpreter's console script
    before the compatibility PATH fallback.
@@ -122,6 +139,7 @@ A pass requires all eight checks.
 
 ## Scope Limits
 
-- The carve-out covers this one wrapper. It does not extend to another script, another dependency, or the caption path.
+- The carve-out covers only the named Apple-Silicon import and provider call.
+  It does not extend to another script, dependency, or the caption path.
 - Adding a second exempt artifact requires naming it here AND documenting its own validation procedure. Adding one without both invalidates the precondition.
 - "Hard to install in CI" does not qualify — see `jbaruch/coding-policy: ci-safety` Install, Don't Skip. `mlx-whisper` cannot run on the runner's architecture and qualifies for the carve-out.

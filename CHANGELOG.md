@@ -1,5 +1,23 @@
 # Changelog
 
+### Bound transcript media acquisition to supervised source generations
+
+Address #219's acquisition boundary with authenticated metadata, generic-media
+probe, yt-dlp, and Whisper workers. Reject cloud placeholders and unsupported
+sources before byte I/O; bound copy, parsing, provider output, download disk
+usage, wall time, memory, and descendant processes. Reuse established media or
+video facts during transcription, then check the source generation after bundle
+staging and before commit. Download attempts use one literal private artifact
+and clean it on success, refusal, consumer failure, and worker termination.
+
+Keep prior transcript and receipt bytes on failed local acquisition, including
+stale quality receipts previously eligible for a fixed-default downgrade. Bind
+downloaded Whisper quality to verified provider duration and reject duration
+drift. Narrow the platform-bound test exemption to the actual MLX import/call;
+exercise orchestration and failure paths with synthetic providers and generated
+media. This changes no stored receipt schema and does not establish a missing
+catalog-to-recording identity or perform live calibration/reparsing.
+
 ## 0.20.124 — 2026-09-05
 
 ### Preserve superseded sources during reviewed official-upload promotion

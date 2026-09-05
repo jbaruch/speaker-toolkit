@@ -1108,6 +1108,15 @@ def test_lane_requirements_match_the_configured_interpreter_contract() -> None:
     assert requirements["google-drive"]["modules"] == {"gdown": "gdown"}
     assert requirements["captions"]["commands"] == {}
     assert requirements["youtube-download"]["commands"] == {"yt-dlp": "yt-dlp"}
+    assert requirements["youtube-download"]["modules"] == {"psutil": "psutil"}
+    assert requirements["whisper"] == {
+        "modules": {"mlx-whisper": "mlx_whisper", "psutil": "psutil"},
+        "commands": {"ffmpeg": "ffmpeg", "ffprobe": "ffprobe"},
+    }
+    assert requirements["source-media"] == {
+        "modules": {"psutil": "psutil"},
+        "commands": {"ffprobe": "ffprobe"},
+    }
     assert requirements["source-video"] == {
         "modules": {"psutil": "psutil"},
         "commands": {"ffprobe": "ffprobe"},
@@ -1141,6 +1150,45 @@ def test_no_markdown_deck_lane_is_selected_or_required_by_default() -> None:
     assert markdown_lanes
     assert markdown_lanes.isdisjoint(check_runtime.DEFAULT_LANES)
     assert markdown_lanes.isdisjoint(check_runtime.DEFAULT_REQUIRED_LANES)
+
+
+@pytest.mark.parametrize("required", [False, True])
+def test_missing_media_supervision_is_lane_local(monkeypatch, required):
+    monkeypatch.setattr(
+        check_runtime,
+        "_probe_module",
+        lambda name: (
+            _failed_probe("unavailable_import")
+            if name == "psutil"
+            else _available_probe()
+        ),
+    )
+    monkeypatch.setattr(check_runtime, "_command_available", lambda name: True)
+    lanes = ("source-media", "whisper", "captions")
+    report = check_runtime.build_report(
+        lanes, ("core", "source-media") if required else ("core",)
+    )
+    assert report["ok"] is (not required)
+    assert report["lanes"]["captions"]["available"] is True
+    assert report["lanes"]["source-media"]["missing_modules"] == ["psutil"]
+    assert report["lanes"]["whisper"]["missing_modules"] == ["psutil"]
+    assert ("source-media" in report["blocking_lanes"]) is required
+
+
+def test_generic_media_gate_does_not_require_whisper_or_video_extraction(monkeypatch):
+    inspected = []
+
+    def probe(name):
+        inspected.append(name)
+        return _available_probe()
+
+    monkeypatch.setattr(check_runtime, "_probe_module", probe)
+    monkeypatch.setattr(
+        check_runtime, "_command_available", lambda name: name == "ffprobe"
+    )
+    report = check_runtime.build_report(("source-media",), ("core", "source-media"))
+    assert report["ok"] is True
+    assert set(inspected) == {"yaml", "psutil"}
 
 
 def test_an_absent_markdown_deck_lane_degrades_rather_than_blocks() -> None:
