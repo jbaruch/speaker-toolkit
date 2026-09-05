@@ -2,10 +2,16 @@
 
 Owner: `vault-profile`. Executable owner:
 `skills/vault-profile/scripts/speech_rates.py`. This is an independent
-schema-v1 artifact lane, not a change to `speaker-profile.json` schema v5 or
+versioned artifact lane, not a change to `speaker-profile.json` schema v5 or
 the tracking database. No operation here acquires media, runs Whisper, or
 reparses talks. Acquisition and source-generation verification remain the
 ingress owner's responsibility.
+
+The separate [family-balanced calibration contract](speech-calibration.md)
+defines schema v2, catalog cohort selection, sampled-transcription quality and
+bootstrap uncertainty. Schema v1 below remains the equal-sample arithmetic
+contract; it cannot be relabeled as schema-v2 evidence. `calibrate()`, `validate_profile()`,
+`validate_rate()` and `plan_duration()` accept both supported shapes read-only.
 
 ## Four Different Metrics
 
@@ -125,9 +131,42 @@ An assumed rate has the same rate keys, with `basis: "assumption"` and
 `provenance: {schema_version: 1, reason: string}`. Its positive ordered range
 must contain its point value. Library callers can construct one through
 `assumed_narration(low, high, reason=...)`. Never attach measured provenance
-to an assumption. `plan_duration` emits a schema-v1 prediction containing the
+to an assumption. With a v1 rate, `plan_duration` emits a schema-v1 prediction containing the
 selected complete rate, intended metric, word count, point duration, and
 inverted duration range, labeled `kind: "prediction_not_verification"`.
+
+With a v2 family-balanced profile, the owner validates the complete retained
+evidence and requires conditional confidence before selecting narration. A
+present sparse profile is rejected with `pace_confidence_insufficient`, even
+when an assumption is also supplied. No mean from a single recording becomes
+a planning default. The v2 output adds `conservative_estimated_seconds` and
+`range_kind: "observed_recording_range_not_prediction_interval"` to the same
+prediction fields and carries `schema_version: 2`. The point duration uses
+the family-balanced mean; the conservative duration uses the lower mean-CI
+rate. The duration range inverts historical recording rates, not the mean CI.
+Neither duration is a fit guarantee or substitutes for actual recording checks.
+
+`speech_calibration.narration_rate(profile)` returns this closed copied rate:
+
+```text
+{schema_version: 2, metric: "narration", unit: "words_per_minute",
+ pause_threshold_seconds: 2.0, value: <family-balanced mean>,
+ range: <observed recording range>, basis: "measured",
+ mean_confidence_interval_95: [low, high], conservative_planning_wpm: <CI low>,
+ provenance: {schema_version: 2, sample_count, presentation_family_count,
+   analyzed_duration_seconds, cohort: <speaker>, language, method_version,
+   evidence_sha256: [digest, ...], calibration_sha256,
+   range_kind: "observed_recording_range_not_prediction_interval",
+   confidence_level: "conditional",
+   interval_kind: "mean_uncertainty_conditional_on_selected_families_not_a_prediction_interval"}}
+```
+
+The rate retains distinct mean, observed range and conditional mean uncertainty.
+The method version is `family-balanced-word-gaps-v2`. Its calibration digest
+binds the complete owner request; evidence digests identify admitted recordings.
+This selector uses the overall cohort, not an implicitly inferred demo subset.
+An embedded rate is structurally checked but cannot independently authenticate
+the raw evidence: obtain it from a freshly owner-validated full profile.
 
 `verify_recording(evidence, *, maximum_duration_seconds)` has no planning-rate
 input. It requires word evidence covering the complete recording, not an
@@ -171,7 +210,7 @@ JSON help envelope without reading stdin. Interrupts propagate.
 New outlines carry root `schema_version: 1` and exactly one
 `talk.pacing_rate`: the complete typed narration rate from planning output.
 Both complete and partial outline readers reject unsupported explicit root
-versions and validate the embedded rate. The creator never recalculates or
+versions and validate v1/v2 embedded rates without migration. The creator never recalculates or
 edits measured provenance. Use a fresh owner-validated measured profile when
 available. A stale or invalid present profile requires owner attention.
 
@@ -182,6 +221,8 @@ unverified narration planning assumption with the v1 2-second gap definition.
 It cannot coexist with `pacing_rate`; the owner replaces it with a typed
 record on the next authoring pass. `extract-script.py` explicitly reports the
 metric, threshold, assumption/measured basis, and measured provenance/range.
+For a v2 rate, it also reports family count, family-balanced mean, conservative
+planning rate and conditional mean interval, explicitly not a prediction interval.
 It never labels predicted timing as verification.
 
 Legacy `speaker-profile.json.pacing.wpm_range` has the same unverified

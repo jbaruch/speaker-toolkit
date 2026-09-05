@@ -89,6 +89,8 @@ markdown-deck = [
 # caption path works everywhere without it.
 whisper = [
     "mlx-whisper==0.4.3",
+    # Resolve a pinned model revision before native transcription; weekly Dependabot.
+    "huggingface-hub==1.4.1",
 ]
 
 [tool.setuptools]

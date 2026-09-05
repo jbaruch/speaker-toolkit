@@ -80,6 +80,14 @@ LANE_REQUIREMENTS: dict[str, dict[str, dict[str, str]]] = {
         "modules": {"mlx-whisper": "mlx_whisper", "psutil": "psutil"},
         "commands": {"ffmpeg": "ffmpeg", "ffprobe": "ffprobe"},
     },
+    "speech-calibration": {
+        "modules": {
+            "mlx-whisper": "mlx_whisper",
+            "huggingface-hub": "huggingface_hub",
+            "psutil": "psutil",
+        },
+        "commands": {"ffmpeg": "ffmpeg", "ffprobe": "ffprobe"},
+    },
     "source-media": {
         "modules": {"psutil": "psutil"},
         "commands": {"ffprobe": "ffprobe"},

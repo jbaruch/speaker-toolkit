@@ -14,12 +14,16 @@ description: Authority of record for the Whisper transcription layer's Platform-
 
 ## Covered Artifact
 
-- The `mlx_whisper` import and actual `provider.transcribe()` call inside
+- The `mlx_whisper` imports, actual `provider.transcribe()` call, native model
+  access, spectrogram construction and `detect_language()` call inside
   `_transcribe_with_mlx()` in
   `skills/vault-ingress/scripts/local_media_transcription.py` are exempt.
 - Both YouTube `--method whisper` and non-YouTube `--audio` delegate to that
   worker. Their orchestration, media admission, resource supervision, download,
   result validation, cleanup, and receipt writes are not exempt.
+- Sampled-word acquisition delegates to the same native boundary. Read its
+  receipt contract and validation procedure in
+  `skills/vault-ingress/references/sampled-word-evidence.md`.
 - `mlx-whisper` is declared as the optional `whisper` extra in `pyproject.toml`, never a base dependency. The caption path and every validator work without it.
 - Route non-YouTube talks through `fetch-transcript.py --audio`. Never call
   `mlx_whisper.transcribe()` from skill prose.
@@ -139,7 +143,7 @@ A pass requires all eight checks.
 
 ## Scope Limits
 
-- The carve-out covers only the named Apple-Silicon import and provider call.
+- The carve-out covers only the named Apple-Silicon imports and native calls.
   It does not extend to another script, dependency, or the caption path.
 - Adding a second exempt artifact requires naming it here AND documenting its own validation procedure. Adding one without both invalidates the precondition.
 - "Hard to install in CI" does not qualify — see `jbaruch/coding-policy: ci-safety` Install, Don't Skip. `mlx-whisper` cannot run on the runner's architecture and qualifies for the carve-out.

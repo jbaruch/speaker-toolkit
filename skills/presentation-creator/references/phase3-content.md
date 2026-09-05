@@ -57,6 +57,10 @@ For long-form duration planning, use
 Keep a measured profile's complete rate and provenance when copying it into
 `talk.pacing_rate`. Use an explicit assumption only when no measured profile
 exists; a present invalid profile is an owner error, not a fallback trigger.
+The reader supports both v1 equal-sample and v2 family-balanced rates. A present
+low-confidence v2 profile also requires owner attention, not an assumed default.
+Keep v2 mean, conservative-planning rate, historical range and conditional mean
+interval separate. A conservative estimate is not proof that a recording fits.
 The full contract and command shapes are in
 `skills/vault-profile/references/speech-rates.md`. Recording verification uses
 actual complete-recording duration and aligned words, independently of the
