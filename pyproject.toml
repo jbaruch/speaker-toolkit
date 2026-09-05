@@ -33,7 +33,7 @@ dependencies = [
     "numpy==2.2.6",
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
     "filelock==3.32.2",
-    "pydantic==2.13.4",
+    "pydantic==2.13.5",
     "PyYAML==6.0.3",
     # Pinned deliberately, not by habit: 1.0 removed the `get_transcript`
     # classmethod, and that uncontrolled API change is what put four Python
