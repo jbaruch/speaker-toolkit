@@ -21,7 +21,7 @@ dependencies = [
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
     "pypdf==6.15.0",
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
-    "lxml==6.1.1",
+    "lxml==6.1.2",
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
     "qrcode==8.2",
     # Video/image dependency pins renew through the same weekly Dependabot lane.
