@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.120 — 2026-09-05
+
 ### Separate recorded speech rates from narration-planning assumptions
 
 Issue #367 exposed a circular timing check that treated articulation WPM as
