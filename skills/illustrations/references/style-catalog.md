@@ -154,8 +154,10 @@ before adding it to the public catalog. An issue is a proposal, not automatic
 catalog admission, rendered-sample approval, or permission to publish a vault.
 
 The initial three Berglund exploration entries cite their owner-supplied issue
-anchors; their images are unbundled references. Seeding from delivered talks
-dated April 2026 onward is a separate evidence pass after this format lands:
-verify the delivery/source identity, inspect actual slides, extract style-only
-features, and retain a consented sample with exact provenance. Do not label the
-three exploration seeds as that completed delivered-talk pass.
+anchors; their images are unbundled references. The separate
+[delivered-talk seed audit](delivered-style-seeds.md) covers the April 2026 onward
+deliveries visible on 2026-09-05. It records per-deck inspection, reusable style
+mappings and source fingerprints. Its samples are existing public deck links,
+not bundled raster images. For later additions, verify delivery/source identity,
+inspect actual slides, extract style-only features, and retain a consented sample
+with exact provenance. The three exploration seeds are not delivered-talk evidence.

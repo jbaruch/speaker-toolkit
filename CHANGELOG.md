@@ -1,5 +1,16 @@
 # Changelog
 
+### Seed reusable styles from twenty delivered-talk decks
+
+Complete #92's separate delivered-talk evidence pass across all twenty public
+deliveries from April 1 through September 5, 2026: inspect 819 PDF pages and add
+nine reusable styles without replacing the three Berglund exploration seeds.
+Record each delivery's style mapping, representative pages, exclusions and
+source fingerprint. Keep repeated deliveries deduplicated and mixed terminal/
+arcade decks explicit. Samples link to already-public decks; no local artifacts,
+slide images or vault data are published. Preserve style-only anchors, personal
+overlay semantics, candidate receipts and render-before-choice gates.
+
 ## 0.20.128 — 2026-09-05
 
 ### Refuse pathological unspaced Whisper output before transcript replacement
