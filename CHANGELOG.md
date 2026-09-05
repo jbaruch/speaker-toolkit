@@ -1,5 +1,21 @@
 # Changelog
 
+### Separate recorded speech rates from narration-planning assumptions
+
+Issue #367 exposed a circular timing check that treated articulation WPM as
+elapsed narration, then verified its own prediction. The new word-timing owner
+preserves timeline, narration, short-phrase, and thresholded articulation rates
+with explicit units, pause definitions, sample provenance, and observed ranges.
+Measured profiles retain their evidence and are recomputed on validation;
+long-form plans require narration and prefer measured data over assumptions.
+Full-recording duration verification has no planning-WPM input.
+
+New outlines use a versioned typed narration rate, while legacy ranges remain
+readable as explicitly unverified narration assumptions. Script reports expose
+the distinction. The independent speech profile leaves tracking state, pattern
+history, and slide-budget pacing unchanged. This ships the deterministic
+contract, not the live calibration pass in #368 or media acquisition in #219.
+
 ## 0.20.119 — 2026-09-05
 
 ### Reusable public and personal style catalogs

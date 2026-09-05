@@ -8,6 +8,11 @@ regenerate deterministically — never hand-edit them.
 
 A complete worked example lives at `tests/fixtures/outline-example.yaml`.
 
+New outlines declare root `schema_version: 1`. Previously unversioned outlines
+remain read-only-compatible; the creator adds the stamp on the next authoring
+pass. Explicit unsupported root versions fail closed. This does not rewrite
+an existing file during loading.
+
 ## Writing the Outline
 
 The outline needs to be:
@@ -32,7 +37,8 @@ Authored in Phase 1; never re-edited carelessly. Field reference (see
 | `audience_spread` | yes | `heterogeneous` (cover all four registers) or `homogeneous` (match one). Set at intake — see `phase0-intake.md` Step 0.4 and `patterns/prepare/walk-around.md` |
 | `dominant_register` | conditional | `A` \| `B` \| `C` \| `D`. Required iff `audience_spread: homogeneous`; rejected otherwise |
 | `slide_budget` | yes | Integer; expanded build count is validated against this |
-| `pacing_wpm` | yes | `[low, high]` integer tuple |
+| `pacing_rate` | yes for new outlines | Complete typed narration rate from owner planning output; see `skills/vault-profile/references/speech-rates.md` |
+| `pacing_wpm` | legacy only | Ordered positive `[low, high]` integer tuple; an unverified narration assumption retaining internal gaps ≤2 s, never a measurement. Cannot coexist with `pacing_rate` |
 | `architecture` | yes | One of: `narrative-arc`, `sparkline`, `fourthought`, `triad`, `talklet`, `expansion-joints`, `lightning-talk`, `takahashi`, `cave-painting`. Filled in Phase 2 — leave a placeholder at Phase 1 |
 | `engine` | yes | `pptx` \| `presenterm`. Filled in Phase 2 Decision #2 |
 | `deck_theme` | yes | Free-string theme/template pointer. Phase 2 Decision #2 |
@@ -45,6 +51,17 @@ Authored in Phase 1; never re-edited carelessly. Field reference (see
 | `must_include`, `must_avoid` | optional | Lists of strings |
 | `catalog_reference` | optional | Pointer to sessions-catalog entry |
 | `delivery_count`, `delivery_date` | optional | First delivery = 1; date in ISO YYYY-MM-DD |
+
+For long-form duration planning, use
+`"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/speech_rates.py"` with `intended_metric: narration`.
+Keep a measured profile's complete rate and provenance when copying it into
+`talk.pacing_rate`. Use an explicit assumption only when no measured profile
+exists; a present invalid profile is an owner error, not a fallback trigger.
+The full contract and command shapes are in
+`skills/vault-profile/references/speech-rates.md`. Recording verification uses
+actual complete-recording duration and aligned words, independently of the
+planning estimate. Keep timeline, narration, short-phrase, and articulation
+values labeled in reports.
 
 ## The `chapters:` block
 

@@ -61,6 +61,8 @@ configuration. Never fall back to whichever `python3` happens to be on `PATH`.
 - Use [speaker-profile-schema.md](references/speaker-profile-schema.md) for the full
   JSON shape and [schemas-config.md](references/schemas-config.md) for config and
   confirmed intents.
+- Read [speech-rates.md](references/speech-rates.md) before speech calibration or
+  narration planning. Keep measured word-timing profiles separate from slide pacing.
 - Treat `tracking-database.json` as source of truth and `speaker-profile.json` as the
   output. Toolkit scripts, not prose, own cohort, opportunity, classification, pacing,
   and validation arithmetic.
@@ -163,6 +165,12 @@ classification, empty-cohort, and non-pattern provenance rules there. Use
 schema. Copy deterministic baseline, opportunity, policy stamp, availability, and
 derived classification data; do not infer or recalculate catalog history. Regenerating
 these profile fields reads existing tracking rows and does not reparse any talk.
+
+Apply the independent speaking-rate contract in
+[speech-rates.md](references/speech-rates.md) when measured word evidence is
+available. Preserve `speech-rate-profile.json` separately; missing evidence
+does not authorize a reparse. Legacy `pacing.wpm_range` is an unverified
+narration assumption, never a measured speaker rate.
 
 Compute `pacing.adherence` by running `"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/compute-pacing-adherence.py"`. The
 deterministic arithmetic — duration parsing, slides-per-minute, budget-band

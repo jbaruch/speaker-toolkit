@@ -238,6 +238,12 @@ voice calibration, placeholder definitions, and meme-brief format.
 
 Fill `slides[]` and `interludes[]` in `outline.yaml`.
 
+Use the typed narration-planning contract in
+[speech-rates.md](../vault-profile/references/speech-rates.md). Prefer a current
+owner-validated measured profile; label uncalibrated rates as assumptions.
+Author `talk.pacing_rate` and root `schema_version: 1`; never use articulation
+WPM to plan elapsed narration or predicted timing to verify a recording.
+
 Placeholders use typed, independent numbering (each type starts at 01):
 `AUTHOR-01`, `DEMO-01`, `DATA-01`, `SCREENSHOT-01`, `IMAGE-01`, `MEME-01`. Every
 placeholder requiring author input MUST use one of these typed tags — never

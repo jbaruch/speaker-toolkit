@@ -58,6 +58,14 @@ Current `schema_version`: **5**. The validator (`scripts/validate-profile.py`,
 
 ## Schema
 
+`pacing.wpm_range` retains one explicit legacy meaning: an unverified narration
+planning assumption that retains internal gaps up to 2 seconds. Its values do
+not establish a measured speaker rate. Measured timeline, narration,
+short-phrase, and articulation rates live in the separate schema-v1
+`speech-rate-profile.json` owned by vault-profile; see
+[speech-rates.md](speech-rates.md). That artifact does not change this profile's
+v5 shape, pattern provenance, or slide-budget `pacing.adherence` lane.
+
 ```json
 {
   "schema_version": 5,
@@ -753,7 +761,7 @@ automatically picks up changes when the profile is regenerated.
 | `design_rules` | Phase 5 (slide generation) | Background colors, footer specs, shape vocabulary |
 | `rhetoric_defaults` | Phase 1-3 (spec, architecture, content) | Voice calibration, opening/closing defaults |
 | `confirmed_intents` | Phase 2-4 (architecture, guardrails) | Hard rules that override pattern inference |
-| `pacing` | Phase 3-4 (content, guardrails) | Slide budget tables, WPM targets |
+| `pacing` | Phase 3-4 (content, guardrails) | Slide budget tables and legacy unverified narration assumptions; measured speech rates use the separate owner artifact |
 | `guardrail_sources` | Phase 4 (guardrails) | All guardrail checks with thresholds |
 | `instrument_catalog` | Phase 2 (architecture) | Complete instrument menu by dimension |
 | `visual_style_history` | Phase 2 (architecture — illustration strategy) | Default aesthetic, mode-specific departures, style proposals |

@@ -110,12 +110,29 @@ def render(outline: _os.Outline) -> str:
     """Render the full script.md content."""
     lines: list[str] = []
     speakers_csv = " · ".join(outline.talk.speakers)
+    rate = outline.talk.narration_rate
+    low, high = rate["range"]
+    provenance = rate["provenance"]
+    if rate["basis"] == "measured":
+        rate_source = (
+            f"measured; {provenance['sample_count']} samples, "
+            f"{provenance['analyzed_duration_seconds']:g} s analyzed; "
+            f"cohort {provenance['cohort']}; {provenance['method_version']}; "
+            "observed sample range, not a confidence interval"
+        )
+    else:
+        rate_source = f"assumption, not verified: {provenance['reason']}"
     lines.append(f"# {outline.talk.title} — Script")
     lines.append("")
     lines.append(
         f"**{outline.talk.venue}** · {outline.talk.duration_min:g} min "
-        f"· {speakers_csv} · pacing {outline.talk.pacing_wpm[0]}–"
-        f"{outline.talk.pacing_wpm[1]} WPM",
+        f"· {speakers_csv} · pacing {low:g}–{high:g} WPM narration "
+        f"(internal gaps ≤{rate['pause_threshold_seconds']:g} s; {rate_source})",
+    )
+    lines.append("")
+    lines.append(
+        "> Narration pace supports planning only. Recording verification requires "
+        "actual word timestamps and actual duration; predicted timing is not evidence."
     )
     lines.append("")
     lines.append(
