@@ -533,6 +533,12 @@ configured interpreter and require the repair's `output_sha256`. Resume the
 normal bootstrap gates only then. A refusal authorizes no manual restamping,
 raw database read, or bypass of another schema gate.
 
+Valid active queue claims do not require recovery for this QR-only repair.
+The owner preserves them unchanged; shape-changing normal migration still
+refuses active writers. If a concurrent writer reports a generation conflict, reload through
+that writer's owner and retry the intended operation. Do not cancel a claim to
+clear a generation conflict.
+
 Agent-owned config and catalog changes use a typed plan:
 
 ```json
