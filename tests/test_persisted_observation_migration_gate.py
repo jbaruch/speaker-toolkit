@@ -19,7 +19,7 @@ def gate(migrate_tracking_database):
 
 def _database(talk: dict) -> dict:
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "config": {"schema_version": 2, "pptx_directory_exclusions": []},
         "talks": [talk],
         "pptx_catalog": [],

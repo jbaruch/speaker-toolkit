@@ -11,7 +11,7 @@ import sys
 
 import pytest
 
-from conftest import current_tracking_config
+from conftest import CURRENT_ROOT_SCHEMA_VERSION, current_tracking_config
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -73,7 +73,7 @@ def _database_path(
             ]
             current_talks.append(current_talk)
         database = {
-            "schema_version": 2,
+            "schema_version": CURRENT_ROOT_SCHEMA_VERSION,
             "config": current_tracking_config(**config),
             "talks": current_talks,
             "pptx_catalog": [],

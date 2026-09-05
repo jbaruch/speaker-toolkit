@@ -64,7 +64,7 @@ def _write_json(path: Path, value: object) -> None:
 
 def _base_database() -> dict[str, Any]:
     return {
-        "schema_version": 2,
+        "schema_version": CURRENT_ROOT,
         "config": _current_config(),
         "talks": [
             {

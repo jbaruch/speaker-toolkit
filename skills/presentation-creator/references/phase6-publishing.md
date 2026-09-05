@@ -186,9 +186,9 @@ path make the check before resolving the link.
    ```
 
    The script is a non-owner dual reader and a current-schema writer. Dry-run
-   accepts any readable database schema — legacy 0, pre-`markdown_decks` 1, or
-   current 2 — without changing any of them.
-   A real run requires database schema 2 before URL-shortener calls, deck edits,
+   accepts every readable database generation without changing it; the generations
+   are defined by the [owner schema](../../vault-ingress/references/schemas-db.md).
+   A real run requires the current database schema before URL-shortener calls, deck edits,
    or tracking persistence. Route a legacy database through vault-ingress Step 1.
    An unsupported future database or record version is no usable prior state.
 

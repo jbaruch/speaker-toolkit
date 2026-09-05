@@ -76,14 +76,15 @@ state:
 
 Exit 0 writes one JSON object with `from_schema_version`,
 `to_schema_version`, `changed`, `database_written: false`, `input_sha256`, and
-`record_counts`. Continue only for `changed: false` at database schema v2 with
-config schema v2. A legacy root or config report requires the owner workflow;
+`record_counts`. Continue only for `changed: false` at the current database
+generation in the [owner compatibility contract](../vault-ingress/references/schemas-db.md#schema-versioning)
+with config schema v2. A legacy root or config report requires the owner workflow;
 invoke `Skill(skill: "vault-ingress")`
 with the migration report as handoff context, then finish this clarification run.
 Exit 2 writes one error object to stdout plus an `ERROR:` diagnostic to stderr;
 stop without changing session state.
 
-Every tracking write in Steps 2–8 is current-only. Preserve database schema 2,
+Every tracking write in Steps 2–8 is current-only. Preserve the owner-current root,
 config schema 2, talk schema 8, and every unrelated record. Stamp confirmed
 intents with schema 1 and new improvement goals with schema 2. Capture the exact
 input bytes immediately before each write, reject a changed generation, validate

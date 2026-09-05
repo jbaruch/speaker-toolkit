@@ -28,6 +28,7 @@ from pptx_discovery_contract import (
     validate_pptx_directory_exclusions,
 )
 from pptx_talk_identity import unassessed_legacy_binding
+from source_alias_contract import SourceAliasError, validate_alias_database
 
 
 LEGACY_TRACKING_DATABASE_SCHEMA_VERSION = 0
@@ -36,7 +37,8 @@ LEGACY_TRACKING_DATABASE_SCHEMA_VERSION = 0
 # does not version its parent database, so admitting the collection moves the
 # root generation (`stateful-artifacts` Migration Policy).
 PRE_MARKDOWN_DECKS_TRACKING_DATABASE_SCHEMA_VERSION = 1
-TRACKING_DATABASE_SCHEMA_VERSION = 2
+PRE_SOURCE_ALIASES_TRACKING_DATABASE_SCHEMA_VERSION = 2
+TRACKING_DATABASE_SCHEMA_VERSION = 3
 LEGACY_TALK_RECORD_SCHEMA_VERSION = 1
 FLAT_SCORE_TALK_RECORD_SCHEMA_VERSION = 5
 # The generation before the owner-reviewed title-equivalence ledger (#333).
@@ -79,6 +81,7 @@ READABLE_TRACKING_DATABASE_SCHEMA_VERSIONS = frozenset(
     {
         LEGACY_TRACKING_DATABASE_SCHEMA_VERSION,
         PRE_MARKDOWN_DECKS_TRACKING_DATABASE_SCHEMA_VERSION,
+        PRE_SOURCE_ALIASES_TRACKING_DATABASE_SCHEMA_VERSION,
         TRACKING_DATABASE_SCHEMA_VERSION,
     }
 )
@@ -1348,7 +1351,12 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
         )
 
     current = root_version == TRACKING_DATABASE_SCHEMA_VERSION
-    if current and "config" not in database:
+    # Root v2 already required explicit child versions and complete collections.
+    # Admitting it as a rollout reader must not loosen those existing gates.
+    explicit_records = (
+        root_version >= PRE_SOURCE_ALIASES_TRACKING_DATABASE_SCHEMA_VERSION
+    )
+    if explicit_records and "config" not in database:
         raise TrackingDatabaseError(
             f"tracking database schema v{TRACKING_DATABASE_SCHEMA_VERSION} "
             "requires a 'config' object"
@@ -1357,12 +1365,14 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
     if not isinstance(config, Mapping):
         raise TrackingDatabaseError("tracking database 'config' must be an object")
     collections = {
-        key: _object_collection(database, key, required=current or key == "talks")
+        key: _object_collection(
+            database, key, required=explicit_records or key == "talks"
+        )
         for key in _TOP_LEVEL_COLLECTIONS
     }
 
     reasons: list[str] = []
-    if current and "schema_version" not in config:
+    if explicit_records and "schema_version" not in config:
         reasons.append("config_schema_version_missing")
     config_version = _record_version(
         config,
@@ -1409,7 +1419,7 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
             records,
             label=key,
             accepted_versions=accepted_versions_by_collection[key],
-            require_explicit=current,
+            require_explicit=explicit_records,
             missing_version=(
                 LEGACY_TALK_RECORD_SCHEMA_VERSION
                 if key == "talks"
@@ -1469,7 +1479,7 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
         for rejection_index, rejection in enumerate(rejections):
             if not isinstance(rejection, Mapping):
                 continue
-            if current and "schema_version" not in rejection:
+            if explicit_records and "schema_version" not in rejection:
                 reasons.append("source_rejections_schema_version_missing")
                 break
             rejection_version = _record_version(
@@ -1618,6 +1628,11 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
                 f"{talk_filename!r}; a talk has one authored deck source"
             )
         claimed_by_talk.add(talk_filename)
+
+    try:
+        validate_alias_database(database)
+    except SourceAliasError as exc:
+        raise TrackingDatabaseError(str(exc)) from exc
 
     try:
         # Assessment intentionally admits claim/status drift so schema-0 queue
@@ -1872,7 +1887,7 @@ def repair_missing_qr_schema_versions(database: object) -> TrackingDatabaseMigra
     """Explicit, preservation-only repair of unstamped legacy QR records.
 
     Ordinary readers/migration remain closed on missing child versions. This
-    opt-in owner operation accepts only a current root/config whose sole version
+    opt-in owner operation accepts root v2/v3 with current config whose sole version
     defect is a missing QR stamp. Every unstamped record must satisfy the exact
     legacy-v1 shape before stamping; v2 artifact receipts are never invented or
     inferred. The complete candidate must validate before it is returned. No
@@ -1893,7 +1908,11 @@ def repair_missing_qr_schema_versions(database: object) -> TrackingDatabaseMigra
         ) from exc
     if (
         not isinstance(database, dict)
-        or assessment.schema_version != TRACKING_DATABASE_SCHEMA_VERSION
+        or assessment.schema_version
+        not in {
+            PRE_SOURCE_ALIASES_TRACKING_DATABASE_SCHEMA_VERSION,
+            TRACKING_DATABASE_SCHEMA_VERSION,
+        }
         or (
             not assessment.usable
             and assessment.reason_codes != ("qr_codes_schema_version_missing",)
@@ -1926,7 +1945,14 @@ def repair_missing_qr_schema_versions(database: object) -> TrackingDatabaseMigra
         record["schema_version"] = LEGACY_QR_CODE_RECORD_SCHEMA_VERSION
         counts["qr_codes"] += 1
     try:
-        require_current_tracking_database(candidate)
+        repaired = assess_tracking_database(candidate)
+        if (
+            not repaired.usable
+            or candidate["config"]["schema_version"] != CONFIG_RECORD_SCHEMA_VERSION
+        ):
+            raise TrackingDatabaseError(
+                "QR repair candidate must retain validated current config"
+            )
     except TrackingDatabaseError as exc:
         raise TrackingDatabaseRepairError(
             "qr_repair_candidate_invalid", {"stage": "complete_owner_validation"}
@@ -1934,14 +1960,14 @@ def repair_missing_qr_schema_versions(database: object) -> TrackingDatabaseMigra
     return TrackingDatabaseMigration(
         database=candidate,
         changed=bool(counts["qr_codes"]),
-        from_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
-        to_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
+        from_schema_version=assessment.schema_version,
+        to_schema_version=assessment.schema_version,
         record_counts=counts,
     )
 
 
 def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
-    """Build the deterministic owner migration to root v2/config v2."""
+    """Build the deterministic owner migration to root v3/config v2."""
     assessment = assess_tracking_database(database)
     if not assessment.usable:
         raise TrackingDatabaseError(

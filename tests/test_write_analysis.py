@@ -330,7 +330,7 @@ def _write_tracking_db(
     path.write_text(
         json.dumps(
             {
-                "schema_version": 2,
+                "schema_version": 3,
                 "config": current_tracking_config(),
                 "talks": talks,
                 "pptx_catalog": [],

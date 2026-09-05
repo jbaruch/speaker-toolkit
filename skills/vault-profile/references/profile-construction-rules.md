@@ -43,7 +43,9 @@ repair any field in that stamp during profile assembly.
 extractor cohort for pacing-sensitive analysis. Instrumentation membership never
 confers pattern-baseline eligibility.
 
-Legacy database schemas 0 and 1 and current schema 2 are read-only inputs. An unsupported
+The readable database generations in the
+[owner compatibility contract](../../vault-ingress/references/schemas-db.md#schema-versioning)
+are read-only inputs. An unsupported
 future database or record schema has no usable prior state. Compatibility stays
 internal, adds no payload fields, and never migrates the database.
 

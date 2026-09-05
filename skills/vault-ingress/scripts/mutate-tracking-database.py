@@ -61,6 +61,11 @@ from pptx_discovery_contract import (
 )
 from pptx_talk_identity import binding_refusal
 from source_identity_matching import parse_catalog_date, pinned_provider_title
+from source_alias_contract import (
+    SourceAliasError,
+    active_identity,
+    validate_alias_record,
+)
 
 
 PLAN_SCHEMA_VERSION = 1
@@ -996,6 +1001,81 @@ def _apply_record_title_equivalence(
     )
 
 
+def _apply_record_source_alias(
+    database: dict[str, Any],
+    mutation: dict[str, Any],
+    changes: list[dict[str, Any]],
+    *,
+    index: int,
+) -> None:
+    """Append a reviewed inactive identity without changing talk evidence."""
+    label = f"mutations[{index}]"
+    _require_keys(mutation, required={"kind", "record", "expect"}, label=label)
+    record = mutation["record"]
+    try:
+        validate_alias_record(record, label=f"{label}.record")
+    except SourceAliasError as exc:
+        raise TrackingDatabaseMutationError(str(exc)) from exc
+    filename = record["talk_filename"]
+    talk = _talk_by_filename(database, filename)
+    _require_readable_talk_record(talk, filename=filename)
+    claim = talk.get("_queue_claim")
+    if talk.get("status") == "reprocessing-inflight" or (
+        isinstance(claim, dict) and claim.get("state") == "claimed"
+    ):
+        raise TrackingDatabaseMutationError(
+            f"{label}: cannot change an active claim's identity ledger"
+        )
+    expected = mutation["expect"]
+    if not isinstance(expected, dict):
+        raise TrackingDatabaseMutationError(f"{label}.expect must be an object")
+    _require_keys(
+        expected,
+        required={"video_url", "youtube_id", "source_rejections", "source_aliases"},
+        label=f"{label}.expect",
+    )
+    for field in ("video_url", "youtube_id", "source_rejections", "source_aliases"):
+        container = database if field == "source_aliases" else talk
+        _expect_value(
+            exists=field in container,
+            actual=container.get(field),
+            expected=expected[field],
+            label=f"{label}.expect.{field}",
+        )
+    if active_identity(talk) != record["canonical"]["video_id"]:
+        raise TrackingDatabaseMutationError(
+            f"{label}: canonical evidence is not the talk's current source"
+        )
+    if (
+        talk.get("title") != record["catalog_title"]
+        or talk.get("conference") != record["event"]["conference"]
+    ):
+        raise TrackingDatabaseMutationError(
+            f"{label}: reviewed catalog identity disagrees with this talk"
+        )
+    catalog_date = talk.get("date")
+    event_date = record["event"]["date"]
+    if not isinstance(catalog_date, str) or catalog_date not in {
+        event_date,
+        event_date[:4],
+    }:
+        raise TrackingDatabaseMutationError(
+            f"{label}: independent event date disagrees with this delivery"
+        )
+    before = database.get("source_aliases", MISSING_MARKER)
+    existing = database.get("source_aliases", [])
+    if any(json_values_equal(item, record) for item in existing):
+        return
+    database["source_aliases"] = [*existing, copy.deepcopy(record)]
+    _record_change(
+        changes,
+        kind="record_source_alias",
+        identity=filename,
+        before=before,
+        after=database["source_aliases"],
+    )
+
+
 def _apply_record_markdown_deck(
     database: dict[str, Any],
     mutation: dict[str, Any],
@@ -1720,6 +1800,8 @@ def build_candidate(
             _apply_reviewed_metadata(candidate, mutation, changes, index=index)
         elif kind == "record_source_title_equivalence":
             _apply_record_title_equivalence(candidate, mutation, changes, index=index)
+        elif kind == "record_source_alias":
+            _apply_record_source_alias(candidate, mutation, changes, index=index)
         elif kind == "record_markdown_deck":
             _apply_record_markdown_deck(candidate, mutation, changes, index=index)
         elif kind == "update_talk_publishing":
@@ -1749,14 +1831,14 @@ def build_candidate(
     return candidate, changes
 
 
-def _validate_digest(value: str) -> None:
+def _validate_digest(value: str, *, flag: str = "--expected-sha256") -> None:
     if value == "missing":
         return
     if len(value) != 64 or any(
         character not in "0123456789abcdef" for character in value
     ):
         raise TrackingDatabaseMutationError(
-            "--expected-sha256 must be `missing` or 64 lowercase hexadecimal characters"
+            f"{flag} must be `missing` or 64 lowercase hexadecimal characters"
         )
 
 
@@ -1766,6 +1848,7 @@ def execute(
     *,
     apply: bool,
     expected_sha256: str | None,
+    expected_output_sha256: str | None = None,
 ) -> dict[str, Any]:
     plan = load_plan(plan_path)
     mutations = plan["mutations"]
@@ -1774,6 +1857,19 @@ def execute(
     if apply and expected_sha256 is None:
         raise TrackingDatabaseMutationError(
             "--apply requires --expected-sha256 from the reviewed dry-run report"
+        )
+    alias_plan = any(
+        mutation.get("kind") == "record_source_alias" for mutation in mutations
+    )
+    if expected_output_sha256 is not None:
+        _validate_digest(expected_output_sha256, flag="--expected-output-sha256")
+        if expected_output_sha256 == "missing":
+            raise TrackingDatabaseMutationError(
+                "--expected-output-sha256 must be a candidate digest, not missing"
+            )
+    if apply and alias_plan and expected_output_sha256 is None:
+        raise TrackingDatabaseMutationError(
+            "alias --apply requires --expected-output-sha256 from the reviewed dry run"
         )
 
     initialize = (
@@ -1806,6 +1902,13 @@ def execute(
             ) from exc
         rendered = render_json_object(candidate)
         output_sha256 = hashlib.sha256(rendered).hexdigest()
+        if (
+            expected_output_sha256 is not None
+            and expected_output_sha256 != output_sha256
+        ):
+            raise TrackingDatabaseMutationError(
+                "reviewed candidate output sha256 precondition failed; repeat the dry run and review"
+            )
         if apply:
             try:
                 result = initialize_tracking_database(database_path, candidate)
@@ -1857,6 +1960,10 @@ def execute(
     candidate, changes = build_candidate(database, mutations)
     rendered = render_json_object(candidate) if changes else snapshot.raw
     output_sha256 = hashlib.sha256(rendered).hexdigest()
+    if expected_output_sha256 is not None and expected_output_sha256 != output_sha256:
+        raise TrackingDatabaseMutationError(
+            "reviewed candidate output sha256 precondition failed; repeat the dry run and review"
+        )
     if apply:
         try:
             result = commit_tracking_database(snapshot, rendered)
@@ -1892,6 +1999,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("plan", type=Path)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--expected-sha256")
+    parser.add_argument("--expected-output-sha256")
     try:
         args = parser.parse_args(argv)
         report = execute(
@@ -1899,6 +2007,7 @@ def main(argv: list[str] | None = None) -> int:
             args.plan,
             apply=args.apply,
             expected_sha256=args.expected_sha256,
+            expected_output_sha256=args.expected_output_sha256,
         )
     except TrackingDatabaseMutationError as exc:
         print(json.dumps({"schema_version": 1, "ok": False, "error": str(exc)}))

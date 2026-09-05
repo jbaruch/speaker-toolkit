@@ -310,6 +310,12 @@ compare against this ledger before importing an upstream link.
 
 ## YouTube identity and duplicate relation
 
+Accepted inactive uploads live in the owner's top-level `source_aliases` ledger,
+not `source_rejections`. The shared schema assessment rejects malformed/future
+aliases, conflicting ownership, canonical/rejection overlap, and invalid lineage
+before evidence access. See [source-aliases.md](source-aliases.md) for the record
+and reviewed-write contract. Aliases supply no artifact or acquisition capability.
+
 The parser accepts these URL identities:
 
 - `youtube.com/watch?v={id}`

@@ -43,8 +43,9 @@ The vault lives at `~/.claude/rhetoric-knowledge-vault/` (may be a symlink to a 
 location). Load `tracking-database.json` with the strict owner reader at
 `{speaker_toolkit_root}/skills/vault-ingress/scripts/read-tracking-database.py` to
 get `config.vault_root`; never parse it directly. The stdlib-only reader may use
-the host interpreter for this one bootstrap read. It accepts legacy database
-schemas 0 and 1 and current schema 2 without rewriting any of them. Stop on unsupported root
+the host interpreter for this one bootstrap read. It accepts the readable database
+generations in the [owner compatibility contract](../vault-ingress/references/schemas-db.md#schema-versioning)
+without rewriting them. Stop on unsupported root
 or owner-record generations and route migration to `Skill(skill: "vault-ingress")`.
 
 Discover the exact non-empty `config.python_path`, then immediately re-read the
@@ -52,9 +53,10 @@ same canonical database path with that interpreter and require the same SHA-256;
 restart discovery if the generation changed. Use only that configured interpreter
 for every later toolkit command. Missing or unusable configuration stops this flow
 and invokes `Skill(skill: "vault-ingress")` with Step 1 as the handoff context.
-Read-only phases may continue on schema 0 or 1, but publishing and post-event
-writes require schema 2 before their paired network, deck, image, or tracking
-side effects. For schema 0 or 1, invoke `Skill(skill: "vault-ingress")` with a
+Read-only phases may continue on readable legacy generations, but publishing and
+post-event writes require the owner-current schema before their paired network,
+deck, image, or tracking side effects. For a legacy generation, invoke
+`Skill(skill: "vault-ingress")` with a
 Step 1 migration handoff before continuing.
 
 Load from vault root: `rhetoric-style-summary.md` (constitution — all patterns),

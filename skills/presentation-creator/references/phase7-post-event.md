@@ -15,9 +15,11 @@ Before ANY Phase 7 action, load these files. If any is missing, STOP and ask.
 4. **YouTube video URL** — provided by the speaker at trigger time
 
 Read the tracking database through the main presentation-creator compatibility
-gate. Thumbnail and shownotes lookup may read schema 0 or 1. Any database update
-in this phase requires current database schema 2 and talk schema 8 before the
-thumbnail, shownotes, or video side effect paired with it. Route schema 0 or 1 through
+gate and the [owner compatibility contract](../../vault-ingress/references/schemas-db.md#schema-versioning).
+Thumbnail and shownotes lookup may read the owner's readable generations. Any
+database update in this phase requires the owner-current database and talk
+schema 8 before the thumbnail, shownotes, or video side effect paired with it.
+Route legacy generations through
 `Skill(skill: "vault-ingress")`; preserve all schema fields and apply the main
 skill's exact-generation atomic-write contract.
 
