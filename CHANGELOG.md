@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.127 — 2026-09-05
+
 ### Derive family-balanced narration calibration from fresh audio samples
 
 Add #368's vault-root calibration command with a metadata-only planning mode,
