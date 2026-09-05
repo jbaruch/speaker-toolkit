@@ -64,7 +64,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | [references/markdown-decks.md](references/markdown-decks.md) | Slidev/presenterm/Marp/reveal-md decks — render lanes, register-and-requeue, reveal structure |
 | [references/source-identity-preflight.md](references/source-identity-preflight.md) | Offline identity, duplicate-source, enum, and artifact integrity contracts |
 | [references/source-identity-audit.md](references/source-identity-audit.md) | Networked, read-only capture of live provider identity evidence and review findings |
-| [references/source-aliases.md](references/source-aliases.md) | Owner-reviewed inactive recording aliases; evidence review, hash-bound append, and scan verification |
+| [references/source-aliases.md](references/source-aliases.md) | Owner-reviewed recording aliases; hash-bound append, official-upload promotion, superseded history, and scan verification |
 | [references/catalog-feedback-intake.md](references/catalog-feedback-intake.md) | Five-lane catalog-feedback schema, polarity, recurrence, and review contract |
 | [references/pattern-catalog-contract.md](references/pattern-catalog-contract.md) | Read-only catalog graph, polarity, source-gate, and semantic-debt contract |
 | [references/processing-rules.md](references/processing-rules.md) | Language policy, pattern migration logic, structured field rules |

@@ -187,7 +187,7 @@ no-op.
 | confirmed intent | 1 |
 | source rejection | 1 |
 | source title equivalence | 2 (own top-level collection; v1 nested entries are migrated) |
-| accepted source alias | 1 (optional top-level collection; never inferred by migration) |
+| accepted source alias | 1 (inactive decision), 2 (owner-built promotion history); never inferred by migration |
 | improvement goal | 2 (schema 1 remains readable historical state) |
 
 | Component | Access | Contract |
@@ -607,6 +607,7 @@ exact-type rule. The supported mutation kinds are:
 | `apply_reviewed_metadata` | Install one human-reviewed shownotes catalog-conflict decision on one exact talk filename, over a closed identity field set, with `expect` covering exactly the same fields |
 | `record_source_title_equivalence` | Append one owner-reviewed provider-title equivalence to one exact talk filename; append-only and refuses a duplicate |
 | `record_source_alias` | Append a reviewed inactive YouTube identity; exact canonical/ledger expectations and both input/output hashes bind apply; see [source-aliases.md](source-aliases.md) |
+| `promote_source_alias` | Sole mutation for an owner-reviewed official-upload switch; expect the complete talk and alias ledger, require both hashes, preserve superseded identity/history, and requeue without relabeling existing evidence; see [source-aliases.md](source-aliases.md#atomic-official-upload-promotion) |
 | `record_markdown_deck` | Register (or re-point) the markdown file one exact talk's deck was authored in, with `expect` naming the currently registered `deck_source_path` or the missing marker; upsert, one deck per talk |
 | `update_talk_publishing` | Set supported publishing fields on one exact talk filename, with `expect` covering exactly the same fields |
 | `update_talk_clarification` | Set complete object/array `blind_spot_observations` or `humor_postmortem` values on one exact talk, with matching field expectations |

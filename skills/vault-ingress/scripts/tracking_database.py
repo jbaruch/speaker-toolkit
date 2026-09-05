@@ -1358,8 +1358,7 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
     )
     if explicit_records and "config" not in database:
         raise TrackingDatabaseError(
-            f"tracking database schema v{TRACKING_DATABASE_SCHEMA_VERSION} "
-            "requires a 'config' object"
+            f"tracking database schema v{root_version} requires a 'config' object"
         )
     config = database.get("config", {})
     if not isinstance(config, Mapping):
