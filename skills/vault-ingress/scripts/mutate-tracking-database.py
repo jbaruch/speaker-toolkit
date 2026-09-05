@@ -62,9 +62,13 @@ from pptx_discovery_contract import (
 from pptx_talk_identity import binding_refusal
 from source_identity_matching import parse_catalog_date, pinned_provider_title
 from source_alias_contract import (
+    PRIOR_SOURCE_FIELDS,
+    PROMOTED_SOURCE_ALIAS_SCHEMA_VERSION,
+    SOURCE_ALIAS_SCHEMA_VERSION,
     SourceAliasError,
     active_identity,
     validate_alias_record,
+    youtube_identity,
 )
 
 
@@ -1001,6 +1005,50 @@ def _apply_record_title_equivalence(
     )
 
 
+def _require_alias_delivery(
+    talk: dict[str, Any], record: dict[str, Any], *, label: str
+) -> None:
+    if (
+        talk.get("title") != record["catalog_title"]
+        or talk.get("conference") != record["event"]["conference"]
+    ):
+        raise TrackingDatabaseMutationError(
+            f"{label}: reviewed catalog identity disagrees with this talk"
+        )
+    catalog_date = talk.get("date")
+    event_date = record["event"]["date"]
+    if not isinstance(catalog_date, str) or catalog_date not in {
+        event_date,
+        event_date[:4],
+    }:
+        raise TrackingDatabaseMutationError(
+            f"{label}: independent event date disagrees with this delivery"
+        )
+
+
+def _require_inactive_alias_owner(talk: dict[str, Any], *, label: str) -> None:
+    claim = talk.get("_queue_claim")
+    if talk.get("status") == "reprocessing-inflight" or (
+        isinstance(claim, dict) and claim.get("state") == "claimed"
+    ):
+        raise TrackingDatabaseMutationError(
+            f"{label}: cannot change an active claim's identity ledger"
+        )
+
+
+def _reviewed_alias_record(mutation: dict[str, Any], *, label: str) -> dict[str, Any]:
+    record = mutation["record"]
+    try:
+        validate_alias_record(record, label=f"{label}.record")
+    except SourceAliasError as exc:
+        raise TrackingDatabaseMutationError(str(exc)) from exc
+    if record["schema_version"] != SOURCE_ALIAS_SCHEMA_VERSION:
+        raise TrackingDatabaseMutationError(
+            f"{label}: submit a reviewed v1 decision; only promotion constructs history"
+        )
+    return record
+
+
 def _apply_record_source_alias(
     database: dict[str, Any],
     mutation: dict[str, Any],
@@ -1011,21 +1059,11 @@ def _apply_record_source_alias(
     """Append a reviewed inactive identity without changing talk evidence."""
     label = f"mutations[{index}]"
     _require_keys(mutation, required={"kind", "record", "expect"}, label=label)
-    record = mutation["record"]
-    try:
-        validate_alias_record(record, label=f"{label}.record")
-    except SourceAliasError as exc:
-        raise TrackingDatabaseMutationError(str(exc)) from exc
+    record = _reviewed_alias_record(mutation, label=label)
     filename = record["talk_filename"]
     talk = _talk_by_filename(database, filename)
     _require_readable_talk_record(talk, filename=filename)
-    claim = talk.get("_queue_claim")
-    if talk.get("status") == "reprocessing-inflight" or (
-        isinstance(claim, dict) and claim.get("state") == "claimed"
-    ):
-        raise TrackingDatabaseMutationError(
-            f"{label}: cannot change an active claim's identity ledger"
-        )
+    _require_inactive_alias_owner(talk, label=label)
     expected = mutation["expect"]
     if not isinstance(expected, dict):
         raise TrackingDatabaseMutationError(f"{label}.expect must be an object")
@@ -1046,22 +1084,7 @@ def _apply_record_source_alias(
         raise TrackingDatabaseMutationError(
             f"{label}: canonical evidence is not the talk's current source"
         )
-    if (
-        talk.get("title") != record["catalog_title"]
-        or talk.get("conference") != record["event"]["conference"]
-    ):
-        raise TrackingDatabaseMutationError(
-            f"{label}: reviewed catalog identity disagrees with this talk"
-        )
-    catalog_date = talk.get("date")
-    event_date = record["event"]["date"]
-    if not isinstance(catalog_date, str) or catalog_date not in {
-        event_date,
-        event_date[:4],
-    }:
-        raise TrackingDatabaseMutationError(
-            f"{label}: independent event date disagrees with this delivery"
-        )
+    _require_alias_delivery(talk, record, label=label)
     before = database.get("source_aliases", MISSING_MARKER)
     existing = database.get("source_aliases", [])
     if any(json_values_equal(item, record) for item in existing):
@@ -1073,6 +1096,101 @@ def _apply_record_source_alias(
         identity=filename,
         before=before,
         after=database["source_aliases"],
+    )
+
+
+def _apply_promote_source_alias(
+    database: dict[str, Any],
+    mutation: dict[str, Any],
+    changes: list[dict[str, Any]],
+    *,
+    index: int,
+) -> None:
+    """Replace one acquisition identity and retain its exact superseded state."""
+    label = f"mutations[{index}]"
+    _require_keys(mutation, required={"kind", "record", "expect"}, label=label)
+    record = _reviewed_alias_record(mutation, label=label)
+    filename = record["talk_filename"]
+    talk = _talk_by_filename(database, filename)
+    _require_readable_talk_record(talk, filename=filename)
+    _require_inactive_alias_owner(talk, label=label)
+    expected = mutation["expect"]
+    if not isinstance(expected, dict):
+        raise TrackingDatabaseMutationError(f"{label}.expect must be an object")
+    _require_keys(
+        expected, required={"talk", "source_aliases"}, label=f"{label}.expect"
+    )
+    _expect_value(
+        exists=True,
+        actual=talk,
+        expected=expected["talk"],
+        label=f"{label}.expect.talk",
+    )
+    _expect_value(
+        exists="source_aliases" in database,
+        actual=database.get("source_aliases"),
+        expected=expected["source_aliases"],
+        label=f"{label}.expect.source_aliases",
+    )
+    if (
+        record["relationship"] != "superseded_by_official_upload"
+        or record["canonical_choice_reason"] is None
+        or active_identity(talk) != record["alias"]["video_id"]
+    ):
+        raise TrackingDatabaseMutationError(
+            f"{label}: promotion requires the current source as alias, an official-upload relationship, and a reviewed reason"
+        )
+    _require_alias_delivery(talk, record, label=label)
+    promoted_id = record["canonical"]["video_id"]
+    for other in database["talks"]:
+        if other["filename"] != filename and promoted_id in (
+            youtube_identity(other.get("video_url")),
+            other.get("youtube_id"),
+        ):
+            raise TrackingDatabaseMutationError(
+                f"{label}: promoted source is already active on another talk; resolve ownership first"
+            )
+    existing = database.get("source_aliases", [])
+    retired = next(
+        (item for item in existing if item["alias"]["video_id"] == promoted_id), None
+    )
+    if retired is not None and retired["talk_filename"] != filename:
+        raise TrackingDatabaseMutationError(
+            f"{label}: promoted alias belongs to another talk; resolve ownership first"
+        )
+    prior_talk = copy.deepcopy(talk)
+    promoted_record = {
+        **copy.deepcopy(record),
+        "schema_version": PROMOTED_SOURCE_ALIAS_SCHEMA_VERSION,
+        "prior_state": {
+            "schema_version": 1,
+            **{
+                field: copy.deepcopy(talk.get(field, MISSING_MARKER))
+                for field in sorted(PRIOR_SOURCE_FIELDS)
+            },
+        },
+        "retired_alias": copy.deepcopy(retired),
+    }
+    # Move only the newly active identity's earlier judgment into inactive
+    # history. Other edges keep their compared target and resolve through the
+    # old canonical's new edge, preserving the original evidence.
+    database["source_aliases"] = [item for item in existing if item is not retired] + [
+        promoted_record
+    ]
+    talk["video_url"] = record["canonical"]["url"]
+    talk["youtube_id"] = promoted_id
+    talk.pop("source_identity", None)
+    talk["status"] = "needs-reprocessing"
+    talk["reprocess_reason"] = "source_added"
+    _record_change(
+        changes,
+        kind="promote_source_alias",
+        identity=filename,
+        before={"talk": prior_talk, "source_aliases": existing},
+        after={
+            "talk": copy.deepcopy(talk),
+            "source_aliases": database["source_aliases"],
+        },
     )
 
 
@@ -1780,6 +1898,12 @@ def build_candidate(
         raise TrackingDatabaseMutationError(str(exc)) from exc
     candidate = copy.deepcopy(database)
     _validate_database_shape(candidate)
+    if len(mutations) != 1 and any(
+        mutation.get("kind") == "promote_source_alias" for mutation in mutations
+    ):
+        raise TrackingDatabaseMutationError(
+            "promote_source_alias must be the plan's sole mutation; review its complete transition"
+        )
     changes: list[dict[str, Any]] = []
     for index, mutation in enumerate(mutations):
         kind = mutation.get("kind")
@@ -1802,6 +1926,8 @@ def build_candidate(
             _apply_record_title_equivalence(candidate, mutation, changes, index=index)
         elif kind == "record_source_alias":
             _apply_record_source_alias(candidate, mutation, changes, index=index)
+        elif kind == "promote_source_alias":
+            _apply_promote_source_alias(candidate, mutation, changes, index=index)
         elif kind == "record_markdown_deck":
             _apply_record_markdown_deck(candidate, mutation, changes, index=index)
         elif kind == "update_talk_publishing":
@@ -1859,7 +1985,8 @@ def execute(
             "--apply requires --expected-sha256 from the reviewed dry-run report"
         )
     alias_plan = any(
-        mutation.get("kind") == "record_source_alias" for mutation in mutations
+        mutation.get("kind") in {"record_source_alias", "promote_source_alias"}
+        for mutation in mutations
     )
     if expected_output_sha256 is not None:
         _validate_digest(expected_output_sha256, flag="--expected-output-sha256")

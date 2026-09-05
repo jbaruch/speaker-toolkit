@@ -104,13 +104,58 @@ and preflight. `scan-shownotes.py` reports a reviewed alternate as `unchanged`
 when no independent metadata conflict remains. It preserves the canonical URL
 and stored ID, including an absent ID, and never promotes the alias.
 
-## Canonical replacement boundary
+## Atomic official-upload promotion
 
-This append operation does not replace the canonical source, rewrite old ledger
-entries, invalidate analysis, or perform reparsing. Do not compose a canonical
-replacement from separate source-repair and alias-append writes: a partial
-transition can lose provenance or leave invalid lineage. The atomic reviewed
-promotion/superseded-history transition remains follow-up work in #175.
+Appending an alias does not change acquisition. For an owner-approved switch to
+a verified official upload, use `promote_source_alias` as the plan's sole
+mutation. Review independent event identity and recording comparison again;
+an existing alias decision alone does not authorize changing the canonical.
+
+Supply a complete **v1** decision with the old current upload in `alias`, the
+new official upload in `canonical`, relationship
+`superseded_by_official_upload`, and a non-null `canonical_choice_reason` that
+records the owner's official-source judgment. The writer does not infer an
+official channel from its name, title, or upload date. `expect` names exactly:
+
+- `talk`: the complete owner-read talk record, including any completed lease,
+  artifact declarations, analysis, and absent-versus-null fields.
+- `source_aliases`: the complete current top-level array, or the missing marker.
+
+Use the same dry-run command and review both hashes before apply. The writer
+refuses active claims, competing ownership, stale talk/ledger values, rejected
+identities, or a composed multi-operation plan. The locked commit installs the
+source switch and its history together; do not substitute separate repair and
+append writes.
+
+The writer sets `video_url` and `youtube_id` to the reviewed new identity,
+removes the old upload's top-level `source_identity`, and sets status
+`needs-reprocessing` with reason `source_added`. It leaves all other talk fields,
+analysis, transcript/video declarations, receipts, and external artifacts
+untouched. The source switch performs no acquisition or reparsing. Old receipts
+do not become proof for the new upload: existing owner/provenance checks still
+apply, and preflight may remain blocking until separately authorized evidence
+repair or reprocessing. Never clear or relabel those receipts to bypass a gate.
+
+The resulting alias is **v2**, with the v1 decision fields plus:
+
+- `prior_state`: closed schema-v1 snapshot of the exact overwritten or removed
+  `video_url`, `youtube_id`, `source_identity`, `status`, and `reprocess_reason`.
+  An absent field uses `{"$missing": true}`. Historical provider evidence is
+  preserved as an inactive object, never interpreted as current evidence.
+- `retired_alias`: null, or the complete earlier same-talk alias record for the
+  identity that is now canonical. It retains its original version, reviewer,
+  comparison, and any prior history. Only this edge moves into history; other
+  edges retain their compared targets and resolve through the superseded source.
+
+Readers accept v1 and v2 without restamping old judgments. Only the promotion
+writer constructs v2 history; caller-supplied history is refused. Historical
+records must name the promoted identity and same talk. The contract's bounded
+history limit fails closed without dropping old decisions. Retired records are
+neither live aliases nor acquisition capabilities. Root schema remains v3.
+
+Re-read the committed database and verify its output digest. Repeat shownotes
+scan and preflight; shownotes for the superseded recording now resolves as an
+accepted alias, while independent metadata conflicts stay visible.
 
 Unrelated source repair, scan/import, queue, persistence, and profile operations
 must preserve the ledger. A mutation that would make its ownership inconsistent

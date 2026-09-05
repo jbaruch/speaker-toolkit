@@ -1,5 +1,15 @@
 # Changelog
 
+### Preserve superseded sources during reviewed official-upload promotion
+
+Complete the canonical replacement path in #175 with a single hash-bound owner
+transition. Preserve the original identity, provider evidence, and any earlier
+alias judgment in versioned inactive history; keep unrelated edges and artifacts
+unchanged. Requeue the talk without relabeling old analysis or receipts as the new
+upload's evidence. Reject active claims, stale plans, cross-talk ownership,
+rejection collisions, future history schemas, and excessive history depth.
+Also correct the readable-root missing-config diagnostic identified in PR #404.
+
 ## 0.20.123 — 2026-09-05
 
 ### Preserve reviewed inactive recording aliases

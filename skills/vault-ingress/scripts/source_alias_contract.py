@@ -17,6 +17,11 @@ from urllib.parse import parse_qs, urlparse
 
 
 SOURCE_ALIAS_SCHEMA_VERSION = 1
+PROMOTED_SOURCE_ALIAS_SCHEMA_VERSION = 2
+MAX_RETIRED_ALIAS_DEPTH = 32
+PRIOR_SOURCE_FIELDS = frozenset(
+    {"video_url", "youtube_id", "source_identity", "status", "reprocess_reason"}
+)
 RELATIONSHIPS = frozenset(
     {"valid_duplicate", "mirror", "superseded_by_official_upload"}
 )
@@ -80,6 +85,14 @@ def _text(value: Any, label: str) -> str:
     ):
         _refuse(label, "expected bounded nonempty trimmed text")
     return value
+
+
+def _missing(value: Any) -> bool:
+    return (
+        isinstance(value, Mapping)
+        and set(value) == {"$missing"}
+        and value["$missing"] is True
+    )
 
 
 def _timestamp(value: Any, label: str) -> None:
@@ -164,13 +177,19 @@ def _provider(value: Any, label: str) -> Mapping[str, Any]:
     return record
 
 
-def validate_alias_record(value: Any, *, label: str = "source_alias") -> None:
-    record = _shape(value, RECORD_FIELDS, label)
-    if (
-        type(record["schema_version"]) is not int
-        or record["schema_version"] != SOURCE_ALIAS_SCHEMA_VERSION
-    ):
+def _validate_alias_record(value: Any, *, label: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        _refuse(label, "unsupported record shape")
+    version = value.get("schema_version")
+    if type(version) is not int or version not in {
+        SOURCE_ALIAS_SCHEMA_VERSION,
+        PROMOTED_SOURCE_ALIAS_SCHEMA_VERSION,
+    }:
         _refuse(label, "unsupported source-alias schema version")
+    fields = RECORD_FIELDS
+    if version == PROMOTED_SOURCE_ALIAS_SCHEMA_VERSION:
+        fields = fields | {"prior_state", "retired_alias"}
+    record = _shape(value, fields, label)
     for field in ("talk_filename", "catalog_title", "reviewer"):
         _text(record[field], f"{label}.{field}")
     if (
@@ -235,6 +254,57 @@ def validate_alias_record(value: Any, *, label: str = "source_alias") -> None:
         type(agreement) is not int or not 0 <= agreement <= 10000
     ):
         _refuse(label, "agreement must be null or integer basis points")
+    if version == PROMOTED_SOURCE_ALIAS_SCHEMA_VERSION:
+        if (
+            record["relationship"] != "superseded_by_official_upload"
+            or record["canonical_choice_reason"] is None
+        ):
+            _refuse(
+                label, "promotion requires the official-upload relationship and reason"
+            )
+        prior = _shape(
+            record["prior_state"],
+            PRIOR_SOURCE_FIELDS | {"schema_version"},
+            f"{label}.prior_state",
+        )
+        if type(prior["schema_version"]) is not int or prior["schema_version"] != 1:
+            _refuse(label, "unsupported prior-source-state schema version")
+        old_url = _url(prior["video_url"], f"{label}.prior_state.video_url")
+        old_id = prior["youtube_id"]
+        if youtube_identity(old_url) != alias["video_id"] or (
+            not _missing(old_id) and old_id not in (None, "", alias["video_id"])
+        ):
+            _refuse(
+                label, "superseded state disagrees with the prior canonical identity"
+            )
+        for field in ("status", "reprocess_reason"):
+            old = prior[field]
+            if old is not None and not _missing(old):
+                _text(old, f"{label}.prior_state.{field}")
+        identity = prior["source_identity"]
+        if identity is not None and not isinstance(identity, Mapping):
+            _refuse(label, "historical source identity must be an object or null")
+    return record
+
+
+def validate_alias_record(value: Any, *, label: str = "source_alias") -> None:
+    """Read both generations and bounded, inactive retired-decision history."""
+    record = _validate_alias_record(value, label=label)
+    depth = 0
+    while record["schema_version"] == PROMOTED_SOURCE_ALIAS_SCHEMA_VERSION:
+        retired = record["retired_alias"]
+        if retired is None:
+            return
+        depth += 1
+        if depth > MAX_RETIRED_ALIAS_DEPTH:
+            _refuse(label, "retired alias history exceeds the supported depth")
+        parent = _validate_alias_record(retired, label=f"{label}.retired_alias")
+        if (
+            parent["talk_filename"] != record["talk_filename"]
+            or parent["alias"]["video_id"] != record["canonical"]["video_id"]
+        ):
+            _refuse(label, "retired decision does not belong to the promoted identity")
+        record = parent
 
 
 def active_identity(talk: Mapping[str, Any]) -> str | None:

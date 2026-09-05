@@ -116,6 +116,8 @@ When both identities are valid uploads of the same delivery, review the two
 provider-fact blocks with independent event evidence and a recording/transcript
 comparison. Follow [source-aliases.md](source-aliases.md) to retain the inactive
 identity without rejecting it or replacing the canonical recording.
+An owner-approved official-upload switch uses the separate atomic promotion
+contract in that reference, not a repair followed by an alias append.
 
 ## Report contract (v2)
 
