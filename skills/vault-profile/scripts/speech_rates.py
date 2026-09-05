@@ -66,13 +66,13 @@ def _fail(code: str, message: str) -> NoReturn:
     raise SpeechRateError(code, message)
 
 
-def _record(value: Any, keys: set[str]) -> dict:
+def _record(value: Any, keys: set[str], *, version: int = 1) -> dict:
     if not isinstance(value, dict) or set(value) != keys | {"schema_version"}:
         _fail("speech_shape_invalid", "Use the documented closed speech-rate shape.")
-    if type(value["schema_version"]) is not int or value["schema_version"] != 1:
+    if type(value["schema_version"]) is not int or value["schema_version"] != version:
         _fail(
             "speech_schema_unsupported",
-            "Use schema version 1; update the owner for other versions.",
+            "Use a supported schema version; update the owner for other versions.",
         )
     return value
 
@@ -245,6 +245,14 @@ def measure(evidence: Any) -> dict:
 
 
 def calibrate(request: Any) -> dict:
+    if (
+        isinstance(request, dict)
+        and type(request.get("schema_version")) is int
+        and request["schema_version"] == 2
+    ):
+        from speech_calibration import calibrate as calibrate_families
+
+        return calibrate_families(request)
     request = _record(request, {"cohort", "samples"})
     _text(request["cohort"])
     samples = request["samples"]
@@ -314,6 +322,14 @@ def calibrate(request: Any) -> dict:
 
 
 def validate_profile(value: Any) -> dict:
+    if (
+        isinstance(value, dict)
+        and type(value.get("schema_version")) is int
+        and value["schema_version"] == 2
+    ):
+        from speech_calibration import validate_profile as validate_family_profile
+
+        return validate_family_profile(value)
     profile = _record(value, {"calibration", "rates"})
     expected = calibrate(profile["calibration"])
     # Canonical JSON equality also rejects bool/int and int/float substitutions.
@@ -326,6 +342,16 @@ def validate_profile(value: Any) -> dict:
 
 
 def validate_rate(value: Any) -> dict:
+    family_rate = (
+        isinstance(value, dict)
+        and type(value.get("schema_version")) is int
+        and value["schema_version"] == 2
+    )
+    extra = (
+        {"mean_confidence_interval_95", "conservative_planning_wpm"}
+        if family_rate
+        else set()
+    )
     rate = _record(
         value,
         {
@@ -336,7 +362,9 @@ def validate_rate(value: Any) -> dict:
             "range",
             "basis",
             "provenance",
-        },
+        }
+        | extra,
+        version=2 if family_rate else 1,
     )
     metric = _metric(rate["metric"])
     threshold = rate["pause_threshold_seconds"]
@@ -360,6 +388,11 @@ def validate_rate(value: Any) -> dict:
             "speech_range_invalid",
             "Supply an ordered [low, high] rate range containing the point estimate.",
         )
+    if family_rate and (metric != "narration" or rate["basis"] != "measured"):
+        _fail(
+            "speech_definition_invalid",
+            "Use a measured family-balanced narration rate for schema v2.",
+        )
     if rate["basis"] == "assumption":
         provenance = _record(rate["provenance"], {"reason"})
         _text(provenance["reason"])
@@ -373,7 +406,19 @@ def validate_rate(value: Any) -> dict:
                 "method_version",
                 "evidence_sha256",
                 "range_kind",
-            },
+            }
+            | (
+                {
+                    "presentation_family_count",
+                    "language",
+                    "calibration_sha256",
+                    "confidence_level",
+                    "interval_kind",
+                }
+                if family_rate
+                else set()
+            ),
+            version=2 if family_rate else 1,
         )
         count = provenance["sample_count"]
         if type(count) is not int or not 1 <= count <= MAX_SAMPLES:
@@ -395,7 +440,9 @@ def validate_rate(value: Any) -> dict:
             )
         for digest in digests:
             _sha(digest)
-        if (
+        if family_rate:
+            _validate_family_rate(rate)
+        elif (
             provenance["method_version"] != METHOD_VERSION
             or provenance["range_kind"]
             != "observed_sample_range_not_confidence_interval"
@@ -410,6 +457,59 @@ def validate_rate(value: Any) -> dict:
             "Identify a rate as measured or an explicit assumption.",
         )
     return rate
+
+
+def _validate_family_rate(rate: dict) -> None:
+    # Called after common shape, number, range and evidence-digest validation.
+    # The full profile is validated when selecting a rate; an embedded outline
+    # rate carries provenance but cannot independently authenticate raw evidence.
+    from speech_calibration import (
+        CALIBRATION_METHOD,
+        CONFIDENCE_POLICY,
+        MEAN_INTERVAL_KIND,
+    )
+
+    provenance = rate["provenance"]
+    families = provenance["presentation_family_count"]
+    interval = rate["mean_confidence_interval_95"]
+    if not isinstance(interval, list) or len(interval) != 2:
+        _fail(
+            "speech_range_invalid",
+            "Preserve the two-sided family-mean confidence interval.",
+        )
+    lower, upper = (_number(n, positive=True) for n in interval)
+    conservative = _number(rate["conservative_planning_wpm"], positive=True)
+    observed_low, observed_high = rate["range"]
+    if (
+        not observed_low <= lower <= rate["value"] <= upper <= observed_high
+        or conservative != lower
+    ):
+        _fail(
+            "speech_range_invalid",
+            "Preserve the mean interval and its lower-bound planning rate; never replace the observed range with a confidence interval.",
+        )
+    if (
+        type(families) is not int
+        or not CONFIDENCE_POLICY["minimum_families"]
+        <= families
+        <= provenance["sample_count"]
+        or provenance["sample_count"] < CONFIDENCE_POLICY["minimum_recordings"]
+        or provenance["analyzed_duration_seconds"]
+        < CONFIDENCE_POLICY["minimum_analyzed_seconds"]
+        or provenance["method_version"] != CALIBRATION_METHOD
+        or provenance["range_kind"]
+        != "observed_recording_range_not_prediction_interval"
+        or provenance["interval_kind"] != MEAN_INTERVAL_KIND
+        or provenance["confidence_level"] != "conditional"
+        or not isinstance(provenance["language"], str)
+        or re.fullmatch(r"[a-z]{2,3}(?:-[a-z0-9]{2,8})*", provenance["language"])
+        is None
+    ):
+        _fail(
+            "speech_provenance_invalid",
+            "Copy a supported, sufficiently covered family-balanced narration rate from the owner.",
+        )
+    _sha(provenance["calibration_sha256"])
 
 
 def assumed_narration(low: float, high: float, *, reason: str) -> dict:
@@ -446,10 +546,19 @@ def plan_duration(
             "Supply a positive script word count within 50,000 words.",
         )
     if profile is not None:
-        profile = validate_profile(profile)
-        rate = next(
-            rate for rate in profile["rates"] if rate["metric"] == intended_metric
-        )
+        if (
+            isinstance(profile, dict)
+            and type(profile.get("schema_version")) is int
+            and profile["schema_version"] == 2
+        ):
+            from speech_calibration import narration_rate
+
+            rate = narration_rate(profile)
+        else:
+            profile = validate_profile(profile)
+            rate = next(
+                rate for rate in profile["rates"] if rate["metric"] == intended_metric
+            )
     elif assumption is not None:
         rate = validate_rate(assumption)
         if rate["metric"] != intended_metric or rate["basis"] != "assumption":
@@ -463,7 +572,7 @@ def plan_duration(
             "Provide a measured narration profile or an explicitly labeled assumption.",
         )
     low, high = rate["range"]
-    return {
+    result = {
         "schema_version": 1,
         "kind": "prediction_not_verification",
         "word_count": word_count,
@@ -475,6 +584,15 @@ def plan_duration(
             _number(word_count * 60 / low, positive=True),
         ],
     }
+    if rate["schema_version"] == 2:
+        result.update(
+            schema_version=2,
+            range_kind="observed_recording_range_not_prediction_interval",
+            conservative_estimated_seconds=_number(
+                word_count * 60 / rate["conservative_planning_wpm"], positive=True
+            ),
+        )
+    return result
 
 
 def verify_recording(evidence: Any, *, maximum_duration_seconds: float) -> dict:
@@ -605,4 +723,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    # Lazy family-profile dispatch imports this module's arithmetic and error
+    # class. Reuse this executable instance instead of creating a second class
+    # identity that the CLI's typed-error boundary could not catch.
+    sys.modules["speech_rates"] = sys.modules[__name__]
     raise SystemExit(main())

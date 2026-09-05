@@ -63,6 +63,8 @@ configuration. Never fall back to whichever `python3` happens to be on `PATH`.
   confirmed intents.
 - Read [speech-rates.md](references/speech-rates.md) before speech calibration or
   narration planning. Keep measured word-timing profiles separate from slide pacing.
+- Read [speech-calibration.md](references/speech-calibration.md) for the standalone
+  vault-root calibration command, sampled evidence, family balance and uncertainty.
 - Treat `tracking-database.json` as source of truth and `speaker-profile.json` as the
   output. Toolkit scripts, not prose, own cohort, opportunity, classification, pacing,
   and validation arithmetic.

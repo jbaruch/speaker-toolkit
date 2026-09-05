@@ -113,7 +113,20 @@ def render(outline: _os.Outline) -> str:
     rate = outline.talk.narration_rate
     low, high = rate["range"]
     provenance = rate["provenance"]
-    if rate["basis"] == "measured":
+    if rate["schema_version"] == 2:
+        ci_low, ci_high = rate["mean_confidence_interval_95"]
+        rate_source = (
+            f"measured family-balanced mean {rate['value']:g} WPM; "
+            f"conservative planning {rate['conservative_planning_wpm']:g} WPM; "
+            f"{provenance['sample_count']} recordings, "
+            f"{provenance['presentation_family_count']} families, "
+            f"{provenance['analyzed_duration_seconds']:g} s analyzed; "
+            f"cohort {provenance['cohort']}; language {provenance['language']}; "
+            f"{provenance['method_version']}; observed recording range; "
+            f"conditional mean 95% interval {ci_low:g}–{ci_high:g} WPM, "
+            "not a prediction interval"
+        )
+    elif rate["basis"] == "measured":
         rate_source = (
             f"measured; {provenance['sample_count']} samples, "
             f"{provenance['analyzed_duration_seconds']:g} s analyzed; "

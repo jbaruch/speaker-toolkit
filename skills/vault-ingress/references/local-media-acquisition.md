@@ -30,6 +30,9 @@ pins. A failed optional lane does not invalidate independent captions or slides.
   in-memory media/video probe from its owner. It reuses those facts and rechecks
   source generation. A serialized or hand-constructed receipt is not authority
   to skip acquisition.
+- `transcribe_local_words` uses the same acquisition owner for bounded interior
+  samples. Read [sampled-word-evidence.md](sampled-word-evidence.md) before using
+  this independent word-evidence lane; it does not write catalog transcripts.
 - `local_media_download.py`'s `download_youtube_audio` yields a private local
   artifact plus provider duration and removes the workspace when its consumer
   exits. It does not register or preserve a recording in the vault.

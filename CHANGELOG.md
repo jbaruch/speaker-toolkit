@@ -1,5 +1,39 @@
 # Changelog
 
+### Derive family-balanced narration calibration from fresh audio samples
+
+Add #368's vault-root calibration command with a metadata-only planning mode,
+explicit download opt-in, strict catalog/interpreter authority and a final
+catalog-generation check. Retain every cohort, acquisition and quality
+exclusion. Prefer declared local recordings, resolve explicit duplicates and
+keep repeated deliveries from overweighting one presentation family.
+
+Extend the ingress media owner with bounded interior PCM/WAV sampling, fresh
+native word alignment and measured language confidence. Bind original and
+sample generations, keep model revision and provider version, and clean private
+samples on success, failure and worker termination. Pin the model resolver in
+the optional Whisper extra and document the expanded native validation boundary.
+
+Keep schema-v2 calibration separate from v1 equal-sample arithmetic. Preserve
+all four word-gap metrics, per-recording and per-family values, family-balanced
+means, medians, ranges and conditional bootstrap intervals. Sparse cohorts
+remain explicitly low confidence without a planning default. No transcript,
+catalog, queue or existing speech-profile replacement is part of calibration.
+
+Add read-only v1/v2 planning and creator readers. Keep the narration mean,
+historical recording range, conditional mean interval and conservative planning
+budget separate, and refuse sparse v2 profiles even when an assumption is
+available. Final recording verification still consumes actual aligned words
+and complete recording duration. Recorder integration remains open under #364.
+
+Native validation found losslessly convertible NumPy timestamps and words
+straddling retained Whisper segment boundaries. Preserve exact timestamps and
+explicit segment membership in sampled receipt v2; reject missing overlap,
+nonpositive/overlapping word spans and sample-bound violations. Numeric-only
+worker diagnostics expose failing boundaries without leaking words or paths.
+Use correctly rounded bootstrap means so degenerate family distributions retain
+their exact observed endpoint and remain valid planning inputs.
+
 ## 0.20.126 — 2026-09-05
 
 ### Route compatible image requests through subscription Codex
