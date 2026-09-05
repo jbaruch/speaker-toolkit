@@ -404,13 +404,19 @@ def test_unrepresentable_arithmetic_is_rejected(rates, evidence):
         rates.plan_duration(100, intended_metric="narration", assumption=assumption)
 
 
-def test_decoder_recursion_failure_is_typed(rates, monkeypatch):
+@pytest.mark.parametrize("failure", [ValueError, RecursionError])
+def test_decoder_value_or_recursion_failure_is_typed(rates, monkeypatch, failure):
     def reject_deep_input(*args, **kwargs):
-        raise RecursionError
+        raise failure
 
     monkeypatch.setattr(rates.json, "loads", reject_deep_input)
     with pytest.raises(rates.SpeechRateError):
         rates.decode(b"[]")
+
+
+def test_utf16_is_not_accepted_as_utf8_json(rates):
+    with pytest.raises(rates.SpeechRateError):
+        rates.decode('{"schema_version":1}'.encode("utf-16le"))
 
 
 def test_outline_legacy_range_is_explicitly_unverified(outline, extract_script):

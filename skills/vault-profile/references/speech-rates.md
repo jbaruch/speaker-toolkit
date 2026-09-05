@@ -9,20 +9,24 @@ ingress owner's responsibility.
 
 ## Four Different Metrics
 
-Every rate uses `unit: "words_per_minute"` and a named `metric`. Method
-`word-gaps-v1` has these closed definitions:
+Every rate uses `unit: "words_per_minute"` and a named `metric`. Each emitted
+record preserves its applied `pause_threshold_seconds`; measurement records
+also expose `denominator_seconds`. The complete timeline/pause definitions
+for `word-gaps-v1` are documented in the owner's module docstring and implemented
+by `THRESHOLDS` and `_denominators` in
+`skills/vault-profile/scripts/speech_rates.py`. Execute the owner rather than
+recreating those calculations in prose or reader code.
 
-| Metric | Denominator | `pause_threshold_seconds` | Use |
-|---|---|---|---|
-| `timeline` | Complete sample duration, including leading/trailing silence and all interruptions | `null` | Describe the finished recording |
-| `narration` | Word spans plus complete internal gaps of at most 2 seconds | `2.0` | Long-form narration planning |
-| `short_phrase` | Word spans plus complete internal gaps of at most 1 second | `1.0` | Describe phrase/beat pace |
-| `articulation` | Word spans plus complete internal gaps of at most 250 milliseconds | `0.25` | Describe thresholded articulation, not end-to-end duration |
+| Metric label | Reporting and planning role |
+|---|---|
+| `timeline` | Describe the finished recording's complete timeline |
+| `narration` | Plan long-form narration |
+| `short_phrase` | Describe phrase/beat pace |
+| `articulation` | Describe thresholded articulation, not end-to-end duration |
 
-Gaps above a threshold contribute nothing; they are not clipped to the
-threshold. Articulation is an operational word-alignment metric, not a
-phonetic voice-activity detector. Do not relabel it as narration or use it
-to size a long-form script. A threshold change requires a new method version.
+Articulation is an operational word-alignment metric, not a phonetic
+voice-activity detector. Do not relabel it as narration. Preserve the method
+version and applied threshold with every copied rate.
 
 ## Recorded Word Evidence
 

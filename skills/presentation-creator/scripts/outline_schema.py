@@ -38,7 +38,7 @@ if str(_PROFILE_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_PROFILE_SCRIPTS))
 
 # The installed sibling skill owns speech-rate schemas; readers do not migrate them.
-from speech_rates import assumed_narration, validate_rate  # noqa: E402  # pyright: ignore[reportMissingImports]
+from speech_rates import assumed_narration, validate_rate  # noqa: E402
 
 
 class _StrictModel(BaseModel):

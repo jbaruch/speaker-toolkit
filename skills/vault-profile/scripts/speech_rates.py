@@ -506,8 +506,12 @@ def decode(raw: bytes) -> Any:
             "speech_json_too_large", "Reduce the calibration batch to at most 16 MiB."
         )
     try:
-        return json.loads(raw, object_pairs_hook=_pairs, parse_constant=_constant)
-    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
+        return json.loads(
+            raw.decode("utf-8"), object_pairs_hook=_pairs, parse_constant=_constant
+        )
+    except SpeechRateError:
+        raise
+    except (UnicodeDecodeError, ValueError, RecursionError):
         _fail(
             "speech_json_invalid",
             "Supply one UTF-8 JSON document matching the owner schema.",
