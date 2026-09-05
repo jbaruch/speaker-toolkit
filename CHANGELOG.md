@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.128 — 2026-09-05
+
 ### Refuse pathological unspaced Whisper output before transcript replacement
 
 Native #219 validation exposed an intermittent repetitive syllable suffix that
