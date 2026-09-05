@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.126 — 2026-09-05
+
 ### Route compatible image requests through subscription Codex
 
 Add per-render CLI/API selection shared by both generators (#385), explicit
