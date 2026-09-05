@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.124 — 2026-09-05
+
 ### Preserve superseded sources during reviewed official-upload promotion
 
 Complete the canonical replacement path in #175 with a single hash-bound owner
