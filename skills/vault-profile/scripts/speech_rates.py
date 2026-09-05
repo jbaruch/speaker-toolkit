@@ -127,9 +127,19 @@ def _metric(value: Any) -> str:
 
 
 def encode(value: Any) -> bytes:
-    raw = json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False
-    ).encode()
+    try:
+        raw = json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode()
+    except (TypeError, ValueError, RecursionError):
+        raise SpeechRateError(
+            "speech_json_invalid",
+            "Supply finite JSON-compatible values without circular or excessive nesting.",
+        ) from None
     if len(raw) > MAX_JSON_BYTES:
         _fail(
             "speech_json_too_large", "Reduce the calibration batch to at most 16 MiB."

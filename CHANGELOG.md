@@ -1,5 +1,12 @@
 # Changelog
 
+### Typed failures for invalid speech-rate serialization inputs
+
+Make the speech-rate owner's direct-library serializer reject non-JSON values,
+non-finite numbers, circular structures, and encoder recursion failures with a
+closed, redacted error. Preserve canonical output bytes, size-bound errors, and
+interrupt propagation (#402).
+
 ## 0.20.121 — 2026-09-05
 
 ### Preserve active claims during the QR-version-only owner repair
