@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.119 — 2026-09-05
+
 ### Reusable public and personal style catalogs
 
 Add versioned packaged and vault-local style catalogs with personal-over-public
