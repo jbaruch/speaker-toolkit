@@ -157,6 +157,12 @@ generation, or an instrumentation cohort.
 
 ## Pacing and Section 15
 
+`pacing.wpm_range` is a legacy unverified narration assumption with the
+2-second internal-gap definition, not a measured speaking-rate profile.
+Keep measured word-timing calibration in the separate owner artifact described
+in [speech-rates.md](speech-rates.md); do not collapse its four rate types into
+the legacy range or infer speech speed from slides per minute.
+
 Pacing is quantitative but approximate. Treat marginal slide-budget overages softly;
 the result complements, rather than replaces, Dimension 14's transcript-evident
 "rushing" assessment.

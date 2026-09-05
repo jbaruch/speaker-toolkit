@@ -131,7 +131,11 @@ executionEnvironments = [
         "skills/illustrations/scripts",
         "skills/presentation-creator/scripts",
     ] },
-    { root = "skills/presentation-creator/scripts", extraPaths = ["skills/presentation-creator/scripts"] },
+    # The outline reader consumes the vault-profile-owned speech-rate contract.
+    { root = "skills/presentation-creator/scripts", extraPaths = [
+        "skills/presentation-creator/scripts",
+        "skills/vault-profile/scripts",
+    ] },
     # clarification and profile splice the vault-ingress scripts onto sys.path
     # at import time to share its validators.
     { root = "skills/vault-clarification/scripts", extraPaths = [

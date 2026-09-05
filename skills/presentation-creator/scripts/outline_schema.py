@@ -16,6 +16,7 @@ checklist concern, not a schema concern; the schema accepts any non-antipattern.
 from __future__ import annotations
 
 import json
+import copy
 import re
 import sys
 from enum import Enum
@@ -31,6 +32,13 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+
+_PROFILE_SCRIPTS = Path(__file__).resolve().parents[2] / "vault-profile" / "scripts"
+if str(_PROFILE_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_PROFILE_SCRIPTS))
+
+# The installed sibling skill owns speech-rate schemas; readers do not migrate them.
+from speech_rates import assumed_narration, validate_rate  # noqa: E402
 
 
 class _StrictModel(BaseModel):
@@ -425,9 +433,57 @@ class TalkMetadata(_StrictModel):
     mode: str
     venue: str
     slide_budget: int = Field(gt=0)
-    pacing_wpm: tuple[int, int]
+    # Legacy read-only compatibility: unverified narration planning assumption,
+    # never a measured rate. New outlines select one typed pacing_rate instead.
+    pacing_wpm: tuple[int, int] | None = None
+    pacing_rate: dict | None = None
     architecture: str
     applied_patterns: list[AppliedPattern] = Field(default_factory=list)
+
+    @field_validator("pacing_wpm", mode="before")
+    @classmethod
+    def _legacy_pacing_is_an_ordered_integer_range(cls, value):
+        if value is None:
+            return value
+        if (
+            not isinstance(value, (list, tuple))
+            or len(value) != 2
+            or any(type(n) is not int for n in value)
+            or not 0 < value[0] <= value[1]
+        ):
+            raise ValueError(
+                "pacing_wpm requires an ordered positive integer range; use pacing_rate for measured narration"
+            )
+        return value
+
+    @field_validator("pacing_rate")
+    @classmethod
+    def _typed_pacing_is_narration(cls, value):
+        if value is None:
+            return value
+        validate_rate(value)
+        if value["metric"] != "narration":
+            raise ValueError("pacing_rate must name narration for long-form planning")
+        return value
+
+    @model_validator(mode="after")
+    def _one_pacing_source(self) -> "TalkMetadata":
+        if (self.pacing_wpm is None) == (self.pacing_rate is None):
+            raise ValueError(
+                "select exactly one pacing_rate or legacy pacing_wpm assumption"
+            )
+        return self
+
+    @property
+    def narration_rate(self) -> dict:
+        """Read a typed rate without rewriting the source outline."""
+        if self.pacing_rate is not None:
+            return copy.deepcopy(self.pacing_rate)
+        assert self.pacing_wpm is not None  # Required by _one_pacing_source.
+        return assumed_narration(
+            *self.pacing_wpm,
+            reason="legacy pacing_wpm; unverified narration assumption",
+        )
 
     @model_validator(mode="after")
     def _walk_around_is_per_claim(self) -> "TalkMetadata":
@@ -630,6 +686,9 @@ def _check_beat_slide_refs(
 
 
 class Outline(_StrictModel):
+    # Missing root stamp is the legacy read-only view. The owner writes v1 on
+    # its next authoring pass; no loader rewrites an existing outline.
+    schema_version: int = Field(default=1, strict=True, ge=1, le=1)
     talk: TalkMetadata
     style_anchor: StyleAnchor | None = None
     chapters: list[Chapter] = Field(min_length=1)
@@ -795,6 +854,7 @@ class PartialOutline(_StrictModel):
     stays the Phase 3+ source-of-truth contract.
     """
 
+    schema_version: int = Field(default=1, strict=True, ge=1, le=1)
     talk: TalkMetadata
     style_anchor: StyleAnchor | None = None
     chapters: list[Chapter] = Field(default_factory=list)
