@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "styles": [
+    {
+      "schema_version": 1,
+      "slug": "comic-book-hero",
+      "name": "Comic Book Hero",
+      "anchors": {
+        "FULL": "A bold modern comic-book / graphic-novel illustration: heavy black ink outlines, dramatic Ben-Day halftone dot shading, high-contrast cel coloring, dynamic foreshortened perspective, saturated punchy colors, and printed-comic paper grain.",
+        "IMG+TXT": "A bold modern comic-book / graphic-novel illustration: heavy black ink outlines, dramatic Ben-Day halftone dot shading, high-contrast cel coloring, dynamic foreshortened perspective, saturated punchy colors, and printed-comic paper grain."
+      },
+      "text_treatment": "Render title and footer lettering as a thick blockbuster comic logo: heavy brush/slab capitals with a bold black outline and a thin contrasting inner outline.",
+      "conventions": "Color is semantic, never decorative. When the scene names opposing roles, use ominous crimson-and-black with jagged edges for the old/brittle role and confident electric blue with warm highlights for the clean/hopeful role. Apply motion-line styling only to movement named in the scene.",
+      "composition": "poster-theatrical",
+      "tags": [
+        "narrative",
+        "comic",
+        "high-contrast"
+      ],
+      "sample": {
+        "schema_version": 1,
+        "kind": "reference",
+        "location": "https://github.com/jbaruch/speaker-toolkit/issues/92",
+        "description": "The issue identifies slide 2, “WHEN I HEAR \"MCP\"…”, from the Tim Berglund re-talk exploration. The representative image is not bundled or claimed as inspected."
+      },
+      "provenance": {
+        "schema_version": 1,
+        "kind": "exploration",
+        "reference": "https://github.com/jbaruch/speaker-toolkit/issues/92",
+        "note": "Owner-supplied anchor from the Building Agents with MCP and Data Streams exploration. Style detail is retained; lettering is separated and scene/page-furniture instructions are conditional under #87."
+      }
+    },
+    {
+      "schema_version": 1,
+      "slug": "isometric-systems-3d",
+      "name": "Isometric Systems 3D",
+      "anchors": {
+        "FULL": "A clean isometric 3D systems illustration at a fixed approximately 30-degree angle: crisp toy-like low-poly forms with soft ambient occlusion, smooth matte-plastic surfaces, gentle studio lighting and long soft shadows on a pale neutral ground. Precise geometric, infographic-grade rendering with generous clean negative space.",
+        "IMG+TXT": "A clean isometric 3D systems illustration at a fixed approximately 30-degree angle: crisp toy-like low-poly forms with soft ambient occlusion, smooth matte-plastic surfaces, gentle studio lighting and long soft shadows on a pale neutral ground. Precise geometric, infographic-grade rendering with generous clean negative space."
+      },
+      "text_treatment": "Render title and footer lettering as tidy modern geometric sans-serif, crisp and flat like a UI label.",
+      "conventions": "Use cool indigo and slate with vivid semantic accents: alarm orange-red for any brittle/problem role named in the scene and fresh teal-green for any clean/hopeful role. Color is semantic, not decorative.",
+      "composition": "poster-theatrical",
+      "tags": [
+        "systems",
+        "diagram",
+        "isometric"
+      ],
+      "sample": {
+        "schema_version": 1,
+        "kind": "reference",
+        "location": "https://github.com/jbaruch/speaker-toolkit/issues/92",
+        "description": "The issue identifies slide 2, “WHEN I HEAR \"MCP\"…”, from the Tim Berglund re-talk exploration. The representative image is not bundled or claimed as inspected."
+      },
+      "provenance": {
+        "schema_version": 1,
+        "kind": "exploration",
+        "reference": "https://github.com/jbaruch/speaker-toolkit/issues/92",
+        "note": "Owner-supplied anchor from the Building Agents with MCP and Data Streams exploration. Style detail is retained; lettering is separated and scene/page-furniture instructions are conditional under #87."
+      }
+    },
+    {
+      "schema_version": 1,
+      "slug": "illuminated-manuscript",
+      "name": "Illuminated Manuscript",
+      "anchors": {
+        "FULL": "A medieval illuminated-manuscript aesthetic: hand-inked on aged vellum with a warm parchment tone, ornate gold-leaf accents, egg-tempera mineral pigments (lapis blue, vermilion red, verdigris green, burnished gold), flattened Gothic perspective, gilt highlights, and cracked hand-illuminated texture with scribal authority.",
+        "IMG+TXT": "A medieval illuminated-manuscript aesthetic: hand-inked on aged vellum with a warm parchment tone, ornate gold-leaf accents, egg-tempera mineral pigments (lapis blue, vermilion red, verdigris green, burnished gold), flattened Gothic perspective, gilt highlights, and cracked hand-illuminated texture with scribal authority."
+      },
+      "text_treatment": "Render title and footer lettering as ornate gold-leaf Gothic blackletter with decorated illuminated initials, like a manuscript rubric.",
+      "conventions": "Color is semantic. When the scene names opposing roles, treat the problem role with vermilion-and-ink and the hopeful role with lapis-and-gold. Use foliate ornament, grotesque marginalia, beasts, halos, and borders only when the individual scene explicitly requests those elements.",
+      "composition": "poster-theatrical",
+      "tags": [
+        "historical",
+        "narrative",
+        "manuscript"
+      ],
+      "sample": {
+        "schema_version": 1,
+        "kind": "reference",
+        "location": "https://github.com/jbaruch/speaker-toolkit/issues/92",
+        "description": "The issue identifies slide 2, “WHEN I HEAR \"MCP\"…”, from the Tim Berglund re-talk exploration. The representative image is not bundled or claimed as inspected."
+      },
+      "provenance": {
+        "schema_version": 1,
+        "kind": "exploration",
+        "reference": "https://github.com/jbaruch/speaker-toolkit/issues/92",
+        "note": "Owner-supplied anchor from the Building Agents with MCP and Data Streams exploration. Style detail is retained; lettering is separated and scene/page-furniture instructions are conditional under #87."
+      }
+    }
+  ]
+}

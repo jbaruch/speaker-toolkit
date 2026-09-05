@@ -1,5 +1,16 @@
 # Changelog
 
+### Reusable public and personal style catalogs
+
+Add versioned packaged and vault-local style catalogs with personal-over-public
+shadowing by slug, digest-bound owner writes, and exact prior-byte backups. Seed
+the three owner-supplied Berglund exploration styles with explicitly unbundled
+sample references. Catalog-backed exploration preserves conventions, composition,
+and text treatment while continuing to read legacy candidate files. Add an opt-in
+public contribution form and a separate end-of-ingress offer. The delivered-talk
+visual-evidence seeding pass in #92 remains separate; these exploration seeds do
+not claim that pass is complete.
+
 ## 0.20.118 — 2026-09-04
 
 ### Clean usage errors for malformed reviewed-source digests

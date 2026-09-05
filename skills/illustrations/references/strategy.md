@@ -141,6 +141,12 @@ table.
 
 ## Step 7: Propose Styles Across the Checked Sources
 
+Read the public/personal merged catalog through the owner command in
+[skills/illustrations/references/style-catalog.md](style-catalog.md). Choose
+reusable entries by slug across the selected idea sources. Catalog membership
+does not establish concept fit, personal history, or rendered approval. A novel
+style can be added to the personal layer through the owner preview/apply flow.
+
 Present 3-4 style options spanning the Step 3 sources, each informed by **three
 inputs**:
 
@@ -191,7 +197,9 @@ Models produce meaningfully different aesthetics from the same prompt, and so do
 styles. The decision is visual — made from rendered output, not prose — and style
 and model are picked together.
 
-1. **Write `style-explore/candidates.json`** — the shortlisted models, the
+1. **Build `style-explore/candidates.json`** through the catalog owner's selection
+   command for catalog styles. Legacy hand-authored v1 inputs remain readable.
+   Include the shortlisted models, the
    candidate styles with their per-format anchor paragraphs, and one
    representative slide per format (central to the deck's concept, not the title
    slide, not an edge case; each slide must already have a complete `[STYLE
