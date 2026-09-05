@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Authenticated Codex image invocation with private output and no API retry.
 
-Capability is renewed on every selection and again before each render: resolve
-the executable, read its version/help, and check its current authentication
-method. No minimum-version assertion substitutes for these checks. The actual
-image tool may still be unavailable; that is a visible failed render.
+The optional runtime is pinned in scripts/codex-cli/package.json and its lock,
+renewed by weekly Dependabot updates. Each selection/render checks that exact
+version plus capability and authentication. The actual image tool may still be
+unavailable; that is a visible failed render.
 """
 
 from __future__ import annotations
@@ -52,6 +52,7 @@ IMAGE_MAX_DIMENSION = 8192
 PROMPT_MAX_BYTES = 64 * 1024
 MAX_EVENTS = 10000
 OUTPUT_NAME = "image.png"
+CLI_PACKAGE_DIR = Path(__file__).resolve().parent / "codex-cli"
 PROBE_LIMITS = SupervisorLimits(
     profile_id="image-cli-probe-v1",
     wall_seconds=45,
@@ -70,6 +71,8 @@ _FAILURES = PROCESS_FAILURES | {
     "cli_binary_changed",
     "cli_binary_invalid",
     "cli_version_invalid",
+    "cli_dependency_invalid",
+    "cli_version_not_pinned",
     "cli_invocation_unsupported",
     "cli_auth_required",
     "cli_auth_unverified",
@@ -164,7 +167,16 @@ def _worker(operation: str, payload: dict[str, Any]) -> Any:
 
 def probe_codex() -> CliProbe:
     """Return absent separately from a present-but-failed fresh CLI probe."""
-    binary = shutil.which("codex")
+    local_binary = (
+        CLI_PACKAGE_DIR
+        / "node_modules"
+        / ".bin"
+        / ("codex.cmd" if os.name == "nt" else "codex")
+    )
+    # A broken local install is present-and-failing, never a PATH fallback.
+    binary = (
+        str(local_binary) if os.path.lexists(local_binary) else shutil.which("codex")
+    )
     if binary is None:
         return CliProbe("absent")
     binary = os.path.abspath(binary)
@@ -246,7 +258,38 @@ def _binary(path: str) -> tuple[Path, FileGeneration]:
     return binary, generation
 
 
+def pinned_cli_version() -> str:
+    """Read the committed optional-runtime manifest, never an independent pin."""
+    try:
+        with (CLI_PACKAGE_DIR / "package.json").open("rb") as source:
+            data = source.read(65537)
+        if len(data) > 65536:
+            _fail("cli_dependency_invalid")
+        manifest = json.loads(data)
+        dependencies = (
+            manifest.get("dependencies") if isinstance(manifest, dict) else None
+        )
+        version = (
+            dependencies.get("@openai/codex")
+            if isinstance(dependencies, dict)
+            else None
+        )
+        if (
+            not isinstance(version, str)
+            or re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version) is None
+        ):
+            _fail("cli_dependency_invalid")
+        return version
+    except (OSError, ValueError, UnicodeError, RecursionError) as exc:
+        if isinstance(exc, ImageLaneError):
+            raise
+        raise ImageLaneError(
+            "cli_dependency_invalid", "restore the shipped Codex dependency manifest"
+        ) from exc
+
+
 def _probe(binary_path: str, workspace: Path) -> CliProbe:
+    pinned = pinned_cli_version()
     binary, generation = _binary(binary_path)
     version_result = run_cli_command([str(binary), "--version"], workspace)
     version_match = _VERSION.fullmatch(
@@ -254,6 +297,11 @@ def _probe(binary_path: str, workspace: Path) -> CliProbe:
     )
     if version_result.returncode != 0 or version_match is None:
         _fail("cli_version_invalid")
+    if version_match.group(1) != pinned:
+        raise ImageLaneError(
+            "cli_version_not_pinned",
+            "install the shipped Codex lock with npm ci; see image-provider-lanes.md; no API retry was selected",
+        )
     help_result = run_cli_command([str(binary), "exec", "--help"], workspace)
     required_flags = (
         b"--ephemeral",

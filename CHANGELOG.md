@@ -4,8 +4,9 @@
 
 Add per-render CLI/API selection shared by both generators (#385), explicit
 lane overrides, lazy API credentials, bounded authenticated native execution,
-and visible failures without metered retries. Renew installed CLI capability
-and authentication per use. Preserve dated aliases and exact geometry on API;
+and visible failures without metered retries. Declare a locked optional Codex
+runtime with weekly Dependabot renewal; enforce its exact version and check
+capability/authentication per use. Preserve dated aliases and exact geometry on API;
 native output requires explicit opt-in and reports its unpinned identity,
 observed dimensions, and digest. Gemini, Imagen, masks, and thumbnail composition
 retain their verified API paths. Unmasked native builds edit the preceding frame.

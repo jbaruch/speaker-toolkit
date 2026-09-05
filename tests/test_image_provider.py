@@ -93,6 +93,24 @@ def test_exact_and_api_only_requests_never_probe(
     assert message["binary"] is None and message["version"] is None
 
 
+@pytest.mark.parametrize("lane", ["auto", "api", "cli"])
+def test_unsupported_imagen_edit_returns_provider_failure_without_side_effects(
+    provider, cli, generate_illustrations, no_credentials, monkeypatch, lane
+):
+    monkeypatch.setattr(cli, "probe_codex", lambda: pytest.fail("probed CLI"))
+    gi = generate_illustrations
+    result = gi.edit_image(
+        "/unused-reference.png",
+        "erase cup",
+        "imagen-4.0-generate-001",
+        gi.ImageKeys(options=provider.ImageProviderOptions(lane, True)),
+    )
+    assert result.data is None and result.lane is None
+    assert "Image editing is not supported for Imagen" in result.detail
+    assert result.provenance()["lane"] is None
+    assert tuple(result) == (None, result.detail)
+
+
 def test_native_probe_is_fresh_for_each_selection(
     provider, cli, ready, monkeypatch, capsys
 ):

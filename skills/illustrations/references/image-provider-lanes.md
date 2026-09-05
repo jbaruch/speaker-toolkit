@@ -82,12 +82,23 @@ writes its partial result manifest before that exit.
 
 ## Dependency renewal and execution boundary
 
-Codex is an optional runtime dependency, discovered on PATH. Capability is
-renewed on every CLI selection and again before each render: resolved executable
-identity, parsed version, required non-interactive flags, and authentication.
-No minimum-version pin replaces that probe. A version change between selection
-and rendering refuses the run. The actual image-tool invocation remains a
-separate capability check: help text alone never counts as image success.
+Codex is an optional runtime dependency declared and pinned by
+`skills/illustrations/scripts/codex-cli/package.json` and `package-lock.json`.
+Weekly Dependabot PRs renew the pin; dependency bumps retain their own review
+and capability validation. Install the isolated, locked runtime without changing
+your global CLI or login:
+
+```bash
+npm ci --ignore-scripts --prefix "{speaker_toolkit_root}/skills/illustrations/scripts/codex-cli"
+```
+
+The adapter prefers this local installation, then discovers Codex on PATH when
+the local installation is absent. Either must match the manifest's exact version;
+a mismatched or broken installation fails visibly, without selecting another
+binary or billing API. `pinned_cli_version` reads the manifest as the sole pin.
+Every selection/render also checks executable identity, required invocation
+flags, and authentication. The actual image-tool invocation remains a separate
+capability check: a matching version and help text alone never count as success.
 
 `image_cli.py` uses the co-shipped authenticated supervisor and an owner-private
 temporary workspace. Its probe and render profiles bound wall time, memory, and

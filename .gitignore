@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 .venv/
+/skills/illustrations/scripts/codex-cli/node_modules/
 
 # OS metadata. `tessl plugin pack` reads the working tree, not the git index, so
 # an unignored .DS_Store under skills/ ships to consumers.

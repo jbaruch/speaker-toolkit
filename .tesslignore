@@ -30,7 +30,7 @@
 /.tessl/
 /.venv/
 node_modules/
-package-lock.json
+/package-lock.json
 
 # VCS metadata
 /.gitignore

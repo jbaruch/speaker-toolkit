@@ -14,8 +14,15 @@ from conftest import SCRIPTS_ILL, _import_script
 
 
 @pytest.fixture
-def cli():
-    return _import_script(Path(SCRIPTS_ILL) / "image_cli.py", "image_cli")
+def cli(monkeypatch, tmp_path):
+    module = _import_script(Path(SCRIPTS_ILL) / "image_cli.py", "image_cli")
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "package.json").write_text(
+        json.dumps({"dependencies": {"@openai/codex": "0.153.2"}})
+    )
+    monkeypatch.setattr(module, "CLI_PACKAGE_DIR", package)
+    return module
 
 
 @pytest.fixture
@@ -65,6 +72,112 @@ def test_absence_is_not_a_failed_probe(cli, monkeypatch):
     monkeypatch.setattr(cli.shutil, "which", lambda name: None)
     monkeypatch.setattr(cli, "_worker", lambda *a: pytest.fail("must not start worker"))
     assert cli.probe_codex() == cli.CliProbe("absent")
+
+
+def test_shipped_cli_pin_lock_and_renewal_agree():
+    import yaml
+
+    package = Path(SCRIPTS_ILL) / "codex-cli"
+    manifest = json.loads((package / "package.json").read_text())
+    lock = json.loads((package / "package-lock.json").read_text())
+    version = manifest["dependencies"]["@openai/codex"]
+    assert (
+        all(part.isdigit() for part in version.split("."))
+        and len(version.split(".")) == 3
+    )
+    assert lock["packages"][""]["dependencies"]["@openai/codex"] == version
+    assert lock["packages"]["node_modules/@openai/codex"]["version"] == version
+    assert lock["packages"]["node_modules/@openai/codex"]["integrity"].startswith(
+        "sha512-"
+    )
+    root = Path(__file__).resolve().parents[1]
+    updates = yaml.safe_load((root / ".github" / "dependabot.yml").read_text())[
+        "updates"
+    ]
+    assert any(
+        update["package-ecosystem"] == "npm"
+        and update["directory"] == "/skills/illustrations/scripts/codex-cli"
+        and update["schedule"]["interval"] == "weekly"
+        for update in updates
+    )
+
+
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        [],
+        {},
+        {"dependencies": []},
+        {"dependencies": {"@openai/codex": "latest"}},
+        {"dependencies": {"@openai/codex": "^0.153.2"}},
+    ],
+)
+def test_bad_dependency_manifest_is_a_closed_refusal(cli, manifest):
+    (cli.CLI_PACKAGE_DIR / "package.json").write_text(json.dumps(manifest))
+    with pytest.raises(cli.ImageLaneError, match="cli_dependency_invalid"):
+        cli.pinned_cli_version()
+
+
+def test_missing_dependency_manifest_is_not_a_runtime_guess(cli):
+    (cli.CLI_PACKAGE_DIR / "package.json").unlink()
+    with pytest.raises(cli.ImageLaneError, match="cli_dependency_invalid"):
+        cli.pinned_cli_version()
+
+
+@pytest.mark.parametrize("data", [b"{", b"\xff", b" " * 65537])
+def test_unreadable_or_oversized_dependency_data_is_a_closed_refusal(cli, data):
+    (cli.CLI_PACKAGE_DIR / "package.json").write_bytes(data)
+    with pytest.raises(cli.ImageLaneError, match="cli_dependency_invalid"):
+        cli.pinned_cli_version()
+
+
+def test_unpinned_cli_version_refuses_before_help_or_auth(cli, monkeypatch, tmp_path):
+    binary = tmp_path / "codex"
+    binary.write_bytes(b"fake")
+    calls = []
+
+    def run(command, workspace):
+        calls.append(command)
+        return SimpleNamespace(returncode=0, stdout=b"codex-cli 0.153.3", stderr=b"")
+
+    monkeypatch.setattr(cli, "run_cli_command", run)
+    with pytest.raises(cli.ImageLaneError, match="cli_version_not_pinned") as caught:
+        cli._probe(str(binary), tmp_path)
+    assert len(calls) == 1
+    assert "npm ci" in str(caught.value)
+
+
+def test_local_locked_install_is_preferred_over_path(cli, monkeypatch):
+    binary = (
+        cli.CLI_PACKAGE_DIR
+        / "node_modules"
+        / ".bin"
+        / ("codex.cmd" if cli.os.name == "nt" else "codex")
+    )
+    binary.parent.mkdir(parents=True)
+    binary.write_bytes(b"fixture executable")
+    monkeypatch.setattr(cli.shutil, "which", lambda *a: pytest.fail("consulted PATH"))
+
+    def worker(operation, payload):
+        assert payload["binary"] == str(binary)
+        return asdict(
+            cli.CliProbe("ready", str(binary), "0.153.2", auth_mode="chatgpt")
+        )
+
+    monkeypatch.setattr(cli, "_worker", worker)
+    assert cli.probe_codex().binary == str(binary)
+
+
+def test_broken_local_install_never_selects_a_second_binary(cli, monkeypatch):
+    monkeypatch.setattr(cli.os.path, "lexists", lambda *a: True)
+    monkeypatch.setattr(cli.shutil, "which", lambda *a: pytest.fail("consulted PATH"))
+
+    def worker(*a):
+        raise cli.ImageLaneError("cli_binary_invalid", "repair local install")
+
+    monkeypatch.setattr(cli, "_worker", worker)
+    result = cli.probe_codex()
+    assert result.state == "failed" and result.failure_code == "cli_binary_invalid"
 
 
 def test_present_probe_uses_authenticated_worker(cli, monkeypatch, ready):

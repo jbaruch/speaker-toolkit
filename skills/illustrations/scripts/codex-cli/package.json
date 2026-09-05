@@ -1,0 +1,9 @@
+{
+  "name": "speaker-toolkit-image-cli",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Optional pinned Codex runtime for subscription image generation",
+  "dependencies": {
+    "@openai/codex": "0.153.2"
+  }
+}

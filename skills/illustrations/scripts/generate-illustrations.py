@@ -1167,7 +1167,7 @@ def generate_image(prompt, model, keys, slide_format=None):
 
 def edit_image(
     input_path, edit_prompt, model, keys, slide_format=None, erase_region=None
-):
+) -> ImageRender:
     """Edit an existing image via the appropriate vendor endpoint.
 
     Auto-appends vendor-agnostic safety suffixes to the prompt to prevent
@@ -1183,7 +1183,8 @@ def edit_image(
             When None, the historical whole-frame regeneration is used.
 
     Returns:
-        tuple (image_bytes, mime_type) on success, or (None, error_message) on failure.
+        ImageRender with bytes/MIME type or a failure message, plus lane provenance.
+        Two-value unpacking remains compatible with the historical tuple result.
     """
     suffixes = []
     lower_prompt = edit_prompt.lower()
@@ -1199,10 +1200,12 @@ def edit_image(
     sizing = sizing_for(slide_format)
 
     if family == "imagen":
-        return None, (
+        return ImageRender(
+            None,
             f"Image editing is not supported for Imagen models ({model}). "
             "Imagen has no public edit endpoint — use a Gemini or OpenAI "
-            "model for --edit / --build / --fix workflows."
+            "model for --edit / --build / --fix workflows.",
+            None,
         )
 
     width, height = sizing["openai_size"].split("x")
