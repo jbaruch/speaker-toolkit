@@ -29,7 +29,7 @@ Usage:
 Requires:
     - Gemini API key in {vault}/secrets.json (preferred) or GEMINI_API_KEY env var
     - Pillow (pip install Pillow)
-    - Python 3.7+
+    - Python 3.10+
 """
 
 import argparse
@@ -40,6 +40,14 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+
+from image_lane_contract import ImageLaneError
+from image_provider import (
+    ImageProviderOptions,
+    add_image_lane_arguments,
+    report_lane,
+    select_image_lane,
+)
 
 try:
     from PIL import Image
@@ -605,8 +613,29 @@ def extract_slide_from_pptx(pptx_path, slide_num, output_path=None):
 
 def compose_thumbnail(args):
     """Generate a thumbnail by composing slide image + speaker photo via Gemini."""
-    api_key = load_api_key(args.vault)
     model = args.model or DEFAULT_MODEL
+    options = ImageProviderOptions(
+        getattr(args, "image_lane", "auto"), getattr(args, "allow_cli_native", False)
+    )
+    try:
+        lane = select_image_lane(
+            model,
+            options,
+            operation="edit",
+            reference_count=2,
+            requested_size=(YOUTUBE_WIDTH, YOUTUBE_HEIGHT),
+            report=False,
+        )
+        if lane.family != "gemini":
+            raise ImageLaneError(
+                "thumbnail_family_unsupported",
+                "select a Gemini image model for composition",
+            )
+    except ImageLaneError as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        sys.exit(1)
+    model = lane.served_model
+    api_key = load_api_key(args.vault)
 
     # Load images
     print(f"Loading slide image: {args.slide_image}")
@@ -640,6 +669,12 @@ def compose_thumbnail(args):
             f"{'...' if len(anchor_preview) > 80 else ''}"
         )
         try:
+            select_image_lane(
+                model,
+                options,
+                operation="edit",
+                reference_count=1,
+            )
             speaker_b64, speaker_mime = stylize_portrait(
                 speaker_b64,
                 speaker_mime,
@@ -676,6 +711,7 @@ def compose_thumbnail(args):
             aesthetic=args.aesthetic,
         )
         parts = image_parts + [{"text": prompt}]
+        report_lane(lane)
         image_bytes, result_mime = call_gemini(parts, model, api_key)
         if image_bytes is not None:
             if softness != "default":
@@ -789,6 +825,7 @@ def main():
         help="Extract a slide image from a PPTX deck",
     )
 
+    add_image_lane_arguments(parser)
     args = parser.parse_args()
 
     # Extract-slide mode

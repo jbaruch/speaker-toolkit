@@ -143,7 +143,9 @@ def _single_build_slide(steps):
 def _stub_build_deps(gi, monkeypatch, tmp_path, outline, edit_calls):
     base = tmp_path / "slide-60.png"
     base.write_bytes(b"img")
-    monkeypatch.setattr(gi, "_load_context", lambda p: ({}, outline, str(tmp_path)))
+    monkeypatch.setattr(
+        gi, "_load_context", lambda p, **kw: ({}, outline, str(tmp_path))
+    )
     monkeypatch.setattr(gi, "find_base_image", lambda d, n: str(base))
     monkeypatch.setattr(gi, "effective_slide_format", lambda *a, **k: None)
     monkeypatch.setattr(gi.time, "sleep", lambda *a, **k: None)
@@ -267,7 +269,9 @@ def test_run_build_forwards_erase_region_to_edit(
     base = tmp_path / "slide-60.png"
     base.write_bytes(b"img")
     calls = []
-    monkeypatch.setattr(gi, "_load_context", lambda p: ({}, outline, str(tmp_path)))
+    monkeypatch.setattr(
+        gi, "_load_context", lambda p, **kw: ({}, outline, str(tmp_path))
+    )
     monkeypatch.setattr(gi, "find_base_image", lambda d, n: str(base))
     monkeypatch.setattr(gi, "effective_slide_format", lambda *a, **k: None)
     monkeypatch.setattr(gi.time, "sleep", lambda *a, **k: None)
@@ -305,7 +309,9 @@ def test_run_build_exits_nonzero_when_edit_fails(
             {"step": 1, "description": "[FULL] all panels", "is_full": True},
         ]
     )
-    monkeypatch.setattr(gi, "_load_context", lambda p: ({}, outline, str(tmp_path)))
+    monkeypatch.setattr(
+        gi, "_load_context", lambda p, **kw: ({}, outline, str(tmp_path))
+    )
     monkeypatch.setattr(gi, "find_base_image", lambda d, n: str(base))
     monkeypatch.setattr(gi, "effective_slide_format", lambda *a, **k: None)
     monkeypatch.setattr(gi.time, "sleep", lambda *a, **k: None)
@@ -1215,6 +1221,9 @@ def test_rendered_manifest_excludes_failed(generate_illustrations, tmp_path):
             "model": "nano-banana-pro",
             "status": "OK",
             "rel_path": "a/full/x.png",
+            "provenance": gi.ImageRender(
+                b"image", "image/png", gi.select_image_lane("nano-banana-pro")
+            ).provenance(),
         },
         {
             "style": "A",
@@ -1226,7 +1235,7 @@ def test_rendered_manifest_excludes_failed(generate_illustrations, tmp_path):
     ]
     path = gi.write_rendered_manifest(str(base), str(outline), results)
     m = json.loads(open(path).read())
-    assert m["schema_version"] == 1
+    assert m["schema_version"] == 2
     # nano-banana-pro resolves to its canonical id; the failed model is absent
     assert m["models_rendered_ok"] == ["gemini-3-pro-image"]
     assert len(m["cells"]) == 2
@@ -1297,7 +1306,9 @@ def test_gate_fails_when_model_only_failed(generate_illustrations, tmp_path):
 
 
 def _stub_generate(gi, monkeypatch, outline_dict, output_dir, gen_calls):
-    monkeypatch.setattr(gi, "_load_context", lambda p: ({}, outline_dict, output_dir))
+    monkeypatch.setattr(
+        gi, "_load_context", lambda p, **kw: ({}, outline_dict, output_dir)
+    )
     monkeypatch.setattr(gi.time, "sleep", lambda *a, **k: None)
     monkeypatch.setattr(
         gi,
@@ -1436,7 +1447,7 @@ def test_run_generate_poster_embeds_text_and_skips_safe_zone(
 
     prompts = []
     monkeypatch.setattr(
-        gi, "_load_context", lambda p: ({}, outline_dict, str(tmp_path))
+        gi, "_load_context", lambda p, **kw: ({}, outline_dict, str(tmp_path))
     )
     monkeypatch.setattr(gi.time, "sleep", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -1471,7 +1482,7 @@ def test_gate_fails_on_unsupported_schema_version(generate_illustrations, tmp_pa
     _write_raw_manifest(
         tmp_path,
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "outline": "outline.yaml",
             "models_rendered_ok": ["gemini-3-pro-image"],
             "cells": [],

@@ -2,6 +2,47 @@
 
 from datetime import date
 
+import pytest
+
+
+@pytest.mark.parametrize(
+    "model,canonical,family",
+    [
+        ("GPT-IMAGE-2", "gpt-image-2-2026-04-21", "openai"),
+        ("Nano-Banana-Pro", "gemini-3-pro-image", "gemini"),
+        ("imagen-4-ultra", "imagen-4.0-ultra-generate-001", "imagen"),
+        ("gpt-image-ad-hoc", "gpt-image-ad-hoc", "openai"),
+    ],
+)
+def test_lane_resolver_uses_the_registry_alias_contract(
+    model_registry, model, canonical, family
+):
+    result = model_registry.resolve_image_lane(model)
+    assert (
+        result.requested_model,
+        result.served_model,
+        result.family,
+        result.lane,
+    ) == (canonical, canonical, family, "api")
+
+
+@pytest.mark.parametrize("model", [None, [], "", "unsupported-vendor-model"])
+def test_lane_resolver_rejects_unknown_vendor_before_dispatch(model_registry, model):
+    with pytest.raises(model_registry.ImageLaneError):
+        model_registry.resolve_image_lane(model)
+
+
+def test_registry_native_choice_never_claims_the_snapshot(model_registry):
+    probe = model_registry.CliProbe(
+        "ready", "/synthetic/bin/codex", "0.153.2", auth_mode="chatgpt"
+    )
+    result = model_registry.resolve_image_lane(
+        "gpt-image-2", probe, allow_native_model=True
+    )
+    assert result.lane == "cli"
+    assert result.requested_model == "gpt-image-2-2026-04-21"
+    assert result.served_model == "codex-native-image-model-unpinned"
+
 
 # --- Registry shape ---
 

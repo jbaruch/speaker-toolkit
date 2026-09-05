@@ -32,6 +32,14 @@ python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-illustrati
 
 Output: `illustrations/builds/slide-NN-build-MM.jpg`.
 
+Lane options are shared with generation; see
+[image-provider-lanes.md](image-provider-lanes.md). Unmasked OpenAI edits can
+chain through Codex with `--image-lane cli --allow-cli-native`. Each call edits
+the previous frame; it does not regenerate from a fresh prompt. Native geometry
+may vary. `erase_region` remains API-only: auto reports the API decision;
+forcing CLI refuses with `cli_mask_not_supported` before the edit. A failed
+edit aborts that slide's remaining chain and exits non-zero.
+
 ## Edit-Prompt Authoring
 
 Each build step in `outline.yaml` carries two fields. `desc` is the additive,

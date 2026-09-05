@@ -70,14 +70,15 @@ either version do not migrate or rewrite the input.
 
 - **Writer**: `generate-illustrations.py --style-explore` (`write_rendered_manifest`)
 - **Readers**: `generate-illustrations.py --check-style-explore` and the
-  `run_generate` render-before-bake guard
+  `run_generate` / `run_build` render-before-bake guards; strategy consumers use
+  the `--check-style-explore` verdict, not their own manifest parser
 - **Purpose**: the machine-readable record of what actually rendered, so the gate
   can confirm a baked model was rendered. `index.md` is the human contact sheet;
   `rendered.json` is the gate's source of truth.
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "outline": "outline.yaml",
   "outline_dir": "devnexus26-robocoders",
   "rendered_at": "2026-06-08T12:00:00Z",
@@ -85,10 +86,16 @@ either version do not migrate or rewrite the input.
   "cells": [
     {"style": "Blueprint Schematic", "format": "FULL",
      "model": "nano-banana-pro", "model_resolved": "gemini-3-pro-image",
-     "status": "OK", "rel_path": "blueprint-schematic/full/gemini-3-pro-image.png"},
+     "status": "OK", "rel_path": "blueprint-schematic/full/gemini-3-pro-image.png",
+     "provenance": {
+       "lane": {"family": "gemini", "lane": "api", "operation": "generate",
+                "requested_model": "gemini-3-pro-image", "served_model": "gemini-3-pro-image",
+                "geometry": "requested", "reason_code": "family_api_only",
+                "binary": null, "version": null},
+       "width": null, "height": null, "sha256": null, "warning_count": 0}},
     {"style": "Blueprint Schematic", "format": "FULL",
      "model": "gpt-image-2", "model_resolved": "gpt-image-2-2026-04-21",
-     "status": "FAIL", "error": "rate limited"}
+     "status": "FAIL", "error": "rate limited", "provenance": null}
   ]
 }
 ```
@@ -97,10 +104,30 @@ Fields:
 
 - `outline` — outline filename; `outline_dir` — talk-directory name. Together a
   per-talk discriminator.
-- `models_rendered_ok` — human-readable summary of OK-rendered canonical ids.
+- `models_rendered_ok` — human-readable summary of successful **served** model
+  identities, not a list of bake-eligible requested models.
 - `cells` — one entry per rendered cell: `model` / `model_resolved` (codenames
   resolve via the registry alias map), `format`, `style`, `status`, and `rel_path`
-  (relative to `style-explore/`) or `error`.
+  (relative to `style-explore/`) or `error`, plus `provenance`.
+- `provenance` — `null` for a failure before selection; otherwise `lane` carries
+  the dispatch plan's fields shown above. `width`, `height`, and `sha256` are
+  populated from verified native output, or `null` when unavailable. API output
+  keeps its existing adapter contract; these fields do not invent an inspection.
+  `warning_count` is a non-negative integer counting native non-fatal item
+  diagnostics, also announced on stderr; API outcomes use zero.
+- Native `lane: cli` uses served model `codex-native-image-model-unpinned`,
+  `geometry: native_observed`, and the resolved absolute binary/version. Such a
+  cell cannot prove a dated API model, even if `model_resolved` names one.
+
+The writer emits v2. The reader accepts historical API-only v1 and v2 during the
+additive rollout; reading either version is read-only. V1 has no native cells,
+so its historical model identity remains usable subject to existing live-file
+checks. V2 never infers absent provenance. The next owner `--style-explore` run
+replaces its prior grid manifest with v2 from actual new render outcomes; no
+reader stamps old images with guessed native metadata. Missing, malformed, or
+future versions provide no usable prior state and return an actionable failure.
+Other skills must not rewrite this artifact or initiate a paid rerender merely
+to migrate it.
 
 The render-before-bake gate's eligibility predicate — which cells count, the
 live-file evidence check, path containment, and the per-talk copied/stale
