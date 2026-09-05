@@ -3,6 +3,7 @@
 import copy
 import json
 from pathlib import Path
+import re
 import stat
 import subprocess
 import sys
@@ -12,6 +13,19 @@ import pytest
 
 from conftest import SCRIPTS_ILL, _import_script
 from test_generate_illustrations import _write_outline
+
+
+DELIVERED_SLUGS = {
+    "halftone-editorial-comic",
+    "indigo-vermilion-woodblock",
+    "midnight-terminal",
+    "neon-pixel-arcade",
+    "patinated-ochre-oil",
+    "primary-brick-diorama",
+    "selective-color-noir",
+    "synthwave-line-art-comic",
+    "wartime-technical-manual",
+}
 
 
 @pytest.fixture
@@ -44,7 +58,7 @@ def write_json(path, value):
 
 def test_packaged_seeds_are_closed_versioned_references(catalog):
     merged = catalog.load_merged()
-    assert {style["slug"] for style in merged["styles"]} == {
+    assert {style["slug"] for style in merged["styles"]} == DELIVERED_SLUGS | {
         "comic-book-hero",
         "isometric-systems-3d",
         "illuminated-manuscript",
@@ -58,6 +72,58 @@ def test_packaged_seeds_are_closed_versioned_references(catalog):
     assert merged["personal_sha256"] == "missing"
 
 
+@pytest.mark.parametrize("slug", sorted(DELIVERED_SLUGS))
+def test_delivered_seed_survives_real_candidate_reader(
+    catalog, generate_illustrations, tmp_path, slug
+):
+    merged = catalog.load_merged()
+    source = next(style for style in merged["styles"] if style["slug"] == slug)
+    assert source["provenance"]["kind"] == "delivered-talk"
+    assert source["provenance"]["reference"].startswith("https://speaking.jbaru.ch/")
+    assert source["sample"]["location"].startswith("https://drive.google.com/file/d/")
+    assert "PDF page" in source["sample"]["description"]
+    formats = {"FULL": 3}
+    if source["composition"] == "overlay":
+        formats["IMG+TXT"] = 4
+    candidate = catalog.seed_candidates(merged, selection([slug], slides=formats))
+    path = write_json(tmp_path / "candidates.json", candidate)
+    parsed = generate_illustrations.parse_candidates(str(path))
+    assert parsed["styles"] == [source]
+    assert parsed["slides"] == formats
+
+
+def test_delivered_audit_covers_twenty_decks_and_every_new_style(catalog):
+    audit = (
+        Path(SCRIPTS_ILL).parent / "references" / "delivered-style-seeds.md"
+    ).read_text(encoding="utf-8")
+    coverage = re.findall(
+        r"^\| \[(2026-[^\]]+)\]\((https://speaking\.jbaru\.ch/[^)]+)\)"
+        r" \| (\d+) \| ([^|]+) \|",
+        audit,
+        re.MULTILINE,
+    )
+    assert len(coverage) == 20
+    assert len({url for _, url, _, _ in coverage}) == 20
+    assert sum(int(pages) for _, _, pages, _ in coverage) == 819
+    assert min(label[:10] for label, _, _, _ in coverage) == "2026-04-01"
+    assert max(label[:10] for label, _, _, _ in coverage) == "2026-09-03"
+    mapped = set()
+    for _, _, _, entries in coverage:
+        slugs = set(re.findall(r"`([a-z0-9-]+)`", entries))
+        assert slugs and slugs <= DELIVERED_SLUGS
+        mapped.update(slugs)
+    assert mapped == DELIVERED_SLUGS
+    fingerprints = re.findall(
+        r"\]\((https://drive\.google\.com/file/d/[^)]+)\) \| `([0-9a-f]{64})`",
+        audit,
+    )
+    assert len(fingerprints) == len({url for url, _ in fingerprints}) == 20
+    references = {url for url, _ in fingerprints}
+    for style in catalog.load_merged()["styles"]:
+        if style["slug"] in DELIVERED_SLUGS:
+            assert style["sample"]["location"] in references
+
+
 def test_personal_shadow_and_union_leave_public_untouched(catalog, tmp_path):
     original = catalog.PUBLIC_PATH.read_bytes()
     entry = personal_entry(catalog, "comic-book-hero")
@@ -67,7 +133,7 @@ def test_personal_shadow_and_union_leave_public_untouched(catalog, tmp_path):
         {"schema_version": 1, "styles": [entry, custom]},
     )
     merged = catalog.load_merged(tmp_path)
-    assert len(merged["styles"]) == 4
+    assert len(merged["styles"]) == len(catalog.load_merged()["styles"]) + 1
     shadow = next(
         style for style in merged["styles"] if style["slug"] == "comic-book-hero"
     )
@@ -258,7 +324,9 @@ def test_preview_apply_backup_and_exact_idempotence(catalog, tmp_path):
     second = personal_entry(catalog, "second-style")
     changed = catalog.put_entry(tmp_path, second, catalog.digest(original), apply=True)
     assert Path(changed["backup"]).read_bytes() == original
-    assert len(catalog.load_merged(tmp_path)["styles"]) == 5
+    assert len(catalog.load_merged(tmp_path)["styles"]) == (
+        len(catalog.load_merged()["styles"]) + 2
+    )
     assert (
         next(
             item

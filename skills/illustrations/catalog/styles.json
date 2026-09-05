@@ -87,6 +87,276 @@
         "reference": "https://github.com/jbaruch/speaker-toolkit/issues/92",
         "note": "Owner-supplied anchor from the Building Agents with MCP and Data Streams exploration. Style detail is retained; lettering is separated and scene/page-furniture instructions are conditional under #87."
       }
+    },
+    {
+      "schema_version": 1,
+      "slug": "wartime-technical-manual",
+      "name": "Wartime Technical Manual",
+      "anchors": {
+        "FULL": "A mid-twentieth-century technical-manual illustration: precise black and warm-sepia pen linework, fine crosshatching and stippled shadows, restrained engraved detail, and lightly foxed cream paper with an aged matte print texture. Mechanical and human forms use period instructional-drawing proportions rather than glossy contemporary 3D rendering.",
+        "IMG+TXT": "A mid-twentieth-century technical-manual illustration: precise black and warm-sepia pen linework, fine crosshatching and stippled shadows, restrained engraved detail, and lightly foxed cream paper with an aged matte print texture. Mechanical and human forms use period instructional-drawing proportions rather than glossy contemporary 3D rendering."
+      },
+      "text_treatment": "Use heavy, condensed, upright black sans-serif capitals with the slightly uneven ink character of old technical printing. Render any explicitly requested handwritten annotation in restrained blue ink.",
+      "conventions": "Keep the main drawing monochrome. Reserve muted blue for an explanatory emphasis and red for a warning when those meanings are requested. Borders, seals, stamps, numbered figures, arrows, labels, panels and machinery are scene content, never automatic decorations.",
+      "composition": "poster-theatrical",
+      "tags": [
+        "historical",
+        "technical",
+        "line-art",
+        "paper"
+      ],
+      "sample": {
+        "schema_version": 1,
+        "kind": "reference",
+        "location": "https://drive.google.com/file/d/1sRoSrOn4YH5bwDATlow9UR4JlOuLJCED/view",
+        "description": "Representative delivered-deck PDF page 18. The 58-page local source associated with this public deck was rendered and visually inspected on 2026-09-05. This is a deck reference, not bundled as a raster sample or approval of a newly generated exploration image."
+      },
+      "provenance": {
+        "schema_version": 1,
+        "kind": "delivered-talk",
+        "reference": "https://speaking.jbaru.ch/talks/2026-04-14-arcofai26-ai-native-dev/",
+        "note": "Derived from the visual language of The AI-Native Developer at Arc of AI, 2026-04-14. Source-specific people, claims, branding, page furniture and diagrams are not part of the reusable anchor."
+      }
+    },
+    {
+      "schema_version": 1,
+      "slug": "synthwave-line-art-comic",
+      "name": "Synthwave Line-Art Comic",
+      "anchors": {
+        "FULL": "A retro-futurist synthwave comic illustration with clean, continuous contour lines, flat cel-shaded forms, deep midnight-blue shadows, electric-cyan edge light, and saturated orange highlights. Use crisp vector-like detail, controlled neon glow and strong dark-to-luminous contrast rather than visible pixel blocks or photographic texture.",
+        "IMG+TXT": "A retro-futurist synthwave comic illustration with clean, continuous contour lines, flat cel-shaded forms, deep midnight-blue shadows, electric-cyan edge light, and saturated orange highlights. Use crisp vector-like detail, controlled neon glow and strong dark-to-luminous contrast rather than visible pixel blocks or photographic texture."
+      },
+      "text_treatment": "Use bold forward-slanted block capitals with orange fill, a fine pale outline and a restrained dark extrusion. Keep lettering crisp and consistent with the illustrated linework.",
+      "conventions": "Maintain a cool blue/cyan field with concentrated warm-orange emphasis. Perspective grids, circuit traces, lightning, vehicles, characters, interface panels and footer text appear only when the individual scene requests them; no recurring franchise imagery is implied.",
+      "composition": "poster-theatrical",
+      "tags": [
+        "retro",
+        "synthwave",
+        "comic",
+        "high-contrast"
+      ],
+      "sample": {
+        "schema_version": 1,
+        "kind": "reference",
+        "location": "https://drive.google.com/file/d/1Nz07GwJtFc1qfieKsNuhQmIHurZVAC6h/view",
+        "description": "Representative delivered-deck PDF page 19. The 66-page local source associated with this public deck was rendered and visually inspected on 2026-09-05. This is a deck reference, not bundled as a raster sample or approval of a newly generated exploration image."
+      },
+      "provenance": {
+        "schema_version": 1,
+        "kind": "delivered-talk",
+        "reference": "https://speaking.jbaru.ch/talks/2026-04-16-arcofai-bttf-2026/",
+        "note": "Derived from the illustrated pages of Back To The Future of Software at Arc of AI, 2026-04-16. Photographs, embedded screenshots, film characters and recurring branded scenery remain source-specific content."
+      }
+    },
+    {
+      "schema_version": 1,
+      "slug": "neon-pixel-arcade",
+      "name": "Neon Pixel Arcade",
+      "anchors": {
+        "FULL": "A richly detailed retro-arcade pixel illustration with visibly stepped sprite edges, compact pixel clusters, hard dark contours, dithered shading and subtle horizontal CRT scanline texture. Set luminous cyan, violet and magenta against near-black navy, with selective amber highlights and tightly controlled emissive bloom.",
+        "IMG+TXT": "A richly detailed retro-arcade pixel illustration with visibly stepped sprite edges, compact pixel clusters, hard dark contours, dithered shading and subtle horizontal CRT scanline texture. Set luminous cyan, violet and magenta against near-black navy, with selective amber highlights and tightly controlled emissive bloom."
+      },
+      "text_treatment": "Use crisp arcade block or monospaced capitals with pixel-stepped outlines. Main display lettering may use a bright cyan or warm-amber face with a dark outline and restrained neon highlight; supporting labels remain legible, compact and monospaced.",
+      "conventions": "When a scene explicitly names opposing roles, maintain a stable amber/orange accent for one and cyan/blue for the other. Robots, arenas, scoreboards, health bars, versus marks, stage labels, cabinets and city scenery are optional scene content, not permanent style furniture.",
+      "composition": "poster-theatrical",
+      "tags": [
+        "retro",
+        "arcade",
+        "pixel-art",
+        "neon"
+      ],
+      "sample": {
+        "schema_version": 1,
+        "kind": "reference",
+        "location": "https://drive.google.com/file/d/1Egbfosfz_Ki7jVjlDCnne88Gq2tXeYIh/view",
+        "description": "Representative delivered-deck PDF page 10. All 17 pages were rendered and visually inspected, with page 10 checked individually on 2026-09-05. The arcade treatment also appears in the separately inspected JNation Codepocalypse deck. This is a deck reference, not bundled as a raster sample or generated-style approval."
+      },
+      "provenance": {
+        "schema_version": 1,
+        "kind": "delivered-talk",
+        "reference": "https://speaking.jbaru.ch/talks/2026-05-26-jnation-2026-robocoders-judgment-day/",
+        "note": "Derived from the illustrated stage pages of RoboCoders at JNation, 2026-05-26. The same deck's terminal-style text pages are a separate visual mode; the arcade anchor does not claim to describe every page."
+      }
+    },
+    {
+      "schema_version": 1,
+      "slug": "midnight-terminal",
+      "name": "Midnight Terminal",
+      "anchors": {
+        "FULL": "A restrained terminal/editor visual language: an untextured near-black or dark-indigo ground, crisp pale monospaced lettering and sparse flat geometric marks, with muted lavender, mint and warm amber accents. Keep edges clear, contrast readable and rendering deliberately two-dimensional, without photographic lighting, glossy depth or neon bloom.",
+        "IMG+TXT": "A restrained terminal/editor visual language: an untextured near-black or dark-indigo ground, crisp pale monospaced lettering and sparse flat geometric marks, with muted lavender, mint and warm amber accents. Keep edges clear, contrast readable and rendering deliberately two-dimensional, without photographic lighting, glossy depth or neon bloom."
+      },
+      "text_treatment": "Use bold upright monospaced titles in warm cream or amber, pale gray body text and restrained syntax-like accent colors. Keep text readable and editable through the overlay composition.",
+      "conventions": "Use accent colors consistently for roles explicitly named in the scene, and reserve high-saturation red for a requested warning. Code blocks, prompts, tables, flowcharts, progress markers and footer handles are content decisions; do not add them to an unrelated scene.",
+      "composition": "overlay",
+      "tags": [
+        "minimal",
+        "terminal",
+        "technical",
+        "typographic"
+      ],
+      "sample": {
+        "schema_version": 1,
+        "kind": "reference",
+        "location": "https://drive.google.com/file/d/1gQ98-dgxuiiP347z5xb8oGrsK8r-AYfh/view",
+        "description": "Representative delivered-deck PDF page 12. All 33 pages were visually inspected, alongside the separate 17-page Arc of AI RoboCoders deck. This is a typographic presentation style, not evidence of a painted illustration. The PDF reference is not bundled as a raster sample."
+      },
+      "provenance": {
+        "schema_version": 1,
+        "kind": "delivered-talk",
+        "reference": "https://speaking.jbaru.ch/talks/2026-04-14-arcofai26-codepocalypse-now/",
+        "note": "Derived from Codepocalypse Now at Arc of AI, 2026-04-14, with corroborating terminal-mode pages in Arc of AI RoboCoders. Overlay is the proposed reusable implementation, not a claim that the original PDF exposed editable title layers. The Devoxx UK and JavaZone 300 Tokens decks corroborate a sparser near-black variant."
+      }
+    },
+    {
+      "schema_version": 1,
+      "slug": "halftone-editorial-comic",
+      "name": "Halftone Editorial Comic",
+      "anchors": {
+        "FULL": "A pop-art editorial cartoon with rounded expressive drawing, confident black contours, saturated flat colors and soft cel-shaded volume. Use visible Ben-Day dot screening across colored surfaces and a lightly printed texture. Favor playful caricature and clear silhouettes over muscular superhero anatomy or cinematic photorealism.",
+        "IMG+TXT": "A pop-art editorial cartoon with rounded expressive drawing, confident black contours, saturated flat colors and soft cel-shaded volume. Use visible Ben-Day dot screening across colored surfaces and a lightly printed texture. Favor playful caricature and clear silhouettes over muscular superhero anatomy or cinematic photorealism."
+      },
+      "text_treatment": "Use heavy, condensed, forward-slanted comic capitals. Set display text in black on a light ground or white with a crisp black outline on a colored ground; supporting prose uses a clean rounded sans-serif.",
+      "conventions": "Keep a coherent bright palette of yellow, cyan, purple, coral and green, with stable colors for any repeated semantic roles. Speech bubbles, starbursts, panels, drop shadows, arrows, monkeys, brains, memes and footer handles are optional scene content, not automatic decorations.",
+      "composition": "poster-theatrical",
+      "tags": [
+        "comic",
+        "pop-art",
+        "halftone",
+        "editorial"
+      ],
+      "sample": {
+        "schema_version": 1,
+        "kind": "reference",
+        "location": "https://drive.google.com/file/d/1kdQXJ3qe2p982yzP2bA0Bp_cufT3y_2v/view",
+        "description": "Representative PDF page 38; all 78 source pages were rendered and visually inspected on 2026-09-05. This public deck reference is not bundled as a raster sample and is not approval of a newly generated exploration image."
+      },
+      "provenance": {
+        "schema_version": 1,
+        "kind": "delivered-talk",
+        "reference": "https://speaking.jbaru.ch/talks/2026-04-01-vdams26-coding-fast-and-slow/",
+        "note": "Derived from Coding Fast and Slow at Voxxed Days Amsterdam, 2026-04-01; corroborated across four separately inspected Never Trust a Monkey deliveries. This lighter editorial lettering and multicolor print treatment is distinct from the existing Comic Book Hero exploration."
+      }
+    },
+    {
+      "schema_version": 1,
+      "slug": "patinated-ochre-oil",
+      "name": "Patinated Ochre Oil",
+      "anchors": {
+        "FULL": "An early-modernist oil-painted illustration with elongated simplified forms, dark brushed contours, shallow pictorial depth and visible scumbled paint texture. Use warm ochre, burnt sienna, olive and cream against deep brown-black shadows, with subdued amber illumination and an aged varnish patina. Preserve tactile brushwork rather than clean vector edges or glossy CGI.",
+        "IMG+TXT": "An early-modernist oil-painted illustration with elongated simplified forms, dark brushed contours, shallow pictorial depth and visible scumbled paint texture. Use warm ochre, burnt sienna, olive and cream against deep brown-black shadows, with subdued amber illumination and an aged varnish patina. Preserve tactile brushwork rather than clean vector edges or glossy CGI."
+      },
+      "text_treatment": "Use sturdy condensed display lettering in warm cream or ochre with a dark outline. Keep the letterforms legible against the textured paint and give secondary text a simpler upright treatment.",
+      "conventions": "Keep highlights warm and the overall palette earthy and low-key. Cats, cafes, Parisian posters, period clothing, laptops, crates, signs and recurring people belong to the individual scene, not the reusable style.",
+      "composition": "poster-theatrical",
+      "tags": [
+        "painterly",
+        "oil-paint",
+        "historical",
+        "earth-tones"
+      ],
+      "sample": {
+        "schema_version": 1,
+        "kind": "reference",
+        "location": "https://drive.google.com/file/d/1lRNiK6PKoZacB6rJoWmEhtsb4INeEelu/view",
+        "description": "Representative PDF page 9; all 20 source pages were rendered and visually inspected on 2026-09-05. This public deck reference is not bundled as a raster sample and is not approval of a newly generated exploration image."
+      },
+      "provenance": {
+        "schema_version": 1,
+        "kind": "delivered-talk",
+        "reference": "https://speaking.jbaru.ch/aidevcon-london-2026-dont-write-prompts/",
+        "note": "Derived from Don't Write Prompts, Write Software at AI Native DevCon London, 2026-06-02. Page 9 provides a text-free paint reference; lettering is evidenced by the surrounding pages. Source characters and setting are excluded."
+      }
+    },
+    {
+      "schema_version": 1,
+      "slug": "selective-color-noir",
+      "name": "Selective-Color Noir",
+      "anchors": {
+        "FULL": "A cinematic film-noir illustration rendered in grayscale ink and charcoal-like shading: hard directional light, deep black shadow masses, luminous pale highlights, fine tonal grain and carefully drawn continuous contours. Use strong chiaroscuro, controlled atmospheric softness and a worn photographic-print texture; retain an illustrated rather than purely photographic finish.",
+        "IMG+TXT": "A cinematic film-noir illustration rendered in grayscale ink and charcoal-like shading: hard directional light, deep black shadow masses, luminous pale highlights, fine tonal grain and carefully drawn continuous contours. Use strong chiaroscuro, controlled atmospheric softness and a worn photographic-print texture; retain an illustrated rather than purely photographic finish."
+      },
+      "text_treatment": "Use luminous white mid-century sign lettering: flowing script for short display phrases and condensed upright capitals for denser labels, with restrained haloing and readable contrast.",
+      "conventions": "Keep the image predominantly monochrome. Small green or red accents may mark explicitly requested success or danger; warm light may mark a requested resolution. Detectives, faceless figures, blinds, smoke, rain, guns, office furniture, borders and inset captions are not automatic scene additions.",
+      "composition": "poster-theatrical",
+      "tags": [
+        "noir",
+        "monochrome",
+        "cinematic",
+        "high-contrast"
+      ],
+      "sample": {
+        "schema_version": 1,
+        "kind": "reference",
+        "location": "https://drive.google.com/file/d/1Kjn6qv6dYgaUlqqikHRsIpwBZV_W4YqE/view",
+        "description": "Representative PDF page 21; all 35 source pages were rendered and visually inspected on 2026-09-05. This public deck reference is not bundled as a raster sample and is not approval of a newly generated exploration image."
+      },
+      "provenance": {
+        "schema_version": 1,
+        "kind": "delivered-talk",
+        "reference": "https://speaking.jbaru.ch/talks/2026-06-16-checkmarx-agentsecops/",
+        "note": "Derived from DevSecOps Is Dead. Meet AgentSecOps at the Checkmarx virtual summit, 2026-06-16. The recurring detective story, characters and forensic props are content, not part of the reusable anchor."
+      }
+    },
+    {
+      "schema_version": 1,
+      "slug": "primary-brick-diorama",
+      "name": "Primary Brick Diorama",
+      "anchors": {
+        "FULL": "A clean toy-construction illustration in which requested forms are built from interlocking molded-plastic bricks with visible studs, modular seams and crisp beveled edges. Use bright primary red, blue and yellow with green accents, thin dark contours, restrained plastic highlights and soft contact shadows against a white or near-white ground. Preserve tangible small-scale depth and clear three-quarter views.",
+        "IMG+TXT": "A clean toy-construction illustration in which requested forms are built from interlocking molded-plastic bricks with visible studs, modular seams and crisp beveled edges. Use bright primary red, blue and yellow with green accents, thin dark contours, restrained plastic highlights and soft contact shadows against a white or near-white ground. Preserve tangible small-scale depth and clear three-quarter views."
+      },
+      "text_treatment": "Use heavy upright black sans-serif capitals for main headings and simple bold label lettering. Short emphasis may use primary red or blue; keep the words crisp rather than making every label into a brick object.",
+      "conventions": "Assign a stable primary color to each explicitly named repeated role. Minifigures, conveyor belts, baseplates, houses, arrows, labels, logos and blue footer bands appear only when requested by the scene. Studded material does not imply a particular branded character or set.",
+      "composition": "poster-theatrical",
+      "tags": [
+        "systems",
+        "modular",
+        "toy",
+        "three-dimensional"
+      ],
+      "sample": {
+        "schema_version": 1,
+        "kind": "reference",
+        "location": "https://drive.google.com/file/d/1nwhvo-Kh5IAzGsbbbEIjOXsmPb-EgQo6/view",
+        "description": "Representative PDF page 8; all 18 source pages were rendered and visually inspected on 2026-09-05. This public deck reference is not bundled as a raster sample and is not approval of a newly generated exploration image."
+      },
+      "provenance": {
+        "schema_version": 1,
+        "kind": "delivered-talk",
+        "reference": "https://speaking.jbaru.ch/talks/agentcon-miami-2026-skill-issue/",
+        "note": "Derived from Skill Issue at AgentCon Miami, 2026-06-12, and corroborated by the separately inspected St. Louis delivery, 2026-06-25. Studded primary-color construction differs from the existing smooth, low-poly Isometric Systems 3D exploration."
+      }
+    },
+    {
+      "schema_version": 1,
+      "slug": "indigo-vermilion-woodblock",
+      "name": "Indigo Vermilion Woodblock",
+      "anchors": {
+        "FULL": "A Japanese woodblock-inspired print illustration with flattened layered depth, flowing carved contour lines, dense fine-line detail and broad areas of restrained pigment. Use deep indigo, muted blue-green, warm vermilion and pale ochre on visibly fibrous, aged cream paper. Keep ink edges slightly irregular and surface color matte, with subtle rubbed and weathered print texture.",
+        "IMG+TXT": "A Japanese woodblock-inspired print illustration with flattened layered depth, flowing carved contour lines, dense fine-line detail and broad areas of restrained pigment. Use deep indigo, muted blue-green, warm vermilion and pale ochre on visibly fibrous, aged cream paper. Keep ink edges slightly irregular and surface color matte, with subtle rubbed and weathered print texture."
+      },
+      "text_treatment": "Use dark-indigo, heavy slab-serif display lettering with modest printed wear. Render any explicitly supplied non-Latin text faithfully; the style does not require inventing additional characters or calligraphy.",
+      "conventions": "When opposing roles are explicitly requested, preserve vermilion for one and blue-green for the other. Waves, mountains, monsters, lightning, cartouches, borders and footer bands are scene choices, not permanent decorations.",
+      "composition": "poster-theatrical",
+      "tags": [
+        "woodblock",
+        "historical",
+        "print",
+        "limited-palette"
+      ],
+      "sample": {
+        "schema_version": 1,
+        "kind": "reference",
+        "location": "https://drive.google.com/file/d/1-vD_Xs1ZhYizsH45-AP0EBRU1Jrxa9U7/view",
+        "description": "Representative PDF page 6; all 16 source pages were rendered and visually inspected on 2026-09-05. This public deck reference is not bundled as a raster sample and is not approval of a newly generated exploration image."
+      },
+      "provenance": {
+        "schema_version": 1,
+        "kind": "delivered-talk",
+        "reference": "https://speaking.jbaru.ch/talks/jspring-2026-robocoders/",
+        "note": "Derived from RoboCoders at J-Spring, 2026-06-04. Source monsters, wave imagery and Japanese labels are excluded from the reusable anchor; this matte woodblock treatment is distinct from the other RoboCoders deliveries' neon arcade art."
+      }
     }
   ]
 }
