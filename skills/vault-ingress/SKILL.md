@@ -100,21 +100,11 @@ re-renders without being located again. The `pptx_catalog` array fuzzy-matches
 
 ## Step 1 — Bootstrap Vault State
 
-Narrow exception for a standalone, explicitly requested catalog metadata repair
-under `stateful-artifacts` Migration Policy:
-
-1. Use the owner read and mutation commands above; submit only reviewed metadata
-   corrections through the compatibility contract in
-   [references/schemas-db.md](references/schemas-db.md#owner-read-and-mutation-contract).
-2. Require a successful dry run, then bind application to its input and candidate
-   digests. An owner refusal authorizes no write or manual compatibility override.
-3. Preserve schema generations, analysis, active claims, claim history, and all
-   fields outside the reviewed plan. Do not migrate or recover claims for this repair.
-4. Re-read through the owner, verify the intended changes, report, and finish here.
-   Do not select a batch, reparse, or regenerate derived artifacts.
-
-Every other owner write follows the normal migration policy. Processing runs
-continue through bootstrap and the following steps.
+For an explicitly requested standalone catalog metadata repair, use the
+[root-only owner migration](references/schemas-db.md#root-only-owner-migration)
+before the reviewed metadata transaction. Re-read through the owner, verify the
+changes, report, and finish here. Do not select a batch, reparse, or regenerate
+derived artifacts. Processing runs continue through bootstrap below.
 
 Execute [Bootstrap and Preflight](references/bootstrap-and-preflight.md) in full.
 Do not select work until migration succeeds, the catalog is structurally valid,

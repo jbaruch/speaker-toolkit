@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Migrate one tracking database with a hash precondition and exact backup.
 
+--root-only selects the additive root migration defined by
+tracking_database.migrate_tracking_database_root. Deploy dual readers first.
+It upgrades the root before catalog writes while preserving every child record,
+active claim, and analysis value. It does not authorize processing; that still
+requires full bootstrap and preflight. The two explicit modes are exclusive.
+
 --repair-missing-qr-versions selects a separate preservation-only owner repair,
 not the normal migration: see tracking_database.repair_missing_qr_schema_versions.
 It never restamps talks, repairs observations, or requeues work. A successful
@@ -28,6 +34,7 @@ from tracking_database import (
     TrackingDatabaseError,
     TrackingDatabaseRepairError,
     migrate_tracking_database,
+    migrate_tracking_database_root,
     repair_missing_qr_schema_versions,
 )
 from tracking_database_io import (
@@ -80,7 +87,12 @@ def execute(
     apply: bool,
     expected_sha256: str | None,
     repair_missing_qr_versions: bool = False,
+    root_only: bool = False,
 ) -> dict[str, object]:
+    if root_only and repair_missing_qr_versions:
+        raise TrackingDatabaseMigrationError(
+            "choose either --root-only or --repair-missing-qr-versions, not both"
+        )
     database_path = path.expanduser().absolute()
     if expected_sha256 is not None:
         _validate_expected_digest(expected_sha256)
@@ -105,6 +117,8 @@ def execute(
         migration = (
             repair_missing_qr_schema_versions(database)
             if repair_missing_qr_versions
+            else migrate_tracking_database_root(database)
+            if root_only
             else migrate_tracking_database(database)
         )
         # Run on the migrated candidate, before it is rendered: the whole defect
@@ -112,7 +126,7 @@ def execute(
         # detections, so the gate has to sit between the stamp and the write.
         observation_counts = (
             {"repaired": 0, "requeued": 0}
-            if repair_missing_qr_versions
+            if repair_missing_qr_versions or root_only
             else gate_persisted_observations(migration.database)
         )
         changed = migration.changed or any(observation_counts.values())
@@ -180,6 +194,8 @@ def execute(
             "kind": "missing_qr_schema_versions",
             "python_path": migration.database["config"].get("python_path"),
         }
+    if root_only:
+        report["migration_scope"] = "root_only"
     return report
 
 
@@ -245,7 +261,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("database", type=Path)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--expected-sha256")
-    parser.add_argument("--repair-missing-qr-versions", action="store_true")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--repair-missing-qr-versions", action="store_true")
+    modes.add_argument("--root-only", action="store_true")
     repair_requested = False
     try:
         args = parser.parse_args(argv)
@@ -255,6 +273,7 @@ def main(argv: list[str] | None = None) -> int:
             apply=args.apply,
             expected_sha256=args.expected_sha256,
             repair_missing_qr_versions=args.repair_missing_qr_versions,
+            root_only=args.root_only,
         )
     except TrackingDatabaseMigrationError as exc:
         # Repair is a bootstrap boundary over an unreadable database; neither

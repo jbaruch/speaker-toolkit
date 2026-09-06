@@ -1716,29 +1716,39 @@ def _pre_alias_metadata_database() -> dict[str, Any]:
         ("conference", "Correct event"),
     ],
 )
-def test_pre_alias_root_metadata_repair_preserves_every_unrelated_value(
-    mutate_tracking_database, field, value
+def test_root_migration_then_metadata_repair_preserves_every_child_value(
+    mutate_tracking_database, tracking_database, field, value
 ) -> None:
     database = _pre_alias_metadata_database()
     before = copy.deepcopy(database)
     mutation = _repair({field: value}, {field: database["talks"][0][field]})
 
-    candidate, changes = mutate_tracking_database.build_candidate(database, [mutation])
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(database, [mutation])
+    migrated = tracking_database.migrate_tracking_database_root(database).database
+    candidate, changes = mutate_tracking_database.build_candidate(migrated, [mutation])
 
     expected = copy.deepcopy(before)
+    expected["schema_version"] = tracking_database.TRACKING_DATABASE_SCHEMA_VERSION
     expected["talks"][0][field] = value
     assert candidate == expected
     assert database == before
     assert len(changes) == 1
 
 
-def test_pre_alias_root_metadata_cli_dry_run_and_hash_bound_apply(
-    mutate_tracking_database, tmp_path, capsys
+def test_root_migration_then_metadata_cli_dry_run_and_hash_bound_apply(
+    mutate_tracking_database, migrate_tracking_database, tmp_path, capsys
 ) -> None:
     database = _pre_alias_metadata_database()
     path = tmp_path / "tracking-database.json"
     plan_path = tmp_path / "plan.json"
     _write_json(path, database)
+    migration = migrate_tracking_database.execute(
+        path, apply=False, expected_sha256=None, root_only=True
+    )
+    migrate_tracking_database.execute(
+        path, apply=True, expected_sha256=migration["input_sha256"], root_only=True
+    )
     original_bytes = path.read_bytes()
     _write_json(
         plan_path,
@@ -1778,14 +1788,15 @@ def test_pre_alias_root_metadata_cli_dry_run_and_hash_bound_apply(
     )
     applied = json.loads(capsys.readouterr().out)
     expected = copy.deepcopy(database)
+    expected["schema_version"] = 3
     expected["talks"][0]["date"] = "2018-08-31"
     assert applied["database_written"] is True
     assert applied["output_sha256"] == preview["output_sha256"]
     assert json.loads(path.read_text()) == expected
 
 
-@pytest.mark.parametrize("root_version", [0, 1, 99])
-def test_metadata_compatibility_does_not_admit_other_legacy_or_future_roots(
+@pytest.mark.parametrize("root_version", [0, 1, 2, 99])
+def test_metadata_writer_requires_owner_migration_for_every_legacy_root(
     mutate_tracking_database, root_version
 ) -> None:
     database = _pre_alias_metadata_database()
@@ -1797,10 +1808,11 @@ def test_metadata_compatibility_does_not_admit_other_legacy_or_future_roots(
 
 
 @pytest.mark.parametrize("defect", ["config", "talk", "claim", "collection"])
-def test_metadata_compatibility_keeps_complete_owner_validation(
-    mutate_tracking_database, defect
+def test_post_migration_metadata_keeps_complete_owner_validation(
+    mutate_tracking_database, tracking_database, defect
 ) -> None:
     database = _pre_alias_metadata_database()
+    database = tracking_database.migrate_tracking_database_root(database).database
     if defect == "config":
         database["config"]["schema_version"] = 1
     elif defect == "talk":

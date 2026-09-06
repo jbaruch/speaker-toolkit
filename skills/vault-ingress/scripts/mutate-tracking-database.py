@@ -5,11 +5,6 @@ The default mode is a dry run.  ``--apply`` requires ``--expected-sha256`` from
 that dry run (or the literal ``missing`` for initialization).  Every operation
 declares the exact record or field value it expects, so a reviewed plan cannot
 silently target a different logical state even when its file hash is current.
-
-A nonempty plan containing only ``apply_reviewed_metadata`` may also preserve
-the pre-source-alias root generation with current config. Complete owner
-validation still runs before and after the change. No root, talk, observation,
-or queue-claim migration runs; every other plan requires the current root.
 """
 
 from __future__ import annotations
@@ -40,13 +35,11 @@ from tracking_database import (
     THUMBNAIL_RECORD_SCHEMA_VERSION,
     THUMBNAIL_REQUIRED_FIELDS as OWNER_THUMBNAIL_REQUIRED_FIELDS,
     LEGACY_TALK_RECORD_SCHEMA_VERSION,
-    PRE_SOURCE_ALIASES_TRACKING_DATABASE_SCHEMA_VERSION,
     MARKDOWN_DECK_RECORD_SCHEMA_VERSION,
     SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION,
     TALK_RECORD_SCHEMA_VERSION,
     TRACKING_DATABASE_SCHEMA_VERSION,
     TrackingDatabaseError,
-    assess_tracking_database,
     require_current_tracking_database,
     validate_markdown_deck,
     validate_source_title_equivalence,
@@ -1895,30 +1888,12 @@ def initial_database(mutation: dict[str, Any], *, index: int) -> dict[str, Any]:
     }
 
 
-def _require_mutation_database(
-    database: dict[str, Any], mutations: list[dict[str, Any]]
-) -> None:
-    """Admit the predecessor root only for generation-preserving catalog edits."""
-    if mutations and all(
-        mutation.get("kind") == "apply_reviewed_metadata" for mutation in mutations
-    ):
-        assessment = assess_tracking_database(database)
-        if (
-            assessment.usable
-            and assessment.schema_version
-            == PRE_SOURCE_ALIASES_TRACKING_DATABASE_SCHEMA_VERSION
-            and database["config"]["schema_version"] == CONFIG_RECORD_SCHEMA_VERSION
-        ):
-            return
-    require_current_tracking_database(database)
-
-
 def build_candidate(
     database: dict[str, Any],
     mutations: list[dict[str, Any]],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     try:
-        _require_mutation_database(database, mutations)
+        require_current_tracking_database(database)
     except TrackingDatabaseError as exc:
         raise TrackingDatabaseMutationError(str(exc)) from exc
     candidate = copy.deepcopy(database)
@@ -1974,7 +1949,7 @@ def build_candidate(
             )
     _validate_database_shape(candidate)
     try:
-        _require_mutation_database(candidate, mutations)
+        require_current_tracking_database(candidate)
     except TrackingDatabaseError as exc:
         raise TrackingDatabaseMutationError(
             f"mutation candidate violates the tracking-database schema: {exc}"

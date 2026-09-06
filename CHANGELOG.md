@@ -1,17 +1,16 @@
 # Changelog
 
-### Preserve legacy catalog generations during reviewed metadata corrections
+### Migrate the catalog root without disturbing talk analysis or claims
 
-The #339 delivery-date audit found a session stored on the conference's opening
-day instead of its scheduled day. The metadata writer already supported legacy
-talks, but its root-current gate still blocked the live root-v2 catalog; normal
-migration correctly refused its active queue claims. Admit only metadata-only
-plans on the validated pre-source-alias root with current config. Preserve root
-and talk generations, analysis, claim history, and all unrelated state. Keep
-mixed plans, older/future roots, and malformed owner state closed. Cover exact
-preservation, CLI dry-run/apply digests, stale input refusal, and scope isolation.
-Make the owner's migration-policy exception explicit for standalone reviewed
-metadata repairs, with owner readback and an immediate stop before processing.
+The #339 delivery-date corrections were blocked by a legacy catalog root and
+active claims. The full migration also advances independent analysis records;
+metadata corrections must not trigger that work. Add an explicit `--root-only`
+owner migration for the additive root upgrade already supported by deployed
+dual readers. Preserve every child value and claim contract, with complete owner
+validation, exact backups, hash-bound apply, and concurrent-generation refusal.
+Keep the metadata writer's current-root gate: no policy exception or legacy-root
+write bypass. Verify child preservation, idempotence, claim replay, and stale
+queue/result-writer reload. Full migration and processing gates remain separate.
 
 ## 0.20.129 — 2026-09-05
 
