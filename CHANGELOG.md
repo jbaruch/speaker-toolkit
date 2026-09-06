@@ -1,7 +1,5 @@
 # Changelog
 
-## Unreleased
-
 ### Preserve legacy catalog generations during reviewed metadata corrections
 
 The #339 delivery-date audit found a session stored on the conference's opening
