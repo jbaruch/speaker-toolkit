@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.130 — 2026-09-06
+
 ### Migrate the catalog root without disturbing talk analysis or claims
 
 The #339 delivery-date corrections were blocked by a legacy catalog root and
