@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Preserve legacy catalog generations during reviewed metadata corrections
+
+The #339 delivery-date audit found a session stored on the conference's opening
+day instead of its scheduled day. The metadata writer already supported legacy
+talks, but its root-current gate still blocked the live root-v2 catalog; normal
+migration correctly refused its active queue claims. Admit only metadata-only
+plans on the validated pre-source-alias root with current config. Preserve root
+and talk generations, analysis, claim history, and all unrelated state. Keep
+mixed plans, older/future roots, and malformed owner state closed. Cover exact
+preservation, CLI dry-run/apply digests, stale input refusal, and scope isolation.
+
 ## 0.20.129 — 2026-09-05
 
 ### Seed reusable styles from twenty delivered-talk decks

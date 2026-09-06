@@ -1678,6 +1678,159 @@ def test_a_reviewed_delivery_date_applies_with_an_exact_precondition(
     assert database["talks"][0]["date"] == "2014"
 
 
+def _pre_alias_metadata_database() -> dict[str, Any]:
+    database = _catalog_database(date="2018-08-30")
+    database["schema_version"] = 2
+    talk = database["talks"][0]
+    talk["schema_version"] = 1
+    talk["pattern_observations"] = [{"pattern": "legacy", "evidence": "retained"}]
+    talk["status"] = "reprocessing-inflight"
+    talk["reprocess_generation"] = 2
+    talk["_queue_claim"] = {
+        "schema_version": 1,
+        "run_id": "metadata-test",
+        "batch_id": "active",
+        "claimed_at": "2026-07-31T12:00:00+00:00",
+        "previous_status": "needs-reprocessing",
+        "reprocess_generation": 2,
+        "state": "claimed",
+    }
+    talk["_queue_claim_history"] = [
+        {
+            **talk["_queue_claim"],
+            "batch_id": "previous",
+            "reprocess_generation": 1,
+            "state": "stale_recovered",
+            "released_at": "2026-07-31T12:30:00+00:00",
+            "release_reason": "recovered stale batch",
+        }
+    ]
+    return database
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("date", "2018-08-31"),
+        ("title", "Correct title"),
+        ("conference", "Correct event"),
+    ],
+)
+def test_pre_alias_root_metadata_repair_preserves_every_unrelated_value(
+    mutate_tracking_database, field, value
+) -> None:
+    database = _pre_alias_metadata_database()
+    before = copy.deepcopy(database)
+    mutation = _repair({field: value}, {field: database["talks"][0][field]})
+
+    candidate, changes = mutate_tracking_database.build_candidate(database, [mutation])
+
+    expected = copy.deepcopy(before)
+    expected["talks"][0][field] = value
+    assert candidate == expected
+    assert database == before
+    assert len(changes) == 1
+
+
+def test_pre_alias_root_metadata_cli_dry_run_and_hash_bound_apply(
+    mutate_tracking_database, tmp_path, capsys
+) -> None:
+    database = _pre_alias_metadata_database()
+    path = tmp_path / "tracking-database.json"
+    plan_path = tmp_path / "plan.json"
+    _write_json(path, database)
+    original_bytes = path.read_bytes()
+    _write_json(
+        plan_path,
+        {
+            "schema_version": 1,
+            "mutations": [_repair({"date": "2018-08-31"}, {"date": "2018-08-30"})],
+        },
+    )
+
+    assert mutate_tracking_database.main([str(path), str(plan_path)]) == 0
+    preview = json.loads(capsys.readouterr().out)
+    assert preview["database_written"] is False
+    assert path.read_bytes() == original_bytes
+    assert (
+        mutate_tracking_database.main(
+            [str(path), str(plan_path), "--apply", "--expected-sha256", "0" * 64]
+        )
+        == 2
+    )
+    refusal = json.loads(capsys.readouterr().out)
+    assert refusal["ok"] is False
+    assert path.read_bytes() == original_bytes
+
+    assert (
+        mutate_tracking_database.main(
+            [
+                str(path),
+                str(plan_path),
+                "--apply",
+                "--expected-sha256",
+                preview["input_sha256"],
+                "--expected-output-sha256",
+                preview["output_sha256"],
+            ]
+        )
+        == 0
+    )
+    applied = json.loads(capsys.readouterr().out)
+    expected = copy.deepcopy(database)
+    expected["talks"][0]["date"] = "2018-08-31"
+    assert applied["database_written"] is True
+    assert applied["output_sha256"] == preview["output_sha256"]
+    assert json.loads(path.read_text()) == expected
+
+
+@pytest.mark.parametrize("root_version", [0, 1, 99])
+def test_metadata_compatibility_does_not_admit_other_legacy_or_future_roots(
+    mutate_tracking_database, root_version
+) -> None:
+    database = _pre_alias_metadata_database()
+    database["schema_version"] = root_version
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(
+            database, [_repair({"date": "2018-08-31"}, {"date": "2018-08-30"})]
+        )
+
+
+@pytest.mark.parametrize("defect", ["config", "talk", "claim", "collection"])
+def test_metadata_compatibility_keeps_complete_owner_validation(
+    mutate_tracking_database, defect
+) -> None:
+    database = _pre_alias_metadata_database()
+    if defect == "config":
+        database["config"]["schema_version"] = 1
+    elif defect == "talk":
+        database["talks"][0]["schema_version"] = 99
+    elif defect == "claim":
+        database["talks"][0]["_queue_claim"]["state"] = "invalid"
+    else:
+        del database["qr_codes"]
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(
+            database, [_repair({"date": "2018-08-31"}, {"date": "2018-08-30"})]
+        )
+
+
+@pytest.mark.parametrize("mixed", [False, True])
+def test_pre_alias_root_cannot_launder_other_mutations_through_metadata_plan(
+    mutate_tracking_database, mixed
+) -> None:
+    database = _pre_alias_metadata_database()
+    before = copy.deepcopy(database)
+    mutations = [
+        {"kind": "set_config", "path": ["enabled"], "expect": MISSING, "value": True}
+    ]
+    if mixed:
+        mutations.insert(0, _repair({"date": "2018-08-31"}, {"date": "2018-08-30"}))
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(database, mutations)
+    assert database == before
+
+
 def test_a_reviewed_delivery_date_may_be_a_bare_year(
     mutate_tracking_database,
 ) -> None:

@@ -705,6 +705,14 @@ transition it demands are named at the top of
 updates and human-approved conflict decisions stay separate paths; source lanes
 stay with `apply-source-repairs.py`.
 
+Metadata-only plans also have a generation-preserving root compatibility path,
+owned by `_require_mutation_database` in that command. It validates the entire
+database before and after the edit without migrating the root, config, talk
+records, observations, or queue claims. Mixing any other operation into the
+plan retains the normal current-root requirement. Active claims are not
+recovered, cancelled, or restamped to make a catalog correction possible; the
+shared transaction still rejects a competing writer's changed snapshot.
+
 The command owns each operation's closed fields and record validation; do not
 reimplement those allowlists in skill prose. PPTX catalog records require exact
 integer `schema_version: 2`, since only v2 carries the visual-evidence
