@@ -706,7 +706,8 @@ updates and human-approved conflict decisions stay separate paths; source lanes
 stay with `apply-source-repairs.py`.
 
 Metadata-only plans also have a generation-preserving root compatibility path,
-owned by `_require_mutation_database` in that command. It validates the entire
+authorized by the standalone repair exception in `SKILL.md` Step 1 and owned by
+`_require_mutation_database` in that command. It validates the entire
 database before and after the edit without migrating the root, config, talk
 records, observations, or queue claims. Mixing any other operation into the
 plan retains the normal current-root requirement. Active claims are not

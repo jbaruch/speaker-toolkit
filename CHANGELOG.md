@@ -10,6 +10,8 @@ plans on the validated pre-source-alias root with current config. Preserve root
 and talk generations, analysis, claim history, and all unrelated state. Keep
 mixed plans, older/future roots, and malformed owner state closed. Cover exact
 preservation, CLI dry-run/apply digests, stale input refusal, and scope isolation.
+Make the owner's migration-policy exception explicit for standalone reviewed
+metadata repairs, with owner readback and an immediate stop before processing.
 
 ## 0.20.129 — 2026-09-05
 

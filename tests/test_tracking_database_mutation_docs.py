@@ -10,6 +10,24 @@ def _read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
+def test_standalone_metadata_repair_has_an_explicit_owner_migration_exception() -> None:
+    skill = " ".join(_read("skills/vault-ingress/SKILL.md").split())
+    schema = " ".join(_read("skills/vault-ingress/references/schemas-db.md").split())
+
+    assert (
+        "Narrow exception for a standalone, explicitly requested catalog metadata repair"
+        in skill
+    )
+    assert "under `stateful-artifacts` Migration Policy" in skill
+    assert "bind application to its input and candidate digests" in skill
+    assert (
+        "An owner refusal authorizes no write or manual compatibility override" in skill
+    )
+    assert "Do not select a batch, reparse, or regenerate derived artifacts" in skill
+    assert "Every other owner write follows the normal migration policy" in skill
+    assert "standalone repair exception in `SKILL.md` Step 1" in schema
+
+
 def test_config_deletion_and_reserved_marker_recovery_are_documented() -> None:
     schema = _read("skills/vault-ingress/references/schemas-db.md")
     bootstrap = _read("skills/vault-ingress/references/bootstrap-and-preflight.md")
