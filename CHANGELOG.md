@@ -1,5 +1,17 @@
 # Changelog
 
+### Migrate the catalog root without disturbing talk analysis or claims
+
+The #339 delivery-date corrections were blocked by a legacy catalog root and
+active claims. The full migration also advances independent analysis records;
+metadata corrections must not trigger that work. Add an explicit `--root-only`
+owner migration for the additive root upgrade already supported by deployed
+dual readers. Preserve every child value and claim contract, with complete owner
+validation, exact backups, hash-bound apply, and concurrent-generation refusal.
+Keep the metadata writer's current-root gate: no policy exception or legacy-root
+write bypass. Verify child preservation, idempotence, claim replay, and stale
+queue/result-writer reload. Full migration and processing gates remain separate.
+
 ## 0.20.129 — 2026-09-05
 
 ### Seed reusable styles from twenty delivered-talk decks

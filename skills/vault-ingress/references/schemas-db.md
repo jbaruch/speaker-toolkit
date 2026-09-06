@@ -30,8 +30,8 @@ config, PPTX, QR, resource, thumbnail, confirmed-intent, source-rejection, and
 goal versions likewise map only to their validated historical v1 shapes. Config
 v2 adds the owner-controlled `pptx_directory_exclusions` discovery boundary.
 Run the owner migration in vault-ingress Step 1.
-Dry-run emits the exact input SHA-256. Apply requires that digest, refuses active
-queue claims, stores the complete original bytes under `.backups/`, and replaces
+Dry-run emits the exact input SHA-256. Apply requires that digest, stores the
+complete original bytes under `.backups/`, and replaces
 the verified generation atomically. Backup directory and file opens do not
 follow symbolic links. The target input comparison remains exact across bytes
 and every `FileGeneration` field, including `mtime_ns` and `ctime_ns`, after
@@ -43,6 +43,52 @@ are each stable across one byte-read window within the writer-owned bounded
 attempts. Exhaustion and every hard staged mismatch raise
 `StagedCandidateConflictError` carrying the failed invariant. The class is
 defined in `skills/vault-ingress/scripts/tracking_database_io.py`.
+Full migration refuses active queue claims. The independently scoped
+[root-only migration](#root-only-owner-migration) preserves supported claims.
+
+### Root-only owner migration
+
+For a standalone catalog metadata repair, use the configured interpreter and
+strict owner read from the bootstrap contract. Deploy the dual readers before
+applying this migration; do not use an older toolkit worker that rejects its
+target root. Capture the pre-migration persisted-observation audit on a database
+copy as described in [bootstrap-and-preflight.md](bootstrap-and-preflight.md).
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/migrate-tracking-database.py" \
+  "{vault_root}/tracking-database.json" --root-only
+```
+
+The supported inputs and root-only transformation are owned by
+`migrate_tracking_database_root` in
+`skills/vault-ingress/scripts/tracking_database.py`. The command validates
+the complete input and candidate. It preserves every child value, including
+analysis generations, observations, active claims, baselines, and history.
+It never repairs evidence, requeues a talk, or creates a source alias.
+
+Exit 0 emits the normal migration report plus `migration_scope: "root_only"`.
+Review the root transition, input/output digests, zero child-record changes,
+and zero repaired/requeued observations. Apply only that successful preview:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/migrate-tracking-database.py" \
+  "{vault_root}/tracking-database.json" --root-only \
+  --apply --expected-sha256 "{input_sha256}"
+```
+
+The command retains the shared atomic transaction and exact backup contract.
+A stale digest, concurrent writer, unsupported generation, or inconsistent
+claim refuses without overwriting the database. A pre-migration writer must
+reload through its owner before retrying; do not recover its unchanged claim.
+Re-read through `read-tracking-database.py`, compare the output digest, and
+verify that only the root version changed. Repeating the root-only operation
+on its installed output is a byte-and-inode-preserving no-op.
+
+After root migration, dry-run the reviewed metadata plan through
+`mutate-tracking-database.py`, bind apply to both reported digests, and re-read
+to verify only the intended fields changed. Report the result and finish the
+standalone repair. This mode does not replace full bootstrap or preflight for
+processing and cannot be combined with the QR-version repair mode.
 
 ### `pptx_catalog` v1 -> v2 -> v3
 
@@ -171,9 +217,10 @@ defaults; a valid owner-supplied list is preserved exactly. It
 preserves every other JSON value and missing-vs-present distinction, including
 legacy-v1 `pattern_observations` objects, arrays, or nulls and every historical
 citation/source-inspection field. Explicit version 0 sentinels, future owner
-versions, ambiguous or malformed historical records, and active claims fail
+versions, and ambiguous or malformed historical records fail
 before backup or write. An exact current database is a byte-and-inode-preserving
-no-op.
+no-op. Full migration additionally refuses active claims when changing record
+or root state; the standalone root-only mode below preserves their contracts.
 
 | Independent record | Current schema |
 |---|---:|
@@ -704,6 +751,10 @@ transition it demands are named at the top of
 `skills/vault-ingress/scripts/mutate-tracking-database.py`. Deterministic scan
 updates and human-approved conflict decisions stay separate paths; source lanes
 stay with `apply-source-repairs.py`.
+
+Metadata mutations still require the current root. A standalone correction may
+use the [root-only owner migration](#root-only-owner-migration) first. Never
+recover, cancel, or restamp an active claim merely to permit a catalog edit.
 
 The command owns each operation's closed fields and record validation; do not
 reimplement those allowlists in skill prose. PPTX catalog records require exact

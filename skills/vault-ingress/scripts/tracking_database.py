@@ -1965,6 +1965,55 @@ def repair_missing_qr_schema_versions(database: object) -> TrackingDatabaseMigra
     )
 
 
+def migrate_tracking_database_root(database: object) -> TrackingDatabaseMigration:
+    """Upgrade only the additive pre-source-alias root; preserve child contracts.
+
+    Root v3 adds an optional source-alias collection. Its absence already means
+    no aliases, so this migration changes only the root version. In particular,
+    it does not restamp analysed talks, lift title ledgers, repair observations,
+    or requeue work. Those remain the full migration's independent operations.
+
+    Deployed dual readers already accept both roots. Supported active claims
+    retain their exact return contract and baseline. The CLI uses the shared
+    generation-locked transaction: stale writers must reload, never overwrite
+    this migration or recover a claim to continue. Unknown/malformed child
+    state and claim/status drift refuse before any backup or write.
+    """
+    assessment = assess_tracking_database(database)
+    if (
+        not isinstance(database, dict)
+        or not assessment.usable
+        or assessment.schema_version
+        not in {
+            PRE_SOURCE_ALIASES_TRACKING_DATABASE_SCHEMA_VERSION,
+            TRACKING_DATABASE_SCHEMA_VERSION,
+        }
+        or database["config"]["schema_version"] != CONFIG_RECORD_SCHEMA_VERSION
+    ):
+        raise TrackingDatabaseError(
+            "root-only migration requires a readable pre-source-alias or current "
+            "root with current config; repair unsupported owner state or use "
+            "the full owner migration"
+        )
+    try:
+        validate_queue_claim_database(database)
+    except QueueClaimContractError as exc:
+        raise TrackingDatabaseError(
+            "root-only migration requires consistent queue claims; resolve the "
+            f"owner queue defect before retrying ({exc})"
+        ) from exc
+    candidate = copy.deepcopy(database)
+    candidate["schema_version"] = TRACKING_DATABASE_SCHEMA_VERSION
+    require_current_tracking_database(candidate)
+    return TrackingDatabaseMigration(
+        database=candidate,
+        changed=assessment.schema_version != TRACKING_DATABASE_SCHEMA_VERSION,
+        from_schema_version=assessment.schema_version,
+        to_schema_version=TRACKING_DATABASE_SCHEMA_VERSION,
+        record_counts=_empty_record_counts(),
+    )
+
+
 def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
     """Build the deterministic owner migration to root v3/config v2."""
     assessment = assess_tracking_database(database)

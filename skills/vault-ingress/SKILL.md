@@ -100,6 +100,12 @@ re-renders without being located again. The `pptx_catalog` array fuzzy-matches
 
 ## Step 1 — Bootstrap Vault State
 
+For an explicitly requested standalone catalog metadata repair, use the
+[root-only owner migration](references/schemas-db.md#root-only-owner-migration)
+before the reviewed metadata transaction. Re-read through the owner, verify the
+changes, report, and finish here. Do not select a batch, reparse, or regenerate
+derived artifacts. Processing runs continue through bootstrap below.
+
 Execute [Bootstrap and Preflight](references/bootstrap-and-preflight.md) in full.
 Do not select work until migration succeeds, the catalog is structurally valid,
 and offline preflight has no blocking finding. Before preflight may inspect any
