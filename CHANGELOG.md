@@ -1,5 +1,21 @@
 # Changelog
 
+### A wrong path reads as a wrong path
+
+`resolve-interpreter.py` decided between "vault root" and "database path" with
+`Path.is_file()` alone, so a path that *was* the intended database but did not
+exist took the vault-root branch and had the filename appended a second time:
+
+```
+ERROR: no tracking-database.json at /vault/tracking-database.json/tracking-database.json
+```
+
+A typo therefore looked like a structural problem, which is the opposite of what
+an actionable diagnostic should do. The name is checked before existence now,
+both accepted call shapes still work, and the reported path is the one the caller
+actually named.
+
+
 ## 0.20.138 — 2026-09-07
 
 ### A recorded demo can now be judged instead of trusted

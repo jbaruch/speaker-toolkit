@@ -121,3 +121,53 @@ def test_valid_json_that_is_not_an_object_is_refused(
     (tmp_path / "tracking-database.json").write_text(document, encoding="utf-8")
     with pytest.raises(ValueError, match="must contain a JSON object"):
         resolve_interpreter.resolve(tmp_path)
+
+
+# --- a missing database path is a wrong path, not a structure (#433) ---------
+
+
+def test_a_missing_database_path_is_reported_once_not_doubled(
+    resolve_interpreter, tmp_path
+):
+    """`is_file()` alone sent a missing database down the vault-root branch,
+    so the filename was appended again and a typo looked structural."""
+    missing = tmp_path / "tracking-database.json"
+    with pytest.raises(ValueError) as excinfo:
+        resolve_interpreter.resolve(missing)
+    message = str(excinfo.value)
+    assert message.count("tracking-database.json") == 2  # the name, and the path once
+    assert "tracking-database.json/tracking-database.json" not in message
+    assert str(missing) in message
+
+
+def test_a_named_database_path_is_never_treated_as_a_directory(
+    resolve_interpreter, tmp_path
+):
+    nested = tmp_path / "deep" / "tracking-database.json"
+    assert resolve_interpreter.locate_database(nested) == nested
+
+
+def test_a_vault_root_still_gets_the_filename_appended(resolve_interpreter, tmp_path):
+    assert (
+        resolve_interpreter.locate_database(tmp_path)
+        == tmp_path / "tracking-database.json"
+    )
+
+
+def test_an_existing_database_under_another_name_is_still_accepted(
+    resolve_interpreter, tmp_path
+):
+    """The caller may point at a copy; existence still decides for other names."""
+    other = tmp_path / "snapshot.json"
+    other.write_text("{}", encoding="utf-8")
+    assert resolve_interpreter.locate_database(other) == other
+
+
+def test_a_missing_path_under_another_name_still_reads_as_a_vault_root(
+    resolve_interpreter, tmp_path
+):
+    missing = tmp_path / "not-a-vault"
+    assert (
+        resolve_interpreter.locate_database(missing)
+        == missing / "tracking-database.json"
+    )
