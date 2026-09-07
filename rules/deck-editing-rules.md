@@ -36,17 +36,16 @@ generating slide structure (see `rules/slide-generation-rules.md`).
   `DeckOps.pptm` macro container, import the `.bas`, grant Automation consent).
   Walk the user through it interactively — see
   `skills/presentation-creator/references/deck-editing-setup.md`.
-- Never assume whether setup has been done. `deckops-doctor.py --vault-root <path>`
-  is the read-only probe that answers it, and it is the only thing that can see a
-  STALE macro import: a saved `.pptm` yields no VBA source, so the doctor asks the
-  running PowerPoint for the module's own content stamp. Statuses and their
-  routing live in Step 0 of the setup doc.
-- The macro container has one canonical location, `<vault_root>/.deckops/DeckOps.pptm`,
-  and the importable `.bas` is exported beside it. An installed plugin sits under a
-  hidden `.tessl/` directory that PowerPoint's Import panel will not show, so the
-  import path must leave the plugin tree —
-  `sync-deck-drivers.py export --to <vault_root>/.deckops` puts it where the user
-  can reach it.
+- Never assume whether setup has been done — run `deckops-doctor.py --vault-root <path>`
+  and act on its `status`. Statuses and their routing live in Step 0 of the setup doc.
+- The doctor is the only reader of a STALE macro import. A saved `.pptm` yields no
+  VBA source; the loaded module's content stamp comes back from the running
+  PowerPoint, never off disk.
+- The macro container has one canonical location,
+  `<vault_root>/.deckops/DeckOps.pptm`. The importable `.bas` is exported beside it
+  with `sync-deck-drivers.py export --to <vault_root>/.deckops`.
+- Never hand the user an import path inside the plugin tree. An installed plugin
+  sits under a hidden `.tessl/` directory PowerPoint's Import panel will not show.
 
 ## Add a Generated Illustration as a Slide Background
 
