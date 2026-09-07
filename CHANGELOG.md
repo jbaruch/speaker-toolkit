@@ -129,6 +129,17 @@ without finiteness. Instance-patching had missed them; the sweep did not.
 Also refused: a row declaring `proof_frame_t` with no `phrase`, which was
 silently skipped so a sibling row's pass carried the whole time axis.
 
+A sixth round found the sweep itself was unsound. `sequence()` handed out
+references to module-level word data, and the sweep mutates nested values in
+place, so one case corrupted the baseline for every case after it — an
+order-dependent suite that can pass for the wrong reason. The builder deep-copies
+now, and two tests assert the isolation rather than trusting it. The sweep's
+conclusions held once fixed, but they were not trustworthy until then.
+
+The same round found a pan requirement of `{"axis": "x"}` defaulting its absent
+threshold to zero, which any take satisfies — including one that never panned. A
+declared pan must carry a positive `min_abs_delta`.
+
 
 ## 0.20.137 — 2026-09-07
 

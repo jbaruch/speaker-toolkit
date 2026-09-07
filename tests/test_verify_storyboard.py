@@ -11,6 +11,7 @@ literals so the suite stays deterministic and needs no media.
 """
 
 import json
+from copy import deepcopy
 
 import pytest
 
@@ -53,7 +54,13 @@ def manifest(**over):
 
 
 def sequence(**over):
-    """A take that passes every checked axis. Negative tests perturb exactly one thing."""
+    """A take that passes every checked axis. Negative tests perturb exactly one thing.
+
+    Deep-copied: the sweep tests mutate nested values in place, and handing out a
+    reference to module-level REAL_WORDS let one test corrupt the baseline for
+    every test after it — an order-dependent suite that can pass for the wrong
+    reason (rules/testing-standards.md Independence).
+    """
     base = {
         "delivery": {"width": 1920, "height": 1080, "min_label_px": 14, "scale": 1.0},
         "narration": {"source": "actual_word_timestamps", "words": REAL_WORDS},
@@ -94,7 +101,7 @@ def sequence(**over):
         "seam_tolerances": {"scroll": 2, "transform": 2},
     }
     base.update(over)
-    return base
+    return deepcopy(base)
 
 
 def codes(verdict):
@@ -907,3 +914,51 @@ def test_one_incomplete_row_is_not_masked_by_a_valid_sibling(verify_storyboard):
     s = sequence()
     s["rows"].append({"id": "r2", "clip": "a0-hook", "proof_frame_t": 3.1})
     assert verify_storyboard.structural_problem(s) is not None
+
+
+# --- suite independence and incomplete requirements (PR #432 round 6) ---------
+
+
+def test_the_sequence_builder_shares_no_state_between_calls(verify_storyboard):
+    """The sweep mutates nested values in place; a shared baseline let one test
+    corrupt every test after it, so later cases could pass for the wrong reason."""
+    first = sequence()
+    first["narration"]["words"][0]["start"] = float("nan")
+    first["clips"][0]["entry"]["viewport"]["width"] = -1
+    first["rows"][0]["require"]["visible_labels"].append("injected")
+
+    second = sequence()
+    assert second["narration"]["words"][0]["start"] == 0.0
+    assert second["clips"][0]["entry"]["viewport"]["width"] == 1600
+    assert second["rows"][0]["require"]["visible_labels"] == ["release_docs"]
+    assert verify_storyboard.structural_problem(second) is None
+
+
+def test_module_level_word_data_is_never_handed_out_by_reference():
+    assert sequence()["narration"]["words"] is not REAL_WORDS
+    assert sequence()["narration"]["words"][0] is not REAL_WORDS[0]
+
+
+@pytest.mark.parametrize(
+    "pan,fragment",
+    [
+        ({"axis": "x"}, "rows[0].require.pan must carry min_abs_delta"),
+        ({"axis": "x", "min_abs_delta": 0}, "must be a positive finite number"),
+        ({"axis": "x", "min_abs_delta": -5}, "must be a positive finite number"),
+        ({"axis": "x", "min_abs_delta": "200"}, "must be a positive finite number"),
+    ],
+)
+def test_an_incomplete_pan_requirement_is_refused(verify_storyboard, pan, fragment):
+    """A threshold defaulting to 0 is satisfied by a take that never panned."""
+    s = sequence()
+    s["rows"][0]["require"]["pan"] = pan
+    problem = verify_storyboard.structural_problem(s)
+    assert problem is not None and fragment in problem
+
+
+def test_a_pan_requirement_with_a_real_threshold_still_works(verify_storyboard):
+    s = sequence()
+    s["rows"][0]["require"]["pan"] = {"axis": "x", "min_abs_delta": 200}
+    assert verify_storyboard.verify(s)["ok"] is True
+    s["clips"][0]["events"] = [e for e in s["clips"][0]["events"] if e["type"] != "pan"]
+    assert "pan_not_performed" in codes(verify_storyboard.verify(s))

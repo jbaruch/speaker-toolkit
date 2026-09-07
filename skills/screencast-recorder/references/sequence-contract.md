@@ -51,7 +51,10 @@ A phrase spoken more than once is matched at **every** occurrence; a proof
 frame inside any of them passes.
 
 `route` · `data_fingerprint` · `visible_labels` · `content_bounds [x,y,w,h]` ·
-`margin_px` · `pan {axis,min_abs_delta}` · `click_on_target`
+`margin_px` · `pan {axis, min_abs_delta}` · `click_on_target`
+
+A declared `pan` must carry a **positive** `min_abs_delta`. A threshold of zero,
+or an absent one, is satisfied by a take that never panned.
 
 ## Output
 

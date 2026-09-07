@@ -624,9 +624,14 @@ def structural_problem(sequence):
         if pan is not None:
             if not isinstance(pan, dict):
                 return f"rows[{index}].require.pan must be an object"
-            if "min_abs_delta" in pan and not _is_number(pan["min_abs_delta"]):
+            # A pan requirement with no threshold defaulted to 0, which any
+            # take satisfies — including one that performed no pan at all.
+            if "min_abs_delta" not in pan:
+                return f"rows[{index}].require.pan must carry min_abs_delta"
+            if not _is_number(pan["min_abs_delta"]) or pan["min_abs_delta"] <= 0:
                 return (
-                    f"rows[{index}].require.pan.min_abs_delta must be a finite number"
+                    f"rows[{index}].require.pan.min_abs_delta must be a "
+                    "positive finite number"
                 )
         proof = row.get("proof_frame_t")
         if proof is not None:
