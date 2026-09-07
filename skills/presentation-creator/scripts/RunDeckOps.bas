@@ -62,6 +62,18 @@ Attribute VB_Name = "DeckOps"
 ' =====================================================================
 Option Explicit
 
+' Content stamp -- written by `sync-deck-drivers.py stamp`, never edited by hand.
+' Nothing can read the VBA source back out of a saved DeckOps.pptm, so a module
+' imported once and never refreshed is otherwise invisible. deckops-doctor.py asks
+' the RUNNING PowerPoint for DeckOpsVersion() and compares the answer to the stamp
+' in the shipped module; a mismatch means the container holds a stale import and
+' the user must re-import (see references/deck-editing-setup.md Step 3).
+Public Const DECKOPS_STAMP As String = "8817d0943105a0bf"
+
+Public Function DeckOpsVersion() As Variant
+    DeckOpsVersion = DECKOPS_STAMP
+End Function
+
 Public Function RunDeckOps(ByVal basePath As String, _
                            ByVal outPath As String, _
                            ByVal importSpec As String, _

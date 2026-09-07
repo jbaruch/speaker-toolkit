@@ -63,7 +63,10 @@ through. Pairs with poster-theatrical for pure full-bleed, builds-and-all decks.
 files, which had left the PowerPoint deck layer dead on any installed copy. The
 drivers now ship as committed `.txt` mirrors and are restored automatically on
 first use (`sync-deck-drivers.py`), so `RunDeckOps.bas` and the AppleScript
-drivers are there when you need them — no manual recovery.
+drivers are there when you need them — no manual recovery. And `deckops-doctor.py` now
+answers whether the one-time PowerPoint setup is done, where the macro container
+is, and — the one nothing could see before — whether the module imported into
+`DeckOps.pptm` is the build that shipped, or an old one still quietly running.
 
 **No more per-illustration permission clicks** — the background and build passes
 now stage illustrations into PowerPoint's own sandbox container before applying
@@ -574,6 +577,10 @@ speaker-toolkit/
     |   |   +-- RunDeckOps.bas                 # VBA: BuildDeck + trim/reorder/import/notes/bg/placeholder/QR via real PowerPoint
     |   |   +-- run-deck-ops.sh                # Wrapper for RunDeckOps (staging + move into place)
     |   |   +-- run-deck-ops.applescript       # AppleScript driver for RunDeckOps
+    |   |   +-- deckops-doctor.py              # Is the deck layer set up, open, and current? (tested)
+    |   |   +-- deckops-version.applescript    # Read-only probe: which macro build is loaded
+    |   |   +-- smoke-test-ops.txt             # 3-slide op sequence for the setup smoke test
+    |   |   +-- deckops-smoke-test.sh          # Build that sequence against the template and report where it landed
     |   |   +-- make-bg-slide.sh               # Wrapper for MakeBgImageSlide (illustration -> bg slide)
     |   |   +-- make-bg-slide.applescript      # AppleScript driver for MakeBgImageSlide
     |   |   +-- make-placeholder-slide.sh       # Wrapper for MakePlaceholderSlide (yellow [PLACEHOLDER] slide)

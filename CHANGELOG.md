@@ -1,5 +1,125 @@
 # Changelog
 
+### Tell the user how to actually recreate the DeckOps macro container
+
+The distribution half of the deck layer was solved in #85 and #316: `.bas` and
+`.applescript` drivers ride to consumers as committed `.txt` mirrors,
+`sync-deck-drivers.py` restores them, and `check_shipped_extensions.py` gates
+drift. The walkthrough half was not. Five things the skill could not do:
+
+The import path was wrong for every consumer. Step 3 said "Import File… and
+choose `skills/presentation-creator/scripts/RunDeckOps.bas`" — a repo-relative
+path that, on an installed plugin, resolves under a hidden `.tessl/` directory
+PowerPoint's Import panel does not show. The user was being sent to a folder they
+cannot see by a path that does not resolve, while the same step's materialize
+command used `{speaker_toolkit_root}` — two path conventions in one step, which
+`skill-authoring` forbids. `sync-deck-drivers.py export --to <dir>` now copies the
+module out of the plugin tree to `<vault_root>/.deckops/`, beside the container,
+and the step hands the user that absolute path plus the ⇧⌘G / ⇧⌘. keys the panel
+needs.
+
+Nothing could detect first use. Three callers said "on first use, walk the user
+through deck-editing-setup.md" and none of them could tell first use from the
+hundredth, so the agent guessed. `deckops-doctor.py` answers it.
+
+The container had no recorded location. Step 2 offered `<vault>/.deckops/DeckOps.pptm`
+as an example; eight wrappers printed "confirm DeckOps.pptm is open" and not one
+could say where it should be. That path is now canonical, derived from
+`config.vault_root`, and a running PowerPoint reports where it actually opened
+the container from. Chosen over a `config` field on purpose: a schema v3 bump
+plus migration to record what the live app already knows, and
+`stateful-artifacts` says verify against the live source anyway.
+
+The smoke test was prose. Step 5 — the step whose whole job was confirming steps
+1–4 in one shot — said "run a 3-slide throwaway" and left the agent to invent the
+gate it was gated by. `smoke-test-ops.txt` ships that sequence, using layout 0 and
+a free text box only so it runs against any template, with four explicit pass
+criteria.
+
+A stale macro import was invisible. `ensure-drivers.sh` materializes without
+`--force`, so an on-disk driver is never refreshed, and — worse — a saved `.pptm`
+yields no VBA source at all, so a module imported once and never updated keeps
+running OLD code with nothing to notice. `RunDeckOps.bas` now carries
+`DECKOPS_STAMP`, a digest of its own body with the stamp masked out, exposed
+through a `DeckOpsVersion()` macro; `deckops-version.applescript` asks the running
+PowerPoint for it and the doctor compares. Content-addressed rather than
+hand-bumped because an editor who forgets to bump a counter ships a lie, and
+`mirror` recomputes the stamp while `check` fails on drift.
+
+The probe never launches PowerPoint — a diagnostic that starts a 300 MB app as a
+side effect is worse than the answer it returns — and exits 0 with a verdict even
+when the macro is unreachable, because "setup required" is a finding to act on,
+not a failure of the script.
+
+Review round on PR #412 caught two real bugs in the first cut. `deckops-doctor.py`
+ran the mirror check before materializing, so a fresh `tessl install` — which
+lands ten `.txt` mirrors and none of their sources — reported ten orphan mirrors
+and told a valid installation to reinstall itself. Copilot found the same one
+independently. The doctor also called `read_stamp` unguarded, so a `RunDeckOps.bas`
+with a damaged stamp line crashed it instead of returning the `driver_drift`
+diagnostic `check()` had already produced.
+
+The probe's container lookup started as a bare `on error` handler. Narrowing it
+to specific error numbers meant learning which one actually fires: `repeat with p
+in presentations` + `name of p` raises -2763 on current Mac PowerPoint builds,
+while `name of every presentation` returns the list correctly. Using the working
+plural form removed the need for a handler at all.
+
+That same probe run surfaced a case the verdict table got wrong: a `DeckOps.pptm`
+already open from a location predating the canonical path. A macro that answers
+proves setup wherever its container sits, so `state=ok` now decides `ok` on its
+own, `container.canonical_mismatch` reports the difference, and `next_step` names
+the container the user actually has open rather than sending them to create a
+second one.
+
+The smoke test moved out of the reference file into `deckops-smoke-test.sh`, and
+every `sync-deck-drivers.py` mode emits JSON — both `script-delegation`
+requirements the first cut missed.
+
+Round two found three more. The wrapper serialized its report with `printf`, so an
+output directory containing a double quote or a backslash produced invalid JSON
+behind exit 0 — it now goes through a JSON encoder, with hostile-path tests. The
+probe's remaining catch-all, around the macro call itself, is narrowed to -18, the
+number Mac PowerPoint returns when the named macro is unavailable, verified by
+running the probe against a PowerPoint holding a DeckOps.pptm with no DeckOps
+module in it; every other number propagates and the doctor reports the non-zero
+osascript exit. And the wrapper shipped untested: `tests/test_deckops_smoke_test.py`
+now stubs `build-deck.sh` and covers template validation, unique naming,
+build-failure propagation, a build that writes nothing, and report serialization,
+leaving only the PowerPoint call to manual validation.
+
+The reason installed plugins sit under a hidden directory left the rule body for
+this archive, where justification belongs: an installed plugin lives under
+`.tessl/`, which PowerPoint's VBA-editor Import panel does not show, so an import
+path pointing inside the plugin tree cannot be followed.
+
+Round three found the same class of bug twice more, both of them the doctor
+answering a question it had not actually asked. `run_probe` laundered every
+non-zero `osascript` exit into `macro_unreachable`, so denied Automation consent
+plus no canonical container came out as `setup_required` — telling the user to
+build a second container over a permissions problem. The driver returns
+`macro_unreachable` at exit 0 for the one expected failure, so a non-zero exit is
+by construction something else; those now surface as `probe_failed` /
+`probe_missing`, which report the state as UNKNOWN and exit 1. Copilot found the
+`probe_missing` half of this independently.
+
+And the docstring's "Read-only. Opens nothing, saves nothing" was a lie:
+`diagnose()` calls `materialize()`, which writes drivers into the plugin's
+scripts directory, `--offline` included. Both reviewers caught it. The claim is
+now itemized — no deck, no template, no container, no PowerPoint launch; does
+restore missing drivers, never overwriting one — in the docstring, the
+`--help` description, and Step 0 of the walkthrough.
+
+Round four caught two tests that passed on the author's Mac and would have gone
+red on the Ubuntu runner. Both call `main()`, which reads `sys.platform`, so off
+macOS every verdict short-circuits to `unsupported_platform` and the assertions
+never reach the scenario they name. An `on_darwin` fixture pins the platform the
+doctor sees, a new test covers the foreign-platform path itself (verdict, exit 0,
+probe never attempted), and the suite was re-run under a session fixture forcing
+`sys.platform = "linux"` to confirm it. `verdict()` takes platform as an argument
+and needed no patching — only the `main()` and `diagnose()` paths did.
+
+
 ## 0.20.130 — 2026-09-06
 
 ### Migrate the catalog root without disturbing talk analysis or claims

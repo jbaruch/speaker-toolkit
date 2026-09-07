@@ -46,9 +46,12 @@ either run Phase 6 Step 6.1 first or get the shownotes URL manually.
    `"{speaker_toolkit_root}/skills/presentation-creator/scripts/run-deck-ops.sh"`.
    python-pptx editing is not used — it strips per-slide background fills,
    flattening illustrated decks. See `rules/deck-editing-rules.md` (macOS +
-   Microsoft PowerPoint only). On first use, walk the user through
-   `references/deck-editing-setup.md` (enable macros, import the macro, grant
-   Automation consent) before invoking the script.
+   Microsoft PowerPoint only). Before invoking the script, run
+   `"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/deckops-doctor.py" --vault-root "{vault_root}"`
+   and act on its `status` — it reports whether the one-time setup is done,
+   whether the macro container is open, and whether the imported macro is
+   current. Anything but `ok` routes into `references/deck-editing-setup.md`
+   at the step its `next_step` names.
 
 ## CFP Abstract Writing
 
