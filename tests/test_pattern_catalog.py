@@ -667,7 +667,7 @@ SEMANTIC_OUTCOME_GATES = {
         "absence_evaluable_from": None,
     },
 }
-assert len(SEMANTIC_OUTCOME_GATES) == 19
+assert len(SEMANTIC_OUTCOME_GATES) == 21
 
 SEMANTIC_SOURCE_GATES = {
     pattern_id: frozenset(
@@ -831,7 +831,7 @@ REQUIRED_EVIDENCE_GATES = {
     **APPROVED_MECHANICAL_SOURCE_GATES,
     **SEMANTIC_SOURCE_GATES,
 }
-assert len(REQUIRED_EVIDENCE_GATES) == 81
+assert len(REQUIRED_EVIDENCE_GATES) == 83
 
 
 def _ids(files):
