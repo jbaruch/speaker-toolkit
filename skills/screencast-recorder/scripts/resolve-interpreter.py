@@ -30,7 +30,16 @@ REPAIR = "run vault-ingress Step 1 to repair the configuration"
 
 
 def locate_database(target: Path) -> Path:
-    """The database itself, or the one inside a vault root."""
+    """The database itself, or the one inside a vault root.
+
+    Decided by name before existence. Falling back on `is_file()` alone meant a
+    database path that was simply missing took the vault-root branch and had the
+    filename appended a second time, so a typo reported
+    `.../tracking-database.json/tracking-database.json` and read as a structural
+    problem rather than a wrong path.
+    """
+    if target.name == DATABASE_NAME:
+        return target
     return target if target.is_file() else target / DATABASE_NAME
 
 
