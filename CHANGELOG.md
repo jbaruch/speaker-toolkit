@@ -1,5 +1,17 @@
 # Changelog
 
+### Reconcile a macOS worker's clean exit after root metadata disappears
+
+The #219 native trace captured a root becoming unavailable to psutil before
+`waitpid` could reap its successful exit. When the first bounded wait expired,
+cleanup confirmed exit 0 after a refused group signal, but the supervisor kept
+the earlier identity error. It now reconciles that specific root-disappearance
+failure after successful cleanup, only within the original wall deadline and
+without any successful root or observed-descendant kill. Authentication,
+generation bindings, response validation and late pipe checks still run.
+Changed identities, resource failures, invalid word timing and failed cleanup
+remain refusals; no resource limit or wait budget increases.
+
 ## 0.20.136 — 2026-09-07
 
 ### Point pyright at the project environment

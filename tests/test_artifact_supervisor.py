@@ -1207,6 +1207,318 @@ def test_monitor_identity_loss_does_not_accept_a_still_live_worker():
     assert caught.value.reason_code == "worker_monitor_identity_changed"
 
 
+@pytest.fixture
+def cleanup_exit_run(monkeypatch):
+    """Replay root loss, an expired settle wait, EPERM, then a reaped exit.
+
+    Real request/response framing, pipe threads, psutil accounting and cleanup
+    run against fixed process observations. Events finish the pipe traffic
+    before root loss; runner scheduling never decides the response's validity.
+    """
+
+    state = SimpleNamespace(
+        exit_code=0,
+        exits_in_cleanup=True,
+        monitor_failure="memory_missing",
+        group_signal="eperm",
+        descendant_alive=False,
+        descendant_killed=False,
+        platform="darwin",
+        response="success",
+        late_pipe_error=None,
+        cleanup_failure=False,
+        in_cleanup=False,
+        finish_time=0.0,
+        now=0.0,
+    )
+    pipe_done = [threading.Event() for _ in range(3)]
+
+    class ReadPipe(io.BytesIO):
+        def __init__(self, data, done):
+            super().__init__(data)
+            self.done = done
+
+        def read(self, size: int | None = -1):
+            result = super().read(size)
+            if not result:
+                self.done.set()
+            return result
+
+    class WritePipe(io.BytesIO):
+        def close(self):
+            super().close()
+            pipe_done[0].set()
+
+    class CleanupExitProcess(ScriptedProcess):
+        def wait(self, timeout=0.0):
+            self.wait_timeouts.append(timeout)
+            if self.returncode is None:
+                if not state.in_cleanup or not state.exits_in_cleanup:
+                    raise subprocess.TimeoutExpired("worker", timeout)
+                self.returncode = state.exit_code
+            return self.returncode
+
+    process = CleanupExitProcess(exit_code=0)
+    state.process = process
+    prepare_request = artifact_supervisor._prepare_request
+
+    def prepare(*args, **kwargs):
+        pending = prepare_request(*args, **kwargs)
+        stream = io.BytesIO()
+        if state.response == "word_error":
+            artifact_supervisor.write_worker_response(
+                pending.request,
+                error=artifact_supervisor.SupervisorError(
+                    "whisper_word_sample_invalid_word_nonpositive_span"
+                ),
+                observed_generations=pending.request.expected_generations,
+                stream=stream,
+            )
+        else:
+            artifact_supervisor.write_worker_response(
+                pending.request,
+                payload={"value": 1},
+                observed_generations=pending.request.expected_generations,
+                stream=stream,
+            )
+        frame = stream.getvalue()
+        if state.response == "bad_mac":
+            document = json.loads(frame[4:])
+            document["hmac_sha256"] = "0" * 64
+            encoded = json.dumps(document).encode()
+            frame = struct.pack("!I", len(encoded)) + encoded
+        elif state.response == "truncated":
+            frame = frame[:-1]
+        elif state.response == "trailing":
+            frame += b"x"
+        process.stdin = WritePipe()
+        process.stdout = ReadPipe(frame, pipe_done[1])
+        process.stderr = ReadPipe(b"", pipe_done[2])
+        return pending
+
+    class ObservedProcess:
+        def __init__(self, pid):
+            self.pid = pid
+            self.samples = 0
+
+        def create_time(self):
+            if self.pid == process.pid and self.samples:
+                for done in pipe_done:
+                    done.wait()
+            if self.samples and state.monitor_failure == "identity_replaced":
+                return 2.0
+            return 1.0
+
+        def children(self, recursive):
+            assert recursive
+            if self.samples and state.monitor_failure in {
+                "children_missing",
+                "other_process_missing",
+            }:
+                missing = self.pid if state.monitor_failure == "children_missing" else 9
+                raise psutil.NoSuchProcess(missing)
+            return [descendant] if state.descendant_alive else []
+
+        def memory_info(self):
+            if self.pid == process.pid:
+                self.samples += 1
+                if state.monitor_failure == "barrier_missing":
+                    raise psutil.NoSuchProcess(self.pid)
+                if self.samples > 1:
+                    for done in pipe_done:
+                        done.wait()
+                    if state.monitor_failure == "memory_missing":
+                        raise psutil.NoSuchProcess(self.pid)
+                    if state.monitor_failure == "memory_other_pid":
+                        raise psutil.NoSuchProcess(9)
+                    if state.monitor_failure == "zombie":
+                        raise psutil.ZombieProcess(self.pid)
+                    if state.monitor_failure == "unavailable":
+                        raise psutil.AccessDenied(self.pid)
+                    if state.monitor_failure == "memory_limit":
+                        return SimpleNamespace(rss=1024**3)
+            return SimpleNamespace(rss=1)
+
+        def is_running(self):
+            if self.pid != process.pid:
+                return state.descendant_alive
+            if self.samples > 1 and state.monitor_failure == "not_running":
+                return False
+            return process.returncode is None
+
+        def status(self):
+            return psutil.STATUS_RUNNING
+
+        def kill(self):
+            assert self.pid != process.pid
+            state.descendant_alive = False
+            state.descendant_killed = True
+
+    root = ObservedProcess(process.pid)
+    descendant = ObservedProcess(process.pid + 1)
+
+    def killpg(pid, sig):
+        assert pid == process.pid
+        assert sig == artifact_supervisor.signal.SIGKILL
+        if state.group_signal == "eperm":
+            raise PermissionError(1, "Operation not permitted")
+        if state.group_signal == "esrch":
+            raise ProcessLookupError(3, "No such process")
+        assert state.group_signal == "success"
+        process.kill()
+
+    cleanup = artifact_supervisor._cleanup_invocation
+
+    def finish_cleanup(*args, **kwargs):
+        state.in_cleanup = True
+        result = cleanup(*args, **kwargs)
+        if state.late_pipe_error is not None:
+            pipe_index, event = state.late_pipe_error
+            getattr(args[pipe_index], event).set()
+        state.now = state.finish_time
+        if state.cleanup_failure:
+            return RuntimeError("synthetic cleanup failure")
+        return result
+
+    def run():
+        monkeypatch.setattr(artifact_supervisor, "_prepare_request", prepare)
+        monkeypatch.setattr(artifact_supervisor, "_cleanup_invocation", finish_cleanup)
+        monkeypatch.setattr(
+            artifact_supervisor,
+            "os",
+            SimpleNamespace(**{**vars(os), "name": "posix", "killpg": killpg}),
+        )
+        monkeypatch.setattr(
+            artifact_supervisor,
+            "sys",
+            SimpleNamespace(**{**vars(sys), "platform": state.platform}),
+        )
+        # Windows has no SIGKILL. Supply the simulated POSIX signal API along
+        # with os.name/killpg, without changing the host's real signal module.
+        monkeypatch.setattr(artifact_supervisor, "signal", SimpleNamespace(SIGKILL=9))
+        monkeypatch.setattr(
+            artifact_supervisor,
+            "psutil",
+            SimpleNamespace(
+                **{
+                    **vars(psutil),
+                    "Process": lambda pid: root,
+                    "wait_procs": lambda processes, timeout: (processes, []),
+                }
+            ),
+        )
+        return _run(
+            "success",
+            process_backend=lambda *args, **kwargs: process,
+            monitor_factory=artifact_supervisor._ProcessTreeMonitor,
+            credentials=artifact_supervisor.WorkerCredentials(b"k" * 32),
+            clock=lambda: state.now,
+            sleeper=lambda seconds: None,
+        )
+
+    return state, run
+
+
+@pytest.mark.parametrize("failure", ["memory_missing", "children_missing"])
+def test_cleanup_reconciles_disappeared_root_only_after_clean_exit(
+    cleanup_exit_run, failure
+):
+    state, run = cleanup_exit_run
+    state.monitor_failure = failure
+
+    assert run().payload == {"value": 1}
+    assert state.process.returncode == 0
+    assert state.process.killed is False
+    assert state.process.wait_timeouts[:2] == [0.01, 0.01]
+
+
+def test_cleanup_replay_does_not_require_host_posix_signals(
+    cleanup_exit_run, monkeypatch
+):
+    _, run = cleanup_exit_run
+    monkeypatch.setattr(artifact_supervisor, "signal", SimpleNamespace())
+
+    assert run().payload == {"value": 1}
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "reason"),
+    [
+        ("exit_code", 1, "worker_monitor_identity_changed"),
+        ("monitor_failure", "identity_replaced", "worker_monitor_identity_changed"),
+        ("monitor_failure", "other_process_missing", "worker_monitor_identity_changed"),
+        ("monitor_failure", "memory_other_pid", "worker_monitor_identity_changed"),
+        ("monitor_failure", "zombie", "worker_monitor_identity_changed"),
+        ("monitor_failure", "barrier_missing", "worker_monitor_identity_changed"),
+        ("monitor_failure", "not_running", "worker_monitor_identity_changed"),
+        ("monitor_failure", "unavailable", "worker_monitor_unavailable"),
+        ("monitor_failure", "memory_limit", "worker_memory_limit_exceeded"),
+        ("group_signal", "success", "worker_monitor_identity_changed"),
+        ("group_signal", "esrch", "worker_monitor_identity_changed"),
+        ("descendant_alive", True, "worker_monitor_identity_changed"),
+        ("platform", "linux", "worker_cleanup_failed"),
+        ("exits_in_cleanup", False, "worker_cleanup_failed"),
+        ("finish_time", 5.0, "worker_monitor_identity_changed"),
+        ("cleanup_failure", True, "worker_cleanup_failed"),
+    ],
+)
+def test_cleanup_cannot_reconcile_unsafe_or_late_exit(
+    cleanup_exit_run, field, value, reason
+):
+    state, run = cleanup_exit_run
+    setattr(state, field, value)
+
+    with pytest.raises(artifact_supervisor.SupervisorError) as caught:
+        run()
+
+    assert caught.value.reason_code == reason
+    if field == "descendant_alive":
+        assert state.descendant_killed
+
+
+@pytest.mark.parametrize(
+    ("response", "reason"),
+    [
+        ("bad_mac", "worker_response_authentication_failed"),
+        ("truncated", "invalid_worker_response"),
+        ("trailing", "invalid_worker_response"),
+        ("word_error", "whisper_word_sample_invalid_word_nonpositive_span"),
+    ],
+)
+def test_cleanup_reconciled_exit_still_validates_response(
+    cleanup_exit_run, response, reason
+):
+    state, run = cleanup_exit_run
+    state.response = response
+
+    with pytest.raises(artifact_supervisor.SupervisorError) as caught:
+        run()
+
+    assert caught.value.reason_code == reason
+
+
+@pytest.mark.parametrize(
+    ("pipe_index", "event", "reason"),
+    [
+        (3, "_failed", "worker_request_write_failed"),
+        (4, "_failed", "worker_output_read_failed"),
+        (5, "_failed", "worker_diagnostic_read_failed"),
+        (4, "_overflow", "worker_output_limit_exceeded"),
+        (5, "_overflow", "worker_diagnostic_limit_exceeded"),
+    ],
+)
+def test_cleanup_reconciled_exit_still_rejects_late_pipe_failure(
+    cleanup_exit_run, pipe_index, event, reason
+):
+    state, run = cleanup_exit_run
+    state.late_pipe_error = (pipe_index, event)
+
+    with pytest.raises(artifact_supervisor.SupervisorError) as caught:
+        run()
+
+    assert caught.value.reason_code == reason
+
+
 def test_cleanup_failure_overrides_signed_success(tmp_path):
     class CleanupFailingMonitor:
         def __init__(self, _pid, _limits):

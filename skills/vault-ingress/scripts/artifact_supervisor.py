@@ -83,6 +83,13 @@ class SupervisorError(RuntimeError):
         super().__init__(reason_code)
 
 
+class _RootProcessDisappeared(SupervisorError):
+    """Root metadata vanished; only Popen can confirm this child's exit."""
+
+    def __init__(self) -> None:
+        super().__init__("worker_monitor_identity_changed")
+
+
 @dataclass(frozen=True)
 class FileGeneration:
     """Path-free identity snapshot used to bind requests and responses."""
@@ -502,6 +509,8 @@ def run_authenticated_worker(
     clock_fn = clock if clock is not None else time.monotonic
     sleep_fn = sleeper if sleeper is not None else time.sleep
     started = clock_fn()
+    deadline = started + limits.wall_seconds
+    request_started = False
     process: subprocess.Popen[bytes] | None = None
     controller: _ProcessController | None = None
     monitor: _ProcessTreeMonitor | None = None
@@ -563,13 +572,13 @@ def run_authenticated_worker(
                 ) from exc
             raise
 
-        deadline = started + limits.wall_seconds
         if clock_fn() >= deadline:
             raise SupervisorError("worker_timeout")
 
         stdout_reader.start()
         stderr_reader.start()
         stdin_writer.start()
+        request_started = True
 
         while process.poll() is None:
             if stdout_reader.overflowed:
@@ -654,6 +663,24 @@ def run_authenticated_worker(
                 },
                 diagnostic_receipt,
             ) from cleanup_error
+        if (
+            sys.platform == "darwin"
+            and request_started
+            and isinstance(primary_error, _RootProcessDisappeared)
+            and process is not None
+            and process.returncode == 0
+            and controller is not None
+            and not controller.termination_sent
+            and monitor is not None
+            and not monitor.termination_sent
+            and clock_fn() < deadline
+        ):
+            # Darwin can expose root ESRCH before waitpid can reap it. Existing
+            # bounded cleanup may learn the clean exit after the first settle
+            # wait expires. Reconcile only without a successful kill and after
+            # cleanup proves all seen processes and pipe threads are gone.
+            # Keep late pipe checks and authenticated response validation below.
+            primary_error = None
         late_pipe_error = _pipe_error_after_cleanup(
             stdin_writer,
             stdout_reader,
@@ -1083,6 +1110,7 @@ class _ProcessTreeMonitor:
         self._root: Any | None = None
         self._root_create_time: float | None = None
         self._seen: dict[tuple[int, float], Any] = {}
+        self.termination_sent = False
 
     def establish(self) -> None:
         psutil_module = _load_psutil()
@@ -1111,9 +1139,10 @@ class _ProcessTreeMonitor:
                 raise SupervisorError("worker_monitor_identity_changed")
             candidates = [self._root, *self._root.children(recursive=True)]
         except psutil_module.NoSuchProcess as exc:
-            # Callers sample only while Popen still reports the child running.
-            # Disappearance here is therefore a containment/identity failure,
-            # not a clean exit.
+            if exc.pid == self._pid and not isinstance(
+                exc, psutil_module.ZombieProcess
+            ):
+                raise _RootProcessDisappeared() from exc
             raise SupervisorError("worker_monitor_identity_changed") from exc
         except (
             psutil_module.AccessDenied,
@@ -1134,6 +1163,10 @@ class _ProcessTreeMonitor:
                     continue
             except psutil_module.NoSuchProcess as exc:
                 if candidate.pid == self._pid:
+                    if exc.pid == self._pid and not isinstance(
+                        exc, psutil_module.ZombieProcess
+                    ):
+                        raise _RootProcessDisappeared() from exc
                     raise SupervisorError("worker_monitor_identity_changed") from exc
                 continue
             except (
@@ -1180,6 +1213,7 @@ class _ProcessTreeMonitor:
         for process in processes:
             try:
                 process.kill()
+                self.termination_sent = True
             except psutil_module.NoSuchProcess:
                 continue
             except (
@@ -1214,6 +1248,7 @@ class _ProcessController:
         self._process = process
         self._limits = limits
         self._windows_job: _WindowsJob | None = None
+        self.termination_sent = False
 
     def establish(self) -> None:
         if os.name == "nt":
@@ -1237,6 +1272,7 @@ class _ProcessController:
         if self._windows_job is not None:
             try:
                 self._windows_job.terminate()
+                self.termination_sent = True
             except OSError as exc:
                 failures.append(exc)
         elif os.name == "posix" and self._process.poll() is None:
@@ -1247,6 +1283,7 @@ class _ProcessController:
             # _ProcessTreeMonitor even after the root has exited.
             try:
                 os.killpg(self._process.pid, signal.SIGKILL)
+                self.termination_sent = True
             except ProcessLookupError:
                 pass
             except PermissionError as exc:
@@ -1280,6 +1317,7 @@ class _ProcessController:
         if self._process.poll() is None:
             try:
                 self._process.kill()
+                self.termination_sent = True
             except ProcessLookupError:
                 # The process group kill can win the race after poll() but
                 # before this direct-child fallback. ESRCH means the cleanup
