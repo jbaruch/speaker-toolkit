@@ -622,7 +622,7 @@ def test_bundled_catalog_registry_uses_frontmatter_polarity(
     assert catalog["errors"] == []
     assert catalog["registry"]["ant-fonts"]["polarity"] == "antipattern"
     assert catalog["registry"]["anti-sell"]["polarity"] == "pattern"
-    assert len(catalog["registry"]) == 111
+    assert len(catalog["registry"]) == 113
 
 
 def test_cli_emits_stable_json_and_does_not_edit_inputs_or_catalog(
