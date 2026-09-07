@@ -223,10 +223,13 @@ def inspect_container(path: Path) -> dict:
         if not report["exists"]:
             return report
         with zipfile.ZipFile(path) as z:
-            if VBA_PART not in z.namelist():
+            try:
+                info = z.getinfo(VBA_PART)
+            except KeyError:
+                # A valid archive that simply carries no macros — readable, empty.
                 report["readable"] = True
                 return report
-            if z.getinfo(VBA_PART).compress_type not in ALLOWED_COMPRESSION:
+            if info.compress_type not in ALLOWED_COMPRESSION:
                 return report
             with z.open(VBA_PART) as member:
                 blob = member.read(VBA_PART_READ_LIMIT)

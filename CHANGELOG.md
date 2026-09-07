@@ -43,9 +43,10 @@ embedded NUL in the path — at which point patching one class per review round
 was plainly the wrong shape of fix. The handler now names everything `zipfile`
 documents for opening an archive and reading a member: `BadZipFile`,
 `LargeZipFile`, `zlib.error`, `NotImplementedError`, `ValueError`, `KeyError`,
-`EOFError`, `OSError`. Only three of the eight descend from `OSError`. A test
-raises each one in turn and asserts the diagnosis survives, so the contract is
-pinned by class rather than by whichever corruption someone thought to try.
+`EOFError`, `RuntimeError`, `lzma.LZMAError`, `OSError` — the last two arriving
+in later rounds described below. Only three of the ten descend from `OSError`. A
+test raises each one in turn and asserts the diagnosis survives, so the contract
+is pinned by class rather than by whichever corruption someone thought to try.
 
 `path.is_file()` sat outside that guard, which made the enumeration moot for a
 malformed path — it stats the path, so an embedded NUL or an unreadable parent

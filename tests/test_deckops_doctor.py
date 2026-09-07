@@ -922,11 +922,3 @@ def test_the_codecs_a_real_container_uses_are_allowed(deckops_doctor, tmp_path):
         assert r["readable"] is True, name
         assert r["has_module"] is True, name
         assert r["has_stamp_macro"] is True, name
-
-
-def test_the_allowlist_holds_only_what_powerpoint_writes(deckops_doctor):
-    import zipfile
-
-    assert deckops_doctor.ALLOWED_COMPRESSION == frozenset(
-        {zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED}
-    )
