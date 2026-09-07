@@ -16,8 +16,7 @@ user_invocable: true
 
 Process steps in order. Do not skip ahead.
 
-This skill verifies a take. It does **not** record one. The unattended recording
-lane is issue #364 and is not implemented; the design it must satisfy is #369.
+This skill verifies a take. It does **not** record one.
 
 Resolve the absolute path of this loaded `SKILL.md`, then set
 `speaker_toolkit_root` to the plugin root two directories above the directory
@@ -71,14 +70,12 @@ was observed. Proceed immediately to Step 4.
 
 An axis reads `unverified` for either of two reasons, and neither is a pass.
 
-`axes.pixels` is always `unverified`: this lane reads structured state and cannot
-examine encoded frames, so three of the design's ten negative tests are outside
-it — a click invisible in the encode, a label unreadable in the delivered pixels
-rather than in the measurement, and OS chrome inside the crop.
+`axes.pixels` is always `unverified`. Three checks are outside this lane: a click
+visible in the encoded frames, a label readable in the delivered pixels, and OS
+chrome absent from the crop.
 
-Any other axis reads `unverified` when no row in the sequence declared a
-requirement on it. A take that asserts nothing about geometry has not passed
-geometry; `unverified_axes` names which case applies.
+Any other axis reads `unverified` when no row declared a requirement on it.
+`unverified_axes` names which case applies.
 
 Report those as unchecked. Never restate an `unverified` axis as a pass.
 

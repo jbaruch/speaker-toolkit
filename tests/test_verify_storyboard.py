@@ -693,3 +693,125 @@ def test_main_exits_two_rather_than_tracebacking_on_an_unexpected_shape(
     p.write_text(json.dumps(sequence()), encoding="utf-8")
     assert verify_storyboard.main([str(p)]) == 2
     assert "could not be verified" in capsys.readouterr().err
+
+
+# --- a refused requirement is skipped, not judged (PR #432 round 4) -----------
+#
+# Every finding in this round was one structure: checks ran after their evidence
+# gate had already refused them, producing a verdict about nothing and two codes
+# for one defect.
+
+
+def test_missing_labels_yields_one_finding_not_two(verify_storyboard):
+    """`required_label_absent` is a judgement; with no labels there is nothing to judge."""
+    s = sequence()
+    del s["clips"][0]["entry"]["labels"]
+    v = verify_storyboard.verify(s)
+    assert codes(v) == {"evidence_missing"}
+    assert "required_label_absent" not in codes(v)
+
+
+def test_missing_route_evidence_does_not_also_report_a_mismatch(verify_storyboard):
+    s = sequence()
+    del s["clips"][0]["entry"]["route"]
+    v = verify_storyboard.verify(s)
+    assert codes(v) == {"evidence_missing"}
+    assert "route_mismatch" not in codes(v)
+
+
+def test_missing_data_evidence_does_not_also_report_stale_data(verify_storyboard):
+    s = sequence()
+    del s["clips"][0]["entry"]["data_fingerprint"]
+    v = verify_storyboard.verify(s)
+    assert codes(v) == {"evidence_missing"}
+    assert "stale_data" not in codes(v)
+
+
+def test_a_click_without_evidence_does_not_also_report_cursor_off_target(
+    verify_storyboard,
+):
+    s = sequence()
+    del s["clips"][0]["events"][1]["target_rect"]
+    v = verify_storyboard.verify(s)
+    assert codes(v) == {"evidence_missing"}
+    assert "cursor_off_target" not in codes(v)
+
+
+def test_no_narration_does_not_also_report_phrase_not_spoken(verify_storyboard):
+    s = sequence()
+    s["narration"]["words"] = []
+    v = verify_storyboard.verify(s)
+    assert codes(v) == {"evidence_missing"}
+    assert "phrase_not_spoken" not in codes(v)
+
+
+def test_an_unmeasured_label_does_not_also_report_below_readable_size(
+    verify_storyboard,
+):
+    s = sequence()
+    s["clips"][0]["entry"]["labels"] = [{"text": "release_docs"}]
+    v = verify_storyboard.verify(s)
+    assert codes(v) == {"evidence_missing"}
+    assert "label_below_readable_size" not in codes(v)
+
+
+# --- non-finite and incomplete evidence (PR #432 round 4) --------------------
+
+
+def test_a_nan_measurement_is_refused_not_passed(verify_storyboard):
+    """JSON admits NaN, and every comparison with NaN is false — so a NaN
+    height silently satisfies any readability threshold it is tested against."""
+    doc = {
+        "clips": [
+            {"id": "a", "entry": {"labels": [{"text": "x", "height_px": float("nan")}]}}
+        ]
+    }
+    assert (
+        verify_storyboard.structural_problem(doc)
+        == "clips[0].entry.labels[0].height_px must be a finite number"
+    )
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_numbers_are_not_numbers(verify_storyboard, bad):
+    assert verify_storyboard._is_number(bad) is False
+    assert verify_storyboard._numbers([bad, 1.0], 2) is False
+
+
+@pytest.mark.parametrize(
+    "doc,fragment",
+    [
+        (
+            {"clips": [{"id": "a", "entry": {"scroll": {}}}]},
+            "clips[0].entry.scroll must carry x",
+        ),
+        (
+            {"clips": [{"id": "a", "entry": {"scroll": {"x": 1}}}]},
+            "clips[0].entry.scroll must carry y",
+        ),
+        (
+            {"clips": [{"id": "a", "entry": {"transform": {"pan_x": 0, "pan_y": 0}}}]},
+            "clips[0].entry.transform must carry zoom",
+        ),
+        (
+            {"clips": [{"id": "a", "entry": {"scroll": {"x": float("nan"), "y": 0}}}]},
+            "clips[0].entry.scroll.x must be a finite number",
+        ),
+        (
+            {"clips": [{"id": "a", "entry": {"zoom": float("inf")}}]},
+            "clips[0].entry.zoom must be a finite number",
+        ),
+    ],
+)
+def test_incomplete_continuity_evidence_is_refused(verify_storyboard, doc, fragment):
+    """Two empty scroll objects compare equal — agreement between two absences."""
+    assert verify_storyboard.structural_problem(doc) == fragment
+
+
+def test_seam_tolerance_does_not_default_a_missing_key_to_zero(verify_storyboard):
+    """`before.get(k, 0)` read an absent key as 0 and called the gap in-tolerance."""
+    s = sequence()
+    s["clips"][0]["exit"]["scroll"] = {"x": 0}  # y absent on one side only
+    v = verify_storyboard.verify(s)
+    assert v["ok"] is False
+    assert "scroll" in {f.get("field") for f in v["findings"]}

@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -141,7 +142,13 @@ EVIDENCE_FOR_REQUIREMENT = {
 
 
 def check_evidence(row, clip, narration, delivery, findings):
-    """Refuse to judge a requirement whose evidence the take does not carry."""
+    """Refuse to judge a requirement whose evidence the take does not carry.
+
+    Returns the set of requirement names that cannot be judged. Every check
+    below skips those: running a predicate whose evidence was just refused
+    produces a verdict about nothing, and reports two codes for one defect.
+    """
+    blocked = set()
     req = row.get("require") or {}
     subject = row["id"]
     labels = (clip.get("entry") or {}).get("labels") or []
@@ -150,6 +157,7 @@ def check_evidence(row, clip, narration, delivery, findings):
         if name not in req:
             continue
         if (clip.get(section) or {}).get(field) is None:
+            blocked.add(name)
             findings.append(
                 _finding(
                     "evidence_missing",
@@ -168,6 +176,7 @@ def check_evidence(row, clip, narration, delivery, findings):
             x for x in req["visible_labels"] if x in present and x not in measured
         ]
         if unmeasured:
+            blocked.add("label_readability")
             findings.append(
                 _finding(
                     "evidence_missing",
@@ -182,6 +191,7 @@ def check_evidence(row, clip, narration, delivery, findings):
     if req.get("click_on_target"):
         for click in (e for e in clip.get("events") or [] if e.get("type") == "click"):
             if click.get("pointer") is None or click.get("target_rect") is None:
+                blocked.add("click_on_target")
                 findings.append(
                     _finding(
                         "evidence_missing",
@@ -194,6 +204,7 @@ def check_evidence(row, clip, narration, delivery, findings):
                 )
 
     if row.get("proof_frame_t") is not None and not (narration.get("words") or []):
+        blocked.add("proof_frame_t")
         findings.append(
             _finding(
                 "evidence_missing",
@@ -205,8 +216,10 @@ def check_evidence(row, clip, narration, delivery, findings):
             )
         )
 
+    return blocked
 
-def check_semantic(row, clip, findings, exercised):
+
+def check_semantic(row, clip, findings, exercised, blocked):
     req = row.get("require") or {}
     entry = clip.get("entry") or {}
     subject = row["id"]
@@ -214,7 +227,7 @@ def check_semantic(row, clip, findings, exercised):
     if any(k in req for k in ("route", "data_fingerprint", "visible_labels")):
         exercised.add(SEMANTIC)
 
-    if "route" in req and entry.get("route") != req["route"]:
+    if "route" in req and "route" not in blocked and entry.get("route") != req["route"]:
         findings.append(
             _finding(
                 "route_mismatch",
@@ -229,6 +242,7 @@ def check_semantic(row, clip, findings, exercised):
     # what makes this failure invisible without a data fingerprint.
     if (
         "data_fingerprint" in req
+        and "data_fingerprint" not in blocked
         and entry.get("data_fingerprint") != req["data_fingerprint"]
     ):
         findings.append(
@@ -241,7 +255,9 @@ def check_semantic(row, clip, findings, exercised):
                 actual=entry.get("data_fingerprint"),
             )
         )
-    required_labels = req.get("visible_labels") or []
+    required_labels = (
+        [] if "visible_labels" in blocked else req.get("visible_labels") or []
+    )
     present = {label.get("text") for label in entry.get("labels") or []}
     missing = [label for label in required_labels if label not in present]
     if missing:
@@ -256,7 +272,7 @@ def check_semantic(row, clip, findings, exercised):
         )
 
 
-def check_geometry(row, clip, delivery, findings, exercised):
+def check_geometry(row, clip, delivery, findings, exercised, blocked):
     req = row.get("require") or {}
     entry = clip.get("entry") or {}
     subject = row["id"]
@@ -268,7 +284,7 @@ def check_geometry(row, clip, delivery, findings, exercised):
         exercised.add(GEOMETRY)
 
     # Negative test 2: the content is present but partly outside the viewport.
-    bounds = req.get("content_bounds")
+    bounds = None if "content_bounds" in blocked else req.get("content_bounds")
     if bounds and viewport:
         margin = req.get("margin_px", 0)
         vp_rect = [0, 0, viewport["width"], viewport["height"]]
@@ -286,7 +302,7 @@ def check_geometry(row, clip, delivery, findings, exercised):
             )
 
     # Negative test 4: readable in the browser is not readable at delivery size.
-    min_px = delivery.get("min_label_px")
+    min_px = None if "label_readability" in blocked else delivery.get("min_label_px")
     if min_px:
         scale = delivery.get("scale", 1.0)
         too_small = [
@@ -312,7 +328,7 @@ def check_geometry(row, clip, delivery, findings, exercised):
             )
 
 
-def check_motion(row, clip, findings, exercised):
+def check_motion(row, clip, findings, exercised, blocked):
     req = row.get("require") or {}
     events = clip.get("events") or []
     subject = row["id"]
@@ -347,7 +363,7 @@ def check_motion(row, clip, findings, exercised):
             )
 
     # Negative test 5: the click fires while the pointer is not on the target.
-    if req.get("click_on_target"):
+    if req.get("click_on_target") and "click_on_target" not in blocked:
         clicks = [e for e in events if e.get("type") == "click"]
         if not clicks:
             findings.append(
@@ -374,11 +390,11 @@ def check_motion(row, clip, findings, exercised):
                 )
 
 
-def check_time(row, narration, findings, exercised):
+def check_time(row, narration, findings, exercised, blocked):
     subject = row["id"]
     proof_t = row.get("proof_frame_t")
     phrase = row.get("phrase")
-    if proof_t is None or not phrase:
+    if proof_t is None or not phrase or "proof_frame_t" in blocked:
         return
     exercised.add(TIME)
 
@@ -452,9 +468,11 @@ def check_seam(previous, following, tolerances, findings, exercised):
         # Negative test 7: a numeric transform drifted across the seam.
         tol = tolerances.get(field)
         if tol is not None and isinstance(before, dict) and isinstance(after, dict):
-            if all(
-                abs(before.get(k, 0) - after.get(k, 0)) <= tol
-                for k in set(before) | set(after)
+            keys = set(before) | set(after)
+            # A key absent from one side is missing evidence; defaulting it to 0
+            # would read the gap as "within tolerance".
+            if all(k in before and k in after for k in keys) and all(
+                abs(before[k] - after[k]) <= tol for k in keys
             ):
                 continue
         # Negative test 8: the tab set or active tab changed across the seam.
@@ -476,12 +494,24 @@ def check_seam(previous, following, tolerances, findings, exercised):
         )
 
 
-def _numbers(value, count):
-    """True when `value` is a list of exactly `count` real numbers."""
+def _is_number(value):
+    """A real, finite number. `bool` is an `int` in Python and is not one.
+
+    Finiteness matters: JSON admits NaN, and every comparison against NaN is
+    false, so a NaN measurement silently satisfies any threshold it is tested
+    against — passing readability while carrying no usable evidence.
+    """
     return (
-        isinstance(value, list)
-        and len(value) == count
-        and all(isinstance(n, (int, float)) and not isinstance(n, bool) for n in value)
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+    )
+
+
+def _numbers(value, count):
+    """True when `value` is a list of exactly `count` real finite numbers."""
+    return (
+        isinstance(value, list) and len(value) == count and all(map(_is_number, value))
     )
 
 
@@ -517,9 +547,30 @@ def _manifest_problem(where, manifest):
                 return f"{where}.labels[{index}] must be an object"
             if not isinstance(label.get("text"), str):
                 return f"{where}.labels[{index}].text must be a string"
+            if "height_px" in label and not _is_number(label["height_px"]):
+                return f"{where}.labels[{index}].height_px must be a finite number"
     tabs = manifest.get("tabs")
     if tabs is not None and not isinstance(tabs, list):
         return f"{where}.tabs must be a list"
+    for name, keys in (
+        ("scroll", ("x", "y")),
+        ("transform", ("pan_x", "pan_y", "zoom")),
+    ):
+        block = manifest.get(name)
+        if block is None:
+            continue
+        if not isinstance(block, dict):
+            return f"{where}.{name} must be an object"
+        # An empty scroll/transform is present but carries no continuity evidence,
+        # and two empty ones compare equal — agreement between two absences.
+        for key in keys:
+            if key not in block:
+                return f"{where}.{name} must carry {key}"
+            if not _is_number(block[key]):
+                return f"{where}.{name}.{key} must be a finite number"
+    zoom = manifest.get("zoom")
+    if zoom is not None and not _is_number(zoom):
+        return f"{where}.zoom must be a finite number"
     return None
 
 
@@ -613,11 +664,11 @@ def verify(sequence):
                 )
             )
             continue
-        check_evidence(row, clip, narration, delivery, findings)
-        check_semantic(row, clip, findings, exercised)
-        check_geometry(row, clip, delivery, findings, exercised)
-        check_motion(row, clip, findings, exercised)
-        check_time(row, narration, findings, exercised)
+        blocked = check_evidence(row, clip, narration, delivery, findings)
+        check_semantic(row, clip, findings, exercised, blocked)
+        check_geometry(row, clip, delivery, findings, exercised, blocked)
+        check_motion(row, clip, findings, exercised, blocked)
+        check_time(row, narration, findings, exercised, blocked)
 
     ordered = sequence.get("clips", [])
     tolerances = sequence.get("seam_tolerances", {})

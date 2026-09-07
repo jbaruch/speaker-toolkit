@@ -95,6 +95,29 @@ traceback.
 
 Surface sync: the plugin description and README both still said "six skills".
 
+A fourth round found the shape had one more layer, and this time the fix was
+structural rather than another patch. Checks were still running after their own
+evidence gate had refused them: a take with no `labels` reported both
+`evidence_missing` and `required_label_absent`, which is a judgement about
+nothing and two codes for one defect. `check_evidence` now returns the set of
+requirements it refused, and every check skips them.
+
+Two more ways absence was read as agreement: a `height_px` of NaN passed
+readability, because JSON admits NaN and every comparison against it is false, so
+it satisfies any threshold it is tested against; and the seam tolerance read a
+key absent from one side as `0`, calling the gap "within tolerance". Numbers must
+now be finite, `scroll` and `transform` must carry their fields, and a key present
+on only one side of a seam is missing evidence.
+
+The recurring lesson across four rounds: a verifier's failure mode is always
+silently passing what it did not examine, and it hides at every layer — the axis,
+the requirement, the axis attribution, the shape of the value, and finally the
+order of operations. Separating "is this evidence present and well-formed" from
+"does it conform", and refusing to run the second without the first, is what
+closed the class.
+
+Two loaded-surface advisories: issue history and attached rationale moved here.
+
 
 ## 0.20.137 — 2026-09-07
 
