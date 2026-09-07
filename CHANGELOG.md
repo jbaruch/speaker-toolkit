@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.132 — 2026-09-07
+
 ### Report a damaged DeckOps stamp once
 
 The setup doctor no longer repeats a stamp-parse problem already reported by
