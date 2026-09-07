@@ -58,6 +58,23 @@ upgrade now additionally requires that PowerPoint reports the container OPEN,
 which is the only state in which "the macro did not answer" means "the open
 module is old".
 
+That was still too strong. An open container does not prove macros are enabled,
+and disabled macros silence the probe identically — so asserting "setup is
+otherwise done" would strand someone whose only problem is a security setting.
+The inferred reading is now its own verdict, `macro_stale_inferred`, whose
+message carries the re-import AND the enable-macros step. `macro_stale` stays
+reserved for a macro that actually answered with the wrong stamp, which proves
+macros are on.
+
+`RuntimeError` from an encrypted member was the fifth read-error class found one
+round at a time, and it exposed the real flaw: the test iterated
+`CONTAINER_READ_ERRORS`, so a class MISSING from the tuple was invisible to it —
+it could never have caught this. `test_real_malformed_containers_never_raise`
+replaces that with seven genuinely broken artifacts — not a zip, empty,
+truncated, corrupt deflate, unsupported method, encrypted, no VBA part — each
+raising whatever the stdlib raises without consulting the tuple, so a missing
+class escapes as a failure instead of a silent pass.
+
 ## 0.20.132 — 2026-09-07
 
 ### Report a damaged DeckOps stamp once

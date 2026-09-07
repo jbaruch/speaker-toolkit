@@ -104,6 +104,7 @@ CONTAINER_READ_ERRORS = (
     ValueError,  # embedded NUL in the path, closed file, malformed member
     KeyError,  # member absent between namelist() and read()
     EOFError,  # stream ends mid-member
+    RuntimeError,  # encrypted member, no password
     OSError,  # unreadable, permissions, a directory, I/O failure
 )
 
@@ -155,6 +156,17 @@ STATUSES = {
         "{container} holds an OLD build of the macro (found {found}, expected "
         "{expected}) — re-import it per deck-editing-setup.md Step 3 before "
         "building. Setup is otherwise done; this is a re-import, not a redo."
+    ),
+    # Reached by reading the container rather than by a macro that answered, so
+    # the module being old is inferred, not observed. Disabled macros produce the
+    # same silence, and dropping that remediation would strand a user whose only
+    # real problem is a security setting.
+    "macro_stale_inferred": (
+        "{container} is open and holds a DeckOps module with no version macro, so "
+        "it is a build predating the stamp (expected {expected}) — re-import it "
+        "per deck-editing-setup.md Step 3. Disabled macros look identical from "
+        "outside, so if the re-import does not clear this, confirm macros are "
+        "enabled (Step 1)."
     ),
 }
 
@@ -290,11 +302,10 @@ def verdict(
         return "powerpoint_not_running"
     if container_holds_old_module and probe.get("container"):
         # Only when PowerPoint actually HAS the container open does "the macro did
-        # not answer" mean "the open module is old". The driver's -18 also covers
-        # a container that is not open and macros that are disabled, and for those
-        # the remediation is to open it or enable them — re-import would be
-        # premature and would drop the step that actually unblocks the user.
-        return "macro_stale"
+        # not answer" point at the module rather than at the file being closed.
+        # Macros being disabled still produces the same silence, so this verdict
+        # is inferred and its message carries both remediations.
+        return "macro_stale_inferred"
     return "macro_unreachable"
 
 
@@ -349,7 +360,8 @@ def diagnose(vault_root: Path, scripts_dir: Path, offline: bool, platform: str) 
     import_source = paths["import_source"]
     report = {
         "status": status,
-        "setup_complete": status in ("ok", "powerpoint_not_running", "macro_stale"),
+        "setup_complete": status
+        in ("ok", "powerpoint_not_running", "macro_stale", "macro_stale_inferred"),
         "platform": platform,
         "expected_stamp": expected_stamp,
         "container": {

@@ -40,7 +40,8 @@ same thing as one sentence:
 | `setup_required` | No macro container on this machine | Step 1 |
 | `macro_unreachable` | Container not open, macros off, or the module was NEVER imported | Steps 1–3 |
 | `powerpoint_not_running` | Set up; PowerPoint just isn't open | Step 6 |
-| `macro_stale` | Container holds an OLD build of the macro — setup is done, it needs a re-import | Step 3 (Updating) |
+| `macro_stale` | The macro answered with an old stamp — setup is done, it needs a re-import | Step 3 (Updating) |
+| `macro_stale_inferred` | The OPEN container holds a module with no version macro. Inferred, not observed: disabled macros look identical | Step 3 (Updating), then Step 1 if it persists |
 | `driver_drift` | Shipped drivers don't match their mirrors | Read `drivers.problems`; it names the fix |
 | `probe_failed` | The probe could not run, so the state is UNKNOWN | Read `live.detail` — usually denied Automation consent (Step 4) |
 | `probe_missing` | The probe driver or `osascript` is absent | Reinstall the plugin |
@@ -126,7 +127,9 @@ at all; the doctor reads the `.pptm` itself to tell that from a container that
 never had the module, and reports it as `macro_stale` rather than as a setup that
 never happened. How it classifies the two is
 `skills/presentation-creator/scripts/deckops-doctor.py`'s `inspect_container` /
-`verdict`. On `macro_stale`: re-run the `export` command above, then in
+`verdict`. That reading is an inference, reported as `macro_stale_inferred` —
+disabled macros silence the probe exactly the same way, so its `next_step`
+carries the enable-macros step alongside the re-import. On `macro_stale`: re-run the `export` command above, then in
 the VBA editor right-click the `DeckOps` module → **Remove** (No to export) →
 **Import File…** the refreshed `.bas` → save. Re-run Step 0 to confirm `ok`.
 

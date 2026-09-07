@@ -573,7 +573,7 @@ def test_an_old_module_reads_as_stale_not_never_imported(deckops_doctor):
             },
             container_holds_old_module=True,
         )
-        == "macro_stale"
+        == "macro_stale_inferred"
     )
 
 
@@ -612,11 +612,11 @@ def test_diagnose_reports_a_stale_container_at_the_canonical_path(
         lambda _d: {"state": "macro_unreachable", "container": str(open_at)},
     )
     report = deckops_doctor.diagnose(tmp_path, _scripts_dir(), False, "darwin")
-    assert report["status"] == "macro_stale"
+    assert report["status"] == "macro_stale_inferred"
     assert report["container"]["holds_module"] is True
     assert report["container"]["holds_stamp_macro"] is False
     assert "re-import" in report["next_step"]
-    assert "not a redo" in report["next_step"]
+    assert "predating the stamp" in report["next_step"]
 
 
 def test_diagnose_inspects_the_open_container_over_the_canonical_one(
@@ -632,7 +632,7 @@ def test_diagnose_inspects_the_open_container_over_the_canonical_one(
     )
     report = deckops_doctor.diagnose(tmp_path, _scripts_dir(), False, "darwin")
     assert report["container"]["inspected_path"] == str(elsewhere)
-    assert report["status"] == "macro_stale"
+    assert report["status"] == "macro_stale_inferred"
 
 
 def test_a_stale_next_step_names_the_absent_version_readably(
@@ -747,10 +747,12 @@ def test_a_directory_in_place_of_a_container_does_not_abort(deckops_doctor, tmp_
 
 
 def test_every_enumerated_read_error_is_handled(deckops_doctor, tmp_path, monkeypatch):
-    """The contract is absolute, so prove it for each class rather than per bug.
+    """Each named class is handled. NOT a completeness check — see the next test.
 
-    Three of the eight descend from OSError; the rest were each found one review
-    round at a time until the enumeration was completed in full.
+    This iterates CONTAINER_READ_ERRORS, so a class MISSING from the tuple is
+    invisible to it. That is exactly how RuntimeError (encrypted member) reached
+    review. Completeness is covered by real artifacts below, which raise whatever
+    the stdlib raises without consulting the tuple.
     """
     import zipfile
 
@@ -767,47 +769,93 @@ def test_every_enumerated_read_error_is_handled(deckops_doctor, tmp_path, monkey
         assert r["has_module"] is False, exc.__name__
 
 
-def test_an_old_module_on_disk_but_not_open_stays_unreachable(deckops_doctor):
-    """-18 also means "container not open" and "macros disabled".
+def _encrypted_member_pptm(path: Path) -> Path:
+    """A .pptm whose member is flagged encrypted — zipfile raises RuntimeError."""
+    import io
+    import zipfile
 
-    Calling that macro_stale would drop the step that actually unblocks the user —
-    open the container, enable macros — and send them to re-import prematurely.
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("ppt/vbaProject.bin", b"DeckOps RunDeckOps")
+    blob = bytearray(buf.getvalue())
+    for sig, off in ((b"PK\x03\x04", 6), (b"PK\x01\x02", 8)):
+        i = blob.find(sig)
+        flag = int.from_bytes(blob[i + off : i + off + 2], "little") | 0x1
+        blob[i + off : i + off + 2] = flag.to_bytes(2, "little")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(bytes(blob))
+    return path
+
+
+def test_an_encrypted_member_does_not_abort(deckops_doctor, tmp_path):
+    """RuntimeError — the fifth class found one review round at a time."""
+    r = deckops_doctor.inspect_container(_encrypted_member_pptm(tmp_path / "D.pptm"))
+    assert r["exists"] is True
+    assert r["readable"] is False
+    assert r["has_module"] is False
+
+
+def test_real_malformed_containers_never_raise(deckops_doctor, tmp_path):
+    """Completeness check that does NOT consult CONTAINER_READ_ERRORS.
+
+    Each artifact is built to break a different stage of the read, and each raises
+    whatever the stdlib actually raises. A class missing from the tuple surfaces
+    here as an escaping exception rather than as a silent pass.
     """
-    assert (
-        _verdict(
-            deckops_doctor,
-            container_exists=True,
-            probe={"state": "macro_unreachable"},  # no container reported open
-            container_holds_old_module=True,
-        )
-        == "macro_unreachable"
-    )
+
+    builders = {
+        "not-a-zip": lambda p: p.write_bytes(b"definitely not a zip"),
+        "empty-file": lambda p: p.write_bytes(b""),
+        "truncated": lambda p: p.write_bytes(
+            _pptm(tmp_path / "src.pptm", vba=NEW_VBA).read_bytes()[:40]
+        ),
+        "corrupt-deflate": lambda p: p.write_bytes(
+            _corrupt_deflate_pptm(tmp_path / "cd.pptm").read_bytes()
+        ),
+        "bad-method": lambda p: p.write_bytes(
+            _pptm_with_method(tmp_path / "bm.pptm", 99).read_bytes()
+        ),
+        "encrypted": lambda p: p.write_bytes(
+            _encrypted_member_pptm(tmp_path / "en.pptm").read_bytes()
+        ),
+        "zip-without-vba": lambda p: p.write_bytes(
+            _pptm(tmp_path / "nv.pptm", vba=None).read_bytes()
+        ),
+    }
+    for name, build in builders.items():
+        target = tmp_path / f"{name}.pptm"
+        build(target)
+        r = deckops_doctor.inspect_container(target)  # must not raise
+        assert r["has_module"] is False, name
+        assert r["has_stamp_macro"] is False, name
+        if name != "zip-without-vba":
+            assert r["readable"] is False, name
 
 
-def test_diagnose_keeps_the_open_container_remediation_when_nothing_is_open(
+def test_an_inferred_stale_verdict_keeps_the_enable_macros_step(
     deckops_doctor, tmp_path, monkeypatch
 ):
-    _pptm(tmp_path / ".deckops" / "DeckOps.pptm", vba=OLD_VBA)
+    """An open container does not prove macros are on — disabled looks identical.
+
+    Dropping that remediation would strand a user whose only problem is a
+    security setting.
+    """
+    open_at = _pptm(tmp_path / ".deckops" / "DeckOps.pptm", vba=OLD_VBA)
     monkeypatch.setattr(
-        deckops_doctor, "run_probe", lambda _d: {"state": "macro_unreachable"}
+        deckops_doctor,
+        "run_probe",
+        lambda _d: {"state": "macro_unreachable", "container": str(open_at)},
     )
     report = deckops_doctor.diagnose(tmp_path, _scripts_dir(), False, "darwin")
-    assert report["status"] == "macro_unreachable"
+    assert report["status"] == "macro_stale_inferred"
+    assert "re-import" in report["next_step"]
     assert "macros are enabled" in report["next_step"]
+    assert report["setup_complete"] is True
 
 
-def test_is_file_failures_are_inside_the_guard(deckops_doctor, monkeypatch, tmp_path):
-    """path.is_file() stats the path, so it can raise before any zip work."""
-    from pathlib import Path as _P
-
-    def boom(_self):
-        raise PermissionError("simulated")
-
-    monkeypatch.setattr(_P, "is_file", boom)
-    r = deckops_doctor.inspect_container(tmp_path / "DeckOps.pptm")
-    assert r == {
-        "exists": False,
-        "readable": False,
-        "has_module": False,
-        "has_stamp_macro": False,
-    }
+def test_an_observed_stale_verdict_needs_no_macro_caveat(deckops_doctor):
+    """A macro that ANSWERED with the wrong stamp proves macros are on."""
+    assert (
+        _verdict(deckops_doctor, probe=_ok_probe("0000old"), expected_stamp="abc123")
+        == "macro_stale"
+    )
