@@ -38,9 +38,10 @@ same thing as one sentence:
 |---|---|---|
 | `ok` | Set up and current | Step 6 |
 | `setup_required` | No macro container on this machine | Step 1 |
-| `macro_unreachable` | Container missing from the running PowerPoint, macros off, or module never imported | Steps 1–3 |
+| `macro_unreachable` | Container not open, macros off, or the module was NEVER imported | Steps 1–3 |
 | `powerpoint_not_running` | Set up; PowerPoint just isn't open | Step 6 |
-| `macro_stale` | Container holds an OLD build of the macro | Step 3 (Updating) |
+| `macro_stale` | The macro answered with an old stamp — setup is done, it needs a re-import | Step 3 (Updating) |
+| `macro_stale_inferred` | The OPEN container holds a module with no version macro. Inferred, not observed: disabled macros look identical | Step 3 (Updating), then Step 1 if it persists |
 | `driver_drift` | Shipped drivers don't match their mirrors | Read `drivers.problems`; it names the fix |
 | `probe_failed` | The probe could not run, so the state is UNKNOWN | Read `live.detail` — usually denied Automation consent (Step 4) |
 | `probe_missing` | The probe driver or `osascript` is absent | Reinstall the plugin |
@@ -119,10 +120,22 @@ starts with a dot, so one of the two is needed. Save `DeckOps.pptm` (⌘S).
 
 **Updating the macro later.** A plugin update ships a new macro; the copy already
 imported into `DeckOps.pptm` keeps running the OLD code, silently, because nothing
-can read VBA source back out of a saved `.pptm`. That is what `macro_stale`
-detects — the module carries a content stamp and the doctor asks the running
-PowerPoint for it. On `macro_stale`: re-run the `export` command above, then in
-the VBA editor right-click the `DeckOps` module → **Remove** (No to export) →
+can read VBA source back out of a saved `.pptm`. Two statuses cover this, and they
+are not interchangeable:
+
+- `macro_stale` — the macro ANSWERED with an old stamp. Macros are provably on,
+  so the re-import below is the whole fix.
+- `macro_stale_inferred` — the open container READS as holding a module with no
+  version macro, which is what a container imported before the stamp existed looks
+  like. Disabled macros silence the probe identically, so this one is an inference:
+  do the re-import, and if it does not clear, confirm macros are enabled (Step 1).
+
+How the two are classified is
+`skills/presentation-creator/scripts/deckops-doctor.py`'s `inspect_container` /
+`verdict`.
+
+The re-import, for either: re-run the `export` command above, then in the VBA
+editor right-click the `DeckOps` module → **Remove** (No to export) →
 **Import File…** the refreshed `.bas` → save. Re-run Step 0 to confirm `ok`.
 
 ## Step 4 — Grant Automation consent (first run only)

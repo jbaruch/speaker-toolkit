@@ -1,5 +1,99 @@
 # Changelog
 
+### Tell a stale DeckOps import from one that never happened
+
+Running the shipped walkthrough against a real machine found the doctor giving
+the wrong instruction in the single most common case: a user upgrading from a
+pre-stamp plugin.
+
+The live probe asks the running PowerPoint for `DeckOpsVersion`. A module
+imported before the stamp existed does not have that macro, so PowerPoint
+answers -18 — exactly what it answers when no module was ever imported. The
+doctor could not tell the two apart and reported `macro_unreachable`, whose
+remediation is "confirm the module was imported", sending someone with a working
+six-month-old container back through setup.
+
+The container found in the wild made it concrete: `ppt/vbaProject.bin` carried
+`DeckOps`, `RunDeckOps`, and `BuildDeck`, and carried neither `DeckOpsVersion`
+nor `DECKOPS_STAMP`. Module names sit in the project streams as plain bytes even
+though the source is compressed, so `inspect_container` reads the part and
+separates "an old module" from "no module". That case now reports
+`macro_stale_inferred` — re-import, and confirm macros are enabled if that does
+not clear it — and `next_step` names the absent version readably instead of
+printing `unknown` at someone whose container is fine. `macro_stale` stays
+reserved for a macro that answered with the wrong stamp; the two verdicts and
+why they differ are below.
+
+The file read is a hint, never the authority: a probe that answers `ok` outranks
+it, and an unreadable or corrupt `.pptm` degrades to "no information" rather than
+raising, since this refines a diagnostic and must never become one. Fixtures are
+built as zips in test setup — no binary checked into the repo.
+
+That never-raises promise had a hole the reviewer found: `zlib.error` descends
+from `Exception`, not `OSError`, so a structurally valid archive whose deflate
+stream is corrupt escaped the handler and took the whole diagnosis down with it —
+including runs where the live probe had already answered. Reproduced by flipping
+a byte in the middle of a real compressed payload (`Error -3 while decompressing
+data: invalid distances set`), fixed by naming `zlib.error`, and pinned by a test
+that builds that exact archive.
+
+Two more classes surfaced the same way — `NotImplementedError` from an
+unsupported compression method (99, AE-x encrypted), and `ValueError` from an
+embedded NUL in the path — at which point patching one class per review round
+was plainly the wrong shape of fix. The handler now names everything `zipfile`
+documents for opening an archive and reading a member: `BadZipFile`,
+`LargeZipFile`, `zlib.error`, `NotImplementedError`, `ValueError`, `KeyError`,
+`EOFError`, `RuntimeError`, `lzma.LZMAError`, `OSError` — the last two arriving
+in later rounds described below. Only three of the ten descend from `OSError`. A
+test raises each one in turn and asserts the diagnosis survives, so the contract
+is pinned by class rather than by whichever corruption someone thought to try.
+
+`path.is_file()` sat outside that guard, which made the enumeration moot for a
+malformed path — it stats the path, so an embedded NUL or an unreadable parent
+raises before any zip work starts. Every filesystem touch is inside the guard now.
+
+The sharper catch was in the verdict, not the reader. The upgrade from
+`macro_unreachable` to `macro_stale` fired on an old module alone, but the
+driver's -18 also covers a container that is not open and macros that are
+disabled. A user whose `DeckOps.pptm` sat closed on disk with an old module was
+told to re-import, dropping the step that would actually unblock them. The
+upgrade now additionally requires that PowerPoint reports the container OPEN,
+which is the only state in which "the macro did not answer" means "the open
+module is old".
+
+That was still too strong. An open container does not prove macros are enabled,
+and disabled macros silence the probe identically — so asserting "setup is
+otherwise done" would strand someone whose only problem is a security setting.
+The inferred reading is now its own verdict, `macro_stale_inferred`, whose
+message carries the re-import AND the enable-macros step. `macro_stale` stays
+reserved for a macro that actually answered with the wrong stamp, which proves
+macros are on.
+
+`RuntimeError` from an encrypted member was the fifth read-error class found one
+round at a time, and it exposed the real flaw: the test iterated
+`CONTAINER_READ_ERRORS`, so a class MISSING from the tuple was invisible to it —
+it could never have caught this. `test_real_malformed_containers_never_raise`
+replaces that with seven genuinely broken artifacts — not a zip, empty,
+truncated, corrupt deflate, unsupported method, encrypted, no VBA part — each
+raising whatever the stdlib raises without consulting the tuple, so a missing
+class escapes as a failure instead of a silent pass.
+
+The member read is bounded at 8 MB. Only marker presence matters and a real
+container's part is ~88 KB, so nothing is given up by refusing to decompress an
+arbitrary amount on the strength of a size field a damaged or hostile archive
+controls. A test pins both halves of that trade: markers inside the bound are
+found, markers past it are not, and neither case raises.
+
+`lzma.LZMAError` from a corrupt LZMA member was the sixth read-error class found
+one round at a time, which was enough evidence that enumerating them was chasing
+a set that grows: every codec `zipfile` supports raises its own exception type,
+and a future Python can add another. The fix moved up a level. `ALLOWED_COMPRESSION`
+holds the two methods PowerPoint actually writes, STORED and DEFLATE, and is
+checked BEFORE decoding, so an archive declaring anything else is reported
+unreadable without its codec ever being invoked. The test proves the point with a
+perfectly valid LZMA container whose markers decoding WOULD find: it is refused
+anyway. `lzma.LZMAError` is in the tuple as well, unreachable by construction and
+kept because a decoder error must never be the thing that escapes.
 ## 0.20.133 — 2026-09-07
 
 ### Renew the CI cache action's runtime

@@ -494,3 +494,431 @@ def test_a_missing_sibling_script_raises_an_actionable_import_error(
     monkeypatch.setattr(deckops_doctor, "__file__", str(tmp_path / "deckops-doctor.py"))
     with pytest.raises(ImportError, match="reinstall the plugin"):
         deckops_doctor._load_sibling("nope", "not-here.py")
+
+
+# --- container introspection -------------------------------------------------
+#
+# The live probe asks for DeckOpsVersion, which a pre-stamp module does not have,
+# so an OLD import and NO import both come back as "macro unavailable". Every user
+# upgrading from a pre-stamp plugin is in the first state, and being told the
+# module was never imported sends them to redo setup instead of re-importing.
+
+
+def _pptm(path: Path, *, vba: bytes | None) -> Path:
+    """A .pptm shaped enough for the inspector. Built, never a checked-in binary."""
+    import zipfile
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("[Content_Types].xml", "<Types/>")
+        z.writestr("ppt/presentation.xml", "<p:presentation/>")
+        if vba is not None:
+            z.writestr("ppt/vbaProject.bin", vba)
+    return path
+
+
+OLD_VBA = b"\x00\x01DeckOps\x00RunDeckOps\x00BuildDeck\x00"  # pre-stamp build
+NEW_VBA = OLD_VBA + b"DeckOpsVersion\x00DECKOPS_STAMP\x00"
+
+
+def test_inspect_container_reports_a_missing_file(deckops_doctor, tmp_path):
+    r = deckops_doctor.inspect_container(tmp_path / "nope.pptm")
+    assert r == {
+        "exists": False,
+        "readable": False,
+        "has_module": False,
+        "has_stamp_macro": False,
+    }
+
+
+def test_inspect_container_sees_an_old_module(deckops_doctor, tmp_path):
+    r = deckops_doctor.inspect_container(_pptm(tmp_path / "DeckOps.pptm", vba=OLD_VBA))
+    assert r["exists"] and r["readable"]
+    assert r["has_module"] is True
+    assert r["has_stamp_macro"] is False
+
+
+def test_inspect_container_sees_a_current_module(deckops_doctor, tmp_path):
+    r = deckops_doctor.inspect_container(_pptm(tmp_path / "DeckOps.pptm", vba=NEW_VBA))
+    assert r["has_module"] is True
+    assert r["has_stamp_macro"] is True
+
+
+def test_inspect_container_handles_a_pptm_with_no_vba_at_all(deckops_doctor, tmp_path):
+    """A container saved before any import — readable, but empty of macros."""
+    r = deckops_doctor.inspect_container(_pptm(tmp_path / "DeckOps.pptm", vba=None))
+    assert r["readable"] is True
+    assert r["has_module"] is False
+
+
+def test_inspect_container_never_raises_on_a_corrupt_file(deckops_doctor, tmp_path):
+    """This refines a diagnostic; it must never become one."""
+    bad = tmp_path / "DeckOps.pptm"
+    bad.write_bytes(b"not a zip at all")
+    r = deckops_doctor.inspect_container(bad)
+    assert r["exists"] is True
+    assert r["readable"] is False
+    assert r["has_module"] is False
+
+
+def test_an_old_module_reads_as_stale_not_never_imported(deckops_doctor):
+    """The upgrade path: re-import, not redo setup."""
+    assert (
+        _verdict(
+            deckops_doctor,
+            container_exists=True,
+            probe={
+                "state": "macro_unreachable",
+                "container": "/v/.deckops/DeckOps.pptm",
+            },
+            container_holds_old_module=True,
+        )
+        == "macro_stale_inferred"
+    )
+
+
+def test_no_module_at_all_still_reads_as_unreachable(deckops_doctor):
+    assert (
+        _verdict(
+            deckops_doctor,
+            container_exists=True,
+            probe={"state": "macro_unreachable"},
+            container_holds_old_module=False,
+        )
+        == "macro_unreachable"
+    )
+
+
+def test_an_answering_macro_outranks_container_introspection(deckops_doctor):
+    """The live probe is the authority; the file read is only a hint."""
+    assert (
+        _verdict(
+            deckops_doctor,
+            container_exists=True,
+            probe=_ok_probe(),
+            container_holds_old_module=True,
+        )
+        == "ok"
+    )
+
+
+def test_diagnose_reports_a_stale_container_at_the_canonical_path(
+    deckops_doctor, tmp_path, monkeypatch
+):
+    open_at = _pptm(tmp_path / ".deckops" / "DeckOps.pptm", vba=OLD_VBA)
+    monkeypatch.setattr(
+        deckops_doctor,
+        "run_probe",
+        lambda _d: {"state": "macro_unreachable", "container": str(open_at)},
+    )
+    report = deckops_doctor.diagnose(tmp_path, _scripts_dir(), False, "darwin")
+    assert report["status"] == "macro_stale_inferred"
+    assert report["container"]["holds_module"] is True
+    assert report["container"]["holds_stamp_macro"] is False
+    assert "re-import" in report["next_step"]
+    assert "predating the stamp" in report["next_step"]
+
+
+def test_diagnose_inspects_the_open_container_over_the_canonical_one(
+    deckops_doctor, tmp_path, monkeypatch
+):
+    """PowerPoint's open file is where the running macro came from."""
+    _pptm(tmp_path / ".deckops" / "DeckOps.pptm", vba=NEW_VBA)
+    elsewhere = _pptm(tmp_path / "elsewhere" / "DeckOps.pptm", vba=OLD_VBA)
+    monkeypatch.setattr(
+        deckops_doctor,
+        "run_probe",
+        lambda _d: {"state": "macro_unreachable", "container": str(elsewhere)},
+    )
+    report = deckops_doctor.diagnose(tmp_path, _scripts_dir(), False, "darwin")
+    assert report["container"]["inspected_path"] == str(elsewhere)
+    assert report["status"] == "macro_stale_inferred"
+
+
+def test_a_stale_next_step_names_the_absent_version_readably(
+    deckops_doctor, tmp_path, monkeypatch
+):
+    """ "unknown" at a user holding a good container is a worse answer than the truth."""
+    open_at = _pptm(tmp_path / ".deckops" / "DeckOps.pptm", vba=OLD_VBA)
+    monkeypatch.setattr(
+        deckops_doctor,
+        "run_probe",
+        lambda _d: {"state": "macro_unreachable", "container": str(open_at)},
+    )
+    report = deckops_doctor.diagnose(tmp_path, _scripts_dir(), False, "darwin")
+    assert "predating the stamp" in report["next_step"]
+    assert "unknown" not in report["next_step"]
+
+
+def _corrupt_deflate_pptm(path: Path) -> Path:
+    """A structurally valid .pptm whose vbaProject.bin deflate stream is garbage.
+
+    Distinct from a non-zip file: the archive parses, the member is listed, and
+    the failure only appears on decompression — as zlib.error, which descends
+    from Exception rather than OSError and so escapes an OSError handler.
+    """
+    import io
+    import zipfile
+    import zlib
+
+    data = b"DeckOps RunDeckOps " * 300
+    raw = zlib.compress(data, 9)[2:-4]
+    bad = bytearray(raw)
+    bad[len(bad) // 2] ^= 0xFF
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("ppt/vbaProject.bin", data, zipfile.ZIP_DEFLATED)
+    blob = bytearray(buf.getvalue())
+    start = blob.find(raw[:8])
+    assert start >= 0, "could not locate the compressed payload to corrupt"
+    blob[start : start + len(raw)] = bytes(bad)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(bytes(blob))
+    return path
+
+
+def test_corrupt_compressed_vba_does_not_abort_the_diagnosis(deckops_doctor, tmp_path):
+    """zlib.error is not an OSError, so it escaped the original handler.
+
+    The crash took down the whole diagnosis, including cases where the live probe
+    had already answered — a refinement turning itself into a fatal error.
+    """
+    p = _corrupt_deflate_pptm(tmp_path / "DeckOps.pptm")
+    r = deckops_doctor.inspect_container(p)
+    assert r["exists"] is True
+    assert r["readable"] is False
+    assert r["has_module"] is False
+    assert r["has_stamp_macro"] is False
+
+
+def test_a_corrupt_container_still_yields_a_verdict(
+    deckops_doctor, tmp_path, monkeypatch
+):
+    _corrupt_deflate_pptm(tmp_path / ".deckops" / "DeckOps.pptm")
+    stamp = deckops_doctor.sync_deck_drivers.read_stamp(
+        (_scripts_dir() / "RunDeckOps.bas").read_text(encoding="utf-8")
+    )
+    monkeypatch.setattr(
+        deckops_doctor, "run_probe", lambda _d: {"state": "ok", "stamp": stamp}
+    )
+    report = deckops_doctor.diagnose(tmp_path, _scripts_dir(), False, "darwin")
+    assert report["status"] == "ok"
+    assert report["container"]["readable"] is False
+
+
+def _pptm_with_method(path: Path, method: int) -> Path:
+    """A .pptm whose member declares an unsupported compression method."""
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("ppt/vbaProject.bin", b"DeckOps RunDeckOps")
+    blob = bytearray(buf.getvalue())
+    for sig, off in ((b"PK\x03\x04", 8), (b"PK\x01\x02", 10)):
+        i = blob.find(sig)
+        blob[i + off : i + off + 2] = method.to_bytes(2, "little")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(bytes(blob))
+    return path
+
+
+def test_an_unsupported_compression_method_does_not_abort(deckops_doctor, tmp_path):
+    """Method 99 (AE-x encrypted) raises NotImplementedError, not an OSError."""
+    p = _pptm_with_method(tmp_path / "DeckOps.pptm", 99)
+    r = deckops_doctor.inspect_container(p)
+    assert r["exists"] is True
+    assert r["readable"] is False
+    assert r["has_module"] is False
+
+
+def test_an_embedded_nul_in_the_path_does_not_abort(deckops_doctor, tmp_path):
+    """Path validation raises ValueError before any I/O happens."""
+    r = deckops_doctor.inspect_container(Path(str(tmp_path / "Deck\x00Ops.pptm")))
+    assert r["readable"] is False
+    assert r["has_module"] is False
+
+
+def test_a_directory_in_place_of_a_container_does_not_abort(deckops_doctor, tmp_path):
+    d = tmp_path / "DeckOps.pptm"
+    d.mkdir()
+    r = deckops_doctor.inspect_container(d)
+    assert r["readable"] is False
+
+
+def test_every_enumerated_read_error_is_handled(deckops_doctor, tmp_path, monkeypatch):
+    """Each named class is handled. NOT a completeness check — see the next test.
+
+    This iterates CONTAINER_READ_ERRORS, so a class MISSING from the tuple is
+    invisible to it. That is exactly how RuntimeError (encrypted member) reached
+    review. Completeness is covered by real artifacts below, which raise whatever
+    the stdlib raises without consulting the tuple.
+    """
+    import zipfile
+
+    real = tmp_path / "DeckOps.pptm"
+    _pptm(real, vba=NEW_VBA)
+    for exc in deckops_doctor.CONTAINER_READ_ERRORS:
+
+        def boom(*_a, **_k):
+            raise exc("simulated")
+
+        monkeypatch.setattr(zipfile.ZipFile, "open", boom)
+        r = deckops_doctor.inspect_container(real)
+        assert r["readable"] is False, exc.__name__
+        assert r["has_module"] is False, exc.__name__
+
+
+def _encrypted_member_pptm(path: Path) -> Path:
+    """A .pptm whose member is flagged encrypted — zipfile raises RuntimeError."""
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("ppt/vbaProject.bin", b"DeckOps RunDeckOps")
+    blob = bytearray(buf.getvalue())
+    for sig, off in ((b"PK\x03\x04", 6), (b"PK\x01\x02", 8)):
+        i = blob.find(sig)
+        flag = int.from_bytes(blob[i + off : i + off + 2], "little") | 0x1
+        blob[i + off : i + off + 2] = flag.to_bytes(2, "little")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(bytes(blob))
+    return path
+
+
+def test_an_encrypted_member_does_not_abort(deckops_doctor, tmp_path):
+    """RuntimeError — the fifth class found one review round at a time."""
+    r = deckops_doctor.inspect_container(_encrypted_member_pptm(tmp_path / "D.pptm"))
+    assert r["exists"] is True
+    assert r["readable"] is False
+    assert r["has_module"] is False
+
+
+def test_real_malformed_containers_never_raise(deckops_doctor, tmp_path):
+    """Completeness check that does NOT consult CONTAINER_READ_ERRORS.
+
+    Each artifact is built to break a different stage of the read, and each raises
+    whatever the stdlib actually raises. A class missing from the tuple surfaces
+    here as an escaping exception rather than as a silent pass.
+    """
+
+    builders = {
+        "not-a-zip": lambda p: p.write_bytes(b"definitely not a zip"),
+        "empty-file": lambda p: p.write_bytes(b""),
+        "truncated": lambda p: p.write_bytes(
+            _pptm(tmp_path / "src.pptm", vba=NEW_VBA).read_bytes()[:40]
+        ),
+        "corrupt-deflate": lambda p: p.write_bytes(
+            _corrupt_deflate_pptm(tmp_path / "cd.pptm").read_bytes()
+        ),
+        "bad-method": lambda p: p.write_bytes(
+            _pptm_with_method(tmp_path / "bm.pptm", 99).read_bytes()
+        ),
+        "encrypted": lambda p: p.write_bytes(
+            _encrypted_member_pptm(tmp_path / "en.pptm").read_bytes()
+        ),
+        "zip-without-vba": lambda p: p.write_bytes(
+            _pptm(tmp_path / "nv.pptm", vba=None).read_bytes()
+        ),
+    }
+    for name, build in builders.items():
+        target = tmp_path / f"{name}.pptm"
+        build(target)
+        r = deckops_doctor.inspect_container(target)  # must not raise
+        assert r["has_module"] is False, name
+        assert r["has_stamp_macro"] is False, name
+        if name != "zip-without-vba":
+            assert r["readable"] is False, name
+
+
+def test_an_inferred_stale_verdict_keeps_the_enable_macros_step(
+    deckops_doctor, tmp_path, monkeypatch
+):
+    """An open container does not prove macros are on — disabled looks identical.
+
+    Dropping that remediation would strand a user whose only problem is a
+    security setting.
+    """
+    open_at = _pptm(tmp_path / ".deckops" / "DeckOps.pptm", vba=OLD_VBA)
+    monkeypatch.setattr(
+        deckops_doctor,
+        "run_probe",
+        lambda _d: {"state": "macro_unreachable", "container": str(open_at)},
+    )
+    report = deckops_doctor.diagnose(tmp_path, _scripts_dir(), False, "darwin")
+    assert report["status"] == "macro_stale_inferred"
+    assert "re-import" in report["next_step"]
+    assert "macros are enabled" in report["next_step"]
+    assert report["setup_complete"] is True
+
+
+def test_an_observed_stale_verdict_needs_no_macro_caveat(deckops_doctor):
+    """A macro that ANSWERED with the wrong stamp proves macros are on."""
+    assert (
+        _verdict(deckops_doctor, probe=_ok_probe("0000old"), expected_stamp="abc123")
+        == "macro_stale"
+    )
+
+
+def test_the_vba_part_read_is_bounded(deckops_doctor, tmp_path):
+    """A declared member size is attacker-controlled; do not decompress on trust.
+
+    Only marker presence matters, so a bounded read answers the question without
+    letting a zip bomb or a damaged size field pull an arbitrary amount into memory.
+    """
+    limit = deckops_doctor.VBA_PART_READ_LIMIT
+    assert 0 < limit <= 64 * 1024 * 1024
+    big = _pptm(tmp_path / "DeckOps.pptm", vba=NEW_VBA + b"\0" * (limit + 4096))
+    r = deckops_doctor.inspect_container(big)
+    assert r["readable"] is True
+    assert r["has_module"] is True  # markers sit at the front, inside the bound
+
+
+def test_markers_past_the_bound_are_simply_not_found(deckops_doctor, tmp_path):
+    """The bound is honest about what it trades: reach, never a crash."""
+    limit = deckops_doctor.VBA_PART_READ_LIMIT
+    p = _pptm(tmp_path / "DeckOps.pptm", vba=b"\0" * (limit + 1024) + NEW_VBA)
+    r = deckops_doctor.inspect_container(p)
+    assert r["readable"] is True
+    assert r["has_module"] is False
+
+
+def _lzma_pptm(path: Path) -> Path:
+    """A well-formed .pptm whose member uses LZMA — a codec PowerPoint never writes."""
+    import zipfile
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_LZMA) as z:
+        z.writestr("ppt/vbaProject.bin", NEW_VBA)
+    return path
+
+
+def test_an_unexpected_codec_is_refused_before_decoding(deckops_doctor, tmp_path):
+    """The root fix for one-decoder-error-per-review round.
+
+    The archive here is perfectly valid — decoding would SUCCEED and find the
+    markers. It is refused anyway, because a real container never uses this codec
+    and every codec brings its own exception type to escape through.
+    """
+    r = deckops_doctor.inspect_container(_lzma_pptm(tmp_path / "DeckOps.pptm"))
+    assert r["exists"] is True
+    assert r["readable"] is False
+    assert r["has_module"] is False
+
+
+def test_the_codecs_a_real_container_uses_are_allowed(deckops_doctor, tmp_path):
+    """STORED and DEFLATE both read normally — the allowlist is not a blanket no."""
+    import zipfile
+
+    for method, name in (
+        (zipfile.ZIP_STORED, "stored"),
+        (zipfile.ZIP_DEFLATED, "defl"),
+    ):
+        p = tmp_path / f"{name}.pptm"
+        with zipfile.ZipFile(p, "w", method) as z:
+            z.writestr("ppt/vbaProject.bin", NEW_VBA)
+        r = deckops_doctor.inspect_container(p)
+        assert r["readable"] is True, name
+        assert r["has_module"] is True, name
+        assert r["has_stamp_macro"] is True, name

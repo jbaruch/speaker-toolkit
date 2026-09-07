@@ -51,6 +51,9 @@ import argparse
 import json
 import subprocess
 import sys
+import lzma
+import zipfile
+import zlib
 from pathlib import Path
 
 from importlib import util as _importlib_util
@@ -82,6 +85,49 @@ sync_deck_drivers = _load_sibling("sync_deck_drivers", "sync-deck-drivers.py")
 # VBA-editor Import panel will not show.
 CONTAINER_DIRNAME = ".deckops"
 CONTAINER_NAME = "DeckOps.pptm"
+
+# Markers looked for inside a container's ppt/vbaProject.bin. Module and
+# procedure names sit in the project streams as plain bytes even though the
+# source itself is compressed, so their presence separates "no module at all"
+# from "an old module". A HINT that refines the advice, never the authority —
+# the live probe decides whether the macro actually answers.
+# Everything `zipfile` documents for opening an archive and reading a member off
+# an attacker-shaped or merely broken file. Enumerated rather than a catch-all
+# (rules/error-handling.md Specific Exceptions), and enumerated in FULL rather
+# than one class per bug report — only three of these descend from OSError, and
+# a container this cannot read must degrade to "no information", never abort a
+# diagnosis the live probe may already have answered.
+CONTAINER_READ_ERRORS = (
+    zipfile.BadZipFile,  # not a zip, truncated, bad central directory
+    zipfile.LargeZipFile,  # ZIP64 needed but disallowed
+    zlib.error,  # valid archive, corrupt deflate stream (Exception, not OSError)
+    NotImplementedError,  # unsupported compression method, e.g. AE-x encrypted
+    ValueError,  # embedded NUL in the path, closed file, malformed member
+    KeyError,  # member absent between namelist() and read()
+    EOFError,  # stream ends mid-member
+    RuntimeError,  # encrypted member, no password
+    lzma.LZMAError,  # corrupt LZMA stream; unreachable via ALLOWED_COMPRESSION,
+    # kept because a decoder error must never be the thing that escapes
+    OSError,  # unreadable, permissions, a directory, I/O failure
+)
+
+# The compression methods PowerPoint actually writes. Checked BEFORE decoding, so
+# an archive declaring anything else is reported unreadable without its codec ever
+# being invoked. This is the root fix for a run of one-decoder-error-per-review:
+# every codec zipfile supports raises its own exception type (zlib.error,
+# lzma.LZMAError, and whatever a future Python adds), and enumerating them chases
+# a set that grows. Refusing to decode what a real container never uses closes the
+# whole family instead of its current members.
+ALLOWED_COMPRESSION = frozenset({zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED})
+
+VBA_PART = "ppt/vbaProject.bin"
+# Cap on the bytes read out of that member. Only marker presence matters, and a
+# real container's part is ~88 KB, so this is generous for the job while refusing
+# to decompress an arbitrarily large member into memory on the strength of a
+# declared size a hostile or damaged archive controls.
+VBA_PART_READ_LIMIT = 8 * 1024 * 1024
+MODULE_MARKER = b"RunDeckOps"
+STAMP_MACRO_MARKER = b"DeckOpsVersion"
 
 PROBE_DRIVER = "deckops-version.applescript"
 PROBE_TIMEOUT_SEC = 90
@@ -124,8 +170,20 @@ STATUSES = {
         "check the on-disk half alone."
     ),
     "macro_stale": (
-        "{container} holds an OLD build of the macro ({found}, expected {expected}) "
-        "— re-import it per deck-editing-setup.md Step 3 before building."
+        "{container} holds an OLD build of the macro (found {found}, expected "
+        "{expected}) — re-import it per deck-editing-setup.md Step 3 before "
+        "building. Setup is otherwise done; this is a re-import, not a redo."
+    ),
+    # Reached by reading the container rather than by a macro that answered, so
+    # the module being old is inferred, not observed. Disabled macros produce the
+    # same silence, and dropping that remediation would strand a user whose only
+    # real problem is a security setting.
+    "macro_stale_inferred": (
+        "{container} is open and holds a DeckOps module with no version macro, so "
+        "it is a build predating the stamp (expected {expected}) — re-import it "
+        "per deck-editing-setup.md Step 3. Disabled macros look identical from "
+        "outside, so if the re-import does not clear this, confirm macros are "
+        "enabled (Step 1)."
     ),
 }
 
@@ -138,6 +196,49 @@ def container_paths(vault_root: Path) -> dict[str, Path]:
         "container": d / CONTAINER_NAME,
         "import_source": d / sync_deck_drivers.STAMP_DRIVER,
     }
+
+
+def inspect_container(path: Path) -> dict:
+    """Read-only look inside a .pptm for the DeckOps module. Never opens PowerPoint.
+
+    Answers the one question the live probe cannot: when DeckOpsVersion does not
+    answer, is that because no module was ever imported, or because an OLD build
+    is imported that predates the stamp macro? Every user upgrading from a
+    pre-stamp plugin is in the second state, and telling them "never imported"
+    sends them to redo setup instead of re-importing.
+
+    Unreadable or malformed files report `readable: False` rather than raising —
+    this refines a diagnostic and must never become one.
+    """
+    report = {
+        "exists": False,
+        "readable": False,
+        "has_module": False,
+        "has_stamp_macro": False,
+    }
+    # is_file() is inside the guard too: it stats the path, so a malformed one
+    # (an embedded NUL) or an unreadable parent raises before any zip work.
+    try:
+        report["exists"] = path.is_file()
+        if not report["exists"]:
+            return report
+        with zipfile.ZipFile(path) as z:
+            try:
+                info = z.getinfo(VBA_PART)
+            except KeyError:
+                # A valid archive that simply carries no macros — readable, empty.
+                report["readable"] = True
+                return report
+            if info.compress_type not in ALLOWED_COMPRESSION:
+                return report
+            with z.open(VBA_PART) as member:
+                blob = member.read(VBA_PART_READ_LIMIT)
+    except CONTAINER_READ_ERRORS:
+        return report
+    report["readable"] = True
+    report["has_module"] = MODULE_MARKER in blob
+    report["has_stamp_macro"] = STAMP_MACRO_MARKER in blob
+    return report
 
 
 def parse_probe(out: str) -> dict[str, str]:
@@ -198,6 +299,7 @@ def verdict(
     container_exists: bool,
     expected_stamp: str,
     probe: dict[str, str] | None,
+    container_holds_old_module: bool = False,
 ) -> str:
     """Classify the setup. `probe` is None when the live check was skipped."""
     if platform != "darwin":
@@ -221,6 +323,12 @@ def verdict(
         return "setup_required"
     if state == "not_running":
         return "powerpoint_not_running"
+    if container_holds_old_module and probe.get("container"):
+        # Only when PowerPoint actually HAS the container open does "the macro did
+        # not answer" point at the module rather than at the file being closed.
+        # Macros being disabled still produces the same silence, so this verdict
+        # is inferred and its message carries both remediations.
+        return "macro_stale_inferred"
     return "macro_unreachable"
 
 
@@ -253,19 +361,30 @@ def diagnose(vault_root: Path, scripts_dir: Path, offline: bool, platform: str) 
         ]
 
     probe = None if (offline or platform != "darwin") else run_probe(scripts_dir)
+    open_path = (probe or {}).get("container", "")
+
+    # Inspect whichever container is real: the one PowerPoint has open wins over
+    # the canonical path, since that is the file the macro would have come from.
+    inspect_path = Path(open_path) if open_path else paths["container"]
+    container_report = inspect_container(inspect_path)
+    holds_old_module = (
+        container_report["has_module"] and not container_report["has_stamp_macro"]
+    )
+
     status = verdict(
         platform=platform,
         driver_problems=driver_problems,
         container_exists=paths["container"].is_file(),
         expected_stamp=expected_stamp,
         probe=probe,
+        container_holds_old_module=holds_old_module,
     )
 
-    open_path = (probe or {}).get("container", "")
     import_source = paths["import_source"]
     report = {
         "status": status,
-        "setup_complete": status in ("ok", "powerpoint_not_running", "macro_stale"),
+        "setup_complete": status
+        in ("ok", "powerpoint_not_running", "macro_stale", "macro_stale_inferred"),
         "platform": platform,
         "expected_stamp": expected_stamp,
         "container": {
@@ -274,6 +393,10 @@ def diagnose(vault_root: Path, scripts_dir: Path, offline: bool, platform: str) 
             "open_path": open_path,
             "canonical_mismatch": bool(open_path)
             and open_path != str(paths["container"]),
+            "inspected_path": str(inspect_path),
+            "holds_module": container_report["has_module"],
+            "holds_stamp_macro": container_report["has_stamp_macro"],
+            "readable": container_report["readable"],
         },
         "import_source": {
             "path": str(import_source),
@@ -290,9 +413,18 @@ def diagnose(vault_root: Path, scripts_dir: Path, offline: bool, platform: str) 
     # Name the container the user actually has open, when there is one — telling
     # them to open the canonical path while a DeckOps.pptm sits open elsewhere
     # sends them to create a second one.
+    # A pre-stamp module answers no version at all, so name that rather than
+    # printing "unknown" at a user who has a perfectly good container.
+    found = (probe or {}).get("stamp", "")
+    if not found:
+        found = (
+            "no version macro — a build predating the stamp"
+            if holds_old_module
+            else "unknown"
+        )
     report["next_step"] = STATUSES[status].format(
         container=open_path or paths["container"],
-        found=(probe or {}).get("stamp", "unknown"),
+        found=found,
         expected=expected_stamp,
     )
     return report
