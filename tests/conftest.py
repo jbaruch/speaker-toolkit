@@ -620,6 +620,13 @@ def sync_deck_drivers():
 
 
 @pytest.fixture(scope="session")
+def deckops_doctor():
+    return _import_script(
+        os.path.join(SCRIPTS_PC, "deckops-doctor.py"), "deckops_doctor"
+    )
+
+
+@pytest.fixture(scope="session")
 def generate_illustrations():
     return _import_script(
         os.path.join(SCRIPTS_ILL, "generate-illustrations.py"), "generate_illustrations"
