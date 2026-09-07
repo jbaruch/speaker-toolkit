@@ -1,7 +1,5 @@
 # Changelog
 
-## Unreleased
-
 ### Locate the corrupt DeckOps test payload structurally
 
 The damaged-deflate fixture locates the VBA payload from the ZIP member's local
