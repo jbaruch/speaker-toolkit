@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Locate the corrupt DeckOps test payload structurally
+
+The damaged-deflate fixture locates the VBA payload from the ZIP member's local
+header instead of searching for a separately compressed byte prefix (#423).
+It sets the reserved block type to make decompression fail independently of
+compression level. Regression cases verify that the archive remains readable
+but its member raises `zlib.error` at levels 0, 1, 6, and 9. Runtime behavior and
+the existing diagnosis assertions are unchanged.
+
 ## 0.20.134 — 2026-09-07
 
 ### Tell a stale DeckOps import from one that never happened
