@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.136 — 2026-09-07
+
 ### Point pyright at the project environment
 
 `[tool.pyright]` configured `pythonVersion`, `include`, `exclude`, and
