@@ -53,7 +53,12 @@ bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/build-deck.sh" 
 
 Op vocabulary, field layout, and state rules: `references/deckops-spec.md`. The
 template is read-only — pass a uniquely-named copy. macOS + Microsoft PowerPoint
-only; on first use walk the user through `references/deck-editing-setup.md`.
+only. Before the first pass run
+`"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/deckops-doctor.py" --vault-root "{vault_root}"`
+and require `status: ok`; anything else routes into
+`references/deck-editing-setup.md` at the step its `next_step` names. Do not
+guess whether this is a first run — the doctor answers it, and it also catches a
+closed container or a stale macro import before a long build half-finishes.
 
 ---
 
@@ -319,11 +324,14 @@ listing tokens in the target order; import by adding an alias to `importSpec`.
 "BASE:1 BASE:2 BASE:6 BASE:4 BASE:5"
 ```
 
-macOS + Microsoft PowerPoint only. On first use, walk the user through
-`references/deck-editing-setup.md` (enable VBA macros, import `RunDeckOps.bas`
-into a `DeckOps.pptm` container, grant Automation consent). On EVERY build, the
-user must open `DeckOps.pptm` first and keep it open for the whole sequence —
-each pass calls a macro in that running instance (see Step 6 of the setup doc).
+macOS + Microsoft PowerPoint only. Run
+`"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/deckops-doctor.py" --vault-root "{vault_root}"`
+first and act on its `status` rather than assuming a first run;
+`references/deck-editing-setup.md` covers enabling VBA macros, importing
+`RunDeckOps.bas` into a `DeckOps.pptm` container, and granting Automation
+consent. On EVERY build, the user must open `DeckOps.pptm` first and keep it open
+for the whole sequence — each pass calls a macro in that running instance (see
+Step 6 of the setup doc).
 The macro writes a COPY — the original is untouched; continue editing from the
 OUTPUT deck.
 

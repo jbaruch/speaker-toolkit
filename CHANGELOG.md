@@ -1,5 +1,57 @@
 # Changelog
 
+### Tell the user how to actually recreate the DeckOps macro container
+
+The distribution half of the deck layer was solved in #85 and #316: `.bas` and
+`.applescript` drivers ride to consumers as committed `.txt` mirrors,
+`sync-deck-drivers.py` restores them, and `check_shipped_extensions.py` gates
+drift. The walkthrough half was not. Five things the skill could not do:
+
+The import path was wrong for every consumer. Step 3 said "Import File… and
+choose `skills/presentation-creator/scripts/RunDeckOps.bas`" — a repo-relative
+path that, on an installed plugin, resolves under a hidden `.tessl/` directory
+PowerPoint's Import panel does not show. The user was being sent to a folder they
+cannot see by a path that does not resolve, while the same step's materialize
+command used `{speaker_toolkit_root}` — two path conventions in one step, which
+`skill-authoring` forbids. `sync-deck-drivers.py export --to <dir>` now copies the
+module out of the plugin tree to `<vault_root>/.deckops/`, beside the container,
+and the step hands the user that absolute path plus the ⇧⌘G / ⇧⌘. keys the panel
+needs.
+
+Nothing could detect first use. Three callers said "on first use, walk the user
+through deck-editing-setup.md" and none of them could tell first use from the
+hundredth, so the agent guessed. `deckops-doctor.py` answers it.
+
+The container had no recorded location. Step 2 offered `<vault>/.deckops/DeckOps.pptm`
+as an example; eight wrappers printed "confirm DeckOps.pptm is open" and not one
+could say where it should be. That path is now canonical, derived from
+`config.vault_root`, and a running PowerPoint reports where it actually opened
+the container from. Chosen over a `config` field on purpose: a schema v3 bump
+plus migration to record what the live app already knows, and
+`stateful-artifacts` says verify against the live source anyway.
+
+The smoke test was prose. Step 5 — the step whose whole job was confirming steps
+1–4 in one shot — said "run a 3-slide throwaway" and left the agent to invent the
+gate it was gated by. `smoke-test-ops.txt` ships that sequence, using layout 0 and
+a free text box only so it runs against any template, with four explicit pass
+criteria.
+
+A stale macro import was invisible. `ensure-drivers.sh` materializes without
+`--force`, so an on-disk driver is never refreshed, and — worse — a saved `.pptm`
+yields no VBA source at all, so a module imported once and never updated keeps
+running OLD code with nothing to notice. `RunDeckOps.bas` now carries
+`DECKOPS_STAMP`, a digest of its own body with the stamp masked out, exposed
+through a `DeckOpsVersion()` macro; `deckops-version.applescript` asks the running
+PowerPoint for it and the doctor compares. Content-addressed rather than
+hand-bumped because an editor who forgets to bump a counter ships a lie, and
+`mirror` recomputes the stamp while `check` fails on drift.
+
+The probe never launches PowerPoint — a diagnostic that starts a 300 MB app as a
+side effect is worse than the answer it returns — and exits 0 with a verdict even
+when the macro is unreachable, because "setup required" is a finding to act on,
+not a failure of the script.
+
+
 ## 0.20.130 — 2026-09-06
 
 ### Migrate the catalog root without disturbing talk analysis or claims

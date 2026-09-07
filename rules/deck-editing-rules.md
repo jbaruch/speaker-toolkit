@@ -34,8 +34,19 @@ generating slide structure (see `rules/slide-generation-rules.md`).
   ```
 - One-time setup is a manual, GUI-bound sequence (enable VBA macros, create the
   `DeckOps.pptm` macro container, import the `.bas`, grant Automation consent).
-  Walk the user through it interactively the first time — see
+  Walk the user through it interactively — see
   `skills/presentation-creator/references/deck-editing-setup.md`.
+- Never assume whether setup has been done. `deckops-doctor.py --vault-root <path>`
+  is the read-only probe that answers it, and it is the only thing that can see a
+  STALE macro import: a saved `.pptm` yields no VBA source, so the doctor asks the
+  running PowerPoint for the module's own content stamp. Statuses and their
+  routing live in Step 0 of the setup doc.
+- The macro container has one canonical location, `<vault_root>/.deckops/DeckOps.pptm`,
+  and the importable `.bas` is exported beside it. An installed plugin sits under a
+  hidden `.tessl/` directory that PowerPoint's Import panel will not show, so the
+  import path must leave the plugin tree —
+  `sync-deck-drivers.py export --to <vault_root>/.deckops` puts it where the user
+  can reach it.
 
 ## Add a Generated Illustration as a Slide Background
 
@@ -89,6 +100,13 @@ generating slide structure (see `rules/slide-generation-rules.md`).
   `<p:bg>`-blipFill check finds the expected slides.
 - The deterministic Python/shell helpers (illustration apply, manifest→spec) ARE
   unit-tested in `tests/` — only the PowerPoint-driving layer is exempt.
+- Exempt artifacts: `RunDeckOps.bas` and every `*.applescript` driver beside it,
+  `deckops-version.applescript` included. Their manual validation procedure is
+  Step 5 of `skills/presentation-creator/references/deck-editing-setup.md` — what
+  to run, what to observe, what counts as a pass.
+- `deckops-doctor.py` splits along the same line: the AppleScript probe is exempt,
+  while path derivation, probe-output parsing, and the verdict table are unit-tested
+  in `tests/test_deckops_doctor.py` against synthetic probe results.
 
 ## Mac PowerPoint VBA Landmines (all handled in RunDeckOps)
 
