@@ -1,5 +1,33 @@
 # Changelog
 
+### Tell a stale DeckOps import from one that never happened
+
+Running the shipped walkthrough against a real machine found the doctor giving
+the wrong instruction in the single most common case: a user upgrading from a
+pre-stamp plugin.
+
+The live probe asks the running PowerPoint for `DeckOpsVersion`. A module
+imported before the stamp existed does not have that macro, so PowerPoint
+answers -18 — exactly what it answers when no module was ever imported. The
+doctor could not tell the two apart and reported `macro_unreachable`, whose
+remediation is "confirm the module was imported", sending someone with a working
+six-month-old container back through setup.
+
+The container found in the wild made it concrete: `ppt/vbaProject.bin` carried
+`DeckOps`, `RunDeckOps`, and `BuildDeck`, and carried neither `DeckOpsVersion`
+nor `DECKOPS_STAMP`. Module names sit in the project streams as plain bytes even
+though the source is compressed, so `inspect_container` reads the part and
+separates "an old module" from "no module". That case now reports `macro_stale`
+— "setup is otherwise done; this is a re-import, not a redo" — and `next_step`
+names the absent version readably instead of printing `unknown` at someone whose
+container is fine.
+
+The file read is a hint, never the authority: a probe that answers `ok` outranks
+it, and an unreadable or corrupt `.pptm` degrades to "no information" rather than
+raising, since this refines a diagnostic and must never become one. Fixtures are
+built as zips in test setup — no binary checked into the repo.
+
+
 ## 0.20.131 — 2026-09-07
 
 ### Tell the user how to actually recreate the DeckOps macro container

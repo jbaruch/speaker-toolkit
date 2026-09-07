@@ -466,3 +466,150 @@ def test_a_missing_sibling_script_raises_an_actionable_import_error(
     monkeypatch.setattr(deckops_doctor, "__file__", str(tmp_path / "deckops-doctor.py"))
     with pytest.raises(ImportError, match="reinstall the plugin"):
         deckops_doctor._load_sibling("nope", "not-here.py")
+
+
+# --- container introspection -------------------------------------------------
+#
+# The live probe asks for DeckOpsVersion, which a pre-stamp module does not have,
+# so an OLD import and NO import both come back as "macro unavailable". Every user
+# upgrading from a pre-stamp plugin is in the first state, and being told the
+# module was never imported sends them to redo setup instead of re-importing.
+
+
+def _pptm(path: Path, *, vba: bytes | None) -> Path:
+    """A .pptm shaped enough for the inspector. Built, never a checked-in binary."""
+    import zipfile
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("[Content_Types].xml", "<Types/>")
+        z.writestr("ppt/presentation.xml", "<p:presentation/>")
+        if vba is not None:
+            z.writestr("ppt/vbaProject.bin", vba)
+    return path
+
+
+OLD_VBA = b"\x00\x01DeckOps\x00RunDeckOps\x00BuildDeck\x00"  # pre-stamp build
+NEW_VBA = OLD_VBA + b"DeckOpsVersion\x00DECKOPS_STAMP\x00"
+
+
+def test_inspect_container_reports_a_missing_file(deckops_doctor, tmp_path):
+    r = deckops_doctor.inspect_container(tmp_path / "nope.pptm")
+    assert r == {
+        "exists": False,
+        "readable": False,
+        "has_module": False,
+        "has_stamp_macro": False,
+    }
+
+
+def test_inspect_container_sees_an_old_module(deckops_doctor, tmp_path):
+    r = deckops_doctor.inspect_container(_pptm(tmp_path / "DeckOps.pptm", vba=OLD_VBA))
+    assert r["exists"] and r["readable"]
+    assert r["has_module"] is True
+    assert r["has_stamp_macro"] is False
+
+
+def test_inspect_container_sees_a_current_module(deckops_doctor, tmp_path):
+    r = deckops_doctor.inspect_container(_pptm(tmp_path / "DeckOps.pptm", vba=NEW_VBA))
+    assert r["has_module"] is True
+    assert r["has_stamp_macro"] is True
+
+
+def test_inspect_container_handles_a_pptm_with_no_vba_at_all(deckops_doctor, tmp_path):
+    """A container saved before any import — readable, but empty of macros."""
+    r = deckops_doctor.inspect_container(_pptm(tmp_path / "DeckOps.pptm", vba=None))
+    assert r["readable"] is True
+    assert r["has_module"] is False
+
+
+def test_inspect_container_never_raises_on_a_corrupt_file(deckops_doctor, tmp_path):
+    """This refines a diagnostic; it must never become one."""
+    bad = tmp_path / "DeckOps.pptm"
+    bad.write_bytes(b"not a zip at all")
+    r = deckops_doctor.inspect_container(bad)
+    assert r["exists"] is True
+    assert r["readable"] is False
+    assert r["has_module"] is False
+
+
+def test_an_old_module_reads_as_stale_not_never_imported(deckops_doctor):
+    """The upgrade path: re-import, not redo setup."""
+    assert (
+        _verdict(
+            deckops_doctor,
+            container_exists=True,
+            probe={"state": "macro_unreachable"},
+            container_holds_old_module=True,
+        )
+        == "macro_stale"
+    )
+
+
+def test_no_module_at_all_still_reads_as_unreachable(deckops_doctor):
+    assert (
+        _verdict(
+            deckops_doctor,
+            container_exists=True,
+            probe={"state": "macro_unreachable"},
+            container_holds_old_module=False,
+        )
+        == "macro_unreachable"
+    )
+
+
+def test_an_answering_macro_outranks_container_introspection(deckops_doctor):
+    """The live probe is the authority; the file read is only a hint."""
+    assert (
+        _verdict(
+            deckops_doctor,
+            container_exists=True,
+            probe=_ok_probe(),
+            container_holds_old_module=True,
+        )
+        == "ok"
+    )
+
+
+def test_diagnose_reports_a_stale_container_at_the_canonical_path(
+    deckops_doctor, tmp_path, monkeypatch
+):
+    _pptm(tmp_path / ".deckops" / "DeckOps.pptm", vba=OLD_VBA)
+    monkeypatch.setattr(
+        deckops_doctor, "run_probe", lambda _d: {"state": "macro_unreachable"}
+    )
+    report = deckops_doctor.diagnose(tmp_path, _scripts_dir(), False, "darwin")
+    assert report["status"] == "macro_stale"
+    assert report["container"]["holds_module"] is True
+    assert report["container"]["holds_stamp_macro"] is False
+    assert "re-import" in report["next_step"]
+    assert "not a redo" in report["next_step"]
+
+
+def test_diagnose_inspects_the_open_container_over_the_canonical_one(
+    deckops_doctor, tmp_path, monkeypatch
+):
+    """PowerPoint's open file is where the running macro came from."""
+    _pptm(tmp_path / ".deckops" / "DeckOps.pptm", vba=NEW_VBA)
+    elsewhere = _pptm(tmp_path / "elsewhere" / "DeckOps.pptm", vba=OLD_VBA)
+    monkeypatch.setattr(
+        deckops_doctor,
+        "run_probe",
+        lambda _d: {"state": "macro_unreachable", "container": str(elsewhere)},
+    )
+    report = deckops_doctor.diagnose(tmp_path, _scripts_dir(), False, "darwin")
+    assert report["container"]["inspected_path"] == str(elsewhere)
+    assert report["status"] == "macro_stale"
+
+
+def test_a_stale_next_step_names_the_absent_version_readably(
+    deckops_doctor, tmp_path, monkeypatch
+):
+    """ "unknown" at a user holding a good container is a worse answer than the truth."""
+    _pptm(tmp_path / ".deckops" / "DeckOps.pptm", vba=OLD_VBA)
+    monkeypatch.setattr(
+        deckops_doctor, "run_probe", lambda _d: {"state": "macro_unreachable"}
+    )
+    report = deckops_doctor.diagnose(tmp_path, _scripts_dir(), False, "darwin")
+    assert "predating the stamp" in report["next_step"]
+    assert "unknown" not in report["next_step"]

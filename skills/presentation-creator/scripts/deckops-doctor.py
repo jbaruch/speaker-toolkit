@@ -51,6 +51,7 @@ import argparse
 import json
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 from importlib import util as _importlib_util
@@ -82,6 +83,15 @@ sync_deck_drivers = _load_sibling("sync_deck_drivers", "sync-deck-drivers.py")
 # VBA-editor Import panel will not show.
 CONTAINER_DIRNAME = ".deckops"
 CONTAINER_NAME = "DeckOps.pptm"
+
+# Markers looked for inside a container's ppt/vbaProject.bin. Module and
+# procedure names sit in the project streams as plain bytes even though the
+# source itself is compressed, so their presence separates "no module at all"
+# from "an old module". A HINT that refines the advice, never the authority —
+# the live probe decides whether the macro actually answers.
+VBA_PART = "ppt/vbaProject.bin"
+MODULE_MARKER = b"RunDeckOps"
+STAMP_MACRO_MARKER = b"DeckOpsVersion"
 
 PROBE_DRIVER = "deckops-version.applescript"
 PROBE_TIMEOUT_SEC = 90
@@ -124,8 +134,9 @@ STATUSES = {
         "check the on-disk half alone."
     ),
     "macro_stale": (
-        "{container} holds an OLD build of the macro ({found}, expected {expected}) "
-        "— re-import it per deck-editing-setup.md Step 3 before building."
+        "{container} holds an OLD build of the macro (found {found}, expected "
+        "{expected}) — re-import it per deck-editing-setup.md Step 3 before "
+        "building. Setup is otherwise done; this is a re-import, not a redo."
     ),
 }
 
@@ -138,6 +149,40 @@ def container_paths(vault_root: Path) -> dict[str, Path]:
         "container": d / CONTAINER_NAME,
         "import_source": d / sync_deck_drivers.STAMP_DRIVER,
     }
+
+
+def inspect_container(path: Path) -> dict:
+    """Read-only look inside a .pptm for the DeckOps module. Never opens PowerPoint.
+
+    Answers the one question the live probe cannot: when DeckOpsVersion does not
+    answer, is that because no module was ever imported, or because an OLD build
+    is imported that predates the stamp macro? Every user upgrading from a
+    pre-stamp plugin is in the second state, and telling them "never imported"
+    sends them to redo setup instead of re-importing.
+
+    Unreadable or malformed files report `readable: False` rather than raising —
+    this refines a diagnostic and must never become one.
+    """
+    report = {
+        "exists": path.is_file(),
+        "readable": False,
+        "has_module": False,
+        "has_stamp_macro": False,
+    }
+    if not report["exists"]:
+        return report
+    try:
+        with zipfile.ZipFile(path) as z:
+            if VBA_PART not in z.namelist():
+                report["readable"] = True
+                return report
+            blob = z.read(VBA_PART)
+    except (zipfile.BadZipFile, OSError, KeyError):
+        return report
+    report["readable"] = True
+    report["has_module"] = MODULE_MARKER in blob
+    report["has_stamp_macro"] = STAMP_MACRO_MARKER in blob
+    return report
 
 
 def parse_probe(out: str) -> dict[str, str]:
@@ -198,6 +243,7 @@ def verdict(
     container_exists: bool,
     expected_stamp: str,
     probe: dict[str, str] | None,
+    container_holds_old_module: bool = False,
 ) -> str:
     """Classify the setup. `probe` is None when the live check was skipped."""
     if platform != "darwin":
@@ -221,6 +267,10 @@ def verdict(
         return "setup_required"
     if state == "not_running":
         return "powerpoint_not_running"
+    if container_holds_old_module:
+        # The module IS imported, it just predates the stamp macro. The fix is a
+        # re-import, not the whole of setup.
+        return "macro_stale"
     return "macro_unreachable"
 
 
@@ -253,15 +303,25 @@ def diagnose(vault_root: Path, scripts_dir: Path, offline: bool, platform: str) 
         ]
 
     probe = None if (offline or platform != "darwin") else run_probe(scripts_dir)
+    open_path = (probe or {}).get("container", "")
+
+    # Inspect whichever container is real: the one PowerPoint has open wins over
+    # the canonical path, since that is the file the macro would have come from.
+    inspect_path = Path(open_path) if open_path else paths["container"]
+    container_report = inspect_container(inspect_path)
+    holds_old_module = (
+        container_report["has_module"] and not container_report["has_stamp_macro"]
+    )
+
     status = verdict(
         platform=platform,
         driver_problems=driver_problems,
         container_exists=paths["container"].is_file(),
         expected_stamp=expected_stamp,
         probe=probe,
+        container_holds_old_module=holds_old_module,
     )
 
-    open_path = (probe or {}).get("container", "")
     import_source = paths["import_source"]
     report = {
         "status": status,
@@ -274,6 +334,10 @@ def diagnose(vault_root: Path, scripts_dir: Path, offline: bool, platform: str) 
             "open_path": open_path,
             "canonical_mismatch": bool(open_path)
             and open_path != str(paths["container"]),
+            "inspected_path": str(inspect_path),
+            "holds_module": container_report["has_module"],
+            "holds_stamp_macro": container_report["has_stamp_macro"],
+            "readable": container_report["readable"],
         },
         "import_source": {
             "path": str(import_source),
@@ -290,9 +354,18 @@ def diagnose(vault_root: Path, scripts_dir: Path, offline: bool, platform: str) 
     # Name the container the user actually has open, when there is one — telling
     # them to open the canonical path while a DeckOps.pptm sits open elsewhere
     # sends them to create a second one.
+    # A pre-stamp module answers no version at all, so name that rather than
+    # printing "unknown" at a user who has a perfectly good container.
+    found = (probe or {}).get("stamp", "")
+    if not found:
+        found = (
+            "no version macro — a build predating the stamp"
+            if holds_old_module
+            else "unknown"
+        )
     report["next_step"] = STATUSES[status].format(
         container=open_path or paths["container"],
-        found=(probe or {}).get("stamp", "unknown"),
+        found=found,
         expected=expected_stamp,
     )
     return report

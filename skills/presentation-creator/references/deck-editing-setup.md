@@ -38,9 +38,9 @@ same thing as one sentence:
 |---|---|---|
 | `ok` | Set up and current | Step 6 |
 | `setup_required` | No macro container on this machine | Step 1 |
-| `macro_unreachable` | Container missing from the running PowerPoint, macros off, or module never imported | Steps 1–3 |
+| `macro_unreachable` | Container not open, macros off, or the module was NEVER imported | Steps 1–3 |
 | `powerpoint_not_running` | Set up; PowerPoint just isn't open | Step 6 |
-| `macro_stale` | Container holds an OLD build of the macro | Step 3 (Updating) |
+| `macro_stale` | Container holds an OLD build of the macro — setup is done, it needs a re-import | Step 3 (Updating) |
 | `driver_drift` | Shipped drivers don't match their mirrors | Read `drivers.problems`; it names the fix |
 | `probe_failed` | The probe could not run, so the state is UNKNOWN | Read `live.detail` — usually denied Automation consent (Step 4) |
 | `probe_missing` | The probe driver or `osascript` is absent | Reinstall the plugin |
@@ -121,7 +121,10 @@ starts with a dot, so one of the two is needed. Save `DeckOps.pptm` (⌘S).
 imported into `DeckOps.pptm` keeps running the OLD code, silently, because nothing
 can read VBA source back out of a saved `.pptm`. That is what `macro_stale`
 detects — the module carries a content stamp and the doctor asks the running
-PowerPoint for it. On `macro_stale`: re-run the `export` command above, then in
+PowerPoint for it. A container imported before the stamp existed answers nothing
+at all, so the doctor also reads the `.pptm` itself for the module: module present
+without the version macro means a pre-stamp build, reported as `macro_stale`
+rather than as a setup that never happened. On `macro_stale`: re-run the `export` command above, then in
 the VBA editor right-click the `DeckOps` module → **Remove** (No to export) →
 **Import File…** the refreshed `.bas` → save. Re-run Step 0 to confirm `ok`.
 
