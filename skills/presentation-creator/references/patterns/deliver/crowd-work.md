@@ -14,8 +14,8 @@ detection_signals:
   - "the wait is named out loud rather than covered over"
   - "material generated in the gap is reused later in the talk"
 evaluable_from:
-  - delivery_video
   - transcript
+  - delivery_video
 strong_evaluable_from:
   - delivery_video
 absence_evaluable_from: null
@@ -23,8 +23,8 @@ not_applicable_when:
   - condition_id: no-live-execution-waits
     description: "The delivery contains no live execution that can stall — pre-recorded demo playback, slide-only delivery, or a recorded talk with no on-stage waits — so there is no wait available to convert."
 applicability_evaluable_from:
-  - delivery_video
   - transcript
+  - delivery_video
 evidence_requirements:
   - "Evidence must establish both halves: that live execution left a wait, and that the speaker filled it by engaging the room rather than by narrating filler."
   - "A timestamped transcript must show the gap and the audience exchange inside it; a strong finding additionally requires video establishing that the screen was genuinely stalled."
@@ -78,8 +78,9 @@ Distinguish from `brain-breaks`, which is a planned pacing device placed where t
 - Absent: Live-execution waits occur and are filled with narration, filler, or silence. Absence is never scorable from artifacts alone, because a delivery may simply have had no stalls
 
 ## Evidence Gate
-
-Requires a timestamped transcript at minimum, and delivery video for a strong finding — only video establishes that the screen was genuinely stalled rather than the speaker choosing to pause. Not applicable when the demo track is pre-recorded, since no wait exists to convert.
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
+Not applicable when the demo track is pre-recorded, since no wait exists to convert.
 
 ## Relationship to Vault Dimensions
 

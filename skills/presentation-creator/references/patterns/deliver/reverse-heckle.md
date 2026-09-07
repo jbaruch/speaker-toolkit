@@ -14,8 +14,8 @@ detection_signals:
   - "an explicit payoff line fires when the room's behaviour changes"
   - "the needling targets the room collectively and carries no contempt toward any individual"
 evaluable_from:
-  - delivery_video
   - transcript
+  - delivery_video
 strong_evaluable_from:
   - delivery_video
 absence_evaluable_from: null
@@ -23,8 +23,8 @@ not_applicable_when:
   - condition_id: no-live-audience
     description: "The delivery has no co-present audience able to respond — webinar, recorded-to-camera, or an empty-room capture — so there is no room temperature to name or turn."
 applicability_evaluable_from:
-  - delivery_video
   - transcript
+  - delivery_video
 evidence_requirements:
   - "Evidence must show the full three-beat shape: the named diagnosis, at least one repetition, and the payoff. A single wry remark about a quiet room is not this pattern."
   - "Evidence must establish the room's actual response, so audible audience reaction or visible show of hands is required; a strong finding needs video."
@@ -78,8 +78,9 @@ Distinguish from ordinary self-deprecating filler about a quiet room: the differ
 - Absent: Room reticence occurs and is not converted. Absence is never scorable from artifacts alone, since a warm room offers nothing to work with
 
 ## Evidence Gate
-
-Requires a timestamped transcript at minimum to reconstruct the arc, and delivery video for a strong finding, because the payoff depends on establishing that the room actually turned. Not applicable to formats without a co-present audience.
+Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
+Current catalog artifacts may support positive detection only. Because `absence_evaluable_from` is `null`, no delivery video, transcript, rendered or native deck, comparison artifact, or claim of full coverage authorizes an absence finding; when no positive signal is established, record `not_evaluable`, not `absent`.
+Not applicable to formats without a co-present audience.
 
 ## Relationship to Vault Dimensions
 
