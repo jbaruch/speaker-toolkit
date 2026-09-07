@@ -134,7 +134,9 @@ def test_restamp_writes_a_digest_and_is_idempotent(sync_deck_drivers, tmp_path):
 def test_stamp_changes_when_the_macro_body_changes(sync_deck_drivers, tmp_path):
     _stamped(sync_deck_drivers, tmp_path, "Sub A()\nEnd Sub")
     before, _ = sync_deck_drivers.restamp(tmp_path)
-    _stamped(sync_deck_drivers, tmp_path, "Sub A()\n' behaviour change\nEnd Sub", before)
+    _stamped(
+        sync_deck_drivers, tmp_path, "Sub A()\n' behaviour change\nEnd Sub", before
+    )
     after, changed = sync_deck_drivers.restamp(tmp_path)
     assert changed is True
     assert after != before

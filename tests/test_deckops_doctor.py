@@ -90,7 +90,9 @@ def test_verdict_flags_a_foreign_platform_first(deckops_doctor):
 def test_verdict_driver_drift_outranks_a_missing_container(deckops_doctor):
     """Drift means the shipped drivers cannot be trusted, so report that first."""
     assert (
-        _verdict(deckops_doctor, driver_problems=["mirror X drifted"], container_exists=False)
+        _verdict(
+            deckops_doctor, driver_problems=["mirror X drifted"], container_exists=False
+        )
         == "driver_drift"
     )
 
@@ -130,7 +132,9 @@ def test_verdict_missing_state_is_unreachable_not_ok(deckops_doctor):
 def test_verdict_offline_stops_at_the_container_check(deckops_doctor):
     """--offline answers first-use and location, and claims nothing about liveness."""
     assert _verdict(deckops_doctor, probe=None) == "ok"
-    assert _verdict(deckops_doctor, probe=None, container_exists=False) == "setup_required"
+    assert (
+        _verdict(deckops_doctor, probe=None, container_exists=False) == "setup_required"
+    )
 
 
 # --- report ------------------------------------------------------------------

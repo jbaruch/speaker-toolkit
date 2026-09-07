@@ -63,13 +63,19 @@ error message look for it there:
 {vault_root}/.deckops/DeckOps.pptm
 ```
 
-Ask the user to:
+Create the directory yourself first, so the Save dialog has somewhere to land:
+
+```bash
+mkdir -p "{vault_root}/.deckops"
+```
+
+Then ask the user to:
 1. **File → New Presentation** (a blank deck — this becomes the macro home).
 2. **File → Save As** → set **File Format: PowerPoint Macro-Enabled
    Presentation (.pptm)** → name it `DeckOps.pptm` and save it to the path above.
    In the Save dialog, ⇧⌘G opens "Go to Folder" — paste the expanded directory
-   there. Create `.deckops` first if the dialog won't navigate to a
-   dot-directory: `mkdir -p "{vault_root}/.deckops"`.
+   there. A dot-directory does not appear in the file list; ⇧⌘. toggles hidden
+   files if they need to see it.
 
 Gotcha to warn about up front: if PowerPoint ever shows **"Visual Basic macros
 will be removed if you save the file in this format"**, the user is saving a
