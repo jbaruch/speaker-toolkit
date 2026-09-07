@@ -38,6 +38,24 @@ spatial axis are different things sharing a word, and the first draft passed
 code — all four reserved fields are named parameters, so Python rejects the
 shadowing itself — and was removed rather than left as protection that cannot run.
 
+Review caught the script committing the very failure it was written to prevent:
+an empty sequence passed all four checked axes, and a requirement whose evidence
+the take did not carry passed silently — a required click with no pointer data, a
+content-bounds requirement with no viewport. Absence of evidence was being read
+as conformance. Two changes fix it. `evidence_missing` refuses any requirement
+that cannot be judged, and an axis no row exercised now reports `unverified`
+rather than `pass`, so the honesty the pixel axis already had extends to every
+axis. `unverified_axes` distinguishes "cannot be checked here" from "nothing
+asked for it".
+
+Phrase matching returned only the first occurrence, so narration that says a
+phrase twice would fail a proof frame correctly placed during the second. Every
+occurrence is matched now, and findings report all spoken windows.
+
+The skill also never said where `{python_path}` comes from while requiring it in
+every command; it now reads `config.python_path` from the tracking database like
+the other six, and refuses to fall back to whatever is on `PATH`.
+
 
 ## 0.20.137 — 2026-09-07
 

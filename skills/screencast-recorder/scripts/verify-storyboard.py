@@ -98,8 +98,12 @@ def _point_in_rect(point, rect):
     return rx <= px <= rx + rw and ry <= py <= ry + rh
 
 
-def _phrase_span(words, phrase):
-    """Actual [start, end] of `phrase` in transcribed words, or None if absent.
+def _phrase_spans(words, phrase):
+    """Every [start, end] where `phrase` is spoken, in order. Empty if never.
+
+    All occurrences, not the first: a narration that says "ship it" twice has two
+    valid moments to prove against, and matching only the first would fail a take
+    whose proof frame is correctly placed during the second.
 
     Matches on a normalised token sequence so punctuation and spacing from the
     transcriber do not decide whether a phrase was spoken.
@@ -110,20 +114,84 @@ def _phrase_span(words, phrase):
 
     target = [norm(w) for w in phrase.split() if norm(w)]
     if not target:
-        return None
+        return []
     toks = [(norm(w.get("word", "")), w) for w in words]
-    toks = [(t, w) for t, w in toks if t]
+    toks = [(tok, w) for tok, w in toks if tok]
+    spans = []
     for i in range(len(toks) - len(target) + 1):
-        if [t for t, _ in toks[i : i + len(target)]] == target:
-            span = [w for _, w in toks[i : i + len(target)]]
-            return float(span[0]["start"]), float(span[-1]["end"])
-    return None
+        if [tok for tok, _ in toks[i : i + len(target)]] == target:
+            window = [w for _, w in toks[i : i + len(target)]]
+            spans.append((float(window[0]["start"]), float(window[-1]["end"])))
+    return spans
 
 
-def check_semantic(row, clip, findings):
+# What each row requirement needs before it can be judged at all. Without this,
+# a requirement whose evidence is missing silently passes — the same "unexamined
+# reported as passing" failure the pixel axis is careful to avoid, which this
+# script committed everywhere else in its first draft.
+EVIDENCE_FOR_REQUIREMENT = {
+    "route": (("entry", "route"),),
+    "data_fingerprint": (("entry", "data_fingerprint"),),
+    "visible_labels": (("entry", "labels"),),
+    "content_bounds": (("entry", "viewport"),),
+}
+
+
+def check_evidence(row, clip, narration, findings):
+    """Refuse to judge a requirement whose evidence the take does not carry."""
+    req = row.get("require", {})
+    subject = row["id"]
+
+    for name, needed in EVIDENCE_FOR_REQUIREMENT.items():
+        if name not in req:
+            continue
+        for section, field in needed:
+            if (clip.get(section) or {}).get(field) is None:
+                findings.append(
+                    _finding(
+                        "evidence_missing",
+                        SEMANTIC,
+                        subject,
+                        f"row requires {name} but the clip carries no {section}.{field}",
+                        requirement=name,
+                        missing_field=f"{section}.{field}",
+                    )
+                )
+
+    if req.get("click_on_target"):
+        for click in (e for e in clip.get("events") or [] if e.get("type") == "click"):
+            if click.get("pointer") is None or click.get("target_rect") is None:
+                findings.append(
+                    _finding(
+                        "evidence_missing",
+                        MOTION,
+                        subject,
+                        "a click event carries no pointer/target_rect, so it cannot be judged",
+                        requirement="click_on_target",
+                        at_seconds=click.get("t"),
+                    )
+                )
+
+    if row.get("proof_frame_t") is not None and not (narration.get("words") or []):
+        findings.append(
+            _finding(
+                "evidence_missing",
+                TIME,
+                subject,
+                "row declares a proof frame but the sequence carries no narration words",
+                requirement="proof_frame_t",
+                missing_field="narration.words",
+            )
+        )
+
+
+def check_semantic(row, clip, findings, exercised):
     req = row.get("require", {})
     entry = clip.get("entry", {})
     subject = row["id"]
+
+    if any(k in req for k in ("route", "data_fingerprint", "visible_labels")):
+        exercised.add(SEMANTIC)
 
     if "route" in req and entry.get("route") != req["route"]:
         findings.append(
@@ -167,11 +235,16 @@ def check_semantic(row, clip, findings):
         )
 
 
-def check_geometry(row, clip, delivery, findings):
+def check_geometry(row, clip, delivery, findings, exercised):
     req = row.get("require", {})
     entry = clip.get("entry", {})
     subject = row["id"]
     viewport = entry.get("viewport")
+
+    if req.get("content_bounds") or (
+        delivery.get("min_label_px") and req.get("visible_labels")
+    ):
+        exercised.add(GEOMETRY)
 
     # Negative test 2: the content is present but partly outside the viewport.
     bounds = req.get("content_bounds")
@@ -218,10 +291,13 @@ def check_geometry(row, clip, delivery, findings):
             )
 
 
-def check_motion(row, clip, findings):
+def check_motion(row, clip, findings, exercised):
     req = row.get("require", {})
     events = clip.get("events") or []
     subject = row["id"]
+
+    if req.get("pan") or req.get("click_on_target"):
+        exercised.add(MOTION)
 
     # Negative test 3: content wider than the viewport with no pan performed.
     pan_req = req.get("pan")
@@ -277,12 +353,13 @@ def check_motion(row, clip, findings):
                 )
 
 
-def check_time(row, narration, findings):
+def check_time(row, narration, findings, exercised):
     subject = row["id"]
     proof_t = row.get("proof_frame_t")
     phrase = row.get("phrase")
     if proof_t is None or not phrase:
         return
+    exercised.add(TIME)
 
     # Negative test 10: timing asserted from predicted WPM. WPM establishes
     # whether a script is deliverable; it never establishes synchronisation.
@@ -299,8 +376,8 @@ def check_time(row, narration, findings):
         )
         return
 
-    span = _phrase_span(narration.get("words") or [], phrase)
-    if span is None:
+    spans = _phrase_spans(narration.get("words") or [], phrase)
+    if not spans:
         findings.append(
             _finding(
                 "phrase_not_spoken",
@@ -311,8 +388,7 @@ def check_time(row, narration, findings):
             )
         )
         return
-    start, end = span
-    if not (start <= proof_t <= end):
+    if not any(start <= proof_t <= end for start, end in spans):
         findings.append(
             _finding(
                 "proof_outside_phrase",
@@ -320,16 +396,18 @@ def check_time(row, narration, findings):
                 subject,
                 "the visual proof does not occur while the phrase is being spoken",
                 phrase=phrase,
-                spoken=[start, end],
+                spoken=[list(s) for s in spans],
                 proof_frame_t=proof_t,
             )
         )
 
 
-def check_seam(previous, following, tolerances, findings):
+def check_seam(previous, following, tolerances, findings, exercised):
     """A seam passes only when the outgoing and incoming state agree (#369 §2)."""
     subject = f"{previous['id']}→{following['id']}"
     exit_state, entry_state = previous.get("exit", {}), following.get("entry", {})
+    if exit_state and entry_state:
+        exercised.add(SEMANTIC)
 
     for field in SEAM_FIELDS:
         before, after = exit_state.get(field), entry_state.get(field)
@@ -364,9 +442,20 @@ def check_seam(previous, following, tolerances, findings):
 
 def verify(sequence):
     findings = []
+    exercised = set()
     delivery = sequence.get("delivery", {})
     narration = sequence.get("narration", {})
     clips = {c["id"]: c for c in sequence.get("clips", [])}
+
+    if not sequence.get("rows"):
+        findings.append(
+            _finding(
+                "sequence_empty",
+                SEMANTIC,
+                "sequence",
+                "the sequence declares no storyboard rows, so it verifies nothing",
+            )
+        )
 
     for row in sequence.get("rows", []):
         clip = clips.get(row.get("clip"))
@@ -381,28 +470,39 @@ def verify(sequence):
                 )
             )
             continue
-        check_semantic(row, clip, findings)
-        check_geometry(row, clip, delivery, findings)
-        check_motion(row, clip, findings)
-        check_time(row, narration, findings)
+        check_evidence(row, clip, narration, findings)
+        check_semantic(row, clip, findings, exercised)
+        check_geometry(row, clip, delivery, findings, exercised)
+        check_motion(row, clip, findings, exercised)
+        check_time(row, narration, findings, exercised)
 
     ordered = sequence.get("clips", [])
     tolerances = sequence.get("seam_tolerances", {})
     for previous, following in zip(ordered, ordered[1:]):
-        check_seam(previous, following, tolerances, findings)
+        check_seam(previous, following, tolerances, findings, exercised)
 
-    checked = [SEMANTIC, GEOMETRY, MOTION, TIME]
     failed = {f["axis"] for f in findings}
-    axes = {a: ("fail" if a in failed else "pass") for a in checked}
-    # Never report pass for an axis this script cannot examine.
+    axes, unverified = {}, {}
+    for axis in (SEMANTIC, GEOMETRY, MOTION, TIME):
+        if axis in failed:
+            axes[axis] = "fail"
+        elif axis in exercised:
+            axes[axis] = "pass"
+        else:
+            # No requirement in this sequence exercised the axis. Reporting pass
+            # would claim an assurance nothing was checked to earn.
+            axes[axis] = "unverified"
+            unverified[axis] = (
+                "no row in this sequence declared a requirement on this axis"
+            )
+    # Never report pass for the axis this script structurally cannot examine.
     axes[PIXELS] = "unverified"
+    unverified[PIXELS] = "requires encoded frames; not checked by the manifest lane"
 
     return {
         "ok": not findings,
         "axes": axes,
-        "unverified_axes": {
-            PIXELS: "requires encoded frames; not checked by the manifest lane"
-        },
+        "unverified_axes": unverified,
         "finding_count": len(findings),
         "findings": findings,
         "counts": {

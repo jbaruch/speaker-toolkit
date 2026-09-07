@@ -47,6 +47,9 @@ label readable in the browser and unreadable in the encode is the case
 
 ### Row requirements
 
+A phrase spoken more than once is matched at **every** occurrence; a proof
+frame inside any of them passes.
+
 `route` · `data_fingerprint` · `visible_labels` · `content_bounds [x,y,w,h]` ·
 `margin_px` · `pan {axis,min_abs_delta}` · `click_on_target`
 
@@ -63,10 +66,24 @@ label readable in the browser and unreadable in the encode is the case
   "counts": {"rows":1,"clips":2,"seams":1} }
 ```
 
-`pixels` is always `unverified`. It is never `pass`, because this lane cannot
-examine encoded frames — and an axis reported as passing without being examined
-is a false assurance, which is the failure mode the whole verification doctrine
-exists to prevent.
+An axis is `unverified` for either of two reasons, and neither is a pass:
+
+- **`pixels`, always** — this lane cannot examine encoded frames.
+- **Any axis no row exercised** — a sequence that asserts nothing about geometry
+  has not passed geometry.
+
+`unverified_axes` says which case applies. An axis reported as passing without
+being examined is a false assurance, which is the failure the verification
+doctrine exists to prevent — and which the first draft of this script committed
+by passing an empty sequence on every axis.
+
+## Evidence is required before judgement
+
+A requirement whose evidence the take does not carry is **refused**, never
+passed: `require.content_bounds` with no `entry.viewport`, `visible_labels` with
+no `entry.labels`, `click_on_target` with a click lacking `pointer`/`target_rect`,
+or `proof_frame_t` with no `narration.words`. Each yields `evidence_missing`
+naming the requirement and the absent field.
 
 Exit 0 when every checked axis passes, 1 on any finding, 2 on usage error.
 
@@ -86,7 +103,9 @@ Exit 0 when every checked axis passes, 1 on any finding, 2 on usage error.
 | `cursor_off_target` | motion | the pointer was not on the target when the click fired |
 | `timing_not_from_actual_words` | time | synchronisation asserted without transcribed timestamps |
 | `phrase_not_spoken` | time | the row's phrase is absent from the narration |
-| `proof_outside_phrase` | time | the proof frame falls outside the spoken span |
+| `proof_outside_phrase` | time | the proof frame falls outside every spoken occurrence |
+| `evidence_missing` | varies | a requirement cannot be judged; the take lacks its evidence |
+| `sequence_empty` | semantic | the sequence declares no rows, so it verifies nothing |
 
 ## Coverage against the #369 negative tests
 

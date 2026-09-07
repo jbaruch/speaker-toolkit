@@ -28,7 +28,20 @@ containing this file. Never derive it from the consumer working directory.
 Treat `{speaker_toolkit_root}` as absolute in every toolkit-owned command;
 sequence, media, and output paths remain consumer-owned.
 
-## Step 1 — Obtain the sequence description
+## Step 1 — Resolve the interpreter
+
+Every command below runs under `{python_path}`, which this skill does not invent.
+Read `config.python_path` from the vault's `tracking-database.json` and set
+`python_path` to that exact value — it is the interpreter authority for every
+operational command here, exactly as in the other toolkit skills.
+
+If `python_path` is absent, empty, or cannot execute, stop and direct the speaker
+to vault-ingress Step 1 to repair the configuration. Never fall back to whichever
+`python3` happens to be on `PATH`.
+
+Proceed immediately to Step 2.
+
+## Step 2 — Obtain the sequence description
 
 The recording rig emits one JSON file describing the take: delivery resolution,
 narration words with real timestamps, per-clip entry/exit manifests and events,
@@ -41,7 +54,7 @@ carries only the half a machine can decide.
 
 Proceed immediately to Step 2.
 
-## Step 2 — Verify
+## Step 3 — Verify
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/screencast-recorder/scripts/verify-storyboard.py" <sequence.json>
@@ -49,15 +62,20 @@ Proceed immediately to Step 2.
 
 Exit 0 when every checked axis passes, 1 on any finding, 2 on usage error. The
 verdict names each finding's axis, subject, and what was expected against what
-was observed. Proceed immediately to Step 3.
+was observed. Proceed immediately to Step 4.
 
-## Step 3 — Read the unverified axes before reporting a pass
+## Step 4 — Read the unverified axes before reporting a pass
 
-`axes.pixels` is always `unverified`, never `pass`. This lane reads structured
-state; it cannot examine encoded frames, so three of the design's ten negative
-tests are outside it — a click that is invisible in the encode, a label
-unreadable at delivery size in the pixels rather than in the measurement, and OS
-chrome inside the crop.
+An axis reads `unverified` for either of two reasons, and neither is a pass.
+
+`axes.pixels` is always `unverified`: this lane reads structured state and cannot
+examine encoded frames, so three of the design's ten negative tests are outside
+it — a click invisible in the encode, a label unreadable in the delivered pixels
+rather than in the measurement, and OS chrome inside the crop.
+
+Any other axis reads `unverified` when no row in the sequence declared a
+requirement on it. A take that asserts nothing about geometry has not passed
+geometry; `unverified_axes` names which case applies.
 
 Report those as unchecked. An axis called passing without being examined is a
 false assurance, and false assurance from a green driver log is the specific

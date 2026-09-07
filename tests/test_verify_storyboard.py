@@ -211,7 +211,8 @@ def test_proof_frame_outside_the_spoken_phrase_fails(verify_storyboard):
     v = verify_storyboard.verify(s)
     assert codes(v) == {"proof_outside_phrase"}
     finding = v["findings"][0]
-    assert finding["spoken"] == [2.72, 3.56]
+    # every occurrence is reported, so the operator can see the real windows
+    assert finding["spoken"] == [[2.72, 3.56]]
 
 
 def test_proof_frame_at_each_edge_of_the_real_span_passes(verify_storyboard):
@@ -333,21 +334,112 @@ def test_main_rejects_malformed_json(verify_storyboard, tmp_path, capsys):
     assert "not valid JSON" in capsys.readouterr().err
 
 
-def test_finding_payload_cannot_shadow_a_reserved_field(verify_storyboard):
-    """A pan axis and a verification axis are different things sharing a word.
-
-    The first draft passed `axis="x"` as finding metadata, colliding with the
-    verification axis — caught by these tests, not in review. All four reserved
-    fields are named parameters, so Python itself rejects the shadowing.
-    """
-    for reserved in ("axis", "code", "subject", "message"):
-        with pytest.raises(TypeError, match="multiple values"):
-            verify_storyboard._finding("c", "motion", "s", "m", **{reserved: "x"})
-
-
 def test_pan_findings_report_the_spatial_axis_under_its_own_key(verify_storyboard):
     s = sequence()
     s["clips"][0]["events"] = [e for e in s["clips"][0]["events"] if e["type"] != "pan"]
     finding = verify_storyboard.verify(s)["findings"][0]
     assert finding["axis"] == "motion"  # verification axis
     assert finding["pan_axis"] == "x"  # spatial axis
+
+
+# --- absence of evidence is never evidence of conformance (PR #432 review) ----
+#
+# The first draft passed an empty sequence on every axis — the exact
+# "unexamined reported as passing" failure the pixel axis was careful to avoid,
+# committed everywhere else.
+
+
+def test_an_empty_sequence_does_not_pass(verify_storyboard):
+    v = verify_storyboard.verify({})
+    assert v["ok"] is False
+    assert "sequence_empty" in codes(v)
+
+
+def test_an_unexercised_axis_reads_unverified_not_pass(verify_storyboard):
+    """A take asserting nothing about geometry has not passed geometry."""
+    v = verify_storyboard.verify({})
+    for axis in ("geometry", "motion", "time"):
+        assert v["axes"][axis] == "unverified", axis
+        assert axis in v["unverified_axes"]
+
+
+def test_a_sequence_exercising_only_time_leaves_the_others_unverified(
+    verify_storyboard,
+):
+    s = sequence()
+    s["rows"][0]["require"] = {}  # keep phrase + proof_frame_t only
+    v = verify_storyboard.verify(s)
+    assert v["axes"]["time"] == "pass"
+    assert v["axes"]["semantic"] == "pass"  # seam check still ran
+    assert v["axes"]["geometry"] == "unverified"
+    assert v["axes"]["motion"] == "unverified"
+
+
+@pytest.mark.parametrize(
+    "strip,requirement",
+    [
+        ("viewport", "content_bounds"),
+        ("labels", "visible_labels"),
+        ("route", "route"),
+        ("data_fingerprint", "data_fingerprint"),
+    ],
+)
+def test_a_requirement_without_its_evidence_is_refused_not_passed(
+    verify_storyboard, strip, requirement
+):
+    s = sequence()
+    del s["clips"][0]["entry"][strip]
+    v = verify_storyboard.verify(s)
+    assert "evidence_missing" in codes(v), (strip, v["findings"])
+    assert any(f.get("requirement") == requirement for f in v["findings"])
+
+
+def test_a_click_without_pointer_data_is_refused_not_passed(verify_storyboard):
+    s = sequence()
+    del s["clips"][0]["events"][1]["pointer"]
+    v = verify_storyboard.verify(s)
+    assert "evidence_missing" in codes(v)
+    assert v["axes"]["motion"] == "fail"
+
+
+def test_a_proof_frame_without_narration_is_refused_not_passed(verify_storyboard):
+    s = sequence()
+    s["narration"]["words"] = []
+    v = verify_storyboard.verify(s)
+    assert "evidence_missing" in codes(v)
+    assert v["axes"]["time"] == "fail"
+
+
+# --- a phrase spoken more than once (PR #432 review) --------------------------
+
+
+def _twice():
+    """Narration saying "ship it" at ~1s and again at ~5s."""
+    return [
+        {"word": "ship", "start": 1.0, "end": 1.4},
+        {"word": "it", "start": 1.4, "end": 1.8},
+        {"word": "then", "start": 3.0, "end": 3.4},
+        {"word": "we", "start": 3.4, "end": 3.7},
+        {"word": "ship", "start": 5.0, "end": 5.4},
+        {"word": "it", "start": 5.4, "end": 5.8},
+    ]
+
+
+@pytest.mark.parametrize("proof_t", [1.2, 5.2])
+def test_a_proof_frame_during_any_occurrence_passes(verify_storyboard, proof_t):
+    """Matching only the first occurrence would fail a correctly-placed proof."""
+    s = sequence()
+    s["narration"]["words"] = _twice()
+    s["rows"][0]["phrase"] = "ship it"
+    s["rows"][0]["proof_frame_t"] = proof_t
+    assert verify_storyboard.verify(s)["ok"] is True, proof_t
+
+
+def test_a_proof_frame_between_occurrences_still_fails(verify_storyboard):
+    s = sequence()
+    s["narration"]["words"] = _twice()
+    s["rows"][0]["phrase"] = "ship it"
+    s["rows"][0]["proof_frame_t"] = 3.2  # spoken neither time
+    v = verify_storyboard.verify(s)
+    assert codes(v) == {"proof_outside_phrase"}
+    assert v["findings"][0]["spoken"] == [[1.0, 1.8], [5.0, 5.8]]
