@@ -99,7 +99,11 @@ A document that does not satisfy the contract exits 2 with the violation named,
 rather than failing later on a missing key. Validation covers structure
 (`clips`/`rows` as lists of objects with unique, non-empty string ids), completeness
 (`scroll` carries `x`/`y`, `transform` carries `pan_x`/`pan_y`/`zoom`, a
-`proof_frame_t` has a `phrase`), and **finiteness of every number**.
+`proof_frame_t` has a `phrase`), and **finiteness of every number**. Dimensions and thresholds must also be
+positive: `min_label_px <= 0` makes readability vacuously true, a zero `scale`
+erases the measurement it converts, and a `content_bounds` with non-positive
+width or height describes no region. A declared `content_bounds: null` is
+refused rather than silently skipped.
 
 Finiteness is not pedantry: JSON admits `NaN`, and every comparison against
 `NaN` is false, so a `NaN` measurement or threshold satisfies whatever it is

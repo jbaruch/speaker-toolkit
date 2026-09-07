@@ -25,20 +25,22 @@ sequence, media, and output paths remain consumer-owned.
 
 ## Step 1 — Resolve the interpreter
 
-Every command below runs under `{python_path}`, which this skill does not invent.
-Read `config.python_path` from the vault's `tracking-database.json` and set
-`python_path` to that exact value. It is the interpreter authority for every
-operational command here.
+```bash
+python3 "{speaker_toolkit_root}/skills/screencast-recorder/scripts/resolve-interpreter.py" <vault_root>
+```
 
-If `python_path` is absent, empty, or cannot execute, stop and repair the
-configuration through its owner:
+Emits `{"ok": true, "python_path": ..., "vault_root": ..., "database": ...}`.
+Set `python_path` from that value; it is the interpreter authority for every
+command below.
+
+Exit 1 means it could not be resolved — the diagnostic names the cause. Repair
+through its owner:
 
 ```
 Skill(skill: "vault-ingress")
 ```
 
-Its Step 1 owns the runtime configuration. Never fall back to whichever `python3`
-happens to be on `PATH`.
+Never fall back to whichever `python3` is on `PATH`.
 
 Proceed immediately to Step 2.
 

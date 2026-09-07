@@ -648,7 +648,7 @@ def test_main_exits_two_on_a_malformed_sequence(verify_storyboard, tmp_path, cap
         ({"clips": [{"id": "a", "events": "none"}]}, "clips[0].events must be a list"),
         (
             {"rows": [{"id": "r", "require": {"content_bounds": [1, 2]}}]},
-            "rows[0].require.content_bounds must be 4 numbers",
+            "rows[0].require.content_bounds must be 4 finite numbers",
         ),
         (
             {"narration": {"words": [{"word": "x", "start": "0", "end": 1}]}},
@@ -890,7 +890,7 @@ def test_a_nan_scale_cannot_pass_readability(verify_storyboard, tmp_path, capsys
     p = tmp_path / "seq.json"
     p.write_text(json.dumps(s), encoding="utf-8")
     assert verify_storyboard.main([str(p)]) == 2
-    assert "delivery.scale must be a finite number" in capsys.readouterr().err
+    assert "delivery.scale must be a positive finite number" in capsys.readouterr().err
 
 
 def test_a_proof_frame_without_a_phrase_is_refused(verify_storyboard):
@@ -1027,3 +1027,45 @@ def test_a_blocked_check_does_not_mark_its_axis_exercised(verify_storyboard):
     v2 = verify_storyboard.verify(s2)
     # semantic still fails on the evidence gap, never passes on a skipped check
     assert v2["axes"]["semantic"] == "fail"
+
+
+# --- declared-but-unusable requirements (PR #432 round 8) --------------------
+
+
+@pytest.mark.parametrize(
+    "require,fragment",
+    [
+        ({"content_bounds": None}, "must be 4 finite numbers"),
+        ({"content_bounds": [110, 10, -20, 20]}, "must have positive width and height"),
+        ({"content_bounds": [0, 0, 10, 0]}, "must have positive width and height"),
+        ({"margin_px": -5}, "must be a non-negative finite number"),
+        ({"margin_px": "8"}, "must be a non-negative finite number"),
+    ],
+)
+def test_a_declared_but_unusable_requirement_is_refused(
+    verify_storyboard, require, fragment
+):
+    """`content_bounds: null` validated, then made the geometry check skip
+    itself — a requirement that was declared and verified nothing."""
+    s = sequence()
+    s["rows"][0]["require"].update(require)
+    problem = verify_storyboard.structural_problem(s)
+    assert problem is not None and fragment in problem
+
+
+@pytest.mark.parametrize("field", ["width", "height", "min_label_px", "scale"])
+@pytest.mark.parametrize("value", [0, -1])
+def test_non_positive_delivery_values_are_refused(verify_storyboard, field, value):
+    """min_label_px <= 0 makes readability vacuously true; scale 0 erases the
+    measurement it converts."""
+    s = sequence()
+    s["delivery"][field] = value
+    problem = verify_storyboard.structural_problem(s)
+    assert problem == f"delivery.{field} must be a positive finite number"
+
+
+def test_a_zero_margin_is_still_allowed(verify_storyboard):
+    """Non-negative, not positive: a flush-to-edge requirement is legitimate."""
+    s = sequence()
+    s["rows"][0]["require"]["margin_px"] = 0
+    assert verify_storyboard.structural_problem(s) is None

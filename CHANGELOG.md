@@ -152,6 +152,22 @@ the lookup, so a conforming clip could stand in for the failing one a row named;
 and `delivery.scale` defaulted to 1.0, assuming the conversion from recorded to
 delivered size. Both refused now.
 
+An eighth round moved from "is the value there and finite" to "is it usable".
+A declared `content_bounds: null` validated and then made the geometry check skip
+itself — a requirement that was declared and verified nothing — and
+`[110, 10, -20, 20]` described a negative region that passed against a 100×100
+viewport. Dimensions and thresholds must now be positive, since `min_label_px <= 0`
+makes readability vacuously true and a zero `scale` erases the measurement it
+converts. `margin_px` must be non-negative, zero still being a legitimate
+flush-to-edge requirement.
+
+`resolve-interpreter.py` replaces the prose in Step 1 that had the agent parse
+the tracking database, extract `config.python_path`, and validate it by hand.
+That is deterministic work — read a key, confirm the file exists, confirm it runs
+Python 3 — and belongs in a script rather than in instructions re-implemented each
+session. It emits the resolved interpreter as JSON and exits non-zero with the
+repair path named.
+
 
 ## 0.20.137 — 2026-09-07
 

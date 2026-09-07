@@ -644,11 +644,21 @@ def structural_problem(sequence):
         if require is not None and not isinstance(require, dict):
             return f"rows[{index}].require must be an object"
         require = require or {}
-        bounds = require.get("content_bounds")
-        if bounds is not None and not _numbers(bounds, 4):
-            return f"rows[{index}].require.content_bounds must be 4 numbers"
-        if "margin_px" in require and not _is_number(require["margin_px"]):
-            return f"rows[{index}].require.margin_px must be a finite number"
+        if "content_bounds" in require:
+            bounds = require["content_bounds"]
+            # `null` passed validation and then made the geometry check skip
+            # itself — a declared requirement that verified nothing.
+            if not _numbers(bounds, 4):
+                return f"rows[{index}].require.content_bounds must be 4 finite numbers"
+            if bounds[2] <= 0 or bounds[3] <= 0:
+                return (
+                    f"rows[{index}].require.content_bounds must have positive "
+                    "width and height"
+                )
+        if "margin_px" in require:
+            margin = require["margin_px"]
+            if not _is_number(margin) or margin < 0:
+                return f"rows[{index}].require.margin_px must be a non-negative finite number"
         pan = require.get("pan")
         if pan is not None:
             if not isinstance(pan, dict):
@@ -676,8 +686,14 @@ def structural_problem(sequence):
     if not isinstance(delivery, dict):
         return "delivery must be an object"
     for field in ("width", "height", "min_label_px", "scale"):
-        if field in delivery and not _is_number(delivery[field]):
-            return f"delivery.{field} must be a finite number"
+        if field not in delivery:
+            continue
+        value = delivery[field]
+        # Non-positive is not merely odd here: min_label_px <= 0 makes the
+        # readability predicate vacuously true, and a zero scale erases the
+        # measurement it converts.
+        if not _is_number(value) or value <= 0:
+            return f"delivery.{field} must be a positive finite number"
 
     tolerances = sequence.get("seam_tolerances") or {}
     if not isinstance(tolerances, dict):

@@ -625,6 +625,13 @@ SCRIPTS_SR = os.path.join(
 
 
 @pytest.fixture(scope="session")
+def resolve_interpreter():
+    return _import_script(
+        os.path.join(SCRIPTS_SR, "resolve-interpreter.py"), "resolve_interpreter"
+    )
+
+
+@pytest.fixture(scope="session")
 def verify_storyboard():
     return _import_script(
         os.path.join(SCRIPTS_SR, "verify-storyboard.py"), "verify_storyboard"
