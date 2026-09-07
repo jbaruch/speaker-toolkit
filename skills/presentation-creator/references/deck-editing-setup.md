@@ -120,17 +120,22 @@ starts with a dot, so one of the two is needed. Save `DeckOps.pptm` (⌘S).
 
 **Updating the macro later.** A plugin update ships a new macro; the copy already
 imported into `DeckOps.pptm` keeps running the OLD code, silently, because nothing
-can read VBA source back out of a saved `.pptm`. That is what `macro_stale`
-detects — the module carries a content stamp and the doctor asks the running
-PowerPoint for it. A container imported before the stamp existed answers nothing
-at all; the doctor reads the `.pptm` itself to tell that from a container that
-never had the module, and reports it as `macro_stale` rather than as a setup that
-never happened. How it classifies the two is
+can read VBA source back out of a saved `.pptm`. Two statuses cover this, and they
+are not interchangeable:
+
+- `macro_stale` — the macro ANSWERED with an old stamp. Macros are provably on,
+  so the re-import below is the whole fix.
+- `macro_stale_inferred` — the open container READS as holding a module with no
+  version macro, which is what a container imported before the stamp existed looks
+  like. Disabled macros silence the probe identically, so this one is an inference:
+  do the re-import, and if it does not clear, confirm macros are enabled (Step 1).
+
+How the two are classified is
 `skills/presentation-creator/scripts/deckops-doctor.py`'s `inspect_container` /
-`verdict`. That reading is an inference, reported as `macro_stale_inferred` —
-disabled macros silence the probe exactly the same way, so its `next_step`
-carries the enable-macros step alongside the re-import. On `macro_stale`: re-run the `export` command above, then in
-the VBA editor right-click the `DeckOps` module → **Remove** (No to export) →
+`verdict`.
+
+The re-import, for either: re-run the `export` command above, then in the VBA
+editor right-click the `DeckOps` module → **Remove** (No to export) →
 **Import File…** the refreshed `.bas` → save. Re-run Step 0 to confirm `ok`.
 
 ## Step 4 — Grant Automation consent (first run only)

@@ -109,6 +109,11 @@ CONTAINER_READ_ERRORS = (
 )
 
 VBA_PART = "ppt/vbaProject.bin"
+# Cap on the bytes read out of that member. Only marker presence matters, and a
+# real container's part is ~88 KB, so this is generous for the job while refusing
+# to decompress an arbitrarily large member into memory on the strength of a
+# declared size a hostile or damaged archive controls.
+VBA_PART_READ_LIMIT = 8 * 1024 * 1024
 MODULE_MARKER = b"RunDeckOps"
 STAMP_MACRO_MARKER = b"DeckOpsVersion"
 
@@ -209,7 +214,8 @@ def inspect_container(path: Path) -> dict:
             if VBA_PART not in z.namelist():
                 report["readable"] = True
                 return report
-            blob = z.read(VBA_PART)
+            with z.open(VBA_PART) as member:
+                blob = member.read(VBA_PART_READ_LIMIT)
     except CONTAINER_READ_ERRORS:
         return report
     report["readable"] = True

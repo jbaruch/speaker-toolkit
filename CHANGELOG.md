@@ -75,6 +75,12 @@ truncated, corrupt deflate, unsupported method, encrypted, no VBA part — each
 raising whatever the stdlib raises without consulting the tuple, so a missing
 class escapes as a failure instead of a silent pass.
 
+The member read is bounded at 8 MB. Only marker presence matters and a real
+container's part is ~88 KB, so nothing is given up by refusing to decompress an
+arbitrary amount on the strength of a size field a damaged or hostile archive
+controls. A test pins both halves of that trade: markers inside the bound are
+found, markers past it are not, and neither case raises.
+
 ## 0.20.132 — 2026-09-07
 
 ### Report a damaged DeckOps stamp once

@@ -763,7 +763,7 @@ def test_every_enumerated_read_error_is_handled(deckops_doctor, tmp_path, monkey
         def boom(*_a, **_k):
             raise exc("simulated")
 
-        monkeypatch.setattr(zipfile.ZipFile, "read", boom)
+        monkeypatch.setattr(zipfile.ZipFile, "open", boom)
         r = deckops_doctor.inspect_container(real)
         assert r["readable"] is False, exc.__name__
         assert r["has_module"] is False, exc.__name__
@@ -859,3 +859,26 @@ def test_an_observed_stale_verdict_needs_no_macro_caveat(deckops_doctor):
         _verdict(deckops_doctor, probe=_ok_probe("0000old"), expected_stamp="abc123")
         == "macro_stale"
     )
+
+
+def test_the_vba_part_read_is_bounded(deckops_doctor, tmp_path):
+    """A declared member size is attacker-controlled; do not decompress on trust.
+
+    Only marker presence matters, so a bounded read answers the question without
+    letting a zip bomb or a damaged size field pull an arbitrary amount into memory.
+    """
+    limit = deckops_doctor.VBA_PART_READ_LIMIT
+    assert 0 < limit <= 64 * 1024 * 1024
+    big = _pptm(tmp_path / "DeckOps.pptm", vba=NEW_VBA + b"\0" * (limit + 4096))
+    r = deckops_doctor.inspect_container(big)
+    assert r["readable"] is True
+    assert r["has_module"] is True  # markers sit at the front, inside the bound
+
+
+def test_markers_past_the_bound_are_simply_not_found(deckops_doctor, tmp_path):
+    """The bound is honest about what it trades: reach, never a crash."""
+    limit = deckops_doctor.VBA_PART_READ_LIMIT
+    p = _pptm(tmp_path / "DeckOps.pptm", vba=b"\0" * (limit + 1024) + NEW_VBA)
+    r = deckops_doctor.inspect_container(p)
+    assert r["readable"] is True
+    assert r["has_module"] is False
