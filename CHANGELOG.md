@@ -93,6 +93,23 @@ this archive, where justification belongs: an installed plugin lives under
 `.tessl/`, which PowerPoint's VBA-editor Import panel does not show, so an import
 path pointing inside the plugin tree cannot be followed.
 
+Round three found the same class of bug twice more, both of them the doctor
+answering a question it had not actually asked. `run_probe` laundered every
+non-zero `osascript` exit into `macro_unreachable`, so denied Automation consent
+plus no canonical container came out as `setup_required` — telling the user to
+build a second container over a permissions problem. The driver returns
+`macro_unreachable` at exit 0 for the one expected failure, so a non-zero exit is
+by construction something else; those now surface as `probe_failed` /
+`probe_missing`, which report the state as UNKNOWN and exit 1. Copilot found the
+`probe_missing` half of this independently.
+
+And the docstring's "Read-only. Opens nothing, saves nothing" was a lie:
+`diagnose()` calls `materialize()`, which writes drivers into the plugin's
+scripts directory, `--offline` included. Both reviewers caught it. The claim is
+now itemized — no deck, no template, no container, no PowerPoint launch; does
+restore missing drivers, never overwriting one — in the docstring, the
+`--help` description, and Step 0 of the walkthrough.
+
 
 ## 0.20.130 — 2026-09-06
 

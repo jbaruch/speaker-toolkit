@@ -7,6 +7,7 @@ everything deterministic — path derivation, probe-output parsing, and the verd
 table — is covered here by feeding `verdict()` synthetic probe results.
 """
 
+import json
 from pathlib import Path
 
 import pytest
@@ -133,10 +134,6 @@ def test_verdict_without_a_stamp_in_the_probe_is_stale_not_ok(deckops_doctor):
     assert _verdict(deckops_doctor, probe={"state": "ok"}) == "macro_stale"
 
 
-def test_verdict_missing_state_is_unreachable_not_ok(deckops_doctor):
-    assert _verdict(deckops_doctor, probe={}) == "macro_unreachable"
-
-
 def test_verdict_offline_stops_at_the_container_check(deckops_doctor):
     """--offline answers first-use and location, and claims nothing about liveness."""
     assert _verdict(deckops_doctor, probe=None) == "ok"
@@ -215,8 +212,6 @@ def test_main_exits_zero_with_a_verdict_when_setup_is_missing(
     deckops_doctor, tmp_path, capsys
 ):
     """A verdict IS success — the caller reads `status`, not the exit code."""
-    import json
-
     rc = deckops_doctor.main(["--vault-root", str(tmp_path), "--offline"])
     out = capsys.readouterr()
     assert rc == 0
@@ -345,3 +340,83 @@ def test_next_step_names_the_open_container_not_the_canonical_one(
     )
     report = deckops_doctor.diagnose(tmp_path, _scripts_dir(), False, "darwin")
     assert "/open/here/DeckOps.pptm" in report["next_step"]
+
+
+# --- probe failures are not verdicts (PR #412 round 3) -----------------------
+
+
+@pytest.mark.parametrize("failed_state", ["probe_failed", "probe_missing"])
+def test_a_probe_that_could_not_run_is_not_a_setup_verdict(
+    deckops_doctor, failed_state
+):
+    """Denied Automation consent must not read as "create a container".
+
+    The driver returns macro_unreachable (exit 0) for the one EXPECTED failure.
+    Anything else means the question was never asked, so no fix is prescribed.
+    """
+    assert (
+        _verdict(
+            deckops_doctor,
+            container_exists=False,
+            probe={"state": failed_state, "detail": "not authorised"},
+        )
+        == failed_state
+    )
+
+
+def test_a_probe_failure_outranks_a_present_container(deckops_doctor):
+    assert _verdict(deckops_doctor, probe={"state": "probe_failed"}) == "probe_failed"
+
+
+def test_an_unparseable_probe_reads_as_failure_not_unreachable(deckops_doctor):
+    """An empty probe payload means the driver said nothing, not "no macro"."""
+    assert _verdict(deckops_doctor, probe={}) == "probe_failed"
+
+
+def test_run_probe_maps_a_nonzero_osascript_exit_to_probe_failed(
+    deckops_doctor, tmp_path, monkeypatch
+):
+    import subprocess as sp
+
+    def fake_run(*_a, **_k):
+        return sp.CompletedProcess(_a[0], 1, "", "Not authorised to send Apple events")
+
+    monkeypatch.setattr(deckops_doctor.subprocess, "run", fake_run)
+    probe = deckops_doctor.run_probe(_scripts_dir())
+    assert probe["state"] == "probe_failed"
+    assert "Not authorised" in probe["detail"]
+
+
+def test_run_probe_maps_a_timeout_to_probe_failed(deckops_doctor, monkeypatch):
+    import subprocess as sp
+
+    def fake_run(*_a, **_k):
+        raise sp.TimeoutExpired(cmd="osascript", timeout=1)
+
+    monkeypatch.setattr(deckops_doctor.subprocess, "run", fake_run)
+    probe = deckops_doctor.run_probe(_scripts_dir())
+    assert probe["state"] == "probe_failed"
+    assert "modal dialog" in probe["detail"]
+
+
+def test_main_exits_nonzero_when_the_probe_could_not_run(
+    deckops_doctor, tmp_path, monkeypatch, capsys
+):
+    """No verdict was reached, so this is a script failure, not a finding."""
+    monkeypatch.setattr(
+        deckops_doctor,
+        "run_probe",
+        lambda _d: {"state": "probe_failed", "detail": "not authorised"},
+    )
+    rc = deckops_doctor.main(["--vault-root", str(tmp_path)])
+    out = capsys.readouterr()
+    assert rc == 1
+    assert json.loads(out.out)["status"] == "probe_failed"
+    assert "UNKNOWN" in out.err
+
+
+def test_docstring_does_not_claim_to_be_read_only(deckops_doctor):
+    """diagnose() writes missing drivers; a blanket read-only claim is false."""
+    doc = deckops_doctor.__doc__
+    assert "Read-only." not in doc
+    assert "materialize" in doc

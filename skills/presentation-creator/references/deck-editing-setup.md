@@ -25,8 +25,13 @@ Never assume this is a first run, and never assume it isn't:
   --vault-root "{vault_root}"
 ```
 
-Read-only: it opens nothing, saves nothing, and never launches PowerPoint. It
-prints a JSON report whose `status` says what to do — `next_step` carries the
+It touches no deck, no template, no macro container, and never launches
+PowerPoint. It does restore missing drivers into the plugin's own scripts
+directory — the same install-restore the `.sh` wrappers do, and what keeps a
+fresh install from reading as driver drift. That restore runs under `--offline`
+too, and never overwrites an existing driver.
+
+It prints a JSON report whose `status` says what to do — `next_step` carries the
 same thing as one sentence:
 
 | `status` | What it means | Go to |
@@ -36,11 +41,20 @@ same thing as one sentence:
 | `macro_unreachable` | Container missing from the running PowerPoint, macros off, or module never imported | Steps 1–3 |
 | `powerpoint_not_running` | Set up; PowerPoint just isn't open | Step 6 |
 | `macro_stale` | Container holds an OLD build of the macro | Step 3 (Updating) |
-| `driver_drift` | Shipped drivers don't match their mirrors | Reinstall the plugin |
+| `driver_drift` | Shipped drivers don't match their mirrors | Read `drivers.problems`; it names the fix |
+| `probe_failed` | The probe could not run, so the state is UNKNOWN | Read `live.detail` — usually denied Automation consent (Step 4) |
+| `probe_missing` | The probe driver or `osascript` is absent | Reinstall the plugin |
 | `unsupported_platform` | Not macOS | No deck build is possible here |
 
+Exit code separates a diagnosis from a non-diagnosis: 0 when a verdict was
+reached (`setup_required` included — that is a finding, not a script failure),
+1 when the probe could not run and the state is unknown.
+
 Pass `--offline` to skip the live PowerPoint probe; you then get `setup_required`
-versus everything-else, and no reading on whether the macro is current.
+versus everything-else, and no reading on whether the macro is current. A
+container open from a path other than the canonical one still counts as set up —
+`container.canonical_mismatch` reports the difference, and `next_step` names the
+file the user actually has open rather than sending them to create a second one.
 
 Heads-up for installed plugins: `tessl install` ships only `.md/.py/.json/.sh/.txt`
 and STRIPS `.bas`/`.applescript`, so `RunDeckOps.bas` and the `.applescript`

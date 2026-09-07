@@ -15,18 +15,30 @@ Three questions the skill used to have no way to ask, so it guessed:
      content stamp (DeckOpsVersion, stamped by sync-deck-drivers.py) and compare.
      A stale import is otherwise invisible: it runs, and it runs the OLD code.
 
-Read-only. Opens nothing, saves nothing, and never launches PowerPoint.
+Side effects, stated plainly rather than as a blanket "read-only" claim:
+
+  * Never touches a deck, a template, the macro container, or PowerPoint's state.
+    It opens no document, saves no document, and never launches PowerPoint.
+  * DOES restore missing drivers into the PLUGIN's own scripts directory, via
+    sync-deck-drivers.py materialize — the same install-restore every `.sh`
+    wrapper performs. This runs in --offline mode too. Without it a fresh
+    `tessl install` (mirrors, no sources) reads as ten orphan mirrors and a valid
+    installation is told to reinstall itself. Existing drivers are never
+    overwritten, so an in-progress edit in a dev checkout is safe.
 
 Usage:
     deckops-doctor.py --vault-root <path> [--offline]
 
     --offline   skip the live PowerPoint probe (answers 1 and 2 only). Use in
-                CI, or when PowerPoint must not be disturbed.
+                CI, or when PowerPoint must not be disturbed. Driver restoration
+                still runs — see Side effects.
 
 Stdout: one JSON object (see STATUSES). Stderr: an actionable line when the
 status is not `ok`. Exit 0 whenever a verdict was reached — "setup required" is a
-finding to act on, not a failure of this script. Exit 1 only when no verdict
-could be reached, 2 on usage error.
+finding to act on, not a failure of this script. Exit 1 when no verdict could be
+reached: an unusable vault root, or a probe that failed outright (`probe_failed`,
+`probe_missing`), where the setup state is unknown rather than diagnosed. Exit 2
+on usage error.
 
 The live probe drives PowerPoint, so it is manual-validation-only per
 rules/deck-editing-rules.md; every deterministic part here (path derivation,
@@ -77,8 +89,10 @@ STATUSES = {
         "build can run on this host."
     ),
     "driver_drift": (
-        "The deck drivers do not match their committed mirrors — reinstall the "
-        "plugin, or in a dev checkout run: sync-deck-drivers.py mirror"
+        "The deck drivers do not match their committed mirrors — read "
+        "`drivers.problems`. A driver left stale by a plugin update is refreshed "
+        "with `sync-deck-drivers.py materialize --force`; a mirror left behind by "
+        "a dev-tree edit, with `sync-deck-drivers.py mirror`."
     ),
     "setup_required": (
         "First-time setup has not been done on this machine — walk the user "
@@ -92,6 +106,17 @@ STATUSES = {
         "PowerPoint is running but the DeckOps macro did not answer — ask the user "
         "to open {container}, confirm macros are enabled, and confirm the module "
         "was imported into THAT file (deck-editing-setup.md Steps 1-3)."
+    ),
+    "probe_failed": (
+        "The PowerPoint probe could not run, so the setup state is UNKNOWN — read "
+        "`live.detail`. Denied Automation consent is the usual cause (System "
+        "Settings -> Privacy & Security -> Automation). Re-run with --offline to "
+        "check the on-disk half alone."
+    ),
+    "probe_missing": (
+        "The probe driver or `osascript` is missing, so the setup state is UNKNOWN "
+        "— read `live.detail`. Reinstall the plugin, or re-run with --offline to "
+        "check the on-disk half alone."
     ),
     "macro_stale": (
         "{container} holds an OLD build of the macro ({found}, expected {expected}) "
@@ -145,14 +170,19 @@ def run_probe(scripts_dir: Path) -> dict[str, str]:
         return {"state": "probe_missing", "detail": "osascript not on PATH"}
     except subprocess.TimeoutExpired:
         return {
-            "state": "macro_unreachable",
+            "state": "probe_failed",
             "detail": (
                 f"the probe did not return within {PROBE_TIMEOUT_SEC}s — a modal "
                 "dialog in PowerPoint blocks every macro call until dismissed"
             ),
         }
     if proc.returncode != 0:
-        return {"state": "macro_unreachable", "detail": proc.stderr.strip()}
+        # The driver returns state=macro_unreachable (exit 0) for the ONE expected
+        # failure, an unavailable macro. A non-zero exit is therefore something
+        # else — denied Automation consent, a cancel, an unexpected error — and
+        # must not be laundered into a setup verdict that sends the user to build
+        # a second container.
+        return {"state": "probe_failed", "detail": proc.stderr.strip()}
     return parse_probe(proc.stdout)
 
 
@@ -172,7 +202,11 @@ def verdict(
     if probe is None:
         # Offline: the on-disk container at the canonical path is all there is to see.
         return "ok" if container_exists else "setup_required"
-    state = probe.get("state", "macro_unreachable")
+    state = probe.get("state", "probe_failed")
+    if state in ("probe_failed", "probe_missing"):
+        # The probe could not answer, so nothing is known about the setup. Saying
+        # "setup_required" here would prescribe a fix for a question never asked.
+        return state
     if state == "ok":
         # A macro that answers proves setup regardless of where the container file
         # sits — a user whose DeckOps.pptm predates the canonical path is set up,
@@ -261,7 +295,11 @@ def diagnose(vault_root: Path, scripts_dir: Path, offline: bool, platform: str) 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
-        description="Diagnose the PowerPoint deck-editing setup (read-only)."
+        description=(
+            "Diagnose the PowerPoint deck-editing setup. Never touches a deck, a "
+            "template, the macro container, or PowerPoint; does restore missing "
+            "drivers into the plugin's own scripts directory."
+        )
     )
     ap.add_argument(
         "--vault-root",
@@ -300,7 +338,8 @@ def main(argv=None) -> int:
     print(json.dumps(report, indent=2))
     if report["status"] != "ok":
         print(f"{report['status']}: {report['next_step']}", file=sys.stderr)
-    return 0
+    # A verdict is success; a probe that could not run is not a verdict.
+    return 1 if report["status"] in ("probe_failed", "probe_missing") else 0
 
 
 if __name__ == "__main__":
