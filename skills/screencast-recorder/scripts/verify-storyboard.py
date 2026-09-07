@@ -543,6 +543,20 @@ def _numbers(value, count):
     )
 
 
+def _rect_problem(where, value):
+    """A rect is four finite numbers describing a REGION, or a problem string.
+
+    Zero width or height passes a coordinate-count check and describes nothing:
+    a target_rect of [1,1,0,0] contains no point, so no click can land on it,
+    yet the containment test reported motion: pass.
+    """
+    if not _numbers(value, 4):
+        return f"{where} must be 4 finite numbers"
+    if value[2] <= 0 or value[3] <= 0:
+        return f"{where} must have positive width and height"
+    return None
+
+
 def _manifest_problem(where, manifest):
     """Shape problems in one manifest, or None.
 
@@ -636,25 +650,38 @@ def structural_problem(sequence):
                 if field in event and not _is_number(event[field]):
                     return f"{at}.{field} must be a finite number"
             if event.get("type") == "click":
-                for field, size in (("pointer", 2), ("target_rect", 4)):
-                    if field in event and not _numbers(event[field], size):
-                        return f"{at}.{field} must be {size} numbers"
+                if "pointer" in event and not _numbers(event["pointer"], 2):
+                    return f"{at}.pointer must be 2 numbers"
+                if "target_rect" in event:
+                    problem = _rect_problem(f"{at}.target_rect", event["target_rect"])
+                    if problem:
+                        return problem
 
     for index, row in enumerate(sequence.get("rows", [])):
         if "require" in row and not isinstance(row["require"], dict):
             return f"rows[{index}].require must be an object"
         require = row.get("require") or {}
+        for field in ("route", "data_fingerprint"):
+            if field in require and not isinstance(require[field], str):
+                return f"rows[{index}].require.{field} must be a string"
+        if "visible_labels" in require:
+            labels_req = require["visible_labels"]
+            if not isinstance(labels_req, list) or not all(
+                isinstance(x, str) for x in labels_req
+            ):
+                return f"rows[{index}].require.visible_labels must be a list of strings"
+        if "click_on_target" in require and not isinstance(
+            require["click_on_target"], bool
+        ):
+            return f"rows[{index}].require.click_on_target must be a boolean"
         if "content_bounds" in require:
-            bounds = require["content_bounds"]
             # `null` passed validation and then made the geometry check skip
             # itself — a declared requirement that verified nothing.
-            if not _numbers(bounds, 4):
-                return f"rows[{index}].require.content_bounds must be 4 finite numbers"
-            if bounds[2] <= 0 or bounds[3] <= 0:
-                return (
-                    f"rows[{index}].require.content_bounds must have positive "
-                    "width and height"
-                )
+            problem = _rect_problem(
+                f"rows[{index}].require.content_bounds", require["content_bounds"]
+            )
+            if problem:
+                return problem
         if "margin_px" in require:
             margin = require["margin_px"]
             if not _is_number(margin) or margin < 0:

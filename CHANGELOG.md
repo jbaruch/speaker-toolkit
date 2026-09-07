@@ -182,6 +182,21 @@ The click evidence gap also said "pointer/target_rect" when only one was absent;
 it names the missing field now, matching the pattern every other evidence gap
 follows.
 
+A tenth round found the two requirement fields that had never been type-checked
+at all — `visible_labels` and `click_on_target` — so a `null` in either passed
+validation and skipped the check it declared. Every declared requirement now
+carries a type.
+
+And a `target_rect` of `[1, 1, 0, 0]` was four finite numbers enclosing no area:
+it contains no point, so no click can land on it, yet the containment test
+reported `motion: pass`. Rects are validated as regions now, `content_bounds` and
+`target_rect` through the same predicate.
+
+`resolve-interpreter.py` was echoing `config.vault_root` back even when the
+caller pointed at a different vault. The root of the database actually read wins;
+a differing stored value is surfaced as `vault_root_mismatch` rather than
+silently substituted.
+
 
 ## 0.20.137 — 2026-09-07
 

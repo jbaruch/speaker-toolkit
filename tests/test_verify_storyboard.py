@@ -643,7 +643,7 @@ def test_main_exits_two_on_a_malformed_sequence(verify_storyboard, tmp_path, cap
                     }
                 ]
             },
-            "clips[0].events[0].target_rect must be 4 numbers",
+            "clips[0].events[0].target_rect must be 4 finite numbers",
         ),
         ({"clips": [{"id": "a", "events": "none"}]}, "clips[0].events must be a list"),
         (
@@ -1124,3 +1124,50 @@ def test_the_click_evidence_gap_names_the_missing_field(verify_storyboard):
     )
     assert finding["missing_field"] == "events[].target_rect"
     assert "pointer" not in finding["message"]
+
+
+# --- every declared requirement carries a type (PR #432 round 10) ------------
+
+
+@pytest.mark.parametrize(
+    "require,fragment",
+    [
+        ({"visible_labels": None}, "visible_labels must be a list of strings"),
+        (
+            {"visible_labels": "release_docs"},
+            "visible_labels must be a list of strings",
+        ),
+        ({"visible_labels": [1, 2]}, "visible_labels must be a list of strings"),
+        ({"click_on_target": None}, "click_on_target must be a boolean"),
+        ({"click_on_target": "yes"}, "click_on_target must be a boolean"),
+        ({"click_on_target": 1}, "click_on_target must be a boolean"),
+        ({"route": 7}, "route must be a string"),
+        ({"data_fingerprint": ["x"]}, "data_fingerprint must be a string"),
+    ],
+)
+def test_every_declared_requirement_is_type_checked(
+    verify_storyboard, require, fragment
+):
+    """visible_labels and click_on_target had no type check at all, so `null`
+    passed validation and silently skipped the check it declared."""
+    s = sequence()
+    s["rows"][0]["require"].update(require)
+    problem = verify_storyboard.structural_problem(s)
+    assert problem is not None and fragment in problem
+
+
+@pytest.mark.parametrize("rect", [[1, 1, 0, 0], [1, 1, 10, 0], [1, 1, -5, 5]])
+def test_a_target_rect_with_no_area_is_refused(verify_storyboard, rect):
+    """A rect of zero area contains no point, so no click can land on it —
+    yet the containment test reported motion: pass."""
+    s = sequence()
+    s["clips"][0]["events"][1]["target_rect"] = rect
+    problem = verify_storyboard.structural_problem(s)
+    assert problem is not None and "positive width and height" in problem
+
+
+def test_a_real_target_rect_still_verifies_the_click(verify_storyboard):
+    s = sequence()
+    assert verify_storyboard.verify(s)["ok"] is True
+    s["clips"][0]["events"][1]["pointer"] = [9000, 9000]
+    assert "cursor_off_target" in codes(verify_storyboard.verify(s))

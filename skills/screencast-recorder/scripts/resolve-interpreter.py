@@ -85,13 +85,23 @@ def resolve(target: Path) -> dict:
             f"(exit {probe.returncode}) — {REPAIR}"
         )
 
-    vault_root = config.get("vault_root") or str(database.parent)
-    return {
+    # The vault the caller actually pointed at wins. `config.vault_root` is a
+    # stored assertion that can be stale — echoing it back over a correct
+    # caller-supplied root would misdirect every step downstream.
+    resolved_root = database.parent
+    stored_root = config.get("vault_root")
+    result = {
         "ok": True,
         "python_path": str(interpreter),
-        "vault_root": str(vault_root),
+        "vault_root": str(resolved_root),
         "database": str(database),
     }
+    if isinstance(stored_root, str) and stored_root.strip():
+        stored = Path(stored_root).expanduser()
+        if stored != resolved_root:
+            result["stored_vault_root"] = str(stored)
+            result["vault_root_mismatch"] = True
+    return result
 
 
 def main(argv=None) -> int:

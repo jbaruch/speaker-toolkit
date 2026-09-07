@@ -51,6 +51,11 @@ case `min_label_px` exists to catch.
 A phrase spoken more than once is matched at **every** occurrence; a proof
 frame inside any of them passes.
 
+Every declared requirement is type-checked: `route` and `data_fingerprint` are
+strings, `visible_labels` a list of strings, `click_on_target` a boolean. A rect
+— `content_bounds` or an event's `target_rect` — must describe a region with
+positive width and height; four numbers enclosing no area contain no point.
+
 `route` · `data_fingerprint` · `visible_labels` · `content_bounds [x,y,w,h]` ·
 `margin_px` · `pan {axis, min_abs_delta}` · `click_on_target`
 

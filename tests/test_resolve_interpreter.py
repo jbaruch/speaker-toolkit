@@ -23,6 +23,19 @@ def test_resolves_from_a_vault_root(resolve_interpreter, tmp_path):
     assert out["ok"] is True
     assert out["python_path"] == sys.executable
     assert out["vault_root"] == str(tmp_path)
+    assert "vault_root_mismatch" not in out
+
+
+def test_a_stale_stored_root_does_not_override_the_one_read(
+    resolve_interpreter, tmp_path
+):
+    """Echoing config.vault_root back over the caller's actual vault would
+    misdirect every step downstream."""
+    _db(tmp_path, {"python_path": sys.executable, "vault_root": "/somewhere/else"})
+    out = resolve_interpreter.resolve(tmp_path)
+    assert out["vault_root"] == str(tmp_path)
+    assert out["stored_vault_root"] == "/somewhere/else"
+    assert out["vault_root_mismatch"] is True
 
 
 def test_resolves_from_the_database_path_directly(resolve_interpreter, tmp_path):
@@ -32,7 +45,7 @@ def test_resolves_from_the_database_path_directly(resolve_interpreter, tmp_path)
     assert out["database"] == str(db)
 
 
-def test_vault_root_defaults_to_the_database_parent(resolve_interpreter, tmp_path):
+def test_vault_root_is_the_parent_of_the_database_read(resolve_interpreter, tmp_path):
     db = _db(tmp_path, {"python_path": sys.executable})
     assert resolve_interpreter.resolve(db)["vault_root"] == str(tmp_path)
 
