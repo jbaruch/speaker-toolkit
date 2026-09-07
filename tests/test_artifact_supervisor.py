@@ -1393,6 +1393,9 @@ def cleanup_exit_run(monkeypatch):
             "sys",
             SimpleNamespace(**{**vars(sys), "platform": state.platform}),
         )
+        # Windows has no SIGKILL. Supply the simulated POSIX signal API along
+        # with os.name/killpg, without changing the host's real signal module.
+        monkeypatch.setattr(artifact_supervisor, "signal", SimpleNamespace(SIGKILL=9))
         monkeypatch.setattr(
             artifact_supervisor,
             "psutil",
@@ -1427,6 +1430,15 @@ def test_cleanup_reconciles_disappeared_root_only_after_clean_exit(
     assert state.process.returncode == 0
     assert state.process.killed is False
     assert state.process.wait_timeouts[:2] == [0.01, 0.01]
+
+
+def test_cleanup_replay_does_not_require_host_posix_signals(
+    cleanup_exit_run, monkeypatch
+):
+    _, run = cleanup_exit_run
+    monkeypatch.setattr(artifact_supervisor, "signal", SimpleNamespace())
+
+    assert run().payload == {"value": 1}
 
 
 @pytest.mark.parametrize(

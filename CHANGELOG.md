@@ -43,6 +43,7 @@ the older analyzer simply cannot see it. That is a binary-version difference, no
 a resolution problem, and the code is left alone rather than contorted for an
 analyzer the project does not use.
 
+
 ## 0.20.135 — 2026-09-07
 
 ### Locate the corrupt DeckOps test payload structurally
