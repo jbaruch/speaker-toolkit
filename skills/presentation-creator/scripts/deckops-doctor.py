@@ -182,14 +182,17 @@ def inspect_container(path: Path) -> dict:
     this refines a diagnostic and must never become one.
     """
     report = {
-        "exists": path.is_file(),
+        "exists": False,
         "readable": False,
         "has_module": False,
         "has_stamp_macro": False,
     }
-    if not report["exists"]:
-        return report
+    # is_file() is inside the guard too: it stats the path, so a malformed one
+    # (an embedded NUL) or an unreadable parent raises before any zip work.
     try:
+        report["exists"] = path.is_file()
+        if not report["exists"]:
+            return report
         with zipfile.ZipFile(path) as z:
             if VBA_PART not in z.namelist():
                 report["readable"] = True
@@ -285,9 +288,12 @@ def verdict(
         return "setup_required"
     if state == "not_running":
         return "powerpoint_not_running"
-    if container_holds_old_module:
-        # The module IS imported, it just predates the stamp macro. The fix is a
-        # re-import, not the whole of setup.
+    if container_holds_old_module and probe.get("container"):
+        # Only when PowerPoint actually HAS the container open does "the macro did
+        # not answer" mean "the open module is old". The driver's -18 also covers
+        # a container that is not open and macros that are disabled, and for those
+        # the remediation is to open it or enable them — re-import would be
+        # premature and would drop the step that actually unblocks the user.
         return "macro_stale"
     return "macro_unreachable"
 
@@ -312,9 +318,9 @@ def diagnose(vault_root: Path, scripts_dir: Path, offline: bool, platform: str) 
                 stamp_src.read_text(encoding="utf-8")
             )
         except ValueError as e:
-            # check() already recorded this as a driver problem; crashing here
-            # would swallow the actionable diagnostic it produced.
-            driver_problems = driver_problems + [str(e)]
+            # check() validates the real driver's stamp, not an orphan mirror.
+            if stamp_src == mirror:
+                driver_problems = driver_problems + [str(e)]
     else:
         driver_problems = driver_problems + [
             f"neither {src.name} nor its mirror is present — reinstall the plugin"

@@ -45,6 +45,26 @@ documents for opening an archive and reading a member: `BadZipFile`,
 raises each one in turn and asserts the diagnosis survives, so the contract is
 pinned by class rather than by whichever corruption someone thought to try.
 
+`path.is_file()` sat outside that guard, which made the enumeration moot for a
+malformed path — it stats the path, so an embedded NUL or an unreadable parent
+raises before any zip work starts. Every filesystem touch is inside the guard now.
+
+The sharper catch was in the verdict, not the reader. The upgrade from
+`macro_unreachable` to `macro_stale` fired on an old module alone, but the
+driver's -18 also covers a container that is not open and macros that are
+disabled. A user whose `DeckOps.pptm` sat closed on disk with an old module was
+told to re-import, dropping the step that would actually unblock them. The
+upgrade now additionally requires that PowerPoint reports the container OPEN,
+which is the only state in which "the macro did not answer" means "the open
+module is old".
+
+## 0.20.132 — 2026-09-07
+
+### Report a damaged DeckOps stamp once
+
+The setup doctor no longer repeats a stamp-parse problem already reported by
+the driver checker (#414). Its mirror-only fallback still reports that problem
+when the real driver is absent; unrelated driver findings remain intact.
 
 ## 0.20.131 — 2026-09-07
 

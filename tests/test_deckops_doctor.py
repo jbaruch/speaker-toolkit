@@ -279,17 +279,45 @@ def test_a_fresh_install_is_not_reported_as_driver_drift(deckops_doctor, tmp_pat
     assert "RunDeckOps.bas" in report["drivers"]["materialized"]
 
 
-def test_a_malformed_stamp_reports_drift_instead_of_crashing(deckops_doctor, tmp_path):
-    """read_stamp raises on a missing stamp line; the doctor must survive it."""
+@pytest.mark.parametrize(
+    ("stamp_text", "problem"),
+    [
+        ("Option Explicit\n' no stamp line\n", "has no"),
+        ('Public Const DECKOPS_STAMP As String = "unfinished\n', "unterminated"),
+        ('Public Const DECKOPS_STAMP As String = "abc"\n' * 2, "more than one"),
+    ],
+)
+def test_a_malformed_stamp_reports_drift_instead_of_crashing(
+    deckops_doctor, tmp_path, stamp_text, problem
+):
+    """A damaged real driver gets one actionable stamp diagnostic, not two."""
     scripts = _mirrors_only_install(tmp_path)
     for name in ("RunDeckOps.bas", "RunDeckOps.bas.txt"):
-        (scripts / name).write_text(
-            "Option Explicit\n' no stamp line\n", encoding="utf-8"
-        )
+        (scripts / name).write_text(stamp_text, encoding="utf-8")
     report = deckops_doctor.diagnose(tmp_path, scripts, True, "darwin")
     assert report["status"] == "driver_drift"
     assert report["expected_stamp"] == ""
-    assert any("has no" in p for p in report["drivers"]["problems"])
+    problems = report["drivers"]["problems"]
+    assert sum(problem in p for p in problems) == 1
+    assert len(problems) == len(set(problems))
+
+
+def test_a_mirror_only_stamp_problem_is_not_lost(deckops_doctor, tmp_path, monkeypatch):
+    """The fallback mirror needs its own stamp check when no real is available."""
+    scripts = _mirrors_only_install(tmp_path)
+    (scripts / "RunDeckOps.bas.txt").write_text(
+        "Option Explicit\n' no stamp line\n", encoding="utf-8"
+    )
+    # Keep this test on the fallback-reader branch rather than restoring the real.
+    monkeypatch.setattr(deckops_doctor.sync_deck_drivers, "materialize", lambda _: [])
+    report = deckops_doctor.diagnose(tmp_path, scripts, True, "darwin")
+    assert report["status"] == "driver_drift"
+    assert report["expected_stamp"] == ""
+    problems = report["drivers"]["problems"]
+    assert (
+        sum(p.startswith("RunDeckOps.bas has no Public Const") for p in problems) == 1
+    )
+    assert any("orphan mirror" in p and "RunDeckOps.bas.txt" in p for p in problems)
 
 
 def test_a_container_open_elsewhere_still_counts_as_set_up(deckops_doctor):
@@ -539,7 +567,10 @@ def test_an_old_module_reads_as_stale_not_never_imported(deckops_doctor):
         _verdict(
             deckops_doctor,
             container_exists=True,
-            probe={"state": "macro_unreachable"},
+            probe={
+                "state": "macro_unreachable",
+                "container": "/v/.deckops/DeckOps.pptm",
+            },
             container_holds_old_module=True,
         )
         == "macro_stale"
@@ -574,9 +605,11 @@ def test_an_answering_macro_outranks_container_introspection(deckops_doctor):
 def test_diagnose_reports_a_stale_container_at_the_canonical_path(
     deckops_doctor, tmp_path, monkeypatch
 ):
-    _pptm(tmp_path / ".deckops" / "DeckOps.pptm", vba=OLD_VBA)
+    open_at = _pptm(tmp_path / ".deckops" / "DeckOps.pptm", vba=OLD_VBA)
     monkeypatch.setattr(
-        deckops_doctor, "run_probe", lambda _d: {"state": "macro_unreachable"}
+        deckops_doctor,
+        "run_probe",
+        lambda _d: {"state": "macro_unreachable", "container": str(open_at)},
     )
     report = deckops_doctor.diagnose(tmp_path, _scripts_dir(), False, "darwin")
     assert report["status"] == "macro_stale"
@@ -606,9 +639,11 @@ def test_a_stale_next_step_names_the_absent_version_readably(
     deckops_doctor, tmp_path, monkeypatch
 ):
     """ "unknown" at a user holding a good container is a worse answer than the truth."""
-    _pptm(tmp_path / ".deckops" / "DeckOps.pptm", vba=OLD_VBA)
+    open_at = _pptm(tmp_path / ".deckops" / "DeckOps.pptm", vba=OLD_VBA)
     monkeypatch.setattr(
-        deckops_doctor, "run_probe", lambda _d: {"state": "macro_unreachable"}
+        deckops_doctor,
+        "run_probe",
+        lambda _d: {"state": "macro_unreachable", "container": str(open_at)},
     )
     report = deckops_doctor.diagnose(tmp_path, _scripts_dir(), False, "darwin")
     assert "predating the stamp" in report["next_step"]
@@ -730,3 +765,49 @@ def test_every_enumerated_read_error_is_handled(deckops_doctor, tmp_path, monkey
         r = deckops_doctor.inspect_container(real)
         assert r["readable"] is False, exc.__name__
         assert r["has_module"] is False, exc.__name__
+
+
+def test_an_old_module_on_disk_but_not_open_stays_unreachable(deckops_doctor):
+    """-18 also means "container not open" and "macros disabled".
+
+    Calling that macro_stale would drop the step that actually unblocks the user —
+    open the container, enable macros — and send them to re-import prematurely.
+    """
+    assert (
+        _verdict(
+            deckops_doctor,
+            container_exists=True,
+            probe={"state": "macro_unreachable"},  # no container reported open
+            container_holds_old_module=True,
+        )
+        == "macro_unreachable"
+    )
+
+
+def test_diagnose_keeps_the_open_container_remediation_when_nothing_is_open(
+    deckops_doctor, tmp_path, monkeypatch
+):
+    _pptm(tmp_path / ".deckops" / "DeckOps.pptm", vba=OLD_VBA)
+    monkeypatch.setattr(
+        deckops_doctor, "run_probe", lambda _d: {"state": "macro_unreachable"}
+    )
+    report = deckops_doctor.diagnose(tmp_path, _scripts_dir(), False, "darwin")
+    assert report["status"] == "macro_unreachable"
+    assert "macros are enabled" in report["next_step"]
+
+
+def test_is_file_failures_are_inside_the_guard(deckops_doctor, monkeypatch, tmp_path):
+    """path.is_file() stats the path, so it can raise before any zip work."""
+    from pathlib import Path as _P
+
+    def boom(_self):
+        raise PermissionError("simulated")
+
+    monkeypatch.setattr(_P, "is_file", boom)
+    r = deckops_doctor.inspect_container(tmp_path / "DeckOps.pptm")
+    assert r == {
+        "exists": False,
+        "readable": False,
+        "has_module": False,
+        "has_stamp_macro": False,
+    }
