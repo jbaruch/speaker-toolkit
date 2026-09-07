@@ -17,10 +17,12 @@ The container found in the wild made it concrete: `ppt/vbaProject.bin` carried
 `DeckOps`, `RunDeckOps`, and `BuildDeck`, and carried neither `DeckOpsVersion`
 nor `DECKOPS_STAMP`. Module names sit in the project streams as plain bytes even
 though the source is compressed, so `inspect_container` reads the part and
-separates "an old module" from "no module". That case now reports `macro_stale`
-— "setup is otherwise done; this is a re-import, not a redo" — and `next_step`
-names the absent version readably instead of printing `unknown` at someone whose
-container is fine.
+separates "an old module" from "no module". That case now reports
+`macro_stale_inferred` — re-import, and confirm macros are enabled if that does
+not clear it — and `next_step` names the absent version readably instead of
+printing `unknown` at someone whose container is fine. `macro_stale` stays
+reserved for a macro that answered with the wrong stamp; the two verdicts and
+why they differ are below.
 
 The file read is a hint, never the authority: a probe that answers `ok` outranks
 it, and an unreadable or corrupt `.pptm` degrades to "no information" rather than
