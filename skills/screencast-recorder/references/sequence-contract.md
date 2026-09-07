@@ -83,7 +83,17 @@ A requirement whose evidence the take does not carry is **refused**, never
 passed: `require.content_bounds` with no `entry.viewport`, `visible_labels` with
 no `entry.labels`, `click_on_target` with a click lacking `pointer`/`target_rect`,
 or `proof_frame_t` with no `narration.words`. Each yields `evidence_missing`
-naming the requirement and the absent field.
+naming the requirement and the absent field, **on the axis that requirement is
+judged on** — a missing `viewport` fails `geometry`, not `semantic`, so an axis
+can never read `pass` while its own evidence is absent.
+
+A seam field absent from either manifest is refused for the same reason: two
+absences compare equal, and equality between nothing and nothing is not
+agreement.
+
+A document that does not satisfy the contract — `clips`/`rows` not lists of
+objects with non-empty string ids, `narration` not an object — exits 2 with the
+violation named, rather than failing later on a missing key.
 
 Exit 0 when every checked axis passes, 1 on any finding, 2 on usage error.
 

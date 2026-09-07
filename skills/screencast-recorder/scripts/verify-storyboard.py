@@ -130,10 +130,13 @@ def _phrase_spans(words, phrase):
 # reported as passing" failure the pixel axis is careful to avoid, which this
 # script committed everywhere else in its first draft.
 EVIDENCE_FOR_REQUIREMENT = {
-    "route": (("entry", "route"),),
-    "data_fingerprint": (("entry", "data_fingerprint"),),
-    "visible_labels": (("entry", "labels"),),
-    "content_bounds": (("entry", "viewport"),),
+    # requirement -> (needed field, the axis that requirement is judged on)
+    "route": (("entry", "route"), SEMANTIC),
+    "data_fingerprint": (("entry", "data_fingerprint"), SEMANTIC),
+    "visible_labels": (("entry", "labels"), SEMANTIC),
+    # Missing viewport blocks GEOMETRY, not semantic. Filing it under the wrong
+    # axis let `axes.geometry` read `pass` while its evidence was absent.
+    "content_bounds": (("entry", "viewport"), GEOMETRY),
 }
 
 
@@ -143,21 +146,20 @@ def check_evidence(row, clip, narration, delivery, findings):
     subject = row["id"]
     labels = clip.get("entry", {}).get("labels") or []
 
-    for name, needed in EVIDENCE_FOR_REQUIREMENT.items():
+    for name, ((section, field), axis) in EVIDENCE_FOR_REQUIREMENT.items():
         if name not in req:
             continue
-        for section, field in needed:
-            if (clip.get(section) or {}).get(field) is None:
-                findings.append(
-                    _finding(
-                        "evidence_missing",
-                        SEMANTIC,
-                        subject,
-                        f"row requires {name} but the clip carries no {section}.{field}",
-                        requirement=name,
-                        missing_field=f"{section}.{field}",
-                    )
+        if (clip.get(section) or {}).get(field) is None:
+            findings.append(
+                _finding(
+                    "evidence_missing",
+                    axis,
+                    subject,
+                    f"row requires {name} but the clip carries no {section}.{field}",
+                    requirement=name,
+                    missing_field=f"{section}.{field}",
                 )
+            )
 
     if delivery.get("min_label_px") and req.get("visible_labels"):
         present = {label.get("text") for label in labels}
@@ -474,6 +476,30 @@ def check_seam(previous, following, tolerances, findings, exercised):
         )
 
 
+def structural_problem(sequence):
+    """Describe the first contract violation, or None. Runs before verify().
+
+    verify() indexes `clip["id"]` and `row["id"]`; without this a malformed
+    document crashes with a KeyError instead of the actionable exit-2 the CLI
+    contract promises.
+    """
+    for name in ("clips", "rows"):
+        items = sequence.get(name, [])
+        if not isinstance(items, list):
+            return f"{name} must be a list"
+        for index, item in enumerate(items):
+            if not isinstance(item, dict):
+                return f"{name}[{index}] must be an object"
+            if not isinstance(item.get("id"), str) or not item["id"]:
+                return f"{name}[{index}] needs a non-empty string id"
+    narration = sequence.get("narration", {})
+    if not isinstance(narration, dict):
+        return "narration must be an object"
+    if not isinstance(narration.get("words", []), list):
+        return "narration.words must be a list"
+    return None
+
+
 def verify(sequence):
     findings = []
     exercised = set()
@@ -583,6 +609,15 @@ def main(argv=None):
 
     if not isinstance(sequence, dict):
         print("ERROR: sequence must be a JSON object.", file=sys.stderr)
+        return 2
+
+    problem = structural_problem(sequence)
+    if problem:
+        print(
+            f"ERROR: {args.sequence} does not satisfy the sequence contract: "
+            f"{problem} — see references/sequence-contract.md.",
+            file=sys.stderr,
+        )
         return 2
 
     verdict = verify(sequence)

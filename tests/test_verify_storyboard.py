@@ -514,3 +514,71 @@ def test_main_rejects_a_json_scalar_with_exit_two(verify_storyboard, tmp_path, c
     p.write_text("[]", encoding="utf-8")
     assert verify_storyboard.main([str(p)]) == 2
     assert "must be a JSON object" in capsys.readouterr().err
+
+
+# --- evidence gaps must fail the axis they block (PR #432, Copilot) -----------
+
+
+def test_missing_viewport_fails_geometry_not_semantic(verify_storyboard):
+    """Filing it under semantic let axes.geometry read pass with no evidence."""
+    s = sequence()
+    del s["clips"][0]["entry"]["viewport"]
+    v = verify_storyboard.verify(s)
+    finding = next(f for f in v["findings"] if f.get("requirement") == "content_bounds")
+    assert finding["axis"] == "geometry"
+    assert v["axes"]["geometry"] == "fail"
+
+
+@pytest.mark.parametrize(
+    "requirement,strip,axis",
+    [
+        ("route", "route", "semantic"),
+        ("data_fingerprint", "data_fingerprint", "semantic"),
+        ("visible_labels", "labels", "semantic"),
+        ("content_bounds", "viewport", "geometry"),
+    ],
+)
+def test_each_evidence_gap_is_filed_on_the_axis_it_blocks(
+    verify_storyboard, requirement, strip, axis
+):
+    s = sequence()
+    del s["clips"][0]["entry"][strip]
+    v = verify_storyboard.verify(s)
+    finding = next(f for f in v["findings"] if f.get("requirement") == requirement)
+    assert finding["axis"] == axis
+    assert v["axes"][axis] == "fail"
+
+
+# --- a malformed document is refused, never crashes --------------------------
+
+
+@pytest.mark.parametrize(
+    "sequence_doc,fragment",
+    [
+        ({"clips": "nope"}, "clips must be a list"),
+        ({"rows": {"a": 1}}, "rows must be a list"),
+        ({"clips": ["not-an-object"]}, "clips[0] must be an object"),
+        ({"rows": [{"clip": "x"}]}, "rows[0] needs a non-empty string id"),
+        ({"clips": [{"id": ""}]}, "clips[0] needs a non-empty string id"),
+        ({"clips": [{"id": 7}]}, "clips[0] needs a non-empty string id"),
+        ({"narration": "words"}, "narration must be an object"),
+        ({"narration": {"words": "no"}}, "narration.words must be a list"),
+    ],
+)
+def test_structural_problems_are_described_not_raised(
+    verify_storyboard, sequence_doc, fragment
+):
+    assert verify_storyboard.structural_problem(sequence_doc) == fragment
+
+
+def test_a_conforming_sequence_has_no_structural_problem(verify_storyboard):
+    assert verify_storyboard.structural_problem(sequence()) is None
+
+
+def test_main_exits_two_on_a_malformed_sequence(verify_storyboard, tmp_path, capsys):
+    p = tmp_path / "seq.json"
+    p.write_text(json.dumps({"clips": [{"no_id": True}]}), encoding="utf-8")
+    assert verify_storyboard.main([str(p)]) == 2
+    err = capsys.readouterr().err
+    assert "sequence contract" in err
+    assert "sequence-contract.md" in err

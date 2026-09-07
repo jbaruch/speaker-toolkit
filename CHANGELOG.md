@@ -72,6 +72,13 @@ both now return an actionable diagnostic. The skill's Step 2 continuation pointe
 back at Step 2, stranding the workflow before verification, and its recovery
 handoff named vault-ingress in prose instead of a typed `Skill()` call.
 
+A fourth instance of the same shape came from the second reviewer: every
+`evidence_missing` finding was filed on the semantic axis regardless of what it
+blocked, so a take missing its `viewport` failed `semantic` while `geometry` —
+the axis that could not be judged — still read `pass`. Each evidence requirement
+now names the axis it gates. A malformed document is also refused with the
+violation named, instead of failing later on a missing key.
+
 
 ## 0.20.137 — 2026-09-07
 
