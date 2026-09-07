@@ -114,6 +114,8 @@ validation and the check it gates.
 Finiteness is not pedantry: JSON admits `NaN`, and every comparison against
 `NaN` is false, so a `NaN` measurement or threshold satisfies whatever it is
 tested against. A `bool` is an `int` in Python and is rejected as a coordinate.
+A Python `int` is unbounded, so a value with no float representation (`10**400`)
+counts as non-finite rather than raising.
 
 Exit 0 when every checked axis passes, 1 on any finding, 2 on usage error.
 

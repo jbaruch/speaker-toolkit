@@ -48,8 +48,12 @@ Proceed immediately to Step 2.
 
 The recording rig emits one JSON file describing the take: delivery resolution,
 narration words with real timestamps, per-clip entry/exit manifests and events,
-and the storyboard rows with their machine-checkable requirements. Shape and
-every field: `references/sequence-contract.md`.
+and the storyboard rows with their machine-checkable requirements. Shape, every
+field, and every finding code:
+
+```text
+skills/screencast-recorder/references/sequence-contract.md
+```
 
 The approved storyboard itself stays prose and stays human-approved. Conditions
 like "leave room for the laugh" are judgments no verifier makes. This file
@@ -72,8 +76,9 @@ was observed. Proceed immediately to Step 4.
 An axis reads `unverified` for either of two reasons, and neither is a pass.
 
 `axes.pixels` is always `unverified`. Three checks are outside this lane: a click
-visible in the encoded frames, a label readable in the delivered pixels, and OS
-chrome absent from the crop.
+visible in the encoded frames, OS chrome absent from the crop, and confirming in
+the delivered pixels what the readability check computes from the recorded
+measurement.
 
 Any other axis reads `unverified` when no row declared a requirement on it.
 `unverified_axes` names which case applies.

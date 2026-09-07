@@ -197,6 +197,19 @@ caller pointed at a different vault. The root of the database actually read wins
 a differing stored value is surfaced as `vault_root_mismatch` rather than
 silently substituted.
 
+An eleventh round reached the numeric edges. A Python `int` is unbounded, so
+`10**400` in a JSON document has no float representation and `math.isfinite`
+raises `OverflowError` rather than answering — escaping validation as a traceback
+instead of the documented exit 2. Unrepresentable now counts as non-finite. And
+the seam-tolerance fast path subtracted dict values without checking they were
+numeric, so an extra non-required key carrying a string raised `TypeError` where a
+seam mismatch belonged.
+
+Two documentation corrections: Step 4 claimed label readability was outside this
+lane when the lane does check it from the recorded measurement — only confirming
+it in the delivered pixels is out of scope — and the contract reference is now a
+typed block carrying its full relative path.
+
 
 ## 0.20.137 — 2026-09-07
 

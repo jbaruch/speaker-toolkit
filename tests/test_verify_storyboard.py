@@ -1171,3 +1171,62 @@ def test_a_real_target_rect_still_verifies_the_click(verify_storyboard):
     assert verify_storyboard.verify(s)["ok"] is True
     s["clips"][0]["events"][1]["pointer"] = [9000, 9000]
     assert "cursor_off_target" in codes(verify_storyboard.verify(s))
+
+
+# --- unrepresentable and non-numeric edges (PR #432 round 11) ----------------
+
+HUGE_INT = 10**400  # a Python int with no float representation
+
+
+def test_an_unrepresentable_integer_is_not_finite(verify_storyboard):
+    """math.isfinite raises OverflowError rather than answering, and that
+    escaped structural_problem() as a traceback instead of exit 2."""
+    assert verify_storyboard._is_number(HUGE_INT) is False
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ("delivery", "width"),
+        ("rows", 0, "proof_frame_t"),
+        ("clips", 0, "entry", "zoom"),
+    ],
+)
+def test_an_unrepresentable_integer_is_refused_wherever_a_number_is_read(
+    verify_storyboard, path
+):
+    doc = _poke(sequence(), path, HUGE_INT)
+    assert verify_storyboard.structural_problem(doc) is not None
+
+
+def test_main_exits_two_on_an_unrepresentable_integer(
+    verify_storyboard, tmp_path, capsys
+):
+    s = sequence()
+    s["delivery"]["width"] = HUGE_INT
+    p = tmp_path / "seq.json"
+    p.write_text(json.dumps(s), encoding="utf-8")
+    assert verify_storyboard.main([str(p)]) == 2
+    assert "delivery.width must be a positive finite number" in capsys.readouterr().err
+
+
+def test_a_non_numeric_extra_key_in_a_tolerated_field_does_not_crash(
+    verify_storyboard,
+):
+    """Structural validation enforces the required keys; an extra one with a
+    non-numeric value reached the tolerance subtraction and raised TypeError."""
+    s = sequence()
+    s["clips"][0]["exit"]["scroll"] = {"x": 0, "y": 0, "note": "annotated"}
+    s["clips"][1]["entry"]["scroll"] = {"x": 0, "y": 0, "note": "annotated"}
+    v = verify_storyboard.verify(s)  # must not raise
+    assert isinstance(v["ok"], bool)
+
+
+def test_a_non_numeric_extra_key_reports_a_mismatch_rather_than_passing(
+    verify_storyboard,
+):
+    s = sequence()
+    s["clips"][0]["exit"]["scroll"] = {"x": 0, "y": 0, "note": "a"}
+    s["clips"][1]["entry"]["scroll"] = {"x": 0, "y": 0, "note": "b"}
+    v = verify_storyboard.verify(s)
+    assert "seam_state_mismatch" in codes(v)

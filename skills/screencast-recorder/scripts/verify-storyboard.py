@@ -499,9 +499,14 @@ def check_seam(previous, following, tolerances, findings, exercised):
             keys = set(before) | set(after)
             # A key absent from one side is missing evidence; defaulting it to 0
             # would read the gap as "within tolerance".
-            if all(k in before and k in after for k in keys) and all(
-                abs(before[k] - after[k]) <= tol for k in keys
-            ):
+            comparable = all(
+                k in before
+                and k in after
+                and _is_number(before[k])
+                and _is_number(after[k])
+                for k in keys
+            )
+            if comparable and all(abs(before[k] - after[k]) <= tol for k in keys):
                 continue
         # Negative test 8: the tab set or active tab changed across the seam.
         code = (
@@ -529,11 +534,15 @@ def _is_number(value) -> TypeGuard[float]:
     false, so a NaN measurement silently satisfies any threshold it is tested
     against — passing readability while carrying no usable evidence.
     """
-    return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(value)
-    )
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        # A Python int is unbounded; 10**400 has no float representation, and
+        # math.isfinite raises rather than answering. Unrepresentable is not
+        # finite for our purposes, and must not escape as a traceback.
+        return False
 
 
 def _numbers(value, count):
