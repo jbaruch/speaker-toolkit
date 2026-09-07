@@ -91,7 +91,7 @@ STATUSES = {
     "macro_unreachable": (
         "PowerPoint is running but the DeckOps macro did not answer — ask the user "
         "to open {container}, confirm macros are enabled, and confirm the module "
-        "was imported (deck-editing-setup.md Steps 1-3)."
+        "was imported into THAT file (deck-editing-setup.md Steps 1-3)."
     ),
     "macro_stale": (
         "{container} holds an OLD build of the macro ({found}, expected {expected}) "
@@ -130,7 +130,6 @@ def parse_probe(out: str) -> dict[str, str]:
 
 def run_probe(scripts_dir: Path) -> dict[str, str]:
     """Ask the running PowerPoint for the loaded macro's stamp. Never launches it."""
-    sync_deck_drivers.materialize(scripts_dir)
     driver = scripts_dir / PROBE_DRIVER
     if not driver.exists():
         return {"state": "probe_missing", "detail": f"{driver} not found"}
@@ -170,33 +169,46 @@ def verdict(
         return "unsupported_platform"
     if driver_problems:
         return "driver_drift"
-    if not container_exists:
-        return "setup_required"
     if probe is None:
-        return "ok"
+        # Offline: the on-disk container at the canonical path is all there is to see.
+        return "ok" if container_exists else "setup_required"
     state = probe.get("state", "macro_unreachable")
+    if state == "ok":
+        # A macro that answers proves setup regardless of where the container file
+        # sits — a user whose DeckOps.pptm predates the canonical path is set up,
+        # not unconfigured. `container.canonical_mismatch` reports the difference.
+        return "ok" if probe.get("stamp", "") == expected_stamp else "macro_stale"
+    if not container_exists and not probe.get("container"):
+        return "setup_required"
     if state == "not_running":
         return "powerpoint_not_running"
-    if state != "ok":
-        return "macro_unreachable"
-    if probe.get("stamp", "") != expected_stamp:
-        return "macro_stale"
-    return "ok"
+    return "macro_unreachable"
 
 
 def diagnose(vault_root: Path, scripts_dir: Path, offline: bool, platform: str) -> dict:
     paths = container_paths(vault_root)
+
+    # Restore before judging. A fresh `tessl install` lands the .txt mirrors and
+    # none of their sources, which check() reads as ten orphan mirrors — a valid
+    # installation told to reinstall itself. Materializing first is the supported
+    # recovery, so try it before reporting drift (error-handling: Graceful Fallback).
+    materialized = [p.name for p in sync_deck_drivers.materialize(scripts_dir)]
     driver_problems = sync_deck_drivers.check(scripts_dir)
 
     src = scripts_dir / sync_deck_drivers.STAMP_DRIVER
     mirror = src.with_name(src.name + sync_deck_drivers.MIRROR_SUFFIX)
     stamp_src = src if src.exists() else mirror
+    expected_stamp = ""
     if stamp_src.exists():
-        expected_stamp = sync_deck_drivers.read_stamp(
-            stamp_src.read_text(encoding="utf-8")
-        )
+        try:
+            expected_stamp = sync_deck_drivers.read_stamp(
+                stamp_src.read_text(encoding="utf-8")
+            )
+        except ValueError as e:
+            # check() already recorded this as a driver problem; crashing here
+            # would swallow the actionable diagnostic it produced.
+            driver_problems = driver_problems + [str(e)]
     else:
-        expected_stamp = ""
         driver_problems = driver_problems + [
             f"neither {src.name} nor its mirror is present — reinstall the plugin"
         ]
@@ -210,6 +222,7 @@ def diagnose(vault_root: Path, scripts_dir: Path, offline: bool, platform: str) 
         probe=probe,
     )
 
+    open_path = (probe or {}).get("container", "")
     import_source = paths["import_source"]
     report = {
         "status": status,
@@ -219,7 +232,9 @@ def diagnose(vault_root: Path, scripts_dir: Path, offline: bool, platform: str) 
         "container": {
             "canonical_path": str(paths["container"]),
             "exists": paths["container"].is_file(),
-            "open_path": (probe or {}).get("container", ""),
+            "open_path": open_path,
+            "canonical_mismatch": bool(open_path)
+            and open_path != str(paths["container"]),
         },
         "import_source": {
             "path": str(import_source),
@@ -230,11 +245,14 @@ def diagnose(vault_root: Path, scripts_dir: Path, offline: bool, platform: str) 
                 and import_source.read_bytes() == src.read_bytes()
             ),
         },
-        "drivers": {"problems": driver_problems},
+        "drivers": {"materialized": materialized, "problems": driver_problems},
         "live": probe if probe is not None else {"state": "skipped"},
     }
+    # Name the container the user actually has open, when there is one — telling
+    # them to open the canonical path while a DeckOps.pptm sits open elsewhere
+    # sends them to create a second one.
     report["next_step"] = STATUSES[status].format(
-        container=paths["container"],
+        container=open_path or paths["container"],
         found=(probe or {}).get("stamp", "unknown"),
         expected=expected_stamp,
     )

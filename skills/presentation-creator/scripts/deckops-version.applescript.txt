@@ -24,19 +24,20 @@ on run argv
 		return "state=not_running"
 	end if
 
+	-- Plural accessors on purpose. `repeat with p in presentations` + `name of p`
+	-- raises -2763 ("no result was returned") on current Mac PowerPoint builds;
+	-- `name of every presentation` returns the list correctly. Using the working
+	-- form needs no error handler, so nothing here swallows a failure.
 	set containerPath to ""
-	try
-		tell application "Microsoft PowerPoint"
-			repeat with p in presentations
-				if (name of p) is "DeckOps.pptm" then
-					set containerPath to (full name of p) as string
-				end if
-			end repeat
-		end tell
-	on error
-		-- A dictionary surprise here costs the container path, never the stamp.
-		set containerPath to ""
-	end try
+	tell application "Microsoft PowerPoint"
+		set openNames to name of every presentation
+		set openPaths to full name of every presentation
+	end tell
+	repeat with i from 1 to (count of openNames)
+		if (item i of openNames) as string is "DeckOps.pptm" then
+			set containerPath to (item i of openPaths) as string
+		end if
+	end repeat
 
 	try
 		tell application "Microsoft PowerPoint"
@@ -45,7 +46,9 @@ on run argv
 			end timeout
 		end tell
 	on error errMsg
-		return "state=macro_unreachable" & linefeed & "detail=" & errMsg
+		set out to "state=macro_unreachable" & linefeed & "detail=" & errMsg
+		if containerPath is not "" then set out to out & linefeed & "container=" & containerPath
+		return out
 	end try
 
 	set out to "state=ok" & linefeed & "stamp=" & (macroStamp as string)

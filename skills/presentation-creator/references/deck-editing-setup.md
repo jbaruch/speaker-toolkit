@@ -123,23 +123,24 @@ to control PowerPoint. After consent is granted once, the agent may run
 ## Step 5 — Smoke-test before any real edit
 
 Given the history of lost work with other tools, always test before touching a
-real deck. A 3-slide op sequence ships for exactly this — it uses layout 0 and a
-free text box only, so it runs against any template:
+real deck. One script does the whole thing — it copies the template to a
+uniquely-named base, builds the shipped 3-slide op sequence (layout 0 and a free
+text box only, so it runs against any template), and prints where the output
+landed:
 
 ```bash
-SMOKE="$TMPDIR/deckops-smoke-$$"
-cp "{template_pptx_path}" "$SMOKE-base.pptx"
-bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/build-deck.sh" \
-  "$SMOKE-base.pptx" "$SMOKE-out.pptx" \
-  "{speaker_toolkit_root}/skills/presentation-creator/scripts/smoke-test-ops.txt"
+bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/deckops-smoke-test.sh" \
+  "{template_pptx_path}"
 ```
 
 `{template_pptx_path}` is `infrastructure.template_pptx_path` from the speaker
-profile. `DeckOps.pptm` must be open (Step 6). The copies are uniquely named on
-purpose — PowerPoint keys open decks by filename.
+profile; the template is read-only. An optional second argument sets the output
+directory. It prints `{"ok":true,"output":"<path>","slides":3,"base":"<path>"}`
+and exits non-zero when no deck was produced. `DeckOps.pptm` must be open
+(Step 6).
 
 It passes when all four hold:
-1. The command exits 0 and prints `done -> …`.
+1. The script exits 0 and prints `{"ok":true,...}`.
 2. The output has exactly 3 slides, titled "DeckOps smoke test", "Slide 2 of 3",
    "Slide 3 of 3".
 3. It opens in **PowerPoint** with no "Repair" prompt.

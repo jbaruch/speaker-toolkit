@@ -97,8 +97,16 @@ def test_verdict_driver_drift_outranks_a_missing_container(deckops_doctor):
     )
 
 
-def test_verdict_setup_required_when_the_container_is_absent(deckops_doctor):
-    assert _verdict(deckops_doctor, container_exists=False) == "setup_required"
+def test_verdict_setup_required_when_no_container_exists_or_is_open(deckops_doctor):
+    """Absent on disk AND absent from the running PowerPoint — nothing set up."""
+    assert (
+        _verdict(
+            deckops_doctor,
+            container_exists=False,
+            probe={"state": "macro_unreachable"},
+        )
+        == "setup_required"
+    )
 
 
 def test_verdict_distinguishes_powerpoint_closed_from_macro_missing(deckops_doctor):
@@ -231,3 +239,109 @@ def test_smoke_test_fixture_avoids_layout_dependent_placeholders(layout_dependen
     """It runs against an unknown template, so it must not need a body placeholder."""
     ops = (_scripts_dir() / "smoke-test-ops.txt").read_text(encoding="utf-8")
     assert layout_dependent_op not in ops
+
+
+# --- review regressions (PR #412) --------------------------------------------
+
+
+def _mirrors_only_install(tmp_path) -> Path:
+    """A scripts dir shaped like a fresh `tessl install`: mirrors, no sources."""
+    import shutil
+
+    scripts = tmp_path / "installed"
+    scripts.mkdir()
+    for f in _scripts_dir().glob("*.txt"):
+        shutil.copyfile(f, scripts / f.name)
+    for f in _scripts_dir().glob("*.py"):
+        shutil.copyfile(f, scripts / f.name)
+    return scripts
+
+
+def test_a_fresh_install_is_not_reported_as_driver_drift(deckops_doctor, tmp_path):
+    """tessl install lands mirrors and no sources; check() reads those as orphans.
+
+    Materializing is the supported recovery, so it runs before the drift check —
+    otherwise a valid installation is told to reinstall itself.
+    """
+    scripts = _mirrors_only_install(tmp_path)
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    report = deckops_doctor.diagnose(vault, scripts, True, "darwin")
+    assert report["drivers"]["problems"] == []
+    assert report["status"] == "setup_required"
+    assert "RunDeckOps.bas" in report["drivers"]["materialized"]
+
+
+def test_a_malformed_stamp_reports_drift_instead_of_crashing(deckops_doctor, tmp_path):
+    """read_stamp raises on a missing stamp line; the doctor must survive it."""
+    scripts = _mirrors_only_install(tmp_path)
+    for name in ("RunDeckOps.bas", "RunDeckOps.bas.txt"):
+        (scripts / name).write_text(
+            "Option Explicit\n' no stamp line\n", encoding="utf-8"
+        )
+    report = deckops_doctor.diagnose(tmp_path, scripts, True, "darwin")
+    assert report["status"] == "driver_drift"
+    assert report["expected_stamp"] == ""
+    assert any("has no" in p for p in report["drivers"]["problems"])
+
+
+def test_a_container_open_elsewhere_still_counts_as_set_up(deckops_doctor):
+    """A DeckOps.pptm predating the canonical path is set up, not unconfigured."""
+    assert (
+        _verdict(
+            deckops_doctor,
+            container_exists=False,
+            probe={
+                "state": "ok",
+                "stamp": "abc123",
+                "container": "/elsewhere/DeckOps.pptm",
+            },
+        )
+        == "ok"
+    )
+
+
+def test_an_unreachable_macro_with_a_container_open_is_not_setup_required(
+    deckops_doctor,
+):
+    """The ask is "import the module", not "create a second container"."""
+    assert (
+        _verdict(
+            deckops_doctor,
+            container_exists=False,
+            probe={
+                "state": "macro_unreachable",
+                "container": "/elsewhere/DeckOps.pptm",
+            },
+        )
+        == "macro_unreachable"
+    )
+
+
+def test_powerpoint_closed_with_no_container_anywhere_is_setup_required(deckops_doctor):
+    assert (
+        _verdict(deckops_doctor, container_exists=False, probe={"state": "not_running"})
+        == "setup_required"
+    )
+
+
+def test_report_flags_a_container_open_off_the_canonical_path(deckops_doctor, tmp_path):
+    scripts = _scripts_dir()
+    report = deckops_doctor.diagnose(tmp_path, scripts, True, "darwin")
+    assert report["container"]["canonical_mismatch"] is False  # nothing open offline
+
+
+def test_next_step_names_the_open_container_not_the_canonical_one(
+    deckops_doctor, tmp_path, monkeypatch
+):
+    """Sending the user to the canonical path spawns a second container."""
+    monkeypatch.setattr(
+        deckops_doctor,
+        "run_probe",
+        lambda _d: {
+            "state": "macro_unreachable",
+            "container": "/open/here/DeckOps.pptm",
+        },
+    )
+    report = deckops_doctor.diagnose(tmp_path, _scripts_dir(), False, "darwin")
+    assert "/open/here/DeckOps.pptm" in report["next_step"]

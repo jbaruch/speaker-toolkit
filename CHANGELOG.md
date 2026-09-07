@@ -51,6 +51,31 @@ side effect is worse than the answer it returns — and exits 0 with a verdict e
 when the macro is unreachable, because "setup required" is a finding to act on,
 not a failure of the script.
 
+Review round on PR #412 caught two real bugs in the first cut. `deckops-doctor.py`
+ran the mirror check before materializing, so a fresh `tessl install` — which
+lands ten `.txt` mirrors and none of their sources — reported ten orphan mirrors
+and told a valid installation to reinstall itself. Copilot found the same one
+independently. The doctor also called `read_stamp` unguarded, so a `RunDeckOps.bas`
+with a damaged stamp line crashed it instead of returning the `driver_drift`
+diagnostic `check()` had already produced.
+
+The probe's container lookup started as a bare `on error` handler. Narrowing it
+to specific error numbers meant learning which one actually fires: `repeat with p
+in presentations` + `name of p` raises -2763 on current Mac PowerPoint builds,
+while `name of every presentation` returns the list correctly. Using the working
+plural form removed the need for a handler at all.
+
+That same probe run surfaced a case the verdict table got wrong: a `DeckOps.pptm`
+already open from a location predating the canonical path. A macro that answers
+proves setup wherever its container sits, so `state=ok` now decides `ok` on its
+own, `container.canonical_mismatch` reports the difference, and `next_step` names
+the container the user actually has open rather than sending them to create a
+second one.
+
+The smoke test moved out of the reference file into `deckops-smoke-test.sh`, and
+every `sync-deck-drivers.py` mode emits JSON — both `script-delegation`
+requirements the first cut missed.
+
 
 ## 0.20.130 — 2026-09-06
 

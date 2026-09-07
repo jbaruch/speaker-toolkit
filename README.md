@@ -580,6 +580,7 @@ speaker-toolkit/
     |   |   +-- deckops-doctor.py              # Is the deck layer set up, open, and current? (tested)
     |   |   +-- deckops-version.applescript    # Read-only probe: which macro build is loaded
     |   |   +-- smoke-test-ops.txt             # 3-slide op sequence for the setup smoke test
+    |   |   +-- deckops-smoke-test.sh          # Build that sequence against the template and report where it landed
     |   |   +-- make-bg-slide.sh               # Wrapper for MakeBgImageSlide (illustration -> bg slide)
     |   |   +-- make-bg-slide.applescript      # AppleScript driver for MakeBgImageSlide
     |   |   +-- make-placeholder-slide.sh       # Wrapper for MakePlaceholderSlide (yellow [PLACEHOLDER] slide)

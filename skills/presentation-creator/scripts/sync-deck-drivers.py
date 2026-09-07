@@ -41,6 +41,10 @@ The mapping is deterministic file copy -> script, not LLM (rules/script-delegati
 The VBA side can't run in CI; this tool is unit-tested in
 tests/test_deck_driver_mirrors.py.
 
+Stdout: one JSON object per mode (`rules/script-delegation.md` Script
+Requirements). Stderr: actionable diagnostics. Exit non-zero on failure and on
+`check` drift.
+
 Usage:
     sync-deck-drivers.py {materialize|mirror|stamp|export|check} [--force]
                         [--dir DIR] [--to DIR]
@@ -268,10 +272,7 @@ def main(argv=None) -> int:
 
     if args.mode == "materialize":
         written = materialize(base, force=args.force)
-        if written:
-            print("materialized: " + ", ".join(p.name for p in written))
-        else:
-            print("materialize: nothing to do (real drivers already present)")
+        print(json.dumps({"materialized": [p.name for p in written]}))
         return 0
 
     if args.mode == "export":
@@ -296,7 +297,7 @@ def main(argv=None) -> int:
         except (FileNotFoundError, ValueError) as e:
             print(f"ERROR: {e}", file=sys.stderr)
             return 1
-        print(f"stamp: {stamp}" + ("" if changed else " (already current)"))
+        print(json.dumps({"stamp": stamp, "changed": changed}))
         return 0
 
     if args.mode == "mirror":
@@ -305,20 +306,17 @@ def main(argv=None) -> int:
         except ValueError as e:
             print(f"ERROR: {e}", file=sys.stderr)
             return 1
-        if written:
-            print("updated mirrors: " + ", ".join(p.name for p in written))
-        else:
-            print("mirror: all mirrors already in sync")
+        print(json.dumps({"updated_mirrors": [p.name for p in written]}))
         return 0
 
     # check
     problems = check(base)
+    print(json.dumps({"ok": not problems, "problems": problems}))
     if problems:
         print("deck-driver mirror drift:", file=sys.stderr)
         for p in problems:
             print("  - " + p, file=sys.stderr)
         return 1
-    print("deck-driver mirrors in sync")
     return 0
 
 
