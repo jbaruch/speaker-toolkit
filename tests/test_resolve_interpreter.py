@@ -98,3 +98,13 @@ def test_main_exits_one_with_an_actionable_diagnostic(
     err = capsys.readouterr().err
     assert err.startswith("ERROR:")
     assert "vault-ingress Step 1" in err
+
+
+@pytest.mark.parametrize("document", ["[]", "null", '"text"', "7"])
+def test_valid_json_that_is_not_an_object_is_refused(
+    resolve_interpreter, tmp_path, document
+):
+    """`.get()` on a list or None raises rather than reporting the repair path."""
+    (tmp_path / "tracking-database.json").write_text(document, encoding="utf-8")
+    with pytest.raises(ValueError, match="must contain a JSON object"):
+        resolve_interpreter.resolve(tmp_path)

@@ -102,8 +102,9 @@ rather than failing later on a missing key. Validation covers structure
 `proof_frame_t` has a `phrase`), and **finiteness of every number**. Dimensions and thresholds must also be
 positive: `min_label_px <= 0` makes readability vacuously true, a zero `scale`
 erases the measurement it converts, and a `content_bounds` with non-positive
-width or height describes no region. A declared `content_bounds: null` is
-refused rather than silently skipped.
+width or height describes no region. An explicit `null` is refused wherever a value is declared — it is not the
+same as an absent key, and accepting it let a requirement skip both its
+validation and the check it gates.
 
 Finiteness is not pedantry: JSON admits `NaN`, and every comparison against
 `NaN` is false, so a `NaN` measurement or threshold satisfies whatever it is

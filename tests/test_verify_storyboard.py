@@ -1069,3 +1069,58 @@ def test_a_zero_margin_is_still_allowed(verify_storyboard):
     s = sequence()
     s["rows"][0]["require"]["margin_px"] = 0
     assert verify_storyboard.structural_problem(s) is None
+
+
+# --- an explicit null is not an absent key (PR #432 round 9) -----------------
+#
+# `content_bounds: null` was fixed last round; its sibling `pan: null` was not.
+# Every validator now guards on key presence, so a declared-null cannot skip
+# both its validation and the check it gates.
+
+
+@pytest.mark.parametrize(
+    "path,fragment",
+    [
+        (("rows", 0, "require", "pan"), "rows[0].require.pan must be an object"),
+        (("rows", 0, "require", "content_bounds"), "must be 4 finite numbers"),
+        (("rows", 0, "require", "margin_px"), "must be a non-negative finite number"),
+        (("rows", 0, "proof_frame_t"), "rows[0].proof_frame_t must be a finite number"),
+        (("rows", 0, "require"), "rows[0].require must be an object"),
+        (("clips", 0, "events"), "clips[0].events must be a list"),
+        (
+            ("clips", 0, "entry", "viewport"),
+            "clips[0].entry.viewport must be an object",
+        ),
+        (("clips", 0, "entry", "labels"), "clips[0].entry.labels must be a list"),
+        (("clips", 0, "entry", "tabs"), "clips[0].entry.tabs must be a list"),
+        (("clips", 0, "entry", "zoom"), "clips[0].entry.zoom must be a finite number"),
+    ],
+)
+def test_an_explicit_null_is_refused_wherever_a_value_is_declared(
+    verify_storyboard, path, fragment
+):
+    doc = _poke(sequence(), path, None)
+    problem = verify_storyboard.structural_problem(doc)
+    assert problem is not None, f"null at {path} was accepted"
+    assert fragment in problem
+
+
+def test_a_null_pan_cannot_pass_without_the_pan_being_performed(verify_storyboard):
+    """The exact regression: null skipped validation AND the motion check."""
+    s = sequence()
+    s["rows"][0]["require"]["pan"] = None
+    s["clips"][0]["events"] = [e for e in s["clips"][0]["events"] if e["type"] != "pan"]
+    assert verify_storyboard.structural_problem(s) is not None
+
+
+def test_the_click_evidence_gap_names_the_missing_field(verify_storyboard):
+    """ "pointer/target_rect" read as though both were absent when one was."""
+    s = sequence()
+    del s["clips"][0]["events"][1]["target_rect"]
+    finding = next(
+        f
+        for f in verify_storyboard.verify(s)["findings"]
+        if f["code"] == "evidence_missing"
+    )
+    assert finding["missing_field"] == "events[].target_rect"
+    assert "pointer" not in finding["message"]

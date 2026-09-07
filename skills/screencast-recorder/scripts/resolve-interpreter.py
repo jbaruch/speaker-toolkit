@@ -48,6 +48,10 @@ def resolve(target: Path) -> dict:
     except (OSError, UnicodeDecodeError) as e:
         raise ValueError(f"cannot read {database}: {e}") from e
 
+    # `[]` and `null` are valid JSON; .get() on them raises rather than reporting.
+    if not isinstance(payload, dict):
+        raise ValueError(f"{database} must contain a JSON object — {REPAIR}")
+
     config = payload.get("config")
     if not isinstance(config, dict):
         raise ValueError(f"{database} has no config object — {REPAIR}")

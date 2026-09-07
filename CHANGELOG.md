@@ -168,6 +168,20 @@ Python 3 — and belongs in a script rather than in instructions re-implemented 
 session. It emits the resolved interpreter as JSON and exits non-zero with the
 repair path named.
 
+A ninth round showed the cost of fixing an instance rather than a class one more
+time: `content_bounds: null` was fixed in the eighth round and its sibling
+`pan: null` was not, so a declared pan requirement could skip both its validation
+and the motion check and still return `ok: true` with no pan performed. Every
+validator now guards on key presence rather than a non-null value, swept in one
+pass, with a parametrized test that pokes `null` into ten declared positions.
+
+The resolver had the same shape at its own boundary: `[]` and `null` are valid
+JSON, and `.get()` on them raised instead of reporting the repair path.
+
+The click evidence gap also said "pointer/target_rect" when only one was absent;
+it names the missing field now, matching the pattern every other evidence gap
+follows.
+
 
 ## 0.20.137 — 2026-09-07
 

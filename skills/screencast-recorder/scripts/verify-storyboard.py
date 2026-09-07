@@ -210,15 +210,19 @@ def check_evidence(row, clip, narration, delivery, findings):
 
     if req.get("click_on_target"):
         for click in (e for e in clip.get("events") or [] if e.get("type") == "click"):
-            if click.get("pointer") is None or click.get("target_rect") is None:
+            absent = [f for f in ("pointer", "target_rect") if click.get(f) is None]
+            if absent:
                 blocked.add("click_on_target")
                 findings.append(
                     _finding(
                         "evidence_missing",
                         MOTION,
                         subject,
-                        "a click event carries no pointer/target_rect, so it cannot be judged",
+                        "a click event carries no "
+                        + " or ".join(absent)
+                        + ", so it cannot be judged",
                         requirement="click_on_target",
+                        missing_field=", ".join(f"events[].{f}" for f in absent),
                         at_seconds=click.get("t"),
                     )
                 )
@@ -550,8 +554,8 @@ def _manifest_problem(where, manifest):
         return None  # absence is handled by the evidence gate, with its axis
     if not isinstance(manifest, dict):
         return f"{where} must be an object"
-    viewport = manifest.get("viewport")
-    if viewport is not None:
+    if "viewport" in manifest:
+        viewport = manifest["viewport"]
         if not isinstance(viewport, dict):
             return f"{where}.viewport must be an object"
         for side in ("width", "height"):
@@ -559,8 +563,8 @@ def _manifest_problem(where, manifest):
             # _is_number first: `NaN <= 0` is False, so a bare comparison admits NaN.
             if not _is_number(size) or size <= 0:
                 return f"{where}.viewport.{side} must be a positive number"
-    labels = manifest.get("labels")
-    if labels is not None:
+    if "labels" in manifest:
+        labels = manifest["labels"]
         if not isinstance(labels, list):
             return f"{where}.labels must be a list"
         for index, label in enumerate(labels):
@@ -570,8 +574,7 @@ def _manifest_problem(where, manifest):
                 return f"{where}.labels[{index}].text must be a string"
             if "height_px" in label and not _is_number(label["height_px"]):
                 return f"{where}.labels[{index}].height_px must be a finite number"
-    tabs = manifest.get("tabs")
-    if tabs is not None and not isinstance(tabs, list):
+    if "tabs" in manifest and not isinstance(manifest["tabs"], list):
         return f"{where}.tabs must be a list"
     for name, keys in (
         ("scroll", ("x", "y")),
@@ -589,8 +592,7 @@ def _manifest_problem(where, manifest):
                 return f"{where}.{name} must carry {key}"
             if not _is_number(block[key]):
                 return f"{where}.{name}.{key} must be a finite number"
-    zoom = manifest.get("zoom")
-    if zoom is not None and not _is_number(zoom):
+    if "zoom" in manifest and not _is_number(manifest["zoom"]):
         return f"{where}.zoom must be a finite number"
     return None
 
@@ -623,9 +625,9 @@ def structural_problem(sequence):
             problem = _manifest_problem(f"clips[{index}].{section}", clip.get(section))
             if problem:
                 return problem
-        events = clip.get("events")
-        if events is not None and not isinstance(events, list):
+        if "events" in clip and not isinstance(clip["events"], list):
             return f"clips[{index}].events must be a list"
+        events = clip.get("events") or []
         for position, event in enumerate(events or []):
             at = f"clips[{index}].events[{position}]"
             if not isinstance(event, dict):
@@ -635,15 +637,13 @@ def structural_problem(sequence):
                     return f"{at}.{field} must be a finite number"
             if event.get("type") == "click":
                 for field, size in (("pointer", 2), ("target_rect", 4)):
-                    value = event.get(field)
-                    if value is not None and not _numbers(value, size):
+                    if field in event and not _numbers(event[field], size):
                         return f"{at}.{field} must be {size} numbers"
 
     for index, row in enumerate(sequence.get("rows", [])):
-        require = row.get("require")
-        if require is not None and not isinstance(require, dict):
+        if "require" in row and not isinstance(row["require"], dict):
             return f"rows[{index}].require must be an object"
-        require = require or {}
+        require = row.get("require") or {}
         if "content_bounds" in require:
             bounds = require["content_bounds"]
             # `null` passed validation and then made the geometry check skip
@@ -659,8 +659,8 @@ def structural_problem(sequence):
             margin = require["margin_px"]
             if not _is_number(margin) or margin < 0:
                 return f"rows[{index}].require.margin_px must be a non-negative finite number"
-        pan = require.get("pan")
-        if pan is not None:
+        if "pan" in require:
+            pan = require["pan"]
             if not isinstance(pan, dict):
                 return f"rows[{index}].require.pan must be an object"
             # A pan requirement with no threshold defaulted to 0, which any
@@ -672,8 +672,8 @@ def structural_problem(sequence):
                     f"rows[{index}].require.pan.min_abs_delta must be a "
                     "positive finite number"
                 )
-        proof = row.get("proof_frame_t")
-        if proof is not None:
+        if "proof_frame_t" in row:
+            proof = row["proof_frame_t"]
             if not _is_number(proof):
                 return f"rows[{index}].proof_frame_t must be a finite number"
             # A proof frame with no phrase names no moment to prove against.
