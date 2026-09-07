@@ -118,6 +118,17 @@ closed the class.
 
 Two loaded-surface advisories: issue history and attached rationale moved here.
 
+A fifth round found two more unvalidated numbers — `delivery.scale` and a pan
+threshold — so the response stopped being "validate that one too". A sweep test
+now injects `NaN` at all 23 numeric positions in the contract and requires each
+to be refused. It immediately found four gaps the review had not named:
+`viewport.width`/`height` guarded with `size <= 0`, which admits `NaN` because
+`NaN <= 0` is false, and both narration word times checked for `int`/`float`
+without finiteness. Instance-patching had missed them; the sweep did not.
+
+Also refused: a row declaring `proof_frame_t` with no `phrase`, which was
+silently skipped so a sibling row's pass carried the whole time axis.
+
 
 ## 0.20.137 — 2026-09-07
 

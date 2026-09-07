@@ -645,7 +645,7 @@ def test_main_exits_two_on_a_malformed_sequence(verify_storyboard, tmp_path, cap
         ),
         (
             {"narration": {"words": [{"word": "x", "start": "0", "end": 1}]}},
-            "narration.words[0].start must be a number",
+            "narration.words[0].start must be a finite number",
         ),
     ],
 )
@@ -815,3 +815,95 @@ def test_seam_tolerance_does_not_default_a_missing_key_to_zero(verify_storyboard
     v = verify_storyboard.verify(s)
     assert v["ok"] is False
     assert "scroll" in {f.get("field") for f in v["findings"]}
+
+
+# --- every numeric in the contract must be finite (PR #432 round 5) -----------
+#
+# Five rounds of "this particular number was not validated". This sweeps the
+# whole contract instead of naming instances: a NaN anywhere a number is read
+# must be refused, because NaN satisfies every comparison it is tested against.
+
+NUMERIC_PATHS = [
+    ("delivery", "width"),
+    ("delivery", "height"),
+    ("delivery", "min_label_px"),
+    ("delivery", "scale"),
+    ("clips", 0, "entry", "viewport", "width"),
+    ("clips", 0, "entry", "viewport", "height"),
+    ("clips", 0, "entry", "zoom"),
+    ("clips", 0, "entry", "scroll", "x"),
+    ("clips", 0, "entry", "scroll", "y"),
+    ("clips", 0, "entry", "transform", "pan_x"),
+    ("clips", 0, "entry", "transform", "zoom"),
+    ("clips", 0, "entry", "labels", 0, "height_px"),
+    ("clips", 0, "events", 0, "delta"),
+    ("clips", 0, "events", 0, "t"),
+    ("clips", 0, "events", 1, "pointer", 0),
+    ("clips", 0, "events", 1, "target_rect", 0),
+    ("rows", 0, "proof_frame_t"),
+    ("rows", 0, "require", "margin_px"),
+    ("rows", 0, "require", "content_bounds", 0),
+    ("rows", 0, "require", "pan", "min_abs_delta"),
+    ("narration", "words", 0, "start"),
+    ("narration", "words", 0, "end"),
+    ("seam_tolerances", "scroll"),
+]
+
+
+def _poke(doc, path, value):
+    node = doc
+    for step in path[:-1]:
+        node = node[step]
+    node[path[-1]] = value
+    return doc
+
+
+@pytest.mark.parametrize("path", NUMERIC_PATHS, ids=lambda p: ".".join(map(str, p)))
+def test_a_nan_anywhere_a_number_is_read_is_refused(verify_storyboard, path):
+    doc = _poke(sequence(), path, float("nan"))
+    assert verify_storyboard.structural_problem(doc) is not None, path
+
+
+@pytest.mark.parametrize("path", NUMERIC_PATHS, ids=lambda p: ".".join(map(str, p)))
+def test_the_baseline_sequence_is_finite_everywhere_it_is_poked(
+    verify_storyboard, path
+):
+    """Guards the sweep: a path that does not exist would make the test vacuous."""
+    node = sequence()
+    for step in path:
+        node = node[step]
+    assert isinstance(node, (int, float)) and not isinstance(node, bool), path
+
+
+def test_a_nan_scale_cannot_pass_readability(verify_storyboard, tmp_path, capsys):
+    """scale=NaN made a 1px label meet a 14px floor: NaN < 14 is False."""
+    s = sequence()
+    s["delivery"]["scale"] = float("nan")
+    s["clips"][0]["entry"]["labels"] = [{"text": "release_docs", "height_px": 1}]
+    p = tmp_path / "seq.json"
+    p.write_text(json.dumps(s), encoding="utf-8")
+    assert verify_storyboard.main([str(p)]) == 2
+    assert "delivery.scale must be a finite number" in capsys.readouterr().err
+
+
+def test_a_proof_frame_without_a_phrase_is_refused(verify_storyboard):
+    """Silently skipping it let a sibling row's pass carry the whole time axis."""
+    s = sequence()
+    del s["rows"][0]["phrase"]
+    assert (
+        verify_storyboard.structural_problem(s)
+        == "rows[0] declares proof_frame_t but no phrase to prove it against"
+    )
+
+
+def test_a_blank_phrase_is_refused_like_a_missing_one(verify_storyboard):
+    s = sequence()
+    s["rows"][0]["phrase"] = "   "
+    assert "no phrase to prove it against" in verify_storyboard.structural_problem(s)
+
+
+def test_one_incomplete_row_is_not_masked_by_a_valid_sibling(verify_storyboard):
+    """The reviewer's case: a good row's pass must not cover an unchecked one."""
+    s = sequence()
+    s["rows"].append({"id": "r2", "clip": "a0-hook", "proof_frame_t": 3.1})
+    assert verify_storyboard.structural_problem(s) is not None

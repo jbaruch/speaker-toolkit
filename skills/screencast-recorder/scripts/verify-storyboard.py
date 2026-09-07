@@ -38,6 +38,7 @@ import json
 import math
 import sys
 from pathlib import Path
+from typing import TypeGuard
 
 # Axis names, fixed so a consumer can group findings without string guessing.
 SEMANTIC, GEOMETRY, MOTION, TIME, PIXELS = (
@@ -494,7 +495,7 @@ def check_seam(previous, following, tolerances, findings, exercised):
         )
 
 
-def _is_number(value):
+def _is_number(value) -> TypeGuard[float]:
     """A real, finite number. `bool` is an `int` in Python and is not one.
 
     Finiteness matters: JSON admits NaN, and every comparison against NaN is
@@ -532,11 +533,8 @@ def _manifest_problem(where, manifest):
             return f"{where}.viewport must be an object"
         for side in ("width", "height"):
             size = viewport.get(side)
-            if (
-                not isinstance(size, (int, float))
-                or isinstance(size, bool)
-                or size <= 0
-            ):
+            # _is_number first: `NaN <= 0` is False, so a bare comparison admits NaN.
+            if not _is_number(size) or size <= 0:
                 return f"{where}.viewport.{side} must be a positive number"
     labels = manifest.get("labels")
     if labels is not None:
@@ -603,6 +601,9 @@ def structural_problem(sequence):
             at = f"clips[{index}].events[{position}]"
             if not isinstance(event, dict):
                 return f"{at} must be an object"
+            for field in ("t", "delta"):
+                if field in event and not _is_number(event[field]):
+                    return f"{at}.{field} must be a finite number"
             if event.get("type") == "click":
                 for field, size in (("pointer", 2), ("target_rect", 4)):
                     value = event.get(field)
@@ -613,9 +614,43 @@ def structural_problem(sequence):
         require = row.get("require")
         if require is not None and not isinstance(require, dict):
             return f"rows[{index}].require must be an object"
-        bounds = (require or {}).get("content_bounds")
+        require = require or {}
+        bounds = require.get("content_bounds")
         if bounds is not None and not _numbers(bounds, 4):
             return f"rows[{index}].require.content_bounds must be 4 numbers"
+        if "margin_px" in require and not _is_number(require["margin_px"]):
+            return f"rows[{index}].require.margin_px must be a finite number"
+        pan = require.get("pan")
+        if pan is not None:
+            if not isinstance(pan, dict):
+                return f"rows[{index}].require.pan must be an object"
+            if "min_abs_delta" in pan and not _is_number(pan["min_abs_delta"]):
+                return (
+                    f"rows[{index}].require.pan.min_abs_delta must be a finite number"
+                )
+        proof = row.get("proof_frame_t")
+        if proof is not None:
+            if not _is_number(proof):
+                return f"rows[{index}].proof_frame_t must be a finite number"
+            # A proof frame with no phrase names no moment to prove against.
+            # Skipping it silently let the time axis report pass for the sequence.
+            phrase = row.get("phrase")
+            if not isinstance(phrase, str) or not phrase.strip():
+                return f"rows[{index}] declares proof_frame_t but no phrase to prove it against"
+
+    delivery = sequence.get("delivery") or {}
+    if not isinstance(delivery, dict):
+        return "delivery must be an object"
+    for field in ("width", "height", "min_label_px", "scale"):
+        if field in delivery and not _is_number(delivery[field]):
+            return f"delivery.{field} must be a finite number"
+
+    tolerances = sequence.get("seam_tolerances") or {}
+    if not isinstance(tolerances, dict):
+        return "seam_tolerances must be an object"
+    for field, value in tolerances.items():
+        if not _is_number(value):
+            return f"seam_tolerances.{field} must be a finite number"
 
     narration = sequence.get("narration") or {}
     if not isinstance(narration, dict):
@@ -627,10 +662,8 @@ def structural_problem(sequence):
         if not isinstance(word, dict):
             return f"narration.words[{index}] must be an object"
         for field in ("start", "end"):
-            if not isinstance(word.get(field), (int, float)) or isinstance(
-                word.get(field), bool
-            ):
-                return f"narration.words[{index}].{field} must be a number"
+            if not _is_number(word.get(field)):
+                return f"narration.words[{index}].{field} must be a finite number"
     return None
 
 

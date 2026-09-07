@@ -7,8 +7,7 @@ description: >
   visual proof occurs while its phrase is actually spoken. Use when checking a
   demo or screencast take before shipping it, when a recorded sequence must be
   proved rather than trusted, or when a clip join must be shown to be invisible.
-  Verification only — this skill does not record; the recording lane is issue
-  #364 and is not implemented.
+  Verification only — this skill does not record.
 user_invocable: true
 ---
 

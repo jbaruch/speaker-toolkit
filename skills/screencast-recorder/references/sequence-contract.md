@@ -91,9 +91,15 @@ A seam field absent from either manifest is refused for the same reason: two
 absences compare equal, and equality between nothing and nothing is not
 agreement.
 
-A document that does not satisfy the contract — `clips`/`rows` not lists of
-objects with non-empty string ids, `narration` not an object — exits 2 with the
-violation named, rather than failing later on a missing key.
+A document that does not satisfy the contract exits 2 with the violation named,
+rather than failing later on a missing key. Validation covers structure
+(`clips`/`rows` as lists of objects with non-empty string ids), completeness
+(`scroll` carries `x`/`y`, `transform` carries `pan_x`/`pan_y`/`zoom`, a
+`proof_frame_t` has a `phrase`), and **finiteness of every number**.
+
+Finiteness is not pedantry: JSON admits `NaN`, and every comparison against
+`NaN` is false, so a `NaN` measurement or threshold satisfies whatever it is
+tested against. A `bool` is an `int` in Python and is rejected as a coordinate.
 
 Exit 0 when every checked axis passes, 1 on any finding, 2 on usage error.
 
