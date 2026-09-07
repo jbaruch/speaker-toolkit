@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.137 — 2026-09-07
+
 ### Reconcile a macOS worker's clean exit after root metadata disappears
 
 The #219 native trace captured a root becoming unavailable to psutil before
