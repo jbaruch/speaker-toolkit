@@ -882,3 +882,51 @@ def test_markers_past_the_bound_are_simply_not_found(deckops_doctor, tmp_path):
     r = deckops_doctor.inspect_container(p)
     assert r["readable"] is True
     assert r["has_module"] is False
+
+
+def _lzma_pptm(path: Path) -> Path:
+    """A well-formed .pptm whose member uses LZMA — a codec PowerPoint never writes."""
+    import zipfile
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_LZMA) as z:
+        z.writestr("ppt/vbaProject.bin", NEW_VBA)
+    return path
+
+
+def test_an_unexpected_codec_is_refused_before_decoding(deckops_doctor, tmp_path):
+    """The root fix for one-decoder-error-per-review round.
+
+    The archive here is perfectly valid — decoding would SUCCEED and find the
+    markers. It is refused anyway, because a real container never uses this codec
+    and every codec brings its own exception type to escape through.
+    """
+    r = deckops_doctor.inspect_container(_lzma_pptm(tmp_path / "DeckOps.pptm"))
+    assert r["exists"] is True
+    assert r["readable"] is False
+    assert r["has_module"] is False
+
+
+def test_the_codecs_a_real_container_uses_are_allowed(deckops_doctor, tmp_path):
+    """STORED and DEFLATE both read normally — the allowlist is not a blanket no."""
+    import zipfile
+
+    for method, name in (
+        (zipfile.ZIP_STORED, "stored"),
+        (zipfile.ZIP_DEFLATED, "defl"),
+    ):
+        p = tmp_path / f"{name}.pptm"
+        with zipfile.ZipFile(p, "w", method) as z:
+            z.writestr("ppt/vbaProject.bin", NEW_VBA)
+        r = deckops_doctor.inspect_container(p)
+        assert r["readable"] is True, name
+        assert r["has_module"] is True, name
+        assert r["has_stamp_macro"] is True, name
+
+
+def test_the_allowlist_holds_only_what_powerpoint_writes(deckops_doctor):
+    import zipfile
+
+    assert deckops_doctor.ALLOWED_COMPRESSION == frozenset(
+        {zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED}
+    )

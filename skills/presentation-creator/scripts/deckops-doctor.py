@@ -51,6 +51,7 @@ import argparse
 import json
 import subprocess
 import sys
+import lzma
 import zipfile
 import zlib
 from pathlib import Path
@@ -105,8 +106,19 @@ CONTAINER_READ_ERRORS = (
     KeyError,  # member absent between namelist() and read()
     EOFError,  # stream ends mid-member
     RuntimeError,  # encrypted member, no password
+    lzma.LZMAError,  # corrupt LZMA stream; unreachable via ALLOWED_COMPRESSION,
+    # kept because a decoder error must never be the thing that escapes
     OSError,  # unreadable, permissions, a directory, I/O failure
 )
+
+# The compression methods PowerPoint actually writes. Checked BEFORE decoding, so
+# an archive declaring anything else is reported unreadable without its codec ever
+# being invoked. This is the root fix for a run of one-decoder-error-per-review:
+# every codec zipfile supports raises its own exception type (zlib.error,
+# lzma.LZMAError, and whatever a future Python adds), and enumerating them chases
+# a set that grows. Refusing to decode what a real container never uses closes the
+# whole family instead of its current members.
+ALLOWED_COMPRESSION = frozenset({zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED})
 
 VBA_PART = "ppt/vbaProject.bin"
 # Cap on the bytes read out of that member. Only marker presence matters, and a
@@ -213,6 +225,8 @@ def inspect_container(path: Path) -> dict:
         with zipfile.ZipFile(path) as z:
             if VBA_PART not in z.namelist():
                 report["readable"] = True
+                return report
+            if z.getinfo(VBA_PART).compress_type not in ALLOWED_COMPRESSION:
                 return report
             with z.open(VBA_PART) as member:
                 blob = member.read(VBA_PART_READ_LIMIT)

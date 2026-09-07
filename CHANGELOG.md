@@ -82,6 +82,17 @@ container's part is ~88 KB, so nothing is given up by refusing to decompress an
 arbitrary amount on the strength of a size field a damaged or hostile archive
 controls. A test pins both halves of that trade: markers inside the bound are
 found, markers past it are not, and neither case raises.
+
+`lzma.LZMAError` from a corrupt LZMA member was the sixth read-error class found
+one round at a time, which was enough evidence that enumerating them was chasing
+a set that grows: every codec `zipfile` supports raises its own exception type,
+and a future Python can add another. The fix moved up a level. `ALLOWED_COMPRESSION`
+holds the two methods PowerPoint actually writes, STORED and DEFLATE, and is
+checked BEFORE decoding, so an archive declaring anything else is reported
+unreadable without its codec ever being invoked. The test proves the point with a
+perfectly valid LZMA container whose markers decoding WOULD find: it is refused
+anyway. `lzma.LZMAError` is in the tuple as well, unreachable by construction and
+kept because a decoder error must never be the thing that escapes.
 ## 0.20.133 — 2026-09-07
 
 ### Renew the CI cache action's runtime
