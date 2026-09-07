@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.139 — 2026-09-07
+
 ### A wrong path reads as a wrong path
 
 `resolve-interpreter.py` decided between "vault root" and "database path" with
