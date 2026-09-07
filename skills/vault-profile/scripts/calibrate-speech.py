@@ -42,7 +42,7 @@ from local_media_contract import LocalMediaError  # noqa: E402
 from local_media_download import download_youtube_audio  # noqa: E402
 from local_media_evidence import probe_local_media  # noqa: E402
 from local_media_transcription import transcribe_local_words  # noqa: E402
-from local_media_words import WordSampleError  # noqa: E402
+from local_media_words import WordSampleError, WordSpanError  # noqa: E402
 from speech_calibration import calibrate  # noqa: E402
 from speech_cohort import plan_cohort, sample_window  # noqa: E402
 from speech_rates import SpeechRateError, encode  # noqa: E402
@@ -210,6 +210,20 @@ def execute(args: argparse.Namespace) -> dict:
                                 "schema_version": 1,
                                 "code": reason,
                                 "word_timing": exc.word_timing,
+                            }
+                        ),
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                if isinstance(exc, WordSpanError):
+                    # How widespread the defect is, so a cohort run reports
+                    # whether the all-or-nothing refusal is over-rejecting.
+                    print(
+                        json.dumps(
+                            {
+                                "schema_version": 1,
+                                "code": reason,
+                                "word_spans": exc.word_spans,
                             }
                         ),
                         file=sys.stderr,

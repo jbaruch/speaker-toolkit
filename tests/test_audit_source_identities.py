@@ -1102,3 +1102,132 @@ def test_bare_year_catalog_date_accepts_an_upload_within_that_year(
 
     assert "provider_upload_predates_catalog" not in finding_codes(report)
     assert report["talks"][0]["comparison"]["upload_predates_catalog_date"] is False
+
+
+# --- transient is not link rot (#429) ----------------------------------------
+#
+# yt-dlp reports "the video is gone" and "I could not reach YouTube just now"
+# through the same non-zero exit, so both arrived as one high-priority finding.
+# #429 was filed for two recordings on that basis; both resolve fine on a later
+# run. The operator's next action differs — decide about derived claims, or
+# retry — so the report has to distinguish them.
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "ERROR: [youtube] aBc: Video unavailable",
+        "ERROR: [youtube] aBc: This video is not available",
+        "ERROR: [youtube] aBc: This video has been removed by the uploader",
+        "ERROR: [youtube] aBc: Private video. Sign in if you have been granted access",
+        "The account associated with this video has been terminated",
+    ],
+)
+def test_an_upstream_gone_message_is_not_retryable(audit_source_identities, message):
+    result = audit_source_identities.classify_fetch_failure(message)
+    assert result == {"failure_class": "upstream_gone", "retryable": False}
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "ERROR: unable to download webpage: <urlopen error timed out>",
+        "ERROR: HTTP Error 429: Too Many Requests",
+        "ERROR: HTTP Error 503: Service Unavailable",
+        "ERROR: [youtube] Sign in to confirm you're not a bot",
+        "cannot run yt-dlp: [Errno 60] Operation timed out",
+        "ERROR: Connection reset by peer",
+    ],
+)
+def test_a_transient_message_is_retryable(audit_source_identities, message):
+    result = audit_source_identities.classify_fetch_failure(message)
+    assert result == {"failure_class": "transient", "retryable": True}
+
+
+@pytest.mark.parametrize("message", ["something new", "", None, 7, "ERROR:"])
+def test_an_unrecognised_message_is_never_guessed_into_a_bucket(
+    audit_source_identities, message
+):
+    """Guessing is what produced the wrong issue; unknown stays unknown."""
+    result = audit_source_identities.classify_fetch_failure(message)
+    assert result == {"failure_class": "unclassified", "retryable": None}
+
+
+def test_matching_is_case_insensitive(audit_source_identities):
+    assert (
+        audit_source_identities.classify_fetch_failure("VIDEO UNAVAILABLE")[
+            "failure_class"
+        ]
+        == "upstream_gone"
+    )
+
+
+def test_upstream_gone_is_checked_before_transient(audit_source_identities):
+    """A takedown notice served over a flaky connection is still a takedown."""
+    message = "ERROR: unable to download webpage; This video is not available"
+    assert (
+        audit_source_identities.classify_fetch_failure(message)["failure_class"]
+        == "upstream_gone"
+    )
+
+
+def test_every_classification_carries_both_fields(audit_source_identities):
+    for message in ("Video unavailable", "timed out", "mystery"):
+        result = audit_source_identities.classify_fetch_failure(message)
+        assert set(result) == {"failure_class", "retryable"}
+
+
+def test_each_class_has_its_own_operator_message(audit_source_identities):
+    messages = audit_source_identities.FETCH_FAILURE_MESSAGES
+    assert set(messages) == {"upstream_gone", "transient", "unclassified"}
+    assert len(set(messages.values())) == 3
+    assert "retry" in messages["transient"]
+
+
+@pytest.mark.parametrize(
+    "message,failure_class,retryable",
+    [
+        ("ERROR: [youtube] X: This video is not available", "upstream_gone", False),
+        ("ERROR: unable to download webpage", "transient", True),
+        ("ERROR: brand new failure mode", "unclassified", None),
+    ],
+)
+def test_a_fetch_failure_carries_its_class_into_the_report(
+    audit_source_identities, message, failure_class, retryable
+):
+    """The classification has to reach the operator, not just the helper."""
+
+    def failing_fetcher(video_id):
+        raise audit_source_identities.MetadataFetchError(message)
+
+    database = {"talks": [talk()]}
+    report, _calls = _audit(audit_source_identities, database, None, failing_fetcher)
+
+    finding = next(
+        item for item in report["findings"] if item["code"] == "metadata_fetch_failed"
+    )
+    assert finding["evidence"]["failure_class"] == failure_class
+    assert finding["evidence"]["retryable"] is retryable
+    assert finding["evidence"]["error"] == message
+
+    source = next(item for item in report["sources"] if item["fetch_status"] == "error")
+    assert source["failure_class"] == failure_class
+    assert source["retryable"] is retryable
+
+
+def test_a_transient_failure_reads_differently_from_link_rot(
+    audit_source_identities,
+):
+    """#429 was filed because these were indistinguishable in the output."""
+
+    def failing_fetcher(video_id):
+        raise audit_source_identities.MetadataFetchError("ERROR: HTTP Error 429")
+
+    report, _calls = _audit(
+        audit_source_identities, {"talks": [talk()]}, None, failing_fetcher
+    )
+    finding = next(
+        item for item in report["findings"] if item["code"] == "metadata_fetch_failed"
+    )
+    assert "retry" in finding["message"]
+    assert finding["evidence"]["retryable"] is True

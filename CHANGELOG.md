@@ -1,5 +1,36 @@
 # Changelog
 
+### Tell a dead recording from a bad minute, and count the degenerate words
+
+Two places where the evidence layer under-reported what it had actually seen.
+
+`audit-source-identities.py` surfaced every yt-dlp failure as one
+`metadata_fetch_failed` at high priority, so "the provider no longer serves this
+recording" and "I could not reach YouTube just now" were indistinguishable in the
+output. #429 was filed on that basis for two recordings; re-checking them found
+both resolve fine — they were transient failures reported as link rot. The
+operator's next action differs completely between the two, so findings now carry
+`failure_class` (`upstream_gone` / `transient` / `unclassified`) and `retryable`,
+matched against an enumerated set of yt-dlp signatures. An unrecognised message
+stays `unclassified` rather than being sorted into a bucket, since guessing is
+what produced the wrong issue.
+
+`local_media_words.py` refused a whole ten-minute sample on the first word with
+`end == start`, which excluded 11 of 24 recordings in the last cohort run and
+left the speaker profile at `low_confidence`. Whether that is over-rejection or a
+genuine alignment guard depends on how many degenerate words a failing sample
+carries, and nothing measured it — the stored `.segments.json` artifacts keep no
+word-level data, so the count has to come off the sample while it is in hand.
+
+The refusal is deliberately unchanged. `WordSpanError` now carries a bounded,
+numeric-only report — word count, non-positive count, first index, never token
+text — and `calibrate-speech.py` emits it alongside the existing `word_timing`
+diagnostic. A cohort run therefore now reports whether the rule is rejecting one
+bad word or half of them, which is the measurement #431 asks for before anyone
+changes the admission rule. Choosing a threshold first would be picking a number
+blind.
+
+
 ## 0.20.138 — 2026-09-07
 
 ### A recorded demo can now be judged instead of trusted

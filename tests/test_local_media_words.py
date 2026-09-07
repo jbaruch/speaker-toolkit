@@ -266,3 +266,102 @@ def test_word_cannot_borrow_another_segments_quality_metadata(words):
     receipt["words"][1]["segment_index"] = 0
     with pytest.raises(words.WordSampleError):
         words.validate_word_sample(receipt)
+
+
+# --- degenerate-span instrumentation (#431) ----------------------------------
+#
+# A single word with end == start refuses the whole ten-minute sample, which
+# excluded 11 of 24 recordings in the last cohort run. Whether that is
+# over-rejection or a genuine alignment guard depends on how many degenerate
+# words a failing sample carries — and nothing measured it. The refusal is
+# unchanged here; only the receipt is richer.
+
+
+def _spans(pairs):
+    return [
+        {
+            "text": f"w{i}",
+            "start_seconds": begin,
+            "end_seconds": end,
+            "probability": 0.9,
+            "segment_index": 0,
+        }
+        for i, (begin, end) in enumerate(pairs)
+    ]
+
+
+def test_a_clean_sample_reports_no_degenerate_spans(words):
+    assert words.nonpositive_span_report(_spans([(0.0, 0.5), (0.5, 1.0)])) == {
+        "schema_version": 1,
+        "word_count": 2,
+        "nonpositive_count": 0,
+        "first_index": None,
+    }
+
+
+def test_the_report_counts_every_degenerate_span_not_just_the_first(words):
+    """One versus many is the entire question #431 asks."""
+    report = words.nonpositive_span_report(
+        _spans([(0.0, 0.5), (0.5, 0.5), (0.6, 1.0), (1.0, 1.0), (1.2, 1.1)])
+    )
+    assert report["word_count"] == 5
+    assert report["nonpositive_count"] == 3
+    assert report["first_index"] == 1
+
+
+def test_the_report_judges_nothing_and_refuses_nothing(words):
+    """A measurement; admission is decided elsewhere and is unchanged."""
+    assert words.nonpositive_span_report(_spans([(1.0, 1.0)]))["nonpositive_count"] == 1
+
+
+@pytest.mark.parametrize("garbage", [None, "words", 7, {}])
+def test_the_report_survives_a_non_list(words, garbage):
+    report = words.nonpositive_span_report(garbage)
+    assert report["word_count"] == 0 and report["nonpositive_count"] == 0
+
+
+def test_the_report_skips_entries_it_cannot_read(words):
+    """Malformed entries count toward the total but never as degenerate, so the
+    share is not inflated by unrelated corruption."""
+    report = words.nonpositive_span_report(
+        [{"start_seconds": 0.0, "end_seconds": 0.0}, "not-a-word", {"no": "spans"}]
+    )
+    assert report["word_count"] == 3
+    assert report["nonpositive_count"] == 1
+
+
+def test_a_boolean_is_not_a_timestamp(words):
+    report = words.nonpositive_span_report(
+        [{"start_seconds": True, "end_seconds": True}]
+    )
+    assert report["nonpositive_count"] == 0
+
+
+def test_the_refusal_now_carries_how_widespread_the_defect_is(words):
+    """Same verdict as before; the receipt says one word or half of them."""
+    result = normalized(words)
+    result["words"][0]["end_seconds"] = result["words"][0]["start_seconds"]
+    with pytest.raises(words.WordSpanError) as exc:
+        words.validate_word_sample(result)
+    assert exc.value.reason_code == "whisper_word_sample_invalid_word_nonpositive_span"
+    assert exc.value.word_spans["nonpositive_count"] == 1
+    assert exc.value.word_spans["word_count"] == len(result["words"])
+    assert exc.value.word_spans["first_index"] == 0
+    assert "First" not in str(exc.value)
+
+
+def test_the_span_error_is_still_a_local_media_error(words):
+    """Callers catching LocalMediaError are unaffected by the new type."""
+    assert issubclass(words.WordSpanError, words.LocalMediaError)
+
+
+def test_the_span_report_is_copied_not_aliased(words):
+    report = {
+        "schema_version": 1,
+        "word_count": 2,
+        "nonpositive_count": 1,
+        "first_index": 0,
+    }
+    error = words.WordSpanError(report)
+    report["nonpositive_count"] = 999
+    assert error.word_spans["nonpositive_count"] == 1

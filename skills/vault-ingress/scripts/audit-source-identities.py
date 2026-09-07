@@ -85,6 +85,71 @@ CANDIDATE_CONFLICT_CODES = {
     "existing_slides_url_conflict": "slides_url",
 }
 YT_DLP_TIMEOUT_SECONDS = 60
+
+# yt-dlp reports "the upstream video is gone" and "I could not reach YouTube
+# just now" through the same non-zero exit, so both arrived as one high-priority
+# finding. A transient minute then read as link rot: #429 was filed for two
+# recordings that resolve fine on a later run.
+#
+# Signatures are matched case-insensitively against yt-dlp's own message. An
+# unrecognised message stays `unclassified` — never silently sorted into either
+# bucket, because guessing is what produced the wrong issue in the first place.
+UPSTREAM_GONE_SIGNATURES = (
+    "video unavailable",
+    "this video is not available",
+    "this video has been removed",
+    "private video",
+    "video has been removed by the uploader",
+    "account associated with this video has been terminated",
+    "this video is no longer available",
+    "removed for violating",
+)
+TRANSIENT_SIGNATURES = (
+    "unable to download webpage",
+    "temporary failure in name resolution",
+    "connection reset",
+    "connection refused",
+    "connection timed out",
+    "read timed out",
+    "timed out",
+    "http error 429",
+    "http error 500",
+    "http error 502",
+    "http error 503",
+    "http error 504",
+    "sign in to confirm you're not a bot",
+    "cannot run yt-dlp",
+    "network is unreachable",
+    "ssl",
+)
+
+
+FETCH_FAILURE_MESSAGES = {
+    "upstream_gone": "the provider no longer serves this recording",
+    "transient": "yt-dlp metadata capture failed transiently; retry before acting",
+    "unclassified": "yt-dlp metadata capture failed",
+}
+
+
+def classify_fetch_failure(message: Any) -> dict:
+    """Sort a fetch failure into upstream-gone, transient, or unclassified.
+
+    Deterministic string matching over an enumerated signature set, so it is a
+    script rather than a judgement (`rules/script-delegation.md`). The point is
+    the operator's next action: an upstream-gone recording needs a decision
+    about its derived claims; a transient one needs a retry; an unclassified one
+    needs reading.
+    """
+    text = message.casefold() if isinstance(message, str) else ""
+    for signature in UPSTREAM_GONE_SIGNATURES:
+        if signature in text:
+            return {"failure_class": "upstream_gone", "retryable": False}
+    for signature in TRANSIENT_SIGNATURES:
+        if signature in text:
+            return {"failure_class": "transient", "retryable": True}
+    return {"failure_class": "unclassified", "retryable": None}
+
+
 YOUTUBE_ID_RE = re.compile(r"[A-Za-z0-9_-]{11}")
 CLIP_MARKERS = frozenset(
     {
@@ -908,14 +973,17 @@ def audit_database(
             source["fetch_status"] = "error"
             source["error"] = str(exc)
             failure_code = lane_code("metadata_fetch_failed")
+            classification = classify_fetch_failure(str(exc))
+            source["failure_class"] = classification["failure_class"]
+            source["retryable"] = classification["retryable"]
             findings.append(
                 _finding(
                     failure_code,
                     video_id,
                     indexes,
                     filenames,
-                    "yt-dlp metadata capture failed",
-                    {"error": str(exc)},
+                    FETCH_FAILURE_MESSAGES[classification["failure_class"]],
+                    {"error": str(exc), **classification},
                     "high" if failure_code in ERROR_CODES else "medium",
                 )
             )
