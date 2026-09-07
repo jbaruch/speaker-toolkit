@@ -82,6 +82,14 @@ container's part is ~88 KB, so nothing is given up by refusing to decompress an
 arbitrary amount on the strength of a size field a damaged or hostile archive
 controls. A test pins both halves of that trade: markers inside the bound are
 found, markers past it are not, and neither case raises.
+## 0.20.133 — 2026-09-07
+
+### Renew the CI cache action's runtime
+
+Both dependency caches use `actions/cache@v6`, which declares Node.js 24, to
+remove the runner's Node.js 20 deprecation warning (#417). Cache keys, paths,
+restore/save defaults, and test jobs are unchanged. The cache-only legacy
+Dependabot exclusion is removed so weekly action updates can renew this pin.
 
 ## 0.20.132 — 2026-09-07
 

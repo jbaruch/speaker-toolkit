@@ -133,7 +133,7 @@ jobs:
         # every run, so a cache that restored 185 MiB still paid a full network
         # round-trip — and that fetch, not the download, is what stalled the job
         # for 20 minutes. With the indices here too, a hit installs offline.
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             /tmp/apt-cache
@@ -173,7 +173,7 @@ jobs:
         # and each postinstall downloads into its own cache root. Caching the
         # npm tree without them would restore a tree whose postinstalls never
         # run again and leave reveal-md with no browser at all.
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ${{ github.workspace }}/deck-renderers
