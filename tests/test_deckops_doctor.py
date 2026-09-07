@@ -13,6 +13,18 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture
+def on_darwin(deckops_doctor, monkeypatch):
+    """Pin the platform `main()` reads.
+
+    main() takes it from sys.platform, so on the Ubuntu CI runner every verdict
+    short-circuits to unsupported_platform and a test asserting anything else
+    passes locally on a Mac and fails in CI. verdict() takes platform as an
+    argument and needs no patching; only the main()/diagnose() paths do.
+    """
+    monkeypatch.setattr(deckops_doctor.sys, "platform", "darwin")
+
+
 def _ok_probe(stamp="abc123"):
     return {"state": "ok", "stamp": stamp}
 
@@ -209,7 +221,7 @@ def test_main_rejects_a_missing_vault_root(deckops_doctor, tmp_path, capsys):
 
 
 def test_main_exits_zero_with_a_verdict_when_setup_is_missing(
-    deckops_doctor, tmp_path, capsys
+    deckops_doctor, tmp_path, capsys, on_darwin
 ):
     """A verdict IS success — the caller reads `status`, not the exit code."""
     rc = deckops_doctor.main(["--vault-root", str(tmp_path), "--offline"])
@@ -400,7 +412,7 @@ def test_run_probe_maps_a_timeout_to_probe_failed(deckops_doctor, monkeypatch):
 
 
 def test_main_exits_nonzero_when_the_probe_could_not_run(
-    deckops_doctor, tmp_path, monkeypatch, capsys
+    deckops_doctor, tmp_path, monkeypatch, capsys, on_darwin
 ):
     """No verdict was reached, so this is a script failure, not a finding."""
     monkeypatch.setattr(
@@ -420,3 +432,37 @@ def test_docstring_does_not_claim_to_be_read_only(deckops_doctor):
     doc = deckops_doctor.__doc__
     assert "Read-only." not in doc
     assert "materialize" in doc
+
+
+def test_main_on_a_foreign_platform_says_so_and_still_returns_a_verdict(
+    deckops_doctor, tmp_path, monkeypatch, capsys
+):
+    """The Ubuntu-CI path: a verdict, exit 0, and no PowerPoint probe attempted."""
+    monkeypatch.setattr(deckops_doctor.sys, "platform", "linux")
+    monkeypatch.setattr(
+        deckops_doctor,
+        "run_probe",
+        lambda _d: pytest.fail("the probe must not run off macOS"),
+    )
+    rc = deckops_doctor.main(["--vault-root", str(tmp_path)])
+    assert rc == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "unsupported_platform"
+
+
+def test_a_corrupt_sibling_script_raises_an_actionable_import_error(
+    deckops_doctor, tmp_path, monkeypatch
+):
+    """A raw traceback would replace the diagnostic this script exists to give."""
+    broken = tmp_path / "sync-deck-drivers.py"
+    broken.write_text("def (((\n", encoding="utf-8")
+    monkeypatch.setattr(deckops_doctor, "__file__", str(tmp_path / "deckops-doctor.py"))
+    with pytest.raises(ImportError, match="reinstall the plugin"):
+        deckops_doctor._load_sibling("sync_deck_drivers", "sync-deck-drivers.py")
+
+
+def test_a_missing_sibling_script_raises_an_actionable_import_error(
+    deckops_doctor, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(deckops_doctor, "__file__", str(tmp_path / "deckops-doctor.py"))
+    with pytest.raises(ImportError, match="reinstall the plugin"):
+        deckops_doctor._load_sibling("nope", "not-here.py")

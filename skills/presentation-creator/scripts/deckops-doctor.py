@@ -59,13 +59,18 @@ from importlib import util as _importlib_util
 def _load_sibling(name: str, filename: str):
     """Import a sibling script whose filename is not a valid module name."""
     path = Path(__file__).resolve().parent / filename
+    hint = f"{path} must sit beside this script — reinstall the plugin"
     spec = _importlib_util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
-        raise ImportError(
-            f"cannot load {path} — it must sit beside this script; reinstall the plugin"
-        )
+        raise ImportError(f"cannot load {path} — {hint}")
     module = _importlib_util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    except (OSError, SyntaxError) as e:
+        # A spec can be built for a file that is then unreadable, truncated, or
+        # corrupt. A raw traceback here would replace the actionable diagnostic
+        # this script exists to produce.
+        raise ImportError(f"cannot execute {path} ({e}) — {hint}") from e
     return module
 
 

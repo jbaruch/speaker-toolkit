@@ -110,6 +110,15 @@ now itemized — no deck, no template, no container, no PowerPoint launch; does
 restore missing drivers, never overwriting one — in the docstring, the
 `--help` description, and Step 0 of the walkthrough.
 
+Round four caught two tests that passed on the author's Mac and would have gone
+red on the Ubuntu runner. Both call `main()`, which reads `sys.platform`, so off
+macOS every verdict short-circuits to `unsupported_platform` and the assertions
+never reach the scenario they name. An `on_darwin` fixture pins the platform the
+doctor sees, a new test covers the foreign-platform path itself (verdict, exit 0,
+probe never attempted), and the suite was re-run under a session fixture forcing
+`sys.platform = "linux"` to confirm it. `verdict()` takes platform as an argument
+and needed no patching — only the `main()` and `diagnose()` paths did.
+
 
 ## 0.20.130 — 2026-09-06
 
