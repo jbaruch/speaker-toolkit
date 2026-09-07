@@ -669,3 +669,64 @@ def test_a_corrupt_container_still_yields_a_verdict(
     report = deckops_doctor.diagnose(tmp_path, _scripts_dir(), False, "darwin")
     assert report["status"] == "ok"
     assert report["container"]["readable"] is False
+
+
+def _pptm_with_method(path: Path, method: int) -> Path:
+    """A .pptm whose member declares an unsupported compression method."""
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("ppt/vbaProject.bin", b"DeckOps RunDeckOps")
+    blob = bytearray(buf.getvalue())
+    for sig, off in ((b"PK\x03\x04", 8), (b"PK\x01\x02", 10)):
+        i = blob.find(sig)
+        blob[i + off : i + off + 2] = method.to_bytes(2, "little")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(bytes(blob))
+    return path
+
+
+def test_an_unsupported_compression_method_does_not_abort(deckops_doctor, tmp_path):
+    """Method 99 (AE-x encrypted) raises NotImplementedError, not an OSError."""
+    p = _pptm_with_method(tmp_path / "DeckOps.pptm", 99)
+    r = deckops_doctor.inspect_container(p)
+    assert r["exists"] is True
+    assert r["readable"] is False
+    assert r["has_module"] is False
+
+
+def test_an_embedded_nul_in_the_path_does_not_abort(deckops_doctor, tmp_path):
+    """Path validation raises ValueError before any I/O happens."""
+    r = deckops_doctor.inspect_container(Path(str(tmp_path / "Deck\x00Ops.pptm")))
+    assert r["readable"] is False
+    assert r["has_module"] is False
+
+
+def test_a_directory_in_place_of_a_container_does_not_abort(deckops_doctor, tmp_path):
+    d = tmp_path / "DeckOps.pptm"
+    d.mkdir()
+    r = deckops_doctor.inspect_container(d)
+    assert r["readable"] is False
+
+
+def test_every_enumerated_read_error_is_handled(deckops_doctor, tmp_path, monkeypatch):
+    """The contract is absolute, so prove it for each class rather than per bug.
+
+    Three of the eight descend from OSError; the rest were each found one review
+    round at a time until the enumeration was completed in full.
+    """
+    import zipfile
+
+    real = tmp_path / "DeckOps.pptm"
+    _pptm(real, vba=NEW_VBA)
+    for exc in deckops_doctor.CONTAINER_READ_ERRORS:
+
+        def boom(*_a, **_k):
+            raise exc("simulated")
+
+        monkeypatch.setattr(zipfile.ZipFile, "read", boom)
+        r = deckops_doctor.inspect_container(real)
+        assert r["readable"] is False, exc.__name__
+        assert r["has_module"] is False, exc.__name__

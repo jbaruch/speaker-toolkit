@@ -90,6 +90,23 @@ CONTAINER_NAME = "DeckOps.pptm"
 # source itself is compressed, so their presence separates "no module at all"
 # from "an old module". A HINT that refines the advice, never the authority —
 # the live probe decides whether the macro actually answers.
+# Everything `zipfile` documents for opening an archive and reading a member off
+# an attacker-shaped or merely broken file. Enumerated rather than a catch-all
+# (rules/error-handling.md Specific Exceptions), and enumerated in FULL rather
+# than one class per bug report — only three of these descend from OSError, and
+# a container this cannot read must degrade to "no information", never abort a
+# diagnosis the live probe may already have answered.
+CONTAINER_READ_ERRORS = (
+    zipfile.BadZipFile,  # not a zip, truncated, bad central directory
+    zipfile.LargeZipFile,  # ZIP64 needed but disallowed
+    zlib.error,  # valid archive, corrupt deflate stream (Exception, not OSError)
+    NotImplementedError,  # unsupported compression method, e.g. AE-x encrypted
+    ValueError,  # embedded NUL in the path, closed file, malformed member
+    KeyError,  # member absent between namelist() and read()
+    EOFError,  # stream ends mid-member
+    OSError,  # unreadable, permissions, a directory, I/O failure
+)
+
 VBA_PART = "ppt/vbaProject.bin"
 MODULE_MARKER = b"RunDeckOps"
 STAMP_MACRO_MARKER = b"DeckOpsVersion"
@@ -178,9 +195,7 @@ def inspect_container(path: Path) -> dict:
                 report["readable"] = True
                 return report
             blob = z.read(VBA_PART)
-    except (zipfile.BadZipFile, OSError, KeyError, zlib.error):
-        # zlib.error covers a structurally valid archive whose deflate stream is
-        # corrupt; it descends from Exception, not OSError, so it needs naming.
+    except CONTAINER_READ_ERRORS:
         return report
     report["readable"] = True
     report["has_module"] = MODULE_MARKER in blob

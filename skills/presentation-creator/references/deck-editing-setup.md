@@ -125,7 +125,8 @@ PowerPoint for it. A container imported before the stamp existed answers nothing
 at all; the doctor reads the `.pptm` itself to tell that from a container that
 never had the module, and reports it as `macro_stale` rather than as a setup that
 never happened. How it classifies the two is
-`deckops-doctor.py`'s `inspect_container` / `verdict`. On `macro_stale`: re-run the `export` command above, then in
+`skills/presentation-creator/scripts/deckops-doctor.py`'s `inspect_container` /
+`verdict`. On `macro_stale`: re-run the `export` command above, then in
 the VBA editor right-click the `DeckOps` module → **Remove** (No to export) →
 **Import File…** the refreshed `.bas` → save. Re-run Step 0 to confirm `ok`.
 

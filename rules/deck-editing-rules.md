@@ -43,7 +43,9 @@ generating slide structure (see `rules/slide-generation-rules.md`).
   PowerPoint, never off disk.
 - A container imported before the stamp existed answers no version at all. The
   doctor reads the `.pptm` to tell that from a container that never had the module
-  — classification lives in `deckops-doctor.py`'s `inspect_container` / `verdict`.
+  — classification lives in
+  `skills/presentation-creator/scripts/deckops-doctor.py`'s `inspect_container` /
+  `verdict`.
 - The file read refines the verdict; the live probe remains the authority.
 - The macro container has one canonical location,
   `<vault_root>/.deckops/DeckOps.pptm`. The importable `.bas` is exported beside it
@@ -106,7 +108,7 @@ generating slide structure (see `rules/slide-generation-rules.md`).
   `deckops-version.applescript` included. Their manual validation procedure is
   Step 5 of `skills/presentation-creator/references/deck-editing-setup.md` — what
   to run, what to observe, what counts as a pass.
-- `deckops-doctor.py` splits along the same line: the AppleScript probe is exempt,
+- `skills/presentation-creator/scripts/deckops-doctor.py` splits along the same line: the AppleScript probe is exempt,
   while path derivation, probe-output parsing, and the verdict table are unit-tested
   in `tests/test_deckops_doctor.py` against synthetic probe results.
 

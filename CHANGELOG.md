@@ -35,6 +35,16 @@ a byte in the middle of a real compressed payload (`Error -3 while decompressing
 data: invalid distances set`), fixed by naming `zlib.error`, and pinned by a test
 that builds that exact archive.
 
+Two more classes surfaced the same way — `NotImplementedError` from an
+unsupported compression method (99, AE-x encrypted), and `ValueError` from an
+embedded NUL in the path — at which point patching one class per review round
+was plainly the wrong shape of fix. The handler now names everything `zipfile`
+documents for opening an archive and reading a member: `BadZipFile`,
+`LargeZipFile`, `zlib.error`, `NotImplementedError`, `ValueError`, `KeyError`,
+`EOFError`, `OSError`. Only three of the eight descend from `OSError`. A test
+raises each one in turn and asserts the diagnosis survives, so the contract is
+pinned by class rather than by whichever corruption someone thought to try.
+
 
 ## 0.20.131 — 2026-09-07
 
