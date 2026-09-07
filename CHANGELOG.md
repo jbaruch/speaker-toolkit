@@ -1,5 +1,35 @@
 # Changelog
 
+### Point pyright at the project environment
+
+`[tool.pyright]` configured `pythonVersion`, `include`, `exclude`, and
+per-root `extraPaths`, but never said where the virtualenv is. Pyright therefore
+resolved third-party imports against whatever interpreter it happened to pick,
+so a bare `pyright` reported every venv-only dependency as unresolved while
+`pyright --pythonpath .venv/bin/python` reported clean.
+
+The block's own comment already warned about the consequence — "Run against a
+bare system Python and 94 resolution false-positives reappear, hiding the real
+findings underneath" — and then relied on every caller remembering the flag.
+Tooling does not remember. `coding-policy`'s `stop-handoff-hygiene.sh` invokes a
+bare `pyright` and blocks the handoff on its findings, so an unresolvable import
+in any uncommitted file wedges a session on a defect that does not exist
+(jbaruch/coding-policy#351 covers the hook side).
+
+`venvPath = "."` plus `venv = ".venv"` makes the bare invocation correct too.
+Verified both ways: bare `pyright` on the file that triggered this goes from one
+`reportMissingImports` to zero, and the repo-wide `--pythonpath` run stays at
+zero, so nothing that already worked changed.
+
+Not fixed here: a bare `pyright` from an older global install can still differ.
+Homebrew's 1.1.408 reports `jpg_bytes` possibly-unbound in
+`generate-thumbnail.py`, which the project's own 1.1.411 does not — the loop it
+sits in iterates a non-empty literal tuple, so the variable is provably bound and
+the older analyzer simply cannot see it. That is a binary-version difference, not
+a resolution problem, and the code is left alone rather than contorted for an
+analyzer the project does not use.
+
+
 ## 0.20.135 — 2026-09-07
 
 ### Locate the corrupt DeckOps test payload structurally
