@@ -650,7 +650,7 @@ def test_a_stale_next_step_names_the_absent_version_readably(
     assert "unknown" not in report["next_step"]
 
 
-def _corrupt_deflate_pptm(path: Path) -> Path:
+def _corrupt_deflate_pptm(path: Path, *, compresslevel: int = 6) -> Path:
     """A structurally valid .pptm whose vbaProject.bin deflate stream is garbage.
 
     Distinct from a non-zip file: the archive parses, the member is listed, and
@@ -658,23 +658,43 @@ def _corrupt_deflate_pptm(path: Path) -> Path:
     from Exception rather than OSError and so escapes an OSError handler.
     """
     import io
+    import struct
     import zipfile
-    import zlib
 
     data = b"DeckOps RunDeckOps " * 300
-    raw = zlib.compress(data, 9)[2:-4]
-    bad = bytearray(raw)
-    bad[len(bad) // 2] ^= 0xFF
     buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w") as z:
-        z.writestr("ppt/vbaProject.bin", data, zipfile.ZIP_DEFLATED)
+    with zipfile.ZipFile(
+        buf, "w", zipfile.ZIP_DEFLATED, compresslevel=compresslevel
+    ) as z:
+        z.writestr("ppt/vbaProject.bin", data)
+        info = z.getinfo("ppt/vbaProject.bin")
     blob = bytearray(buf.getvalue())
-    start = blob.find(raw[:8])
-    assert start >= 0, "could not locate the compressed payload to corrupt"
-    blob[start : start + len(raw)] = bytes(bad)
+    # Local-header lengths locate the actual bytes, independent of compressor output.
+    name_size, extra_size = struct.unpack_from("<HH", blob, info.header_offset + 26)
+    start = info.header_offset + 30 + name_size + extra_size
+    assert info.compress_size > 0 and start + info.compress_size <= len(blob)
+    # RFC 1951 section 3.2.3: BTYPE=11 is invalid; BFINAL and all other bits stay put.
+    blob[start] |= 0b110
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(bytes(blob))
     return path
+
+
+@pytest.mark.parametrize("compresslevel", [0, 1, 6, 9])
+def test_corrupt_deflate_fixture_preserves_zip_but_breaks_decompression(
+    tmp_path, compresslevel
+):
+    import zipfile
+    import zlib
+
+    path = _corrupt_deflate_pptm(tmp_path / "DeckOps.pptm", compresslevel=compresslevel)
+    with zipfile.ZipFile(path) as archive:
+        assert archive.namelist() == ["ppt/vbaProject.bin"]
+        info = archive.getinfo("ppt/vbaProject.bin")
+        assert info.compress_type == zipfile.ZIP_DEFLATED
+        assert info.file_size == len(b"DeckOps RunDeckOps " * 300)
+        with pytest.raises(zlib.error, match="invalid block type"):
+            archive.read(info)
 
 
 def test_corrupt_compressed_vba_does_not_abort_the_diagnosis(deckops_doctor, tmp_path):
