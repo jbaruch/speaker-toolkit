@@ -1,0 +1,456 @@
+#!/usr/bin/env python3
+"""Judge a recorded screen sequence against its approved storyboard.
+
+The recording postmortem behind #364 lost a day to a rig that treated "the page
+loaded" as proof. #369's answer is that what the viewer can *see* is the
+contract, and that a verifier must be able to FAIL each way a take can look
+right while being wrong. This is that verifier's manifest lane.
+
+Five verification axes (#369 §5). This script owns the four that read structured
+state; the pixel axis needs encoded frames and is reported `unverified`, never
+`pass`:
+
+  semantic  route, data fingerprint, required labels, seam state agreement
+  geometry  required content in frame, unclipped, labels readable at DELIVERY size
+  motion    required pan/scroll performed; pointer on target when the click fires
+  time      the proof frame falls inside the ACTUALLY SPOKEN word span
+  pixels    NOT CHECKED HERE — reported `unverified`
+
+The distinction between `fail` and `unverified` is the point. A verifier that
+reports `pass` for an axis it never examined is worse than no verifier, because
+it converts an unknown into a false assurance — which is precisely the failure
+#364 paid twenty-four hours for.
+
+Usage:
+    verify-storyboard.py <sequence.json>
+
+Stdout: one JSON verdict object. Stderr: actionable diagnostics.
+Exit 0 when every checked axis passes, 1 on any failure, 2 on usage error.
+
+Input contract, output shape, and every finding code are documented in
+skills/screencast-recorder/references/sequence-contract.md.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+# Axis names, fixed so a consumer can group findings without string guessing.
+SEMANTIC, GEOMETRY, MOTION, TIME, PIXELS = (
+    "semantic",
+    "geometry",
+    "motion",
+    "time",
+    "pixels",
+)
+
+# State a seam must carry across unchanged. "Same page" is not continuity
+# (#369 §2): page, data, framing, tabs, cursor and transient state must agree.
+SEAM_FIELDS = (
+    "route",
+    "data_fingerprint",
+    "viewport",
+    "zoom",
+    "scroll",
+    "transform",
+    "tabs",
+    "active_tab",
+)
+
+# Only timings derived from a real transcription can satisfy the time axis.
+# A WPM estimate predicts feasibility; it never establishes synchronisation.
+ACTUAL_TIMING_SOURCE = "actual_word_timestamps"
+
+
+def _finding(code, axis, subject, message, **extra):
+    """Build a finding. `axis` is the VERIFICATION axis, never a pan/scroll axis.
+
+    A caller describing a spatial axis passes `pan_axis`; `axis` here is one of
+    the five verification axes. Because all four fields are named parameters,
+    Python rejects a payload that would shadow one with "got multiple values",
+    so no explicit guard is needed — an earlier draft added one and it was dead
+    code. The first version of this function did collide (`axis="x"` for a pan),
+    which is why the distinction is spelled out.
+    """
+    out = {"code": code, "axis": axis, "subject": subject, "message": message}
+    out.update(extra)
+    return out
+
+
+def _rect_contains(outer, inner, margin=0):
+    """Is `inner` inside `outer` inset by `margin`? Rects are [x, y, w, h]."""
+    ox, oy, ow, oh = outer
+    ix, iy, iw, ih = inner
+    return (
+        ix >= ox + margin
+        and iy >= oy + margin
+        and ix + iw <= ox + ow - margin
+        and iy + ih <= oy + oh - margin
+    )
+
+
+def _point_in_rect(point, rect):
+    px, py = point
+    rx, ry, rw, rh = rect
+    return rx <= px <= rx + rw and ry <= py <= ry + rh
+
+
+def _phrase_span(words, phrase):
+    """Actual [start, end] of `phrase` in transcribed words, or None if absent.
+
+    Matches on a normalised token sequence so punctuation and spacing from the
+    transcriber do not decide whether a phrase was spoken.
+    """
+
+    def norm(s):
+        return "".join(c for c in s.lower() if c.isalnum())
+
+    target = [norm(w) for w in phrase.split() if norm(w)]
+    if not target:
+        return None
+    toks = [(norm(w.get("word", "")), w) for w in words]
+    toks = [(t, w) for t, w in toks if t]
+    for i in range(len(toks) - len(target) + 1):
+        if [t for t, _ in toks[i : i + len(target)]] == target:
+            span = [w for _, w in toks[i : i + len(target)]]
+            return float(span[0]["start"]), float(span[-1]["end"])
+    return None
+
+
+def check_semantic(row, clip, findings):
+    req = row.get("require", {})
+    entry = clip.get("entry", {})
+    subject = row["id"]
+
+    if "route" in req and entry.get("route") != req["route"]:
+        findings.append(
+            _finding(
+                "route_mismatch",
+                SEMANTIC,
+                subject,
+                "clip is not on the route the row requires",
+                expected=req["route"],
+                actual=entry.get("route"),
+            )
+        )
+    # Negative test 1: correct route, stale data. The route passing is exactly
+    # what makes this failure invisible without a data fingerprint.
+    if (
+        "data_fingerprint" in req
+        and entry.get("data_fingerprint") != req["data_fingerprint"]
+    ):
+        findings.append(
+            _finding(
+                "stale_data",
+                SEMANTIC,
+                subject,
+                "route is correct but the rendered data is not the required revision",
+                expected=req["data_fingerprint"],
+                actual=entry.get("data_fingerprint"),
+            )
+        )
+    required_labels = req.get("visible_labels") or []
+    present = {label.get("text") for label in entry.get("labels") or []}
+    missing = [label for label in required_labels if label not in present]
+    if missing:
+        findings.append(
+            _finding(
+                "required_label_absent",
+                SEMANTIC,
+                subject,
+                "a label the phrase names is not present in the frame",
+                missing=missing,
+            )
+        )
+
+
+def check_geometry(row, clip, delivery, findings):
+    req = row.get("require", {})
+    entry = clip.get("entry", {})
+    subject = row["id"]
+    viewport = entry.get("viewport")
+
+    # Negative test 2: the content is present but partly outside the viewport.
+    bounds = req.get("content_bounds")
+    if bounds and viewport:
+        margin = req.get("margin_px", 0)
+        vp_rect = [0, 0, viewport["width"], viewport["height"]]
+        if not _rect_contains(vp_rect, bounds, margin):
+            findings.append(
+                _finding(
+                    "content_clipped",
+                    GEOMETRY,
+                    subject,
+                    "required content is not fully inside the viewport at the declared margin",
+                    content_bounds=bounds,
+                    viewport=vp_rect,
+                    margin_px=margin,
+                )
+            )
+
+    # Negative test 4: readable in the browser is not readable at delivery size.
+    min_px = delivery.get("min_label_px")
+    if min_px:
+        scale = delivery.get("scale", 1.0)
+        too_small = [
+            {
+                "text": label.get("text"),
+                "delivery_px": round(label["height_px"] * scale, 2),
+            }
+            for label in entry.get("labels") or []
+            if label.get("text") in (req.get("visible_labels") or [])
+            and "height_px" in label
+            and label["height_px"] * scale < min_px
+        ]
+        if too_small:
+            findings.append(
+                _finding(
+                    "label_below_readable_size",
+                    GEOMETRY,
+                    subject,
+                    "a required label falls below the readable threshold at delivery resolution",
+                    min_label_px=min_px,
+                    labels=too_small,
+                )
+            )
+
+
+def check_motion(row, clip, findings):
+    req = row.get("require", {})
+    events = clip.get("events") or []
+    subject = row["id"]
+
+    # Negative test 3: content wider than the viewport with no pan performed.
+    pan_req = req.get("pan")
+    if pan_req:
+        axis = pan_req.get("axis", "x")
+        need = abs(pan_req.get("min_abs_delta", 0))
+        moved = max(
+            (
+                abs(e.get("delta", 0))
+                for e in events
+                if e.get("type") == "pan" and e.get("axis") == axis
+            ),
+            default=0,
+        )
+        if moved < need:
+            findings.append(
+                _finding(
+                    "pan_not_performed",
+                    MOTION,
+                    subject,
+                    "the row requires a deliberate pan that the take does not contain",
+                    pan_axis=axis,
+                    required_abs_delta=need,
+                    observed_abs_delta=moved,
+                )
+            )
+
+    # Negative test 5: the click fires while the pointer is not on the target.
+    if req.get("click_on_target"):
+        clicks = [e for e in events if e.get("type") == "click"]
+        if not clicks:
+            findings.append(
+                _finding(
+                    "click_absent",
+                    MOTION,
+                    subject,
+                    "the row requires a visible click and the take contains none",
+                )
+            )
+        for click in clicks:
+            pointer, target = click.get("pointer"), click.get("target_rect")
+            if pointer and target and not _point_in_rect(pointer, target):
+                findings.append(
+                    _finding(
+                        "cursor_off_target",
+                        MOTION,
+                        subject,
+                        "the pointer was not on the target when the click fired",
+                        pointer=pointer,
+                        target_rect=target,
+                        at_seconds=click.get("t"),
+                    )
+                )
+
+
+def check_time(row, narration, findings):
+    subject = row["id"]
+    proof_t = row.get("proof_frame_t")
+    phrase = row.get("phrase")
+    if proof_t is None or not phrase:
+        return
+
+    # Negative test 10: timing asserted from predicted WPM. WPM establishes
+    # whether a script is deliverable; it never establishes synchronisation.
+    if narration.get("source") != ACTUAL_TIMING_SOURCE:
+        findings.append(
+            _finding(
+                "timing_not_from_actual_words",
+                TIME,
+                subject,
+                "synchronisation was asserted without actual transcribed word timestamps",
+                source=narration.get("source"),
+                required_source=ACTUAL_TIMING_SOURCE,
+            )
+        )
+        return
+
+    span = _phrase_span(narration.get("words") or [], phrase)
+    if span is None:
+        findings.append(
+            _finding(
+                "phrase_not_spoken",
+                TIME,
+                subject,
+                "the row's phrase does not appear in the transcribed narration",
+                phrase=phrase,
+            )
+        )
+        return
+    start, end = span
+    if not (start <= proof_t <= end):
+        findings.append(
+            _finding(
+                "proof_outside_phrase",
+                TIME,
+                subject,
+                "the visual proof does not occur while the phrase is being spoken",
+                phrase=phrase,
+                spoken=[start, end],
+                proof_frame_t=proof_t,
+            )
+        )
+
+
+def check_seam(previous, following, tolerances, findings):
+    """A seam passes only when the outgoing and incoming state agree (#369 §2)."""
+    subject = f"{previous['id']}→{following['id']}"
+    exit_state, entry_state = previous.get("exit", {}), following.get("entry", {})
+
+    for field in SEAM_FIELDS:
+        before, after = exit_state.get(field), entry_state.get(field)
+        if before == after:
+            continue
+        # Negative test 7: a numeric transform drifted across the seam.
+        tol = tolerances.get(field)
+        if tol is not None and isinstance(before, dict) and isinstance(after, dict):
+            if all(
+                abs(before.get(k, 0) - after.get(k, 0)) <= tol
+                for k in set(before) | set(after)
+            ):
+                continue
+        # Negative test 8: the tab set or active tab changed across the seam.
+        code = (
+            "seam_tab_mismatch"
+            if field in ("tabs", "active_tab")
+            else "seam_state_mismatch"
+        )
+        findings.append(
+            _finding(
+                code,
+                SEMANTIC,
+                subject,
+                f"seam does not carry {field} across unchanged",
+                field=field,
+                before=before,
+                after=after,
+            )
+        )
+
+
+def verify(sequence):
+    findings = []
+    delivery = sequence.get("delivery", {})
+    narration = sequence.get("narration", {})
+    clips = {c["id"]: c for c in sequence.get("clips", [])}
+
+    for row in sequence.get("rows", []):
+        clip = clips.get(row.get("clip"))
+        if clip is None:
+            findings.append(
+                _finding(
+                    "clip_missing",
+                    SEMANTIC,
+                    row.get("id", "?"),
+                    "the row names a clip the sequence does not contain",
+                    clip=row.get("clip"),
+                )
+            )
+            continue
+        check_semantic(row, clip, findings)
+        check_geometry(row, clip, delivery, findings)
+        check_motion(row, clip, findings)
+        check_time(row, narration, findings)
+
+    ordered = sequence.get("clips", [])
+    tolerances = sequence.get("seam_tolerances", {})
+    for previous, following in zip(ordered, ordered[1:]):
+        check_seam(previous, following, tolerances, findings)
+
+    checked = [SEMANTIC, GEOMETRY, MOTION, TIME]
+    failed = {f["axis"] for f in findings}
+    axes = {a: ("fail" if a in failed else "pass") for a in checked}
+    # Never report pass for an axis this script cannot examine.
+    axes[PIXELS] = "unverified"
+
+    return {
+        "ok": not findings,
+        "axes": axes,
+        "unverified_axes": {
+            PIXELS: "requires encoded frames; not checked by the manifest lane"
+        },
+        "finding_count": len(findings),
+        "findings": findings,
+        "counts": {
+            "rows": len(sequence.get("rows", [])),
+            "clips": len(ordered),
+            "seams": max(len(ordered) - 1, 0),
+        },
+    }
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        description="Verify a recorded screen sequence against its approved storyboard."
+    )
+    ap.add_argument("sequence", type=Path)
+    args = ap.parse_args(argv)
+
+    try:
+        sequence = json.loads(args.sequence.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        print(
+            f"ERROR: sequence file not found: {args.sequence} — emit it from the "
+            "recording rig per references/sequence-contract.md.",
+            file=sys.stderr,
+        )
+        return 2
+    except json.JSONDecodeError as e:
+        print(f"ERROR: {args.sequence} is not valid JSON ({e}).", file=sys.stderr)
+        return 2
+
+    if not isinstance(sequence, dict):
+        print("ERROR: sequence must be a JSON object.", file=sys.stderr)
+        return 2
+
+    verdict = verify(sequence)
+    print(json.dumps(verdict, indent=2))
+    if not verdict["ok"]:
+        print(
+            f"{verdict['finding_count']} finding(s); the take does not match its storyboard.",
+            file=sys.stderr,
+        )
+        return 1
+    print(
+        "manifest lane passed; the pixel axis is UNVERIFIED and still needs frame checks.",
+        file=sys.stderr,
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -9,7 +9,8 @@
     "skills/vault-profile",
     "skills/presentation-creator",
     "skills/illustrations",
-    "skills/shownotes-publisher"
+    "skills/shownotes-publisher",
+    "skills/screencast-recorder"
   ],
   "rules": [
     "rules/vault-language-policy.md",

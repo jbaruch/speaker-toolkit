@@ -1,5 +1,44 @@
 # Changelog
 
+### A recorded demo can now be judged instead of trusted
+
+#364's postmortem lost a day to a rig that treated "the page loaded" as proof of
+what the viewer saw. #369's answer is that the visible result is the contract,
+and it defines ten ways a take can look right while being wrong, each of which
+"the verifier must fail independently". There was no verifier, so the vertical
+slice that would graduate the design could not be run.
+
+`skills/screencast-recorder` supplies the manifest lane of that oracle. Seven of
+the ten negative tests read structured state and are checked here: stale data
+behind a correct route, content clipped at the viewport edge, a missing
+deliberate pan, a pointer off the target when the click fires, scroll/pan/zoom
+drift across a seam, a changed tab set across a seam, and synchronisation
+asserted from predicted WPM rather than transcribed words. Label readability is
+checked too, from the recorded measurement scaled to delivery resolution.
+
+Each negative test is asserted to fail on its own, so no broken predicate can
+hide behind a working one, and the time axis is exercised against the real
+measured narration from the demo take rather than invented timings.
+
+The pixel axis reports `unverified` and never `pass`. Three tests — a click
+invisible in the encode, readability in the delivered pixels, OS chrome inside
+the crop — need encoded frames this lane cannot open. Reporting an unexamined
+axis as passing would convert an unknown into a false assurance, which is the
+exact failure the doctrine exists to prevent, so the distinction between `fail`
+and `unverified` is load-bearing rather than cosmetic.
+
+The skill records honestly that it verifies and does not record; the recording
+lane remains #364, and #369 still needs a human rehearsal, two approval
+signatures, and a fresh narration take before it graduates.
+
+A collision found while writing the tests: the verification axis and a pan's
+spatial axis are different things sharing a word, and the first draft passed
+`axis="x"` as finding metadata, which raised at runtime. Pan findings now report
+`pan_axis`. An explicit guard added against the same class turned out to be dead
+code — all four reserved fields are named parameters, so Python rejects the
+shadowing itself — and was removed rather than left as protection that cannot run.
+
+
 ## 0.20.137 — 2026-09-07
 
 ### Reconcile a macOS worker's clean exit after root metadata disappears
