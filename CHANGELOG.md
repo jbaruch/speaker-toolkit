@@ -1,5 +1,11 @@
 # Changelog
 
+### Report a damaged DeckOps stamp once
+
+The setup doctor no longer repeats a stamp-parse problem already reported by
+the driver checker (#414). Its mirror-only fallback still reports that problem
+when the real driver is absent; unrelated driver findings remain intact.
+
 ## 0.20.131 — 2026-09-07
 
 ### Tell the user how to actually recreate the DeckOps macro container

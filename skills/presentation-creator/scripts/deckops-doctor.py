@@ -244,9 +244,9 @@ def diagnose(vault_root: Path, scripts_dir: Path, offline: bool, platform: str) 
                 stamp_src.read_text(encoding="utf-8")
             )
         except ValueError as e:
-            # check() already recorded this as a driver problem; crashing here
-            # would swallow the actionable diagnostic it produced.
-            driver_problems = driver_problems + [str(e)]
+            # check() validates the real driver's stamp, not an orphan mirror.
+            if stamp_src == mirror:
+                driver_problems = driver_problems + [str(e)]
     else:
         driver_problems = driver_problems + [
             f"neither {src.name} nor its mirror is present — reinstall the plugin"

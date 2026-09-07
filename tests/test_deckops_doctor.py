@@ -279,17 +279,45 @@ def test_a_fresh_install_is_not_reported_as_driver_drift(deckops_doctor, tmp_pat
     assert "RunDeckOps.bas" in report["drivers"]["materialized"]
 
 
-def test_a_malformed_stamp_reports_drift_instead_of_crashing(deckops_doctor, tmp_path):
-    """read_stamp raises on a missing stamp line; the doctor must survive it."""
+@pytest.mark.parametrize(
+    ("stamp_text", "problem"),
+    [
+        ("Option Explicit\n' no stamp line\n", "has no"),
+        ('Public Const DECKOPS_STAMP As String = "unfinished\n', "unterminated"),
+        ('Public Const DECKOPS_STAMP As String = "abc"\n' * 2, "more than one"),
+    ],
+)
+def test_a_malformed_stamp_reports_drift_instead_of_crashing(
+    deckops_doctor, tmp_path, stamp_text, problem
+):
+    """A damaged real driver gets one actionable stamp diagnostic, not two."""
     scripts = _mirrors_only_install(tmp_path)
     for name in ("RunDeckOps.bas", "RunDeckOps.bas.txt"):
-        (scripts / name).write_text(
-            "Option Explicit\n' no stamp line\n", encoding="utf-8"
-        )
+        (scripts / name).write_text(stamp_text, encoding="utf-8")
     report = deckops_doctor.diagnose(tmp_path, scripts, True, "darwin")
     assert report["status"] == "driver_drift"
     assert report["expected_stamp"] == ""
-    assert any("has no" in p for p in report["drivers"]["problems"])
+    problems = report["drivers"]["problems"]
+    assert sum(problem in p for p in problems) == 1
+    assert len(problems) == len(set(problems))
+
+
+def test_a_mirror_only_stamp_problem_is_not_lost(deckops_doctor, tmp_path, monkeypatch):
+    """The fallback mirror needs its own stamp check when no real is available."""
+    scripts = _mirrors_only_install(tmp_path)
+    (scripts / "RunDeckOps.bas.txt").write_text(
+        "Option Explicit\n' no stamp line\n", encoding="utf-8"
+    )
+    # Keep this test on the fallback-reader branch rather than restoring the real.
+    monkeypatch.setattr(deckops_doctor.sync_deck_drivers, "materialize", lambda _: [])
+    report = deckops_doctor.diagnose(tmp_path, scripts, True, "darwin")
+    assert report["status"] == "driver_drift"
+    assert report["expected_stamp"] == ""
+    problems = report["drivers"]["problems"]
+    assert (
+        sum(p.startswith("RunDeckOps.bas has no Public Const") for p in problems) == 1
+    )
+    assert any("orphan mirror" in p and "RunDeckOps.bas.txt" in p for p in problems)
 
 
 def test_a_container_open_elsewhere_still_counts_as_set_up(deckops_doctor):
