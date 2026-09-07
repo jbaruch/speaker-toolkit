@@ -13,7 +13,7 @@ import copy
 import math
 from numbers import Real
 import re
-from typing import Any, NoReturn
+from typing import Any, NoReturn, TypeGuard
 
 from local_media_contract import LocalMediaError
 
@@ -135,6 +135,11 @@ def validate_word_diagnostic(value: Any) -> dict:
     return diagnostic
 
 
+def _timestamp(value: Any) -> TypeGuard[float]:
+    """A real number that is not a bool. `bool` is a `Real`, so it needs naming."""
+    return isinstance(value, Real) and not isinstance(value, bool)
+
+
 def nonpositive_span_report(words: Any) -> dict:
     """Count words whose span is non-positive. Judges nothing; refuses nothing.
 
@@ -159,13 +164,13 @@ def nonpositive_span_report(words: Any) -> dict:
         if not isinstance(word, dict):
             continue
         begin, end = word.get("start_seconds"), word.get("end_seconds")
-        if (
-            isinstance(begin, Real)
-            and isinstance(end, Real)
-            and not isinstance(begin, bool)
-        ):
-            if end <= begin:
-                nonpositive.append(index)
+        # bool is a Real in Python, and guarding only `begin` let
+        # {"start_seconds": 1.0, "end_seconds": False} count as degenerate —
+        # inflating the very number this exists to measure.
+        if not _timestamp(begin) or not _timestamp(end):
+            continue
+        if end <= begin:
+            nonpositive.append(index)
     return {
         "schema_version": 1,
         "word_count": len(words),

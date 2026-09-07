@@ -1106,11 +1106,25 @@ def test_bare_year_catalog_date_accepts_an_upload_within_that_year(
 
 # --- transient is not link rot (#429) ----------------------------------------
 #
-# yt-dlp reports "the video is gone" and "I could not reach YouTube just now"
-# through the same non-zero exit, so both arrived as one high-priority finding.
-# #429 was filed for two recordings on that basis; both resolve fine on a later
-# run. The operator's next action differs — decide about derived claims, or
-# retry — so the report has to distinguish them.
+# yt-dlp reports "the video is gone", "I could not reach YouTube", and "I could
+# not run at all" through the same non-zero exit, so all three arrived as one
+# high-priority finding. #429 was filed for two recordings on that basis; both
+# resolve fine. The operator's next action differs in each case.
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "ERROR: [youtube] aBc: This video has been removed by the uploader",
+        "ERROR: [youtube] aBc: Private video. Sign in if you have been granted access",
+        "This video is private",
+        "The account associated with this video has been terminated",
+        "removed for violating YouTube's Terms of Service",
+    ],
+)
+def test_a_stated_removal_is_not_retryable(audit_source_identities, message):
+    result = audit_source_identities.classify_fetch_failure(message)
+    assert result == {"failure_class": "upstream_gone", "retryable": False}
 
 
 @pytest.mark.parametrize(
@@ -1118,14 +1132,18 @@ def test_bare_year_catalog_date_accepts_an_upload_within_that_year(
     [
         "ERROR: [youtube] aBc: Video unavailable",
         "ERROR: [youtube] aBc: This video is not available",
-        "ERROR: [youtube] aBc: This video has been removed by the uploader",
-        "ERROR: [youtube] aBc: Private video. Sign in if you have been granted access",
-        "The account associated with this video has been terminated",
+        "Video unavailable. This video is not available in your country",
     ],
 )
-def test_an_upstream_gone_message_is_not_retryable(audit_source_identities, message):
+def test_ambiguous_unavailability_is_never_called_removal(
+    audit_source_identities, message
+):
+    """yt-dlp says "not available" for geographic restriction too, which
+    establishes nothing about whether the recording still exists. This is the
+    exact message that misled #429 into being filed as link rot."""
     result = audit_source_identities.classify_fetch_failure(message)
-    assert result == {"failure_class": "upstream_gone", "retryable": False}
+    assert result["failure_class"] == "unclassified"
+    assert result["retryable"] is None
 
 
 @pytest.mark.parametrize(
@@ -1144,6 +1162,44 @@ def test_a_transient_message_is_retryable(audit_source_identities, message):
     assert result == {"failure_class": "transient", "retryable": True}
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        "cannot run yt-dlp: [Errno 13] Permission denied",
+        "cannot run yt-dlp: [Errno 2] No such file or directory",
+        "cannot run yt-dlp: [Errno 8] Exec format error",
+        "cannot run yt-dlp: [Errno 21] Is a directory",
+    ],
+)
+def test_a_tooling_failure_asks_for_repair_not_a_retry(
+    audit_source_identities, message
+):
+    """Every OSError reached the same wrapper, so a PermissionError was being
+    reported as transient — telling the operator to retry something that will
+    fail identically every time."""
+    result = audit_source_identities.classify_fetch_failure(message)
+    assert result == {"failure_class": "tooling", "retryable": False}
+    assert "repair" in audit_source_identities.FETCH_FAILURE_MESSAGES["tooling"]
+
+
+def test_a_timeout_inside_the_run_wrapper_is_still_transient(
+    audit_source_identities,
+):
+    """Both reach `cannot run yt-dlp`; only the errno separates them."""
+    assert (
+        audit_source_identities.classify_fetch_failure(
+            "cannot run yt-dlp: [Errno 60] Operation timed out"
+        )["failure_class"]
+        == "transient"
+    )
+    assert (
+        audit_source_identities.classify_fetch_failure(
+            "cannot run yt-dlp: [Errno 13] Permission denied"
+        )["failure_class"]
+        == "tooling"
+    )
+
+
 @pytest.mark.parametrize("message", ["something new", "", None, 7, "ERROR:"])
 def test_an_unrecognised_message_is_never_guessed_into_a_bucket(
     audit_source_identities, message
@@ -1155,16 +1211,15 @@ def test_an_unrecognised_message_is_never_guessed_into_a_bucket(
 
 def test_matching_is_case_insensitive(audit_source_identities):
     assert (
-        audit_source_identities.classify_fetch_failure("VIDEO UNAVAILABLE")[
-            "failure_class"
-        ]
+        audit_source_identities.classify_fetch_failure("PRIVATE VIDEO")["failure_class"]
         == "upstream_gone"
     )
 
 
-def test_upstream_gone_is_checked_before_transient(audit_source_identities):
-    """A takedown notice served over a flaky connection is still a takedown."""
-    message = "ERROR: unable to download webpage; This video is not available"
+def test_a_stated_removal_over_a_flaky_connection_is_still_a_removal(
+    audit_source_identities,
+):
+    message = "ERROR: unable to download webpage; This video has been removed"
     assert (
         audit_source_identities.classify_fetch_failure(message)["failure_class"]
         == "upstream_gone"
@@ -1172,23 +1227,24 @@ def test_upstream_gone_is_checked_before_transient(audit_source_identities):
 
 
 def test_every_classification_carries_both_fields(audit_source_identities):
-    for message in ("Video unavailable", "timed out", "mystery"):
+    for message in ("Private video", "timed out", "Permission denied", "mystery"):
         result = audit_source_identities.classify_fetch_failure(message)
         assert set(result) == {"failure_class", "retryable"}
 
 
 def test_each_class_has_its_own_operator_message(audit_source_identities):
     messages = audit_source_identities.FETCH_FAILURE_MESSAGES
-    assert set(messages) == {"upstream_gone", "transient", "unclassified"}
-    assert len(set(messages.values())) == 3
+    assert set(messages) == {"upstream_gone", "transient", "tooling", "unclassified"}
+    assert len(set(messages.values())) == 4
     assert "retry" in messages["transient"]
 
 
 @pytest.mark.parametrize(
     "message,failure_class,retryable",
     [
-        ("ERROR: [youtube] X: This video is not available", "upstream_gone", False),
+        ("ERROR: [youtube] X: Private video", "upstream_gone", False),
         ("ERROR: unable to download webpage", "transient", True),
+        ("cannot run yt-dlp: [Errno 13] Permission denied", "tooling", False),
         ("ERROR: brand new failure mode", "unclassified", None),
     ],
 )
@@ -1200,8 +1256,9 @@ def test_a_fetch_failure_carries_its_class_into_the_report(
     def failing_fetcher(video_id):
         raise audit_source_identities.MetadataFetchError(message)
 
-    database = {"talks": [talk()]}
-    report, _calls = _audit(audit_source_identities, database, None, failing_fetcher)
+    report, _calls = _audit(
+        audit_source_identities, {"talks": [talk()]}, None, failing_fetcher
+    )
 
     finding = next(
         item for item in report["findings"] if item["code"] == "metadata_fetch_failed"
@@ -1209,25 +1266,11 @@ def test_a_fetch_failure_carries_its_class_into_the_report(
     assert finding["evidence"]["failure_class"] == failure_class
     assert finding["evidence"]["retryable"] is retryable
     assert finding["evidence"]["error"] == message
+    assert (
+        finding["message"]
+        == audit_source_identities.FETCH_FAILURE_MESSAGES[failure_class]
+    )
 
     source = next(item for item in report["sources"] if item["fetch_status"] == "error")
     assert source["failure_class"] == failure_class
     assert source["retryable"] is retryable
-
-
-def test_a_transient_failure_reads_differently_from_link_rot(
-    audit_source_identities,
-):
-    """#429 was filed because these were indistinguishable in the output."""
-
-    def failing_fetcher(video_id):
-        raise audit_source_identities.MetadataFetchError("ERROR: HTTP Error 429")
-
-    report, _calls = _audit(
-        audit_source_identities, {"talks": [talk()]}, None, failing_fetcher
-    )
-    finding = next(
-        item for item in report["findings"] if item["code"] == "metadata_fetch_failed"
-    )
-    assert "retry" in finding["message"]
-    assert finding["evidence"]["retryable"] is True

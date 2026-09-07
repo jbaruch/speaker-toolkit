@@ -30,6 +30,17 @@ bad word or half of them, which is the measurement #431 asks for before anyone
 changes the admission rule. Choosing a threshold first would be picking a number
 blind.
 
+Review sharpened all three. A bare "video unavailable" was being read as removal,
+but yt-dlp says it for geographic restriction too — and that is the exact message
+that misled #429 into being filed as link rot, so it now falls through to
+`unclassified` rather than claiming a fact it does not establish. Failing to run
+yt-dlp at all reached the same wrapper as a network timeout, so a
+`PermissionError` was advising a retry that would fail identically forever; it has
+its own `tooling` class asking for a repair, with the errno separating a timeout
+from a permission inside the same message. And the span report guarded `bool` on
+only one endpoint, so `{"start_seconds": 1.0, "end_seconds": False}` counted as
+degenerate — inflating the very number it exists to measure.
+
 
 ## 0.20.138 — 2026-09-07
 

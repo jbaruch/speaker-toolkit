@@ -94,15 +94,19 @@ YT_DLP_TIMEOUT_SECONDS = 60
 # Signatures are matched case-insensitively against yt-dlp's own message. An
 # unrecognised message stays `unclassified` — never silently sorted into either
 # bucket, because guessing is what produced the wrong issue in the first place.
+# Only signatures that state REMOVAL. A bare "video unavailable" is ambiguous —
+# yt-dlp uses it for geographic restriction too ("This video is not available in
+# your country"), which establishes nothing about whether the recording still
+# exists. Assigning meaning to that is the Regex Trap, so it falls through to
+# `unclassified` and gets read by a human.
 UPSTREAM_GONE_SIGNATURES = (
-    "video unavailable",
-    "this video is not available",
     "this video has been removed",
-    "private video",
     "video has been removed by the uploader",
-    "account associated with this video has been terminated",
-    "this video is no longer available",
     "removed for violating",
+    "private video",
+    "this video is private",
+    "account associated with this video has been terminated",
+    "no longer available because the youtube account",
 )
 TRANSIENT_SIGNATURES = (
     "unable to download webpage",
@@ -112,22 +116,33 @@ TRANSIENT_SIGNATURES = (
     "connection timed out",
     "read timed out",
     "timed out",
+    "timeout",
     "http error 429",
     "http error 500",
     "http error 502",
     "http error 503",
     "http error 504",
     "sign in to confirm you're not a bot",
-    "cannot run yt-dlp",
     "network is unreachable",
     "ssl",
+)
+# Failing to run the tool at all is persistent configuration, not weather.
+# Telling an operator to retry a PermissionError wastes their time, so these get
+# their own class with a repair instruction instead of a retry.
+TOOLING_SIGNATURES = (
+    "permission denied",
+    "no such file or directory",
+    "exec format error",
+    "is a directory",
+    "yt-dlp is not installed",
 )
 
 
 FETCH_FAILURE_MESSAGES = {
     "upstream_gone": "the provider no longer serves this recording",
     "transient": "yt-dlp metadata capture failed transiently; retry before acting",
-    "unclassified": "yt-dlp metadata capture failed",
+    "tooling": "yt-dlp could not be run; repair the installation before retrying",
+    "unclassified": "yt-dlp metadata capture failed; read the error before acting",
 }
 
 
@@ -144,9 +159,15 @@ def classify_fetch_failure(message: Any) -> dict:
     for signature in UPSTREAM_GONE_SIGNATURES:
         if signature in text:
             return {"failure_class": "upstream_gone", "retryable": False}
+    # Transient before tooling: "cannot run yt-dlp: [Errno 60] Operation timed
+    # out" reaches the same wrapper as a PermissionError, and only the errno
+    # tells them apart. A timeout is weather; a permission is a repair.
     for signature in TRANSIENT_SIGNATURES:
         if signature in text:
             return {"failure_class": "transient", "retryable": True}
+    for signature in TOOLING_SIGNATURES:
+        if signature in text:
+            return {"failure_class": "tooling", "retryable": False}
     return {"failure_class": "unclassified", "retryable": None}
 
 

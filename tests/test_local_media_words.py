@@ -330,13 +330,6 @@ def test_the_report_skips_entries_it_cannot_read(words):
     assert report["nonpositive_count"] == 1
 
 
-def test_a_boolean_is_not_a_timestamp(words):
-    report = words.nonpositive_span_report(
-        [{"start_seconds": True, "end_seconds": True}]
-    )
-    assert report["nonpositive_count"] == 0
-
-
 def test_the_refusal_now_carries_how_widespread_the_defect_is(words):
     """Same verdict as before; the receipt says one word or half of them."""
     result = normalized(words)
@@ -365,3 +358,17 @@ def test_the_span_report_is_copied_not_aliased(words):
     error = words.WordSpanError(report)
     report["nonpositive_count"] = 999
     assert error.word_spans["nonpositive_count"] == 1
+
+
+@pytest.mark.parametrize(
+    "word",
+    [
+        {"start_seconds": 1.0, "end_seconds": False},
+        {"start_seconds": True, "end_seconds": 2.0},
+        {"start_seconds": True, "end_seconds": False},
+    ],
+)
+def test_a_boolean_endpoint_never_counts_as_degenerate(words, word):
+    """bool is a Real, and guarding only `begin` let start=1.0/end=False count —
+    inflating the very number this exists to measure."""
+    assert words.nonpositive_span_report([word])["nonpositive_count"] == 0
