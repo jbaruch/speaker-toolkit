@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.138 — 2026-09-07
+
 ### A recorded demo can now be judged instead of trusted
 
 #364's postmortem lost a day to a rig that treated "the page loaded" as proof of
