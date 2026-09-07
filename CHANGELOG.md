@@ -1,5 +1,12 @@
 # Changelog
 
+### Renew the CI cache action's runtime
+
+Both dependency caches use `actions/cache@v6`, which declares Node.js 24, to
+remove the runner's Node.js 20 deprecation warning (#417). Cache keys, paths,
+restore/save defaults, and test jobs are unchanged. The cache-only legacy
+Dependabot exclusion is removed so weekly action updates can renew this pin.
+
 ## 0.20.132 — 2026-09-07
 
 ### Report a damaged DeckOps stamp once
