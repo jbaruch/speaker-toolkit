@@ -56,6 +56,22 @@ The skill also never said where `{python_path}` comes from while requiring it in
 every command; it now reads `config.python_path` from the tracking database like
 the other six, and refuses to fall back to whatever is on `PATH`.
 
+A second review round found the same disease twice more, in both places where
+the script compared something to nothing. A required label carrying only its text
+was skipped by the readability check while geometry stayed marked exercised, so
+a take with no measurements at all reported `geometry: pass`. And a seam field
+absent from *both* manifests compared equal as `None`: two manifests carrying
+only a route passed the continuity check without a single tab, zoom, scroll or
+transform ever being compared. Both now emit `evidence_missing`. The lesson that
+kept recurring is that an equality test between two absences is not agreement,
+and every place this script compared values needed an explicit presence check
+first.
+
+The CLI also crashed rather than exiting 2 on a directory or a non-UTF-8 file;
+both now return an actionable diagnostic. The skill's Step 2 continuation pointed
+back at Step 2, stranding the workflow before verification, and its recovery
+handoff named vault-ingress in prose instead of a typed `Skill()` call.
+
 
 ## 0.20.137 — 2026-09-07
 

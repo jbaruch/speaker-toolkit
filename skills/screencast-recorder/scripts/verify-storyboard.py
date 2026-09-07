@@ -137,10 +137,11 @@ EVIDENCE_FOR_REQUIREMENT = {
 }
 
 
-def check_evidence(row, clip, narration, findings):
+def check_evidence(row, clip, narration, delivery, findings):
     """Refuse to judge a requirement whose evidence the take does not carry."""
     req = row.get("require", {})
     subject = row["id"]
+    labels = clip.get("entry", {}).get("labels") or []
 
     for name, needed in EVIDENCE_FOR_REQUIREMENT.items():
         if name not in req:
@@ -157,6 +158,24 @@ def check_evidence(row, clip, narration, findings):
                         missing_field=f"{section}.{field}",
                     )
                 )
+
+    if delivery.get("min_label_px") and req.get("visible_labels"):
+        present = {label.get("text") for label in labels}
+        measured = {label.get("text") for label in labels if "height_px" in label}
+        unmeasured = [
+            x for x in req["visible_labels"] if x in present and x not in measured
+        ]
+        if unmeasured:
+            findings.append(
+                _finding(
+                    "evidence_missing",
+                    GEOMETRY,
+                    subject,
+                    "a required label carries no height_px, so readability cannot be judged",
+                    requirement="visible_labels",
+                    labels=unmeasured,
+                )
+            )
 
     if req.get("click_on_target"):
         for click in (e for e in clip.get("events") or [] if e.get("type") == "click"):
@@ -411,6 +430,21 @@ def check_seam(previous, following, tolerances, findings, exercised):
 
     for field in SEAM_FIELDS:
         before, after = exit_state.get(field), entry_state.get(field)
+        # Absent on both sides compares equal and would pass silently. Two
+        # manifests carrying only a route are not a verified continuity join.
+        if before is None or after is None:
+            findings.append(
+                _finding(
+                    "evidence_missing",
+                    SEMANTIC,
+                    subject,
+                    f"seam cannot be judged: {field} is missing",
+                    field=field,
+                    present_on_exit=before is not None,
+                    present_on_entry=after is not None,
+                )
+            )
+            continue
         if before == after:
             continue
         # Negative test 7: a numeric transform drifted across the seam.
@@ -470,7 +504,7 @@ def verify(sequence):
                 )
             )
             continue
-        check_evidence(row, clip, narration, findings)
+        check_evidence(row, clip, narration, delivery, findings)
         check_semantic(row, clip, findings, exercised)
         check_geometry(row, clip, delivery, findings, exercised)
         check_motion(row, clip, findings, exercised)
@@ -531,6 +565,20 @@ def main(argv=None):
         return 2
     except json.JSONDecodeError as e:
         print(f"ERROR: {args.sequence} is not valid JSON ({e}).", file=sys.stderr)
+        return 2
+    except UnicodeDecodeError as e:
+        print(
+            f"ERROR: {args.sequence} is not UTF-8 text ({e}) — the sequence is a "
+            "JSON document, not media.",
+            file=sys.stderr,
+        )
+        return 2
+    except OSError as e:
+        print(
+            f"ERROR: cannot read {args.sequence}: {e.strerror or e} — check the "
+            "path and permissions.",
+            file=sys.stderr,
+        )
         return 2
 
     if not isinstance(sequence, dict):

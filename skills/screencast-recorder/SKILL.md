@@ -17,10 +17,7 @@ user_invocable: true
 Process steps in order. Do not skip ahead.
 
 This skill verifies a take. It does **not** record one. The unattended recording
-lane is tracked in issue #364 and is not implemented; the design it must satisfy
-is issue #369. What exists today is the oracle those depend on — a recorded
-sequence can be judged against its storyboard instead of trusted because the
-right page loaded.
+lane is issue #364 and is not implemented; the design it must satisfy is #369.
 
 Resolve the absolute path of this loaded `SKILL.md`, then set
 `speaker_toolkit_root` to the plugin root two directories above the directory
@@ -35,9 +32,15 @@ Read `config.python_path` from the vault's `tracking-database.json` and set
 `python_path` to that exact value — it is the interpreter authority for every
 operational command here, exactly as in the other toolkit skills.
 
-If `python_path` is absent, empty, or cannot execute, stop and direct the speaker
-to vault-ingress Step 1 to repair the configuration. Never fall back to whichever
-`python3` happens to be on `PATH`.
+If `python_path` is absent, empty, or cannot execute, stop and repair the
+configuration through its owner:
+
+```
+Skill(skill: "vault-ingress")
+```
+
+Its Step 1 owns the runtime configuration. Never fall back to whichever `python3`
+happens to be on `PATH`.
 
 Proceed immediately to Step 2.
 
@@ -52,7 +55,7 @@ The approved storyboard itself stays prose and stays human-approved. Conditions
 like "leave room for the laugh" are judgments no verifier makes. This file
 carries only the half a machine can decide.
 
-Proceed immediately to Step 2.
+Proceed immediately to Step 3.
 
 ## Step 3 — Verify
 
@@ -77,9 +80,7 @@ Any other axis reads `unverified` when no row in the sequence declared a
 requirement on it. A take that asserts nothing about geometry has not passed
 geometry; `unverified_axes` names which case applies.
 
-Report those as unchecked. An axis called passing without being examined is a
-false assurance, and false assurance from a green driver log is the specific
-failure this verification doctrine exists to prevent.
+Report those as unchecked. Never restate an `unverified` axis as a pass.
 
 If findings exist, return to the earliest invalid artifact — the storyboard row,
 the clip, or the narration take. Do not accumulate local timing, cursor, or crop

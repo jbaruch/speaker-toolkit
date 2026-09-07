@@ -443,3 +443,74 @@ def test_a_proof_frame_between_occurrences_still_fails(verify_storyboard):
     v = verify_storyboard.verify(s)
     assert codes(v) == {"proof_outside_phrase"}
     assert v["findings"][0]["spoken"] == [[1.0, 1.8], [5.0, 5.8]]
+
+
+# --- absence compared to absence is not agreement (PR #432 round 2) -----------
+
+
+def test_a_required_label_without_a_measurement_cannot_pass_readability(
+    verify_storyboard,
+):
+    """A label carrying only its text was silently skipped while geometry
+    was still marked exercised — so it reported pass having judged nothing."""
+    s = sequence()
+    s["clips"][0]["entry"]["labels"] = [{"text": "release_docs"}]  # no height_px
+    v = verify_storyboard.verify(s)
+    assert "evidence_missing" in codes(v)
+    assert v["axes"]["geometry"] == "fail"
+    assert any(f.get("labels") == ["release_docs"] for f in v["findings"])
+
+
+def test_a_seam_missing_a_field_on_both_sides_is_refused(verify_storyboard):
+    """Two manifests carrying only a route compared equal as None and passed."""
+    s = sequence()
+    bare = {"route": "/only"}
+    s["clips"][0]["exit"] = dict(bare)
+    s["clips"][1]["entry"] = dict(bare)
+    v = verify_storyboard.verify(s)
+    assert "evidence_missing" in codes(v)
+    missing = {
+        f["field"]
+        for f in v["findings"]
+        if f["code"] == "evidence_missing" and "field" in f
+    }
+    assert {"tabs", "active_tab", "zoom", "scroll", "transform"} <= missing
+
+
+def test_a_seam_missing_a_field_on_one_side_is_refused(verify_storyboard):
+    s = sequence()
+    del s["clips"][1]["entry"]["active_tab"]
+    v = verify_storyboard.verify(s)
+    finding = next(f for f in v["findings"] if f.get("field") == "active_tab")
+    assert finding["code"] == "evidence_missing"
+    assert finding["present_on_exit"] is True
+    assert finding["present_on_entry"] is False
+
+
+def test_a_fully_described_seam_still_passes(verify_storyboard):
+    """The evidence gate must not make a complete, conforming seam fail."""
+    assert verify_storyboard.verify(sequence())["ok"] is True
+
+
+# --- CLI robustness (Copilot) ------------------------------------------------
+
+
+def test_main_rejects_a_directory_with_exit_two(verify_storyboard, tmp_path, capsys):
+    d = tmp_path / "adir"
+    d.mkdir()
+    assert verify_storyboard.main([str(d)]) == 2
+    assert "cannot read" in capsys.readouterr().err
+
+
+def test_main_rejects_non_utf8_bytes_with_exit_two(verify_storyboard, tmp_path, capsys):
+    p = tmp_path / "seq.json"
+    p.write_bytes(b"\xff\xfe\x00\x01 not text")
+    assert verify_storyboard.main([str(p)]) == 2
+    assert "not UTF-8" in capsys.readouterr().err
+
+
+def test_main_rejects_a_json_scalar_with_exit_two(verify_storyboard, tmp_path, capsys):
+    p = tmp_path / "seq.json"
+    p.write_text("[]", encoding="utf-8")
+    assert verify_storyboard.main([str(p)]) == 2
+    assert "must be a JSON object" in capsys.readouterr().err
