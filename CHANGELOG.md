@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.133 — 2026-09-07
+
 ### Renew the CI cache action's runtime
 
 Both dependency caches use `actions/cache@v6`, which declares Node.js 24, to
