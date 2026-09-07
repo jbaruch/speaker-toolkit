@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.134 — 2026-09-07
+
 ### Tell a stale DeckOps import from one that never happened
 
 Running the shipped walkthrough against a real machine found the doctor giving
