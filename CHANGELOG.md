@@ -79,6 +79,22 @@ the axis that could not be judged — still read `pass`. Each evidence requireme
 now names the axis it gates. A malformed document is also refused with the
 violation named, instead of failing later on a missing key.
 
+A third round found the shape once more, one level deeper: presence was being
+checked but not form. `viewport: {}` is present and useless, and accepting it let
+a required `content_bounds` report `geometry: pass` having compared nothing;
+empty `pointer` and `target_rect` arrays did the same for motion. Validation now
+covers nested shape — viewport dimensions must be positive numbers, coordinates
+must be the right count of real numbers (a `bool` is an `int` in Python and is
+rejected), labels must carry string text.
+
+`clip.get("entry", {})` also returns `None` rather than `{}` when the key is
+present with a null value, which crashed instead of reporting. Every optional
+object read uses `or {}` now, and the CLI wraps `verify()` so a shape the
+validator did not anticipate still exits 2 with a diagnostic rather than a
+traceback.
+
+Surface sync: the plugin description and README both still said "six skills".
+
 
 ## 0.20.137 — 2026-09-07
 

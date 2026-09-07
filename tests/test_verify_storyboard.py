@@ -582,3 +582,114 @@ def test_main_exits_two_on_a_malformed_sequence(verify_storyboard, tmp_path, cap
     err = capsys.readouterr().err
     assert "sequence contract" in err
     assert "sequence-contract.md" in err
+
+
+# --- malformed nested evidence (PR #432 round 3) -----------------------------
+#
+# Presence was not enough: `viewport: {}` is present and useless, and accepting
+# it let a required content_bounds report geometry pass having compared nothing.
+
+
+@pytest.mark.parametrize(
+    "doc,fragment",
+    [
+        ({"clips": [{"id": "a", "entry": "text"}]}, "clips[0].entry must be an object"),
+        (
+            {"clips": [{"id": "a", "entry": {"viewport": {}}}]},
+            "clips[0].entry.viewport.width must be a positive number",
+        ),
+        (
+            {"clips": [{"id": "a", "entry": {"viewport": {"width": 0, "height": 9}}}]},
+            "clips[0].entry.viewport.width must be a positive number",
+        ),
+        (
+            {"clips": [{"id": "a", "entry": {"viewport": "big"}}]},
+            "clips[0].entry.viewport must be an object",
+        ),
+        (
+            {"clips": [{"id": "a", "entry": {"labels": [{"height_px": 9}]}}]},
+            "clips[0].entry.labels[0].text must be a string",
+        ),
+        (
+            {"clips": [{"id": "a", "entry": {"labels": "none"}}]},
+            "clips[0].entry.labels must be a list",
+        ),
+        (
+            {
+                "clips": [
+                    {
+                        "id": "a",
+                        "events": [{"type": "click", "pointer": [], "target_rect": []}],
+                    }
+                ]
+            },
+            "clips[0].events[0].pointer must be 2 numbers",
+        ),
+        (
+            {
+                "clips": [
+                    {
+                        "id": "a",
+                        "events": [
+                            {"type": "click", "pointer": [1, 2], "target_rect": [1]}
+                        ],
+                    }
+                ]
+            },
+            "clips[0].events[0].target_rect must be 4 numbers",
+        ),
+        ({"clips": [{"id": "a", "events": "none"}]}, "clips[0].events must be a list"),
+        (
+            {"rows": [{"id": "r", "require": {"content_bounds": [1, 2]}}]},
+            "rows[0].require.content_bounds must be 4 numbers",
+        ),
+        (
+            {"narration": {"words": [{"word": "x", "start": "0", "end": 1}]}},
+            "narration.words[0].start must be a number",
+        ),
+    ],
+)
+def test_malformed_nested_evidence_is_refused(verify_storyboard, doc, fragment):
+    assert verify_storyboard.structural_problem(doc) == fragment
+
+
+def test_a_boolean_is_not_accepted_as_a_coordinate(verify_storyboard):
+    """bool is an int in Python; a True pointer is not a coordinate."""
+    doc = {
+        "clips": [
+            {
+                "id": "a",
+                "events": [
+                    {"type": "click", "pointer": [True, 2], "target_rect": [1, 2, 3, 4]}
+                ],
+            }
+        ]
+    }
+    assert (
+        verify_storyboard.structural_problem(doc)
+        == "clips[0].events[0].pointer must be 2 numbers"
+    )
+
+
+def test_a_present_but_null_manifest_does_not_crash(verify_storyboard):
+    """`clip.get("entry", {})` returns None for a present null key, not {}."""
+    s = sequence()
+    s["clips"][0]["entry"] = None
+    v = verify_storyboard.verify(s)  # must not raise
+    assert v["ok"] is False
+    assert "evidence_missing" in codes(v)
+
+
+def test_main_exits_two_rather_than_tracebacking_on_an_unexpected_shape(
+    verify_storyboard, tmp_path, capsys, monkeypatch
+):
+    """The contract promises exit 2 and a diagnostic, never a traceback."""
+
+    def boom(_seq):
+        raise TypeError("simulated shape the validator did not anticipate")
+
+    monkeypatch.setattr(verify_storyboard, "verify", boom)
+    p = tmp_path / "seq.json"
+    p.write_text(json.dumps(sequence()), encoding="utf-8")
+    assert verify_storyboard.main([str(p)]) == 2
+    assert "could not be verified" in capsys.readouterr().err

@@ -142,9 +142,9 @@ EVIDENCE_FOR_REQUIREMENT = {
 
 def check_evidence(row, clip, narration, delivery, findings):
     """Refuse to judge a requirement whose evidence the take does not carry."""
-    req = row.get("require", {})
+    req = row.get("require") or {}
     subject = row["id"]
-    labels = clip.get("entry", {}).get("labels") or []
+    labels = (clip.get("entry") or {}).get("labels") or []
 
     for name, ((section, field), axis) in EVIDENCE_FOR_REQUIREMENT.items():
         if name not in req:
@@ -207,8 +207,8 @@ def check_evidence(row, clip, narration, delivery, findings):
 
 
 def check_semantic(row, clip, findings, exercised):
-    req = row.get("require", {})
-    entry = clip.get("entry", {})
+    req = row.get("require") or {}
+    entry = clip.get("entry") or {}
     subject = row["id"]
 
     if any(k in req for k in ("route", "data_fingerprint", "visible_labels")):
@@ -257,8 +257,8 @@ def check_semantic(row, clip, findings, exercised):
 
 
 def check_geometry(row, clip, delivery, findings, exercised):
-    req = row.get("require", {})
-    entry = clip.get("entry", {})
+    req = row.get("require") or {}
+    entry = clip.get("entry") or {}
     subject = row["id"]
     viewport = entry.get("viewport")
 
@@ -313,7 +313,7 @@ def check_geometry(row, clip, delivery, findings, exercised):
 
 
 def check_motion(row, clip, findings, exercised):
-    req = row.get("require", {})
+    req = row.get("require") or {}
     events = clip.get("events") or []
     subject = row["id"]
 
@@ -426,7 +426,7 @@ def check_time(row, narration, findings, exercised):
 def check_seam(previous, following, tolerances, findings, exercised):
     """A seam passes only when the outgoing and incoming state agree (#369 §2)."""
     subject = f"{previous['id']}→{following['id']}"
-    exit_state, entry_state = previous.get("exit", {}), following.get("entry", {})
+    exit_state, entry_state = previous.get("exit") or {}, following.get("entry") or {}
     if exit_state and entry_state:
         exercised.add(SEMANTIC)
 
@@ -476,12 +476,59 @@ def check_seam(previous, following, tolerances, findings, exercised):
         )
 
 
+def _numbers(value, count):
+    """True when `value` is a list of exactly `count` real numbers."""
+    return (
+        isinstance(value, list)
+        and len(value) == count
+        and all(isinstance(n, (int, float)) and not isinstance(n, bool) for n in value)
+    )
+
+
+def _manifest_problem(where, manifest):
+    """Shape problems in one manifest, or None.
+
+    Presence is not enough: `viewport: {}` is present and useless, and accepting
+    it let a required `content_bounds` report `geometry: pass` having compared
+    nothing. Evidence must be the right SHAPE before it can be judged.
+    """
+    if manifest is None:
+        return None  # absence is handled by the evidence gate, with its axis
+    if not isinstance(manifest, dict):
+        return f"{where} must be an object"
+    viewport = manifest.get("viewport")
+    if viewport is not None:
+        if not isinstance(viewport, dict):
+            return f"{where}.viewport must be an object"
+        for side in ("width", "height"):
+            size = viewport.get(side)
+            if (
+                not isinstance(size, (int, float))
+                or isinstance(size, bool)
+                or size <= 0
+            ):
+                return f"{where}.viewport.{side} must be a positive number"
+    labels = manifest.get("labels")
+    if labels is not None:
+        if not isinstance(labels, list):
+            return f"{where}.labels must be a list"
+        for index, label in enumerate(labels):
+            if not isinstance(label, dict):
+                return f"{where}.labels[{index}] must be an object"
+            if not isinstance(label.get("text"), str):
+                return f"{where}.labels[{index}].text must be a string"
+    tabs = manifest.get("tabs")
+    if tabs is not None and not isinstance(tabs, list):
+        return f"{where}.tabs must be a list"
+    return None
+
+
 def structural_problem(sequence):
     """Describe the first contract violation, or None. Runs before verify().
 
-    verify() indexes `clip["id"]` and `row["id"]`; without this a malformed
-    document crashes with a KeyError instead of the actionable exit-2 the CLI
-    contract promises.
+    Covers both shapes verify() would otherwise trip over: a missing key it
+    indexes (`clip["id"]`), and evidence present but malformed, which would be
+    read as checkable and silently pass.
     """
     for name in ("clips", "rows"):
         items = sequence.get(name, [])
@@ -492,19 +539,55 @@ def structural_problem(sequence):
                 return f"{name}[{index}] must be an object"
             if not isinstance(item.get("id"), str) or not item["id"]:
                 return f"{name}[{index}] needs a non-empty string id"
-    narration = sequence.get("narration", {})
+
+    for index, clip in enumerate(sequence.get("clips", [])):
+        for section in ("entry", "exit"):
+            problem = _manifest_problem(f"clips[{index}].{section}", clip.get(section))
+            if problem:
+                return problem
+        events = clip.get("events")
+        if events is not None and not isinstance(events, list):
+            return f"clips[{index}].events must be a list"
+        for position, event in enumerate(events or []):
+            at = f"clips[{index}].events[{position}]"
+            if not isinstance(event, dict):
+                return f"{at} must be an object"
+            if event.get("type") == "click":
+                for field, size in (("pointer", 2), ("target_rect", 4)):
+                    value = event.get(field)
+                    if value is not None and not _numbers(value, size):
+                        return f"{at}.{field} must be {size} numbers"
+
+    for index, row in enumerate(sequence.get("rows", [])):
+        require = row.get("require")
+        if require is not None and not isinstance(require, dict):
+            return f"rows[{index}].require must be an object"
+        bounds = (require or {}).get("content_bounds")
+        if bounds is not None and not _numbers(bounds, 4):
+            return f"rows[{index}].require.content_bounds must be 4 numbers"
+
+    narration = sequence.get("narration") or {}
     if not isinstance(narration, dict):
         return "narration must be an object"
-    if not isinstance(narration.get("words", []), list):
+    words = narration.get("words", [])
+    if not isinstance(words, list):
         return "narration.words must be a list"
+    for index, word in enumerate(words):
+        if not isinstance(word, dict):
+            return f"narration.words[{index}] must be an object"
+        for field in ("start", "end"):
+            if not isinstance(word.get(field), (int, float)) or isinstance(
+                word.get(field), bool
+            ):
+                return f"narration.words[{index}].{field} must be a number"
     return None
 
 
 def verify(sequence):
     findings = []
     exercised = set()
-    delivery = sequence.get("delivery", {})
-    narration = sequence.get("narration", {})
+    delivery = sequence.get("delivery") or {}
+    narration = sequence.get("narration") or {}
     clips = {c["id"]: c for c in sequence.get("clips", [])}
 
     if not sequence.get("rows"):
@@ -620,7 +703,17 @@ def main(argv=None):
         )
         return 2
 
-    verdict = verify(sequence)
+    try:
+        verdict = verify(sequence)
+    except (KeyError, TypeError, AttributeError, ValueError, IndexError) as e:
+        # structural_problem() should have caught this; if a shape still reaches
+        # verify(), the contract promises exit 2 and a diagnostic, not a traceback.
+        print(
+            f"ERROR: {args.sequence} could not be verified ({type(e).__name__}: {e}) "
+            "— see references/sequence-contract.md.",
+            file=sys.stderr,
+        )
+        return 2
     print(json.dumps(verdict, indent=2))
     if not verdict["ok"]:
         print(

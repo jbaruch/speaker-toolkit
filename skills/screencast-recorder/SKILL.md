@@ -29,8 +29,8 @@ sequence, media, and output paths remain consumer-owned.
 
 Every command below runs under `{python_path}`, which this skill does not invent.
 Read `config.python_path` from the vault's `tracking-database.json` and set
-`python_path` to that exact value — it is the interpreter authority for every
-operational command here, exactly as in the other toolkit skills.
+`python_path` to that exact value. It is the interpreter authority for every
+operational command here.
 
 If `python_path` is absent, empty, or cannot execute, stop and repair the
 configuration through its owner:
