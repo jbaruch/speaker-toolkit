@@ -30,9 +30,10 @@ half as the JSON below. Parsing prose pass-conditions is out of scope
 time axis: WPM predicts whether a script is deliverable, never that a visual and
 a phrase coincide.
 
-`delivery.scale` converts a recorded label height to its delivered height. A
-label readable in the browser and unreadable in the encode is the case
-`min_label_px` exists to catch.
+`delivery.scale` converts a recorded label height to its delivered height, and
+is **required** whenever `min_label_px` is set — defaulting it would assume the
+conversion. A label readable in the browser and unreadable in the encode is the
+case `min_label_px` exists to catch.
 
 ### Manifest
 
@@ -96,7 +97,7 @@ agreement.
 
 A document that does not satisfy the contract exits 2 with the violation named,
 rather than failing later on a missing key. Validation covers structure
-(`clips`/`rows` as lists of objects with non-empty string ids), completeness
+(`clips`/`rows` as lists of objects with unique, non-empty string ids), completeness
 (`scroll` carries `x`/`y`, `transform` carries `pan_x`/`pan_y`/`zoom`, a
 `proof_frame_t` has a `phrase`), and **finiteness of every number**.
 

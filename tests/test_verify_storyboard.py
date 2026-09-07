@@ -962,3 +962,68 @@ def test_a_pan_requirement_with_a_real_threshold_still_works(verify_storyboard):
     assert verify_storyboard.verify(s)["ok"] is True
     s["clips"][0]["events"] = [e for e in s["clips"][0]["events"] if e["type"] != "pan"]
     assert "pan_not_performed" in codes(verify_storyboard.verify(s))
+
+
+# --- exercised must mean "a check ran" (PR #432 round 7) ---------------------
+
+
+@pytest.mark.parametrize(
+    "doc,fragment",
+    [
+        ({"clips": [{"id": "a"}, {"id": "a"}]}, "clips[1] repeats the id 'a'"),
+        (
+            {"rows": [{"id": "r"}, {"id": "x"}, {"id": "r"}]},
+            "rows[2] repeats the id 'r'",
+        ),
+    ],
+)
+def test_duplicate_ids_are_refused(verify_storyboard, doc, fragment):
+    """clips are looked up by id; a duplicate silently replaced the earlier one,
+    so a conforming clip could stand in for the failing one a row named."""
+    assert verify_storyboard.structural_problem(doc) == fragment
+
+
+def test_a_later_clip_cannot_shadow_an_earlier_failing_one(verify_storyboard):
+    s = sequence()
+    stale = deepcopy(s["clips"][0])
+    stale["entry"]["data_fingerprint"] = "sha256:stale"
+    s["clips"] = [stale, deepcopy(s["clips"][0])]  # same id twice
+    assert verify_storyboard.structural_problem(s) is not None
+
+
+def test_an_absent_labels_field_leaves_geometry_unverified_not_passing(
+    verify_storyboard,
+):
+    """Readability was never measured, so geometry has not passed."""
+    s = sequence()
+    del s["clips"][0]["entry"]["labels"]
+    del s["rows"][0]["require"]["content_bounds"]  # isolate the readability lane
+    v = verify_storyboard.verify(s)
+    assert v["axes"]["geometry"] == "unverified"
+    assert v["axes"]["geometry"] != "pass"
+
+
+def test_an_absent_delivery_scale_blocks_readability(verify_storyboard):
+    """Defaulting scale to 1.0 assumed the conversion from recorded to delivered."""
+    s = sequence()
+    del s["delivery"]["scale"]
+    v = verify_storyboard.verify(s)
+    assert "evidence_missing" in codes(v)
+    assert any(f.get("missing_field") == "delivery.scale" for f in v["findings"])
+    assert v["axes"]["geometry"] == "fail"
+
+
+def test_a_blocked_check_does_not_mark_its_axis_exercised(verify_storyboard):
+    """The invariant behind every 'unverified vs pass' fix in this PR."""
+    s = sequence()
+    s["rows"][0]["require"] = {"click_on_target": True}
+    del s["clips"][0]["events"][1]["pointer"]
+    v = verify_storyboard.verify(s)
+    assert v["axes"]["motion"] == "fail"  # evidence_missing fires
+
+    s2 = sequence()
+    s2["rows"][0]["require"] = {"route": "/workflows/release_docs"}
+    del s2["clips"][0]["entry"]["route"]
+    v2 = verify_storyboard.verify(s2)
+    # semantic still fails on the evidence gap, never passes on a skipped check
+    assert v2["axes"]["semantic"] == "fail"

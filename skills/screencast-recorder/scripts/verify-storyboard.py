@@ -171,8 +171,27 @@ def check_evidence(row, clip, narration, delivery, findings):
             )
 
     if delivery.get("min_label_px") and req.get("visible_labels"):
+        if "scale" not in delivery:
+            blocked.add("label_readability")
+            findings.append(
+                _finding(
+                    "evidence_missing",
+                    GEOMETRY,
+                    subject,
+                    "readability is required but delivery.scale is absent, so a "
+                    "recorded height cannot be converted to its delivered size",
+                    requirement="visible_labels",
+                    missing_field="delivery.scale",
+                )
+            )
+        if "visible_labels" in blocked:
+            # The labels field is absent entirely, so nothing can be measured.
+            # Without this, readability silently reported geometry: pass.
+            blocked.add("label_readability")
         present = {label.get("text") for label in labels}
         measured = {label.get("text") for label in labels if "height_px" in label}
+        # A label absent from the frame is reported by the semantic axis; asking
+        # for its measurement too would be a second code for one root cause.
         unmeasured = [
             x for x in req["visible_labels"] if x in present and x not in measured
         ]
@@ -279,9 +298,13 @@ def check_geometry(row, clip, delivery, findings, exercised, blocked):
     subject = row["id"]
     viewport = entry.get("viewport")
 
-    if req.get("content_bounds") or (
-        delivery.get("min_label_px") and req.get("visible_labels")
-    ):
+    bounds_runs = bool(req.get("content_bounds")) and "content_bounds" not in blocked
+    readability_runs = (
+        bool(delivery.get("min_label_px"))
+        and bool(req.get("visible_labels"))
+        and "label_readability" not in blocked
+    )
+    if bounds_runs or readability_runs:
         exercised.add(GEOMETRY)
 
     # Negative test 2: the content is present but partly outside the viewport.
@@ -583,11 +606,17 @@ def structural_problem(sequence):
         items = sequence.get(name, [])
         if not isinstance(items, list):
             return f"{name} must be a list"
+        seen = set()
         for index, item in enumerate(items):
             if not isinstance(item, dict):
                 return f"{name}[{index}] must be an object"
             if not isinstance(item.get("id"), str) or not item["id"]:
                 return f"{name}[{index}] needs a non-empty string id"
+            # verify() looks clips up by id; a duplicate silently replaced the
+            # earlier one, so a conforming clip could stand in for a failing one.
+            if item["id"] in seen:
+                return f"{name}[{index}] repeats the id {item['id']!r}"
+            seen.add(item["id"])
 
     for index, clip in enumerate(sequence.get("clips", [])):
         for section in ("entry", "exit"):

@@ -140,6 +140,18 @@ The same round found a pan requirement of `{"axis": "x"}` defaulting its absent
 threshold to zero, which any take satisfies — including one that never panned. A
 declared pan must carry a positive `min_abs_delta`.
 
+A seventh round reached the invariant underneath all of it. An axis was marked
+*exercised* when a requirement was **declared**, not when a check actually
+**ran** — so a blocked check still produced `pass` for its axis. That is the
+single mechanism behind most of the earlier rounds, and it is now stated
+directly: `exercised` means a predicate executed. Removing `entry.labels`
+correctly yields `geometry: unverified` rather than `pass`.
+
+Two more in the same round: duplicate clip ids silently overwrote each other in
+the lookup, so a conforming clip could stand in for the failing one a row named;
+and `delivery.scale` defaulted to 1.0, assuming the conversion from recorded to
+delivered size. Both refused now.
+
 
 ## 0.20.137 — 2026-09-07
 
