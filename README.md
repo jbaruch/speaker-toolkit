@@ -8,7 +8,7 @@ A seven-skill presentation system for conference speakers: analyze your existing
 
 **Evidence-exact reparsing** — fresh ingress work now uses schema-v5 claims,
 returns, talk records, and scoring. Every processed talk records an exhaustive
-outcome for each of the 81 observable catalog entries, bound to the exact live
+outcome for each of the 83 observable catalog entries, bound to the exact live
 catalog and to owner-validated transcript, slide, video, or metadata evidence.
 Older generations remain readable history but cannot enter the current scoring
 cohort by implication.
@@ -202,7 +202,7 @@ The vault skill will:
 2. Scan for talks and .pptx files
 3. Process talks in parallel batches of 5
 4. Extract rhetoric patterns across 14 dimensions
-5. Score each talk against the 81 observable Presentation Patterns entries using
+5. Score each talk against the 83 observable Presentation Patterns entries using
    source-located, channel-permitted evidence
 6. Build a running narrative summary and slide design spec
 7. Run an interactive clarification session to validate findings and capture your intent
@@ -361,7 +361,7 @@ notes which named patterns and antipatterns are detected per talk.
   video-derived slide provenance, or participate in freshness checks. If a
   recording cannot be verified, only source-video capability is removed;
   independently verified transcript, PDF, and PPTX evidence remains
-- Each talk is scored against the taxonomy's 81 observable entries (62 patterns + 19 antipatterns),
+- Each talk is scored against the taxonomy's 83 observable entries (62 patterns + 19 antipatterns),
   with source-located evidence restricted to the artifact channels each entry permits
 - Each batch updates the summary, per-talk analysis files, and triggers profile regeneration
 - An interactive clarification session resolves ambiguities and captures confirmed intent
@@ -468,7 +468,7 @@ allowlisted source metadata only as corroboration. The other **30 are unobservab
 physical stage behaviors, post-event follow-up, and external systems the current artifacts
 cannot prove.
 
-All 81 observable entries explicitly declare positive, strong, and absence source gates.
+All 83 observable entries explicitly declare positive, strong, and absence source gates.
 Only **16** currently permit an undetected/absence outcome: 11 from a fully inspected,
 separately declared rendered PDF and 5 from a fully inspected transcript. The other **65**
 are positive-only and fail closed to `not_evaluable` on non-detection. Sampled,
