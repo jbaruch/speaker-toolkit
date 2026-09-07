@@ -26,9 +26,17 @@ The entry states the constraint the mechanism implies: the pattern works by
 making non-participation conspicuous, which is only pleasant if the room
 already likes the speaker.
 
-Both are field observation, not literature, and are listed as such in the
-Sources block rather than borrowing a mechanism they do not have. Catalog
-totals move from 111 entries to 113, observable from 81 to 83.
+`crowd-work` is field observation from that delivery. `reverse-heckle` is
+retained as a technique but carries a provenance note: it was drafted from the
+same delivery, and the speaker's same-week clarification established that the
+episode is NOT an instance of it. He had been warned a Norwegian room would not
+participate, named it defensively four minutes in, and cheered sincerely when
+it turned thirty-four minutes later. That is inoculation against an expected
+failure, so it lands as a refinement subsection in `inoculation.md` instead.
+The needling variant keeps its entry — it is a real and useful move — but with
+no confirmed observed instance until a delivery evidences one.
+
+Catalog totals move from 111 entries to 113, observable from 81 to 83.
 
 ## 0.20.151 — 2026-09-08
 

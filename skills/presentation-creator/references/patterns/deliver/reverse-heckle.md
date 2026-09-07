@@ -100,4 +100,15 @@ Inverse of `hecklers`. The catalog already scores the audience disrupting the sp
 
 ## Related Reading
 
-Field-observed rather than sourced from the literature. First named from JavaZone 2026 ("The Right 300 Tokens Beat 100k Noisy Ones"), where the diagnosis fires roughly four minutes in, recurs across the middle of the talk, and pays off at minute thirty-eight when the room finally answers a prediction prompt — a thirty-four-minute arc improvised entirely on room temperature.
+Field-observed rather than sourced from the literature.
+
+**Provenance note.** This entry was drafted from the JavaZone 2026 delivery of
+"The Right 300 Tokens Beat 100k Noisy Ones", but the speaker reviewed that
+episode and it is **not** an instance of this pattern: he had been warned the
+room would not participate and named it defensively, then cheered sincerely
+when it turned. That belongs to `inoculation` (see its expected-failure
+refinement), not here. The technique described above — deliberately needling a
+cold room until participating becomes the punchline — is retained as a distinct
+and useful move, but it currently has **no confirmed observed instance** in the
+corpus. Treat it as available for selection, not as established speaker
+history, until a delivery evidences it.
