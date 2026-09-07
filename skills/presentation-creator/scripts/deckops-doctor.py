@@ -52,6 +52,7 @@ import json
 import subprocess
 import sys
 import zipfile
+import zlib
 from pathlib import Path
 
 from importlib import util as _importlib_util
@@ -177,7 +178,9 @@ def inspect_container(path: Path) -> dict:
                 report["readable"] = True
                 return report
             blob = z.read(VBA_PART)
-    except (zipfile.BadZipFile, OSError, KeyError):
+    except (zipfile.BadZipFile, OSError, KeyError, zlib.error):
+        # zlib.error covers a structurally valid archive whose deflate stream is
+        # corrupt; it descends from Exception, not OSError, so it needs naming.
         return report
     report["readable"] = True
     report["has_module"] = MODULE_MARKER in blob

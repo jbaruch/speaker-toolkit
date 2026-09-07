@@ -27,6 +27,14 @@ it, and an unreadable or corrupt `.pptm` degrades to "no information" rather tha
 raising, since this refines a diagnostic and must never become one. Fixtures are
 built as zips in test setup — no binary checked into the repo.
 
+That never-raises promise had a hole the reviewer found: `zlib.error` descends
+from `Exception`, not `OSError`, so a structurally valid archive whose deflate
+stream is corrupt escaped the handler and took the whole diagnosis down with it —
+including runs where the live probe had already answered. Reproduced by flipping
+a byte in the middle of a real compressed payload (`Error -3 while decompressing
+data: invalid distances set`), fixed by naming `zlib.error`, and pinned by a test
+that builds that exact archive.
+
 
 ## 0.20.131 — 2026-09-07
 

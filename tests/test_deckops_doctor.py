@@ -613,3 +613,59 @@ def test_a_stale_next_step_names_the_absent_version_readably(
     report = deckops_doctor.diagnose(tmp_path, _scripts_dir(), False, "darwin")
     assert "predating the stamp" in report["next_step"]
     assert "unknown" not in report["next_step"]
+
+
+def _corrupt_deflate_pptm(path: Path) -> Path:
+    """A structurally valid .pptm whose vbaProject.bin deflate stream is garbage.
+
+    Distinct from a non-zip file: the archive parses, the member is listed, and
+    the failure only appears on decompression — as zlib.error, which descends
+    from Exception rather than OSError and so escapes an OSError handler.
+    """
+    import io
+    import zipfile
+    import zlib
+
+    data = b"DeckOps RunDeckOps " * 300
+    raw = zlib.compress(data, 9)[2:-4]
+    bad = bytearray(raw)
+    bad[len(bad) // 2] ^= 0xFF
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("ppt/vbaProject.bin", data, zipfile.ZIP_DEFLATED)
+    blob = bytearray(buf.getvalue())
+    start = blob.find(raw[:8])
+    assert start >= 0, "could not locate the compressed payload to corrupt"
+    blob[start : start + len(raw)] = bytes(bad)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(bytes(blob))
+    return path
+
+
+def test_corrupt_compressed_vba_does_not_abort_the_diagnosis(deckops_doctor, tmp_path):
+    """zlib.error is not an OSError, so it escaped the original handler.
+
+    The crash took down the whole diagnosis, including cases where the live probe
+    had already answered — a refinement turning itself into a fatal error.
+    """
+    p = _corrupt_deflate_pptm(tmp_path / "DeckOps.pptm")
+    r = deckops_doctor.inspect_container(p)
+    assert r["exists"] is True
+    assert r["readable"] is False
+    assert r["has_module"] is False
+    assert r["has_stamp_macro"] is False
+
+
+def test_a_corrupt_container_still_yields_a_verdict(
+    deckops_doctor, tmp_path, monkeypatch
+):
+    _corrupt_deflate_pptm(tmp_path / ".deckops" / "DeckOps.pptm")
+    stamp = deckops_doctor.sync_deck_drivers.read_stamp(
+        (_scripts_dir() / "RunDeckOps.bas").read_text(encoding="utf-8")
+    )
+    monkeypatch.setattr(
+        deckops_doctor, "run_probe", lambda _d: {"state": "ok", "stamp": stamp}
+    )
+    report = deckops_doctor.diagnose(tmp_path, _scripts_dir(), False, "darwin")
+    assert report["status"] == "ok"
+    assert report["container"]["readable"] is False

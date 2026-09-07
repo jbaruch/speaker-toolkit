@@ -42,9 +42,9 @@ generating slide structure (see `rules/slide-generation-rules.md`).
   VBA source; the loaded module's content stamp comes back from the running
   PowerPoint, never off disk.
 - A container imported before the stamp existed answers no version at all. The
-  doctor reads `ppt/vbaProject.bin` for the module markers to tell that from a
-  container that never had the module. The file read refines the verdict; the live
-  probe remains the authority.
+  doctor reads the `.pptm` to tell that from a container that never had the module
+  — classification lives in `deckops-doctor.py`'s `inspect_container` / `verdict`.
+- The file read refines the verdict; the live probe remains the authority.
 - The macro container has one canonical location,
   `<vault_root>/.deckops/DeckOps.pptm`. The importable `.bas` is exported beside it
   with `sync-deck-drivers.py export --to <vault_root>/.deckops`.
