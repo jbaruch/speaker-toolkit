@@ -12,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_ROOT = REPO_ROOT / "skills"
 EXPECTED_SKILLS = {
     "illustrations",
+    "screencast-recorder",
     "presentation-creator",
     "shownotes-publisher",
     "vault-clarification",

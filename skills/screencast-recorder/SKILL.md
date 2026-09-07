@@ -24,7 +24,9 @@ right page loaded.
 
 Resolve the absolute path of this loaded `SKILL.md`, then set
 `speaker_toolkit_root` to the plugin root two directories above the directory
-containing this file.
+containing this file. Never derive it from the consumer working directory.
+Treat `{speaker_toolkit_root}` as absolute in every toolkit-owned command;
+sequence, media, and output paths remain consumer-owned.
 
 ## Step 1 — Obtain the sequence description
 
