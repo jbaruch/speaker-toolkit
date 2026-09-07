@@ -619,6 +619,25 @@ def sync_deck_drivers():
     )
 
 
+SCRIPTS_SR = os.path.join(
+    os.path.dirname(__file__), os.pardir, "skills", "screencast-recorder", "scripts"
+)
+
+
+@pytest.fixture(scope="session")
+def resolve_interpreter():
+    return _import_script(
+        os.path.join(SCRIPTS_SR, "resolve-interpreter.py"), "resolve_interpreter"
+    )
+
+
+@pytest.fixture(scope="session")
+def verify_storyboard():
+    return _import_script(
+        os.path.join(SCRIPTS_SR, "verify-storyboard.py"), "verify_storyboard"
+    )
+
+
 @pytest.fixture(scope="session")
 def deckops_doctor():
     return _import_script(

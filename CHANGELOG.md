@@ -1,5 +1,216 @@
 # Changelog
 
+### A recorded demo can now be judged instead of trusted
+
+#364's postmortem lost a day to a rig that treated "the page loaded" as proof of
+what the viewer saw. #369's answer is that the visible result is the contract,
+and it defines ten ways a take can look right while being wrong, each of which
+"the verifier must fail independently". There was no verifier, so the vertical
+slice that would graduate the design could not be run.
+
+`skills/screencast-recorder` supplies the manifest lane of that oracle. Seven of
+the ten negative tests read structured state and are checked here: stale data
+behind a correct route, content clipped at the viewport edge, a missing
+deliberate pan, a pointer off the target when the click fires, scroll/pan/zoom
+drift across a seam, a changed tab set across a seam, and synchronisation
+asserted from predicted WPM rather than transcribed words. Label readability is
+checked too, from the recorded measurement scaled to delivery resolution.
+
+Each negative test is asserted to fail on its own, so no broken predicate can
+hide behind a working one, and the time axis is exercised against the real
+measured narration from the demo take rather than invented timings.
+
+The pixel axis reports `unverified` and never `pass`. Three tests — a click
+invisible in the encode, readability in the delivered pixels, OS chrome inside
+the crop — need encoded frames this lane cannot open. Reporting an unexamined
+axis as passing would convert an unknown into a false assurance, which is the
+exact failure the doctrine exists to prevent, so the distinction between `fail`
+and `unverified` is load-bearing rather than cosmetic.
+
+The skill records honestly that it verifies and does not record; the recording
+lane remains #364, and #369 still needs a human rehearsal, two approval
+signatures, and a fresh narration take before it graduates.
+
+A collision found while writing the tests: the verification axis and a pan's
+spatial axis are different things sharing a word, and the first draft passed
+`axis="x"` as finding metadata, which raised at runtime. Pan findings now report
+`pan_axis`. An explicit guard added against the same class turned out to be dead
+code — all four reserved fields are named parameters, so Python rejects the
+shadowing itself — and was removed rather than left as protection that cannot run.
+
+Review caught the script committing the very failure it was written to prevent:
+an empty sequence passed all four checked axes, and a requirement whose evidence
+the take did not carry passed silently — a required click with no pointer data, a
+content-bounds requirement with no viewport. Absence of evidence was being read
+as conformance. Two changes fix it. `evidence_missing` refuses any requirement
+that cannot be judged, and an axis no row exercised now reports `unverified`
+rather than `pass`, so the honesty the pixel axis already had extends to every
+axis. `unverified_axes` distinguishes "cannot be checked here" from "nothing
+asked for it".
+
+Phrase matching returned only the first occurrence, so narration that says a
+phrase twice would fail a proof frame correctly placed during the second. Every
+occurrence is matched now, and findings report all spoken windows.
+
+The skill also never said where `{python_path}` comes from while requiring it in
+every command; it now reads `config.python_path` from the tracking database like
+the other six, and refuses to fall back to whatever is on `PATH`.
+
+A second review round found the same disease twice more, in both places where
+the script compared something to nothing. A required label carrying only its text
+was skipped by the readability check while geometry stayed marked exercised, so
+a take with no measurements at all reported `geometry: pass`. And a seam field
+absent from *both* manifests compared equal as `None`: two manifests carrying
+only a route passed the continuity check without a single tab, zoom, scroll or
+transform ever being compared. Both now emit `evidence_missing`. The lesson that
+kept recurring is that an equality test between two absences is not agreement,
+and every place this script compared values needed an explicit presence check
+first.
+
+The CLI also crashed rather than exiting 2 on a directory or a non-UTF-8 file;
+both now return an actionable diagnostic. The skill's Step 2 continuation pointed
+back at Step 2, stranding the workflow before verification, and its recovery
+handoff named vault-ingress in prose instead of a typed `Skill()` call.
+
+A fourth instance of the same shape came from the second reviewer: every
+`evidence_missing` finding was filed on the semantic axis regardless of what it
+blocked, so a take missing its `viewport` failed `semantic` while `geometry` —
+the axis that could not be judged — still read `pass`. Each evidence requirement
+now names the axis it gates. A malformed document is also refused with the
+violation named, instead of failing later on a missing key.
+
+A third round found the shape once more, one level deeper: presence was being
+checked but not form. `viewport: {}` is present and useless, and accepting it let
+a required `content_bounds` report `geometry: pass` having compared nothing;
+empty `pointer` and `target_rect` arrays did the same for motion. Validation now
+covers nested shape — viewport dimensions must be positive numbers, coordinates
+must be the right count of real numbers (a `bool` is an `int` in Python and is
+rejected), labels must carry string text.
+
+`clip.get("entry", {})` also returns `None` rather than `{}` when the key is
+present with a null value, which crashed instead of reporting. Every optional
+object read uses `or {}` now, and the CLI wraps `verify()` so a shape the
+validator did not anticipate still exits 2 with a diagnostic rather than a
+traceback.
+
+Surface sync: the plugin description and README both still said "six skills".
+
+A fourth round found the shape had one more layer, and this time the fix was
+structural rather than another patch. Checks were still running after their own
+evidence gate had refused them: a take with no `labels` reported both
+`evidence_missing` and `required_label_absent`, which is a judgement about
+nothing and two codes for one defect. `check_evidence` now returns the set of
+requirements it refused, and every check skips them.
+
+Two more ways absence was read as agreement: a `height_px` of NaN passed
+readability, because JSON admits NaN and every comparison against it is false, so
+it satisfies any threshold it is tested against; and the seam tolerance read a
+key absent from one side as `0`, calling the gap "within tolerance". Numbers must
+now be finite, `scroll` and `transform` must carry their fields, and a key present
+on only one side of a seam is missing evidence.
+
+The recurring lesson across four rounds: a verifier's failure mode is always
+silently passing what it did not examine, and it hides at every layer — the axis,
+the requirement, the axis attribution, the shape of the value, and finally the
+order of operations. Separating "is this evidence present and well-formed" from
+"does it conform", and refusing to run the second without the first, is what
+closed the class.
+
+Two loaded-surface advisories: issue history and attached rationale moved here.
+
+A fifth round found two more unvalidated numbers — `delivery.scale` and a pan
+threshold — so the response stopped being "validate that one too". A sweep test
+now injects `NaN` at all 23 numeric positions in the contract and requires each
+to be refused. It immediately found four gaps the review had not named:
+`viewport.width`/`height` guarded with `size <= 0`, which admits `NaN` because
+`NaN <= 0` is false, and both narration word times checked for `int`/`float`
+without finiteness. Instance-patching had missed them; the sweep did not.
+
+Also refused: a row declaring `proof_frame_t` with no `phrase`, which was
+silently skipped so a sibling row's pass carried the whole time axis.
+
+A sixth round found the sweep itself was unsound. `sequence()` handed out
+references to module-level word data, and the sweep mutates nested values in
+place, so one case corrupted the baseline for every case after it — an
+order-dependent suite that can pass for the wrong reason. The builder deep-copies
+now, and two tests assert the isolation rather than trusting it. The sweep's
+conclusions held once fixed, but they were not trustworthy until then.
+
+The same round found a pan requirement of `{"axis": "x"}` defaulting its absent
+threshold to zero, which any take satisfies — including one that never panned. A
+declared pan must carry a positive `min_abs_delta`.
+
+A seventh round reached the invariant underneath all of it. An axis was marked
+*exercised* when a requirement was **declared**, not when a check actually
+**ran** — so a blocked check still produced `pass` for its axis. That is the
+single mechanism behind most of the earlier rounds, and it is now stated
+directly: `exercised` means a predicate executed. Removing `entry.labels`
+correctly yields `geometry: unverified` rather than `pass`.
+
+Two more in the same round: duplicate clip ids silently overwrote each other in
+the lookup, so a conforming clip could stand in for the failing one a row named;
+and `delivery.scale` defaulted to 1.0, assuming the conversion from recorded to
+delivered size. Both refused now.
+
+An eighth round moved from "is the value there and finite" to "is it usable".
+A declared `content_bounds: null` validated and then made the geometry check skip
+itself — a requirement that was declared and verified nothing — and
+`[110, 10, -20, 20]` described a negative region that passed against a 100×100
+viewport. Dimensions and thresholds must now be positive, since `min_label_px <= 0`
+makes readability vacuously true and a zero `scale` erases the measurement it
+converts. `margin_px` must be non-negative, zero still being a legitimate
+flush-to-edge requirement.
+
+`resolve-interpreter.py` replaces the prose in Step 1 that had the agent parse
+the tracking database, extract `config.python_path`, and validate it by hand.
+That is deterministic work — read a key, confirm the file exists, confirm it runs
+Python 3 — and belongs in a script rather than in instructions re-implemented each
+session. It emits the resolved interpreter as JSON and exits non-zero with the
+repair path named.
+
+A ninth round showed the cost of fixing an instance rather than a class one more
+time: `content_bounds: null` was fixed in the eighth round and its sibling
+`pan: null` was not, so a declared pan requirement could skip both its validation
+and the motion check and still return `ok: true` with no pan performed. Every
+validator now guards on key presence rather than a non-null value, swept in one
+pass, with a parametrized test that pokes `null` into ten declared positions.
+
+The resolver had the same shape at its own boundary: `[]` and `null` are valid
+JSON, and `.get()` on them raised instead of reporting the repair path.
+
+The click evidence gap also said "pointer/target_rect" when only one was absent;
+it names the missing field now, matching the pattern every other evidence gap
+follows.
+
+A tenth round found the two requirement fields that had never been type-checked
+at all — `visible_labels` and `click_on_target` — so a `null` in either passed
+validation and skipped the check it declared. Every declared requirement now
+carries a type.
+
+And a `target_rect` of `[1, 1, 0, 0]` was four finite numbers enclosing no area:
+it contains no point, so no click can land on it, yet the containment test
+reported `motion: pass`. Rects are validated as regions now, `content_bounds` and
+`target_rect` through the same predicate.
+
+`resolve-interpreter.py` was echoing `config.vault_root` back even when the
+caller pointed at a different vault. The root of the database actually read wins;
+a differing stored value is surfaced as `vault_root_mismatch` rather than
+silently substituted.
+
+An eleventh round reached the numeric edges. A Python `int` is unbounded, so
+`10**400` in a JSON document has no float representation and `math.isfinite`
+raises `OverflowError` rather than answering — escaping validation as a traceback
+instead of the documented exit 2. Unrepresentable now counts as non-finite. And
+the seam-tolerance fast path subtracted dict values without checking they were
+numeric, so an extra non-required key carrying a string raised `TypeError` where a
+seam mismatch belonged.
+
+Two documentation corrections: Step 4 claimed label readability was outside this
+lane when the lane does check it from the recorded measurement — only confirming
+it in the delivered pixels is out of scope — and the contract reference is now a
+typed block carrying its full relative path.
+
+
 ## 0.20.137 — 2026-09-07
 
 ### Reconcile a macOS worker's clean exit after root metadata disappears
