@@ -44,8 +44,7 @@ generating slide structure (see `rules/slide-generation-rules.md`).
 - The macro container has one canonical location,
   `<vault_root>/.deckops/DeckOps.pptm`. The importable `.bas` is exported beside it
   with `sync-deck-drivers.py export --to <vault_root>/.deckops`.
-- Never hand the user an import path inside the plugin tree. An installed plugin
-  sits under a hidden `.tessl/` directory PowerPoint's Import panel will not show.
+- Never hand the user an import path inside the plugin tree.
 
 ## Add a Generated Illustration as a Slide Background
 

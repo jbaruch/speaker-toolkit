@@ -76,6 +76,23 @@ The smoke test moved out of the reference file into `deckops-smoke-test.sh`, and
 every `sync-deck-drivers.py` mode emits JSON — both `script-delegation`
 requirements the first cut missed.
 
+Round two found three more. The wrapper serialized its report with `printf`, so an
+output directory containing a double quote or a backslash produced invalid JSON
+behind exit 0 — it now goes through a JSON encoder, with hostile-path tests. The
+probe's remaining catch-all, around the macro call itself, is narrowed to -18, the
+number Mac PowerPoint returns when the named macro is unavailable, verified by
+running the probe against a PowerPoint holding a DeckOps.pptm with no DeckOps
+module in it; every other number propagates and the doctor reports the non-zero
+osascript exit. And the wrapper shipped untested: `tests/test_deckops_smoke_test.py`
+now stubs `build-deck.sh` and covers template validation, unique naming,
+build-failure propagation, a build that writes nothing, and report serialization,
+leaving only the PowerPoint call to manual validation.
+
+The reason installed plugins sit under a hidden directory left the rule body for
+this archive, where justification belongs: an installed plugin lives under
+`.tessl/`, which PowerPoint's VBA-editor Import panel does not show, so an import
+path pointing inside the plugin tree cannot be followed.
+
 
 ## 0.20.130 — 2026-09-06
 

@@ -45,7 +45,15 @@ on run argv
 				set macroStamp to run VB macro macro name "DeckOpsVersion"
 			end timeout
 		end tell
-	on error errMsg
+	on error errMsg number errNum
+		-- One documented expected number: -18, which is what Mac PowerPoint returns
+		-- when the named macro is not available (module never imported, macros
+		-- disabled, or the container not open). Verified by running this probe
+		-- against a PowerPoint with DeckOps.pptm open and no DeckOps module in it.
+		-- Everything else -- a user cancel, a modal block, an unexpected failure --
+		-- propagates, and deckops-doctor.py reports the non-zero osascript exit
+		-- with its stderr as the detail.
+		if errNum is not -18 then error errMsg number errNum
 		set out to "state=macro_unreachable" & linefeed & "detail=" & errMsg
 		if containerPath is not "" then set out to out & linefeed & "container=" & containerPath
 		return out
