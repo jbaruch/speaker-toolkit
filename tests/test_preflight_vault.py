@@ -13,6 +13,7 @@ import sys
 from typing import Any
 import zipfile
 
+from conftest import SCRIPTS_VI, _import_script
 from conftest import CURRENT_ROOT_SCHEMA_VERSION as CURRENT_ROOT
 import pytest
 from conftest import video_source_receipt_for, write_tiny_video
@@ -4593,10 +4594,15 @@ def test_a_catalog_retitle_after_review_re_gates_the_talk(
 
 # An uncomparable catalog date says what is known, not that a check failed (#430).
 
+_DATE_PROVENANCE_VERSION = _import_script(
+    os.path.join(SCRIPTS_VI, "tracking_database.py"), "tracking_database"
+).DATE_PROVENANCE_RECORD_SCHEMA_VERSION
+
 
 def _provenance_record(**updates):
     record = {
-        "schema_version": 2,
+        # From the owner, so a generation bump is one line rather than a hunt.
+        "schema_version": _DATE_PROVENANCE_VERSION,
         "talk_filename": "2026-07-30-perfect-ingress.md",
         "method": "provider_upload_ceiling",
         "evidence": f"stored source_identity.upload_date for youtube {VIDEO_ID}",

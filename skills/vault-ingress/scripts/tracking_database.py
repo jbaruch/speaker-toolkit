@@ -1971,10 +1971,10 @@ def _migrate_date_provenance_records(candidate: dict[str, Any]) -> int:
     """Upgrade v1 provenance records to the current generation (#430).
 
     v1 to v2 widened the method enum and changed no field, so every v1 record is
-    already a valid v2 record and the upgrade is a restamp. It is still a
-    migration rather than a reader that accepts both: the reader accepting v1
-    would silently accept whatever a later generation narrows, and a v1 record
-    left in place would refuse the whole database for its owner.
+    already a valid v2 record and the upgrade is a restamp. The reader accepts
+    both generations, holding each to the enum it shipped with, so a v1 record
+    stays readable while it waits for this migration — the same arrangement a v5
+    talk record and a v1 pptx record have.
 
     The release that shipped v1 also shipped the writer that stamps it, so a
     database written against it can carry v1 records. Validated as a v1 record
