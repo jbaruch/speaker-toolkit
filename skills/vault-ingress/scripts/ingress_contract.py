@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -38,6 +40,15 @@ VIDEO_EXTRACTION_SCHEMA_VERSION = 4
 ARCHIVAL_VIDEO_EXTRACTION_SCHEMA_VERSION = 3
 YOUTUBE_ID_RE = re.compile(r"[A-Za-z0-9_-]{11}")
 GOOGLE_DRIVE_ID_RE = re.compile(r"[A-Za-z0-9_-]{3,}")
+VIMEO_ID_RE = re.compile(r"[0-9]{6,12}")
+# An InfoQ presentation is addressed by a path slug, not a numeric id. The
+# provider exposes no video id at all, so the slug is the identity.
+INFOQ_SLUG_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]{1,79}[a-z0-9])?")
+# Providers whose recordings this pipeline can bind evidence to. A provider
+# outside the set is readable as a URL and remains unusable as an identity:
+# nothing derives a binding token for it, so its artifacts stay unbound rather
+# than binding to a token that no reader can reproduce.
+SUPPORTED_SOURCE_PROVIDERS = ("youtube", "vimeo", "infoq")
 
 
 class IngressContractError(ValueError):
@@ -102,6 +113,132 @@ def is_youtube_url(url: Any) -> bool:
         "youtube-nocookie.com",
         "www.youtube-nocookie.com",
     }
+
+
+def parse_vimeo_id(url: Any) -> str | None:
+    """Return the numeric ID from supported Vimeo URL forms, otherwise ``None``."""
+    parsed = _parsed_provider_url(url)
+    if parsed is None:
+        return None
+    host, parts = parsed
+    if host == "player.vimeo.com":
+        candidate = parts[1] if len(parts) >= 2 and parts[0] == "video" else None
+    elif host == "vimeo.com":
+        if len(parts) >= 3 and parts[0] in {"groups", "event"} and parts[2] == "videos":
+            candidate = parts[3] if len(parts) >= 4 else None
+        elif len(parts) >= 3 and parts[0] == "channels":
+            candidate = parts[2]
+        else:
+            # A bare `/<id>` optionally followed by an unlisted-link hash.
+            candidate = parts[0] if parts else None
+    else:
+        return None
+    return (
+        candidate
+        if isinstance(candidate, str) and VIMEO_ID_RE.fullmatch(candidate)
+        else None
+    )
+
+
+def parse_infoq_id(url: Any) -> str | None:
+    """Return the presentation slug from an InfoQ presentation URL."""
+    parsed = _parsed_provider_url(url)
+    if parsed is None:
+        return None
+    host, parts = parsed
+    if host != "infoq.com" or len(parts) < 2 or parts[0] != "presentations":
+        return None
+    slug = parts[1].casefold()
+    return slug if INFOQ_SLUG_RE.fullmatch(slug) else None
+
+
+def _parsed_provider_url(url: Any) -> tuple[str, list[str]] | None:
+    """Return one URL's normalized host and non-empty path segments."""
+    if not isinstance(url, str) or not url.strip():
+        return None
+    candidate = url.strip()
+    if "://" not in candidate:
+        candidate = "https://" + candidate
+    parsed = urlparse(candidate)
+    if parsed.scheme.casefold() not in {"http", "https"}:
+        return None
+    host = (parsed.hostname or "").casefold().rstrip(".")
+    for prefix in ("www.", "m."):
+        if host.startswith(prefix):
+            host = host[len(prefix) :]
+    return host, [part for part in parsed.path.split("/") if part]
+
+
+@dataclass(frozen=True)
+class SourceIdentity:
+    """One talk recording's provider-qualified identity.
+
+    ``binding_token`` is what every artifact, manifest, and receipt binds to.
+    A YouTube token is the bare 11-character ID, so every identity written
+    before providers were qualified keeps binding to the same token and no
+    stored artifact changes meaning. Other providers carry their prefix, which
+    is what keeps two providers' identically-named recordings apart.
+    """
+
+    provider: str
+    video_id: str
+
+    @property
+    def binding_token(self) -> str:
+        if self.provider == "youtube":
+            return self.video_id
+        return f"{self.provider}-{self.video_id}"
+
+
+_PROVIDER_PARSERS = (
+    ("youtube", parse_youtube_id),
+    ("vimeo", parse_vimeo_id),
+    ("infoq", parse_infoq_id),
+)
+_PROVIDER_ID_PATTERNS = {
+    "youtube": YOUTUBE_ID_RE,
+    "vimeo": VIMEO_ID_RE,
+    "infoq": INFOQ_SLUG_RE,
+}
+
+
+def parse_source_identity(url: Any) -> SourceIdentity | None:
+    """Return the provider-qualified identity a supported URL names."""
+    for provider, parser in _PROVIDER_PARSERS:
+        video_id = parser(url)
+        if video_id is not None:
+            return SourceIdentity(provider, video_id)
+    return None
+
+
+def source_identity_for(provider: Any, video_id: Any) -> SourceIdentity | None:
+    """Return a validated identity for one declared provider/ID pair."""
+    if not isinstance(provider, str) or not isinstance(video_id, str):
+        return None
+    pattern = _PROVIDER_ID_PATTERNS.get(provider)
+    if pattern is None or not pattern.fullmatch(video_id):
+        return None
+    return SourceIdentity(provider, video_id)
+
+
+def talk_source_identity(talk: Mapping[str, Any]) -> SourceIdentity | None:
+    """Return the identity a talk record's active source names.
+
+    The stored ``youtube_id`` keeps its precedence over ``video_url`` so a
+    YouTube talk resolves exactly as it did before providers were qualified;
+    every other provider resolves from the active URL, which is the only place
+    a non-YouTube identity is recorded.
+    """
+    youtube_id = talk.get("youtube_id")
+    if isinstance(youtube_id, str) and YOUTUBE_ID_RE.fullmatch(youtube_id):
+        return SourceIdentity("youtube", youtube_id)
+    return parse_source_identity(talk.get("video_url"))
+
+
+def talk_binding_token(talk: Mapping[str, Any]) -> str | None:
+    """Return the token a talk's artifacts and receipts bind to."""
+    identity = talk_source_identity(talk)
+    return None if identity is None else identity.binding_token
 
 
 def parse_google_drive_id(url: Any) -> str | None:
