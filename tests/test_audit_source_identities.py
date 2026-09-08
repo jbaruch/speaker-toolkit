@@ -1102,3 +1102,118 @@ def test_bare_year_catalog_date_accepts_an_upload_within_that_year(
 
     assert "provider_upload_predates_catalog" not in finding_codes(report)
     assert report["talks"][0]["comparison"]["upload_predates_catalog_date"] is False
+
+
+@pytest.mark.parametrize(
+    ("message", "code"),
+    [
+        # The two live findings that opened #429, verbatim from yt-dlp.
+        (
+            "ERROR: [youtube] P01v0-2Dtzo: This video is not available",
+            "source_unavailable_upstream",
+        ),
+        (
+            "ERROR: [youtube] wDKzRI8bT6Y: This video is not available",
+            "source_unavailable_upstream",
+        ),
+        ("Video unavailable", "source_unavailable_upstream"),
+        (
+            "This video has been removed by the uploader",
+            "source_unavailable_upstream",
+        ),
+        # Private is an access state, not a deletion: the recording still exists
+        # for a viewer the provider will serve.
+        (
+            "Private video. Sign in if you've been granted access",
+            "metadata_fetch_failed",
+        ),
+        ("This video is private", "metadata_fetch_failed"),
+        (
+            "This video is no longer available because the YouTube account "
+            "associated with this video has been terminated.",
+            "source_unavailable_upstream",
+        ),
+        # Access restrictions: the recording still exists for some viewer, so the
+        # fetch stays retryable. The region block is the load-bearing case — its
+        # message contains an unavailable signature verbatim.
+        (
+            "This video is not available in your country",
+            "metadata_fetch_failed",
+        ),
+        (
+            "Video unavailable. The uploader has not made this video available "
+            "in your country",
+            "metadata_fetch_failed",
+        ),
+        ("Sign in to confirm your age", "metadata_fetch_failed"),
+        ("Sign in to confirm you're not a bot", "metadata_fetch_failed"),
+        (
+            "Join this channel to get access to members-only content",
+            "metadata_fetch_failed",
+        ),
+        # Transport and tooling faults carry no provider verdict at all.
+        ("cannot run yt-dlp: timed out after 60s", "metadata_fetch_failed"),
+        ("yt-dlp did not return valid JSON", "metadata_fetch_failed"),
+        ("HTTP Error 429: Too Many Requests", "metadata_fetch_failed"),
+        ("", "metadata_fetch_failed"),
+        (None, "metadata_fetch_failed"),
+    ],
+)
+def test_classify_fetch_failure_separates_gone_from_merely_failed(
+    audit_source_identities, message, code
+):
+    """#429 acceptance 3: an upstream loss is not a fetch failure."""
+    assert audit_source_identities.classify_fetch_failure(message) == code
+
+
+def test_upstream_loss_is_recorded_without_failing_the_audit(audit_source_identities):
+    """A recording YouTube no longer serves is link rot, not an audit defect."""
+    database = {"talks": [talk()]}
+
+    def fetcher(video_id):
+        raise audit_source_identities.MetadataFetchError(
+            f"ERROR: [youtube] {video_id}: This video is not available"
+        )
+
+    report, _calls = _audit(
+        audit_source_identities,
+        database,
+        audit_source_identities.NO_CANDIDATE_REPORT,
+        fetcher,
+    )
+
+    assert finding_codes(report) == ["source_unavailable_upstream"]
+    finding = report["findings"][0]
+    assert finding["evidence"]["retryable"] is False
+    assert finding["review_priority"] == "medium"
+    assert report["sources"][0]["fetch_status"] == "unavailable"
+    # The distinction the counts have to carry: a permanent loss stops reading as
+    # a fresh fetch error on every later run.
+    assert report["metadata_fetch_error_count"] == 0
+    assert report["metadata_unavailable_count"] == 1
+    assert report["complete"] is True
+
+
+def test_a_region_block_stays_a_retryable_fetch_failure(audit_source_identities):
+    """The message names an unavailable video; the cause is a geo block."""
+    database = {"talks": [talk()]}
+
+    def fetcher(video_id):
+        raise audit_source_identities.MetadataFetchError(
+            f"ERROR: [youtube] {video_id}: This video is not available in your country"
+        )
+
+    report, _calls = _audit(
+        audit_source_identities,
+        database,
+        audit_source_identities.NO_CANDIDATE_REPORT,
+        fetcher,
+    )
+
+    assert finding_codes(report) == ["metadata_fetch_failed"]
+    assert report["findings"][0]["evidence"]["retryable"] is True
+    assert report["sources"][0]["fetch_status"] == "error"
+    assert report["metadata_fetch_error_count"] == 1
+    assert report["metadata_unavailable_count"] == 0
+    # An active identity the audit could not verify still blocks.
+    assert report["complete"] is False

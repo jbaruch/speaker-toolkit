@@ -46,7 +46,7 @@ from tracking_database_io import (
 from ytdlp_runtime import YtDlpResolutionError, resolve_ytdlp
 
 
-REPORT_SCHEMA_VERSION = 2
+REPORT_SCHEMA_VERSION = 3
 SOURCE_IDENTITY_SCHEMA_VERSION = 1
 
 # Candidate mode reads scan-shownotes.py conflict entries. Only the video lane
@@ -74,6 +74,7 @@ NO_CANDIDATE_REPORT = object()
 # blocking code. Codes here are deliberately absent from ERROR_CODES.
 CANDIDATE_LANE_LOCAL_CODES = {
     "metadata_fetch_failed": "candidate_metadata_fetch_failed",
+    "source_unavailable_upstream": "candidate_source_unavailable_upstream",
     "provider_metadata_incomplete": "candidate_provider_metadata_incomplete",
     "provider_video_id_mismatch": "candidate_provider_video_id_mismatch",
     "provider_webpage_identity_mismatch": (
@@ -85,6 +86,52 @@ CANDIDATE_CONFLICT_CODES = {
     "existing_slides_url_conflict": "slides_url",
 }
 YT_DLP_TIMEOUT_SECONDS = 60
+
+# yt-dlp verdicts that the recording itself is gone from the provider. These are
+# durable: the same fetch returns the same verdict on every later run, so the
+# finding is link rot to record once, not a fetch defect to retry.
+UPSTREAM_UNAVAILABLE_SIGNATURES = (
+    "video unavailable",
+    "this video is not available",
+    "this video is no longer available",
+    "this video is unavailable",
+    "this video has been removed",
+    "removed by the uploader",
+    "has been terminated",
+    "the uploader has closed their youtube account",
+    "video has been deleted",
+    "incomplete youtube id",
+    "does not exist",
+)
+
+# Access restrictions checked FIRST and winning over every signature above: the
+# recording still exists for a viewer the provider will serve, so a refusal here
+# is retryable and must never be recorded as gone. The overlap is real -- "this
+# video is not available in your country" contains an unavailable signature
+# verbatim -- so precedence, not the signature list, is what keeps a region
+# block from being filed as link rot.
+PROVIDER_ACCESS_RESTRICTION_SIGNATURES = (
+    "this video is private",
+    "private video",
+    "in your country",
+    "in your location",
+    "geo restricted",
+    "geo-restricted",
+    "geo blocked",
+    "sign in to confirm your age",
+    "age-restricted",
+    "age restricted",
+    "confirm you're not a bot",
+    "confirm you are not a bot",
+    "sign in to confirm",
+    "sign in if you've been granted access",
+    "members-only",
+    "join this channel",
+    "http error 429",
+    "too many requests",
+    "temporarily unavailable",
+    "try again later",
+)
 YOUTUBE_ID_RE = re.compile(r"[A-Za-z0-9_-]{11}")
 CLIP_MARKERS = frozenset(
     {
@@ -125,6 +172,23 @@ class MetadataFetchError(RuntimeError):
 
 def _nonempty(value: Any) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def classify_fetch_failure(message: Any) -> str:
+    """Tell an upstream recording that is gone from a fetch that merely failed.
+
+    Returns ``source_unavailable_upstream`` only when the provider affirmatively
+    reports the recording no longer exists, and ``metadata_fetch_failed`` for
+    everything else: transport faults, timeouts, a missing yt-dlp, unusable JSON,
+    and every access restriction. Restrictions are tested first so a message that
+    carries both shapes is retryable, never recorded as gone.
+    """
+    text = " ".join(str(message).lower().split()) if message is not None else ""
+    if any(mark in text for mark in PROVIDER_ACCESS_RESTRICTION_SIGNATURES):
+        return "metadata_fetch_failed"
+    if any(mark in text for mark in UPSTREAM_UNAVAILABLE_SIGNATURES):
+        return "source_unavailable_upstream"
+    return "metadata_fetch_failed"
 
 
 def parse_youtube_id(value: Any) -> str | None:
@@ -905,17 +969,23 @@ def audit_database(
             if not isinstance(raw_metadata, dict):
                 raise MetadataFetchError("metadata fetcher returned a non-object")
         except (MetadataFetchError, OSError, RuntimeError) as exc:
-            source["fetch_status"] = "error"
+            classified = classify_fetch_failure(exc)
+            gone = classified == "source_unavailable_upstream"
+            source["fetch_status"] = "unavailable" if gone else "error"
             source["error"] = str(exc)
-            failure_code = lane_code("metadata_fetch_failed")
+            failure_code = lane_code(classified)
             findings.append(
                 _finding(
                     failure_code,
                     video_id,
                     indexes,
                     filenames,
-                    "yt-dlp metadata capture failed",
-                    {"error": str(exc)},
+                    (
+                        "provider reports the recording is no longer available"
+                        if gone
+                        else "yt-dlp metadata capture failed"
+                    ),
+                    {"error": str(exc), "retryable": not gone},
                     "high" if failure_code in ERROR_CODES else "medium",
                 )
             )
@@ -1179,7 +1249,12 @@ def audit_database(
     talk_audits.sort(key=lambda item: (item["talk_index"], item["filename"]))
     sources.sort(key=lambda item: item["video_id"])
     by_code = Counter(item["code"] for item in findings)
-    fetch_errors = sum(1 for item in sources if item["fetch_status"] != "ok")
+    # "unavailable" leaves this count so a permanent upstream loss stops reading
+    # as a fresh fetch error every run; "invalid" stays in it, as before.
+    unavailable = sum(1 for item in sources if item["fetch_status"] == "unavailable")
+    fetch_errors = sum(
+        1 for item in sources if item["fetch_status"] not in ("ok", "unavailable")
+    )
     complete = not any(item["code"] in ERROR_CODES for item in findings)
     return {
         "schema_version": REPORT_SCHEMA_VERSION,
@@ -1191,6 +1266,7 @@ def audit_database(
         "unique_youtube_id_count": len(groups),
         "metadata_fetch_count": len(set(groups) | set(candidate_members)),
         "metadata_fetch_error_count": fetch_errors,
+        "metadata_unavailable_count": unavailable,
         "summary": {
             "finding_count": len(findings),
             "by_code": {key: by_code[key] for key in sorted(by_code)},
