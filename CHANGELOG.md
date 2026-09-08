@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.143 — 2026-09-08
+
 ### The date backlog is now countable
 
 `establish-date-provenance.py` records the provider ceiling for every talk whose
