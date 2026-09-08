@@ -1910,7 +1910,9 @@ quality receipt while removing stale timing in the same transaction. Direct
 ## Video Extraction Output Schema
 
 Produced by `skills/vault-ingress/scripts/video-slide-extraction.py`.
-Stored in `structured_data.video_extraction` on the talk entry:
+Stored in `structured_data.video_extraction` on the talk entry. `source_video_id`
+is the talk's source binding token, which is the bare ID for a YouTube talk and
+carries a provider prefix for every other supported provider:
 
 ```json
 {

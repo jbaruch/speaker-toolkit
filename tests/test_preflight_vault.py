@@ -4725,3 +4725,127 @@ def test_a_calendar_edge_bound_compares_instead_of_overflowing(
 
     codes = finding_codes(report, "warning") | finding_codes(report, "blocking")
     assert "source_identity_date_uncheckable" not in codes
+
+
+# ── #427: a non-YouTube identity is evidence, not a blocking fault ─────
+VIMEO_URL = "https://vimeo.com/1223667266"
+VIMEO_ID = "1223667266"
+INFOQ_URL = "https://www.infoq.com/presentations/java-puzzle/"
+
+
+def vimeo_identity(**updates):
+    evidence = source_identity(
+        provider="vimeo",
+        video_id=VIMEO_ID,
+        webpage_url=VIMEO_URL,
+        webpage_video_id=VIMEO_ID,
+    )
+    evidence.update(updates)
+    return evidence
+
+
+def vimeo_talk(**updates):
+    talk = base_talk(video_url=VIMEO_URL, transcript_source="whisper")
+    talk.pop("youtube_id")
+    talk.update(updates)
+    return talk
+
+
+def test_non_youtube_source_identity_is_not_a_blocking_fault(
+    preflight_vault, vault_fixture
+):
+    """The three blocking findings in a 251-talk vault all came from here."""
+    transcript = materialize_transcript(vault_fixture, "javazone-2026")
+    talk = vimeo_talk(
+        transcript_path=transcript.relative_to(vault_fixture["root"]).as_posix(),
+        source_identity=vimeo_identity(),
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["blocking_count"] == 0, report["findings"]
+
+
+def test_infoq_presentation_slug_is_a_usable_identity(preflight_vault, vault_fixture):
+    """The provider exposes no video id at all; the slug is the identity."""
+    transcript = materialize_transcript(vault_fixture, "infoq-java-puzzlers")
+    talk = vimeo_talk(
+        video_url=INFOQ_URL,
+        transcript_path=transcript.relative_to(vault_fixture["root"]).as_posix(),
+        source_identity=source_identity(
+            provider="infoq",
+            video_id="java-puzzle",
+            webpage_url=INFOQ_URL,
+            webpage_video_id="java-puzzle",
+        ),
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert report["blocking_count"] == 0, report["findings"]
+
+
+def test_identity_evidence_naming_another_provider_is_blocking(
+    preflight_vault, vault_fixture
+):
+    """ "Do not relabel them as YouTube" is now enforced, not just documented."""
+    talk = vimeo_talk(source_identity=vimeo_identity(provider="youtube"))
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "source_identity_provider_mismatch" in finding_codes(report, "blocking")
+
+
+def test_a_provider_id_in_the_wrong_shape_is_still_blocking(
+    preflight_vault, vault_fixture
+):
+    talk = vimeo_talk(source_identity=vimeo_identity(video_id="not-numeric"))
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "source_identity_video_id_invalid" in finding_codes(report, "blocking")
+
+
+def test_an_unsupported_provider_stays_a_warning(preflight_vault, vault_fixture):
+    talk = vimeo_talk(source_identity=vimeo_identity(provider="twitch"))
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "source_identity_provider_unknown" in finding_codes(report, "warning")
+
+
+def test_captured_webpage_from_another_provider_is_blocking(
+    preflight_vault, vault_fixture
+):
+    talk = vimeo_talk(
+        source_identity=vimeo_identity(
+            webpage_url=f"https://www.youtube.com/watch?v={OTHER_VIDEO_ID}"
+        )
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "source_identity_webpage_url_invalid" in finding_codes(report, "blocking")
+
+
+def test_two_providers_sharing_an_id_are_not_a_duplicate_recording(
+    preflight_vault, vault_fixture
+):
+    talks = [
+        vimeo_talk(filename="vimeo.md"),
+        vimeo_talk(
+            filename="infoq.md",
+            video_url="https://www.infoq.com/presentations/1223667266/",
+        ),
+    ]
+    write_database(vault_fixture, talks)
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "duplicate_youtube_id" not in finding_codes(report)

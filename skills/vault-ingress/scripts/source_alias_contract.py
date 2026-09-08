@@ -165,6 +165,14 @@ def record_identity_token(block: Mapping[str, Any]) -> str | None:
     return None if identity is None else identity.binding_token
 
 
+def _bound_token(block: Mapping[str, Any], label: str) -> str:
+    """Return one validated block's token; absence is a contract bug, not data."""
+    token = record_identity_token(block)
+    if token is None:
+        _refuse(label, "provider block does not name a supported identity")
+    return token
+
+
 def _provider(value: Any, label: str) -> Mapping[str, Any]:
     record = _shape(value, PROVIDER_FIELDS, label)
     url = _url(record["url"], f"{label}.url")
@@ -371,9 +379,8 @@ def validate_alias_database(database: Mapping[str, Any]) -> None:
         if filename not in talks:
             _refuse(label, "alias names no canonical talk")
         _text(record["alias"]["video_id"], f"{label}.alias.video_id")
-        # The lineage graph is keyed by token: the record shape is already
-        # validated, so a token here is never None.
-        identity = record_identity_token(record["alias"])
+        # The lineage graph is keyed by token, not by bare provider ID.
+        identity = _bound_token(record["alias"], f"{label}.alias")
         if identity in active_ids:
             _refuse(label, "accepted alias overlaps an active canonical source")
         if identity in edges:
@@ -383,9 +390,8 @@ def validate_alias_database(database: Mapping[str, Any]) -> None:
             for rejection in talks[filename].get("source_rejections", [])
             if rejection["source_type"] == "video"
         }
-        if identity in rejected or record_identity_token(record["canonical"]) in (
-            rejected
-        ):
+        canonical_token = _bound_token(record["canonical"], f"{label}.canonical")
+        if identity in rejected or canonical_token in rejected:
             _refuse(label, "accepted source overlaps the talk's rejection ledger")
         edges[identity] = record
     resolved: dict[str, str] = {}
@@ -395,7 +401,7 @@ def validate_alias_database(database: Mapping[str, Any]) -> None:
         if terminal is None:
             _refuse("source_aliases", "talk has no agreeing canonical URL/ID")
         visited = {identity}
-        target = record_identity_token(record["canonical"])
+        target = _bound_token(record["canonical"], "source_aliases")
         while target != terminal:
             if resolved.get(target) == filename:
                 break
@@ -408,7 +414,7 @@ def validate_alias_database(database: Mapping[str, Any]) -> None:
                     "source_aliases",
                     "alias lineage does not end at its talk's canonical source",
                 )
-            target = record_identity_token(parent["canonical"])
+            target = _bound_token(parent["canonical"], "source_aliases")
         for visited_identity in visited:
             resolved[visited_identity] = filename
 

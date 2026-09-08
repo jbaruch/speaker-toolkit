@@ -920,9 +920,10 @@ class VaultPreflight:
                 actual=valid_stored_id,
             )
 
+        identity_id = parsed_id or valid_stored_id
         identity = (
             SourceIdentity("youtube", identity_id)
-            if (identity_id := parsed_id or valid_stored_id) is not None
+            if identity_id is not None
             else talk_source_identity(talk)
         )
         if identity is not None:

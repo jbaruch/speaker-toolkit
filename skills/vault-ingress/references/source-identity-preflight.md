@@ -322,7 +322,7 @@ entries and blocks an active `video_url` or `slides_url` that names the same
 rejected URL or provider identity (YouTube ID, Drive file/deck ID). Scanners
 compare against this ledger before importing an upstream link.
 
-## YouTube identity and duplicate relation
+## Source identity and duplicate relation
 
 Accepted inactive uploads live in the owner's top-level `source_aliases` ledger,
 not `source_rejections`. The shared schema assessment rejects malformed/future
@@ -330,16 +330,24 @@ aliases, conflicting ownership, canonical/rejection overlap, and invalid lineage
 before evidence access. See [source-aliases.md](source-aliases.md) for the record
 and reviewed-write contract. Aliases supply no artifact or acquisition capability.
 
-The parser accepts these URL identities:
+A talk's identity is provider-qualified: a provider plus that provider's own
+ID. `skills/vault-ingress/scripts/ingress_contract.py` owns the supported
+provider set and each provider's URL forms and ID shape.
 
-- `youtube.com/watch?v={id}`
-- `youtu.be/{id}`
-- `youtube.com/shorts/{id}`
-- `youtube.com/embed/{id}` (including `youtube-nocookie.com`)
+Every artifact, manifest, and receipt binds to the identity's **binding token**.
+A YouTube token is the bare 11-character ID, so an artifact named before
+providers were qualified binds to the same token it always did; every other
+provider carries its name as a prefix (`vimeo-1223667266`,
+`infoq-java-puzzle`). InfoQ publishes no video ID at all, so its presentation
+slug is the identity.
 
-IDs are exactly 11 URL-safe characters and must agree with `youtube_id`.
-Duplicate IDs are blocking unless all but one canonical record explicitly point
-to another record in the same identity group:
+A YouTube ID is exactly 11 URL-safe characters and must agree with `youtube_id`;
+`youtube_id` is a YouTube field and stays absent on every other provider.
+`source_identity.provider` must name the provider the active URL publishes on —
+relabelling another provider's upload as YouTube is blocking, not a warning.
+
+Duplicate tokens are blocking unless all but one canonical record explicitly
+point to another record in the same identity group:
 
 ```json
 {
@@ -351,7 +359,7 @@ to another record in the same identity group:
 ```
 
 `type` is `duplicate` or `borrowed_recording`. The target must exist, must not
-be the same record, and must carry the same YouTube ID. Legacy `duplicate_of`,
+be the same record, and must carry the same source identity. Legacy `duplicate_of`,
 `_duplicate_of`, `borrowed_recording_from`, and `_borrowed_recording_from`
 aliases are recognized when they describe the same recording. A legacy
 `_duplicate_of` between different recordings can continue to describe duplicate
@@ -379,8 +387,10 @@ completeness and must be rerun before an absence conclusion.
 
 - Transcript source enum: `youtube_auto`, `provider_auto`, `whisper`, `manual`,
   `none`. Absence remains valid “unknown provenance.” Unless the value is `none`, the expected
-  file is `transcripts/{youtube_id}.txt`; an explicit relative
-  `transcript_path` is resolved from the vault root.
+  file is `transcripts/{youtube_id}.txt` for a YouTube talk; every other
+  provider registers its transcript through an explicit relative
+  `transcript_path`, resolved from the vault root, whose ownership its quality
+  receipt establishes rather than its filename.
 - Slide source enum: `pptx`, `pdf`, `both`, `video_extracted`, `markdown`, `none`.
 - `markdown` records a deck authored in Slidev, presenterm, Marp, reveal-md or
   remark. It is provenance, not evidence: nothing renders markdown here, so the
@@ -411,8 +421,8 @@ completeness and must be rerun before an absence conclusion.
   values resolve from the vault root.
 - Without an explicit local path, `pdf`/`both` requires `google_drive_id` and
   `slides/{google_drive_id}.pdf`.
-- Without an explicit local path, `video_extracted` requires a valid YouTube
-  identity. `processed` also requires `slides/{youtube_id}.pdf`;
+- Without an explicit local path, `video_extracted` requires a valid source
+  identity. `processed` also requires `slides/{binding_token}.pdf`;
   `processed_partial` may intentionally retain only manifest-declared source and
   derivative artifacts.
 - A present video-extracted PDF is not sufficient deck evidence by itself. A
@@ -425,7 +435,8 @@ completeness and must be rerun before an absence conclusion.
   probed and its bounded page count must match the manifest before either
   preflight or current-return persistence accepts the referential unit. Manifest
   paths reject NUL/dot ambiguity. The schema-v4 source is exactly
-  `<youtube_id>.mp4`; it takes precedence over legacy top-level video path
+  `<binding_token>.mp4`, and the manifest's `source_video_id` is that same
+  token; it takes precedence over legacy top-level video path
   fields and must pass the bounded `source-video` evidence probe as a
   root-confined regular ISO-BMFF recording with a usable video stream and
   positive duration. A promoted PDF must have the
@@ -481,8 +492,8 @@ The thirteen stable slide-contract fault classes are:
 | `slide_pdf_artifact_missing` | Explicit or Drive-ID PDF does not exist |
 | `slide_pdf_artifact_unavailable` | PDF is an offline cloud placeholder |
 | `slide_pdf_artifact_unreadable` | PDF could not complete bounded evidence inspection; use the nested reason code to distinguish parse, dependency, monitor, identity, containment, and resource causes |
-| `slide_video_reference_missing` | Video extraction has no valid YouTube identity |
-| `slide_video_artifact_missing` | Required explicit/processed YouTube-ID PDF does not exist |
+| `slide_video_reference_missing` | Video extraction has no valid source identity |
+| `slide_video_artifact_missing` | Required explicit/processed identity-named PDF does not exist |
 | `slide_video_artifact_unavailable` | Video-derived PDF is an offline cloud placeholder |
 | `slide_video_artifact_unreadable` | Video-derived PDF could not complete bounded evidence inspection; use the nested reason code to select remediation |
 

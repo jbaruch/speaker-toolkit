@@ -152,10 +152,13 @@ The downloader result and exit-code contract lives in
 [subagent-instructions.md](subagent-instructions.md#slide-acquisition-per-slide_source),
 under `video_extracted`. Follow it before invoking the extractor.
 
-`youtube_id` must match the shared ingress grammar exactly:
-`[A-Za-z0-9_-]{11}`. It is validated before any filesystem or process boundary,
-is never normalized, and is the only component used to derive the frame
-workspace, PDF filenames, and manifest ownership. Every derived path must stay
+The third argument is the talk's **source binding token**: the bare
+11-character ID for a YouTube talk, `vimeo-<id>` or `infoq-<slug>` for the
+other providers `skills/vault-ingress/scripts/ingress_contract.py` supports.
+`{youtube_id}` in the paths below is that token; a YouTube talk's token is its
+ID, so those paths are unchanged. It is validated before any filesystem or
+process boundary, is never normalized, and is the only component used to derive
+the frame workspace, PDF filenames, and manifest ownership. Every derived path must stay
 under the canonical authorized output root; an existing redirecting symlink is
 rejected. The script passes video/output paths to ffmpeg as argv data with no
 shell interpolation, so shell metacharacters in valid native POSIX filenames do

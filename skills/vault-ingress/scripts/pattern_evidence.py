@@ -646,7 +646,10 @@ def _declared_pdf_path(talk: Mapping[str, object]) -> tuple[str, object] | None:
 
 
 def _identity_duration(talk: Mapping[str, object]) -> float | None:
-    """Return the recorded provider duration when it names this talk's source."""
+    """Return the recorded provider duration when it names this talk's source.
+
+    Provider/source-owned duration only, never prior analysis prose.
+    """
     source = talk_source_identity(talk)
     identity = talk.get("source_identity")
     if source is None or not (
@@ -665,11 +668,6 @@ def _identity_duration(talk: Mapping[str, object]) -> float | None:
     ):
         return None
     return float(duration)
-
-
-def _catalog_duration(talk: Mapping[str, object]) -> float | None:
-    """Return only provider/source-owned duration, never prior analysis prose."""
-    return _identity_duration(talk)
 
 
 def _selected_video_assessment(
@@ -1280,7 +1278,7 @@ def _validate_transcript_quality_for_owner(
 
     provenance_kind = provenance.get("kind")
     owner_youtube_id = talk.get("youtube_id")
-    owner_duration = _catalog_duration(talk)
+    owner_duration = _identity_duration(talk)
     if provenance_kind == "youtube_duration":
         if provenance.get("video_id") != owner_youtube_id:
             return (
@@ -1639,7 +1637,7 @@ def build_evidence_context(
     }:
         canonical_transcript_source = cast(str, recorded_transcript_source)
     timing_owner_source = canonical_transcript_source or "unknown"
-    timing_owner_duration = _catalog_duration(talk)
+    timing_owner_duration = _identity_duration(talk)
     if timing_owner_duration is None:
         timing_owner_duration = predeclared_video_duration
     timing_owner_media_sha256 = (
