@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.146 — 2026-09-08
+
 ### A slow import is no longer reported as a missing module
 
 `check-runtime.py` probes each lane's modules in a bounded child, and a probe
