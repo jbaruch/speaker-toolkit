@@ -33,10 +33,17 @@ LOCAL_ARTIFACT_FIELDS = (
 )
 # Shape version of the structured_data.video_extraction record. Owned by
 # skills/vault-ingress/scripts/video-slide-extraction.py and shared here so the
-# producer and every reader gate on one number. v4 binds each derivative to the
-# engine-owned source receipt; v3 stays readable as an archival/reprocessing
-# input and is never upgraded in place.
-VIDEO_EXTRACTION_SCHEMA_VERSION = 4
+# producer and every reader gate on one number. v5 reads `source_video_id` as a
+# provider-qualified binding token; v4 read it as a YouTube ID, which every v5
+# reader still accepts because a YouTube ID is exactly its own token. That is
+# what makes this a backward-compatible widening rather than a repurposed
+# field: a v4 record needs no migration and no re-extraction, and the two
+# contracts stay distinguishable because a v4 record may not carry a
+# provider-prefixed token. v3 predates the source receipt and stays readable
+# only as an archival/reprocessing input, never upgraded in place.
+VIDEO_EXTRACTION_SCHEMA_VERSION = 5
+YOUTUBE_BOUND_VIDEO_EXTRACTION_SCHEMA_VERSION = 4
+READABLE_VIDEO_EXTRACTION_SCHEMA_VERSIONS = frozenset({4, 5})
 ARCHIVAL_VIDEO_EXTRACTION_SCHEMA_VERSION = 3
 YOUTUBE_ID_RE = re.compile(r"[A-Za-z0-9_-]{11}")
 GOOGLE_DRIVE_ID_RE = re.compile(r"[A-Za-z0-9_-]{3,}")
@@ -49,6 +56,13 @@ INFOQ_SLUG_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]{1,79}[a-z0-9])?")
 # nothing derives a binding token for it, so its artifacts stay unbound rather
 # than binding to a token that no reader can reproduce.
 SUPPORTED_SOURCE_PROVIDERS = ("youtube", "vimeo", "infoq")
+# The provider separator sits OUTSIDE the YouTube ID alphabet on purpose. With
+# an in-alphabet separator, the InfoQ slug `kafka` and a real YouTube ID
+# `infoq-kafka` produce the same token, and every ownership, alias, and
+# duplicate check keyed on that token conflates two different recordings. A
+# character no YouTube ID can contain makes the overlap unrepresentable rather
+# than unlikely.
+SOURCE_PROVIDER_SEPARATOR = "+"
 
 
 class IngressContractError(ValueError):
@@ -187,7 +201,7 @@ class SourceIdentity:
     def binding_token(self) -> str:
         if self.provider == "youtube":
             return self.video_id
-        return f"{self.provider}-{self.video_id}"
+        return f"{self.provider}{SOURCE_PROVIDER_SEPARATOR}{self.video_id}"
 
 
 _PROVIDER_PARSERS = (
@@ -242,25 +256,25 @@ def talk_binding_token(talk: Mapping[str, Any]) -> str | None:
 
 
 def is_source_binding_token(value: Any) -> bool:
-    """Return whether some supported identity produces this exact token.
+    """Return whether exactly one supported identity produces this token."""
+    return token_source_identity(value) is not None
 
-    Any 11 URL-safe characters are a YouTube ID, so a string that reads as a
-    prefixed token at that length (``infoq-Upper``) is accepted as the YouTube
-    token it also is. The token still names exactly one talk's artifacts, which
-    is all a binding asks of it.
+
+def token_source_identity(value: Any) -> SourceIdentity | None:
+    """Return the one identity a binding token names, otherwise ``None``.
+
+    The inverse of ``binding_token`` and total: the separator cannot appear in a
+    YouTube ID, so a prefixed token and a YouTube token are never the same
+    string and this never has to choose between two readings.
     """
     if not isinstance(value, str):
-        return False
+        return None
     if YOUTUBE_ID_RE.fullmatch(value):
-        return True
-    return any(
-        value.startswith(f"{provider}-")
-        and _PROVIDER_ID_PATTERNS[provider].fullmatch(
-            value[len(provider) + 1 :],
-        )
-        for provider in SUPPORTED_SOURCE_PROVIDERS
-        if provider != "youtube"
-    )
+        return SourceIdentity("youtube", value)
+    provider, separator, video_id = value.partition(SOURCE_PROVIDER_SEPARATOR)
+    if not separator or provider == "youtube":
+        return None
+    return source_identity_for(provider, video_id)
 
 
 def parse_google_drive_id(url: Any) -> str | None:

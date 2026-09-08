@@ -15,8 +15,8 @@ Usage:
     <outdir>      Directory for intermediate files and output artifacts
     <source_token>
                   The talk's source binding token, used to name the output PDF:
-                  the bare ID for a YouTube talk, `vimeo-<id>` or
-                  `infoq-<slug>` for the other supported providers
+                  the bare ID for a YouTube talk, `vimeo+<id>` or
+                  `infoq+<slug>` for the other supported providers
     --fps         Frames per second to extract (default: 0.5 = 1 frame per 2s)
     --threshold   Largest perceptual-hash distance treated as the same slide
                   (default: 8). Higher values merge more and keep fewer frames.
@@ -44,7 +44,10 @@ import sys
 import tempfile
 
 from artifact_locator import ArtifactLocatorError, materialize_native_root
-from ingress_contract import is_source_binding_token
+from ingress_contract import (
+    VIDEO_EXTRACTION_SCHEMA_VERSION,
+    is_source_binding_token,
+)
 from video_evidence import (
     VideoEvidenceAssessment,
     VideoEvidenceError,
@@ -62,10 +65,12 @@ PIPELINE_VERSION = "0.14.0"
 
 # Shape version of the structured_data.video_extraction record (distinct from
 # PIPELINE_VERSION, which tracks extractor behavior — this tracks the record's
-# field shape). Bump on any field add/remove/rename. Records written before this
-# field existed have no schema_version and are read as the legacy shape (0).
+# field shape). The number itself lives in ingress_contract so the producer and
+# every reader gate on one constant; a second copy here is how they drift apart.
+# Records written before this field existed have no schema_version and are read
+# as the legacy shape (0).
 # See skills/vault-ingress/references/schemas-db.md ("Video Extraction Output Schema").
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = VIDEO_EXTRACTION_SCHEMA_VERSION
 
 VIDEO_DEPENDENCY_INSTALL = (
     'pip install "ImageHash==4.3.2" "numpy==2.2.6" "Pillow==12.3.0" "filelock==3.32.2"'

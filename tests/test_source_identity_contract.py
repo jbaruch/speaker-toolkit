@@ -70,8 +70,8 @@ def test_youtube_binding_token_is_the_bare_id(ingress_contract):
 @pytest.mark.parametrize(
     ("provider", "video_id", "token"),
     [
-        ("vimeo", "1223667266", "vimeo-1223667266"),
-        ("infoq", "java-puzzle", "infoq-java-puzzle"),
+        ("vimeo", "1223667266", "vimeo+1223667266"),
+        ("infoq", "java-puzzle", "infoq+java-puzzle"),
     ],
 )
 def test_other_providers_carry_their_prefix(
@@ -100,10 +100,10 @@ def test_stored_youtube_id_outranks_the_active_url(ingress_contract):
 @pytest.mark.parametrize(
     ("talk", "token"),
     [
-        ({"video_url": "https://vimeo.com/1223667266"}, "vimeo-1223667266"),
+        ({"video_url": "https://vimeo.com/1223667266"}, "vimeo+1223667266"),
         (
             {"video_url": "https://www.infoq.com/presentations/java-puzzle/"},
-            "infoq-java-puzzle",
+            "infoq+java-puzzle",
         ),
         ({"video_url": "https://youtu.be/dQw4w9WgXcQ"}, "dQw4w9WgXcQ"),
         ({"video_url": "https://example.com/talk"}, None),
@@ -146,7 +146,7 @@ def test_supported_providers_are_the_ones_with_parsers(ingress_contract):
 
 @pytest.mark.parametrize(
     "token",
-    ["dQw4w9WgXcQ", "vimeo-1223667266", "infoq-java-puzzle"],
+    ["dQw4w9WgXcQ", "vimeo+1223667266", "infoq+java-puzzle"],
 )
 def test_every_identity_produces_a_recognized_binding_token(ingress_contract, token):
     assert ingress_contract.is_source_binding_token(token) is True
@@ -154,14 +154,60 @@ def test_every_identity_produces_a_recognized_binding_token(ingress_contract, to
 
 @pytest.mark.parametrize(
     "token",
-    ["vimeo-1234", "infoq-Upper-Case", "vimeo-", "twitch-1223667266", "", None, 11],
+    ["vimeo+1234", "infoq+Upper-Case", "vimeo+", "twitch+1223667266", "", None, 11],
 )
 def test_malformed_tokens_bind_nothing(ingress_contract, token):
     assert ingress_contract.is_source_binding_token(token) is False
 
 
-def test_an_eleven_character_token_is_a_youtube_id_whatever_it_spells(
-    ingress_contract,
+@pytest.mark.parametrize(
+    ("provider", "video_id", "colliding_youtube_id"),
+    # A Vimeo ID is at least six digits, so `vimeo-<id>` was never 11
+    # characters and never collided. InfoQ slugs are the real surface.
+    [
+        ("infoq", "kafka", "infoq-kafka"),
+        ("infoq", "abc", "infoq-abc12"),
+    ],
+)
+def test_no_token_can_be_mistaken_for_a_youtube_id(
+    ingress_contract, provider, video_id, colliding_youtube_id
 ):
-    """Documented in `is_source_binding_token`; pinned so it stays deliberate."""
-    assert ingress_contract.is_source_binding_token("infoq-Upper") is True
+    """The separator is outside the YouTube alphabet, so overlap is unrepresentable.
+
+    With an in-alphabet separator the InfoQ slug `kafka` and the YouTube ID
+    `infoq-kafka` produced one token, and every ownership, alias, and duplicate
+    check keyed on it conflated two different recordings.
+    """
+    token = ingress_contract.SourceIdentity(provider, video_id).binding_token
+    assert token != colliding_youtube_id
+    assert ingress_contract.token_source_identity(token) == (
+        ingress_contract.SourceIdentity(provider, video_id)
+    )
+    assert ingress_contract.token_source_identity(colliding_youtube_id) == (
+        ingress_contract.SourceIdentity("youtube", colliding_youtube_id)
+    )
+
+
+@pytest.mark.parametrize(
+    ("provider", "video_id"),
+    [
+        ("youtube", "dQw4w9WgXcQ"),
+        ("vimeo", "1223667266"),
+        ("infoq", "java-puzzle"),
+    ],
+)
+def test_the_token_round_trips_back_to_its_identity(
+    ingress_contract, provider, video_id
+):
+    identity = ingress_contract.SourceIdentity(provider, video_id)
+    assert ingress_contract.token_source_identity(identity.binding_token) == identity
+
+
+def test_the_separator_is_outside_the_youtube_alphabet(ingress_contract):
+    """The property every collision guarantee above rests on."""
+    assert (
+        ingress_contract.YOUTUBE_ID_RE.fullmatch(
+            ingress_contract.SOURCE_PROVIDER_SEPARATOR * 11
+        )
+        is None
+    )

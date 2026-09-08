@@ -2901,3 +2901,33 @@ def test_manifest_state_carries_the_canonical_receipt_for_lineage_readers(
     )
 
     assert state.source_receipt == manifest["source_receipt"]
+
+
+def test_a_v4_manifest_may_not_carry_a_provider_token(return_validation):
+    """The two readable contracts stay distinguishable (#427 review)."""
+    value = _video_return()
+    manifest = value["structured_data"]["video_extraction"]
+    manifest["schema_version"] = (
+        return_validation.YOUTUBE_BOUND_VIDEO_EXTRACTION_SCHEMA_VERSION
+    )
+    manifest["source_video_id"] = "vimeo+1223667266"
+
+    with pytest.raises(return_validation.ReturnValidationError) as excinfo:
+        return_validation.validate_video_extraction_manifest(value["structured_data"])
+
+    assert "must be a YouTube ID in a schema-4 manifest" in str(excinfo.value)
+
+
+def test_a_v4_manifest_with_a_youtube_id_still_reads(return_validation):
+    """A vault full of v4 records needs no migration and no re-extraction."""
+    value = _video_return()
+    manifest = value["structured_data"]["video_extraction"]
+    manifest["schema_version"] = (
+        return_validation.YOUTUBE_BOUND_VIDEO_EXTRACTION_SCHEMA_VERSION
+    )
+
+    state = return_validation.validate_video_extraction_manifest(
+        value["structured_data"]
+    )
+
+    assert state.source_video_id == manifest["source_video_id"]

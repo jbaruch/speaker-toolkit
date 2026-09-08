@@ -33,11 +33,19 @@ provider's own ID, resolved once in `ingress_contract.py`. Artifacts bind to a
 **binding token** derived from it. A YouTube token is the bare ID, which is the
 property that made this safe to land: every stored artifact, manifest, receipt
 and filename binds to exactly the string it always did, and no vault content
-moves. Other providers carry a prefix (`vimeo-1223667266`,
-`infoq-java-puzzle`), which is also what keeps two providers sharing an ID from
+moves. Other providers carry a prefix (`vimeo+1223667266`,
+`infoq+java-puzzle`), which is also what keeps two providers sharing an ID from
 reading as one identity. InfoQ publishes no video ID at all — `infoq.com/
 presentations/java-puzzle/` — so its presentation slug is the identity, which
 is why the token could not simply be a different ID format.
+
+The separator is `+` because `-` was not safe. Review caught that with an
+in-alphabet separator the InfoQ slug `kafka` and a real YouTube ID
+`infoq-kafka` produce the same token, and every ownership, alias, and
+duplicate check keyed on that token would conflate two different recordings.
+A character no YouTube ID can contain makes the overlap unrepresentable
+rather than unlikely, and it makes the token's inverse total — one token, one
+identity, no reading to choose between.
 
 Two deliberate asymmetries. The YouTube-owned transcript provenance kinds
 (`youtube_captions`, `youtube_whisper`, `youtube_duration`) still compare the
@@ -52,6 +60,12 @@ lane this issue is about.
 Promotion is the one place that stayed YouTube-only. It writes the talk's
 `youtube_id`, so it refuses a non-YouTube canonical outright rather than
 stamping a foreign ID into a field that means something else.
+
+The extraction manifest goes to schema v5, where `source_video_id` is that
+binding token. v4 read it as a YouTube ID and stays readable: a YouTube ID is
+exactly its own token, so no vault record needs migrating and nothing needs
+re-extracting. What keeps the two contracts distinguishable is that a v4
+record may not carry a provider-prefixed token.
 
 The audit's report contract goes to v4: `out_of_scope_talk_count`, a per-talk
 `source_provider`, and `active_source_provider_out_of_scope` — low priority,

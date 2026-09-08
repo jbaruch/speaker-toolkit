@@ -2201,7 +2201,7 @@ def test_a_backup_left_by_a_killed_publish_is_restored_next_run(
 
 @pytest.mark.parametrize(
     "source_token",
-    [YOUTUBE_ID, "vimeo-1223667266", "infoq-java-puzzle"],
+    [YOUTUBE_ID, "vimeo+1223667266", "infoq+java-puzzle"],
 )
 def test_pipeline_names_artifacts_for_any_supported_provider(
     video_slide_extraction, source_token
@@ -2214,7 +2214,7 @@ def test_pipeline_names_artifacts_for_any_supported_provider(
 # so the cases below are all longer than one.
 @pytest.mark.parametrize(
     "source_token",
-    ["vimeo-1234", "infoq-Upper-Case", "vimeo-", "twitch-1223667266"],
+    ["vimeo+1234", "infoq+Upper-Case", "vimeo+", "twitch+1223667266"],
 )
 def test_pipeline_rejects_a_malformed_provider_token(
     video_slide_extraction, source_token

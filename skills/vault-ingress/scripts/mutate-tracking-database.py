@@ -1161,7 +1161,12 @@ def _apply_promote_source_alias(
             )
     existing = database.get("source_aliases", [])
     retired = next(
-        (item for item in existing if item["alias"]["video_id"] == promoted_id), None
+        (
+            item
+            for item in existing
+            if record_identity_token(item["alias"]) == promoted_token
+        ),
+        None,
     )
     if retired is not None and retired["talk_filename"] != filename:
         raise TrackingDatabaseMutationError(

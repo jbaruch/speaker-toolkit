@@ -527,3 +527,30 @@ def test_promotion_refuses_a_non_youtube_canonical(mutate_tracking_database):
 
     assert "YouTube canonical only" in str(caught.value)
     assert database == original
+
+
+# An all-digit YouTube ID is also a syntactically valid Vimeo ID, which is the
+# only way two providers can genuinely share a bare `video_id` string.
+SHARED_BARE_ID = "12345678901"
+
+
+def test_promotion_retires_by_token_not_by_bare_id(mutate_tracking_database):
+    """A Vimeo alias whose bare ID equals the promoted YouTube ID must not be
+    retired in its place (#427 review)."""
+    from test_source_alias_contract import _vimeo_provider
+
+    database = _database()
+    decoy = _record(
+        alias=_vimeo_provider(SHARED_BARE_ID),
+        canonical=_provider(database["talks"][0]["youtube_id"]),
+        relationship="valid_duplicate",
+    )
+    database["source_aliases"] = [decoy]
+
+    candidate, _ = mutate_tracking_database.build_candidate(
+        database, [_promotion(database, SHARED_BARE_ID)]
+    )
+
+    latest = candidate["source_aliases"][-1]
+    assert latest["retired_alias"] is None, "a bare-ID match retired the wrong record"
+    assert decoy in candidate["source_aliases"]

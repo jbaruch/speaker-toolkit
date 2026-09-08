@@ -189,7 +189,7 @@ text.
 
   Only once this id's entry is `ok` or `skip`, extract. The extractor's third
   argument is the talk's source binding token — the bare ID for a YouTube talk,
-  `vimeo-<id>` or `infoq-<slug>` otherwise — and `{youtube_id}` in the paths
+  `vimeo+<id>` or `infoq+<slug>` otherwise — and `{youtube_id}` in the paths
   below is that token:
   ```bash
   "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/video-slide-extraction.py" \

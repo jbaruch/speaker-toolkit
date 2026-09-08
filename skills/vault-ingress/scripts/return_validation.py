@@ -44,7 +44,10 @@ from catalog_io import (
 )
 from ingress_contract import (
     ARCHIVAL_VIDEO_EXTRACTION_SCHEMA_VERSION,
+    READABLE_VIDEO_EXTRACTION_SCHEMA_VERSIONS,
+    YOUTUBE_ID_RE,
     VIDEO_EXTRACTION_SCHEMA_VERSION,
+    YOUTUBE_BOUND_VIDEO_EXTRACTION_SCHEMA_VERSION,
     IngressContractError,
     has_local_source_artifact,
     has_pdf_source,
@@ -52,6 +55,7 @@ from ingress_contract import (
     has_remote_acquisition_source,
     has_transcript_source,
     has_video_source,
+    is_source_binding_token,
     source_capabilities,
     talk_binding_token,
     validate_talk_record_schemas,
@@ -278,7 +282,10 @@ SUBSTANTIVE_PROSE_FIELDS = frozenset(
 )
 LANGUAGE_RE = re.compile(r"^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$")
 CONDITION_ID_RE = re.compile(r"^[a-z0-9]+(?:[-_][a-z0-9]+)*$")
-VIDEO_SOURCE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+# Accepts a bare YouTube ID and a provider-qualified binding token; the
+# per-version rules in `validate_video_extraction_manifest` decide which of
+# those the manifest at hand is allowed to carry.
+VIDEO_SOURCE_ID_RE = re.compile(r"^[A-Za-z0-9_+-]+$")
 QUEUE_CLAIM_SCHEMA_VERSION = 7
 SOURCE_LOCATED_QUEUE_CLAIM_SCHEMA_VERSION = 4
 BASELINE_QUEUE_CLAIM_SCHEMA_VERSION = 3
@@ -1160,14 +1167,14 @@ def validate_video_extraction_manifest(structured: dict) -> VideoExtractionState
             "slide_source video_extracted requires a complete "
             "structured_data.video_extraction schema-v4 manifest"
         )
-    if manifest.get("schema_version") != VIDEO_EXTRACTION_SCHEMA_VERSION:
+    manifest_version = manifest.get("schema_version")
+    if manifest_version not in READABLE_VIDEO_EXTRACTION_SCHEMA_VERSIONS:
         # An archival record is separable from a malformed one: it was valid
         # under its own contract and names the exact repair (reacquire the
         # source, re-extract), so readers surface it as work rather than rot.
         reason = (
             "video_extraction.schema_version_archival"
-            if manifest.get("schema_version")
-            == ARCHIVAL_VIDEO_EXTRACTION_SCHEMA_VERSION
+            if manifest_version == ARCHIVAL_VIDEO_EXTRACTION_SCHEMA_VERSION
             else None
         )
         _manifest_error(
@@ -1192,6 +1199,28 @@ def validate_video_extraction_manifest(structured: dict) -> VideoExtractionState
     ):
         _manifest_error(
             "source_video_id", "must be a non-empty URL-safe identity token"
+        )
+    # What separates the two readable contracts. A v4 record was written when
+    # the field held a YouTube ID, so it may not carry a provider-prefixed
+    # token; a v5 record may carry either, because a YouTube ID is its own
+    # token. Nothing rewrites a v4 record to say so.
+    if (
+        manifest_version == YOUTUBE_BOUND_VIDEO_EXTRACTION_SCHEMA_VERSION
+        and YOUTUBE_ID_RE.fullmatch(source_video_id) is None
+    ):
+        _manifest_error(
+            "source_video_id",
+            f"must be a YouTube ID in a schema-"
+            f"{YOUTUBE_BOUND_VIDEO_EXTRACTION_SCHEMA_VERSION} manifest; a "
+            f"provider-qualified token requires schema "
+            f"{VIDEO_EXTRACTION_SCHEMA_VERSION}",
+        )
+    elif (
+        manifest_version == VIDEO_EXTRACTION_SCHEMA_VERSION
+        and not is_source_binding_token(source_video_id)
+    ):
+        _manifest_error(
+            "source_video_id", "must be a supported provider's binding token"
         )
     source_video_path = _validate_absolute_manifest_path(
         manifest.get("source_video_path"), "source_video_path"

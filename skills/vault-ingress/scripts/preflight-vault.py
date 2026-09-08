@@ -1384,9 +1384,12 @@ class VaultPreflight:
                     severity,
                     "slide_video_reference_missing",
                     "video_extracted source requires a valid source identity",
-                    field="youtube_id",
+                    field="video_url",
                     expected="a supported provider identity",
-                    actual=talk.get("video_url"),
+                    actual={
+                        "video_url": talk.get("video_url"),
+                        "youtube_id": talk.get("youtube_id"),
+                    },
                 )
             else:
                 pdf_path = self.vault_root / "slides" / f"{youtube_id}.pdf"

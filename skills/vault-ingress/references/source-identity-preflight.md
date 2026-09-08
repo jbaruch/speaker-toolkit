@@ -337,8 +337,8 @@ provider set and each provider's URL forms and ID shape.
 Every artifact, manifest, and receipt binds to the identity's **binding token**.
 A YouTube token is the bare 11-character ID, so an artifact named before
 providers were qualified binds to the same token it always did; every other
-provider carries its name as a prefix (`vimeo-1223667266`,
-`infoq-java-puzzle`). InfoQ publishes no video ID at all, so its presentation
+provider carries its name as a prefix (`vimeo+1223667266`,
+`infoq+java-puzzle`). InfoQ publishes no video ID at all, so its presentation
 slug is the identity.
 
 A YouTube ID is exactly 11 URL-safe characters and must agree with `youtube_id`;

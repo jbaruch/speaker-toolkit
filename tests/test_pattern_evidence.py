@@ -3972,9 +3972,9 @@ def test_detection_claim_leaves_non_string_sources_used_untouched() -> None:
 # could still only be scored from the slides PDF, because every binding lane
 # resolved a bare `youtube_id`. These are the two shapes from the live vault.
 VIMEO_TALK_URL = "https://vimeo.com/1223667266"
-VIMEO_TOKEN = "vimeo-1223667266"
+VIMEO_TOKEN = "vimeo+1223667266"
 INFOQ_TALK_URL = "https://www.infoq.com/presentations/java-puzzle/"
-INFOQ_TOKEN = "infoq-java-puzzle"
+INFOQ_TOKEN = "infoq+java-puzzle"
 
 
 def _receipt_bound_transcript(vault: Path, media: Path) -> Path:

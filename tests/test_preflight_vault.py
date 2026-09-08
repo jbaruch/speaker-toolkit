@@ -4428,7 +4428,7 @@ def test_archival_v3_manifest_asks_for_re_extraction_not_a_stamped_digest(
         for item in report["findings"]
         if item["code"] == "video_extraction_source_receipt_missing"
     )
-    assert finding["expected"] == 4
+    assert finding["expected"] == preflight_vault.VIDEO_EXTRACTION_SCHEMA_VERSION
     assert finding["actual"] == 3
     # Preflight reports the gap; it never writes a receipt of its own.
     stored = json.loads(vault_fixture["database"].read_text())["talks"][0]
@@ -4849,3 +4849,28 @@ def test_two_providers_sharing_an_id_are_not_a_duplicate_recording(
     report = preflight_vault.run_preflight(vault_fixture["root"])
 
     assert "duplicate_youtube_id" not in finding_codes(report)
+
+
+def test_missing_identity_for_video_slides_names_the_field_it_read(
+    preflight_vault, vault_fixture
+):
+    """A Vimeo talk has no `youtube_id` by design; reporting one misleads."""
+    talk = vimeo_talk(
+        video_url="https://example.com/talks/1",
+        slide_source="video_extracted",
+        status="pending",
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    finding = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "slide_video_reference_missing"
+    )
+    assert finding["field"] == "video_url"
+    assert finding["actual"] == {
+        "video_url": "https://example.com/talks/1",
+        "youtube_id": None,
+    }

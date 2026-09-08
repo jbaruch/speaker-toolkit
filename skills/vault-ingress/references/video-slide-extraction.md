@@ -153,7 +153,7 @@ The downloader result and exit-code contract lives in
 under `video_extracted`. Follow it before invoking the extractor.
 
 The third argument is the talk's **source binding token**: the bare
-11-character ID for a YouTube talk, `vimeo-<id>` or `infoq-<slug>` for the
+11-character ID for a YouTube talk, `vimeo+<id>` or `infoq+<slug>` for the
 other providers `skills/vault-ingress/scripts/ingress_contract.py` supports.
 `{youtube_id}` in the paths below is that token; a YouTube talk's token is its
 ID, so those paths are unchanged. It is validated before any filesystem or

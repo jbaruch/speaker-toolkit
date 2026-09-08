@@ -1577,10 +1577,10 @@ portable canonical form `slides/<artifact>.pdf`; persistence copies it to the ta
 record and the analysis writer renders it in the provenance header. For
 `slide_source: "video_extracted"`, the filename must be
 `slides/{structured_data.video_extraction.source_video_id}.pdf`. `status: "processed"`
-requires that path plus a complete schema-v4 manifest whose top-level crop provenance
-and `slide_region` artifact independently agree on a verified manual crop. The return's
-manifest identity is also matched against the claimed talk's `youtube_id` before either
-writer changes state.
+requires that path plus a complete readable-version manifest whose top-level crop
+provenance and `slide_region` artifact independently agree on a verified manual crop.
+The return's manifest identity is also matched against the claimed talk's source
+binding token before either writer changes state.
 
 Any video-extracted return without a promoted artifact must omit
 `slides_local_path`, include it in `clear_fields`, and cannot finish `processed`. A
@@ -1912,12 +1912,18 @@ quality receipt while removing stale timing in the same transaction. Direct
 Produced by `skills/vault-ingress/scripts/video-slide-extraction.py`.
 Stored in `structured_data.video_extraction` on the talk entry. `source_video_id`
 is the talk's source binding token, which is the bare ID for a YouTube talk and
-carries a provider prefix for every other supported provider:
+carries a provider prefix for every other supported provider.
+
+Readers accept **v4 and v5**. v4 read `source_video_id` as a YouTube ID; v5
+reads it as that binding token. A YouTube ID is exactly its own token, so a v4
+record needs no migration and no re-extraction — but it may not carry a
+provider-prefixed token, which is what keeps the two contracts distinguishable.
+The extractor writes v5.
 
 ```json
 {
   "slide_source": "video_extracted",
-  "schema_version": 4,
+  "schema_version": 5,
   "pipeline_version": "0.14.0",
   "source_video_id": "AbCdEfGhI_1",
   "source_video_path": "/vault/slides-rebuild/AbCdEfGhI_1/AbCdEfGhI_1.mp4",
@@ -2079,7 +2085,7 @@ counts agree with `unique_frame_count`; and artifact scope, crop method, verific
 and trust flags are mutually consistent. `review_required: false` is accepted only for
 a verified manual `slide_region`; setting one optimistic flag cannot turn a context PDF
 into a deck. Persistence replaces this complete owner-versioned manifest rather than
-deep-merging it, so obsolete v1/v2/v3 fields cannot survive inside a schema-v4 record.
+deep-merging it, so obsolete v1/v2/v3 fields cannot survive inside a current record.
 
 `retained_frames` maps each PDF page to the zero-based index in the sampled frame
 sequence and its approximate video timestamp (`frame_index / fps_used`). Both artifacts
