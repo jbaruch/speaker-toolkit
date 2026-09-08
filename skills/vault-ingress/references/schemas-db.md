@@ -808,8 +808,9 @@ one that exists. Provenance is written by an owner who checked something, never
 inferred from a date that happens to be present.
 
 `skills/vault-ingress/scripts/establish-date-provenance.py` writes the ceiling
-records. It is a dry run by default and `--apply` requires the input digest from
-that dry run, like the migration CLI. It writes `date_provenance` records only —
+records. It is a dry run by default, `--apply` requires the input digest from
+that dry run, and the backup lands under `.backups/` beside the owner
+migration's, all like the migration CLI. It writes `date_provenance` records only —
 never a talk's `date`, and never a method that claims a delivery day — so the
 only thing it can add is a bound. Its report names every proposal, every talk it
 refused and why (the closed `BLOCKED_REASONS` in that file), and a coverage block

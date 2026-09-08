@@ -191,7 +191,14 @@ def _validate_as_of(value: str) -> str:
 
 
 def _backup_path(path: Path, input_sha256: str) -> Path:
-    return path.with_name(f"{path.name}.{input_sha256[:12]}.bak")
+    """Beside the owner migration's backups, never loose in the vault root.
+
+    The vault already collects database backups under `.backups/`, and a `.bak`
+    dropped next to the database is a stray file in a directory a human reads.
+    The operation is named in the filename for the same reason the migration
+    names its own: two backups of one input are otherwise indistinguishable.
+    """
+    return path.parent / ".backups" / f"{path.name}.date-provenance-{input_sha256}.bak"
 
 
 def execute(
