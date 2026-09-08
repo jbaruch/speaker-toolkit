@@ -21,7 +21,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, BinaryIO, Callable, TypedDict
+from typing import Any, BinaryIO, Callable, Mapping, TypedDict
 
 from ytdlp_runtime import (
     YTDLP_REQUIRED_VERSION,
@@ -36,6 +36,12 @@ MODULE_PROBE_SCHEMA_VERSION = 1
 MODULE_PROBE_TIMEOUT_SECONDS = 30
 MODULE_PROBE_MAX_OUTPUT_BYTES = 4096
 MODULE_PROBE_CHILD_FLAG = "--module-probe-child"
+# Probe outcomes that leave the module's presence UNKNOWN rather than answered.
+# A timeout is the ordinary one: the configured interpreter can live on a
+# network filesystem, where a cold import reads its dependencies over the
+# network and a healthy install takes minutes. Measured on a Drive-hosted vault
+# venv, `import mlx_whisper` took 568s cold and 1s warm, almost all of it scipy.
+UNRESOLVED_PROBE_REASONS = frozenset({"timeout", "probe_start_failure"})
 MINIMUM_PYTHON = (3, 10)
 PSUTIL_REQUIRED_VERSION = "7.2.2"
 FILELOCK_REQUIRED_VERSION = "3.32.2"
@@ -387,6 +393,41 @@ def _command_available(command: str) -> bool:
     return shutil.which(command) is not None
 
 
+def unresolved_module_probes(report: Mapping[str, Any]) -> dict[str, str]:
+    """Map each module whose probe never answered to the reason it did not.
+
+    Separated from the missing set because the two need different repairs: a
+    missing module is one the probe found absent, repaired by installing it; an
+    unresolved one is a module whose presence the probe never established,
+    usually repaired by warming the interpreter it lives on.
+    """
+    unresolved: dict[str, str] = {}
+    for lane in report.get("lanes", {}).values():
+        failures = lane.get("module_failures", {})
+        for name in lane.get("unresolved_modules", []):
+            failure = failures.get(name)
+            if isinstance(failure, dict):
+                unresolved[name] = str(failure.get("reason"))
+    return unresolved
+
+
+def _unresolved_advice(report: Mapping[str, Any]) -> str:
+    """Name the modules whose presence is unknown, and the repair that fits."""
+    unresolved = unresolved_module_probes(report)
+    if not unresolved:
+        return ""
+    named = ", ".join(
+        f"{name} ({reason})" for name, reason in sorted(unresolved.items())
+    )
+    return (
+        f". NOTE: the probe did not resolve {named}, so these may be installed "
+        "but slow to import rather than absent — an interpreter on a network "
+        "filesystem reads its dependencies over the network on a cold import. "
+        "Read the package files once to warm them, then rerun this check, "
+        "before reinstalling anything"
+    )
+
+
 def _probe_command(
     label: str,
     command: str,
@@ -512,6 +553,18 @@ def build_report(
         missing_modules = sorted(
             name for name, available in modules.items() if not available
         )
+        # A probe that never finished says nothing about whether the module is
+        # installed. Reporting one as missing sends an operator to install a
+        # package that is already there — the repair for a cold interpreter on a
+        # network filesystem is to warm it, not to reinstall it. `missing_modules`
+        # keeps every unavailable name so existing readers are unaffected; this
+        # names the subset whose answer is unknown rather than "absent".
+        unresolved_modules = sorted(
+            name
+            for name, failure in module_failures.items()
+            if isinstance(failure, dict)
+            and failure.get("reason") in UNRESOLVED_PROBE_REASONS
+        )
         missing_commands = sorted(
             name for name, available in commands.items() if not available
         )
@@ -536,6 +589,7 @@ def build_report(
                 else {}
             ),
             "missing_modules": missing_modules,
+            "unresolved_modules": unresolved_modules,
             "missing_commands": missing_commands,
         }
     blocking = sorted(lane for lane in required if not lane_reports[lane]["available"])
@@ -584,7 +638,7 @@ def main(argv: list[str] | None = None) -> int:
             "and install the missing modules or commands at their required "
             "versions, or repair failed "
             f"dependency initialization, listed in the JSON in {sys.executable}, "
-            "then rerun this check",
+            "then rerun this check" + _unresolved_advice(report),
             file=sys.stderr,
         )
     elif report["degraded_lanes"]:
@@ -594,7 +648,7 @@ def main(argv: list[str] | None = None) -> int:
             f"{degraded}; install the missing modules or commands at their "
             "required versions, or repair "
             "failed dependency initialization, listed in the JSON in "
-            f"{sys.executable}, then rerun this check",
+            f"{sys.executable}, then rerun this check" + _unresolved_advice(report),
             file=sys.stderr,
         )
     return 0 if report["ok"] else 1

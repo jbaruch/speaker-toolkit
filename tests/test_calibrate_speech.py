@@ -331,7 +331,10 @@ def test_missing_runtime_refuses_before_acquisition(command, tmp_path, monkeypat
         command,
         "_owner_script",
         lambda name: (
-            SimpleNamespace(build_report=lambda *a: {"ok": False})
+            SimpleNamespace(
+                build_report=lambda *a: {"ok": False},
+                unresolved_module_probes=lambda report: {},
+            )
             if name == "check-runtime.py"
             else real(name)
         ),
@@ -339,3 +342,35 @@ def test_missing_runtime_refuses_before_acquisition(command, tmp_path, monkeypat
     with pytest.raises(command.SpeechRateError) as exc:
         command.execute(options(tmp_path, run=True))
     assert exc.value.code == "pace_runtime_unavailable"
+    assert "repair missing dependencies" in str(exc.value)
+
+
+def test_an_unresolved_probe_is_not_reported_as_a_missing_dependency(
+    command, tmp_path, monkeypatch
+):
+    """A probe that timed out says nothing about whether the module is there.
+
+    Telling an operator to install it sends them after a package that is already
+    installed, which is what a cold interpreter on a network filesystem looks
+    like (#444).
+    """
+    vault(tmp_path)
+    real = command._owner_script
+    monkeypatch.setattr(
+        command,
+        "_owner_script",
+        lambda name: (
+            SimpleNamespace(
+                build_report=lambda *a: {"ok": False},
+                unresolved_module_probes=lambda report: {"mlx-whisper": "timeout"},
+            )
+            if name == "check-runtime.py"
+            else real(name)
+        ),
+    )
+    with pytest.raises(command.SpeechRateError) as exc:
+        command.execute(options(tmp_path, run=True))
+    assert exc.value.code == "pace_runtime_unavailable"
+    assert "mlx-whisper (timeout)" in str(exc.value)
+    assert "warm" in str(exc.value)
+    assert "repair missing dependencies" not in str(exc.value)

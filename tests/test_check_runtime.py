@@ -1305,3 +1305,97 @@ def test_video_dependency_version_authorities_are_synchronized() -> None:
         )
         assert manifest_versions == [required_version]
         assert f'"{package}=={required_version}"' in reference
+
+
+# A probe that never answered is not a missing module (#444).
+
+
+def test_a_timed_out_probe_is_reported_as_unresolved_not_merely_missing(
+    monkeypatch,
+) -> None:
+    """An interpreter on a network filesystem reads its dependencies over the
+    network on a cold import, so a healthy install can blow the probe budget."""
+
+    def probe(name: str) -> dict[str, object]:
+        if name == "pptx":
+            return check_runtime._failed_module_probe("timeout", timeout_seconds=30)
+        return _available_probe()
+
+    monkeypatch.setattr(check_runtime, "_probe_module", probe)
+    monkeypatch.setattr(check_runtime, "_command_available", lambda _name: True)
+
+    report = check_runtime.build_report(("core", "pptx"), ("core",))
+
+    lane = report["lanes"]["pptx"]
+    assert lane["available"] is False
+    assert lane["unresolved_modules"] == ["python-pptx"]
+    # Still in missing_modules, so every existing reader is unaffected.
+    assert lane["missing_modules"] == ["python-pptx"]
+    assert check_runtime.unresolved_module_probes(report) == {"python-pptx": "timeout"}
+
+
+def test_an_absent_module_is_not_reported_as_unresolved(monkeypatch) -> None:
+    def probe(name: str) -> dict[str, object]:
+        if name == "pptx":
+            return _failed_probe("unavailable_import")
+        return _available_probe()
+
+    monkeypatch.setattr(check_runtime, "_probe_module", probe)
+    monkeypatch.setattr(check_runtime, "_command_available", lambda _name: True)
+
+    report = check_runtime.build_report(("core", "pptx"), ("core",))
+
+    assert report["lanes"]["pptx"]["missing_modules"] == ["python-pptx"]
+    assert report["lanes"]["pptx"]["unresolved_modules"] == []
+    assert check_runtime.unresolved_module_probes(report) == {}
+
+
+def test_a_healthy_lane_reports_no_unresolved_modules(monkeypatch) -> None:
+    monkeypatch.setattr(check_runtime, "_probe_module", lambda _n: _available_probe())
+    monkeypatch.setattr(check_runtime, "_command_available", lambda _name: True)
+
+    report = check_runtime.build_report(("core",), ("core",))
+
+    assert report["lanes"]["core"]["unresolved_modules"] == []
+    assert check_runtime.unresolved_module_probes(report) == {}
+
+
+def test_the_stderr_advice_names_the_module_and_the_warming_repair(
+    monkeypatch, capsys
+) -> None:
+    """The message that misled this project: 'install the missing modules' for a
+    package that was installed and merely cold."""
+
+    def probe(name: str) -> dict[str, object]:
+        if name == "pptx":
+            return check_runtime._failed_module_probe("timeout", timeout_seconds=30)
+        return _available_probe()
+
+    monkeypatch.setattr(check_runtime, "_probe_module", probe)
+    monkeypatch.setattr(check_runtime, "_command_available", lambda _name: True)
+
+    exit_code = check_runtime.main(["--lanes", "core,pptx", "--require-lanes", "pptx"])
+
+    assert exit_code == 1
+    stderr = capsys.readouterr().err
+    assert "python-pptx (timeout)" in stderr
+    assert "warm" in stderr
+    assert "before reinstalling anything" in stderr
+
+
+def test_the_stderr_advice_stays_silent_when_every_probe_answered(
+    monkeypatch, capsys
+) -> None:
+    def probe(name: str) -> dict[str, object]:
+        if name == "pptx":
+            return _failed_probe("unavailable_import")
+        return _available_probe()
+
+    monkeypatch.setattr(check_runtime, "_probe_module", probe)
+    monkeypatch.setattr(check_runtime, "_command_available", lambda _name: True)
+
+    check_runtime.main(["--lanes", "core,pptx", "--require-lanes", "pptx"])
+
+    stderr = capsys.readouterr().err
+    assert "install the missing modules" in stderr
+    assert "did not resolve" not in stderr

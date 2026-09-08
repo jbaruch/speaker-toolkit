@@ -128,10 +128,26 @@ def execute(args: argparse.Namespace) -> dict:
         required += ["source-media", "speech-calibration"]
         if args.allow_download:
             required.append("youtube-download")
-    runtime = _owner_script("check-runtime.py").build_report(
-        tuple(required), tuple(required)
-    )
+    check_runtime = _owner_script("check-runtime.py")
+    runtime = check_runtime.build_report(tuple(required), tuple(required))
     if runtime["ok"] is not True:
+        # A probe that never answered is not a missing dependency, and telling an
+        # operator to install one sends them after a package that is already
+        # there. The lane report already separates the two, so the refusal says
+        # which it is.
+        unresolved = check_runtime.unresolved_module_probes(runtime)
+        if unresolved:
+            named = ", ".join(
+                f"{name} ({reason})" for name, reason in sorted(unresolved.items())
+            )
+            raise SpeechRateError(
+                "pace_runtime_unavailable",
+                f"The runtime probe did not resolve {named}; these may be "
+                "installed but slow to import rather than absent. Read the "
+                "interpreter's package files once to warm them, rerun the "
+                "configured interpreter's check-runtime.py, and reinstall only "
+                "if it still reports them missing.",
+            )
         raise SpeechRateError(
             "pace_runtime_unavailable",
             "Run the configured interpreter's check-runtime.py for the required lanes; repair missing dependencies before calibration.",
