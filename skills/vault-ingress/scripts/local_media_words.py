@@ -333,10 +333,19 @@ def validate_word_sample(value: Any) -> dict:
         if (
             type(item["token_index"]) is not int
             or not previous_index < item["token_index"] < WORDS_MAX_COUNT
+            or not isinstance(item["reason"], str)
             or item["reason"] not in TOKEN_EXCLUSION_REASONS
         ):
             _refuse()
         previous_index = item["token_index"]
+    degenerate = sum(1 for item in exclusions if item["reason"] == "nonpositive_span")
+    # Same bound, same denominator as normalize_word_result: a receipt that
+    # excluded more than the admission share is not a valid receipt, whoever
+    # wrote it.
+    if degenerate and degenerate / (len(words) + degenerate) > (
+        WORDS_MAX_NONPOSITIVE_SHARE
+    ):
+        _refuse("word_nonpositive_span")
     return sample
 
 
@@ -404,7 +413,15 @@ def normalize_word_result(
                 # A zero-or-negative span carries no duration, so omitting the
                 # token leaves the elapsed-time denominator untouched and moves
                 # the word count by one. Recorded, never repaired.
-                if retained["end_seconds"] <= retained["start_seconds"]:
+                #
+                # Only a plain-number pair is judged here. A malformed timestamp
+                # is retained and refused by validate_word_sample below, which
+                # keeps its diagnostic rather than raising a comparison error.
+                if (
+                    type(retained["start_seconds"]) in (int, float)
+                    and type(retained["end_seconds"]) in (int, float)
+                    and retained["end_seconds"] <= retained["start_seconds"]
+                ):
                     degenerate += 1
                     exclusions.append(
                         {"token_index": token_index, "reason": "nonpositive_span"}

@@ -390,3 +390,41 @@ def test_the_receipt_declares_the_widened_exclusion_contract(words):
                 "token_exclusions": [{"token_index": 73, "reason": "repaired"}],
             }
         )
+
+
+@pytest.mark.parametrize("missing", ["start", "end"])
+def test_a_missing_timestamp_still_refuses_with_its_own_diagnostic(words, missing):
+    """The degenerate check must not turn a malformed span into a TypeError."""
+    raw = wide_raw(200, set())
+    del raw["segments"][0]["words"][7][missing]
+    with pytest.raises(words.LocalMediaError) as exc:
+        wide_normalized(words, raw)
+    assert exc.value.reason_code == "whisper_word_sample_invalid_word_span"
+
+
+@pytest.mark.parametrize("reason", [[], {}, {"nonpositive_span": True}, 3, None])
+def test_an_unhashable_exclusion_reason_refuses_rather_than_raising(words, reason):
+    result = wide_normalized(words, wide_raw(200, {73}))
+    result["token_exclusions"] = [{"token_index": 73, "reason": reason}]
+    with pytest.raises(words.LocalMediaError):
+        words.validate_word_sample(result)
+
+
+def test_the_reader_enforces_the_same_admission_bound_as_the_writer(words):
+    """A receipt excluding more than the bound is invalid, whoever wrote it."""
+    result = wide_normalized(words, wide_raw(200, {73}))
+    over = result["words"][:8]
+    result["words"] = over
+    result["token_exclusions"] = [
+        {"token_index": index, "reason": "nonpositive_span"}
+        for index in range(300, 300 + len(over))
+    ]
+    with pytest.raises(words.LocalMediaError) as exc:
+        words.validate_word_sample(result)
+    assert exc.value.reason_code == "whisper_word_sample_invalid_word_nonpositive_span"
+
+
+def test_the_reader_admits_a_receipt_inside_the_bound(words):
+    """The writer's own output round-trips through the reader unchanged."""
+    result = wide_normalized(words, wide_raw(200, {73}))
+    assert words.validate_word_sample(copy.deepcopy(result)) == result

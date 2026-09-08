@@ -35,13 +35,16 @@ A degenerate token is now excluded from `words` and recorded in
 when the degenerate share exceeds `WORDS_MAX_NONPOSITIVE_SHARE`, which is the
 case the strictness was really protecting against: a misaligned transcript
 degrades many spans at once and its other timestamps are untrustworthy too. The
-bound sits two orders of magnitude above the measured worst case.
+bound is `WORDS_MAX_NONPOSITIVE_SHARE`, roughly seven times the measured worst
+case and thirty times the corpus rate.
 
 Exclusion is never repair, and #368's property survives: no word span is
 stretched, clipped or interpolated to make a sample pass. A zero-span token
 contributes no duration, so dropping it leaves the elapsed-time denominator
 untouched and moves the word count by one. `validate_word_sample()` still refuses
-any *retained* word with a non-positive span, whatever produced the receipt.
+any *retained* word with a non-positive span, and enforces the same admission
+share the writer applied, so a hand-built receipt cannot exclude its way past the
+bound.
 
 Receipt schema v3, `pipeline_version` `sampled-words-v3`. v1 and v2 receipts are
 not accepted or auto-migrated: v2 refused on any degenerate token, so its
