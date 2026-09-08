@@ -542,6 +542,16 @@ SEMANTIC_OUTCOME_GATES = {
         "strong_evaluable_from": ["delivery_video"],
         "absence_evaluable_from": ["delivery_video"],
     },
+    "crowd-work": {
+        "evaluable_from": ["transcript", "delivery_video"],
+        "strong_evaluable_from": ["delivery_video"],
+        "absence_evaluable_from": None,
+    },
+    "reverse-heckle": {
+        "evaluable_from": ["transcript", "delivery_video"],
+        "strong_evaluable_from": ["delivery_video"],
+        "absence_evaluable_from": None,
+    },
     "hiccup-words": {
         "evaluable_from": ["delivery_video"],
         "strong_evaluable_from": ["delivery_video"],
@@ -657,7 +667,7 @@ SEMANTIC_OUTCOME_GATES = {
         "absence_evaluable_from": None,
     },
 }
-assert len(SEMANTIC_OUTCOME_GATES) == 19
+assert len(SEMANTIC_OUTCOME_GATES) == 21
 
 SEMANTIC_SOURCE_GATES = {
     pattern_id: frozenset(
@@ -687,6 +697,7 @@ EXPECTED_APPLICABILITY_CONDITION_IDS = {
     "call-to-action": ("purely-ceremonial-talk",),
     "call-to-adventure": ("non-persuasive-talk",),
     "cave-painting": ("no-spatial-or-hierarchical-content",),
+    "crowd-work": ("no-live-execution-waits",),
     "charred-trail": ("no-sequential-multi-item-slide",),
     "coda": ("no-external-resources-cited",),
     "context-keeper": ("short-talk-at-most-15-minutes",),
@@ -714,13 +725,14 @@ EXPECTED_APPLICABILITY_CONDITION_IDS = {
     "retrieval-beat": ("performance-shaped-talk",),
     "screen-blackout": ("screen-only-remote-presentation", "no-projected-screen"),
     "seeding-the-first-question": ("no-q-and-a-segment",),
+    "reverse-heckle": ("no-live-audience",),
     "sparkline": ("non-persuasive-talk",),
     "talklet": ("short-talk-at-most-30-minutes", "cumulative-prerequisite-chain"),
     "three-part-close": ("short-talk-under-25-minutes", "non-action-oriented-talk"),
     "traveling-highlights": ("no-dense-visual",),
     "weatherman": ("no-projected-slides",),
 }
-assert len(EXPECTED_APPLICABILITY_CONDITION_IDS) == 37
+assert len(EXPECTED_APPLICABILITY_CONDITION_IDS) == 39
 
 APP_VIDEO_GATE_IDS = frozenset(
     {
@@ -762,10 +774,12 @@ APP_SPOKEN_GATE_IDS = frozenset(
     {
         "call-to-action",
         "call-to-adventure",
+        "crowd-work",
         "echo-chamber",
         "new-bliss",
         "opening-punch",
         "retrieval-beat",
+        "reverse-heckle",
         "sparkline",
     }
 )
@@ -794,8 +808,8 @@ OBSERVABLE_GATE_IDS = frozenset(
     | set(SEMANTIC_SOURCE_GATES)
 )
 POSITIVE_ONLY_IDS = OBSERVABLE_GATE_IDS - frozenset(EXPECTED_ABSENCE_GATES)
-assert len(OBSERVABLE_GATE_IDS) == 81
-assert len(POSITIVE_ONLY_IDS) == 65
+assert len(OBSERVABLE_GATE_IDS) == 83
+assert len(POSITIVE_ONLY_IDS) == 67
 
 RECLASSIFIED_UNOBSERVABLE_IDS = frozenset(
     {
@@ -817,7 +831,7 @@ REQUIRED_EVIDENCE_GATES = {
     **APPROVED_MECHANICAL_SOURCE_GATES,
     **SEMANTIC_SOURCE_GATES,
 }
-assert len(REQUIRED_EVIDENCE_GATES) == 81
+assert len(REQUIRED_EVIDENCE_GATES) == 83
 
 
 def _ids(files):
@@ -856,7 +870,7 @@ def _entry(pattern_id):
 
 def test_catalog_is_present():
     """Guard the guard: a bad glob would make every parametrized test vacuous."""
-    assert len(ENTRY_FILES) == 111, f"expected 111 entries, found {len(ENTRY_FILES)}"
+    assert len(ENTRY_FILES) == 113, f"expected 113 entries, found {len(ENTRY_FILES)}"
     assert len(ANTI_FILES) == 28, f"expected 28 antipatterns, found {len(ANTI_FILES)}"
 
 

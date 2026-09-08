@@ -29,7 +29,7 @@ not_evaluable_when:
   - "Only a deck, transcript, or short excerpt is available, so actual timing, interaction, room behavior, or absence cannot be established."
   - "The complete audience-interaction record is unavailable, so the no-disruption applicability condition cannot be assessed."
 related_patterns: [know-your-audience, display-of-high-value]
-inverse_of: []
+inverse_of: [reverse-heckle]
 difficulty: intermediate
 ---
 

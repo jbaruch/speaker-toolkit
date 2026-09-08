@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.20.152 — 2026-09-07
+
+### Two vault-derived patterns from a talk that went live
+
+`crowd-work` and `reverse-heckle` join the catalog's vault-derived list, both
+first observed in the JavaZone 2026 delivery of "The Right 300 Tokens Beat 100k
+Noisy Ones" — the first cut of that talk to run its demos live instead of as
+tape.
+
+`crowd-work` covers what the speaker does while a live agent run stalls the
+screen: hand the wait to the room rather than narrate filler. The pattern is
+only reachable in `live-demo` mode, which is the point — a `lipsync` delivery
+of identical material never stalls and therefore never produces the improvised
+material the gaps generate. It carries a `not_applicable_when` for deliveries
+with no live execution, and its documented tension is `shortchanged`, since
+unplanned exchange spends wall-clock that lands at the close.
+
+`reverse-heckle` covers the cold room: name the temperature out loud, needle it
+as a running gag, and cash the payoff when the room turns. Three beats, all
+required — a single wry remark about a quiet audience is not this pattern. It
+is declared `inverse_of` `hecklers`, with the reciprocal declaration added to
+`_anti_hecklers.md` because the graph contract makes `inverse_of` symmetric.
+The entry states the constraint the mechanism implies: the pattern works by
+making non-participation conspicuous, which is only pleasant if the room
+already likes the speaker.
+
+`crowd-work` is field observation from that delivery. `reverse-heckle` is
+retained as a technique but carries a provenance note: it was drafted from the
+same delivery, and the speaker's same-week clarification established that the
+episode is NOT an instance of it. He had been warned a Norwegian room would not
+participate, named it defensively four minutes in, and cheered sincerely when
+it turned thirty-four minutes later. That is inoculation against an expected
+failure, so it lands as a refinement subsection in `inoculation.md` instead.
+The needling variant keeps its entry — it is a real and useful move — but with
+no confirmed observed instance until a delivery evidences one.
+
+Catalog totals move from 111 entries to 113, observable from 81 to 83.
+
 ## 0.20.151 — 2026-09-08
 
 ### A talk published off YouTube can finally carry its own evidence

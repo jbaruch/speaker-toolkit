@@ -448,7 +448,7 @@ def _with_adherence_comparison(return_validation, ret, *, count=10):
 
 def test_valid_return_resolves_the_catalog_fingerprint(return_validation):
     catalog = return_validation.validate_batch([_return()])
-    assert len(catalog.entries) == 111
+    assert len(catalog.entries) == 113
     assert len(catalog.fingerprint) == 64
 
 
@@ -2751,7 +2751,7 @@ def test_validator_cli_emits_structured_report(tmp_path, return_validation):
     report = json.loads(result.stdout)
     assert report["valid"] is True
     assert report["returns"] == 1
-    assert report["catalog_entries"] == 111
+    assert report["catalog_entries"] == 113
     assert report["return_schema_versions"] == {"2": 1}
     assert report["pattern_scoring_schema_version"] == (
         return_validation.PATTERN_SCORING_SCHEMA_VERSION

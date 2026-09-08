@@ -56,6 +56,32 @@ The pattern's construction depends entirely on the prior `know-your-audience` wo
 
 Common transition language that signals an inoculation move: *"You might be thinking…"*, *"I can hear the obvious objection…"*, *"The natural skepticism here is…"*, *"Some of you are already running the numbers and finding that…"*, *"If you're a [role], you're probably worried that…"*, *"The honest critique of this position is…"* These phrases give the audience explicit permission to have the objection — and then immediately accompany them through it.
 
+### Inoculating Against an Expected Failure, Not Just an Objection
+
+The classic form inoculates against an *argument* the room might raise. The same
+move works against an expected *failure of the room itself* — most often a
+audience that has been predicted, by locals or by reputation, not to participate.
+
+An interaction-dependent talk (show-of-hands beats, predict-before-reveal
+reveals, a constructed trap that needs the room to commit) is structurally
+exposed to a silent audience. Naming that expectation early — lightly, and
+without blaming the room — buys two things. If the silence arrives, it was
+pre-acknowledged rather than a visible failure. If the room answers anyway, the
+speaker gets a genuine reversal to enjoy.
+
+Two constraints keep it from curdling. The pre-acknowledgement must attribute
+the expectation to something other than the audience's interest — a regional
+norm, the hour, the speaker's own phrasing — or it reads as a complaint filed
+in advance. And when the room does turn, the acknowledgement of that has to be
+**sincere**, not delivered as a scripted punchline; the warmth is the payoff,
+and an audience can tell the difference between being cheered and being used
+as a setup.
+
+Speaker-confirmed (JavaZone 2026): warned beforehand that a Norwegian room
+would not participate, the speaker named it four minutes in, and when hands
+went up thirty-four minutes later cheered it for real. The defensive opening
+came first; the reversal was a bonus, not the design.
+
 ## When to Use / When to Avoid
 Use Inoculation in any persuasive presentation where the audience is likely to have specific, identifiable objections. The pattern is especially valuable when:
 - The audience contains stakeholders with conflicting interests

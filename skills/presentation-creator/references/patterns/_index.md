@@ -7,7 +7,7 @@ with supplementary patterns and reinforcements from *Presentation Zen* (Garr Rey
 Duarte, 2010), and *Make It Stick: The Science of Successful Learning* (Peter C. Brown,
 Henry L. Roediger III, Mark A. McDaniel, 2014), and *The Whole Brain Business Book* (Ned
 Herrmann, 2nd ed., 2015), plus a set of vault-derived patterns observed across the
-speaker's corpus. Contains 83 named patterns and 28 antipatterns
+speaker's corpus. Contains 85 named patterns and 28 antipatterns
 organized by presentation lifecycle phase. See the Sources section at the end of this file for full citations.
 
 **This is the primary entry point.** The agent reads this file first, then drills into
@@ -249,7 +249,7 @@ entries are skipped and surfaced as go-live actions, not emitted as per-talk
 | slideuments | Slideuments | antipattern | 13, 14 | guardrails | infodeck, charred-trail, gradual-consistency |
 | dead-demo | Dead Demo | antipattern | 11, 14 | guardrails | live-demo, a-la-carte-content |
 
-### Deliver Phase (22 patterns + 14 antipatterns)
+### Deliver Phase (24 patterns + 14 antipatterns)
 
 | ID | Name | Type | Vault Dims | Creator Phases | Related |
 |----|------|------|------------|----------------|---------|
@@ -275,6 +275,8 @@ entries are skipped and surfaced as go-live actions, not emitted as per-talk
 | stakeout | Stakeout | pattern | 14 | publishing | preparation, carnegie-hall |
 | greek-chorus | Greek Chorus | pattern | 4, 9 | architecture, content | posse, mentor |
 | spaced-followup | Spaced Follow-Up | pattern | 6 | publishing | retrieval-beat, coda, call-to-action, live-on-tape, social-media-advertising, crucible |
+| crowd-work | Crowd Work | pattern | 4, 12 | content, publishing | live-demo, brain-breaks, breathing-room, know-your-audience, greek-chorus |
+| reverse-heckle | Reverse Heckle | pattern | 3, 4 | content, publishing | know-your-audience, entertainment, greek-chorus, emotional-state, make-it-rain |
 | shortchanged | Shortchanged | antipattern | 12, 14 | guardrails | preparation, expansion-joints, weatherman |
 | hiccup-words | Hiccup Words | antipattern | 7, 14 | guardrails | breathing-room, carnegie-hall |
 | disowning-your-topic | Disowning Your Topic | antipattern | 9, 12, 14 | guardrails | know-your-audience, crucible |
@@ -415,7 +417,7 @@ Reverse lookup: which patterns relate to each of the 14 rhetoric analysis dimens
 
 ## Denominator-Safe Catalog Status
 
-All 81 observable entries have explicit positive, strong, and absence outcome gates. Of
+All 83 observable entries have explicit positive, strong, and absence outcome gates. Of
 those, 37 also declare source-located applicability conditions. Only 16 currently permit
 absence; 65 are deliberately positive-only because their available role labels do not
 intrinsically prove the timing, rendering, screen, audio, audience, stage, session, or
@@ -496,22 +498,22 @@ they surface during **creator Phase 6 (Publishing / Go-Live)** as a preparation 
 
 ## Summary Statistics
 
-- **Total entries:** 111 (83 patterns + 28 antipatterns)
-- **Observable (vault-scorable):** 81 (62 patterns + 19 antipatterns)
-- **Positive source-gated:** 81
+- **Total entries:** 113 (85 patterns + 28 antipatterns)
+- **Observable (vault-scorable):** 83 (64 patterns + 19 antipatterns)
+- **Positive source-gated:** 83
 - **Absence source-gated:** 16
-- **Applicability-gated:** 37
-- **Positive-only (absence disabled):** 65
+- **Applicability-gated:** 39
+- **Positive-only (absence disabled):** 67
 - **Unobservable (go-live checklist):** 30 (21 patterns + 9 antipatterns)
 - **Prepare phase:** 24 (20 patterns + 4 antipatterns)
 - **Build phase:** 51 (41 patterns + 10 antipatterns)
-- **Deliver phase:** 36 (22 patterns + 14 antipatterns)
+- **Deliver phase:** 38 (24 patterns + 14 antipatterns)
 
 ## Sources
 
 - Ford, N., McCullough, M., & Schutta, N. (2013). *Presentation Patterns: Techniques for Crafting Better Presentations.* Addison-Wesley. — primary taxonomy source.
 - Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). New Riders. — supplementary source; reinforces ~17 existing patterns and contributes the `opening-punch` and `screen-blackout` patterns plus three refinement subsections folded into existing patterns: "Hara Hachi Bu — The 90–95% Finish Line" (in `breathing-room.md`), "Plan Analog Before Going Digital" (in `concurrent-creation.md`), and "The Elevator Test" (in `the-big-why.md`).
-- Vault-derived patterns — observed across the speaker's own corpus rather than sourced from a book: `delayed-self-introduction`, `three-part-close`, `progressive-reveal`, `anti-sell`, `meme-as-argument`, `second-look`. Mechanism support is cited per-file where a literature basis exists (e.g. `second-look` cites Loewenstein's information-gap account of curiosity); the evidence is field observation.
+- Vault-derived patterns — observed across the speaker's own corpus rather than sourced from a book: `delayed-self-introduction`, `three-part-close`, `progressive-reveal`, `anti-sell`, `meme-as-argument`, `second-look`, `crowd-work`. `reverse-heckle` is catalogued as a technique without a confirmed observed instance yet — see its Related Reading provenance note. Mechanism support is cited per-file where a literature basis exists (e.g. `second-look` cites Loewenstein's information-gap account of curiosity); the evidence is field observation.
 - Brown, P. C., Roediger, H. L., III, & McDaniel, M. A. (2014). *Make It Stick: The Science of Successful Learning.* Belknap Press / Harvard University Press. — supplementary source; the catalog's only retention-science source. Contributes three new patterns (`guess-first`, `retrieval-beat`, `spaced-followup`) and one new antipattern (`nodding-room`), plus five refinement subsections folded into existing patterns: "Rehearse by Retrieval, Not Rereading" (in `carnegie-hall.md`), "The Consolidation Pause" (in `brain-breaks.md`), "Learning Styles Are a Myth" (in `know-your-audience.md`), "Smile Sheets Do Not Measure Retention" (in `red-yellow-green.md`), and "Do Not Make It Hard to Read" (in `analog-noise.md`, which corrects a retracted disfluency claim the file previously carried).
 - Herrmann, N., & Herrmann-Nehdi, A. (2015). *The Whole Brain Business Book* (2nd ed.). McGraw-Hill. — supplementary source; contributes `walk-around` and the `golden-rule` antipattern from Ch. 8 (Communicating Across Thinking Styles) and Ch. 13 (Influencing and Getting Buy-In). The catalog imports the four-question Walk-Around procedure and the A/B/C/D quadrant vocabulary as a recognizable handle; it does not import the Whole Brain Model's physiological claims, the HBDI instrument, audience typing, or the book's gender-differences section. See `walk-around.md` Related Reading for the boundary and for the replicable premise (Elaboration Likelihood / need for cognition) the pattern actually rests on.
 - Duarte, N. (2010). *Resonate: Present Visual Stories that Transform Audiences.* Wiley. — supplementary source; reinforces ~20 existing patterns and contributes seven new build-phase patterns (`sparkline`, `call-to-adventure`, `call-to-action`, `new-bliss`, `star-moment`, `inoculation`, `master-story`) plus six refinement subsections folded into existing patterns: "Adopting the Stance — Planning Implications" (in `mentor.md`), "The Big Idea — Statement Format" (in `the-big-why.md`), "Numerical Narrative — Making Numbers Land" (in `vacation-photos.md`), "Screening with Critics — Beyond Copyediting" (in `peer-review.md`), "Murder Your Darlings — The Pre-Delivery Cut Pass" (in `crucible.md`), and "The Three Contrast Types — Engine of the Middle" (in `sparkline.md`).
