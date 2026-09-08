@@ -1152,14 +1152,54 @@ def test_ambiguous_unavailability_is_never_called_removal(
         "ERROR: unable to download webpage: <urlopen error timed out>",
         "ERROR: HTTP Error 429: Too Many Requests",
         "ERROR: HTTP Error 503: Service Unavailable",
-        "ERROR: [youtube] Sign in to confirm you're not a bot",
         "cannot run yt-dlp: [Errno 60] Operation timed out",
         "ERROR: Connection reset by peer",
+        "ERROR: Temporary failure in name resolution",
     ],
 )
 def test_a_transient_message_is_retryable(audit_source_identities, message):
+    """The test is whether a plain retry can plausibly succeed."""
     result = audit_source_identities.classify_fetch_failure(message)
     assert result == {"failure_class": "transient", "retryable": True}
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "ERROR: unable to download webpage: HTTP Error 403: Forbidden",
+        "ERROR: unable to download webpage: <urlopen error [SSL: "
+        "CERTIFICATE_VERIFY_FAILED] certificate verify failed>",
+        "ERROR: unable to download webpage",
+        "ERROR: [youtube] Sign in to confirm you're not a bot",
+    ],
+)
+def test_a_generic_wrapper_is_not_evidence_of_a_transient_failure(
+    audit_source_identities, message
+):
+    """ "unable to download webpage" also wraps a 403, and "ssl" also wraps an
+    expired certificate; neither is fixed by trying again. A bot check needs
+    cookies, not a retry. Advising one would waste the operator's time exactly
+    as the PermissionError case did."""
+    result = audit_source_identities.classify_fetch_failure(message)
+    assert result == {"failure_class": "unclassified", "retryable": None}
+
+
+def test_a_specific_cause_inside_a_generic_wrapper_still_classifies(
+    audit_source_identities,
+):
+    """Dropping the wrapper must not lose the cases it legitimately carried."""
+    assert (
+        audit_source_identities.classify_fetch_failure(
+            "ERROR: unable to download webpage: <urlopen error timed out>"
+        )["failure_class"]
+        == "transient"
+    )
+    assert (
+        audit_source_identities.classify_fetch_failure(
+            "ERROR: unable to download webpage; This video has been removed"
+        )["failure_class"]
+        == "upstream_gone"
+    )
 
 
 @pytest.mark.parametrize(
@@ -1216,16 +1256,6 @@ def test_matching_is_case_insensitive(audit_source_identities):
     )
 
 
-def test_a_stated_removal_over_a_flaky_connection_is_still_a_removal(
-    audit_source_identities,
-):
-    message = "ERROR: unable to download webpage; This video has been removed"
-    assert (
-        audit_source_identities.classify_fetch_failure(message)["failure_class"]
-        == "upstream_gone"
-    )
-
-
 def test_every_classification_carries_both_fields(audit_source_identities):
     for message in ("Private video", "timed out", "Permission denied", "mystery"):
         result = audit_source_identities.classify_fetch_failure(message)
@@ -1243,7 +1273,7 @@ def test_each_class_has_its_own_operator_message(audit_source_identities):
     "message,failure_class,retryable",
     [
         ("ERROR: [youtube] X: Private video", "upstream_gone", False),
-        ("ERROR: unable to download webpage", "transient", True),
+        ("ERROR: HTTP Error 503: Service Unavailable", "transient", True),
         ("cannot run yt-dlp: [Errno 13] Permission denied", "tooling", False),
         ("ERROR: brand new failure mode", "unclassified", None),
     ],

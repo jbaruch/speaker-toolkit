@@ -108,8 +108,13 @@ UPSTREAM_GONE_SIGNATURES = (
     "account associated with this video has been terminated",
     "no longer available because the youtube account",
 )
+# Only causes where a plain retry can plausibly succeed. The test is that
+# question, not "does it sound like weather": "unable to download webpage" also
+# wraps HTTP 403, and "ssl" also wraps an expired certificate, and neither is
+# fixed by trying again. Both were removed — the specific cause inside such a
+# message ("timed out", "429") still classifies it, and a message carrying only
+# the generic wrapper stays unclassified for a human to read.
 TRANSIENT_SIGNATURES = (
-    "unable to download webpage",
     "temporary failure in name resolution",
     "connection reset",
     "connection refused",
@@ -122,9 +127,6 @@ TRANSIENT_SIGNATURES = (
     "http error 502",
     "http error 503",
     "http error 504",
-    "sign in to confirm you're not a bot",
-    "network is unreachable",
-    "ssl",
 )
 # Failing to run the tool at all is persistent configuration, not weather.
 # Telling an operator to retry a PermissionError wastes their time, so these get

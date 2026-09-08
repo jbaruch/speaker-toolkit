@@ -45,6 +45,15 @@ degenerate — inflating the very number it exists to measure.
 narrowing told static analysis a caller could assume a float. Corrected to
 `TypeGuard[int | float]` here and in `verify-storyboard.py`, which shipped the
 identical mistake in 0.20.138.
+
+A further round applied the same standard to the other side of the classifier,
+which had stayed broad while the removal side was tightened. `unable to download
+webpage` also wraps an HTTP 403, `ssl` also wraps an expired certificate, and a
+bot check needs cookies — none is fixed by trying again, so advising a retry
+wasted the operator's time exactly as the `PermissionError` case did. The test is
+now whether a plain retry can plausibly succeed, not whether the message sounds
+like weather. A specific cause inside a generic wrapper still classifies, so
+nothing legitimate was lost.
 ## 0.20.139 — 2026-09-07
 
 ### A wrong path reads as a wrong path
