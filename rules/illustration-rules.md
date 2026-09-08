@@ -107,6 +107,10 @@ Don't:
   and only the *unchanged* surroundings are taken from the prior frame.
 - Generate each build stage independently from prompts — visual drift
   between stages will be jarring even if each individual stage looks fine.
+- Run a build chain on a `strong`-tier editor when an edit-stable model is
+  shortlisted. Chained edits drift on `strong`-tier editors; `erase_region`
+  scopes that drift, never removes it. Tiers and the build-editability ranking:
+  `skills/illustrations/scripts/model_registry.py` (`edit` attribute comment).
 
 Naming convention: `builds/slide-NN-build-MM.jpg` where `MM` is the stage
 index (`00` is empty, `01` adds the first element, etc.).

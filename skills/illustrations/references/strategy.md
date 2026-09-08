@@ -64,7 +64,10 @@ shortlist (Step 6):
 - **speed** — faster turnaround per image
 - **quality** — top-tier fidelity
 - **build-editability** — the model must support image editing; required for
-  progressive-reveal builds and edit/fix iteration
+  progressive-reveal builds and edit/fix iteration. It also leads the ranking
+  with edit-stable models (GPT Image 2.5): a build chain edits the previous
+  frame at every step, and the pre-2.5 editors compound small deviations
+  across the chain — the drift `erase_region` scopes but does not remove
 
 Present with `AskUserQuestion` as a **multi-select** (checkboxes, not radio) — the
 speaker can pick several (e.g. `quality,build-editability`). Pass every chosen
@@ -72,7 +75,9 @@ priority to `--shortlist` (Step 6).
 
 Auto-flag `build-editability` when any slide carries a `Builds:` block — build
 frames are produced by editing the previous frame, so the model must support
-editing. A deck with no builds can drop the constraint.
+editing. A deck with no builds can drop the constraint. With builds, carry only
+the edit-stable models the shortlist leads with into the exploration render;
+a `strong`-tier editor enters only on the speaker's explicit request.
 
 Per-model attributes and how priorities rank them live in
 `skills/illustrations/scripts/model_registry.py` (the `MODEL_REGISTRY` entries and

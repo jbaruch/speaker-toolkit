@@ -75,6 +75,29 @@ from is not a fault the talk committed.
 Closes #427. #428 was the same root cause found from the other direction and
 was closed as a duplicate.
 
+## 0.20.150 — 2026-09-08
+
+### feat(illustrations) — lean hard on GPT Image 2.5 whenever a talk has builds
+
+GPT Image 2.5 fixes the failure that made build chains fragile on every earlier
+generation: chained edits no longer degrade. A build is a backwards chain of edits — each
+frame is the previous frame with one element erased — and on the pre-2.5 editors every step
+redraws the frame, so small deviations compound across the chain (`erase_region` scopes that
+drift to a box; it never removes it). The `edit` attribute becomes a ranked tier instead of
+a yes/no: `precise` (GPT Image 2.5 Sunburst, OpenAI's pick "for workflows where editing
+precision matters most"), `stable` (GPT Image 2.5 Flare — edits follow instructions across
+multiple turns, subjects preserved), `strong` (the Gemini editors: capable, drifting), `none`
+(Imagen). `gpt-image-2.5-sunburst-2026-09-08` joins the roster (alias
+`gpt-image-2.5-sunburst`; same token rates as Flare; no published latency claim, so it keeps
+GPT Image 2's `slow` tier). `--shortlist` with `build-editability` still filters `none` out
+and now sorts the survivors by edit tier FIRST, soft signals second: a talk with builds lands
+on a 2.5 model before cost, speed, or quality is weighed, and the cheapest, fastest Gemini
+ranks below both. Without `build-editability` the ranking is unchanged. The illustration
+rule, the skill's Step 4, the strategy and builds references say the same thing in prose:
+with builds, carry only the edit-stable models into the exploration render; a `strong`-tier
+editor enters only on the speaker's explicit request. The priority-model-shortlist eval's
+cost criterion is restated for the lean.
+
 ## 0.20.149 — 2026-09-08
 
 ### fix(illustrations) — replace GPT Image 2 with GPT Image 2.5 Flare in the model roster

@@ -58,8 +58,22 @@ OPENAI_API_BASE = "https://api.openai.com/v1"
 #   cost     — relative price tier: low | medium | high
 #   speed    — relative latency tier: fast | medium | slow
 #   quality  — relative fidelity tier: medium | high
-#   edit     — image-edit support: strong | none. Drives build-editability:
-#              Imagen has no edit endpoint, so build chains cannot run on it.
+#   edit     — image-edit tier, best first (EDIT_RANKING):
+#                precise — chained edits hold, and the vendor positions the
+#                          model for edit precision (GPT Image 2.5 Sunburst)
+#                stable  — chained edits hold across steps (GPT Image 2.5
+#                          Flare: edits follow instructions reliably across
+#                          multiple turns, subjects preserved)
+#                strong  — edits well, but a CHAINED sequence drifts: every
+#                          step redraws the frame and small deviations
+#                          compound across a build (the pre-2.5 editors)
+#                none    — no edit endpoint (Imagen); build chains cannot
+#                          run on it
+#              Drives build-editability: `none` is filtered out, and the tier
+#              is the PRIMARY sort key ahead of every soft signal — a talk with
+#              builds lands on an edit-stable model before cost, speed, or
+#              quality is weighed. Chained-edit drift is the failure that ruins
+#              builds; `erase_region` scopes it but does not remove it.
 #
 # This roster is a SEED CACHE, not an allowlist. Rendering dispatches by family
 # prefix and accepts any id (see generate-illustrations.py model_family /
@@ -118,9 +132,9 @@ MODEL_REGISTRY = [
         # Snapshot-pinned for reproducible illustration style; the rolling
         # "gpt-image-2.5-flare" alias resolves here so baked outlines still
         # dispatch. Flare is OpenAI's stated default of the two GPT Image 2.5
-        # models (2026-09-08); "gpt-image-2.5-sunburst" targets edit-precision
-        # workflows and can be ranked per talk via `--shortlist --add`. The
-        # retired "gpt-image-2" is deliberately NOT an alias here — it would
+        # models (2026-09-08); Sunburst, the edit-precision sibling, is the
+        # next entry. The retired "gpt-image-2" is deliberately NOT an alias
+        # here — it would
         # remap baked outlines onto a different model — it lives in
         # LEGACY_MODEL_ALIASES, pinned to the snapshot it was current on.
         "id": "gpt-image-2.5-flare-2026-09-08",
@@ -130,7 +144,20 @@ MODEL_REGISTRY = [
         "cost": "high",
         "speed": "medium",
         "quality": "high",
-        "edit": "strong",
+        "edit": "stable",
+    },
+    {
+        # OpenAI's pick "for workflows where editing precision matters most"
+        # (2026-09-08) — the build-chain model. Token rates match Flare. No
+        # latency claim is published for it, so speed keeps GPT Image 2's tier.
+        "id": "gpt-image-2.5-sunburst-2026-09-08",
+        "display": "GPT Image 2.5 Sunburst",
+        "family": "openai",
+        "aliases": ["gpt-image-2.5-sunburst"],
+        "cost": "high",
+        "speed": "slow",
+        "quality": "high",
+        "edit": "precise",
     },
 ]
 
@@ -156,7 +183,10 @@ PRIORITY_RANKINGS = {
     "speed": ("speed", ["fast", "medium", "slow"]),
     "quality": ("quality", ["high", "medium"]),
 }
-# build-editability is a hard filter, not a soft rank.
+# build-editability is a hard filter (drop edit == "none") AND the primary
+# sort key over the survivors, best tier first. An unknown tier string on an
+# injected model survives the filter but ranks after every known tier.
+EDIT_RANKING = ["precise", "stable", "strong"]
 VALID_PRIORITIES = set(PRIORITY_RANKINGS) | {"build-editability"}
 
 
@@ -269,7 +299,11 @@ def shortlist_models(priorities, registry=None, extra_models=None):
     """Filter + rank the registry by optimization priorities, best first.
 
     - "build-editability" is a HARD filter: drops models whose edit == "none"
-      (Imagen has no edit endpoint, so build chains cannot run on it).
+      (Imagen has no edit endpoint, so build chains cannot run on it). It is
+      also the PRIMARY sort key over the survivors (EDIT_RANKING, best first):
+      an edit-stable model outranks a drifting one whatever the soft signals
+      say, so a talk with builds lands on GPT Image 2.5 before cost, speed, or
+      quality is weighed.
     - cost / speed / quality are SOFT signals: candidates are ranked by the
       summed tier-position across the requested signals (lower is better), with
       registry order as a stable tie-break.
@@ -299,7 +333,8 @@ def shortlist_models(priorities, registry=None, extra_models=None):
                 f"Unknown priority '{p}'. Valid priorities: "
                 f"{', '.join(sorted(VALID_PRIORITIES))}."
             )
-    if "build-editability" in priorities:
+    builds = "build-editability" in priorities
+    if builds:
         # Keep only models EXPLICITLY marked edit-capable. A missing/blank edit
         # field (e.g. an injected model that forgot it) must not slip into a
         # build-required shortlist, so treat unknown edit support as not-capable.
@@ -314,6 +349,12 @@ def shortlist_models(priorities, registry=None, extra_models=None):
             total += order.index(tier) if tier in order else len(order)
         return total
 
+    def edit_rank(model):
+        tier = model.get("edit")
+        return EDIT_RANKING.index(tier) if tier in EDIT_RANKING else len(EDIT_RANKING)
+
+    if builds:
+        return sorted(reg, key=lambda m: (edit_rank(m), score(m)))
     return sorted(reg, key=score)
 
 
