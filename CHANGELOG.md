@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.141 — 2026-09-08
+
 ### One degenerate word no longer voids a whole recording
 
 `local_media_words.py` refused an entire ten-minute analyzed sample when a single
