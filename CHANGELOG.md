@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.142 — 2026-09-08
+
 ### A date now says how it was established
 
 Half the catalog carries a bare year or nothing where a delivery day belongs —
