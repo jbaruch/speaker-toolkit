@@ -60,6 +60,13 @@ The pattern is only reachable in `live-demo` mode. A `lipsync` delivery of ident
 
 Use it whenever the talk runs anything live whose duration you do not control: agents, builds, deploys, remote APIs, hardware. Use it especially when the wait is long enough that silence would be conspicuous but short enough that a `brain-breaks` detour would overshoot.
 
+Plan it per demo rather than reaching for it in the moment. Speaker-confirmed
+(JavaZone 2026): applied opportunistically it converts only the gaps you happen
+to notice and leaves the rest as filler — the converted ones produced the
+delivery's best material while others became "okay". Nominating one
+audience-facing beat per demo before the stage is what makes the conversion
+consistent.
+
 Avoid it when the wait is under about ten seconds — starting an exchange you must abandon mid-answer is worse than a pause. Avoid it when the room has not warmed up enough to answer at all; an unanswered question in dead air compounds the problem rather than solving it, and `know-your-audience` has to come first. Avoid it in a slot so tight that any unplanned exchange threatens the close, since the pattern's failure mode is `shortchanged`.
 
 ## Detection Heuristics
@@ -98,6 +105,6 @@ Tension with `shortchanged`. Unplanned exchange costs wall-clock that a scripted
 
 ## Related Reading
 
-Field-observed rather than sourced from the literature. First named from JavaZone 2026 ("The Right 300 Tokens Beat 100k Noisy Ones"), where the same talk's two previous deliveries had run the demos as tape and produced none of the improvised material the live cut generated in its waits.
+Field-observed rather than sourced from the literature. First named from JavaZone 2026 ("The Right 300 Tokens Beat 100k Noisy Ones"), where the same talk's two previous deliveries had run the demos as tape and produced none of the improvised material the live cut generated in its waits. Speaker-confirmed in the same-week clarification as a deliberate technique he intends to apply to every wait, not improvisation that happened to work.
 
 The term is borrowed from stand-up, where crowd work denotes the unscripted portion of a set built from direct exchange with the audience. The borrowing is deliberate: comics generally regard crowd work as harder and more valuable than prepared material, which is the right connotation here. This is not stalling.
