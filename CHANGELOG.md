@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.148 — 2026-09-08
+
 ### The intermittent cohort abort was a lost teardown race
 
 `media_cleanup_failed` had killed three separate speech-calibration
