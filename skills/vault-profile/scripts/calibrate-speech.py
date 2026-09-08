@@ -285,9 +285,14 @@ def main(argv: list[str] | None = None) -> int:
         if isinstance(exc, SpeechRateError):
             code, message = exc.code, str(exc)
         elif isinstance(exc, LocalMediaError):
+            # The owner's closed details name what actually failed. Without them
+            # an intermittent worker fault reads as a bare code and has to be
+            # re-investigated from scratch every time it appears (#438).
+            named = ", ".join(f"{k}={v}" for k, v in sorted(exc.details.items()))
             code, message = (
                 exc.reason_code,
-                "Repair the bounded media owner's source, runtime or cleanup failure before rerunning.",
+                (f"Underlying failure: {named}. " if named else "")
+                + "Repair the bounded media owner's source, runtime or cleanup failure before rerunning.",
             )
         else:
             code, message = (

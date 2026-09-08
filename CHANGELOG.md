@@ -1,5 +1,47 @@
 # Changelog
 
+### A cleanup failure says what failed
+
+`worker_cleanup_failed` reached a caller as a reason code alone. Every media
+owner maps it straight onto its own `media_cleanup_failed`, so the exception that
+actually failed survived only as a `__cause__` nobody printed, and an
+intermittent fault cost a fresh investigation each time it appeared.
+
+`classify_cleanup_failure()` records the two facts that separate the plausible
+causes — the exception's class and its errno, with the symbolic name — and
+neither carries a filename, a command, or any caller-supplied value.
+`OSError.filename` is deliberately not read.
+
+The errno usually sits one frame down: `_ProcessController.terminate` and
+`_ProcessTreeMonitor.kill_seen` both wrap an OSError in a SupervisorError before
+it reaches the aggregation, so classifying the outer exception alone would report
+`SupervisorError` for exactly the paths this exists to explain. The explicit
+`__cause__` chain is followed to a bounded depth, and only that chain — an
+implicit `__context__` can carry an unrelated exception from elsewhere in the
+frame.
+
+`LocalMediaError` gained an optional `details`, so the owners pass that
+classification through instead of discarding it, and `calibrate-speech.py` names
+it in the refusal:
+
+```
+media_cleanup_failed: Underlying failure: cleanup_errno_name=EPERM,
+cleanup_error_type=PermissionError. Repair the bounded media owner's ...
+```
+
+`details` is an explicit field allowlist, not a shape check. A shape check is not
+a safety check — `[A-Za-z0-9_.:-]{1,64}` happily admits a token or a relative
+filename — so each field is verified for what it actually is: an errno must be a
+real one, an errno name must be a real name, an exception-type name must name a
+real exception class, and a reason code must match the supervisor's own pattern.
+A field this owner cannot name is dropped whatever it contains, so the contract
+never has to reason about whether an unknown value was a path, a token, or
+provider text. A caller that passes nothing gets exactly the previous message.
+
+This is #438's first criterion only. Reproducing the fault, and deciding whether
+a cohort run should survive one cleanup failure instead of discarding 23
+completed recordings, remain open there.
+
 ## 0.20.146 — 2026-09-08
 
 ### A slow import is no longer reported as a missing module

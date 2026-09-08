@@ -110,7 +110,11 @@ def _worker(operation: str, payload: dict[str, Any]) -> Any:
                 "worker_diagnostic_limit_exceeded": "ytdlp_worker_resource_limit",
                 "worker_cleanup_failed": "media_cleanup_failed",
             }.get(reason, "ytdlp_worker_failed")
-        raise LocalMediaError(reason) from exc
+        # Carry the supervisor's classification: a cleanup failure that
+        # arrives as a bare owner code costs a fresh investigation each
+        # time it recurs (#438). `details` is closed, so nothing a caller
+        # supplied can ride along.
+        raise LocalMediaError(reason, exc.details) from exc
     return result.payload
 
 

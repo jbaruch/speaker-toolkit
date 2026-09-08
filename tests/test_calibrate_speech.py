@@ -374,3 +374,49 @@ def test_an_unresolved_probe_is_not_reported_as_a_missing_dependency(
     assert "mlx-whisper (timeout)" in str(exc.value)
     assert "warm" in str(exc.value)
     assert "repair missing dependencies" not in str(exc.value)
+
+
+def test_the_cli_envelope_carries_the_underlying_failure(
+    command, tmp_path, monkeypatch, capsys
+):
+    vault(tmp_path)
+    monkeypatch.setattr(
+        command,
+        "execute",
+        lambda _args: (_ for _ in ()).throw(
+            command.LocalMediaError(
+                "media_cleanup_failed",
+                {
+                    "cleanup_error_type": "PermissionError",
+                    "cleanup_errno_name": "EPERM",
+                },
+            )
+        ),
+    )
+
+    code = command.main([str(tmp_path), "--speaker", "A Speaker", "--language", "en"])
+
+    report = json.loads(capsys.readouterr().out)
+    assert code == 1
+    assert report["error"]["code"] == "media_cleanup_failed"
+    assert "cleanup_errno_name=EPERM" in report["error"]["message"]
+    assert "cleanup_error_type=PermissionError" in report["error"]["message"]
+
+
+def test_the_cli_envelope_is_unchanged_when_there_is_nothing_to_name(
+    command, tmp_path, monkeypatch, capsys
+):
+    vault(tmp_path)
+    monkeypatch.setattr(
+        command,
+        "execute",
+        lambda _args: (_ for _ in ()).throw(
+            command.LocalMediaError("media_cleanup_failed")
+        ),
+    )
+
+    command.main([str(tmp_path), "--speaker", "A Speaker", "--language", "en"])
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["error"]["message"].startswith("Repair the bounded media owner")
+    assert "Underlying failure" not in report["error"]["message"]

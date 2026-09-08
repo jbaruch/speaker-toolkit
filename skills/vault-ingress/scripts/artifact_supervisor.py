@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 import binascii
 import ctypes
+import errno
 import hashlib
 import hmac
 import importlib
@@ -81,6 +82,56 @@ class SupervisorError(RuntimeError):
         self.details = dict(details or {})
         self.diagnostics = diagnostics or DiagnosticReceipt.empty()
         super().__init__(reason_code)
+
+
+# A wrapped cleanup failure is one or two frames deep; a longer walk would be
+# chasing an unrelated chain rather than the cause of this failure.
+_CLEANUP_CAUSE_MAX_DEPTH = 8
+
+
+def classify_cleanup_failure(error: BaseException | None) -> dict[str, JsonValue]:
+    """Describe a cleanup failure without disclosing a path or a value.
+
+    `worker_cleanup_failed` used to reach a caller as the reason code alone, and
+    every owner maps it straight to its own cleanup code, so the exception that
+    actually failed survived only as a `__cause__` nobody printed. An
+    intermittent fault then costs a fresh investigation every time it appears
+    (#438).
+
+    `errno` and the exception's class are the two facts that separate the
+    plausible causes — EPERM on a process group, ESRCH on a reaped child, a
+    cleanup deadline — and neither carries a filename, a command, or any
+    caller-supplied value. `OSError.filename` is deliberately not read.
+    """
+    if error is None:
+        return {}
+    details: dict[str, JsonValue] = {"cleanup_error_type": type(error).__name__}
+    reason_code = getattr(error, "reason_code", None)
+    if isinstance(reason_code, str):
+        details["cleanup_reason_code"] = reason_code
+    # The errno usually sits one level down. `_ProcessController.terminate` and
+    # `_ProcessTreeMonitor.kill_seen` both wrap an OSError in a SupervisorError
+    # before it reaches the aggregation, so classifying the outer exception
+    # alone would report `SupervisorError` for exactly the paths this exists to
+    # explain. Only the explicit `__cause__` chain is followed — an implicit
+    # `__context__` can carry an unrelated exception from elsewhere in the frame.
+    seen: set[int] = set()
+    cause: BaseException | None = error
+    depth = 0
+    while cause is not None and depth < _CLEANUP_CAUSE_MAX_DEPTH:
+        if id(cause) in seen:
+            break
+        seen.add(id(cause))
+        number = getattr(cause, "errno", None)
+        if isinstance(number, int) and not isinstance(number, bool):
+            details["cleanup_errno"] = number
+            details["cleanup_errno_name"] = errno.errorcode.get(number, "UNKNOWN")
+            if cause is not error:
+                details["cleanup_cause_type"] = type(cause).__name__
+            break
+        cause = cause.__cause__
+        depth += 1
+    return details
 
 
 class _RootProcessDisappeared(SupervisorError):
@@ -659,7 +710,8 @@ def run_authenticated_worker(
                 {
                     "prior_reason_code": primary_error.reason_code
                     if primary_error
-                    else None
+                    else None,
+                    **classify_cleanup_failure(cleanup_error),
                 },
                 diagnostic_receipt,
             ) from cleanup_error

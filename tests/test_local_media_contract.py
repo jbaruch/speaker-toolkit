@@ -379,3 +379,108 @@ def test_repetition_guard_keeps_optional_timing_mismatch_independent(contract):
         "language": None,
         "segments": value["segments"],
     }
+
+
+# A refusal carries what actually failed (#438).
+
+
+def test_a_refusal_without_details_reads_exactly_as_before(contract):
+    error = contract.LocalMediaError("media_cleanup_failed")
+
+    assert error.details == {}
+    assert str(error) == (
+        "media_cleanup_failed; inspect the source and rerun the bounded media owner"
+    )
+
+
+def test_disclosable_details_reach_the_message_and_the_attribute(contract):
+    error = contract.LocalMediaError(
+        "media_cleanup_failed",
+        {"cleanup_errno": 1, "cleanup_errno_name": "EPERM"},
+    )
+
+    assert error.details == {"cleanup_errno": 1, "cleanup_errno_name": "EPERM"}
+    assert "cleanup_errno=1" in str(error)
+    assert "cleanup_errno_name=EPERM" in str(error)
+
+
+@pytest.mark.parametrize(
+    "details",
+    [
+        # The reviewer's case: identifier-shaped values that a shape check would
+        # have admitted. A field this owner cannot name is dropped whatever it
+        # looks like.
+        {"token": "synthetic-secret-value", "path": "confidential.mp4"},
+        {"path": "/Users/someone/vault/media.mp4"},
+        {"note": "failed while removing /tmp/scratch"},
+        {"stderr": "ffmpeg: no such file or directory"},
+        {"Bad-Key": "value"},
+        {"": "x"},
+    ],
+)
+def test_a_field_this_contract_cannot_name_is_dropped(contract, details):
+    """Paths, tokens and provider text stay private, which is the whole job."""
+    error = contract.LocalMediaError("media_cleanup_failed", details)
+
+    assert error.details == {}
+    for value in details.values():
+        assert str(value) not in str(error)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        # Smuggling the same values into an ALLOWED key: each field is verified,
+        # not merely shape-checked.
+        ("cleanup_error_type", "confidential.mp4"),
+        ("cleanup_error_type", "synthetic-secret-value"),
+        ("cleanup_cause_type", "NotAnExceptionClass"),
+        ("cleanup_errno_name", "synthetic-secret"),
+        ("cleanup_errno_name", "media.mp4"),
+        ("cleanup_errno", 999999),
+        ("cleanup_errno", True),
+        ("cleanup_errno", "1"),
+        ("cleanup_reason_code", "Not A Code"),
+        ("cleanup_reason_code", "/tmp/path"),
+    ],
+)
+def test_an_allowed_field_still_has_to_be_what_it_claims(contract, key, value):
+    error = contract.LocalMediaError("media_cleanup_failed", {key: value})
+
+    assert error.details == {}
+    assert str(value) not in str(error)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("cleanup_errno", 1),
+        ("cleanup_errno_name", "EPERM"),
+        ("cleanup_errno_name", "UNKNOWN"),
+        ("cleanup_error_type", "PermissionError"),
+        ("cleanup_error_type", "TimeoutError"),
+        ("cleanup_cause_type", "ProcessLookupError"),
+        ("cleanup_error_type", "SupervisorError"),
+        ("cleanup_reason_code", "worker_cleanup_failed"),
+    ],
+)
+def test_a_verified_field_is_disclosed(contract, key, value):
+    error = contract.LocalMediaError("media_cleanup_failed", {key: value})
+
+    assert error.details == {key: value}
+    assert str(value) in str(error)
+
+
+def test_the_supervisor_classification_survives_the_contract(contract):
+    """The producer and the gate agree, so a real cleanup failure is disclosed."""
+    classified = {
+        "cleanup_error_type": "SupervisorError",
+        "cleanup_reason_code": "worker_cleanup_failed",
+        "cleanup_errno": 1,
+        "cleanup_errno_name": "EPERM",
+        "cleanup_cause_type": "PermissionError",
+    }
+
+    error = contract.LocalMediaError("media_cleanup_failed", classified)
+
+    assert error.details == classified

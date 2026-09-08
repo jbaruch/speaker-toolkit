@@ -1548,7 +1548,13 @@ def test_cleanup_failure_overrides_signed_success(tmp_path):
         )
 
     assert caught.value.reason_code == "worker_cleanup_failed"
-    assert caught.value.details == {"prior_reason_code": None}
+    # The classification rides along: a bare reason code makes an intermittent
+    # cleanup fault cost a fresh investigation each time it recurs (#438).
+    assert caught.value.details["prior_reason_code"] is None
+    assert (
+        caught.value.details["cleanup_error_type"]
+        == type(caught.value.__cause__).__name__
+    )
 
 
 def test_cleanup_steps_share_one_absolute_timeout_budget():
@@ -2728,3 +2734,133 @@ def test_windows_job_process_handle_close_failure_is_visible():
 
     with pytest.raises(OSError):
         job.assign(99)
+
+
+# A cleanup failure names what failed (#438).
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (None, {}),
+        (
+            PermissionError(1, "Operation not permitted", "/vault/private/media.mp4"),
+            {
+                "cleanup_error_type": "PermissionError",
+                "cleanup_errno": 1,
+                "cleanup_errno_name": "EPERM",
+            },
+        ),
+        (
+            ProcessLookupError(3, "No such process"),
+            {
+                "cleanup_error_type": "ProcessLookupError",
+                "cleanup_errno": 3,
+                "cleanup_errno_name": "ESRCH",
+            },
+        ),
+        (
+            TimeoutError("worker cleanup deadline exceeded"),
+            {"cleanup_error_type": "TimeoutError"},
+        ),
+    ],
+)
+def test_a_cleanup_failure_is_classified_without_disclosing_a_path(error, expected):
+    """errno and the exception class separate EPERM on a process group from a
+    reaped child from a blown deadline. `OSError.filename` is never read."""
+    assert artifact_supervisor.classify_cleanup_failure(error) == expected
+
+
+def test_a_classified_cleanup_failure_never_carries_the_filename():
+    error = PermissionError(1, "Operation not permitted", "/vault/private/media.mp4")
+
+    details = artifact_supervisor.classify_cleanup_failure(error)
+
+    assert "/vault/private/media.mp4" not in str(details)
+    assert all("media.mp4" not in str(value) for value in details.values())
+
+
+def test_a_supervisor_cleanup_failure_keeps_its_own_reason_code():
+    error = artifact_supervisor.SupervisorError("worker_monitor_unavailable")
+
+    assert artifact_supervisor.classify_cleanup_failure(error) == {
+        "cleanup_error_type": "SupervisorError",
+        "cleanup_reason_code": "worker_monitor_unavailable",
+    }
+
+
+def test_an_unnumbered_errno_still_classifies():
+    """A bool is not an errno, and a missing one is simply absent."""
+    error = OSError("no errno at all")
+
+    assert artifact_supervisor.classify_cleanup_failure(error) == {
+        "cleanup_error_type": "OSError"
+    }
+
+
+def _wrapped(inner: Exception, outer: Exception) -> Exception:
+    """Build the real shape: an exception raised `from` another, as the cleanup
+    paths do, so the fixture exercises `__cause__` rather than setting it."""
+    try:
+        try:
+            raise inner
+        except type(inner) as caught:
+            raise outer from caught
+    except type(outer) as raised:
+        return raised
+
+
+def test_an_os_failure_wrapped_by_the_supervisor_still_reports_its_errno():
+    """`terminate()` and `kill_seen()` both wrap an OSError before it reaches the
+    aggregation, so classifying the outer exception alone would report
+    SupervisorError for exactly the paths this exists to explain (#438)."""
+    wrapped = _wrapped(
+        PermissionError(1, "Operation not permitted", "/vault/private/media.mp4"),
+        artifact_supervisor.SupervisorError("worker_cleanup_failed"),
+    )
+
+    details = artifact_supervisor.classify_cleanup_failure(wrapped)
+
+    assert details == {
+        "cleanup_error_type": "SupervisorError",
+        "cleanup_reason_code": "worker_cleanup_failed",
+        "cleanup_errno": 1,
+        "cleanup_errno_name": "EPERM",
+        "cleanup_cause_type": "PermissionError",
+    }
+    assert "media.mp4" not in str(details)
+
+
+def test_the_cause_walk_stops_rather_than_chasing_an_unrelated_chain():
+    deepest = ProcessLookupError(3, "No such process")
+    chain: Exception = deepest
+    for _ in range(artifact_supervisor._CLEANUP_CAUSE_MAX_DEPTH + 2):
+        chain = _wrapped(chain, RuntimeError("wrapper"))
+
+    details = artifact_supervisor.classify_cleanup_failure(chain)
+
+    assert "cleanup_errno" not in details
+    assert details["cleanup_error_type"] == "RuntimeError"
+
+
+def test_a_cyclic_cause_chain_terminates():
+    first = RuntimeError("first")
+    second = RuntimeError("second")
+    first.__cause__ = second
+    second.__cause__ = first
+
+    assert artifact_supervisor.classify_cleanup_failure(first) == {
+        "cleanup_error_type": "RuntimeError"
+    }
+
+
+def test_an_implicit_context_is_not_followed():
+    """`__context__` can carry an unrelated exception from elsewhere in the frame,
+    so only the explicit cause chain is read."""
+    unrelated = PermissionError(1, "Operation not permitted")
+    outer = artifact_supervisor.SupervisorError("worker_cleanup_failed")
+    outer.__context__ = unrelated
+
+    details = artifact_supervisor.classify_cleanup_failure(outer)
+
+    assert "cleanup_errno" not in details

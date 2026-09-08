@@ -7,7 +7,9 @@ converts a VideoArtifactProbe already established in the same assessment.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import builtins
+import errno
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import math
 import re
@@ -127,15 +129,97 @@ _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _LANGUAGE = re.compile(r"[a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*\Z")
 
 
-class LocalMediaError(ValueError):
-    """A typed acquisition refusal; raw paths and provider output stay private."""
+# Which diagnostic fields may be disclosed, and what each one must actually be.
+# A shape check is not a safety check: `[A-Za-z0-9_.:-]{1,64}` happily admits a
+# token or a relative filename, so a key is only disclosable if this owner can
+# say what the value means and verify it. Everything else is dropped.
+#
+# Exception class names are checked against real exception classes rather than
+# an identifier pattern, so a value shaped like a name but naming nothing is
+# refused along with everything else.
+_PROJECT_EXCEPTION_NAMES = frozenset({"SupervisorError", "LocalMediaError"})
+_REASON_CODE = re.compile(r"[a-z][a-z0-9_]{0,63}")
 
-    def __init__(self, reason_code: str) -> None:
+
+def _is_errno(value: object) -> bool:
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and value in errno.errorcode
+    )
+
+
+def _is_errno_name(value: object) -> bool:
+    return isinstance(value, str) and (
+        value == "UNKNOWN" or value in set(errno.errorcode.values())
+    )
+
+
+def _is_exception_type_name(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    if value in _PROJECT_EXCEPTION_NAMES:
+        return True
+    candidate = getattr(builtins, value, None)
+    return isinstance(candidate, type) and issubclass(candidate, BaseException)
+
+
+def _is_reason_code(value: object) -> bool:
+    return isinstance(value, str) and _REASON_CODE.fullmatch(value) is not None
+
+
+DISCLOSABLE_DETAILS: Mapping[str, Callable[[object], bool]] = {
+    "cleanup_errno": _is_errno,
+    "cleanup_errno_name": _is_errno_name,
+    "cleanup_error_type": _is_exception_type_name,
+    "cleanup_cause_type": _is_exception_type_name,
+    "cleanup_reason_code": _is_reason_code,
+}
+
+
+def _safe_details(details: Mapping[str, object] | None) -> dict[str, object]:
+    """Keep only fields this owner can name and verify.
+
+    A field absent from `DISCLOSABLE_DETAILS` is dropped whatever it contains, so
+    the contract never has to reason about whether an unknown value was a path,
+    a token, or provider text.
+    """
+    if not details:
+        return {}
+    return {
+        key: value
+        for key, value in details.items()
+        if key in DISCLOSABLE_DETAILS and DISCLOSABLE_DETAILS[key](value)
+    }
+
+
+class LocalMediaError(ValueError):
+    """A typed acquisition refusal; raw paths and provider output stay private.
+
+    `details` is optional and closed: numbers, booleans, and short identifiers an
+    owner already treats as safe to disclose. It exists so a refusal that maps a
+    worker failure onto an owner code does not discard what actually failed —
+    an intermittent fault otherwise costs a fresh investigation each time (#438).
+    Callers that pass nothing get exactly the previous behaviour.
+    """
+
+    def __init__(
+        self,
+        reason_code: str,
+        details: Mapping[str, object] | None = None,
+    ) -> None:
         if re.fullmatch(r"[a-z][a-z0-9_]{0,63}", reason_code) is None:
             raise ValueError("invalid local-media failure code")
         self.reason_code = reason_code
+        self.details = _safe_details(details)
+        detail_text = (
+            " (" + ", ".join(f"{k}={v}" for k, v in sorted(self.details.items())) + ")"
+            if self.details
+            else ""
+        )
         super().__init__(
-            f"{reason_code}; inspect the source and rerun the bounded media owner"
+            f"{reason_code}{detail_text}; inspect the source and rerun the "
+            "bounded media owner"
         )
 
 
