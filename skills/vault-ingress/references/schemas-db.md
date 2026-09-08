@@ -10,7 +10,8 @@ shape, and all migrations. vault-clarification may write current config,
 confirmed-intent, and improvement-goal records. presentation-creator may write
 current QR records. vault-profile and the remaining presentation consumers are
 read-only. Non-owner readers accept every readable database generation during
-rollout — legacy 0, pre-`markdown_decks` 1, pre-`source_aliases` 2, and current 3. They never rewrite
+rollout — legacy 0, pre-`markdown_decks` 1, pre-`source_aliases` 2,
+pre-`date_provenance` 3, and current 4. They never rewrite
 legacy state. An unsupported future database or record version is no usable
 prior state.
 
@@ -200,9 +201,9 @@ v1 and v2 for the rollout window.
 
 ### Schema versioning
 
-A schema-v3 database with current child records is an idempotent no-op.
-Earlier roots advance to v3; config v1 advances to v2 in the same pass.
-The root-only v2-to-v3 transition preserves every child value and does not
+A schema-v4 database with current child records is an idempotent no-op.
+Earlier roots advance to v4; config v1 advances to v2 in the same pass.
+The root-only transition to v4 preserves every child value and does not
 create or infer any source alias. Before migration, queue `inspect` may read
 schema 0 and queue `recover` may close an active schema-0 lease in place.
 Recovery changes only queue lease/status state and never stamps database or talk
@@ -210,7 +211,7 @@ schema fields; the established queue transition may advance a recovered claim
 receipt from v1 to v2 while adding its release fields.
 
 The owner migration is a preservation migration. Its only allowed semantic
-changes are advancing the root to schema v3, adding the validated historical
+changes are advancing the root to schema v4, adding the validated historical
 version to an unversioned owner record, creating absent owned arrays as empty
 arrays, and upgrading config v1 to v2. A missing exclusion list receives the canonical
 defaults; a valid owner-supplied list is preserved exactly. It
@@ -224,7 +225,7 @@ or root state; the standalone root-only mode below preserves their contracts.
 
 | Independent record | Current schema |
 |---|---:|
-| database root | 3 (schemas 0-2 remain readable migration inputs) |
+| database root | 4 (schemas 0-3 remain readable migration inputs) |
 | config | 2 (schema 1 remains readable owner-migration input) |
 | talk | 8 (schemas 1-7 remain readable historical state; v5-v7 restamp) |
 | PPTX catalog | 3 (schemas 1 and 2 remain readable legacy state) |
@@ -239,21 +240,22 @@ or root state; the standalone root-only mode below preserves their contracts.
 
 | Component | Access | Contract |
 |---|---|---|
-| vault-ingress migration | owner read/write | Accept root schema 0/1/2/3 and config schema 1/2; migrate to root v3/config v2; never downgrade future state |
+| vault-ingress migration | owner read/write | Accept root schema 0/1/2/3/4 and config schema 1/2; migrate to root v4/config v2; never downgrade future state |
 | vault-ingress queue inspection/recovery | owner compatibility transition | Inspect schema 0/1/2/3; recover active leases in readable roots; never stamp artifact or talk schema versions |
-| vault-ingress queue normalization/claim, persistence, shownotes apply, source repair | current read/write | Require database schema 3, config schema 2, and supported explicit owner-record versions; targeted writers emit their current record generation and never migrate the root implicitly |
-| vault-ingress preflight, source audit, analysis rendering, shownotes dry-run | dual reader | Parse schemas 0-3; gate through existing finding/error channels; never rewrite |
+| vault-ingress queue normalization/claim, persistence, shownotes apply, source repair | current read/write | Require database schema 4, config schema 2, and supported explicit owner-record versions; targeted writers emit their current record generation and never migrate the root implicitly |
+| vault-ingress preflight, source audit, analysis rendering, shownotes dry-run | dual reader | Parse schemas 0-4; gate through existing finding/error channels; never rewrite |
 | vault-clarification | current read/write | Route schema migration to vault-ingress; preserve config v2 and stamp confirmed intent v1/improvement goal v2 |
-| presentation-creator QR writer | dual reader/current writer | Read schemas 0-3; require schema 3 before URL creation or QR metadata persistence; stamp QR v2 |
-| presentation-creator publishing/post-event | authorized current writer | Require schema 3 before tracking writes; stamp resource v1 and preserve talk v8 |
-| illustrations thumbnail workflow | authorized current writer | Require schema 3 before tracking writes; stamp thumbnail v1 and preserve talk v8 |
-| vault-profile | dual reader | Parse schemas 0-3; treat unsupported generations as unavailable; never migrate |
+| presentation-creator QR writer | dual reader/current writer | Read schemas 0-4; require schema 4 before URL creation or QR metadata persistence; stamp QR v2 |
+| presentation-creator publishing/post-event | authorized current writer | Require schema 4 before tracking writes; stamp resource v1 and preserve talk v8 |
+| illustrations thumbnail workflow | authorized current writer | Require schema 4 before tracking writes; stamp thumbnail v1 and preserve talk v8 |
+| vault-profile | dual reader | Parse schemas 0-4; treat unsupported generations as unavailable; never migrate |
 
-Current database schema 3 with config schema 2 requires all eight top-level
-state fields shown below. `source_title_equivalences`, `source_aliases`, and
-`markdown_decks` are optional owner collections. For `markdown_decks`,
-absent means no talk has a registered markdown deck, which is what every
-database written before root v2 says.
+Current database schema 4 with config schema 2 requires all eight top-level
+state fields shown below. `source_title_equivalences`, `source_aliases`,
+`markdown_decks`, and `date_provenance` are optional owner collections. For
+`markdown_decks`, absent means no talk has a registered markdown deck, which is
+what every database written before root v2 says. For `date_provenance`, absent
+means nothing was recorded about how any delivery date was established.
 Missing legacy arrays become empty during owner migration. Current writers do
 not create them opportunistically. A schema-v1 improvement goal remains valid
 historical state; migration never fabricates the schema-v2 baseline provenance
@@ -278,7 +280,7 @@ customization, not the owner default. See the
 
 ```json
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "config": {
     "schema_version": 2,
     "vault_root": "~/.claude/rhetoric-knowledge-vault",
@@ -405,7 +407,7 @@ customization, not the owner default. See the
       "not_evaluable": []
     }
   }],
-  "_comment_schema_version": "Database root schema v3 is owner-migrated by vault-ingress and introduces the optional top-level source_aliases collection. Root v2 introduced markdown_decks. Root migration infers neither deck registrations nor aliases. A missing talk record version is the historical implicit-v1 lineage. Talk v2 makes transcript_source optional. Two incompatible v3 lineages were emitted; v4 is their source-located union and remains archival with evidence ledger v1. V5 adds applicability assessments, exhaustive outcomes, opportunity-coverage identity, and evidence ledger v2. V6 adds pattern_score_basis and a possibly-fractional pattern_score at the weighted scoring generation. V7 was introduced for the owner-reviewed title-equivalence ledger, which now lives in the top-level source_title_equivalences collection at record v2, so v7 adds no field a v6 record lacks. V8 adds provider_auto to the transcript-source enum. Migration restamps v5-v7 records to v8 without rescoring or relabeling their source and lifts a nested v1 title ledger into the top-level collection. It preserves historical evidence and never synthesizes v5 outcomes.",
+  "_comment_schema_version": "Database root schema v4 is owner-migrated by vault-ingress and introduces the optional top-level date_provenance collection. Root v3 introduced source_aliases. Root v2 introduced markdown_decks. Root migration infers neither deck registrations nor aliases. A missing talk record version is the historical implicit-v1 lineage. Talk v2 makes transcript_source optional. Two incompatible v3 lineages were emitted; v4 is their source-located union and remains archival with evidence ledger v1. V5 adds applicability assessments, exhaustive outcomes, opportunity-coverage identity, and evidence ledger v2. V6 adds pattern_score_basis and a possibly-fractional pattern_score at the weighted scoring generation. V7 was introduced for the owner-reviewed title-equivalence ledger, which now lives in the top-level source_title_equivalences collection at record v2, so v7 adds no field a v6 record lacks. V8 adds provider_auto to the transcript-source enum. Migration restamps v5-v7 records to v8 without rescoring or relabeling their source and lifts a nested v1 title ledger into the top-level collection. It preserves historical evidence and never synthesizes v5 outcomes.",
   "_comment_absent_transcript_source": "Absent transcript_source: the key may be MISSING on a talk, and missing is meaningful — it means provenance is unknown, not that no transcript exists (that is the explicit value `none`). It arises on one path: fetch-transcript.py returning method `existing`, where a valid transcript was already on disk and no fetch ran, so nothing was learned about where it came from. Writers MUST NOT backfill a guess; `manual` in particular asserts a human produced it. Readers gauging transcript reliability MUST treat absent as unknown and MUST NOT default it to any value.",
   "pptx_catalog": [{
     "schema_version": 3,
@@ -736,6 +738,64 @@ reason to refuse the whole database. The collection is optional — absent means
 no registered deck, which is the correct reading of every database written
 before it existed — and no migration owns it: a deck is registered by an owner
 who knows where the file is, never inferred.
+
+`date_provenance` is a top-level collection for the same reason, and it answers
+a question the catalog cannot ask of itself:
+
+```json
+"date_provenance": [{
+  "schema_version": 1,
+  "talk_filename": "playlist-5jhzguKLEr4.md",
+  "method": "live_broadcast_release",
+  "evidence": "youtube 5jhzguKLEr4 was_live=true, release_timestamp 1453343702",
+  "established_at": "2026-09-08T00:00:00Z",
+  "not_later_than": "2016-01-21"
+}]
+```
+
+Half the catalog carries a bare year or nothing where a delivery day belongs.
+Before this collection a date proved from an organizer program, a date inferred
+from an event's opening day, and a date that is just a year were the same
+string, so each audit re-derived what the previous one had already established
+and left its working in an issue thread.
+
+`method` is the only strength signal, and it is not stored as one: readers call
+`tracking_database.date_provenance_basis()`, which maps a method to `proved`,
+`inferred`, or `bounded`. Keeping strength derived means a record cannot claim
+more than its method supports. The accepted methods and their mapping are
+`DATE_PROVENANCE_BASIS_BY_METHOD` in
+`skills/vault-ingress/scripts/tracking_database.py`.
+
+`evidence` is required and non-empty because a method names a kind of evidence,
+never the evidence: the field is the trace an owner follows to re-check the
+claim without reading GitHub.
+
+`not_later_than` is an independent fact rather than a weaker date. A provider
+upload cannot precede the recording it publishes, so a talk with no date at all
+still has a ceiling, and a talk with a proved day can carry one that corroborates
+it. It is compared against the talk's own `date` through `upload_predates_catalog`
+(`skills/vault-ingress/scripts/source_identity_matching.py`) — the same
+comparator and the same timezone grace the live source-identity audit uses — so
+a ceiling that contradicts the record it bounds refuses here rather than being
+stored beside a date it disagrees with. A method that establishes no day of its
+own requires one; `DATE_PROVENANCE_CEILING_REQUIRED_METHODS` names those.
+
+An absent or blank `date` leaves a ceiling standing alone, which is the case
+this collection exists for. Every other present value `parse_catalog_date`
+refuses — month precision, a non-string, a calendar-boundary year — refuses the
+ceiling instead of storing a bound nothing ever checks.
+
+The collection is the root v4 shape, for the same reason `markdown_decks` is the
+root v2 shape: a top-level key is part of the root record, and a version on each
+nested record does not version its parent. A database at an older root carrying
+a `date_provenance` key is never `current`; the root-only migration advances the
+root and preserves the records.
+
+One record per talk: a date established again replaces its account rather than
+appending a second one. The collection is optional — absent means nothing was
+recorded about a date, which is the state most of the catalog is in — and no
+migration owns it. Provenance is written by an owner who checked something,
+never inferred from a date that happens to be present.
 
 `apply_reviewed_metadata` exists because `scan-shownotes.py --apply` refuses
 review-required entries by design: an approved catalog correction otherwise had

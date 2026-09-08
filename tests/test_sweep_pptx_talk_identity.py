@@ -17,6 +17,8 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
+from conftest import CURRENT_ROOT_SCHEMA_VERSION as CURRENT_ROOT
+
 import pytest
 
 from test_pptx_deck_facts import full_deck_members, write_deck
@@ -78,7 +80,7 @@ def catalog_row(pptx_path: str, talk_filename: str | None, **overrides: Any) -> 
 def database(rows: list[dict], talks: list[dict], source_root: Path) -> dict:
     """One owner-current database whose only interesting part is the catalog."""
     return {
-        "schema_version": 3,
+        "schema_version": CURRENT_ROOT,
         "config": {
             "schema_version": 2,
             "pptx_directory_exclusions": [],

@@ -29,6 +29,7 @@ from pptx_discovery_contract import (
 )
 from pptx_talk_identity import unassessed_legacy_binding
 from source_alias_contract import SourceAliasError, validate_alias_database
+from source_identity_matching import parse_catalog_date, upload_predates_catalog
 
 
 LEGACY_TRACKING_DATABASE_SCHEMA_VERSION = 0
@@ -38,7 +39,12 @@ LEGACY_TRACKING_DATABASE_SCHEMA_VERSION = 0
 # root generation (`stateful-artifacts` Migration Policy).
 PRE_MARKDOWN_DECKS_TRACKING_DATABASE_SCHEMA_VERSION = 1
 PRE_SOURCE_ALIASES_TRACKING_DATABASE_SCHEMA_VERSION = 2
-TRACKING_DATABASE_SCHEMA_VERSION = 3
+# The root shape before the `date_provenance` collection (#430), for the same
+# reason the two above exist: a top-level key is part of the ROOT record's
+# shape, and a version on each nested provenance record does not version its
+# parent database (`stateful-artifacts` Migration Policy).
+PRE_DATE_PROVENANCE_TRACKING_DATABASE_SCHEMA_VERSION = 3
+TRACKING_DATABASE_SCHEMA_VERSION = 4
 LEGACY_TALK_RECORD_SCHEMA_VERSION = 1
 FLAT_SCORE_TALK_RECORD_SCHEMA_VERSION = 5
 # The generation before the owner-reviewed title-equivalence ledger (#333).
@@ -76,12 +82,21 @@ IMPROVEMENT_GOAL_RECORD_SCHEMA_VERSION = 2
 # owns it (it is absent from `_RECORD_COUNT_KEYS` for that reason): a deck is
 # registered by an owner who knows where the file is, never inferred.
 MARKDOWN_DECK_RECORD_SCHEMA_VERSION = 1
+# How a talk's delivery date was established (#430). Its own top-level
+# collection for the same reason `markdown_decks` is one: the records this is
+# for are the legacy ones, and `TALK_RECORD_SCHEMA_VERSION` means the analysis
+# generation. Optional — absent means nothing was recorded about a date, which
+# is the state half the catalog is in. No migration owns it, and it is absent
+# from `_RECORD_COUNT_KEYS`: provenance is established by an owner who checked
+# something, never inferred from a date that happens to be present.
+DATE_PROVENANCE_RECORD_SCHEMA_VERSION = 1
 
 READABLE_TRACKING_DATABASE_SCHEMA_VERSIONS = frozenset(
     {
         LEGACY_TRACKING_DATABASE_SCHEMA_VERSION,
         PRE_MARKDOWN_DECKS_TRACKING_DATABASE_SCHEMA_VERSION,
         PRE_SOURCE_ALIASES_TRACKING_DATABASE_SCHEMA_VERSION,
+        PRE_DATE_PROVENANCE_TRACKING_DATABASE_SCHEMA_VERSION,
         TRACKING_DATABASE_SCHEMA_VERSION,
     }
 )
@@ -237,6 +252,33 @@ MARKDOWN_DECK_REQUIRED_FIELDS = frozenset({"talk_filename", "deck_source_path"})
 # authors markdown, so a deck source named with any other suffix is a mistyped
 # path rather than a deck.
 MARKDOWN_DECK_SOURCE_SUFFIXES = frozenset({".md", ".markdown"})
+DATE_PROVENANCE_REQUIRED_FIELDS = frozenset(
+    {"talk_filename", "method", "evidence", "established_at"}
+)
+DATE_PROVENANCE_OPTIONAL_FIELDS = frozenset({"not_later_than"})
+# What a provenance record establishes, and how strongly. The mapping IS the
+# honesty of this collection: `basis` is never stored, so a record cannot claim
+# a strength its method does not support.
+#
+#   proved   — direct evidence of the delivery day itself
+#   inferred — derived from something adjacent to the delivery
+#   bounded  — establishes no day at all, only a ceiling
+#
+# A live broadcast's release timestamp is the stream running, which is why it
+# proves rather than bounds: for `was_live` media the provider's date is the
+# delivery moment, not a later publication. For everything else a provider
+# upload date is publication time and bounds only — see
+# `skills/vault-ingress/references/source-identity-audit.md`.
+DATE_PROVENANCE_BASIS_BY_METHOD = {
+    "live_broadcast_release": "proved",
+    "organizer_program": "proved",
+    "event_opening_day": "inferred",
+    "provider_upload_ceiling": "bounded",
+}
+# A method that establishes no day must carry the ceiling that is its whole
+# content; a record with neither would assert nothing.
+DATE_PROVENANCE_CEILING_REQUIRED_METHODS = frozenset({"provider_upload_ceiling"})
+_ISO_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS = frozenset(
     {
         "talk_filename",
@@ -1241,6 +1283,149 @@ def validate_markdown_deck(
         )
 
 
+def date_provenance_basis(method: object) -> str | None:
+    """Name how strongly a provenance method establishes a delivery date.
+
+    Returns ``proved``, ``inferred``, ``bounded``, or ``None`` for a method this
+    reader does not know. Callers read strength through this rather than a
+    stored field, so a record cannot claim more than its method supports. The
+    mapping is ``DATE_PROVENANCE_BASIS_BY_METHOD``.
+    """
+    if not isinstance(method, str):
+        return None
+    return DATE_PROVENANCE_BASIS_BY_METHOD.get(method)
+
+
+def validate_date_provenance(
+    record: Mapping[str, object],
+    *,
+    label: str,
+    talks_by_filename: Mapping[object, Mapping[str, object]] | None = None,
+) -> None:
+    """Validate one record of how a talk's delivery date was established.
+
+    The record answers a question the catalog cannot: whether a `date` was
+    proved from the delivery, inferred from something next to it, or never
+    established at all. Half the catalog carries a bare year or nothing, and
+    before this the three were the same string, so each audit re-derived what
+    the last one had already worked out (#430).
+
+    `not_later_than` is an independent fact rather than a weaker date: a
+    provider upload cannot precede the recording it publishes, so a talk with no
+    date at all still has a ceiling, and one with a proved day can carry a
+    ceiling that corroborates it. It is compared against the talk's own date
+    through `upload_predates_catalog`, the same comparator and the same
+    timezone grace the live source-identity audit uses, so a ceiling that
+    contradicts the catalog refuses here instead of being stored as a fact that
+    disagrees with the record beside it.
+
+    `talks_by_filename` binds the record to the catalog it describes. Given, an
+    unknown `talk_filename` refuses and the ceiling is compared against that
+    talk; omitted, the record is checked for shape alone.
+    """
+    _require_closed_shape(
+        record,
+        required=DATE_PROVENANCE_REQUIRED_FIELDS,
+        optional=DATE_PROVENANCE_OPTIONAL_FIELDS,
+        label=label,
+    )
+    # `_require_closed_shape` ignores `schema_version` for every record, so the
+    # generation is checked explicitly. A record this reader cannot name must
+    # refuse rather than be coerced into the current shape.
+    recorded = record.get("schema_version")
+    if (
+        isinstance(recorded, bool)
+        or not isinstance(recorded, int)
+        or recorded != DATE_PROVENANCE_RECORD_SCHEMA_VERSION
+    ):
+        raise TrackingDatabaseError(
+            f"{label}.schema_version must be {DATE_PROVENANCE_RECORD_SCHEMA_VERSION}"
+        )
+    _require_nonempty_string(record["talk_filename"], f"{label}.talk_filename")
+    # The trace an owner follows to check the claim without reading an issue
+    # thread. A method alone names a kind of evidence, never the evidence.
+    _require_nonempty_string(record["evidence"], f"{label}.evidence")
+    method = _require_nonempty_string(record["method"], f"{label}.method")
+    if date_provenance_basis(method) is None:
+        raise TrackingDatabaseError(
+            f"{label}.method must be one of "
+            f"{sorted(DATE_PROVENANCE_BASIS_BY_METHOD)}, not {method!r}"
+        )
+    established_at = _require_nonempty_string(
+        record["established_at"],
+        f"{label}.established_at",
+    )
+    try:
+        parsed = dt.datetime.fromisoformat(established_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise TrackingDatabaseError(
+            f"{label}.established_at must be a timezone-aware ISO-8601 timestamp"
+        ) from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise TrackingDatabaseError(
+            f"{label}.established_at must be a timezone-aware ISO-8601 timestamp"
+        )
+    # Resolved here rather than by the caller so the lookup happens after
+    # `talk_filename` is a proven string: a JSON array in that field would raise
+    # an unhandled TypeError on set membership instead of naming the field.
+    talk: Mapping[str, object] | None = None
+    if talks_by_filename is not None:
+        if record["talk_filename"] not in talks_by_filename:
+            raise TrackingDatabaseError(
+                f"{label}.talk_filename names no talk: {record['talk_filename']!r}"
+            )
+        talk = talks_by_filename[record["talk_filename"]]
+    ceiling_raw = record.get("not_later_than")
+    if ceiling_raw is None:
+        if method in DATE_PROVENANCE_CEILING_REQUIRED_METHODS:
+            raise TrackingDatabaseError(
+                f"{label}.not_later_than is required for method {method!r}, "
+                "which establishes no delivery day of its own"
+            )
+        return
+    ceiling_text = _require_nonempty_string(ceiling_raw, f"{label}.not_later_than")
+    # Hyphenated form only. `date.fromisoformat` also reads the compact
+    # `YYYYMMDD` the provider emits, and accepting both would put two spellings
+    # of one day in a collection every other date in the catalog spells one way.
+    if not _ISO_DAY.fullmatch(ceiling_text):
+        raise TrackingDatabaseError(
+            f"{label}.not_later_than must be an ISO-8601 calendar date, "
+            f"not {ceiling_text!r}"
+        )
+    try:
+        ceiling = dt.date.fromisoformat(ceiling_text)
+    except ValueError as exc:
+        raise TrackingDatabaseError(
+            f"{label}.not_later_than must be an ISO-8601 calendar date, "
+            f"not {ceiling_text!r}"
+        ) from exc
+    if talk is None:
+        return
+    catalog = parse_catalog_date(talk.get("date"))
+    recorded_date = talk.get("date")
+    # A date the comparator cannot read is not the same as no date. Absent, or
+    # a string of whitespace, leaves the ceiling standing alone, which is the
+    # case this collection exists for. Every other present value the comparator
+    # refuses — month precision, a non-string, a calendar-boundary year — would
+    # store a bound nothing ever checks, so it refuses until the catalog value
+    # is one the comparator can reach.
+    absent = recorded_date is None or (
+        isinstance(recorded_date, str) and not recorded_date.strip()
+    )
+    if catalog is None and not absent:
+        raise TrackingDatabaseError(
+            f"{label}.not_later_than cannot be checked against the talk's date "
+            f"{recorded_date!r}, which is neither YYYY nor an ISO-8601 calendar "
+            "date; record a comparable date before bounding it"
+        )
+    if upload_predates_catalog(ceiling, catalog):
+        raise TrackingDatabaseError(
+            f"{label}.not_later_than {ceiling_text!r} precedes the talk's own "
+            f"date {talk.get('date')!r}; a ceiling cannot contradict the record "
+            "it bounds"
+        )
+
+
 def validate_source_title_equivalence(
     equivalence: Mapping[str, object],
     *,
@@ -1570,11 +1755,12 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
     equivalences = database.get("source_title_equivalences", [])
     if not isinstance(equivalences, list):
         raise TrackingDatabaseError("source_title_equivalences must be an array")
-    known_filenames = {
-        talk.get("filename")
+    talks_by_filename: dict[object, Mapping[str, object]] = {
+        talk.get("filename"): talk
         for talk in collections["talks"]
         if isinstance(talk, Mapping)
     }
+    known_filenames = set(talks_by_filename)
     for index, equivalence in enumerate(equivalences):
         if not isinstance(equivalence, Mapping):
             raise TrackingDatabaseError(
@@ -1627,6 +1813,30 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
                 f"{talk_filename!r}; a talk has one authored deck source"
             )
         claimed_by_talk.add(talk_filename)
+
+    provenance = database.get("date_provenance", [])
+    if not isinstance(provenance, list):
+        raise TrackingDatabaseError("date_provenance must be an array")
+    dated_talks: set[object] = set()
+    for index, record in enumerate(provenance):
+        if not isinstance(record, Mapping):
+            raise TrackingDatabaseError(
+                f"date_provenance[{index}] must be a JSON object"
+            )
+        label = f"date_provenance[{index}]"
+        validate_date_provenance(
+            record, label=label, talks_by_filename=talks_by_filename
+        )
+        talk_filename = record["talk_filename"]
+        # One record per talk. A second would leave a reader choosing between
+        # two accounts of the same date with nothing saying which is current;
+        # a date established again is a replacement, not an append.
+        if talk_filename in dated_talks:
+            raise TrackingDatabaseError(
+                f"{label} is a second date provenance for {talk_filename!r}; "
+                "a talk has one account of how its date was established"
+            )
+        dated_talks.add(talk_filename)
 
     try:
         validate_alias_database(database)
@@ -1910,6 +2120,7 @@ def repair_missing_qr_schema_versions(database: object) -> TrackingDatabaseMigra
         or assessment.schema_version
         not in {
             PRE_SOURCE_ALIASES_TRACKING_DATABASE_SCHEMA_VERSION,
+            PRE_DATE_PROVENANCE_TRACKING_DATABASE_SCHEMA_VERSION,
             TRACKING_DATABASE_SCHEMA_VERSION,
         }
         or (
@@ -1986,6 +2197,7 @@ def migrate_tracking_database_root(database: object) -> TrackingDatabaseMigratio
         or assessment.schema_version
         not in {
             PRE_SOURCE_ALIASES_TRACKING_DATABASE_SCHEMA_VERSION,
+            PRE_DATE_PROVENANCE_TRACKING_DATABASE_SCHEMA_VERSION,
             TRACKING_DATABASE_SCHEMA_VERSION,
         }
         or database["config"]["schema_version"] != CONFIG_RECORD_SCHEMA_VERSION

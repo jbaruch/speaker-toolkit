@@ -1,5 +1,62 @@
 # Changelog
 
+### A date now says how it was established
+
+Half the catalog carries a bare year or nothing where a delivery day belongs —
+126 of 251 records have a day, 91 a bare year, 26 nothing, 8 a month. Before
+this, a date proved from an organizer program, a date inferred from an event's
+opening day, and a date that is just a year were the same string. Each audit
+re-derived what the previous one had already worked out and left its working in
+an issue thread (#333, #339).
+
+The new optional `date_provenance` collection records the difference. It is a
+top-level collection rather than a talk field for the reason `markdown_decks`
+already documents: `TALK_RECORD_SCHEMA_VERSION` means the analysis generation,
+and the records this is for are the legacy ones, so a talk-field version would
+be unreachable for exactly the records that need it. No talk record changes
+shape, and absent means nothing was recorded.
+
+A top-level key is part of the root record's shape, so the root advances to v4
+exactly as `markdown_decks` moved it to v2 and `source_aliases` to v3. The
+root-only migration accepts v2, v3 and v4, preserves every child value, and
+invents no provenance. Test fixtures that pinned the root by literal now read
+`conftest.CURRENT_ROOT_SCHEMA_VERSION`, which is what that constant's own
+comment asked for after the last bump.
+
+`method` is the only strength signal and it is deliberately not stored as one.
+Readers call `date_provenance_basis()`, which maps a method to `proved`,
+`inferred`, or `bounded`, so a record cannot claim more than its method
+supports. `evidence` is required and non-empty because a method names a kind of
+evidence, never the evidence itself — the field is the trace an owner follows to
+re-check a claim without opening GitHub.
+
+`not_later_than` is an independent fact rather than a weaker date. A provider
+upload cannot precede the recording it publishes, so a talk with no date at all
+still has a ceiling. Measured against every talk that has both a proved day and
+a stored upload date, the bound holds 74 of 74, with the single −1 day inside
+the repo's own `UPLOAD_TIMEZONE_GRACE`. It is compared through
+`upload_predates_catalog`, the same comparator and grace the live
+source-identity audit uses, so a ceiling that contradicts the record it bounds
+refuses rather than being stored beside a date it disagrees with. A `date` that is present but
+uncomparable — month precision, a non-string, a calendar-boundary year — refuses
+the ceiling rather than storing a bound nothing checks; only an absent or blank
+date lets a ceiling stand alone. Teaching `parse_catalog_date` to read month
+precision belongs with the `source_identity_date_uncheckable` re-scope.
+
+Separately, `parse_catalog_date` now refuses years 0 and 1. The grace
+subtraction in `upload_predates_catalog` underflows the calendar there, so a
+catalog date of `0000` raised `ValueError` and `0001` raised `OverflowError` out
+of the shared comparator — reachable from preflight, not only from the new
+collection. Such a record is a typo rather than a delivery, so it reads as
+uncomparable instead of crashing its caller.
+
+`live_broadcast_release` proves rather than bounds, which is the one place a
+provider date is delivery evidence: for a `was_live` recording the release
+timestamp is the stream running, not a later publication.
+
+Schema and validation only. Establishing provenance for the existing catalog is
+separate work — see #430.
+
 ## 0.20.141 — 2026-09-08
 
 ### One degenerate word no longer voids a whole recording

@@ -9,7 +9,7 @@ from the wrong delivery.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import date, timedelta
+from datetime import MINYEAR, date, timedelta
 import math
 import re
 from typing import Any
@@ -382,10 +382,19 @@ def parse_catalog_date(value: Any) -> tuple[date | None, int] | None:
         return None
     value = value.strip()
     if CATALOG_YEAR_RE.fullmatch(value):
-        return None, int(value)
+        year = int(value)
+        # `upload_predates_catalog` subtracts a day of timezone grace from the
+        # year's first day, which underflows the calendar at years 0 and 1. A
+        # record dated there is a typo, not a delivery, so it reads as
+        # uncomparable here rather than crashing every caller downstream.
+        if year < MINYEAR + 1:
+            return None
+        return None, year
     try:
         parsed = date.fromisoformat(value)
     except ValueError:
+        return None
+    if parsed.year < MINYEAR + 1:
         return None
     return parsed, parsed.year
 

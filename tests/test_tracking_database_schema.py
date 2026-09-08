@@ -2444,3 +2444,328 @@ def test_migrating_a_pre_v2_root_without_the_collection_reaches_v2(
     assert tracking_database.assess_tracking_database(result.database).state == (
         "current"
     )
+
+
+# How a talk's delivery date was established (#430).
+
+
+def _provenance(**updates):
+    record = {
+        "schema_version": 1,
+        "talk_filename": "one.md",
+        "method": "organizer_program",
+        "evidence": "DevNexus 2015 published schedule, session page, retrieved 2026-09-08",
+        "established_at": "2026-09-08T00:00:00Z",
+    }
+    record.update(updates)
+    return record
+
+
+def _database_with_provenance(tracking_database, records, *, talk_date=None):
+    migrated = tracking_database.migrate_tracking_database(_legacy_database()).database
+    if talk_date is not None:
+        migrated["talks"][0]["date"] = talk_date
+    migrated["date_provenance"] = records
+    return migrated
+
+
+def test_a_provenance_record_leaves_the_database_current(tracking_database):
+    """The collection is optional and additive: no talk record changes shape."""
+    database = _database_with_provenance(tracking_database, [_provenance()])
+
+    assessment = tracking_database.assess_tracking_database(database)
+
+    assert assessment.state == "current"
+    assert assessment.usable is True
+    # The talk record is untouched: provenance lives beside it, so a legacy
+    # record keeps its own generation and needs no migration to carry one.
+    without = tracking_database.migrate_tracking_database(_legacy_database()).database
+    assert database["talks"] == without["talks"]
+
+
+def test_a_database_without_the_provenance_collection_stays_current(tracking_database):
+    """Absent means nothing recorded — the state half the catalog is in."""
+    database = tracking_database.migrate_tracking_database(_legacy_database()).database
+
+    assert "date_provenance" not in database
+    assert tracking_database.assess_tracking_database(database).state == "current"
+
+
+@pytest.mark.parametrize(
+    "method,basis",
+    [
+        ("live_broadcast_release", "proved"),
+        ("organizer_program", "proved"),
+        ("event_opening_day", "inferred"),
+        ("provider_upload_ceiling", "bounded"),
+    ],
+)
+def test_strength_is_read_from_the_method_never_stored(
+    tracking_database, method, basis
+):
+    """A record cannot claim a strength its method does not support."""
+    assert tracking_database.date_provenance_basis(method) == basis
+
+
+@pytest.mark.parametrize("method", ["proved", "guess", "", None, 3])
+def test_an_unknown_method_refuses_the_database(tracking_database, method):
+    database = _database_with_provenance(
+        tracking_database,
+        [_provenance(method=method, not_later_than="2016-01-21")],
+    )
+
+    with pytest.raises(tracking_database.TrackingDatabaseError):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_a_ceiling_only_method_must_carry_its_ceiling(tracking_database):
+    """`provider_upload_ceiling` establishes no day, so without one it says nothing."""
+    database = _database_with_provenance(
+        tracking_database, [_provenance(method="provider_upload_ceiling")]
+    )
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="not_later_than is required"
+    ):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_a_ceiling_that_contradicts_the_catalog_date_refuses(tracking_database):
+    """A provider upload cannot precede the recording it publishes."""
+    database = _database_with_provenance(
+        tracking_database,
+        [_provenance(not_later_than="2014-01-21")],
+        talk_date="2016-03-04",
+    )
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="cannot contradict"
+    ):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_a_ceiling_inside_the_timezone_grace_is_accepted(tracking_database):
+    """Same comparator and same grace as the live source-identity audit."""
+    database = _database_with_provenance(
+        tracking_database,
+        [_provenance(not_later_than="2016-03-03")],
+        talk_date="2016-03-04",
+    )
+
+    assert tracking_database.assess_tracking_database(database).state == "current"
+
+
+def test_a_ceiling_stands_alone_when_the_talk_has_no_date(tracking_database):
+    """The case this collection exists for: no date, but still a known bound."""
+    database = _database_with_provenance(
+        tracking_database,
+        [
+            _provenance(
+                method="provider_upload_ceiling",
+                evidence="youtube upload_date for 5jhzguKLEr4, captured 2026-08-18",
+                not_later_than="2016-01-21",
+            )
+        ],
+    )
+
+    assert "date" not in database["talks"][0]
+    assert tracking_database.assess_tracking_database(database).state == "current"
+
+
+def test_a_provenance_naming_no_talk_refuses_the_database(tracking_database):
+    database = _database_with_provenance(
+        tracking_database, [_provenance(talk_filename="absent.md")]
+    )
+
+    with pytest.raises(tracking_database.TrackingDatabaseError, match="names no talk"):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_a_second_provenance_for_one_talk_refuses_the_database(tracking_database):
+    """A date established again is a replacement, never an append."""
+    database = _database_with_provenance(
+        tracking_database, [_provenance(), _provenance(method="event_opening_day")]
+    )
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="second date provenance"
+    ):
+        tracking_database.assess_tracking_database(database)
+
+
+@pytest.mark.parametrize(
+    "field", ["talk_filename", "method", "evidence", "established_at"]
+)
+def test_a_missing_required_field_refuses_the_database(tracking_database, field):
+    record = _provenance()
+    del record[field]
+    database = _database_with_provenance(tracking_database, [record])
+
+    with pytest.raises(tracking_database.TrackingDatabaseError):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_an_unknown_field_refuses_the_database(tracking_database):
+    database = _database_with_provenance(
+        tracking_database, [_provenance(confidence="high")]
+    )
+
+    with pytest.raises(tracking_database.TrackingDatabaseError, match="unknown fields"):
+        tracking_database.assess_tracking_database(database)
+
+
+@pytest.mark.parametrize("version", [0, 2, "1", True, None])
+def test_a_record_generation_this_reader_cannot_name_refuses(
+    tracking_database, version
+):
+    database = _database_with_provenance(
+        tracking_database, [_provenance(schema_version=version)]
+    )
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="schema_version must be 1"
+    ):
+        tracking_database.assess_tracking_database(database)
+
+
+@pytest.mark.parametrize(
+    "value", ["2026-09-08", "not-a-time", "2026-09-08T00:00:00", ""]
+)
+def test_a_naive_or_malformed_timestamp_refuses(tracking_database, value):
+    database = _database_with_provenance(
+        tracking_database, [_provenance(established_at=value)]
+    )
+
+    with pytest.raises(tracking_database.TrackingDatabaseError):
+        tracking_database.assess_tracking_database(database)
+
+
+@pytest.mark.parametrize("value", ["2016", "2016-01", "20160121", "", 20160121])
+def test_a_ceiling_that_is_not_a_calendar_date_refuses(tracking_database, value):
+    """A ceiling is a day: a year would silently widen the bound it asserts."""
+    database = _database_with_provenance(
+        tracking_database, [_provenance(not_later_than=value)]
+    )
+
+    with pytest.raises(tracking_database.TrackingDatabaseError):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_the_collection_must_be_an_array(tracking_database):
+    database = _database_with_provenance(tracking_database, {"one.md": _provenance()})
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="must be an array"
+    ):
+        tracking_database.assess_tracking_database(database)
+
+
+@pytest.mark.parametrize("value", [[], {}, ["one.md"], 3, None, True, ""])
+def test_a_malformed_talk_filename_refuses_with_a_named_field(tracking_database, value):
+    """An unhashable value must name the field, not raise on set membership."""
+    database = _database_with_provenance(
+        tracking_database, [_provenance(talk_filename=value)]
+    )
+
+    with pytest.raises(tracking_database.TrackingDatabaseError) as exc:
+        tracking_database.assess_tracking_database(database)
+    assert "date_provenance[0].talk_filename" in str(exc.value)
+
+
+def test_shape_alone_is_checkable_without_a_catalog(tracking_database):
+    """Omitting the map checks the record without binding it to a talk."""
+    tracking_database.validate_date_provenance(
+        _provenance(talk_filename="not-in-any-catalog.md"), label="record"
+    )
+
+
+@pytest.mark.parametrize("talk_date", ["2016-03", "spring 2016", "2016-3", "16-03-04"])
+def test_a_ceiling_refuses_when_the_catalog_date_cannot_be_compared(
+    tracking_database, talk_date
+):
+    """A bound nothing checks is worse than no bound: `parse_catalog_date`
+    reads YYYY and ISO days only, so month precision would skip the
+    contradiction check silently."""
+    database = _database_with_provenance(
+        tracking_database,
+        [_provenance(not_later_than="2014-01-21")],
+        talk_date=talk_date,
+    )
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="cannot be checked against"
+    ):
+        tracking_database.assess_tracking_database(database)
+
+
+@pytest.mark.parametrize("talk_date", ["", "   "])
+def test_an_empty_catalog_date_still_lets_a_ceiling_stand_alone(
+    tracking_database, talk_date
+):
+    """Absent is not the same as unreadable — absent is what this is for."""
+    database = _database_with_provenance(
+        tracking_database,
+        [_provenance(not_later_than="2014-01-21")],
+        talk_date=talk_date,
+    )
+
+    assert tracking_database.assess_tracking_database(database).state == "current"
+
+
+def test_a_bare_year_catalog_date_is_comparable(tracking_database):
+    """Year precision reaches the comparator, so the ceiling is checked."""
+    database = _database_with_provenance(
+        tracking_database,
+        [_provenance(not_later_than="2016-06-01")],
+        talk_date="2016",
+    )
+
+    assert tracking_database.assess_tracking_database(database).state == "current"
+
+    contradicting = _database_with_provenance(
+        tracking_database,
+        [_provenance(not_later_than="2014-06-01")],
+        talk_date="2016",
+    )
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="cannot contradict"
+    ):
+        tracking_database.assess_tracking_database(contradicting)
+
+
+@pytest.mark.parametrize(
+    "talk_date",
+    [
+        2016,
+        ["2016-03-04"],
+        {"year": 2016},
+        True,
+        20160304,
+        "0000",
+        "0001",
+        "0001-05-05",
+    ],
+)
+def test_a_present_but_uncomparable_date_refuses_a_ceiling(
+    tracking_database, talk_date
+):
+    """The guard is about presence, not type: only absent lets a ceiling stand."""
+    database = _database_with_provenance(
+        tracking_database,
+        [_provenance(not_later_than="2014-01-21")],
+        talk_date=talk_date,
+    )
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="cannot be checked against"
+    ):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_a_missing_date_key_still_lets_a_ceiling_stand_alone(tracking_database):
+    database = _database_with_provenance(
+        tracking_database, [_provenance(not_later_than="2014-01-21")]
+    )
+    database["talks"][0].pop("date", None)
+
+    assert tracking_database.assess_tracking_database(database).state == "current"

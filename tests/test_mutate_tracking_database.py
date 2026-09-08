@@ -1788,7 +1788,7 @@ def test_root_migration_then_metadata_cli_dry_run_and_hash_bound_apply(
     )
     applied = json.loads(capsys.readouterr().out)
     expected = copy.deepcopy(database)
-    expected["schema_version"] = 3
+    expected["schema_version"] = CURRENT_ROOT
     expected["talks"][0]["date"] = "2018-08-31"
     assert applied["database_written"] is True
     assert applied["output_sha256"] == preview["output_sha256"]
