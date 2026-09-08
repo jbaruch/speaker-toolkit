@@ -241,6 +241,28 @@ def talk_binding_token(talk: Mapping[str, Any]) -> str | None:
     return None if identity is None else identity.binding_token
 
 
+def is_source_binding_token(value: Any) -> bool:
+    """Return whether some supported identity produces this exact token.
+
+    Any 11 URL-safe characters are a YouTube ID, so a string that reads as a
+    prefixed token at that length (``infoq-Upper``) is accepted as the YouTube
+    token it also is. The token still names exactly one talk's artifacts, which
+    is all a binding asks of it.
+    """
+    if not isinstance(value, str):
+        return False
+    if YOUTUBE_ID_RE.fullmatch(value):
+        return True
+    return any(
+        value.startswith(f"{provider}-")
+        and _PROVIDER_ID_PATTERNS[provider].fullmatch(
+            value[len(provider) + 1 :],
+        )
+        for provider in SUPPORTED_SOURCE_PROVIDERS
+        if provider != "youtube"
+    )
+
+
 def parse_google_drive_id(url: Any) -> str | None:
     """Return a stable file/deck ID from common Google Drive URL forms."""
     if not isinstance(url, str) or not url.strip():

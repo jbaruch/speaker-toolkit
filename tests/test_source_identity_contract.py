@@ -142,3 +142,26 @@ def test_supported_providers_are_the_ones_with_parsers(ingress_contract):
     assert set(ingress_contract.SUPPORTED_SOURCE_PROVIDERS) == set(
         ingress_contract._PROVIDER_ID_PATTERNS
     )
+
+
+@pytest.mark.parametrize(
+    "token",
+    ["dQw4w9WgXcQ", "vimeo-1223667266", "infoq-java-puzzle"],
+)
+def test_every_identity_produces_a_recognized_binding_token(ingress_contract, token):
+    assert ingress_contract.is_source_binding_token(token) is True
+
+
+@pytest.mark.parametrize(
+    "token",
+    ["vimeo-1234", "infoq-Upper-Case", "vimeo-", "twitch-1223667266", "", None, 11],
+)
+def test_malformed_tokens_bind_nothing(ingress_contract, token):
+    assert ingress_contract.is_source_binding_token(token) is False
+
+
+def test_an_eleven_character_token_is_a_youtube_id_whatever_it_spells(
+    ingress_contract,
+):
+    """Documented in `is_source_binding_token`; pinned so it stays deliberate."""
+    assert ingress_contract.is_source_binding_token("infoq-Upper") is True
