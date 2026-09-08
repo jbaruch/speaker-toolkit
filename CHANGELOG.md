@@ -1,5 +1,32 @@
 # Changelog
 
+### A slow import is no longer reported as a missing module
+
+`check-runtime.py` probes each lane's modules in a bounded child, and a probe
+that exceeded the 30-second budget was filed under `missing_modules` next to
+genuinely absent packages. The lane then refused with "install the missing
+modules", sending an operator after a package that was already installed.
+
+The configured interpreter can live on a network filesystem — the vault's own
+`config.python_path` points at a Drive-hosted `.venv` — where a cold import reads
+its dependencies over the network. Measured there, `import mlx_whisper` took
+**568 seconds** cold and **1 second** warm, almost all of it `scipy` submodules
+at one to two seconds each. Thirty seconds is generous for local disk and 19×
+short for that, so no single budget is right for both states; the reason has to
+reach the operator instead.
+
+Each lane now carries `unresolved_modules` alongside `missing_modules`, naming
+the subset whose probe never answered — `timeout` and `probe_start_failure`.
+`missing_modules` still lists every unavailable name, so existing readers are
+unaffected, and `available` is unchanged: an unresolved lane is still unusable.
+
+Both the stderr advice and `calibrate-speech.py`'s `pace_runtime_unavailable`
+now name the module and the reason, and point at warming the interpreter rather
+than reinstalling. `unresolved_module_probes()` is the shared reader.
+
+This cost most of a session on #443 and produced two wrong diagnoses before the
+import was profiled.
+
 ## 0.20.145 — 2026-09-08
 
 ### The provenance backup lands where the others do
