@@ -1395,7 +1395,21 @@ def validate_date_provenance(
         ) from exc
     if talk is None:
         return
-    if upload_predates_catalog(ceiling, parse_catalog_date(talk.get("date"))):
+    catalog = parse_catalog_date(talk.get("date"))
+    recorded_date = talk.get("date")
+    # A date the comparator cannot read is not the same as no date. An absent or
+    # empty one leaves the ceiling standing alone, which is the case this
+    # collection exists for. A present-but-unreadable one — month precision, or
+    # anything else `parse_catalog_date` refuses — would store a bound nothing
+    # ever checks, so it refuses until the catalog value is one the comparator
+    # can reach.
+    if catalog is None and isinstance(recorded_date, str) and recorded_date.strip():
+        raise TrackingDatabaseError(
+            f"{label}.not_later_than cannot be checked against the talk's date "
+            f"{recorded_date!r}, which is neither YYYY nor an ISO-8601 calendar "
+            "date; record a comparable date before bounding it"
+        )
+    if upload_predates_catalog(ceiling, catalog):
         raise TrackingDatabaseError(
             f"{label}.not_later_than {ceiling_text!r} precedes the talk's own "
             f"date {talk.get('date')!r}; a ceiling cannot contradict the record "

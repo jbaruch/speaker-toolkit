@@ -2677,3 +2677,57 @@ def test_shape_alone_is_checkable_without_a_catalog(tracking_database):
     tracking_database.validate_date_provenance(
         _provenance(talk_filename="not-in-any-catalog.md"), label="record"
     )
+
+
+@pytest.mark.parametrize("talk_date", ["2016-03", "spring 2016", "2016-3", "16-03-04"])
+def test_a_ceiling_refuses_when_the_catalog_date_cannot_be_compared(
+    tracking_database, talk_date
+):
+    """A bound nothing checks is worse than no bound: `parse_catalog_date`
+    reads YYYY and ISO days only, so month precision would skip the
+    contradiction check silently."""
+    database = _database_with_provenance(
+        tracking_database,
+        [_provenance(not_later_than="2014-01-21")],
+        talk_date=talk_date,
+    )
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="cannot be checked against"
+    ):
+        tracking_database.assess_tracking_database(database)
+
+
+@pytest.mark.parametrize("talk_date", ["", "   "])
+def test_an_empty_catalog_date_still_lets_a_ceiling_stand_alone(
+    tracking_database, talk_date
+):
+    """Absent is not the same as unreadable — absent is what this is for."""
+    database = _database_with_provenance(
+        tracking_database,
+        [_provenance(not_later_than="2014-01-21")],
+        talk_date=talk_date,
+    )
+
+    assert tracking_database.assess_tracking_database(database).state == "current"
+
+
+def test_a_bare_year_catalog_date_is_comparable(tracking_database):
+    """Year precision reaches the comparator, so the ceiling is checked."""
+    database = _database_with_provenance(
+        tracking_database,
+        [_provenance(not_later_than="2016-06-01")],
+        talk_date="2016",
+    )
+
+    assert tracking_database.assess_tracking_database(database).state == "current"
+
+    contradicting = _database_with_provenance(
+        tracking_database,
+        [_provenance(not_later_than="2014-06-01")],
+        talk_date="2016",
+    )
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="cannot contradict"
+    ):
+        tracking_database.assess_tracking_database(contradicting)

@@ -30,7 +30,10 @@ a stored upload date, the bound holds 74 of 74, with the single −1 day inside
 the repo's own `UPLOAD_TIMEZONE_GRACE`. It is compared through
 `upload_predates_catalog`, the same comparator and grace the live
 source-identity audit uses, so a ceiling that contradicts the record it bounds
-refuses rather than being stored beside a date it disagrees with.
+refuses rather than being stored beside a date it disagrees with. A `date` the
+comparator cannot read at all — month precision — refuses the ceiling rather
+than storing a bound nothing checks; teaching `parse_catalog_date` to read
+month precision belongs with the `source_identity_date_uncheckable` re-scope.
 
 `live_broadcast_release` proves rather than bounds, which is the one place a
 provider date is delivery evidence: for a `was_live` recording the release
