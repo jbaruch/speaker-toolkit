@@ -467,3 +467,19 @@ def test_month_precision_reads_as_its_year(value, expected):
 )
 def test_a_month_outside_the_calendar_stays_unreadable(value):
     assert source_identity_matching.parse_catalog_date(value) is None
+
+
+@pytest.mark.parametrize(
+    ("upload", "catalog", "expected"),
+    [
+        (date(9999, 12, 31), (date(9999, 12, 31), 9999), False),
+        (date(9999, 12, 30), (date(9999, 12, 31), 9999), False),
+        (date(9999, 12, 1), (date(9999, 12, 31), 9999), True),
+        (date(2, 1, 1), (None, 2), False),
+        (date(2, 1, 3), (None, 2), False),
+    ],
+)
+def test_the_grace_comparison_never_leaves_the_calendar(upload, catalog, expected):
+    """Both ends: the comparison is a subtraction, so no date is constructed
+    beyond `MINYEAR`/`MAXYEAR` to make it."""
+    assert source_identity_matching.upload_predates_catalog(upload, catalog) is expected

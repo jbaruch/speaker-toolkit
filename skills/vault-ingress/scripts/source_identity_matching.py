@@ -440,7 +440,9 @@ def upload_predates_catalog(
         return None
     catalog_day, catalog_year = catalog
     boundary = catalog_day if catalog_day is not None else date(catalog_year, 1, 1)
-    return upload < boundary - UPLOAD_TIMEZONE_GRACE
+    # Subtraction, never `boundary - grace`: the same comparison without
+    # constructing a date that can fall off either end of the calendar.
+    return boundary - upload > UPLOAD_TIMEZONE_GRACE
 
 
 def expected_duration_seconds(talk: dict[str, Any]) -> float | None:

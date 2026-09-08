@@ -4698,3 +4698,24 @@ def test_an_upload_after_the_bound_is_not_a_contradiction(
         report, "blocking"
     )
     assert "source_identity_date_bounded_only" in finding_codes(report, "warning")
+
+
+@pytest.mark.parametrize("bound", ["9999-12-31", "0002-01-01"])
+def test_a_calendar_edge_bound_compares_instead_of_overflowing(
+    preflight_vault, vault_fixture, bound
+):
+    """A bound at either end of the calendar is a valid record, and adding or
+    subtracting the grace day from it would fall off the calendar."""
+    materialize_transcript(vault_fixture)
+    talk = base_talk(date="", duration_seconds=2700, source_identity=source_identity())
+    write_database(
+        vault_fixture,
+        [talk],
+        current=True,
+        date_provenance=[_provenance_record(not_later_than=bound)],
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["database"])
+
+    codes = finding_codes(report, "warning") | finding_codes(report, "blocking")
+    assert "source_identity_date_uncheckable" not in codes

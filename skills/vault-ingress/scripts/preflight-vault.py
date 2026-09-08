@@ -2294,7 +2294,9 @@ class VaultPreflight:
         # 10% of uploads trail their delivery by more than a month and the worst
         # by 876 days — so comparing an upload against a delivery bound would
         # block valid recordings rather than catch a contradiction.
-        if recorded is not None and recorded > ceiling + UPLOAD_TIMEZONE_GRACE:
+        # Subtraction, never `ceiling + grace`: a bound of 9999-12-31 is a valid
+        # record, and adding a day to it overflows the calendar.
+        if recorded is not None and recorded - ceiling > UPLOAD_TIMEZONE_GRACE:
             self.talk_add(
                 index,
                 "blocking",

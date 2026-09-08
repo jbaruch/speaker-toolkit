@@ -18,6 +18,12 @@ It now names the repair, and a recorded bound changes the finding entirely:
 - recorded date after the bound — `source_identity_date_exceeds_recorded_bound`,
   blocking, because a recorded bound is checkable and that is the point of it
 
+Both grace comparisons are subtractions now — `recorded - ceiling > grace`
+rather than `recorded > ceiling + grace`, and the same in
+`upload_predates_catalog`. A bound of `9999-12-31` is a valid record and adding
+a day to it overflowed the calendar; the subtraction form constructs no date and
+so falls off neither end.
+
 The bound is on the DELIVERY, so only `recorded_date` is compared against it. A
 recording is routinely published long after it was delivered — measured across
 this catalog, 10% of uploads trail their delivery by more than a month and the
