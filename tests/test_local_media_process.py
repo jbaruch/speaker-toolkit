@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import io
 from pathlib import Path
 import sys
@@ -118,6 +119,34 @@ def test_thread_start_failure_stops_child_and_is_typed(process, monkeypatch):
             stdout_limit=128,
             stderr_limit=32,
         )
+
+
+def test_a_failed_tool_stop_names_what_failed(process, monkeypatch):
+    """This stop never reaches the supervisor, so #438's classification had to
+    be wired here too or the refusal stays a bare code."""
+    import subprocess
+
+    def cannot_wait(self, timeout=None):
+        raise OSError(errno.ECHILD, "No child processes")
+
+    monkeypatch.setattr(subprocess.Popen, "wait", cannot_wait)
+    monkeypatch.setattr(process._PipeDrainer, "start", _refuse_to_start)
+    with pytest.raises(process.LocalMediaError) as caught:
+        process.run_media_tool(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            stdout_limit=128,
+            stderr_limit=32,
+        )
+    assert caught.value.reason_code == "media_cleanup_failed"
+    assert caught.value.details == {
+        "cleanup_error_type": "ChildProcessError",
+        "cleanup_errno": errno.ECHILD,
+        "cleanup_errno_name": "ECHILD",
+    }
+
+
+def _refuse_to_start(self):
+    raise RuntimeError("cannot allocate drainer")
 
 
 def test_partial_sink_write_is_a_failure_not_a_short_success(process):

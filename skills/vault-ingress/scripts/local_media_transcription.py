@@ -86,6 +86,7 @@ WHISPER_FAILURES = frozenset(
         "whisper_provider_version_unsupported",
         "media_private_workspace_unavailable",
         "media_cleanup_failed",
+        "media_workspace_cleanup_failed",
         "media_dependency_unavailable",
         "media_tool_stdout_limit",
         "media_tool_stderr_limit",

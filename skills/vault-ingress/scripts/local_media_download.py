@@ -67,6 +67,7 @@ _DOWNLOAD_FAILURES = frozenset(
         "ytdlp_output_invalid",
         "media_pipe_failed",
         "media_cleanup_failed",
+        "media_workspace_cleanup_failed",
         "media_private_workspace_unavailable",
         "media_artifact_unavailable",
         "media_size_limit",

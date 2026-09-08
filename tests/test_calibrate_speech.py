@@ -172,6 +172,75 @@ def test_run_consumes_owner_words_and_preserves_all_exclusions(
     assert prior.read_bytes() == b"existing profile"
 
 
+def test_one_lost_teardown_race_does_not_discard_the_rest_of_the_cohort(
+    command, tmp_path, monkeypatch
+):
+    """The expensive half of #438: a 24-recording cohort died at recording 4
+    and threw away everything already transcribed.
+
+    A scratch directory that could not be removed leaks a temporary directory,
+    not a process, so it excludes its own recording and the run goes on.
+    """
+    names = ["one", "two", "three"]
+    vault(tmp_path, [talk(name) for name in names])
+    runtime_ok(command, monkeypatch)
+    probe = SimpleNamespace(duration_seconds=3600)
+    monkeypatch.setattr(command, "probe_local_media", lambda *a, **k: probe)
+    transcribed = []
+
+    def transcribe(path, **kwargs):
+        name = Path(str(path)).stem
+        transcribed.append(Path(str(path)).name)
+        if name == "two":
+            raise command.LocalMediaError(
+                "media_workspace_cleanup_failed",
+                {"cleanup_errno_name": "ENOTEMPTY", "cleanup_attempts": 5},
+            )
+        # Distinct source digests: the profile collapses identical recordings.
+        return probe, sample(name)["words"]
+
+    monkeypatch.setattr(command, "transcribe_local_words", transcribe)
+    result = command.execute(options(tmp_path, run=True))
+
+    # Every recording was attempted; nothing already done was thrown away.
+    assert sorted(transcribed) == ["one.wav", "three.wav", "two.wav"]
+    assert result["profile"]["summary"]["recording_count"] == 2
+    assert result["profile"]["exclusions"] == [
+        {
+            "schema_version": 1,
+            "recording_id": "two.md",
+            "reasons": ["media_workspace_cleanup_failed"],
+        }
+    ]
+
+
+def test_a_containment_cleanup_failure_still_ends_the_run(
+    command, tmp_path, monkeypatch
+):
+    """A worker whose containment cleanup failed may have left a live process.
+    Nothing may spawn another worker past that, so this one keeps aborting."""
+    names = ["one", "two", "three"]
+    vault(tmp_path, [talk(name) for name in names])
+    runtime_ok(command, monkeypatch)
+    probe = SimpleNamespace(duration_seconds=3600)
+    monkeypatch.setattr(command, "probe_local_media", lambda *a, **k: probe)
+    transcribed = []
+
+    def transcribe(path, **kwargs):
+        transcribed.append(Path(str(path)).name)
+        if Path(str(path)).name == "one.wav":
+            raise command.LocalMediaError("media_cleanup_failed")
+        return probe, sample()["words"]
+
+    monkeypatch.setattr(command, "transcribe_local_words", transcribe)
+    with pytest.raises(command.LocalMediaError, match="media_cleanup_failed"):
+        command.execute(options(tmp_path, run=True))
+    # The run stopped at the failing recording rather than working through the
+    # rest of the cohort.
+    assert transcribed == ["one.wav"]
+    assert "media_workspace_cleanup_failed" not in command._ABORTING_FAILURES
+
+
 def test_missing_local_source_remains_excluded_without_fallback(
     command, tmp_path, monkeypatch
 ):

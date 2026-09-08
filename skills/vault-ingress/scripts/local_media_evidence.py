@@ -13,6 +13,7 @@ import shutil
 import stat
 import sys
 import tempfile
+import time
 from typing import Any, Iterator, NoReturn, cast
 
 from artifact_locator import (
@@ -38,6 +39,7 @@ from artifact_supervisor import (
     SupervisorLimits,
     WorkerRequest,
     WorkerResult,
+    classify_cleanup_failure,
     isolate_protocol_output,
     read_worker_request,
     run_authenticated_worker,
@@ -52,6 +54,9 @@ from local_media_contract import (
     MEDIA_PIPELINE_VERSION,
     MEDIA_PROBE_LIMITS,
     MEDIA_SCHEMA_VERSION,
+    WORKSPACE_CLEANUP_ATTEMPTS,
+    WORKSPACE_CLEANUP_BACKOFF_SECONDS,
+    WORKSPACE_CLEANUP_RETRIED_ERRNOS,
     LocalMediaError,
     MediaArtifactProbe,
     decode_media_probe,
@@ -86,6 +91,7 @@ _LOCAL_FAILURES = frozenset(
         "media_pipe_failed",
         "media_private_workspace_unavailable",
         "media_cleanup_failed",
+        "media_workspace_cleanup_failed",
     }
 )
 
@@ -209,6 +215,51 @@ def probe_local_media(path: Any, *, trusted_root: Any = None) -> MediaArtifactPr
         )
 
 
+def _remove_private_workspace(
+    directory: tempfile.TemporaryDirectory, active: BaseException | None
+) -> None:
+    """Remove one scratch directory, re-attempting a lost teardown race.
+
+    `rmtree` lists a directory, unlinks what it listed, then removes the
+    directory itself. Anything that creates an entry inside that window makes
+    the final removal fail with ENOTEMPTY (EEXIST on the platforms POSIX allows
+    it to, EBUSY where the new entry is held open): a straggler tool flushing a
+    fragment, a content indexer, an endpoint-security agent. A re-attempt walks
+    the directory again and removes whatever appeared.
+
+    `TemporaryDirectory.cleanup` swallows ENOENT already and re-raises the rest,
+    which made one lost race fatal. A cohort tears a workspace down twice per
+    recording, so a per-teardown coin flip ended whole runs while an isolated
+    owner call almost never lost (#438). A writer that keeps producing entries
+    still exhausts the attempts and still fails.
+
+    `active` is the failure already travelling to the caller, if there is one.
+    Raising over it would replace it, and `media_workspace_cleanup_failed` does
+    not stop a caller the way a containment failure or an interrupt must, so a
+    teardown failure is reported beside that one rather than in place of it.
+    """
+    for attempt in range(1, WORKSPACE_CLEANUP_ATTEMPTS + 1):
+        try:
+            directory.cleanup()
+        except OSError as exc:
+            details = dict(classify_cleanup_failure(exc))
+            details["cleanup_attempts"] = attempt
+            if (
+                exc.errno not in WORKSPACE_CLEANUP_RETRIED_ERRNOS
+                or attempt == WORKSPACE_CLEANUP_ATTEMPTS
+            ):
+                failure = LocalMediaError("media_workspace_cleanup_failed", details)
+                if active is None:
+                    raise failure from exc
+                # Closed by construction: a reason code and allowlisted
+                # numbers, never a path or provider text.
+                print(f"local media: {failure}", file=sys.stderr, flush=True)
+                return
+            time.sleep(WORKSPACE_CLEANUP_BACKOFF_SECONDS)
+        else:
+            return
+
+
 @contextmanager
 def private_media_workspace() -> Iterator[dict[str, Any]]:
     """The owner cleans up even after a timed-out or killed worker cannot.
@@ -220,6 +271,7 @@ def private_media_workspace() -> Iterator[dict[str, Any]]:
         directory = tempfile.TemporaryDirectory(prefix="speaker-toolkit-local-media-")
     except OSError as exc:
         raise LocalMediaError("media_private_workspace_unavailable") from exc
+    delivered = False
     try:
         try:
             path = Path(directory.name)
@@ -231,11 +283,13 @@ def private_media_workspace() -> Iterator[dict[str, Any]]:
         except OSError as exc:
             raise LocalMediaError("media_private_workspace_unavailable") from exc
         yield workspace
+        delivered = True
     finally:
-        try:
-            directory.cleanup()
-        except OSError as exc:
-            raise LocalMediaError("media_cleanup_failed") from exc
+        # `delivered` is what separates the two exits. `sys.exc_info()` alone
+        # would also see an exception the caller merely happens to be handling
+        # around a workspace that closed cleanly, and would drop a real
+        # teardown failure on the floor.
+        _remove_private_workspace(directory, None if delivered else sys.exc_info()[1])
 
 
 def _admit_workspace(value: Any) -> Path:

@@ -14,7 +14,11 @@ import threading
 import time
 from typing import BinaryIO, cast
 
-from artifact_supervisor import DiagnosticReceipt, _PipeDrainer
+from artifact_supervisor import (
+    DiagnosticReceipt,
+    _PipeDrainer,
+    classify_cleanup_failure,
+)
 from local_media_contract import LocalMediaError, refuse
 
 
@@ -87,7 +91,12 @@ def _stop(process: subprocess.Popen[bytes]) -> None:
                 process.kill()
                 process.wait(timeout=PIPE_JOIN_SECONDS)
     except (OSError, subprocess.SubprocessError) as exc:
-        raise LocalMediaError("media_cleanup_failed") from exc
+        # Name what failed. This site never reached the supervisor, so it was
+        # still emitting a bare code after the supervisor's own cleanup
+        # failures learned to carry one (#438).
+        raise LocalMediaError(
+            "media_cleanup_failed", classify_cleanup_failure(exc)
+        ) from exc
 
 
 def run_media_tool(

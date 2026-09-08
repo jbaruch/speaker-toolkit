@@ -1,5 +1,65 @@
 # Changelog
 
+### The intermittent cohort abort was a lost teardown race
+
+`media_cleanup_failed` had killed three separate speech-calibration
+investigations — #368's, and twice during #430/#431's acceptance runs — and the
+standing theory was a Darwin process-group race in the supervisor's
+`_cleanup_invocation`. It was not. The fault is in the filesystem, one layer
+above the supervisor, and it reproduces on demand.
+
+`shutil.rmtree` lists a directory, unlinks what it listed, then removes the
+directory. Anything that creates an entry inside that window makes the final
+removal fail with ENOTEMPTY. `TemporaryDirectory.cleanup` swallows ENOENT and
+re-raises everything else, and `private_media_workspace` turned that single
+re-raise into a fatal `media_cleanup_failed`. Racing a create against a real
+workspace teardown reproduces it 30 times out of 30.
+
+That explains every property the issue recorded. It needs no unusual process
+state, so driving either owner in isolation never showed it. A cohort recording
+tears down two private workspaces — one for the download, one for the
+transcription — so a 24-recording run takes roughly fifty independent coin
+flips against a race an isolated owner call takes one. And it aborted at
+recording 4, then at recording 1, because each flip is independent of the last.
+
+Three changes:
+
+- **The teardown re-attempts a lost race.** Five attempts at 50 ms, and only for
+  the codes that mean something is in the directory (ENOTEMPTY, EEXIST, and
+  EBUSY for a held-open entry). A writer that keeps producing entries still
+  exhausts them and still fails, and an error the retry cannot be about — EACCES
+  on an undeletable directory — still fails on the first attempt.
+
+- **A scratch directory is not a process.** The teardown failure had shared
+  `media_cleanup_failed` with the supervisor's containment cleanup, which is why
+  it ended whole runs: nothing may spawn another worker past a cleanup that may
+  have left a live one. A workspace that could not be removed leaks a temporary
+  directory, and the next recording gets a fresh one. It is now
+  `media_workspace_cleanup_failed` and an ordinary per-recording exclusion, so
+  one lost race costs one recording instead of twenty-three transcriptions and
+  twenty minutes.
+
+- **The two raise sites the previous fix could not reach now name what failed.**
+  0.20.147 taught `SupervisorError` cleanup failures to carry an errno, but
+  `private_media_workspace` and `local_media_process._stop` raise
+  `media_cleanup_failed` directly and never touch a `SupervisorError`, so they
+  kept emitting a bare code. Both classify now, and the workspace teardown adds
+  `cleanup_attempts`, which separates a teardown that lost its race once from
+  one that never won it.
+
+The teardown runs in a `finally`, so it also runs on the way out of a failure.
+Raising its own failure there would replace the one already travelling to the
+caller — and `media_workspace_cleanup_failed` is precisely the code that does
+not stop a caller, so a containment failure plus a lost teardown race would
+have let calibration keep spawning workers with containment unconfirmed. A
+teardown failure over an active one is reported beside it instead, and an
+interrupt still outranks a scratch directory.
+
+Not made resumable. A run that survives its most common abort has much less to
+resume, and a durable partial-cohort artifact is a stateful artifact with a
+schema, an owner, and a staleness contract — its own change, not a bug fix.
+A containment cleanup failure still ends the run and still discards it.
+
 ## 0.20.147 — 2026-09-08
 
 ### A cleanup failure says what failed

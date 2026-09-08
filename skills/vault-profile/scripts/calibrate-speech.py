@@ -18,8 +18,12 @@ report is not permission to use a planning default. Save to a fresh candidate,
 never redirect over an existing profile. Exit 0 reports a completed plan/run,
 1 rejects inputs or capabilities, 2 reports usage or unexpected tool failure.
 Per-recording acquisition failures remain explicit exclusions; global failures
-emit no usable candidate. Interrupts propagate. Bounds are owned by the cohort,
-speech-profile and ingress media contracts, not overridable CLI thresholds.
+emit no usable candidate. A scratch directory that could not be removed is a
+per-recording exclusion, not a global failure: it leaks a temporary directory,
+not a process. Only a containment cleanup failure, which may have left a live
+worker, ends the run — see `_ABORTING_FAILURES`. Interrupts propagate. Bounds
+are owned by the cohort, speech-profile and ingress media contracts, not
+overridable CLI thresholds.
 """
 
 from __future__ import annotations
@@ -51,6 +55,26 @@ from vault_root_authority import (  # noqa: E402
     VaultRootAuthorityError,
     materialize_native_authority,
     resolve_vault_root_authority,
+)
+
+
+# Failures that end the run instead of excluding one recording. A worker whose
+# containment cleanup failed may have left a live process, and nothing may spawn
+# another worker past that. A missing or unusable whisper provider fails the same
+# way on every recording left.
+#
+# A scratch directory that could not be removed is neither. It leaks a temporary
+# directory, not a process, and the next recording gets a fresh workspace. It
+# shared `media_cleanup_failed` with the containment failure until a lost
+# teardown race was found discarding whole 24-recording cohorts (#438), so
+# `media_workspace_cleanup_failed` is an ordinary per-recording exclusion.
+_ABORTING_FAILURES = frozenset(
+    {
+        "media_cleanup_failed",
+        "whisper_dependency_unavailable",
+        "whisper_provider_version_unsupported",
+        "whisper_model_download_failed",
+    }
 )
 
 
@@ -190,7 +214,8 @@ def execute(args: argparse.Namespace) -> dict:
                         sample_start_seconds=start,
                         sample_duration_seconds=duration,
                     )
-                # A download context's cleanup must succeed before admission.
+                # A download context's cleanup must succeed before admission:
+                # a sample is admitted only once its workspace is gone.
                 calibration["samples"].append(
                     {
                         "schema_version": 1,
@@ -205,12 +230,7 @@ def execute(args: argparse.Namespace) -> dict:
                 reason = (
                     exc.reason_code if isinstance(exc, LocalMediaError) else exc.code
                 )
-                if reason in {
-                    "media_cleanup_failed",
-                    "whisper_dependency_unavailable",
-                    "whisper_provider_version_unsupported",
-                    "whisper_model_download_failed",
-                }:
+                if reason in _ABORTING_FAILURES:
                     raise
                 calibration["exclusions"].append(
                     {

@@ -29,6 +29,19 @@ MEDIA_MAX_STREAMS = 64
 MEDIA_FFPROBE_STDOUT_BYTES = 256 * 1024
 MEDIA_FFPROBE_STDERR_BYTES = 64 * 1024
 MEDIA_DIGEST_CHUNK_BYTES = 1024 * 1024
+# Scratch-workspace teardown re-attempts. `rmtree` removes the entries it listed
+# and then the directory, so an entry created inside that window fails the final
+# removal; a re-attempt removes what appeared. Five attempts at 50 ms outlast a
+# straggler flush or an indexer pass without letting a writer that keeps
+# producing entries stall the owner: such a writer exhausts them and fails.
+WORKSPACE_CLEANUP_ATTEMPTS = 5
+WORKSPACE_CLEANUP_BACKOFF_SECONDS = 0.05
+# ENOENT never reaches here — TemporaryDirectory swallows it. These are the
+# "something is in the directory" codes: POSIX lets a system answer a non-empty
+# removal with either ENOTEMPTY or EEXIST, and a held-open entry answers EBUSY.
+WORKSPACE_CLEANUP_RETRIED_ERRNOS = frozenset(
+    {errno.ENOTEMPTY, errno.EEXIST, errno.EBUSY}
+)
 WHISPER_MAX_TEXT_BYTES = 2 * 1024 * 1024
 WHISPER_MAX_SEGMENTS = 20000
 WHISPER_MAX_SEGMENT_TEXT_BYTES = 16384
@@ -168,12 +181,22 @@ def _is_reason_code(value: object) -> bool:
     return isinstance(value, str) and _REASON_CODE.fullmatch(value) is not None
 
 
+def _is_cleanup_attempt(value: object) -> bool:
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and 1 <= value <= WORKSPACE_CLEANUP_ATTEMPTS
+    )
+
+
 DISCLOSABLE_DETAILS: Mapping[str, Callable[[object], bool]] = {
     "cleanup_errno": _is_errno,
     "cleanup_errno_name": _is_errno_name,
     "cleanup_error_type": _is_exception_type_name,
     "cleanup_cause_type": _is_exception_type_name,
     "cleanup_reason_code": _is_reason_code,
+    # Separates a teardown that lost its race once from one that never won it.
+    "cleanup_attempts": _is_cleanup_attempt,
 }
 
 
