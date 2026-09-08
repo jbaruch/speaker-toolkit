@@ -1,5 +1,14 @@
 # Changelog
 
+### The provenance backup lands where the others do
+
+`establish-date-provenance.py --apply` wrote its backup next to the database
+instead of into `.backups/`, where this vault already collects them, leaving a
+stray `.bak` in a directory a human reads. It goes beside the owner migration's
+backups now and names its own operation, so two backups of one input stay
+distinguishable.
+
+
 ## 0.20.144 — 2026-09-08
 
 ### An unrecorded date now says what is known

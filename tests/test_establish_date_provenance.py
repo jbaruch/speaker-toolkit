@@ -355,3 +355,23 @@ def test_the_plan_never_mutates_the_database_it_reads(establish_date_provenance)
     establish_date_provenance.plan_ceilings(database, established_at=AS_OF)
 
     assert database == before
+
+
+def test_the_backup_lands_beside_the_owner_migrations(
+    establish_date_provenance, tmp_path
+):
+    """`.backups/` is where this vault collects database backups; a stray .bak
+    next to the database is a loose file in a directory a human reads."""
+    path, digest = _write(tmp_path, _database([_talk("dateless.md")]))
+
+    applied = establish_date_provenance.execute(
+        path, apply=True, expected_sha256=digest, as_of=AS_OF
+    )
+
+    backup = Path(applied["backup"])
+    assert backup.parent == path.parent / ".backups"
+    assert backup.name == f"{path.name}.date-provenance-{digest}.bak"
+    assert backup.is_file()
+    assert list(path.parent.glob("*.bak")) == []
+    # The backup is the exact input, which is what makes it an undo.
+    assert hashlib.sha256(backup.read_bytes()).hexdigest() == digest
