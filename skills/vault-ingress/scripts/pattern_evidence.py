@@ -26,10 +26,10 @@ from artifact_locator import (
     materialize_native_root,
 )
 from ingress_contract import (
-    READABLE_VIDEO_EXTRACTION_SCHEMA_VERSIONS,
     SourceIdentity,
     has_remote_slide_acquisition,
     has_remote_video_acquisition,
+    is_readable_video_extraction_version,
     talk_source_identity,
 )
 from artifact_metadata import canonicalize_trusted_artifact_locator
@@ -708,8 +708,7 @@ def _local_video_binding(
         if identity is None:
             return None, "video_extraction manifest has no claimed source identity"
         if (
-            manifest.get("schema_version")
-            not in READABLE_VIDEO_EXTRACTION_SCHEMA_VERSIONS
+            not is_readable_video_extraction_version(manifest.get("schema_version"))
             or manifest.get("source_video_id") != identity.binding_token
         ):
             return (
@@ -878,7 +877,7 @@ def _trusted_video_slide_probe(
         except PatternEvidenceError as exc:
             return None, str(exc), None
     trusted = (
-        manifest.get("schema_version") in READABLE_VIDEO_EXTRACTION_SCHEMA_VERSIONS
+        is_readable_video_extraction_version(manifest.get("schema_version"))
         and manifest.get("source_video_id") == identity.binding_token
         and manifest.get("slide_region_method") == "manual"
         and manifest.get("slide_region_applied") is True

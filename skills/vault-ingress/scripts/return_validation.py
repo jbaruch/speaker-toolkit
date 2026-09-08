@@ -44,7 +44,6 @@ from catalog_io import (
 )
 from ingress_contract import (
     ARCHIVAL_VIDEO_EXTRACTION_SCHEMA_VERSION,
-    READABLE_VIDEO_EXTRACTION_SCHEMA_VERSIONS,
     YOUTUBE_ID_RE,
     VIDEO_EXTRACTION_SCHEMA_VERSION,
     YOUTUBE_BOUND_VIDEO_EXTRACTION_SCHEMA_VERSION,
@@ -55,6 +54,7 @@ from ingress_contract import (
     has_remote_acquisition_source,
     has_transcript_source,
     has_video_source,
+    is_readable_video_extraction_version,
     is_source_binding_token,
     source_capabilities,
     talk_binding_token,
@@ -1168,7 +1168,7 @@ def validate_video_extraction_manifest(structured: dict) -> VideoExtractionState
             "structured_data.video_extraction schema-v4 manifest"
         )
     manifest_version = manifest.get("schema_version")
-    if manifest_version not in READABLE_VIDEO_EXTRACTION_SCHEMA_VERSIONS:
+    if not is_readable_video_extraction_version(manifest_version):
         # An archival record is separable from a malformed one: it was valid
         # under its own contract and names the exact repair (reacquire the
         # source, re-extract), so readers surface it as work rather than rot.

@@ -150,7 +150,9 @@ grammars.
 
 The downloader result and exit-code contract lives in
 [subagent-instructions.md](subagent-instructions.md#slide-acquisition-per-slide_source),
-under `video_extracted`. Follow it before invoking the extractor.
+under `video_extracted`. Follow it before invoking the extractor. That
+downloader is a YouTube lane; the same section names the prerequisite a talk on
+another supported provider satisfies instead.
 
 The third argument is the talk's **source binding token**: the bare
 11-character ID for a YouTube talk, `vimeo+<id>` or `infoq+<slug>` for the

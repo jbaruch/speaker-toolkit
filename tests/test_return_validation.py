@@ -2931,3 +2931,16 @@ def test_a_v4_manifest_with_a_youtube_id_still_reads(return_validation):
     )
 
     assert state.source_video_id == manifest["source_video_id"]
+
+
+@pytest.mark.parametrize("version", [[], {}, "four", None, True, 4.0])
+def test_a_malformed_schema_version_is_typed_not_a_typeerror(
+    return_validation, version
+):
+    """A JSON document can hold an unhashable value; membership alone raised
+    TypeError past the caller's actionable message (#427 review)."""
+    value = _video_return()
+    value["structured_data"]["video_extraction"]["schema_version"] = version
+
+    with pytest.raises(return_validation.ReturnValidationError):
+        return_validation.validate_video_extraction_manifest(value["structured_data"])

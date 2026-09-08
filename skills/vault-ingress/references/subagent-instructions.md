@@ -187,10 +187,20 @@ text.
   top of `skills/vault-ingress/scripts/batch-download-videos.py` for the report
   shape, the exit codes, and the closed failure vocabulary.
 
-  Only once this id's entry is `ok` or `skip`, extract. The extractor's third
-  argument is the talk's source binding token — the bare ID for a YouTube talk,
-  `vimeo+<id>` or `infoq+<slug>` otherwise — and `{youtube_id}` in the paths
-  below is that token:
+  The downloader is a YouTube lane: it accepts 11-character YouTube IDs and
+  builds YouTube URLs. A talk published on another supported provider never
+  reaches it, and its prerequisite is a different one — the orchestrator
+  acquires the recording itself and places it at
+  `{vault_root}/slides-rebuild/{source_token}/{source_token}.mp4`. Confirm that
+  file exists and is a readable MP4 before extracting; there is no downloader
+  report to branch on, and an absent file is a talk with no video source,
+  handled exactly as a `fail` entry is.
+
+  Extract once the lane's prerequisite holds — this id's `results` entry is
+  `ok` or `skip` on YouTube, or the placed MP4 is confirmed on every other
+  provider. The extractor's third argument is the talk's source binding token
+  (the bare ID for a YouTube talk, `vimeo+<id>` or `infoq+<slug>` otherwise),
+  and `{youtube_id}` in the paths below is that token:
   ```bash
   "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/video-slide-extraction.py" \
     "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \

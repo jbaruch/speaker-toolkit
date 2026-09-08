@@ -45,6 +45,23 @@ VIDEO_EXTRACTION_SCHEMA_VERSION = 5
 YOUTUBE_BOUND_VIDEO_EXTRACTION_SCHEMA_VERSION = 4
 READABLE_VIDEO_EXTRACTION_SCHEMA_VERSIONS = frozenset({4, 5})
 ARCHIVAL_VIDEO_EXTRACTION_SCHEMA_VERSION = 3
+
+
+def is_readable_video_extraction_version(value: Any) -> bool:
+    """Return whether a manifest declares a version this pipeline reads.
+
+    Membership alone would raise ``TypeError`` on the unhashable values a JSON
+    document can legitimately hold (a list, an object), which escapes past a
+    caller's typed error and its actionable message. The type check is the
+    reason this is a function rather than an ``in``.
+    """
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, int)
+        and value in READABLE_VIDEO_EXTRACTION_SCHEMA_VERSIONS
+    )
+
+
 YOUTUBE_ID_RE = re.compile(r"[A-Za-z0-9_-]{11}")
 GOOGLE_DRIVE_ID_RE = re.compile(r"[A-Za-z0-9_-]{3,}")
 VIMEO_ID_RE = re.compile(r"[0-9]{6,12}")
