@@ -23,6 +23,7 @@ import json
 import pathlib
 from typing import Any
 
+from conftest import CURRENT_ROOT_SCHEMA_VERSION as CURRENT_ROOT
 import pytest
 
 
@@ -379,7 +380,7 @@ def test_a_non_integer_record_version_is_rejected(tracking_database) -> None:
 
 def _database(records: list[dict]) -> dict:
     return {
-        "schema_version": 3,
+        "schema_version": CURRENT_ROOT,
         "config": {"schema_version": 2, "pptx_directory_exclusions": []},
         "talks": [],
         "pptx_catalog": records,

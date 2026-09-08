@@ -39,7 +39,12 @@ LEGACY_TRACKING_DATABASE_SCHEMA_VERSION = 0
 # root generation (`stateful-artifacts` Migration Policy).
 PRE_MARKDOWN_DECKS_TRACKING_DATABASE_SCHEMA_VERSION = 1
 PRE_SOURCE_ALIASES_TRACKING_DATABASE_SCHEMA_VERSION = 2
-TRACKING_DATABASE_SCHEMA_VERSION = 3
+# The root shape before the `date_provenance` collection (#430), for the same
+# reason the two above exist: a top-level key is part of the ROOT record's
+# shape, and a version on each nested provenance record does not version its
+# parent database (`stateful-artifacts` Migration Policy).
+PRE_DATE_PROVENANCE_TRACKING_DATABASE_SCHEMA_VERSION = 3
+TRACKING_DATABASE_SCHEMA_VERSION = 4
 LEGACY_TALK_RECORD_SCHEMA_VERSION = 1
 FLAT_SCORE_TALK_RECORD_SCHEMA_VERSION = 5
 # The generation before the owner-reviewed title-equivalence ledger (#333).
@@ -91,6 +96,7 @@ READABLE_TRACKING_DATABASE_SCHEMA_VERSIONS = frozenset(
         LEGACY_TRACKING_DATABASE_SCHEMA_VERSION,
         PRE_MARKDOWN_DECKS_TRACKING_DATABASE_SCHEMA_VERSION,
         PRE_SOURCE_ALIASES_TRACKING_DATABASE_SCHEMA_VERSION,
+        PRE_DATE_PROVENANCE_TRACKING_DATABASE_SCHEMA_VERSION,
         TRACKING_DATABASE_SCHEMA_VERSION,
     }
 )
@@ -2111,6 +2117,7 @@ def repair_missing_qr_schema_versions(database: object) -> TrackingDatabaseMigra
         or assessment.schema_version
         not in {
             PRE_SOURCE_ALIASES_TRACKING_DATABASE_SCHEMA_VERSION,
+            PRE_DATE_PROVENANCE_TRACKING_DATABASE_SCHEMA_VERSION,
             TRACKING_DATABASE_SCHEMA_VERSION,
         }
         or (
@@ -2187,6 +2194,7 @@ def migrate_tracking_database_root(database: object) -> TrackingDatabaseMigratio
         or assessment.schema_version
         not in {
             PRE_SOURCE_ALIASES_TRACKING_DATABASE_SCHEMA_VERSION,
+            PRE_DATE_PROVENANCE_TRACKING_DATABASE_SCHEMA_VERSION,
             TRACKING_DATABASE_SCHEMA_VERSION,
         }
         or database["config"]["schema_version"] != CONFIG_RECORD_SCHEMA_VERSION

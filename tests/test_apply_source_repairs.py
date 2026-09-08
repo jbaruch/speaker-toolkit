@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from conftest import CURRENT_ROOT_SCHEMA_VERSION as CURRENT_ROOT
 from conftest import current_tracking_config
 
 
@@ -15,7 +16,7 @@ def write_json(path, value):
 
 def base_database():
     return {
-        "schema_version": 3,
+        "schema_version": CURRENT_ROOT,
         "config": current_tracking_config(),
         "talks": [
             {

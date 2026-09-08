@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 
+from conftest import CURRENT_ROOT_SCHEMA_VERSION as CURRENT_ROOT
 import pytest
 
 from test_tracking_database_schema import (
@@ -41,11 +42,11 @@ def test_root_upgrade_preserves_every_child_value_and_reader_contract(
     result = tracking_database.migrate_tracking_database_root(database)
 
     expected = copy.deepcopy(before)
-    expected["schema_version"] = 3
+    expected["schema_version"] = CURRENT_ROOT
     assert result.database == expected
     assert database == before
     assert result.changed is True
-    assert (result.from_schema_version, result.to_schema_version) == (2, 3)
+    assert (result.from_schema_version, result.to_schema_version) == (2, CURRENT_ROOT)
     assert not any(result.record_counts.values())
     assert (
         tracking_database.assess_tracking_database(result.database).state == "current"
@@ -142,7 +143,7 @@ def test_root_cli_preserves_evidence_backups_and_noop_inode(
         path, apply=True, expected_sha256=preview["input_sha256"], root_only=True
     )
     expected = copy.deepcopy(database)
-    expected["schema_version"] = 3
+    expected["schema_version"] = CURRENT_ROOT
     assert json.loads(path.read_bytes()) == expected
     assert applied["output_sha256"] == preview["output_sha256"]
     assert Path(applied["backup"]).read_bytes() == raw
@@ -194,7 +195,7 @@ def test_root_migration_rejects_stale_writers_and_allows_claim_preserving_reload
     assert Path(applied["backup"]).read_bytes() == raw
     current, fresh = read(path)
     assert current["talks"] == database["talks"]
-    assert current["schema_version"] == 3
+    assert current["schema_version"] == CURRENT_ROOT
     current["config"]["speaker_name"] = "Synthetic speaker"
     assert write(path, current, expected_snapshot=fresh).installed is True
     reloaded, _ = read(path)
@@ -316,3 +317,50 @@ def test_existing_claim_replays_through_current_queue_cli_after_root_migration(
     assert report["claimed"][0]["reprocess_generation"] == 2
     assert path.read_bytes() == installed
     assert json.loads(installed)["talks"] == database["talks"]
+
+
+@pytest.mark.parametrize("start", [2, 3])
+def test_a_pre_provenance_root_migrates_to_current_preserving_children(
+    tracking_database, start
+):
+    """The root advances; no provenance is invented for a database without any."""
+    database = _root_database(tracking_database)
+    database["schema_version"] = start
+    before = copy.deepcopy(database)
+
+    result = tracking_database.migrate_tracking_database_root(database)
+
+    expected = copy.deepcopy(before)
+    expected["schema_version"] = CURRENT_ROOT
+    assert result.database == expected
+    assert "date_provenance" not in result.database
+    assert (result.from_schema_version, result.to_schema_version) == (
+        start,
+        CURRENT_ROOT,
+    )
+    assert not any(result.record_counts.values())
+
+
+def test_a_pre_provenance_root_carrying_the_collection_is_not_current(
+    tracking_database,
+):
+    """The collection IS the current root shape, so an older root claiming it
+    must not read as current — the fix is the migration, not a refusal."""
+    database = _root_database(tracking_database)
+    database["schema_version"] = 3
+    database["date_provenance"] = [
+        {
+            "schema_version": 1,
+            "talk_filename": database["talks"][0]["filename"],
+            "method": "organizer_program",
+            "evidence": "published schedule",
+            "established_at": "2026-09-08T00:00:00Z",
+        }
+    ]
+
+    assessment = tracking_database.assess_tracking_database(database)
+
+    assert assessment.state != "current"
+    migrated = tracking_database.migrate_tracking_database_root(database).database
+    assert migrated["date_provenance"] == database["date_provenance"]
+    assert tracking_database.assess_tracking_database(migrated).state == "current"

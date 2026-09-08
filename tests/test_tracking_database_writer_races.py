@@ -10,6 +10,7 @@ import threading
 
 import pytest
 
+from conftest import CURRENT_ROOT_SCHEMA_VERSION as CURRENT_ROOT
 from conftest import current_tracking_config
 
 
@@ -21,7 +22,7 @@ def _write(path: Path, value: object) -> bytes:
 
 def _current_database() -> dict[str, object]:
     return {
-        "schema_version": 3,
+        "schema_version": CURRENT_ROOT,
         "config": current_tracking_config(),
         "talks": [],
         "pptx_catalog": [],

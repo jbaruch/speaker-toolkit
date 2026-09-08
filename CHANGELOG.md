@@ -14,7 +14,14 @@ top-level collection rather than a talk field for the reason `markdown_decks`
 already documents: `TALK_RECORD_SCHEMA_VERSION` means the analysis generation,
 and the records this is for are the legacy ones, so a talk-field version would
 be unreachable for exactly the records that need it. No talk record changes
-shape, no migration owns the collection, and absent means nothing was recorded.
+shape, and absent means nothing was recorded.
+
+A top-level key is part of the root record's shape, so the root advances to v4
+exactly as `markdown_decks` moved it to v2 and `source_aliases` to v3. The
+root-only migration accepts v2, v3 and v4, preserves every child value, and
+invents no provenance. Test fixtures that pinned the root by literal now read
+`conftest.CURRENT_ROOT_SCHEMA_VERSION`, which is what that constant's own
+comment asked for after the last bump.
 
 `method` is the only strength signal and it is deliberately not stored as one.
 Readers call `date_provenance_basis()`, which maps a method to `proved`,

@@ -13,6 +13,7 @@ import sys
 from typing import Any
 import zipfile
 
+from conftest import CURRENT_ROOT_SCHEMA_VERSION as CURRENT_ROOT
 import pytest
 from conftest import video_source_receipt_for, write_tiny_video
 from PIL import Image
@@ -142,7 +143,7 @@ def write_database(fixture, talks, config=None, *, current=False, equivalences=N
     if current:
         database.update(
             {
-                "schema_version": 3,
+                "schema_version": CURRENT_ROOT,
                 "pptx_catalog": [],
                 "qr_codes": [],
                 "resources": [],

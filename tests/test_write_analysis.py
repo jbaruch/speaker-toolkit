@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from conftest import CURRENT_ROOT_SCHEMA_VERSION as CURRENT_ROOT
 from conftest import current_tracking_config
 
 
@@ -330,7 +331,7 @@ def _write_tracking_db(
     path.write_text(
         json.dumps(
             {
-                "schema_version": 3,
+                "schema_version": CURRENT_ROOT,
                 "config": current_tracking_config(),
                 "talks": talks,
                 "pptx_catalog": [],
