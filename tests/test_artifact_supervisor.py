@@ -2798,13 +2798,15 @@ def test_an_unnumbered_errno_still_classifies():
     }
 
 
-def _wrapped(inner: BaseException, outer: BaseException) -> BaseException:
+def _wrapped(inner: Exception, outer: Exception) -> Exception:
+    """Build the real shape: an exception raised `from` another, as the cleanup
+    paths do, so the fixture exercises `__cause__` rather than setting it."""
     try:
         try:
             raise inner
-        except BaseException as caught:
+        except type(inner) as caught:
             raise outer from caught
-    except BaseException as raised:
+    except type(outer) as raised:
         return raised
 
 
@@ -2831,7 +2833,7 @@ def test_an_os_failure_wrapped_by_the_supervisor_still_reports_its_errno():
 
 def test_the_cause_walk_stops_rather_than_chasing_an_unrelated_chain():
     deepest = ProcessLookupError(3, "No such process")
-    chain: BaseException = deepest
+    chain: Exception = deepest
     for _ in range(artifact_supervisor._CLEANUP_CAUSE_MAX_DEPTH + 2):
         chain = _wrapped(chain, RuntimeError("wrapper"))
 
