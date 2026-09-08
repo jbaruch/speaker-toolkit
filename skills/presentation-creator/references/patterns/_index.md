@@ -417,7 +417,7 @@ Reverse lookup: which patterns relate to each of the 14 rhetoric analysis dimens
 
 ## Denominator-Safe Catalog Status
 
-All 81 observable entries have explicit positive, strong, and absence outcome gates. Of
+All 83 observable entries have explicit positive, strong, and absence outcome gates. Of
 those, 37 also declare source-located applicability conditions. Only 16 currently permit
 absence; 65 are deliberately positive-only because their available role labels do not
 intrinsically prove the timing, rendering, screen, audio, audience, stage, session, or
@@ -498,8 +498,8 @@ they surface during **creator Phase 6 (Publishing / Go-Live)** as a preparation 
 
 ## Summary Statistics
 
-- **Total entries:** 111 (83 patterns + 28 antipatterns)
-- **Observable (vault-scorable):** 81 (62 patterns + 19 antipatterns)
+- **Total entries:** 113 (85 patterns + 28 antipatterns)
+- **Observable (vault-scorable):** 83 (64 patterns + 19 antipatterns)
 - **Positive source-gated:** 81
 - **Absence source-gated:** 16
 - **Applicability-gated:** 37

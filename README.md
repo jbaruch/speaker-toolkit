@@ -361,7 +361,7 @@ notes which named patterns and antipatterns are detected per talk.
   video-derived slide provenance, or participate in freshness checks. If a
   recording cannot be verified, only source-video capability is removed;
   independently verified transcript, PDF, and PPTX evidence remains
-- Each talk is scored against the taxonomy's 83 observable entries (62 patterns + 19 antipatterns),
+- Each talk is scored against the taxonomy's 83 observable entries (64 patterns + 19 antipatterns),
   with source-located evidence restricted to the artifact channels each entry permits
 - Each batch updates the summary, per-talk analysis files, and triggers profile regeneration
 - An interactive clarification session resolves ambiguities and captures confirmed intent
@@ -461,7 +461,7 @@ across the corpus (`delayed-self-introduction`, `three-part-close`, `progressive
 - **Build** (51): Foreshadowing, Bookends, Defy Defaults, Vacation Photos, Traveling Highlights, Emergence, Sparkline, Call to Adventure, Call to Action, New Bliss, S.T.A.R. Moment, Three-Part Close, Progressive Reveal, Meme as Argument, Guess First, Retrieval Beat, Second Look, and more
 - **Deliver** (36): Carnegie Hall, Breathing Room, Echo Chamber, Seeding the First Question, Screen Blackout, Delayed Self-Introduction, Anti-Sell, Flyover, Spaced Follow-Up, The Nodding Room, and more
 
-Of the 111 entries, **81 are observable** (62 patterns + 19 antipatterns): directly
+Of the 113 entries, **83 are observable** (64 patterns + 19 antipatterns): directly
 detectable through their declared transcript, slide, or video locator channels, with
 allowlisted source metadata only as corroboration. The other **30 are unobservable**
 (21 patterns + 9 antipatterns): pre-event logistics, hidden authoring/provenance processes,
@@ -478,7 +478,7 @@ remain outside absence denominators until versioned capability/alignment receipt
 
 **How it integrates:**
 
-| Integration point | Observable entries (81: 62 patterns + 19 antipatterns) | Unobservable entries (30: 21 patterns + 9 antipatterns) |
+| Integration point | Observable entries (83: 64 patterns + 19 antipatterns) | Unobservable entries (30: 21 patterns + 9 antipatterns) |
 |---|---|---|
 | **Vault scoring** (Step 3 B2) | Exhaustive per-talk outcomes aggregate into source-exact `pattern_profile` occurrence rows | Excluded from scoring |
 | **Creator Phase 2** | Four history tiers from an available mastery/novelty domain; flat current taxonomy for an older, missing, or unavailable domain | Included in recommendations |
@@ -596,7 +596,7 @@ speaker-toolkit/
     |   |   +-- insert-qr.applescript           # AppleScript driver for InsertQR
     |   +-- references/
     |       +-- phase0-intake.md through phase7-post-event.md  # Phase detail docs
-    |       +-- patterns/                     # Presentation Patterns taxonomy (111 entries)
+    |       +-- patterns/                     # Presentation Patterns taxonomy (113 entries)
     |           +-- _index.md                 # Master index, phase mapping, dimension lookup
     |           +-- prepare/                  # 20 patterns + 4 antipatterns
     |           +-- build/                    # 41 patterns + 10 antipatterns
