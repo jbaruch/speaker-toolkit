@@ -500,14 +500,14 @@ they surface during **creator Phase 6 (Publishing / Go-Live)** as a preparation 
 
 - **Total entries:** 113 (85 patterns + 28 antipatterns)
 - **Observable (vault-scorable):** 83 (64 patterns + 19 antipatterns)
-- **Positive source-gated:** 81
+- **Positive source-gated:** 83
 - **Absence source-gated:** 16
-- **Applicability-gated:** 37
-- **Positive-only (absence disabled):** 65
+- **Applicability-gated:** 39
+- **Positive-only (absence disabled):** 67
 - **Unobservable (go-live checklist):** 30 (21 patterns + 9 antipatterns)
 - **Prepare phase:** 24 (20 patterns + 4 antipatterns)
 - **Build phase:** 51 (41 patterns + 10 antipatterns)
-- **Deliver phase:** 36 (22 patterns + 14 antipatterns)
+- **Deliver phase:** 38 (24 patterns + 14 antipatterns)
 
 ## Sources
 
