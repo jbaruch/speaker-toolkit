@@ -142,7 +142,7 @@ def test_native_numeric_scalars_normalize_losslessly_at_provider_boundary(words)
     [
         ("schema_version", True),
         ("schema_version", 1),
-        ("schema_version", 3),
+        ("schema_version", 4),
         ("source_sha256", "unknown"),
         ("language_probability", -0.1),
         ("sample_duration_seconds", 1201),
@@ -240,7 +240,7 @@ def test_native_boundary_straddling_keeps_exact_times_and_membership(words, edge
     else:
         raw["segments"][0]["end"] = 1.8
     receipt = normalized(words, raw)
-    assert receipt["schema_version"] == 2
+    assert receipt["schema_version"] == 3
     assert receipt["words"] == normalized(words)["words"]
     assert receipt["segments"][0][f"{edge}_seconds"] == raw["segments"][0][edge]
 
@@ -266,3 +266,129 @@ def test_word_cannot_borrow_another_segments_quality_metadata(words):
     receipt["words"][1]["segment_index"] = 0
     with pytest.raises(words.WordSampleError):
         words.validate_word_sample(receipt)
+
+
+def wide_raw(lexical_count, degenerate_indexes):
+    """One segment of evenly spaced words, with the named indexes zero-span."""
+    tokens = []
+    for index in range(lexical_count):
+        start = 0.5 + index * 0.1
+        end = start if index in degenerate_indexes else start + 0.05
+        tokens.append(
+            {"word": f" w{index}", "start": start, "end": end, "probability": 0.9}
+        )
+    span = 0.5 + lexical_count * 0.1
+    return {
+        "language": "en",
+        "segments": [
+            {
+                "start": 0.0,
+                "end": span,
+                "compression_ratio": 1.1,
+                "avg_logprob": -0.1,
+                "no_speech_prob": 0.01,
+                "words": tokens,
+            }
+        ],
+    }
+
+
+def wide_normalized(words, raw):
+    duration = raw["segments"][0]["end"] + 1
+    return words.normalize_word_result(
+        raw,
+        source_sha256="a" * 64,
+        sample_sha256="b" * 64,
+        source_duration_seconds=duration + 20,
+        sample_start_seconds=20,
+        sample_duration_seconds=duration,
+        provider_version="0.4.3",
+        model=words.DEFAULT_WORD_MODEL,
+        language_probability=0.99,
+    )
+
+
+def test_one_degenerate_word_is_excluded_and_counted_not_refused(words):
+    """#431: the measured shape — one zero-span token in a large sample."""
+    result = wide_normalized(words, wide_raw(200, {73}))
+
+    assert len(result["words"]) == 199
+    assert result["token_exclusions"] == [
+        {"token_index": 73, "reason": "nonpositive_span"}
+    ]
+    # Excluded, never repaired: no retained word carries the degenerate stamp.
+    assert all(
+        word["end_seconds"] > word["start_seconds"] for word in result["words"]
+    )
+    assert "w73" not in {word["text"] for word in result["words"]}
+
+
+def test_degenerate_and_punctuation_exclusions_share_one_ordered_record(words):
+    raw = wide_raw(200, {5})
+    raw["segments"][0]["words"].insert(
+        3, {"word": " …", "start": 0.75, "end": 0.78, "probability": 1.0}
+    )
+    result = wide_normalized(words, raw)
+
+    assert result["token_exclusions"] == [
+        {"token_index": 3, "reason": "punctuation_only"},
+        {"token_index": 6, "reason": "nonpositive_span"},
+    ]
+    assert len(result["words"]) == 199
+
+
+def test_a_cluster_of_degenerate_words_still_refuses_the_sample(words):
+    """Above the bound the alignment itself is suspect, not one token."""
+    over = set(range(10, 13))  # 3 of 200 lexical tokens exceeds 1%
+    with pytest.raises(words.LocalMediaError) as exc:
+        wide_normalized(words, wide_raw(200, over))
+    assert exc.value.reason_code == "whisper_word_sample_invalid_word_nonpositive_span"
+
+
+def test_the_bound_is_a_share_not_a_fixed_count(words):
+    """Two zero-span tokens pass in 200 lexical words and refuse in 100."""
+    assert len(wide_normalized(words, wide_raw(200, {10, 11}))["words"]) == 198
+    with pytest.raises(words.LocalMediaError):
+        wide_normalized(words, wide_raw(100, {10, 11}))
+
+
+def test_an_all_degenerate_sample_refuses_rather_than_dividing_by_zero(words):
+    with pytest.raises(words.LocalMediaError) as exc:
+        wide_normalized(words, wide_raw(4, {0, 1, 2, 3}))
+    assert exc.value.reason_code == "whisper_word_sample_invalid_word_nonpositive_span"
+
+
+def test_a_negative_span_is_excluded_on_the_same_path(words):
+    raw = wide_raw(200, set())
+    raw["segments"][0]["words"][40]["end"] = (
+        raw["segments"][0]["words"][40]["start"] - 0.01
+    )
+    result = wide_normalized(words, raw)
+    assert result["token_exclusions"] == [
+        {"token_index": 40, "reason": "nonpositive_span"}
+    ]
+
+
+def test_a_retained_zero_span_word_still_refuses_on_read(words):
+    """The admitted-word invariant is unchanged: a receipt claiming a zero-span
+    lexical word is invalid, whatever produced it."""
+    result = wide_normalized(words, wide_raw(200, set()))
+    result["words"][0]["end_seconds"] = result["words"][0]["start_seconds"]
+    with pytest.raises(words.LocalMediaError) as exc:
+        words.validate_word_sample(result)
+    assert exc.value.reason_code == "whisper_word_sample_invalid_word_nonpositive_span"
+
+
+def test_the_receipt_declares_the_widened_exclusion_contract(words):
+    result = wide_normalized(words, wide_raw(200, {73}))
+    assert result["schema_version"] == 3
+    assert result["pipeline_version"] == "sampled-words-v3"
+    with pytest.raises(words.LocalMediaError):
+        words.validate_word_sample({**result, "schema_version": 2})
+    with pytest.raises(words.LocalMediaError):
+        words.validate_word_sample(
+            {
+                **result,
+                "token_exclusions": [{"token_index": 73, "reason": "repaired"}],
+            }
+        )

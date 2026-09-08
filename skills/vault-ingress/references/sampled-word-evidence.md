@@ -48,7 +48,7 @@ This probe does not prove language homogeneity across the complete sample.
 All listed keys are required; unknown keys and future versions refuse:
 
 ```text
-{schema_version: 2, pipeline_version: "sampled-words-v2",
+{schema_version: 3, pipeline_version: "sampled-words-v3",
  source_sha256, sample_sha256, source_duration_seconds,
  sample_start_seconds, sample_duration_seconds,
  provider: "mlx-whisper", provider_version,
@@ -56,15 +56,25 @@ All listed keys are required; unknown keys and future versions refuse:
  words: [{text, start_seconds, end_seconds, probability, segment_index}, ...],
  segments: [{start_seconds, end_seconds, compression_ratio,
              average_log_probability, no_speech_probability}, ...],
- token_exclusions: [{token_index, reason: "punctuation_only"}, ...]}
+ token_exclusions: [{token_index, reason: "punctuation_only" |
+                     "nonpositive_span"}, ...]}
 ```
 
 The root receipt version owns the fixed nested model, word, segment and token
 exclusion shapes. Words carry one lexical token each; the model's tokenization
-convention is preserved. Only punctuation-only tokens are omitted, with an
-explicit original token index. Invalid lexical timestamps, overlaps, missing
-word alignment, invalid Unicode and segment membership failures refuse the
-sample. No timestamps are interpolated, repaired, stretched or clipped.
+convention is preserved. Punctuation-only tokens and degenerate tokens whose
+provider span is zero or negative are omitted, each with an explicit original
+token index and its reason. Invalid lexical timestamps, overlaps, missing word
+alignment, invalid Unicode and segment membership failures refuse the sample.
+No timestamps are interpolated, repaired, stretched or clipped.
+
+A sample is admitted with its degenerate tokens excluded and recorded until their
+share exceeds the admission bound, above which the sample refuses whole with
+`whisper_word_sample_invalid_word_nonpositive_span`. The bound is
+`WORDS_MAX_NONPOSITIVE_SHARE` at the top of
+`skills/vault-ingress/scripts/local_media_words.py`. Exclusion is never repair: a
+retained word always carries a positive span, and a receipt that claims otherwise
+refuses on read.
 
 Word and segment times are relative to the sample, not the full recording.
 Each word retains its zero-based provider `segment_index`. Indices are ordered;
@@ -85,9 +95,10 @@ each sample.
 digests. Consumers obtain receipts from `transcribe_local_words`, preserve them
 unchanged and recheck live source freshness through ingress before reuse.
 Missing receipts mean no word evidence. Segment-only timing sidecars are not
-migrated into words; obtain fresh alignment through this owner. The experimental
-v1 receipt omitted explicit membership; it is not accepted or auto-migrated.
-Run fresh owner acquisition to obtain v2 evidence.
+migrated into words; obtain fresh alignment through this owner. Earlier
+receipts are not accepted or auto-migrated: v1 omitted explicit membership, and
+v2 refused a sample outright on any degenerate token, so its admitted set is not
+comparable. Run fresh owner acquisition to obtain v3 evidence.
 
 `WordSampleError` adds closed numeric failure details: `schema_version: 1`,
 `word_index`, `word_count`, `word_start_seconds`, `word_end_seconds`,

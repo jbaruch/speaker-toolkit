@@ -178,13 +178,6 @@ A refused fetch is classified before it becomes a finding. `classify_fetch_failu
 owns the decision; its two signature tables and their precedence are named at the
 top of `skills/vault-ingress/scripts/audit-source-identities.py`.
 
-An access restriction always outranks an unavailability signature. A region block
-reads `This video is not available in your country`, which contains an
-unavailability signature verbatim, and the recording still exists for a viewer the
-provider will serve. Precedence, not the signature list, is what keeps a
-geo-blocked, age-gated, bot-checked, members-only or private recording out of the
-link-rot bucket.
-
 `source_unavailable_upstream` is absent from `ERROR_CODES`, so an upstream loss
 never sets `complete: false`. Recording it as a distinct code and status is what
 stops a permanent loss from re-reading as a fresh high-priority fetch error on
