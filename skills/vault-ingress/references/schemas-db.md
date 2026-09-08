@@ -658,6 +658,7 @@ exact-type rule. The supported mutation kinds are:
 | `record_source_alias` | Append a reviewed inactive YouTube identity; exact canonical/ledger expectations and both input/output hashes bind apply; see [source-aliases.md](source-aliases.md) |
 | `promote_source_alias` | Sole mutation for an owner-reviewed official-upload switch; expect the complete talk and alias ledger, require both hashes, preserve superseded identity/history, and requeue without relabeling existing evidence; see [source-aliases.md](source-aliases.md#atomic-official-upload-promotion) |
 | `record_markdown_deck` | Register (or re-point) the markdown file one exact talk's deck was authored in, with `expect` naming the currently registered `deck_source_path` or the missing marker; upsert, one deck per talk |
+| `record_date_provenance` | Record (or replace) how one exact talk's delivery date was established, with `expect` naming the currently recorded `method` or the missing marker; `established_at` comes from the plan, never the clock; upsert, one account per talk |
 | `update_talk_publishing` | Set supported publishing fields on one exact talk filename, with `expect` covering exactly the same fields |
 | `update_talk_clarification` | Set complete object/array `blind_spot_observations` or `humor_postmortem` values on one exact talk, with matching field expectations |
 
@@ -744,7 +745,7 @@ a question the catalog cannot ask of itself:
 
 ```json
 "date_provenance": [{
-  "schema_version": 1,
+  "schema_version": 2,
   "talk_filename": "playlist-5jhzguKLEr4.md",
   "method": "live_broadcast_release",
   "evidence": "youtube 5jhzguKLEr4 was_live=true, release_timestamp 1453343702",
@@ -782,8 +783,16 @@ own requires one; `DATE_PROVENANCE_CEILING_REQUIRED_METHODS` names those.
 
 An absent or blank `date` leaves a ceiling standing alone, which is the case
 this collection exists for. Every other present value `parse_catalog_date`
-refuses — month precision, a non-string, a calendar-boundary year — refuses the
-ceiling instead of storing a bound nothing ever checks.
+refuses — a non-string, a calendar-boundary year — refuses the ceiling instead
+of storing a bound nothing ever checks.
+
+Record generation v2 is current; v1 stays readable and the owner migration
+restamps it, the way a v5 talk record and a v1 pptx record are handled — a
+current root does not mean current records. Each generation is held to the
+method enum it shipped with, so a v1 record naming a v2-only method is malformed
+rather than upgradable, and a malformed v1 record refuses instead of being
+restamped. `_migrate_date_provenance_records` owns the upgrade and counts it as
+`date_provenance` in the migration's record counts.
 
 The collection is the root v4 shape, for the same reason `markdown_decks` is the
 root v2 shape: a top-level key is part of the root record, and a version on each
@@ -793,9 +802,10 @@ root and preserves the records.
 
 One record per talk: a date established again replaces its account rather than
 appending a second one. The collection is optional — absent means nothing was
-recorded about a date, which is the state most of the catalog is in — and no
-migration owns it. Provenance is written by an owner who checked something,
-never inferred from a date that happens to be present.
+recorded about a date, which is the state most of the catalog is in. No
+migration creates a record; the owner migration only advances the generation of
+one that exists. Provenance is written by an owner who checked something, never
+inferred from a date that happens to be present.
 
 `skills/vault-ingress/scripts/establish-date-provenance.py` writes the ceiling
 records. It is a dry run by default and `--apply` requires the input digest from

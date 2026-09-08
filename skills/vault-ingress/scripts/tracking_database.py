@@ -89,7 +89,13 @@ MARKDOWN_DECK_RECORD_SCHEMA_VERSION = 1
 # is the state half the catalog is in. No migration owns it, and it is absent
 # from `_RECORD_COUNT_KEYS`: provenance is established by an owner who checked
 # something, never inferred from a date that happens to be present.
-DATE_PROVENANCE_RECORD_SCHEMA_VERSION = 1
+# v2 adds `third_party_record` to the method enum (#430). A v1 reader would
+# refuse a v2 record, so the generation moves even though the field set is
+# unchanged — the same reason talk v8 exists for one added enum value. The
+# release that shipped v1 also shipped its writer, so a v1 record can exist;
+# `_migrate_date_provenance_records` upgrades one.
+LEGACY_DATE_PROVENANCE_RECORD_SCHEMA_VERSION = 1
+DATE_PROVENANCE_RECORD_SCHEMA_VERSION = 2
 
 READABLE_TRACKING_DATABASE_SCHEMA_VERSIONS = frozenset(
     {
@@ -122,6 +128,7 @@ _RECORD_COUNT_KEYS = (
     "improvement_goals",
     "source_title_equivalences",
     "source_rejections",
+    "date_provenance",
 )
 
 PPTX_CATALOG_REQUIRED_FIELDS = frozenset(
@@ -260,9 +267,15 @@ DATE_PROVENANCE_OPTIONAL_FIELDS = frozenset({"not_later_than"})
 # honesty of this collection: `basis` is never stored, so a record cannot claim
 # a strength its method does not support.
 #
-#   proved   — direct evidence of the delivery day itself
-#   inferred — derived from something adjacent to the delivery
+#   proved   — the event's own record of the day, or the delivery itself
+#   inferred — a dated record next to the delivery rather than of it
 #   bounded  — establishes no day at all, only a ceiling
+#
+# `third_party_record` is an attendee write-up, a co-presenter's talk list, or
+# any dated account by someone other than the organizer. It reads as inferred
+# rather than proved even when it names the exact session: the writer was not
+# keeping the event's record, so erring toward the weaker classification is the
+# direction this collection exists to protect.
 #
 # A live broadcast's release timestamp is the stream running, which is why it
 # proves rather than bounds: for `was_live` media the provider's date is the
@@ -272,12 +285,24 @@ DATE_PROVENANCE_OPTIONAL_FIELDS = frozenset({"not_later_than"})
 DATE_PROVENANCE_BASIS_BY_METHOD = {
     "live_broadcast_release": "proved",
     "organizer_program": "proved",
+    "third_party_record": "inferred",
     "event_opening_day": "inferred",
     "provider_upload_ceiling": "bounded",
 }
 # A method that establishes no day must carry the ceiling that is its whole
 # content; a record with neither would assert nothing.
 DATE_PROVENANCE_CEILING_REQUIRED_METHODS = frozenset({"provider_upload_ceiling"})
+# What v1 accepted. A v1 record naming anything else was never writable by the
+# release that produced it, so it is malformed rather than upgradable.
+LEGACY_DATE_PROVENANCE_METHODS = frozenset(
+    set(DATE_PROVENANCE_BASIS_BY_METHOD) - {"third_party_record"}
+)
+READABLE_DATE_PROVENANCE_SCHEMA_VERSIONS = frozenset(
+    {
+        LEGACY_DATE_PROVENANCE_RECORD_SCHEMA_VERSION,
+        DATE_PROVENANCE_RECORD_SCHEMA_VERSION,
+    }
+)
 _ISO_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 SOURCE_TITLE_EQUIVALENCE_REQUIRED_FIELDS = frozenset(
     {
@@ -1330,26 +1355,36 @@ def validate_date_provenance(
         label=label,
     )
     # `_require_closed_shape` ignores `schema_version` for every record, so the
-    # generation is checked explicitly. A record this reader cannot name must
-    # refuse rather than be coerced into the current shape.
+    # generation is checked explicitly. Both readable generations are accepted
+    # here, the way a v5 talk record and a v1 pptx record stay readable: a
+    # current ROOT does not mean current RECORDS, and the owner migration is
+    # what advances one. A generation this reader cannot name still refuses.
     recorded = record.get("schema_version")
     if (
         isinstance(recorded, bool)
         or not isinstance(recorded, int)
-        or recorded != DATE_PROVENANCE_RECORD_SCHEMA_VERSION
+        or recorded not in READABLE_DATE_PROVENANCE_SCHEMA_VERSIONS
     ):
         raise TrackingDatabaseError(
-            f"{label}.schema_version must be {DATE_PROVENANCE_RECORD_SCHEMA_VERSION}"
+            f"{label}.schema_version must be one of "
+            f"{sorted(READABLE_DATE_PROVENANCE_SCHEMA_VERSIONS)}"
         )
     _require_nonempty_string(record["talk_filename"], f"{label}.talk_filename")
     # The trace an owner follows to check the claim without reading an issue
     # thread. A method alone names a kind of evidence, never the evidence.
     _require_nonempty_string(record["evidence"], f"{label}.evidence")
     method = _require_nonempty_string(record["method"], f"{label}.method")
-    if date_provenance_basis(method) is None:
+    # Each generation is held to the enum it shipped with, so a v1 record cannot
+    # carry a method only v2 defines.
+    accepted = (
+        LEGACY_DATE_PROVENANCE_METHODS
+        if recorded == LEGACY_DATE_PROVENANCE_RECORD_SCHEMA_VERSION
+        else frozenset(DATE_PROVENANCE_BASIS_BY_METHOD)
+    )
+    if method not in accepted:
         raise TrackingDatabaseError(
-            f"{label}.method must be one of "
-            f"{sorted(DATE_PROVENANCE_BASIS_BY_METHOD)}, not {method!r}"
+            f"{label}.method must be one of {sorted(accepted)} at "
+            f"generation {recorded}, not {method!r}"
         )
     established_at = _require_nonempty_string(
         record["established_at"],
@@ -1932,6 +1967,43 @@ _RESTAMPABLE_TALK_RECORD_SCHEMA_VERSIONS = frozenset(
 )
 
 
+def _migrate_date_provenance_records(candidate: dict[str, Any]) -> int:
+    """Upgrade v1 provenance records to the current generation (#430).
+
+    v1 to v2 widened the method enum and changed no field, so every v1 record is
+    already a valid v2 record and the upgrade is a restamp. The reader accepts
+    both generations, holding each to the enum it shipped with, so a v1 record
+    stays readable while it waits for this migration — the same arrangement a v5
+    talk record and a v1 pptx record have.
+
+    The release that shipped v1 also shipped the writer that stamps it, so a
+    database written against it can carry v1 records. Validated as a v1 record
+    before anything is restamped — coercing a malformed one into the current
+    shape would manufacture validity this owner never checked.
+    """
+    records = candidate.get("date_provenance")
+    if not isinstance(records, list):
+        return 0
+    upgraded = 0
+    for index, record in enumerate(records):
+        if not isinstance(record, Mapping):
+            raise TrackingDatabaseError(
+                f"date_provenance[{index}] must be a JSON object"
+            )
+        if record.get("schema_version") != LEGACY_DATE_PROVENANCE_RECORD_SCHEMA_VERSION:
+            continue
+        # Checked as a v1 record before anything is restamped: stamping the
+        # current generation onto an unvalidated record would coerce a malformed
+        # one into apparent validity.
+        validate_date_provenance(record, label=f"date_provenance[{index}]")
+        records[index] = {
+            **record,
+            "schema_version": DATE_PROVENANCE_RECORD_SCHEMA_VERSION,
+        }
+        upgraded += 1
+    return upgraded
+
+
 def _migrate_title_equivalences(candidate: dict[str, Any]) -> int:
     """Lift v1 nested equivalences into the v2 top-level collection (#333).
 
@@ -2248,6 +2320,7 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
         # no-op path.
         require_current_tracking_database(candidate)
         counts = _empty_record_counts()
+        counts["date_provenance"] = _migrate_date_provenance_records(candidate)
         counts["pptx_catalog"] = _migrate_pptx_catalog_records(candidate)
         counts["source_title_equivalences"] = _migrate_title_equivalences(candidate)
         counts["talks"] = _restamp_talk_records(candidate)
@@ -2299,6 +2372,7 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
     # skipped for exactly the databases whose config still needed upgrading.
     counts["pptx_catalog"] += _migrate_pptx_catalog_records(candidate)
     counts["source_title_equivalences"] += _migrate_title_equivalences(candidate)
+    counts["date_provenance"] += _migrate_date_provenance_records(candidate)
     counts["talks"] += _restamp_talk_records(candidate)
 
     if root_version == TRACKING_DATABASE_SCHEMA_VERSION:

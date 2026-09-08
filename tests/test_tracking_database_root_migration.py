@@ -350,7 +350,7 @@ def test_a_pre_provenance_root_carrying_the_collection_is_not_current(
     database["schema_version"] = 3
     database["date_provenance"] = [
         {
-            "schema_version": 1,
+            "schema_version": (tracking_database.DATE_PROVENANCE_RECORD_SCHEMA_VERSION),
             "talk_filename": database["talks"][0]["filename"],
             "method": "organizer_program",
             "evidence": "published schedule",

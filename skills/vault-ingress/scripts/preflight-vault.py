@@ -24,7 +24,7 @@ import os
 from pathlib import Path
 import re
 import sys
-from typing import Any
+from typing import Any, Mapping
 
 from failure_diagnostics import sanitized_frames
 from artifact_locator import (
@@ -76,6 +76,7 @@ from video_evidence import (
     video_source_receipt_lineage_drift,
 )
 from source_identity_matching import (
+    UPLOAD_TIMEZONE_GRACE,
     EventAlias,
     event_agreement,
     expected_duration_seconds,
@@ -2240,6 +2241,83 @@ class VaultPreflight:
                 actual=observed,
             )
 
+    def _recorded_ceiling(self, index: int) -> date | None:
+        """Return the bound a `date_provenance` record carries for this talk."""
+        provenance = self.database.get("date_provenance")
+        if not isinstance(provenance, list):
+            return None
+        filename = self.talks[index].get("filename")
+        for record in provenance:
+            if not isinstance(record, Mapping):
+                continue
+            if record.get("talk_filename") != filename:
+                continue
+            value = record.get("not_later_than")
+            if not isinstance(value, str):
+                return None
+            try:
+                return date.fromisoformat(value)
+            except ValueError:
+                return None
+        return None
+
+    def _report_uncomparable_catalog_date(
+        self,
+        index: int,
+        recorded: date | None,
+    ) -> None:
+        """Say what is actually known, not merely that a comparison failed.
+
+        A catalog date this comparator cannot read used to end in one warning
+        that named no repair, and half the catalog sits in that state, so the
+        finding said nothing an owner could act on (#430). A recorded bound is
+        the difference between "nothing is known" and "the day is unknown but
+        the recording predates a day we hold", and the second is checkable: a
+        source date after the bound contradicts it.
+        """
+        ceiling = self._recorded_ceiling(index)
+        if ceiling is None:
+            self.talk_add(
+                index,
+                "warning",
+                "source_identity_date_uncheckable",
+                "catalog date is absent or not YYYY/YYYY-MM/ISO-8601 and no bound "
+                "is recorded; run establish-date-provenance.py to record one, or "
+                "establish the delivery date",
+                field="date",
+                expected="YYYY, YYYY-MM, or YYYY-MM-DD",
+                actual=self.talks[index].get("date"),
+            )
+            return
+        # `recorded_date` alone. The bound is on the DELIVERY, and a recording
+        # is routinely published long after it — measured across this catalog,
+        # 10% of uploads trail their delivery by more than a month and the worst
+        # by 876 days — so comparing an upload against a delivery bound would
+        # block valid recordings rather than catch a contradiction.
+        # Subtraction, never `ceiling + grace`: a bound of 9999-12-31 is a valid
+        # record, and adding a day to it overflows the calendar.
+        if recorded is not None and recorded - ceiling > UPLOAD_TIMEZONE_GRACE:
+            self.talk_add(
+                index,
+                "blocking",
+                "source_identity_date_exceeds_recorded_bound",
+                "recorded date is later than the recorded delivery bound",
+                field="source_identity.recorded_date",
+                expected=f"on or before {ceiling.isoformat()}",
+                actual=recorded.isoformat(),
+            )
+            return
+        self.talk_add(
+            index,
+            "warning",
+            "source_identity_date_bounded_only",
+            "catalog date is unrecorded; the delivery is bounded by the recorded "
+            "provenance and the source dates agree with that bound",
+            field="date",
+            expected=f"a delivery date on or before {ceiling.isoformat()}",
+            actual=self.talks[index].get("date"),
+        )
+
     def _validate_identity_dates(self, index: int, evidence: dict[str, Any]) -> None:
         talk_date = parse_catalog_date(self.talks[index].get("date"))
         recorded_raw = evidence.get("recorded_date")
@@ -2251,15 +2329,7 @@ class VaultPreflight:
         recorded = self._parse_evidence_date(index, "recorded_date", recorded_raw)
         upload = self._parse_evidence_date(index, "upload_date", upload_raw)
         if talk_date is None:
-            self.talk_add(
-                index,
-                "warning",
-                "source_identity_date_uncheckable",
-                "catalog date is absent or not YYYY/ISO-8601; source dates cannot be compared",
-                field="date",
-                expected="YYYY or YYYY-MM-DD",
-                actual=self.talks[index].get("date"),
-            )
+            self._report_uncomparable_catalog_date(index, recorded)
             return
 
         catalog_day, catalog_year = talk_date

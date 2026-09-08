@@ -1,5 +1,57 @@
 # Changelog
 
+### An unrecorded date now says what is known
+
+`parse_catalog_date` reads `YYYY-MM`. A month is a real delivery whose day was
+never recorded, and it reads as its year: the month narrows nothing a year-level
+comparison uses, and inventing a day from it would manufacture precision the
+record does not carry. Eight catalog records leave the uncheckable bucket.
+
+Preflight's `source_identity_date_uncheckable` used to end in one warning that
+named no repair, on half the catalog, so it said nothing an owner could act on.
+It now names the repair, and a recorded bound changes the finding entirely:
+
+- no bound recorded — `source_identity_date_uncheckable`, naming
+  `establish-date-provenance.py`
+- bound recorded, source dates agree — `source_identity_date_bounded_only`, which
+  says the day is unknown but the recording predates a day the catalog holds
+- recorded date after the bound — `source_identity_date_exceeds_recorded_bound`,
+  blocking, because a recorded bound is checkable and that is the point of it
+
+Both grace comparisons are subtractions now — `recorded - ceiling > grace`
+rather than `recorded > ceiling + grace`, and the same in
+`upload_predates_catalog`. A bound of `9999-12-31` is a valid record and adding
+a day to it overflowed the calendar; the subtraction form constructs no date and
+so falls off neither end.
+
+The bound is on the DELIVERY, so only `recorded_date` is compared against it. A
+recording is routinely published long after it was delivered — measured across
+this catalog, 10% of uploads trail their delivery by more than a month and the
+worst by 876 days — so comparing an upload against a delivery bound would block
+valid recordings rather than catch a contradiction.
+
+The bound uses the same `UPLOAD_TIMEZONE_GRACE` as every other date comparison.
+
+`record_date_provenance` joins the owner mutations, so an account an owner
+reached by checking a source can be persisted the way every other owner judgment
+is. `established_at` comes from the plan rather than the clock, so the same plan
+applied twice produces the same bytes. Nothing here touches a talk record or its
+`date`.
+
+Provenance record generation v2: `third_party_record` joins the method enum for
+a dated account by someone other than the organizer — an attendee write-up, a
+co-presenter's talk list. It reads as `inferred` rather than `proved` even when
+it names the exact session, because erring toward the weaker classification is
+the direction this collection exists to protect. The generation moves for one
+added enum value for the same reason talk v8 exists.
+
+A v1 record can exist — the release that shipped v1 also shipped its writer — so
+v1 stays readable and the owner migration restamps it, the way a v5 talk record
+and a v1 pptx record are handled. A current ROOT does not mean current RECORDS.
+Each generation is held to the enum it shipped with, so a v1 record naming
+`third_party_record` is malformed rather than upgradable, and a malformed v1
+record refuses instead of being coerced into apparent validity.
+
 ## 0.20.143 — 2026-09-08
 
 ### The date backlog is now countable

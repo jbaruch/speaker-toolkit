@@ -2435,3 +2435,150 @@ def test_a_deck_registration_without_a_usable_expectation_is_refused(
         mutate_tracking_database.build_candidate(
             _base_database(), [_record_deck(expect=expect)]
         )
+
+
+# How a talk's delivery date was established (#430).
+
+
+def _record_provenance(**updates: Any) -> dict[str, Any]:
+    mutation = {
+        "kind": "record_date_provenance",
+        "filename": "talk.md",
+        "expect": {"method": {"$missing": True}},
+        "method": "organizer_program",
+        "evidence": "JavaDay organizer report https://dou.ua/forums/topic/8558/",
+        "established_at": "2026-09-08T00:00:00Z",
+    }
+    mutation.update(updates)
+    return mutation
+
+
+def test_a_recorded_account_lands_in_its_own_collection(
+    mutate_tracking_database,
+) -> None:
+    """The talk record is untouched: provenance lives beside it, not on it."""
+    database = _base_database()
+    before = copy.deepcopy(database["talks"][0])
+
+    candidate, changes = mutate_tracking_database.build_candidate(
+        database, [_record_provenance()]
+    )
+
+    recorded = candidate["date_provenance"]
+    assert len(recorded) == 1
+    assert recorded[0]["talk_filename"] == "talk.md"
+    assert recorded[0]["method"] == "organizer_program"
+    assert "not_later_than" not in recorded[0]
+    assert candidate["talks"][0] == before
+    assert changes[0]["kind"] == "record_date_provenance"
+    assert "date_provenance" not in database
+
+
+def test_a_ceiling_rides_along_when_the_plan_states_one(
+    mutate_tracking_database,
+) -> None:
+    database = _base_database()
+
+    candidate, _changes = mutate_tracking_database.build_candidate(
+        database,
+        [_record_provenance(not_later_than="2016-01-21")],
+    )
+
+    assert candidate["date_provenance"][0]["not_later_than"] == "2016-01-21"
+
+
+def test_a_re_established_account_replaces_rather_than_appends(
+    mutate_tracking_database,
+) -> None:
+    database = _base_database()
+    first, _ = mutate_tracking_database.build_candidate(
+        database, [_record_provenance()]
+    )
+
+    second, changes = mutate_tracking_database.build_candidate(
+        first,
+        [
+            _record_provenance(
+                expect={"method": "organizer_program"},
+                method="third_party_record",
+                evidence="co-presenter talk history https://www.yegor256.com/talks.html",
+            )
+        ],
+    )
+
+    assert len(second["date_provenance"]) == 1
+    assert second["date_provenance"][0]["method"] == "third_party_record"
+    assert changes[0]["before"] == {"method": "organizer_program"}
+
+
+def test_an_account_that_moved_under_the_plan_refuses(
+    mutate_tracking_database,
+) -> None:
+    """The same optimistic precondition every other talk-touching mutation has."""
+    database = _base_database()
+    first, _ = mutate_tracking_database.build_candidate(
+        database, [_record_provenance()]
+    )
+
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(first, [_record_provenance()])
+
+
+def test_the_same_plan_applied_twice_produces_the_same_bytes(
+    mutate_tracking_database,
+) -> None:
+    """`established_at` comes from the plan, never the clock."""
+    database = _base_database()
+
+    once, _ = mutate_tracking_database.build_candidate(database, [_record_provenance()])
+    twice, _ = mutate_tracking_database.build_candidate(
+        copy.deepcopy(database), [_record_provenance()]
+    )
+
+    assert once == twice
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"method": "guessed"},
+        {"method": "provider_upload_ceiling"},
+        {"evidence": ""},
+        {"established_at": "2026-09-08"},
+        {"not_later_than": "2016"},
+    ],
+)
+def test_a_record_the_reader_would_refuse_never_reaches_the_database(
+    mutate_tracking_database, override
+) -> None:
+    """Shape rules belong to validate_date_provenance, and the writer defers."""
+    database = _base_database()
+
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(
+            database, [_record_provenance(**override)]
+        )
+
+
+def test_a_provenance_for_an_unknown_talk_refuses(mutate_tracking_database) -> None:
+    database = _base_database()
+
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(
+            database, [_record_provenance(filename="absent.md")]
+        )
+
+
+def test_a_legacy_talk_record_can_still_carry_provenance(
+    mutate_tracking_database,
+) -> None:
+    """The coarse dates are the legacy records, which is who this is for."""
+    database = _base_database()
+    database["talks"][0]["schema_version"] = 1
+
+    candidate, _changes = mutate_tracking_database.build_candidate(
+        database, [_record_provenance()]
+    )
+
+    assert candidate["date_provenance"][0]["talk_filename"] == "talk.md"
+    assert candidate["talks"][0]["schema_version"] == 1
