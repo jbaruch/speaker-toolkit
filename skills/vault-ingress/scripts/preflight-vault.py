@@ -920,12 +920,33 @@ class VaultPreflight:
                 actual=valid_stored_id,
             )
 
-        identity_id = parsed_id or valid_stored_id
-        identity = (
-            SourceIdentity("youtube", identity_id)
-            if identity_id is not None
-            else talk_source_identity(talk)
+        active_source = parse_source_identity(video_url)
+        foreign_active = (
+            active_source
+            if active_source is not None and active_source.provider != "youtube"
+            else None
         )
+        identity_id = parsed_id or valid_stored_id
+        identity: SourceIdentity | None
+        if valid_stored_id is not None and foreign_active is not None:
+            # `youtube_id` is a YouTube field. Left behind on a source that
+            # publishes elsewhere it does not merely go unused: it outranks the
+            # active URL, so identity evidence naming YouTube would validate and
+            # artifacts would bind to a recording this talk no longer points at.
+            self.talk_add(
+                index,
+                "blocking",
+                "youtube_id_provider_conflict",
+                "stored youtube_id contradicts the active source's provider",
+                field="youtube_id",
+                expected=f"no stored youtube_id on a {foreign_active.provider} source",
+                actual=valid_stored_id,
+            )
+            identity = None
+        elif identity_id is not None:
+            identity = SourceIdentity("youtube", identity_id)
+        else:
+            identity = talk_source_identity(talk)
         if identity is not None:
             self.source_identities[index] = identity
             self.source_tokens[index] = identity.binding_token

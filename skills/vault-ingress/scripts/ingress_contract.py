@@ -303,11 +303,20 @@ def talk_source_identity(talk: Mapping[str, Any]) -> SourceIdentity | None:
     YouTube talk resolves exactly as it did before providers were qualified;
     every other provider resolves from the active URL, which is the only place
     a non-YouTube identity is recorded.
+
+    A record carrying both — a stale ``youtube_id`` and an active URL on
+    another provider — contradicts itself, and there is no honest winner:
+    binding to either half binds artifacts to a source the record does not
+    actually name. That resolves to no identity, and preflight reports the
+    conflict as `youtube_id_provider_conflict`.
     """
+    active = parse_source_identity(talk.get("video_url"))
     youtube_id = talk.get("youtube_id")
     if isinstance(youtube_id, str) and YOUTUBE_ID_RE.fullmatch(youtube_id):
+        if active is not None and active.provider != "youtube":
+            return None
         return SourceIdentity("youtube", youtube_id)
-    return parse_source_identity(talk.get("video_url"))
+    return active
 
 
 def talk_binding_token(talk: Mapping[str, Any]) -> str | None:

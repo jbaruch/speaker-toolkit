@@ -4874,3 +4874,31 @@ def test_missing_identity_for_video_slides_names_the_field_it_read(
         "video_url": "https://example.com/talks/1",
         "youtube_id": None,
     }
+
+
+def test_a_stale_youtube_id_on_a_vimeo_source_is_blocking(
+    preflight_vault, vault_fixture
+):
+    """Left behind, it outranks the active URL and binds artifacts to the wrong
+    recording, so identity evidence naming YouTube would validate (#427 review)."""
+    talk = vimeo_talk(youtube_id=VIDEO_ID, source_identity=source_identity())
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    assert "youtube_id_provider_conflict" in finding_codes(report, "blocking")
+
+
+def test_a_conflicting_record_binds_no_source_identity(preflight_vault, vault_fixture):
+    talks = [
+        vimeo_talk(filename="conflicted.md", youtube_id=VIDEO_ID),
+        base_talk(filename="genuine.md"),
+    ]
+    write_database(vault_fixture, talks)
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    # The conflicted record contributes no token, so it cannot collide with the
+    # genuine YouTube talk that actually owns that ID.
+    assert "duplicate_youtube_id" not in finding_codes(report)
+    assert "youtube_id_provider_conflict" in finding_codes(report, "blocking")

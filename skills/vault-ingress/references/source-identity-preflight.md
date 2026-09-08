@@ -341,8 +341,12 @@ provider carries its name as a prefix (`vimeo+1223667266`,
 `infoq+java-puzzle`). InfoQ publishes no video ID at all, so its presentation
 slug is the identity.
 
-A YouTube ID is exactly 11 URL-safe characters and must agree with `youtube_id`;
-`youtube_id` is a YouTube field and stays absent on every other provider.
+A YouTube ID is exactly 11 URL-safe characters and must agree with `youtube_id`.
+`youtube_id` is a YouTube field and must be absent on every other provider: a
+stored ID left behind on a source that publishes elsewhere outranks the active
+URL, so it is blocking (`youtube_id_provider_conflict`) and the record resolves
+to no identity rather than binding artifacts to the recording it no longer
+points at.
 `source_identity.provider` must name the provider the active URL publishes on —
 relabelling another provider's upload as YouTube is blocking, not a warning.
 

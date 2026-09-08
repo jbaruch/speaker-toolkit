@@ -86,17 +86,6 @@ def test_two_providers_sharing_an_id_get_different_tokens(ingress_contract):
     assert vimeo.binding_token != infoq.binding_token
 
 
-def test_stored_youtube_id_outranks_the_active_url(ingress_contract):
-    """A YouTube talk resolves exactly as it did before providers existed."""
-    talk = {
-        "youtube_id": "dQw4w9WgXcQ",
-        "video_url": "https://vimeo.com/1223667266",
-    }
-    identity = ingress_contract.talk_source_identity(talk)
-    assert identity == ingress_contract.SourceIdentity("youtube", "dQw4w9WgXcQ")
-    assert ingress_contract.talk_binding_token(talk) == "dQw4w9WgXcQ"
-
-
 @pytest.mark.parametrize(
     ("talk", "token"),
     [
@@ -250,3 +239,33 @@ def test_a_malformed_url_reads_as_no_acquisition_source(ingress_contract, url):
     assert ingress_contract.has_remote_video_acquisition({"video_url": url}) is False
     assert ingress_contract.has_remote_slide_acquisition({"slides_url": url}) is False
     assert ingress_contract.talk_source_identity({"video_url": url}) is None
+
+
+def test_a_stale_youtube_id_on_another_provider_resolves_to_nothing(
+    ingress_contract,
+):
+    """Binding to either half would name a source the record does not (#427 review)."""
+    talk = {
+        "youtube_id": "dQw4w9WgXcQ",
+        "video_url": "https://vimeo.com/1223667266",
+    }
+    assert ingress_contract.talk_source_identity(talk) is None
+    assert ingress_contract.talk_binding_token(talk) is None
+
+
+@pytest.mark.parametrize(
+    "video_url",
+    [
+        "https://youtu.be/dQw4w9WgXcQ",
+        "https://www.youtube.com/watch?v=ZyXwVuTsR_2",
+        "https://example.com/not-a-provider",
+        None,
+    ],
+)
+def test_a_youtube_id_still_wins_where_no_other_provider_claims_the_source(
+    ingress_contract, video_url
+):
+    talk = {"youtube_id": "dQw4w9WgXcQ", "video_url": video_url}
+    assert ingress_contract.talk_source_identity(talk) == (
+        ingress_contract.SourceIdentity("youtube", "dQw4w9WgXcQ")
+    )
