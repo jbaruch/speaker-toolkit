@@ -13,7 +13,7 @@ import copy
 import math
 from numbers import Real
 import re
-from typing import Any, NoReturn
+from typing import Any, NoReturn, TypeGuard
 
 from local_media_contract import LocalMediaError
 
@@ -135,6 +135,63 @@ def validate_word_diagnostic(value: Any) -> dict:
     return diagnostic
 
 
+def _timestamp(value: Any) -> TypeGuard[int | float]:
+    """A real number that is not a bool. `bool` is a `Real`, so it needs naming."""
+    return isinstance(value, Real) and not isinstance(value, bool)
+
+
+def nonpositive_span_report(words: Any) -> dict:
+    """Count words whose span is non-positive. Judges nothing; refuses nothing.
+
+    #431 asks whether a refused sample typically carries one degenerate word or
+    hundreds, because that decides whether the all-or-nothing refusal is
+    over-rejection or a genuine alignment guard. Nothing measured it, and the
+    stored `.segments.json` artifacts keep no word-level data, so the count has
+    to come off the sample while it is in hand.
+
+    Numeric only — counts and indexes, never token text — matching the privacy
+    contract `LocalMediaError` states.
+    """
+    if not isinstance(words, list):
+        return {
+            "schema_version": 1,
+            "word_count": 0,
+            "nonpositive_count": 0,
+            "first_index": None,
+        }
+    nonpositive = []
+    for index, word in enumerate(words):
+        if not isinstance(word, dict):
+            continue
+        begin, end = word.get("start_seconds"), word.get("end_seconds")
+        # bool is a Real in Python, and guarding only `begin` let
+        # {"start_seconds": 1.0, "end_seconds": False} count as degenerate —
+        # inflating the very number this exists to measure.
+        if not _timestamp(begin) or not _timestamp(end):
+            continue
+        if end <= begin:
+            nonpositive.append(index)
+    return {
+        "schema_version": 1,
+        "word_count": len(words),
+        "nonpositive_count": len(nonpositive),
+        "first_index": nonpositive[0] if nonpositive else None,
+    }
+
+
+class WordSpanError(LocalMediaError):
+    """A non-positive-span refusal carrying how widespread the defect is.
+
+    The refusal is unchanged — the sample is still rejected. What is new is that
+    the receipt says whether one word or half of them were degenerate, which is
+    the measurement #431 needs before anyone changes the admission rule.
+    """
+
+    def __init__(self, report: dict):
+        self.word_spans = copy.deepcopy(report)
+        super().__init__("whisper_word_sample_invalid_word_nonpositive_span")
+
+
 class WordSampleError(LocalMediaError):
     """A segment-membership refusal with bounded numeric worker diagnostics."""
 
@@ -251,7 +308,10 @@ def validate_word_sample(value: Any) -> dict:
         if begin < previous_end:
             _refuse("word_overlap")
         if end <= begin:
-            _refuse("word_nonpositive_span")
+            # Scan the rest for the same defect before refusing, so the receipt
+            # records its extent. Ordering is untouched: an earlier word with a
+            # different fault has already refused above.
+            raise WordSpanError(nonpositive_span_report(words))
         try:
             _number(word["probability"], 0, 1)
         except LocalMediaError:

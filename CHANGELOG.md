@@ -1,5 +1,59 @@
 # Changelog
 
+### Tell a dead recording from a bad minute, and count the degenerate words
+
+Two places where the evidence layer under-reported what it had actually seen.
+
+`audit-source-identities.py` surfaced every yt-dlp failure as one
+`metadata_fetch_failed` at high priority, so "the provider no longer serves this
+recording" and "I could not reach YouTube just now" were indistinguishable in the
+output. #429 was filed on that basis for two recordings; re-checking them found
+both resolve fine — they were transient failures reported as link rot. The
+operator's next action differs completely between the two, so findings now carry
+`failure_class` (`upstream_gone` / `transient` / `unclassified`) and `retryable`,
+matched against an enumerated set of yt-dlp signatures. An unrecognised message
+stays `unclassified` rather than being sorted into a bucket, since guessing is
+what produced the wrong issue.
+
+`local_media_words.py` refused a whole ten-minute sample on the first word with
+`end == start`, which excluded 11 of 24 recordings in the last cohort run and
+left the speaker profile at `low_confidence`. Whether that is over-rejection or a
+genuine alignment guard depends on how many degenerate words a failing sample
+carries, and nothing measured it — the stored `.segments.json` artifacts keep no
+word-level data, so the count has to come off the sample while it is in hand.
+
+The refusal is deliberately unchanged. `WordSpanError` now carries a bounded,
+numeric-only report — word count, non-positive count, first index, never token
+text — and `calibrate-speech.py` emits it alongside the existing `word_timing`
+diagnostic. A cohort run therefore now reports whether the rule is rejecting one
+bad word or half of them, which is the measurement #431 asks for before anyone
+changes the admission rule. Choosing a threshold first would be picking a number
+blind.
+
+Review sharpened all three. A bare "video unavailable" was being read as removal,
+but yt-dlp says it for geographic restriction too — and that is the exact message
+that misled #429 into being filed as link rot, so it now falls through to
+`unclassified` rather than claiming a fact it does not establish. Failing to run
+yt-dlp at all reached the same wrapper as a network timeout, so a
+`PermissionError` was advising a retry that would fail identically forever; it has
+its own `tooling` class asking for a repair, with the errno separating a timeout
+from a permission inside the same message. And the span report guarded `bool` on
+only one endpoint, so `{"start_seconds": 1.0, "end_seconds": False}` counted as
+degenerate — inflating the very number it exists to measure.
+
+`TypeGuard[float]` was also a lie: both guards return `True` for `int`, so the
+narrowing told static analysis a caller could assume a float. Corrected to
+`TypeGuard[int | float]` here and in `verify-storyboard.py`, which shipped the
+identical mistake in 0.20.138.
+
+A further round applied the same standard to the other side of the classifier,
+which had stayed broad while the removal side was tightened. `unable to download
+webpage` also wraps an HTTP 403, `ssl` also wraps an expired certificate, and a
+bot check needs cookies — none is fixed by trying again, so advising a retry
+wasted the operator's time exactly as the `PermissionError` case did. The test is
+now whether a plain retry can plausibly succeed, not whether the message sounds
+like weather. A specific cause inside a generic wrapper still classifies, so
+nothing legitimate was lost.
 ## 0.20.139 — 2026-09-07
 
 ### A wrong path reads as a wrong path

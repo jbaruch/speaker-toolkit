@@ -85,6 +85,95 @@ CANDIDATE_CONFLICT_CODES = {
     "existing_slides_url_conflict": "slides_url",
 }
 YT_DLP_TIMEOUT_SECONDS = 60
+
+# yt-dlp reports "the upstream video is gone" and "I could not reach YouTube
+# just now" through the same non-zero exit, so both arrived as one high-priority
+# finding. A transient minute then read as link rot: #429 was filed for two
+# recordings that resolve fine on a later run.
+#
+# Signatures are matched case-insensitively against yt-dlp's own message. An
+# unrecognised message stays `unclassified` — never silently sorted into either
+# bucket, because guessing is what produced the wrong issue in the first place.
+# Only signatures that state REMOVAL. A bare "video unavailable" is ambiguous —
+# yt-dlp uses it for geographic restriction too ("This video is not available in
+# your country"), which establishes nothing about whether the recording still
+# exists. Assigning meaning to that is the Regex Trap, so it falls through to
+# `unclassified` and gets read by a human.
+UPSTREAM_GONE_SIGNATURES = (
+    "this video has been removed",
+    "video has been removed by the uploader",
+    "removed for violating",
+    "private video",
+    "this video is private",
+    "account associated with this video has been terminated",
+    "no longer available because the youtube account",
+)
+# Only causes where a plain retry can plausibly succeed. The test is that
+# question, not "does it sound like weather": "unable to download webpage" also
+# wraps HTTP 403, and "ssl" also wraps an expired certificate, and neither is
+# fixed by trying again. Both were removed — the specific cause inside such a
+# message ("timed out", "429") still classifies it, and a message carrying only
+# the generic wrapper stays unclassified for a human to read.
+TRANSIENT_SIGNATURES = (
+    "temporary failure in name resolution",
+    "connection reset",
+    "connection refused",
+    "connection timed out",
+    "read timed out",
+    "timed out",
+    "timeout",
+    "http error 429",
+    "http error 500",
+    "http error 502",
+    "http error 503",
+    "http error 504",
+)
+# Failing to run the tool at all is persistent configuration, not weather.
+# Telling an operator to retry a PermissionError wastes their time, so these get
+# their own class with a repair instruction instead of a retry.
+TOOLING_SIGNATURES = (
+    "permission denied",
+    "no such file or directory",
+    "exec format error",
+    "is a directory",
+    "yt-dlp is not installed",
+)
+
+
+FETCH_FAILURE_MESSAGES = {
+    "upstream_gone": "the provider no longer serves this recording",
+    "transient": "yt-dlp metadata capture failed transiently; retry before acting",
+    "tooling": "yt-dlp could not be run; repair the installation before retrying",
+    "unclassified": "yt-dlp metadata capture failed; read the error before acting",
+}
+
+
+def classify_fetch_failure(message: Any) -> dict:
+    """Sort a fetch failure into upstream-gone, transient, tooling, or unclassified.
+
+    Deterministic string matching over an enumerated signature set, so it is a
+    script rather than a judgement (`rules/script-delegation.md`). The point is
+    the operator's next action: an upstream-gone recording needs a decision about
+    its derived claims; a transient one needs a retry; a tooling one needs the
+    installation repaired, since retrying it fails identically forever; an
+    unclassified one needs reading, because the message did not establish which.
+    """
+    text = message.casefold() if isinstance(message, str) else ""
+    for signature in UPSTREAM_GONE_SIGNATURES:
+        if signature in text:
+            return {"failure_class": "upstream_gone", "retryable": False}
+    # Transient before tooling: "cannot run yt-dlp: [Errno 60] Operation timed
+    # out" reaches the same wrapper as a PermissionError, and only the errno
+    # tells them apart. A timeout is weather; a permission is a repair.
+    for signature in TRANSIENT_SIGNATURES:
+        if signature in text:
+            return {"failure_class": "transient", "retryable": True}
+    for signature in TOOLING_SIGNATURES:
+        if signature in text:
+            return {"failure_class": "tooling", "retryable": False}
+    return {"failure_class": "unclassified", "retryable": None}
+
+
 YOUTUBE_ID_RE = re.compile(r"[A-Za-z0-9_-]{11}")
 CLIP_MARKERS = frozenset(
     {
@@ -908,14 +997,17 @@ def audit_database(
             source["fetch_status"] = "error"
             source["error"] = str(exc)
             failure_code = lane_code("metadata_fetch_failed")
+            classification = classify_fetch_failure(str(exc))
+            source["failure_class"] = classification["failure_class"]
+            source["retryable"] = classification["retryable"]
             findings.append(
                 _finding(
                     failure_code,
                     video_id,
                     indexes,
                     filenames,
-                    "yt-dlp metadata capture failed",
-                    {"error": str(exc)},
+                    FETCH_FAILURE_MESSAGES[classification["failure_class"]],
+                    {"error": str(exc), **classification},
                     "high" if failure_code in ERROR_CODES else "medium",
                 )
             )
