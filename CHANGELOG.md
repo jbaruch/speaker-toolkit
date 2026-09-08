@@ -1,5 +1,35 @@
 # Changelog
 
+### A cleanup failure says what failed
+
+`worker_cleanup_failed` reached a caller as a reason code alone. Every media
+owner maps it straight onto its own `media_cleanup_failed`, so the exception that
+actually failed survived only as a `__cause__` nobody printed, and an
+intermittent fault cost a fresh investigation each time it appeared.
+
+`classify_cleanup_failure()` records the two facts that separate the plausible
+causes — the exception's class and its errno, with the symbolic name — and
+neither carries a filename, a command, or any caller-supplied value.
+`OSError.filename` is deliberately not read.
+
+`LocalMediaError` gained an optional `details`, so the owners pass that
+classification through instead of discarding it, and `calibrate-speech.py` names
+it in the refusal:
+
+```
+media_cleanup_failed: Underlying failure: cleanup_errno_name=EPERM,
+cleanup_error_type=PermissionError. Repair the bounded media owner's ...
+```
+
+`details` is closed rather than trimmed: a key is a short snake-case name, a
+string value a short identifier, and anything else is dropped whole. A path or a
+provider message cannot ride along, which is the contract's whole job. A caller
+that passes nothing gets exactly the previous message.
+
+This is #438's first criterion only. Reproducing the fault, and deciding whether
+a cohort run should survive one cleanup failure instead of discarding 23
+completed recordings, remain open there.
+
 ## 0.20.146 — 2026-09-08
 
 ### A slow import is no longer reported as a missing module

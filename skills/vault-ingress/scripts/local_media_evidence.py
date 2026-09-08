@@ -137,7 +137,10 @@ def _invoke_worker(
             reason = "media_cleanup_failed"
         else:
             reason = "media_worker_failed"
-        raise LocalMediaError(reason) from exc
+        # Carry the supervisor's classification: a cleanup failure that arrives
+        # as a bare owner code costs a fresh investigation each time it recurs
+        # (#438). `details` is closed, so nothing a caller supplied rides along.
+        raise LocalMediaError(reason, exc.details) from exc
     if result.diagnostics != DiagnosticReceipt.empty():
         refuse("media_probe_malformed_result")
     return result

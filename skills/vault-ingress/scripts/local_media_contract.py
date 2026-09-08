@@ -127,15 +127,59 @@ _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _LANGUAGE = re.compile(r"[a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*\Z")
 
 
-class LocalMediaError(ValueError):
-    """A typed acquisition refusal; raw paths and provider output stay private."""
+# Closed shapes for a disclosable detail. A key is a short snake-case name and a
+# string value is a short identifier — an errno name, a reason code — never free
+# text, which is how a path or provider message would get in.
+_DETAIL_KEY = re.compile(r"[a-z][a-z0-9_]{0,63}")
+_DETAIL_VALUE = re.compile(r"[A-Za-z0-9_.:-]{1,64}")
 
-    def __init__(self, reason_code: str) -> None:
+
+def _safe_details(details: Mapping[str, object] | None) -> dict[str, object]:
+    """Keep only disclosable scalars, so no path or provider text can ride along.
+
+    A value this reader cannot vouch for is dropped rather than trimmed: the
+    point of the contract is that a caller never has to audit what reached a log.
+    """
+    if not details:
+        return {}
+    safe: dict[str, object] = {}
+    for key, value in details.items():
+        if not isinstance(key, str) or _DETAIL_KEY.fullmatch(key) is None:
+            continue
+        if isinstance(value, bool) or isinstance(value, int):
+            safe[key] = value
+        elif isinstance(value, str) and _DETAIL_VALUE.fullmatch(value) is not None:
+            safe[key] = value
+    return safe
+
+
+class LocalMediaError(ValueError):
+    """A typed acquisition refusal; raw paths and provider output stay private.
+
+    `details` is optional and closed: numbers, booleans, and short identifiers an
+    owner already treats as safe to disclose. It exists so a refusal that maps a
+    worker failure onto an owner code does not discard what actually failed —
+    an intermittent fault otherwise costs a fresh investigation each time (#438).
+    Callers that pass nothing get exactly the previous behaviour.
+    """
+
+    def __init__(
+        self,
+        reason_code: str,
+        details: Mapping[str, object] | None = None,
+    ) -> None:
         if re.fullmatch(r"[a-z][a-z0-9_]{0,63}", reason_code) is None:
             raise ValueError("invalid local-media failure code")
         self.reason_code = reason_code
+        self.details = _safe_details(details)
+        detail_text = (
+            " (" + ", ".join(f"{k}={v}" for k, v in sorted(self.details.items())) + ")"
+            if self.details
+            else ""
+        )
         super().__init__(
-            f"{reason_code}; inspect the source and rerun the bounded media owner"
+            f"{reason_code}{detail_text}; inspect the source and rerun the "
+            "bounded media owner"
         )
 
 

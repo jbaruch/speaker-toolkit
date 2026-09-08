@@ -1548,7 +1548,13 @@ def test_cleanup_failure_overrides_signed_success(tmp_path):
         )
 
     assert caught.value.reason_code == "worker_cleanup_failed"
-    assert caught.value.details == {"prior_reason_code": None}
+    # The classification rides along: a bare reason code makes an intermittent
+    # cleanup fault cost a fresh investigation each time it recurs (#438).
+    assert caught.value.details["prior_reason_code"] is None
+    assert (
+        caught.value.details["cleanup_error_type"]
+        == type(caught.value.__cause__).__name__
+    )
 
 
 def test_cleanup_steps_share_one_absolute_timeout_budget():
@@ -2728,3 +2734,65 @@ def test_windows_job_process_handle_close_failure_is_visible():
 
     with pytest.raises(OSError):
         job.assign(99)
+
+
+# A cleanup failure names what failed (#438).
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (None, {}),
+        (
+            PermissionError(1, "Operation not permitted", "/vault/private/media.mp4"),
+            {
+                "cleanup_error_type": "PermissionError",
+                "cleanup_errno": 1,
+                "cleanup_errno_name": "EPERM",
+            },
+        ),
+        (
+            ProcessLookupError(3, "No such process"),
+            {
+                "cleanup_error_type": "ProcessLookupError",
+                "cleanup_errno": 3,
+                "cleanup_errno_name": "ESRCH",
+            },
+        ),
+        (
+            TimeoutError("worker cleanup deadline exceeded"),
+            {"cleanup_error_type": "TimeoutError"},
+        ),
+    ],
+)
+def test_a_cleanup_failure_is_classified_without_disclosing_a_path(error, expected):
+    """errno and the exception class separate EPERM on a process group from a
+    reaped child from a blown deadline. `OSError.filename` is never read."""
+    assert artifact_supervisor.classify_cleanup_failure(error) == expected
+
+
+def test_a_classified_cleanup_failure_never_carries_the_filename():
+    error = PermissionError(1, "Operation not permitted", "/vault/private/media.mp4")
+
+    details = artifact_supervisor.classify_cleanup_failure(error)
+
+    assert "/vault/private/media.mp4" not in str(details)
+    assert all("media.mp4" not in str(value) for value in details.values())
+
+
+def test_a_supervisor_cleanup_failure_keeps_its_own_reason_code():
+    error = artifact_supervisor.SupervisorError("worker_monitor_unavailable")
+
+    assert artifact_supervisor.classify_cleanup_failure(error) == {
+        "cleanup_error_type": "SupervisorError",
+        "cleanup_reason_code": "worker_monitor_unavailable",
+    }
+
+
+def test_an_unnumbered_errno_still_classifies():
+    """A bool is not an errno, and a missing one is simply absent."""
+    error = OSError("no errno at all")
+
+    assert artifact_supervisor.classify_cleanup_failure(error) == {
+        "cleanup_error_type": "OSError"
+    }

@@ -379,3 +379,56 @@ def test_repetition_guard_keeps_optional_timing_mismatch_independent(contract):
         "language": None,
         "segments": value["segments"],
     }
+
+
+# A refusal carries what actually failed (#438).
+
+
+def test_a_refusal_without_details_reads_exactly_as_before(contract):
+    error = contract.LocalMediaError("media_cleanup_failed")
+
+    assert error.details == {}
+    assert str(error) == (
+        "media_cleanup_failed; inspect the source and rerun the bounded media owner"
+    )
+
+
+def test_disclosable_details_reach_the_message_and_the_attribute(contract):
+    error = contract.LocalMediaError(
+        "media_cleanup_failed",
+        {"cleanup_errno": 1, "cleanup_errno_name": "EPERM"},
+    )
+
+    assert error.details == {"cleanup_errno": 1, "cleanup_errno_name": "EPERM"}
+    assert "cleanup_errno=1" in str(error)
+    assert "cleanup_errno_name=EPERM" in str(error)
+
+
+@pytest.mark.parametrize(
+    "details",
+    [
+        {"path": "/Users/someone/vault/media.mp4"},
+        {"note": "failed while removing /tmp/scratch"},
+        {"stderr": "ffmpeg: no such file or directory"},
+        {"Bad-Key": "value"},
+        {"value": 1.5},
+        {"value": None},
+        {"value": ["a"]},
+        {"": "x"},
+    ],
+)
+def test_a_value_this_contract_cannot_vouch_for_is_dropped(contract, details):
+    """Paths and provider text stay private, which is the contract's whole job."""
+    error = contract.LocalMediaError("media_cleanup_failed", details)
+
+    assert error.details == {}
+    for value in details.values():
+        assert str(value) not in str(error)
+
+
+def test_a_long_identifier_is_dropped_rather_than_truncated(contract):
+    error = contract.LocalMediaError(
+        "media_cleanup_failed", {"cleanup_reason_code": "x" * 65}
+    )
+
+    assert error.details == {}

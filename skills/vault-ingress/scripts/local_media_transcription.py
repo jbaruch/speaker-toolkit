@@ -162,7 +162,11 @@ def transcribe_local_media(
                 "worker_diagnostic_limit_exceeded": "whisper_worker_resource_limit",
                 "worker_cleanup_failed": "media_cleanup_failed",
             }.get(reason, "whisper_worker_failed")
-        raise LocalMediaError(reason) from exc
+        # Carry the supervisor's classification: a cleanup failure that
+        # arrives as a bare owner code costs a fresh investigation each
+        # time it recurs (#438). `details` is closed, so nothing a caller
+        # supplied can ride along.
+        raise LocalMediaError(reason, exc.details) from exc
     if not isinstance(result.payload, Mapping) or set(result.payload) != {
         "text",
         "language",
