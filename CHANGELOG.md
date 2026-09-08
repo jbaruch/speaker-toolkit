@@ -15,8 +15,14 @@ It now names the repair, and a recorded bound changes the finding entirely:
   `establish-date-provenance.py`
 - bound recorded, source dates agree — `source_identity_date_bounded_only`, which
   says the day is unknown but the recording predates a day the catalog holds
-- source date after the bound — `source_identity_date_exceeds_recorded_bound`,
+- recorded date after the bound — `source_identity_date_exceeds_recorded_bound`,
   blocking, because a recorded bound is checkable and that is the point of it
+
+The bound is on the DELIVERY, so only `recorded_date` is compared against it. A
+recording is routinely published long after it was delivered — measured across
+this catalog, 10% of uploads trail their delivery by more than a month and the
+worst by 876 days — so comparing an upload against a delivery bound would block
+valid recordings rather than catch a contradiction.
 
 The bound uses the same `UPLOAD_TIMEZONE_GRACE` as every other date comparison.
 
@@ -31,8 +37,14 @@ a dated account by someone other than the organizer — an attendee write-up, a
 co-presenter's talk list. It reads as `inferred` rather than `proved` even when
 it names the exact session, because erring toward the weaker classification is
 the direction this collection exists to protect. The generation moves for one
-added enum value for the same reason talk v8 exists; no v1 record was ever
-written, since the collection shipped empty and its only writer stamps current.
+added enum value for the same reason talk v8 exists.
+
+A v1 record can exist — the release that shipped v1 also shipped its writer — so
+v1 stays readable and the owner migration restamps it, the way a v5 talk record
+and a v1 pptx record are handled. A current ROOT does not mean current RECORDS.
+Each generation is held to the enum it shipped with, so a v1 record naming
+`third_party_record` is malformed rather than upgradable, and a malformed v1
+record refuses instead of being coerced into apparent validity.
 
 ## 0.20.143 — 2026-09-08
 

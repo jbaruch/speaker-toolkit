@@ -2265,7 +2265,6 @@ class VaultPreflight:
         self,
         index: int,
         recorded: date | None,
-        upload: date | None,
     ) -> None:
         """Say what is actually known, not merely that a comparison failed.
 
@@ -2290,18 +2289,22 @@ class VaultPreflight:
                 actual=self.talks[index].get("date"),
             )
             return
-        for field, observed in (("recorded_date", recorded), ("upload_date", upload)):
-            if observed is not None and observed > ceiling + UPLOAD_TIMEZONE_GRACE:
-                self.talk_add(
-                    index,
-                    "blocking",
-                    "source_identity_date_exceeds_recorded_bound",
-                    "source date is later than the recorded delivery bound",
-                    field=f"source_identity.{field}",
-                    expected=f"on or before {ceiling.isoformat()}",
-                    actual=observed.isoformat(),
-                )
-                return
+        # `recorded_date` alone. The bound is on the DELIVERY, and a recording
+        # is routinely published long after it — measured across this catalog,
+        # 10% of uploads trail their delivery by more than a month and the worst
+        # by 876 days — so comparing an upload against a delivery bound would
+        # block valid recordings rather than catch a contradiction.
+        if recorded is not None and recorded > ceiling + UPLOAD_TIMEZONE_GRACE:
+            self.talk_add(
+                index,
+                "blocking",
+                "source_identity_date_exceeds_recorded_bound",
+                "recorded date is later than the recorded delivery bound",
+                field="source_identity.recorded_date",
+                expected=f"on or before {ceiling.isoformat()}",
+                actual=recorded.isoformat(),
+            )
+            return
         self.talk_add(
             index,
             "warning",
@@ -2324,7 +2327,7 @@ class VaultPreflight:
         recorded = self._parse_evidence_date(index, "recorded_date", recorded_raw)
         upload = self._parse_evidence_date(index, "upload_date", upload_raw)
         if talk_date is None:
-            self._report_uncomparable_catalog_date(index, recorded, upload)
+            self._report_uncomparable_catalog_date(index, recorded)
             return
 
         catalog_day, catalog_year = talk_date

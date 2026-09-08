@@ -767,11 +767,6 @@ more than its method supports. The accepted methods and their mapping are
 `DATE_PROVENANCE_BASIS_BY_METHOD` in
 `skills/vault-ingress/scripts/tracking_database.py`.
 
-A dated account by someone other than the organizer — an attendee write-up, a
-co-presenter's talk list — reads as inferred rather than proved even when it
-names the exact session. Erring toward the weaker classification is the
-direction this collection exists to protect.
-
 `evidence` is required and non-empty because a method names a kind of evidence,
 never the evidence: the field is the trace an owner follows to re-check the
 claim without reading GitHub.

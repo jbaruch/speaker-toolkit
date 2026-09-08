@@ -4642,15 +4642,13 @@ def test_a_recorded_bound_downgrades_the_finding_to_what_is_known(
     assert "source_identity_date_uncheckable" not in codes
 
 
-def test_a_source_date_after_the_recorded_bound_is_blocking(
-    preflight_vault, vault_fixture
-):
+def test_a_recorded_date_after_the_bound_is_blocking(preflight_vault, vault_fixture):
     """The bound is checkable, which is the point of recording it."""
     materialize_transcript(vault_fixture)
     talk = base_talk(
         date="",
         duration_seconds=2700,
-        source_identity=source_identity(upload_date="2026-09-30"),
+        source_identity=source_identity(recorded_date="2026-09-30"),
     )
     write_database(
         vault_fixture, [talk], current=True, date_provenance=[_provenance_record()]
@@ -4677,3 +4675,26 @@ def test_a_month_precision_date_is_compared_at_its_year(preflight_vault, vault_f
     codes = finding_codes(report, "warning")
     assert "source_identity_date_uncheckable" not in codes
     assert "source_identity_date_bounded_only" not in codes
+
+
+def test_an_upload_after_the_bound_is_not_a_contradiction(
+    preflight_vault, vault_fixture
+):
+    """A recording is routinely published long after it was delivered, so an
+    upload past a DELIVERY bound is ordinary rather than a contradiction."""
+    materialize_transcript(vault_fixture)
+    talk = base_talk(
+        date="",
+        duration_seconds=2700,
+        source_identity=source_identity(upload_date="2027-09-30"),
+    )
+    write_database(
+        vault_fixture, [talk], current=True, date_provenance=[_provenance_record()]
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["database"])
+
+    assert "source_identity_date_exceeds_recorded_bound" not in finding_codes(
+        report, "blocking"
+    )
+    assert "source_identity_date_bounded_only" in finding_codes(report, "warning")

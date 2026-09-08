@@ -502,6 +502,7 @@ def test_owner_migration_only_adds_owned_version_keys(tracking_database):
         "source_title_equivalences": 0,
         "improvement_goals": 1,
         "source_rejections": 1,
+        "date_provenance": 0,
     }
     assert (
         tracking_database.assess_tracking_database(result.database).state == "current"
@@ -844,6 +845,7 @@ def test_current_migration_is_idempotent_with_stable_counts(tracking_database):
         "improvement_goals": 0,
         "source_title_equivalences": 0,
         "source_rejections": 0,
+        "date_provenance": 0,
     }
 
 
@@ -2616,10 +2618,12 @@ def test_an_unknown_field_refuses_the_database(tracking_database):
         tracking_database.assess_tracking_database(database)
 
 
-@pytest.mark.parametrize("version", [0, 1, 3, "2", True, None])
+@pytest.mark.parametrize("version", [0, 3, "2", True, None])
 def test_a_record_generation_this_reader_cannot_name_refuses(
     tracking_database, version
 ):
+    """v1 is readable and restamped by the owner migration, the way a v5 talk
+    record is; every other generation refuses."""
     database = _database_with_provenance(
         tracking_database, [_provenance(schema_version=version)]
     )
@@ -2792,3 +2796,75 @@ def test_a_month_precision_date_is_now_comparable_against_a_ceiling(tracking_dat
         tracking_database.TrackingDatabaseError, match="cannot contradict"
     ):
         tracking_database.assess_tracking_database(contradicting)
+
+
+def _v1_provenance(**updates):
+    record = _provenance(**updates)
+    record["schema_version"] = (
+        _tracking_database.LEGACY_DATE_PROVENANCE_RECORD_SCHEMA_VERSION
+    )
+    return record
+
+
+def test_a_v1_provenance_record_is_upgraded_by_the_owner_migration(tracking_database):
+    """The release that shipped v1 also shipped its writer, so v1 records exist."""
+    database = tracking_database.migrate_tracking_database(_legacy_database()).database
+    database["date_provenance"] = [_v1_provenance(not_later_than="2016-01-21")]
+
+    result = tracking_database.migrate_tracking_database(database)
+
+    upgraded = result.database["date_provenance"][0]
+    assert upgraded["schema_version"] == (
+        tracking_database.DATE_PROVENANCE_RECORD_SCHEMA_VERSION
+    )
+    assert result.record_counts["date_provenance"] == 1
+    assert result.changed is True
+    # Nothing but the generation moves.
+    assert {k: v for k, v in upgraded.items() if k != "schema_version"} == {
+        k: v
+        for k, v in _v1_provenance(not_later_than="2016-01-21").items()
+        if k != "schema_version"
+    }
+    assert (
+        tracking_database.assess_tracking_database(result.database).state == "current"
+    )
+
+
+def test_upgrading_a_v1_record_is_idempotent(tracking_database):
+    database = tracking_database.migrate_tracking_database(_legacy_database()).database
+    database["date_provenance"] = [_v1_provenance()]
+    once = tracking_database.migrate_tracking_database(database).database
+
+    twice = tracking_database.migrate_tracking_database(once)
+
+    assert twice.record_counts["date_provenance"] == 0
+    assert twice.changed is False
+    assert twice.database == once
+
+
+def test_a_malformed_v1_record_refuses_rather_than_being_restamped(tracking_database):
+    """Coercing it into the current shape would manufacture validity."""
+    database = tracking_database.migrate_tracking_database(_legacy_database()).database
+    database["date_provenance"] = [_v1_provenance(evidence="")]
+
+    with pytest.raises(tracking_database.TrackingDatabaseError):
+        tracking_database.migrate_tracking_database(database)
+
+
+def test_a_v1_record_naming_a_v2_only_method_refuses(tracking_database):
+    """v1 could not write `third_party_record`, so one claiming it is malformed."""
+    database = tracking_database.migrate_tracking_database(_legacy_database()).database
+    database["date_provenance"] = [_v1_provenance(method="third_party_record")]
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="at generation 1"
+    ):
+        tracking_database.migrate_tracking_database(database)
+
+
+def test_a_v1_record_is_readable_so_the_database_can_be_assessed(tracking_database):
+    """A generation the migration must upgrade has to be readable first, or the
+    database carrying it cannot be assessed at all."""
+    database = _database_with_provenance(tracking_database, [_v1_provenance()])
+
+    assert tracking_database.assess_tracking_database(database).usable is True
