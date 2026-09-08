@@ -27,6 +27,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import sys
 from typing import Any, NoReturn
 
 from source_identity_matching import parse_catalog_date
@@ -279,12 +280,14 @@ def execute(
 
 
 def _fail(message: str) -> NoReturn:
+    """Refuse on both channels: stdout stays the report, stderr the diagnostic."""
     print(
         json.dumps(
             {"schema_version": REPORT_SCHEMA_VERSION, "ok": False, "error": message},
             indent=2,
         )
     )
+    print(f"establish-date-provenance failed: {message}", file=sys.stderr)
     raise SystemExit(1)
 
 

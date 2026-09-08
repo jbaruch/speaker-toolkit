@@ -16,7 +16,10 @@ from conftest import current_tracking_config
 import pytest
 
 
-AS_OF = "2026-09-08T00:00:00Z"
+# Two fixed past stamps. A later run only needs a different stamp, and a
+# future literal would rot as the run date advances.
+AS_OF = "2026-01-05T00:00:00Z"
+SECOND_RUN = "2026-02-09T00:00:00Z"
 
 
 def _talk(
@@ -195,7 +198,7 @@ def test_a_second_apply_is_a_no_op(establish_date_provenance, tmp_path):
         path,
         apply=True,
         expected_sha256=hashlib.sha256(after_first).hexdigest(),
-        as_of="2027-01-01T00:00:00Z",
+        as_of=SECOND_RUN,
     )
 
     assert again["changed"] is False
@@ -280,9 +283,13 @@ def test_the_cli_reports_a_refusal_as_json_and_exits_one(
         establish_date_provenance.main([str(path)])
 
     assert exc.value.code == 1
-    report = json.loads(capsys.readouterr().out)
+    captured = capsys.readouterr()
+    report = json.loads(captured.out)
     assert report["ok"] is False
     assert "migrate the tracking" in report["error"]
+    # stdout stays the report; the diagnostic also has to reach stderr.
+    assert "establish-date-provenance failed" in captured.err
+    assert "migrate the tracking" in captured.err
 
 
 def test_the_cli_prints_a_plan_and_exits_zero(
