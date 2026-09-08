@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.151 — 2026-09-08
+
 ### A talk published off YouTube can finally carry its own evidence
 
 JavaZone publishes to Vimeo. The 2026 talk arrived with a full evidence set —
