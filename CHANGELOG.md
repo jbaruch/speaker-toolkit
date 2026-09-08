@@ -1,5 +1,63 @@
 # Changelog
 
+### One degenerate word no longer voids a whole recording
+
+`local_media_words.py` refused an entire ten-minute analyzed sample when a single
+word carried `end == start`. Whisper emits zero-duration words routinely — short
+tokens, quantized timestamps, word-level alignment on fast speech — so the
+trigger was ordinary output from the transcriber in use, not data corruption. On
+the released 24-recording cohort recorded in #368 it accounted for 11 of 18
+exclusions, 46% of the corpus, leaving the profile at `too_few_recordings` with
+null conservative planning rates and the narration planner refusing it.
+
+**The measurement came first.** Ten local recordings from the same cohort were
+run through the shipped sampling path — same window, same clip extraction, same
+native provider parameters — and the raw provider output counted rather than
+refused:
+
+| | |
+|---|---|
+| samples measured | 10 |
+| samples carrying at least one degenerate word | 3 |
+| degenerate words per affected sample | 1, 1, 2 (median 1) |
+| worst per-sample share | 0.15% (2 of 1,317 lexical words) |
+| corpus total | 4 of 13,196 lexical words, 0.03% |
+| negative spans | 0 — every one was exactly `end == start` |
+
+The four tokens were `And`, `I`, `You` and `no,` — short function words at 0.63
+to 1.00 provider probability, isolated rather than clustered. A failing sample
+carries one or two, not hundreds, so the refusal was over-rejection rather than
+protection.
+
+A degenerate token is now excluded from `words` and recorded in
+`token_exclusions` with reason `nonpositive_span`, alongside the existing
+`punctuation_only` entries in one ordered record. The sample still refuses whole
+when the degenerate share exceeds `WORDS_MAX_NONPOSITIVE_SHARE`, which is the
+case the strictness was really protecting against: a misaligned transcript
+degrades many spans at once and its other timestamps are untrustworthy too. The
+bound is `WORDS_MAX_NONPOSITIVE_SHARE`, roughly seven times the measured worst
+case and thirty times the corpus rate.
+
+Exclusion is never repair, and #368's property survives: no word span is
+stretched, clipped or interpolated to make a sample pass. A zero-span token
+contributes no duration, so dropping it leaves the elapsed-time denominator
+untouched and moves the word count by one. Only a span the receipt would otherwise
+accept is judged degenerate: a non-finite, negative or past-the-sample timestamp
+is malformed rather than degenerate, and still refuses.
+`validate_word_sample()` still refuses any *retained* word with a non-positive
+span, and enforces the same admission share the writer applied, so a hand-built
+receipt cannot exclude its way past the bound.
+
+Receipt schema v3, `pipeline_version` `sampled-words-v3`. v1 and v2 receipts are
+not accepted or auto-migrated: v2 refused on any degenerate token, so its
+admitted set is not comparable. Run fresh owner acquisition.
+
+Also trims the classification-precedence restatement from
+`source-identity-audit.md` — a deferred `script-as-black-box` advisory from
+PR #436, folded in here rather than spending a dedicated re-review round on it.
+
+Closes #431.
+
 ## 0.20.140 — 2026-09-08
 
 ### An upstream loss is not a fetch failure

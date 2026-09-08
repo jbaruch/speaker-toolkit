@@ -2,8 +2,10 @@
 
 This pure boundary validates and normalizes provider data; it does not acquire
 media or authenticate a caller-supplied digest. Times are sample-relative, never
-interpolated from segment timestamps. Only punctuation-only tokens are omitted,
-with an explicit index/reason record. Invalid lexical spans refuse the sample.
+interpolated from segment timestamps. Punctuation-only tokens and degenerate
+zero-or-negative-span tokens are omitted, each with an explicit index/reason
+record. No timestamp is ever repaired; a retained word always carries a positive
+span, and a sample whose degenerate share exceeds the bound below refuses whole.
 """
 
 from __future__ import annotations
@@ -18,12 +20,23 @@ from typing import Any, NoReturn
 from local_media_contract import LocalMediaError
 
 
-WORDS_PIPELINE_VERSION = "sampled-words-v2"
+WORDS_PIPELINE_VERSION = "sampled-words-v3"
 WORDS_MAX_SAMPLE_SECONDS = 1200
 WORDS_MAX_SOURCE_SECONDS = 14400
 WORDS_MAX_COUNT = 50000
 WORDS_MAX_SEGMENTS = 5000
 WORDS_MAX_TOKEN_BYTES = 1024
+
+# Share of lexical tokens permitted to carry a zero-or-negative span before the
+# whole sample refuses. Whisper emits zero-duration words routinely on short
+# tokens, so a handful is ordinary provider output, not corruption; a cluster is
+# a different animal, because a misaligned transcript degrades many spans at once
+# and its other timestamps are untrustworthy too. Measured against the bound in
+# the CHANGELOG entry that introduced it.
+WORDS_MAX_NONPOSITIVE_SHARE = 0.01
+
+# Reasons a provider token may be recorded as excluded rather than retained.
+TOKEN_EXCLUSION_REASONS = frozenset({"punctuation_only", "nonpositive_span"})
 WORD_VALIDATION_FAILURES = frozenset(
     {
         "whisper_word_sample_invalid",
@@ -78,6 +91,23 @@ def _number(value: Any, low: float, high: float) -> float:
     if not math.isfinite(result):
         _refuse()
     return result
+
+
+def _degenerate_span(begin: Any, end: Any, bound: float | None) -> bool:
+    """True only for a span the receipt would otherwise accept as in-bounds.
+
+    A timestamp that is non-finite, negative, or past the sample is malformed
+    rather than degenerate. Returning False leaves it in ``words``, where
+    ``validate_word_sample`` refuses it with its own diagnostic.
+    """
+    if bound is None:
+        return False
+    try:
+        low = _number(begin, 0, bound)
+        high = _number(end, 0, bound)
+    except LocalMediaError:
+        return False
+    return high <= low
 
 
 def validate_word_diagnostic(value: Any) -> dict:
@@ -197,7 +227,7 @@ def validate_word_sample(value: Any) -> dict:
     )
     if (
         type(sample["schema_version"]) is not int
-        or sample["schema_version"] != 2
+        or sample["schema_version"] != 3
         or sample["pipeline_version"] != WORDS_PIPELINE_VERSION
         or sample["provider"] != "mlx-whisper"
         or not isinstance(sample["provider_version"], str)
@@ -320,10 +350,19 @@ def validate_word_sample(value: Any) -> dict:
         if (
             type(item["token_index"]) is not int
             or not previous_index < item["token_index"] < WORDS_MAX_COUNT
-            or item["reason"] != "punctuation_only"
+            or not isinstance(item["reason"], str)
+            or item["reason"] not in TOKEN_EXCLUSION_REASONS
         ):
             _refuse()
         previous_index = item["token_index"]
+    degenerate = sum(1 for item in exclusions if item["reason"] == "nonpositive_span")
+    # Same bound, same denominator as normalize_word_result: a receipt that
+    # excluded more than the admission share is not a valid receipt, whoever
+    # wrote it.
+    if degenerate and degenerate / (len(words) + degenerate) > (
+        WORDS_MAX_NONPOSITIVE_SHARE
+    ):
+        _refuse("word_nonpositive_span")
     return sample
 
 
@@ -346,6 +385,13 @@ def normalize_word_result(
         _refuse()
     words, segments, exclusions = [], [], []
     token_index = 0
+    lexical = degenerate = 0
+    try:
+        bound = _number(sample_duration_seconds, 0, WORDS_MAX_SAMPLE_SECONDS)
+    except LocalMediaError:
+        bound = None
+    if bound is not None and bound <= 0:
+        bound = None
     for segment_index, segment in enumerate(value["segments"]):
         if not isinstance(segment, Mapping) or not isinstance(
             segment.get("words"), list
@@ -379,19 +425,38 @@ def normalize_word_result(
                     {"token_index": token_index, "reason": "punctuation_only"}
                 )
             else:
-                words.append(
-                    {
-                        "text": text,
-                        "start_seconds": _provider_number(word.get("start")),
-                        "end_seconds": _provider_number(word.get("end")),
-                        "probability": _provider_number(word.get("probability")),
-                        "segment_index": segment_index,
-                    }
-                )
+                lexical += 1
+                retained = {
+                    "text": text,
+                    "start_seconds": _provider_number(word.get("start")),
+                    "end_seconds": _provider_number(word.get("end")),
+                    "probability": _provider_number(word.get("probability")),
+                    "segment_index": segment_index,
+                }
+                # A zero-or-negative span carries no duration, so omitting the
+                # token leaves the elapsed-time denominator untouched and moves
+                # the word count by one. Recorded, never repaired.
+                #
+                # Only a pair the receipt would otherwise accept is judged here.
+                # A malformed timestamp is retained and refused by
+                # validate_word_sample below, keeping its own diagnostic.
+                if _degenerate_span(
+                    retained["start_seconds"], retained["end_seconds"], bound
+                ):
+                    degenerate += 1
+                    exclusions.append(
+                        {"token_index": token_index, "reason": "nonpositive_span"}
+                    )
+                else:
+                    words.append(retained)
             token_index += 1
+    if degenerate and (
+        lexical == 0 or degenerate / lexical > WORDS_MAX_NONPOSITIVE_SHARE
+    ):
+        _refuse("word_nonpositive_span")
     return validate_word_sample(
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "pipeline_version": WORDS_PIPELINE_VERSION,
             "source_sha256": source_sha256,
             "sample_sha256": sample_sha256,
@@ -403,7 +468,11 @@ def normalize_word_result(
             "model": copy.deepcopy(model),
             "language": value.get("language"),
             "language_probability": language_probability,
-            "language_probe_seconds": min(30.0, sample_duration_seconds),
+            # Comparing against an unvalidated duration would raise before the
+            # reader can refuse it; pass the caller's value through instead.
+            "language_probe_seconds": (
+                min(30.0, bound) if bound is not None else sample_duration_seconds
+            ),
             "words": words,
             "segments": segments,
             "token_exclusions": exclusions,
