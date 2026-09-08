@@ -120,9 +120,9 @@ MODEL_REGISTRY = [
         # dispatch. Flare is OpenAI's stated default of the two GPT Image 2.5
         # models (2026-09-08); "gpt-image-2.5-sunburst" targets edit-precision
         # workflows and can be ranked per talk via `--shortlist --add`. The
-        # retired "gpt-image-2" is deliberately NOT an alias here: remapping a
-        # baked outline to a different model would defeat the snapshot pin, and
-        # an outline that names it still dispatches by family prefix unchanged.
+        # retired "gpt-image-2" is deliberately NOT an alias here — it would
+        # remap baked outlines onto a different model — it lives in
+        # LEGACY_MODEL_ALIASES, pinned to the snapshot it was current on.
         "id": "gpt-image-2.5-flare-2026-09-08",
         "display": "GPT Image 2.5 Flare",
         "family": "openai",
@@ -137,6 +137,18 @@ MODEL_REGISTRY = [
 # Historical id list — preserves the COMPARE_MODELS contract for --compare and
 # any downstream code/tests that referenced the bare list.
 COMPARE_MODELS = [m["id"] for m in MODEL_REGISTRY]
+
+# Retired rolling ids that baked outlines may still carry, mapped to the dated
+# snapshot each was pinned to while it was current. Kept OUT of MODEL_REGISTRY
+# so --compare and --shortlist never rank a superseded model, but consulted by
+# resolve_model_id() after the roster: an outline baked against the old alias
+# keeps rendering on the exact snapshot it was baked against. Passing the
+# rolling id through to the vendor instead would let the vendor move it to a
+# newer snapshot and silently change the illustration style.
+LEGACY_MODEL_ALIASES = {
+    # Superseded by gpt-image-2.5-flare on 2026-09-08.
+    "gpt-image-2": "gpt-image-2-2026-04-21",
+}
 
 # Soft ranking priorities: attribute + tier ordering (best first).
 PRIORITY_RANKINGS = {
@@ -165,6 +177,9 @@ def resolve_model_id(name):
             return m["id"]
         if any(key == alias.lower() for alias in m.get("aliases", [])):
             return m["id"]
+    legacy = LEGACY_MODEL_ALIASES.get(key)
+    if legacy:
+        return legacy
     # Unknown id: return it stripped so stray whitespace can't misclassify the
     # vendor family in model_family()'s prefix check.
     return stripped

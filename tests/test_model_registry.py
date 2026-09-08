@@ -116,12 +116,20 @@ def test_resolve_rolling_openai_alias_to_snapshot(model_registry):
     )
 
 
-def test_retired_openai_id_is_not_remapped(model_registry):
-    # A baked outline that names the retired rolling id must keep dispatching
-    # to that id by family prefix, never be silently rendered on the newer
-    # snapshot — that would defeat the pin the outline was baked against.
-    assert model_registry.resolve_model_id("gpt-image-2") == "gpt-image-2"
+def test_retired_openai_alias_keeps_its_snapshot(model_registry):
+    # An outline baked against the retired rolling id must keep rendering on
+    # the snapshot it was pinned to — never drift to whatever the vendor serves
+    # for the rolling id today, and never be remapped onto the newer model.
+    # The retired model stays out of the roster so nothing ranks it.
+    assert model_registry.resolve_model_id("gpt-image-2") == "gpt-image-2-2026-04-21"
+    assert (
+        model_registry.resolve_model_id("  GPT-Image-2  ") == "gpt-image-2-2026-04-21"
+    )
     assert model_registry.is_supported_model("gpt-image-2")
+    assert "gpt-image-2-2026-04-21" not in model_registry.COMPARE_MODELS
+    assert "gpt-image-2-2026-04-21" not in [
+        m["id"] for m in model_registry.shortlist_models([])
+    ]
 
 
 def test_resolve_is_case_insensitive(model_registry):

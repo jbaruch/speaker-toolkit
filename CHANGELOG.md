@@ -9,10 +9,13 @@ where editing precision matters most. The registry's OpenAI entry moves from
 `gpt-image-2-2026-04-21` to the snapshot-pinned `gpt-image-2.5-flare-2026-09-08`, with the
 rolling `gpt-image-2.5-flare` id as its alias. The speed tier moves from `slow` to `medium` on
 the vendor's latency claim; cost and quality tiers are unchanged. The retired `gpt-image-2`
-alias is dropped from the roster rather than remapped: an outline that baked it still
-dispatches by family prefix to OpenAI's `gpt-image-2` unchanged (the roster is a seed cache,
-not an allowlist), and silently rendering a baked style anchor on a different model would
-defeat the snapshot pin — a new test locks that in. Sunburst is not cached; it can be ranked
+alias leaves the roster (so `--compare` and `--shortlist` never rank a superseded model) and
+moves to a new `LEGACY_MODEL_ALIASES` table that `resolve_model_id` consults after the roster,
+still pinned to `gpt-image-2-2026-04-21`: an outline baked against it keeps rendering on the
+exact snapshot it was baked against. Neither remapping it onto Flare nor passing the rolling id
+through to the vendor would do — the first renders a baked style anchor on a different model,
+the second lets the vendor move the rolling id to a newer snapshot; the policy reviewer caught
+the second on the first cut. A new test locks the legacy resolution in. Sunburst is not cached; it can be ranked
 for one talk via `--shortlist --add`. Tests, the candidates-schema example, the provider-lanes
 reference, and the freshness eval fixture follow the new ids. `REGISTRY_LAST_REVIEWED` bumps
 to 2026-09-08.
