@@ -1072,7 +1072,7 @@ def test_video_manifest_identity_is_bound_to_the_claimed_talk(return_validation)
     )
     with pytest.raises(return_validation.ReturnValidationError) as excinfo:
         return_validation.validate_claim_against_talk(talk, value)
-    assert "does not match talk youtube_id" in str(excinfo.value)
+    assert "does not match talk source identity" in str(excinfo.value)
 
 
 def test_claim_generation_must_equal_talk_generation(return_validation):

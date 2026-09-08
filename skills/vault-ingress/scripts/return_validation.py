@@ -53,6 +53,7 @@ from ingress_contract import (
     has_transcript_source,
     has_video_source,
     source_capabilities,
+    talk_binding_token,
     validate_talk_record_schemas,
 )
 from pattern_evidence import (
@@ -4498,15 +4499,17 @@ def validate_claim_against_talk(
                 f"{filename} return has no validated video_extraction manifest"
             )
         returned_id = manifest.get("source_video_id")
-        expected_id = talk.get("youtube_id")
-        if not isinstance(expected_id, str) or not expected_id.strip():
+        expected_id = talk_binding_token(talk)
+        if expected_id is None:
             raise ReturnValidationError(
-                f"{filename} has no youtube_id to bind the video extraction manifest"
+                f"{filename} has no source identity to bind the video extraction "
+                "manifest"
             )
         if returned_id != expected_id:
             raise ReturnValidationError(
                 "structured_data.video_extraction.source_video_id "
-                f"{returned_id!r} does not match talk youtube_id {expected_id!r}"
+                f"{returned_id!r} does not match talk source identity "
+                f"{expected_id!r}"
             )
     if (
         ret.get("status") in ANALYSIS_STATUSES

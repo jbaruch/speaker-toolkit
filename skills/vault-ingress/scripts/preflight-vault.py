@@ -39,10 +39,15 @@ from cloud_artifacts import (
     summarize_cloud_artifacts,
 )
 from ingress_contract import (
+    SUPPORTED_SOURCE_PROVIDERS,
     YOUTUBE_ID_RE,
+    SourceIdentity,
     is_youtube_url,
     parse_google_drive_id,
+    parse_source_identity,
     parse_youtube_id,
+    source_identity_for,
+    talk_source_identity,
     source_capabilities,
 )
 
@@ -316,7 +321,11 @@ class VaultPreflight:
         self.source_indexes: list[int] = []
         self.config: dict[str, Any] = {}
         self.filenames: dict[str, int] = {}
-        self.youtube_ids: dict[int, str] = {}
+        # The token every artifact, manifest, and receipt binds to, plus the
+        # provider-qualified identity it came from. A YouTube talk's token is
+        # its bare ID, so both maps read exactly as `youtube_ids` did.
+        self.source_tokens: dict[int, str] = {}
+        self.source_identities: dict[int, SourceIdentity] = {}
         self.valid_relations: dict[int, tuple[str, str]] = {}
         self.event_aliases: set[EventAlias] = set()
         self.artifact_capabilities: dict[int, dict[str, object]] = {}
@@ -911,9 +920,14 @@ class VaultPreflight:
                 actual=valid_stored_id,
             )
 
-        identity_id = parsed_id or valid_stored_id
-        if identity_id is not None:
-            self.youtube_ids[index] = identity_id
+        identity = (
+            SourceIdentity("youtube", identity_id)
+            if (identity_id := parsed_id or valid_stored_id) is not None
+            else talk_source_identity(talk)
+        )
+        if identity is not None:
+            self.source_identities[index] = identity
+            self.source_tokens[index] = identity.binding_token
 
     def _needs_artifact_checks(self, talk: dict[str, Any]) -> bool:
         transcript_source = talk.get("transcript_source")
@@ -1362,16 +1376,16 @@ class VaultPreflight:
                         require_trusted=True,
                     )
                 return
-            youtube_id = self.youtube_ids.get(index)
+            youtube_id = self.source_tokens.get(index)
             if youtube_id is None:
                 self.talk_add(
                     index,
                     severity,
                     "slide_video_reference_missing",
-                    "video_extracted source requires a valid YouTube identity",
+                    "video_extracted source requires a valid source identity",
                     field="youtube_id",
-                    expected="valid YouTube ID",
-                    actual=talk.get("youtube_id"),
+                    expected="a supported provider identity",
+                    actual=talk.get("video_url"),
                 )
             else:
                 pdf_path = self.vault_root / "slides" / f"{youtube_id}.pdf"
@@ -1673,9 +1687,9 @@ class VaultPreflight:
 
         errors: list[str] = []
         trusted_slide_region_probe: PdfArtifactProbe | None = None
-        expected_id = self.youtube_ids.get(index)
+        expected_id = self.source_tokens.get(index)
         if state.source_video_id != expected_id:
-            errors.append("source_video_id must match the talk's YouTube identity")
+            errors.append("source_video_id must match the talk's source identity")
         else:
             try:
                 source_video_path = resolve_video_extraction_source(
@@ -1971,32 +1985,55 @@ class VaultPreflight:
                 actual=schema_version,
             )
 
-        provider = evidence.get("provider")
-        if provider is not None and provider != "youtube":
+        source = self.source_identities.get(index)
+        declared_provider = evidence.get("provider")
+        if declared_provider is not None and (
+            declared_provider not in SUPPORTED_SOURCE_PROVIDERS
+        ):
             self.talk_add(
                 index,
                 "warning",
                 "source_identity_provider_unknown",
                 "source_identity provider is not currently understood",
                 field="source_identity.provider",
-                expected="youtube",
-                actual=provider,
+                expected=" | ".join(SUPPORTED_SOURCE_PROVIDERS),
+                actual=declared_provider,
             )
-
-        evidence_id = evidence.get("video_id")
-        expected_id = self.youtube_ids.get(index)
-        if evidence_id is None:
-            self._identity_gap(index, "video_id")
-        elif not isinstance(evidence_id, str) or not YOUTUBE_ID_RE.fullmatch(
-            evidence_id
+        elif (
+            declared_provider is not None
+            and source is not None
+            and declared_provider != source.provider
         ):
             self.talk_add(
                 index,
                 "blocking",
+                "source_identity_provider_mismatch",
+                "recorded identity evidence names a provider the active source "
+                "does not publish on",
+                field="source_identity.provider",
+                expected=source.provider,
+                actual=declared_provider,
+            )
+
+        # A record written before providers were qualified carries no provider
+        # field; it was a YouTube identity by construction.
+        provider = (
+            declared_provider
+            if declared_provider in SUPPORTED_SOURCE_PROVIDERS
+            else (source.provider if source is not None else "youtube")
+        )
+        evidence_id = evidence.get("video_id")
+        expected_id = source.video_id if source is not None else None
+        if evidence_id is None:
+            self._identity_gap(index, "video_id")
+        elif source_identity_for(provider, evidence_id) is None:
+            self.talk_add(
+                index,
+                "blocking",
                 "source_identity_video_id_invalid",
-                "source_identity video_id must be an 11-character YouTube ID",
+                f"source_identity video_id must be a {provider} video ID",
                 field="source_identity.video_id",
-                expected="11-character YouTube ID",
+                expected=f"{provider} video ID",
                 actual=evidence_id,
             )
         elif expected_id is not None and evidence_id != expected_id:
@@ -2015,6 +2052,7 @@ class VaultPreflight:
             evidence,
             evidence_id,
             expected_id,
+            provider,
         )
         self._validate_identity_title(index, evidence)
         self._validate_identity_speakers(index, evidence)
@@ -2027,6 +2065,7 @@ class VaultPreflight:
         evidence: dict[str, Any],
         evidence_id: Any,
         expected_id: str | None,
+        provider: str,
     ) -> None:
         for field in ("uploader", "uploader_id"):
             value = evidence.get(field)
@@ -2043,21 +2082,26 @@ class VaultPreflight:
 
         anchor_id = (
             evidence_id
-            if isinstance(evidence_id, str) and YOUTUBE_ID_RE.fullmatch(evidence_id)
+            if source_identity_for(provider, evidence_id) is not None
             else expected_id
         )
         webpage_url = evidence.get("webpage_url")
         webpage_url_id: str | None = None
         if webpage_url is not None:
-            webpage_url_id = parse_youtube_id(webpage_url)
+            captured = parse_source_identity(webpage_url)
+            webpage_url_id = (
+                captured.video_id
+                if captured is not None and captured.provider == provider
+                else None
+            )
             if webpage_url_id is None:
                 self.talk_add(
                     index,
                     "blocking",
                     "source_identity_webpage_url_invalid",
-                    "source_identity webpage_url must be a supported YouTube URL",
+                    f"source_identity webpage_url must be a supported {provider} URL",
                     field="source_identity.webpage_url",
-                    expected="YouTube URL with an 11-character video ID",
+                    expected=f"{provider} URL carrying its video ID",
                     actual=webpage_url,
                 )
             elif anchor_id is not None and webpage_url_id != anchor_id:
@@ -2073,16 +2117,14 @@ class VaultPreflight:
 
         webpage_video_id = evidence.get("webpage_video_id")
         if webpage_video_id is not None:
-            if not isinstance(webpage_video_id, str) or not YOUTUBE_ID_RE.fullmatch(
-                webpage_video_id
-            ):
+            if source_identity_for(provider, webpage_video_id) is None:
                 self.talk_add(
                     index,
                     "blocking",
                     "source_identity_webpage_video_id_invalid",
-                    "source_identity webpage_video_id must be an 11-character YouTube ID",
+                    f"source_identity webpage_video_id must be a {provider} video ID",
                     field="source_identity.webpage_video_id",
-                    expected="11-character YouTube ID",
+                    expected=f"{provider} video ID",
                     actual=webpage_video_id,
                 )
             else:
@@ -2483,8 +2525,8 @@ class VaultPreflight:
                     actual=target,
                 )
                 continue
-            source_id = self.youtube_ids.get(index)
-            target_id = self.youtube_ids.get(target_index)
+            source_id = self.source_tokens.get(index)
+            target_id = self.source_tokens.get(target_index)
             if source_id is None or source_id != target_id:
                 # Legacy `_duplicate_of` records describe duplicate *content*
                 # as well as duplicate recordings.  A different video simply
@@ -2495,7 +2537,8 @@ class VaultPreflight:
                         index,
                         "blocking",
                         "source_relation_identity_mismatch",
-                        "duplicate/borrowed relation target must carry the same YouTube identity",
+                        "duplicate/borrowed relation target must carry the same "
+                        "source identity",
                         field="source_relation.target_filename",
                         expected=source_id,
                         actual=target_id,
@@ -2505,7 +2548,7 @@ class VaultPreflight:
 
     def _validate_duplicate_youtube_ids(self) -> None:
         groups: defaultdict[str, list[int]] = defaultdict(list)
-        for index, video_id in self.youtube_ids.items():
+        for index, video_id in self.source_tokens.items():
             groups[video_id].append(index)
         for video_id, indexes in sorted(groups.items()):
             if len(indexes) < 2:
@@ -2520,7 +2563,7 @@ class VaultPreflight:
             self.add(
                 "blocking",
                 "duplicate_youtube_id",
-                "YouTube ID is used by multiple talks without an explicit "
+                "source identity is used by multiple talks without an explicit "
                 "duplicate/borrowed-recording relation",
                 field="youtube_id",
                 expected="one canonical record plus explicit relations",
