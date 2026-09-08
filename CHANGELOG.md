@@ -47,6 +47,14 @@ Three changes:
   `cleanup_attempts`, which separates a teardown that lost its race once from
   one that never won it.
 
+The teardown runs in a `finally`, so it also runs on the way out of a failure.
+Raising its own failure there would replace the one already travelling to the
+caller — and `media_workspace_cleanup_failed` is precisely the code that does
+not stop a caller, so a containment failure plus a lost teardown race would
+have let calibration keep spawning workers with containment unconfirmed. A
+teardown failure over an active one is reported beside it instead, and an
+interrupt still outranks a scratch directory.
+
 Not made resumable. A run that survives its most common abort has much less to
 resume, and a durable partial-cohort artifact is a stateful artifact with a
 schema, an owner, and a staleness contract — its own change, not a bug fix.

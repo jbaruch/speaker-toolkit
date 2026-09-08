@@ -375,6 +375,85 @@ def test_workspace_teardown_retries_every_occupied_directory_errno(
     assert not path.exists()
 
 
+def test_a_teardown_failure_never_displaces_a_containment_failure(
+    media, monkeypatch, capsys
+):
+    """Both failures at once: the caller must still see the one that stops it.
+
+    `media_workspace_cleanup_failed` is a per-recording exclusion, so raising it
+    over a containment failure would let calibration keep spawning workers with
+    containment unconfirmed.
+    """
+    from tempfile import TemporaryDirectory
+
+    original = TemporaryDirectory.cleanup
+    monkeypatch.setattr(media.time, "sleep", lambda _seconds: None)
+    opened: list[Path] = []
+
+    def never_empty(self):
+        raise OSError(errno.ENOTEMPTY, "Directory not empty", self.name)
+
+    monkeypatch.setattr(TemporaryDirectory, "cleanup", never_empty)
+    with pytest.raises(media.LocalMediaError) as caught:
+        with media.private_media_workspace() as workspace:
+            opened.append(Path(workspace["path"]))
+            raise media.LocalMediaError("media_cleanup_failed")
+
+    assert caught.value.reason_code == "media_cleanup_failed"
+    # Reported beside the containment failure, not in place of it.
+    reported = capsys.readouterr().err
+    assert "media_workspace_cleanup_failed" in reported
+    assert str(opened[0]) not in reported
+    monkeypatch.setattr(TemporaryDirectory, "cleanup", original)
+    shutil.rmtree(opened[0], ignore_errors=True)
+
+
+def test_a_teardown_failure_never_displaces_an_interrupt(media, monkeypatch):
+    """An interrupt outranks a scratch directory; the owner stays killable."""
+    from tempfile import TemporaryDirectory
+
+    original = TemporaryDirectory.cleanup
+    monkeypatch.setattr(media.time, "sleep", lambda _seconds: None)
+    opened: list[Path] = []
+
+    def never_empty(self):
+        raise OSError(errno.ENOTEMPTY, "Directory not empty", self.name)
+
+    monkeypatch.setattr(TemporaryDirectory, "cleanup", never_empty)
+    with pytest.raises(KeyboardInterrupt):
+        with media.private_media_workspace() as workspace:
+            opened.append(Path(workspace["path"]))
+            raise KeyboardInterrupt
+    monkeypatch.setattr(TemporaryDirectory, "cleanup", original)
+    shutil.rmtree(opened[0], ignore_errors=True)
+
+
+def test_a_teardown_failure_still_raises_around_an_unrelated_handled_error(
+    media, monkeypatch
+):
+    """A workspace that closed cleanly is not an excuse to drop its own
+    failure: the caller merely handling something else must not suppress it."""
+    from tempfile import TemporaryDirectory
+
+    original = TemporaryDirectory.cleanup
+    monkeypatch.setattr(media.time, "sleep", lambda _seconds: None)
+    opened: list[Path] = []
+
+    def never_empty(self):
+        raise OSError(errno.ENOTEMPTY, "Directory not empty", self.name)
+
+    try:
+        raise ValueError("something the caller is already handling")
+    except ValueError:
+        monkeypatch.setattr(TemporaryDirectory, "cleanup", never_empty)
+        with pytest.raises(media.LocalMediaError) as caught:
+            with media.private_media_workspace() as workspace:
+                opened.append(Path(workspace["path"]))
+    assert caught.value.reason_code == "media_workspace_cleanup_failed"
+    monkeypatch.setattr(TemporaryDirectory, "cleanup", original)
+    shutil.rmtree(opened[0], ignore_errors=True)
+
+
 def test_workspace_teardown_does_not_retry_an_unrelated_failure(media, monkeypatch):
     """The retry is for a lost race, not for a directory that cannot be
     removed at all: EACCES fails on the first attempt, as it always did."""
