@@ -397,7 +397,9 @@ def unresolved_module_probes(report: Mapping[str, Any]) -> dict[str, str]:
     """Map each module whose probe never answered to the reason it did not.
 
     Separated from the missing set because the two need different repairs: a
-    missing module is installed, an unresolved one is usually warmed.
+    missing module is one the probe found absent, repaired by installing it; an
+    unresolved one is a module whose presence the probe never established,
+    usually repaired by warming the interpreter it lives on.
     """
     unresolved: dict[str, str] = {}
     for lane in report.get("lanes", {}).values():
