@@ -74,6 +74,20 @@ def _write(tmp_path: Path, database) -> tuple[Path, str]:
     return path, hashlib.sha256(raw).hexdigest()
 
 
+def test_the_trace_never_cites_a_talk_youtube_id_that_disagrees(
+    establish_date_provenance,
+):
+    """A stale youtube_id must not send a re-check at the wrong recording."""
+    talk = _talk("dateless.md", youtube_id="StaleStale1")
+    plan = establish_date_provenance.plan_ceilings(
+        _database([talk]), established_at=AS_OF
+    )
+
+    evidence = plan["proposals"][0]["evidence"]
+    assert "StaleStale1" not in evidence
+    assert "youtube AbCdEfGhI_1" in evidence
+
+
 def test_a_dateless_talk_with_a_stored_upload_gets_a_ceiling(
     establish_date_provenance,
 ):
@@ -86,7 +100,11 @@ def test_a_dateless_talk_with_a_stored_upload_gets_a_ceiling(
     assert record["method"] == "provider_upload_ceiling"
     assert record["not_later_than"] == "2016-01-21"
     assert record["established_at"] == AS_OF
-    assert "2016-01-21" in record["evidence"]
+    # The trace cites the identity block the bound came from, never the talk's
+    # own youtube_id, which can disagree with it.
+    assert record["evidence"] == (
+        "stored source_identity.upload_date 2016-01-21 for youtube AbCdEfGhI_1"
+    )
     assert plan["blocked"] == []
 
 
@@ -99,6 +117,28 @@ def test_a_dateless_talk_with_a_stored_upload_gets_a_ceiling(
         (_talk("junk.md", date="spring 2016"), "date_present_but_uncomparable"),
         (_talk("nosource.md", upload_date=None), "no_provider_upload_date"),
         (_talk("badupload.md", upload_date="20160121"), "no_provider_upload_date"),
+        (
+            _talk(
+                "noidentityid.md",
+                source_identity={
+                    "schema_version": 1,
+                    "provider": "youtube",
+                    "upload_date": "2016-01-21",
+                },
+            ),
+            "no_provider_upload_date",
+        ),
+        (
+            _talk(
+                "noprovider.md",
+                source_identity={
+                    "schema_version": 1,
+                    "video_id": "AbCdEfGhI_1",
+                    "upload_date": "2016-01-21",
+                },
+            ),
+            "no_provider_upload_date",
+        ),
     ],
 )
 def test_every_refusal_is_named_rather_than_silently_skipped(

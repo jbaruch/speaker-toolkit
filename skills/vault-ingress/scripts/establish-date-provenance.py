@@ -64,8 +64,14 @@ class DateProvenanceError(RuntimeError):
     """The owner refused an input; the message names the repair."""
 
 
-def _upload_date(talk: Any) -> str | None:
-    """Return the stored provider upload day, or None when there is not one."""
+def _upload_evidence(talk: Any) -> tuple[str, str] | None:
+    """Return the stored upload day and the identity it came from.
+
+    Both halves come out of the same `source_identity` block. The talk's own
+    `youtube_id` is deliberately not consulted: the bound is derived from that
+    block, so citing anything else could point a later re-check at a different
+    recording than the one that produced the date.
+    """
     identity = talk.get("source_identity")
     if not isinstance(identity, dict):
         return None
@@ -77,7 +83,13 @@ def _upload_date(talk: Any) -> str | None:
         dt.date.fromisoformat(stamped)
     except ValueError:
         return None
-    return stamped
+    provider = identity.get("provider")
+    video_id = identity.get("video_id")
+    if not isinstance(provider, str) or not provider.strip():
+        return None
+    if not isinstance(video_id, str) or not video_id.strip():
+        return None
+    return stamped, f"{provider.strip()} {video_id.strip()}"
 
 
 def classify_talk(talk: Any, *, has_provenance: bool) -> str | None:
@@ -98,7 +110,7 @@ def classify_talk(talk: Any, *, has_provenance: bool) -> str | None:
         # Month precision and anything else the comparator refuses. The ceiling
         # would be unverifiable against it, so the reader refuses it too.
         return "date_present_but_uncomparable"
-    if _upload_date(talk) is None:
+    if _upload_evidence(talk) is None:
         return "no_provider_upload_date"
     return None
 
@@ -128,15 +140,16 @@ def plan_ceilings(database: Any, *, established_at: str) -> dict[str, Any]:
         if reason is not None:
             blocked.append({"talk_filename": filename, "reason": reason})
             continue
-        upload = _upload_date(talk)
+        evidence = _upload_evidence(talk)
+        assert evidence is not None  # classify_talk returned a reason otherwise
+        upload, identity = evidence
         proposals.append(
             {
                 "schema_version": DATE_PROVENANCE_RECORD_SCHEMA_VERSION,
                 "talk_filename": filename,
                 "method": CEILING_METHOD,
                 "evidence": (
-                    "stored source_identity.upload_date "
-                    f"{upload} for provider video {talk.get('youtube_id')}"
+                    f"stored source_identity.upload_date {upload} for {identity}"
                 ),
                 "established_at": established_at,
                 "not_later_than": upload,
