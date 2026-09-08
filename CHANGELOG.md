@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.149 — 2026-09-08
+
 ### fix(illustrations) — replace GPT Image 2 with GPT Image 2.5 Flare in the model roster
 
 OpenAI shipped GPT Image 2.5 on 2026-09-08 as two API models: `gpt-image-2.5-flare`, the
