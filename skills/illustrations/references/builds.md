@@ -23,6 +23,17 @@ Reference for Step 5 (builds) and the build-insertion portion of Step 6
 This backwards approach produces better results than building up from empty,
 because the model preserves the existing composition and style at each step.
 
+## Model
+
+Run the chain on an edit-stable model. GPT Image 2.5 holds subjects and
+composition across successive edits; the pre-2.5 editors compound small
+deviations step by step, which is the drift `erase_region` scopes but does not
+remove. The Step 6 shortlist leads with the 2.5 models whenever
+`build-editability` is flagged (Sunburst first — OpenAI's pick where editing
+precision matters most — then Flare); the tiers are the registry's
+(`model_registry.py`, `edit` attribute). Pick a `strong`-tier editor for a
+build talk only on the speaker's explicit request.
+
 ## Run
 
 ```bash

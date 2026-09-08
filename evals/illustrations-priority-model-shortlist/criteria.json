@@ -1,5 +1,5 @@
 {
-  "context": "Tests the illustrations skill's style-strategy model-selection logic (Steps 4-6): priorities drive a data-narrowed model shortlist before any rendering. The deck has progressive-reveal builds (slides 4 and 9), and the speaker optimizes for cost. The tile's contribution is the staged process — surface priorities, recognize builds require an edit-capable model, narrow the roster by attributes, then confirm visually — rather than naming a model from general knowledge. A baseline agent without the skill tends to recommend a single model on quality/reputation grounds.",
+  "context": "Tests the illustrations skill's style-strategy model-selection logic (Steps 4-6): priorities drive a data-narrowed model shortlist before any rendering. The deck has progressive-reveal builds (slides 4 and 9), and the speaker optimizes for cost. The tile's contribution is the staged process — surface priorities, recognize builds require an edit-capable model, narrow the roster by attributes (where the build lean outranks the cost signal: chained edits drift on pre-2.5 editors, so the shortlist leads with the edit-stable GPT Image 2.5 models), then confirm visually — rather than naming a model from general knowledge. A baseline agent without the skill tends to recommend a single model on quality/reputation grounds.",
   "type": "weighted_checklist",
   "checklist": [
     {
@@ -18,8 +18,8 @@
       "max_score": 20
     },
     {
-      "name": "Shortlist excludes the non-editing model and favors low cost",
-      "description": "The recommended shortlist excludes Imagen (it has no image-edit endpoint, so build chains cannot run on it) and favors the lower-cost edit-capable option for this cost-sensitive deck. Checkable against the model_registry.py attributes as committed at eval time.",
+      "name": "Shortlist excludes the non-editing model and leads with the edit-stable models",
+      "description": "The recommended shortlist excludes Imagen (it has no image-edit endpoint, so build chains cannot run on it) and, despite the cost priority, leads with the edit-stable GPT Image 2.5 models — a build chain edits the previous frame at every step, and the pre-2.5 editors drift across the chain. The lower-cost Gemini editor ranks after them as an explicit-request fallback, not the default; recommending it first for this build-heavy deck fails this criterion. Checkable against the model_registry.py `edit` tiers and `--shortlist cost,build-editability` output as committed at eval time.",
       "max_score": 20
     },
     {

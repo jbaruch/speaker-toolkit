@@ -64,7 +64,7 @@ def test_registry_entries_well_formed(model_registry):
         assert m["cost"] in {"low", "medium", "high"}
         assert m["speed"] in {"fast", "medium", "slow"}
         assert m["quality"] in {"medium", "high"}
-        assert m["edit"] in {"strong", "none"}
+        assert m["edit"] in {"precise", "stable", "strong", "none"}
 
 
 def test_compare_models_derived_from_registry(model_registry):
@@ -140,6 +140,13 @@ def test_resolve_is_case_insensitive(model_registry):
     )
 
 
+def test_resolve_sunburst_alias_to_snapshot(model_registry):
+    assert (
+        model_registry.resolve_model_id("gpt-image-2.5-sunburst")
+        == "gpt-image-2.5-sunburst-2026-09-08"
+    )
+
+
 def test_resolve_canonical_id_unchanged(model_registry):
     assert (
         model_registry.resolve_model_id("gpt-image-2.5-flare-2026-09-08")
@@ -199,6 +206,55 @@ def test_shortlist_cost_ranks_cheapest_first(model_registry):
     ranked = model_registry.shortlist_models(["cost"])
     assert ranked[0]["cost"] == "low"
     assert ranked[-1]["cost"] == "high"
+
+
+def test_shortlist_build_editability_leads_with_edit_stable_models(model_registry):
+    # A talk with builds lands on GPT Image 2.5: the edit tier is the primary
+    # key, so both 2.5 models precede every pre-2.5 editor, Sunburst (the
+    # vendor's edit-precision pick) first.
+    ranked = model_registry.shortlist_models(["build-editability"])
+    ids = [m["id"] for m in ranked]
+    assert ids[:2] == [
+        "gpt-image-2.5-sunburst-2026-09-08",
+        "gpt-image-2.5-flare-2026-09-08",
+    ]
+    assert all(m["edit"] == "strong" for m in ranked[2:])
+
+
+def test_shortlist_build_editability_outranks_soft_signals(model_registry):
+    # The lean is heavy: the cheapest, fastest editor still ranks below every
+    # 2.5 model when builds are in play. Without builds, cost rules as before.
+    with_builds = model_registry.shortlist_models(
+        ["cost", "speed", "build-editability"]
+    )
+    ids = [m["id"] for m in with_builds]
+    flash = ids.index("gemini-3.1-flash-image")
+    assert flash > ids.index("gpt-image-2.5-flare-2026-09-08")
+    assert flash > ids.index("gpt-image-2.5-sunburst-2026-09-08")
+    # Tier beats the soft signals within 2.5 too: Flare is the faster model,
+    # Sunburst (precise) still leads.
+    assert ids.index("gpt-image-2.5-sunburst-2026-09-08") < ids.index(
+        "gpt-image-2.5-flare-2026-09-08"
+    )
+    without_builds = model_registry.shortlist_models(["cost", "speed"])
+    assert without_builds[0]["id"] == "gemini-3.1-flash-image"
+
+
+def test_shortlist_injected_unknown_edit_tier_ranks_last(model_registry):
+    # An injected editor with a tier string the ranking does not know survives
+    # the filter but never outranks a known tier.
+    odd = {
+        "id": "vendor-x-editor",
+        "family": "gemini",
+        "cost": "low",
+        "speed": "fast",
+        "quality": "high",
+        "edit": "yes",
+    }
+    ranked = model_registry.shortlist_models(
+        ["cost", "build-editability"], extra_models=[odd]
+    )
+    assert ranked[-1]["id"] == "vendor-x-editor"
 
 
 def test_shortlist_quality_then_editability(model_registry):
