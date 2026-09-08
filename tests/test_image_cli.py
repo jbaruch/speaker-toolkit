@@ -59,7 +59,7 @@ def lane(cli, ready):
         "openai",
         "cli",
         "generate",
-        "gpt-image-2-2026-04-21",
+        "gpt-image-2.5-flare-2026-09-08",
         cli.CODEX_NATIVE_MODEL,
         "native_observed",
         "cli_forced",
@@ -557,7 +557,7 @@ def test_worker_preserves_interrupt_and_cleans_scratch(cli, monkeypatch):
     "updates,reference,reason",
     [
         ({"lane": "api"}, None, "invalid_cli_lane"),
-        ({"served_model": "gpt-image-2-2026-04-21"}, None, "invalid_cli_lane"),
+        ({"served_model": "gpt-image-2.5-flare-2026-09-08"}, None, "invalid_cli_lane"),
         ({"operation": "edit"}, None, "invalid_image_references"),
         ({}, "/fake/reference.png", "invalid_image_references"),
     ],

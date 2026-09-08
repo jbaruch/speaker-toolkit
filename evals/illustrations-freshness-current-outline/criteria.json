@@ -9,7 +9,7 @@
     },
     {
       "name": "No spurious model-change proposal",
-      "description": "The agent does NOT propose editing the registry roster and does NOT propose changing the outline's model, when the baked model (`gpt-image-2`) is among the current MODEL_REGISTRY roster. Surfacing such a proposal anyway fails this criterion.",
+      "description": "The agent does NOT propose editing the registry roster and does NOT propose changing the outline's model, when the baked model (`gpt-image-2.5-flare`) is among the current MODEL_REGISTRY roster. Surfacing such a proposal anyway fails this criterion.",
       "max_score": 27
     },
     {

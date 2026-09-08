@@ -18,7 +18,7 @@ def lanes():
 @pytest.fixture
 def image_request(lanes):
     return lanes.ImageRequest(
-        "openai", "gpt-image-2-2026-04-21", requested_size=(2048, 1152)
+        "openai", "gpt-image-2.5-flare-2026-09-08", requested_size=(2048, 1152)
     )
 
 

@@ -14,7 +14,7 @@ and stderr diagnostics. Resolution happens separately for each render.
 | `--image-lane api` | Use the existing HTTP adapter without probing a CLI. |
 
 `--allow-cli-native` is an explicit relaxation of image-model pinning and exact
-geometry, not an alias change. The baked `gpt-image-2` alias still resolves to its
+geometry, not an alias change. The baked `gpt-image-2.5-flare` alias still resolves to its
 dated API snapshot. Native results report
 `codex-native-image-model-unpinned`, actual width/height, and the output SHA-256.
 They are not labelled as that snapshot or resized to pretend a size was served.
