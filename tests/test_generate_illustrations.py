@@ -567,7 +567,7 @@ def test_effective_slide_format_safe_zone_wins(generate_illustrations):
 
 
 def test_model_family_openai(generate_illustrations):
-    assert generate_illustrations.model_family("gpt-image-2") == "openai"
+    assert generate_illustrations.model_family("gpt-image-2.5-flare") == "openai"
     assert generate_illustrations.model_family("gpt-image-1") == "openai"
 
 
@@ -720,7 +720,7 @@ def test_parse_outline_handles_img_plus_txt_format(generate_illustrations, tmp_p
     # anchor map and drives 2:3 sizing in the cross-vendor dispatchers.
     outline = _write_outline(
         tmp_path,
-        model="gpt-image-2",
+        model="gpt-image-2.5-flare",
         slides=[
             {
                 "n": 3,
@@ -812,14 +812,14 @@ def test_parse_empty_builds_list_yields_no_builds_key(generate_illustrations, tm
 
 def test_multipart_body_structure(generate_illustrations):
     body, boundary = generate_illustrations._multipart_body(
-        fields={"model": "gpt-image-2", "prompt": "edit this", "n": "1"},
+        fields={"model": "gpt-image-2.5-flare", "prompt": "edit this", "n": "1"},
         files=[("image", "input.png", "image/png", b"\x89PNG\r\n")],
     )
     assert boundary.startswith("----GenIllustBnd")
     text = body.decode("utf-8", errors="replace")
     # Every field present with form-data disposition
     assert 'name="model"' in text
-    assert "gpt-image-2" in text
+    assert "gpt-image-2.5-flare" in text
     assert 'name="prompt"' in text
     assert "edit this" in text
     # File field carries filename + content-type
@@ -837,7 +837,7 @@ def _candidates(**overrides):
     base = {
         "schema_version": 1,
         "slides": {"FULL": 3, "IMG+TXT": 7},
-        "models": ["gemini-3-pro-image", "gpt-image-2"],
+        "models": ["gemini-3-pro-image", "gpt-image-2.5-flare"],
         "styles": [
             {
                 "name": "Blueprint Schematic",
@@ -931,16 +931,16 @@ def test_parse_candidates_style_without_anchors(generate_illustrations, tmp_path
 def test_parse_candidates_non_string_model_rejected(generate_illustrations, tmp_path):
     import pytest
 
-    path = _write_candidates(tmp_path, _candidates(models=["gpt-image-2", 7]))
+    path = _write_candidates(tmp_path, _candidates(models=["gpt-image-2.5-flare", 7]))
     with pytest.raises(ValueError) as exc:
         generate_illustrations.parse_candidates(path)
     assert "models[1]" in str(exc.value)
 
 
 def test_parse_candidates_strips_model_whitespace(generate_illustrations, tmp_path):
-    path = _write_candidates(tmp_path, _candidates(models=["  gpt-image-2  "]))
+    path = _write_candidates(tmp_path, _candidates(models=["  gpt-image-2.5-flare  "]))
     data = generate_illustrations.parse_candidates(path)
-    assert data["models"] == ["gpt-image-2"]
+    assert data["models"] == ["gpt-image-2.5-flare"]
 
 
 def test_parse_candidates_blank_anchor_rejected(generate_illustrations, tmp_path):
@@ -1127,9 +1127,9 @@ def test_render_explore_index_groups_by_style(generate_illustrations):
         {
             "style": "Blueprint Schematic",
             "format": "FULL",
-            "model": "gpt-image-2",
+            "model": "gpt-image-2.5-flare",
             "status": "OK",
-            "rel_path": "blueprint-schematic/full/gpt-image-2.png",
+            "rel_path": "blueprint-schematic/full/gpt-image-2.5-flare.png",
         },
         {
             "style": "Watercolor",
@@ -1144,7 +1144,7 @@ def test_render_explore_index_groups_by_style(generate_illustrations):
     assert "## Blueprint Schematic" in md
     assert "## Watercolor" in md
     # OK render links to the relative image path
-    assert "(blueprint-schematic/full/gpt-image-2.png)" in md
+    assert "(blueprint-schematic/full/gpt-image-2.5-flare.png)" in md
     # FAIL render surfaces the error, not a broken link
     assert "FAILED: rate limited" in md
     # representative slide mapping is documented in the header
@@ -1228,7 +1228,7 @@ def test_rendered_manifest_excludes_failed(generate_illustrations, tmp_path):
         {
             "style": "A",
             "format": "FULL",
-            "model": "gpt-image-2",
+            "model": "gpt-image-2.5-flare",
             "status": "FAIL",
             "error": "boom",
         },
@@ -1263,7 +1263,7 @@ def test_gate_passes_on_codename_resolution(generate_illustrations, tmp_path):
 def test_gate_fails_when_model_not_rendered(generate_illustrations, tmp_path):
     gi = generate_illustrations
     outline = _write_gate_outline(tmp_path, model="gemini-3-pro-image")
-    _write_manifest(tmp_path, ["gpt-image-2"])
+    _write_manifest(tmp_path, ["gpt-image-2.5-flare"])
     v = gi.check_style_explore(str(outline))
     assert v["gate_passed"] is False
     assert "not rendered" in v["error"]

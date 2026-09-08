@@ -1,5 +1,22 @@
 # Changelog
 
+### fix(illustrations) — replace GPT Image 2 with GPT Image 2.5 Flare in the model roster
+
+OpenAI shipped GPT Image 2.5 on 2026-09-08 as two API models: `gpt-image-2.5-flare`, the
+vendor's stated default for most applications (higher quality than GPT Image 2 at up to 50%
+lower latency, token rates unchanged), and `gpt-image-2.5-sunburst`, positioned for workflows
+where editing precision matters most. The registry's OpenAI entry moves from
+`gpt-image-2-2026-04-21` to the snapshot-pinned `gpt-image-2.5-flare-2026-09-08`, with the
+rolling `gpt-image-2.5-flare` id as its alias. The speed tier moves from `slow` to `medium` on
+the vendor's latency claim; cost and quality tiers are unchanged. The retired `gpt-image-2`
+alias is dropped from the roster rather than remapped: an outline that baked it still
+dispatches by family prefix to OpenAI's `gpt-image-2` unchanged (the roster is a seed cache,
+not an allowlist), and silently rendering a baked style anchor on a different model would
+defeat the snapshot pin — a new test locks that in. Sunburst is not cached; it can be ranked
+for one talk via `--shortlist --add`. Tests, the candidates-schema example, the provider-lanes
+reference, and the freshness eval fixture follow the new ids. `REGISTRY_LAST_REVIEWED` bumps
+to 2026-09-08.
+
 ## 0.20.148 — 2026-09-08
 
 ### The intermittent cohort abort was a lost teardown race

@@ -8,7 +8,7 @@ import pytest
 @pytest.mark.parametrize(
     "model,canonical,family",
     [
-        ("GPT-IMAGE-2", "gpt-image-2-2026-04-21", "openai"),
+        ("GPT-IMAGE-2.5-FLARE", "gpt-image-2.5-flare-2026-09-08", "openai"),
         ("Nano-Banana-Pro", "gemini-3-pro-image", "gemini"),
         ("imagen-4-ultra", "imagen-4.0-ultra-generate-001", "imagen"),
         ("gpt-image-ad-hoc", "gpt-image-ad-hoc", "openai"),
@@ -37,10 +37,10 @@ def test_registry_native_choice_never_claims_the_snapshot(model_registry):
         "ready", "/synthetic/bin/codex", "0.153.2", auth_mode="chatgpt"
     )
     result = model_registry.resolve_image_lane(
-        "gpt-image-2", probe, allow_native_model=True
+        "gpt-image-2.5-flare", probe, allow_native_model=True
     )
     assert result.lane == "cli"
-    assert result.requested_model == "gpt-image-2-2026-04-21"
+    assert result.requested_model == "gpt-image-2.5-flare-2026-09-08"
     assert result.served_model == "codex-native-image-model-unpinned"
 
 
@@ -110,20 +110,32 @@ def test_resolve_deprecated_preview_ids_to_ga(model_registry):
 
 def test_resolve_rolling_openai_alias_to_snapshot(model_registry):
     # The canonical id is snapshot-pinned; the rolling alias resolves to it.
-    assert model_registry.resolve_model_id("gpt-image-2") == "gpt-image-2-2026-04-21"
+    assert (
+        model_registry.resolve_model_id("gpt-image-2.5-flare")
+        == "gpt-image-2.5-flare-2026-09-08"
+    )
+
+
+def test_retired_openai_id_is_not_remapped(model_registry):
+    # A baked outline that names the retired rolling id must keep dispatching
+    # to that id by family prefix, never be silently rendered on the newer
+    # snapshot — that would defeat the pin the outline was baked against.
+    assert model_registry.resolve_model_id("gpt-image-2") == "gpt-image-2"
+    assert model_registry.is_supported_model("gpt-image-2")
 
 
 def test_resolve_is_case_insensitive(model_registry):
     assert model_registry.resolve_model_id("Nano-Banana-Pro") == "gemini-3-pro-image"
     assert (
-        model_registry.resolve_model_id("  GPT-IMAGE-2  ") == "gpt-image-2-2026-04-21"
+        model_registry.resolve_model_id("  GPT-IMAGE-2.5-FLARE  ")
+        == "gpt-image-2.5-flare-2026-09-08"
     )
 
 
 def test_resolve_canonical_id_unchanged(model_registry):
     assert (
-        model_registry.resolve_model_id("gpt-image-2-2026-04-21")
-        == "gpt-image-2-2026-04-21"
+        model_registry.resolve_model_id("gpt-image-2.5-flare-2026-09-08")
+        == "gpt-image-2.5-flare-2026-09-08"
     )
 
 
@@ -146,7 +158,7 @@ def test_resolve_empty(model_registry):
 
 
 def test_is_supported_model(model_registry):
-    assert model_registry.is_supported_model("gpt-image-2")
+    assert model_registry.is_supported_model("gpt-image-2.5-flare")
     assert model_registry.is_supported_model("imagen-4.0-ultra-generate-001")
     assert model_registry.is_supported_model("gemini-9-future-image")
     assert model_registry.is_supported_model("nano-banana-pro")  # alias resolves
@@ -229,7 +241,9 @@ def test_shortlist_injects_web_discovered_model(model_registry):
     ids = [m["id"] for m in ranked]
     assert "gemini-5-ultra-image" in ids
     # high quality + low cost ranks it ahead of the cached high-cost model
-    assert ids.index("gemini-5-ultra-image") < ids.index("gpt-image-2-2026-04-21")
+    assert ids.index("gemini-5-ultra-image") < ids.index(
+        "gpt-image-2.5-flare-2026-09-08"
+    )
 
 
 def test_shortlist_injected_model_respects_editability_filter(model_registry):

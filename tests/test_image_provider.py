@@ -77,7 +77,7 @@ def test_public_arguments_are_shared(provider, lane):
 
 @pytest.mark.parametrize("lane", ["auto", "api"])
 @pytest.mark.parametrize(
-    "model", ["gpt-image-2", "nano-banana-pro", "imagen-4.0-generate-001"]
+    "model", ["gpt-image-2.5-flare", "nano-banana-pro", "imagen-4.0-generate-001"]
 )
 def test_exact_and_api_only_requests_never_probe(
     provider, cli, monkeypatch, lane, model, capsys
@@ -117,8 +117,8 @@ def test_native_probe_is_fresh_for_each_selection(
     probes = iter([ready, replace(ready, version="0.153.3")])
     monkeypatch.setattr(cli, "probe_codex", lambda: next(probes))
     options = provider.ImageProviderOptions("auto", True)
-    first = provider.select_image_lane("gpt-image-2", options)
-    second = provider.select_image_lane("gpt-image-2", options)
+    first = provider.select_image_lane("gpt-image-2.5-flare", options)
+    second = provider.select_image_lane("gpt-image-2.5-flare", options)
     assert (first.version, second.version) == ("0.153.2", "0.153.3")
     assert first.served_model == cli.CODEX_NATIVE_MODEL
     assert first.requested_model != first.served_model
@@ -129,7 +129,7 @@ def test_nonfatal_cli_diagnostics_are_visible_on_success(
     provider, cli, ready, monkeypatch, png, capsys
 ):
     lane = provider.select_image_lane(
-        "gpt-image-2", provider.ImageProviderOptions("cli", True)
+        "gpt-image-2.5-flare", provider.ImageProviderOptions("cli", True)
     )
     monkeypatch.setattr(
         cli,
@@ -174,9 +174,11 @@ def test_native_generate_edit_need_no_api_credentials(
 
     monkeypatch.setattr(cli, "render_codex", render)
     result = (
-        gi.edit_image(str(reference), "Erase cup. Keep table.", "gpt-image-2", keys)
+        gi.edit_image(
+            str(reference), "Erase cup. Keep table.", "gpt-image-2.5-flare", keys
+        )
         if edit
-        else gi.generate_image("A blue cup", "gpt-image-2", keys)
+        else gi.generate_image("A blue cup", "gpt-image-2.5-flare", keys)
     )
     assert result.data == png
     assert result.lane.lane == "cli"
@@ -222,7 +224,7 @@ def test_present_failure_never_reads_keys_or_retries_api(
         monkeypatch.setattr(cli, "render_codex", fail)
     result = gi.generate_image(
         "cup",
-        "gpt-image-2",
+        "gpt-image-2.5-flare",
         gi.ImageKeys(options=provider.ImageProviderOptions("auto", True)),
     )
     assert result.data is None
@@ -251,11 +253,11 @@ def test_absent_cli_uses_existing_api_and_reports_it(
     monkeypatch.setattr(gi, "_call_openai_generate", api)
     result = gi.generate_image(
         "cup",
-        "gpt-image-2",
+        "gpt-image-2.5-flare",
         gi.ImageKeys(options=provider.ImageProviderOptions("auto", True)),
     )
     assert result.data == png
-    assert calls == [("gpt-image-2-2026-04-21", "fixture-key", "2048x1152")]
+    assert calls == [("gpt-image-2.5-flare-2026-09-08", "fixture-key", "2048x1152")]
     stderr = capsys.readouterr().err
     assert '"reason_code": "cli_absent"' in stderr
     assert "fixture-key" not in stderr
@@ -264,8 +266,8 @@ def test_absent_cli_uses_existing_api_and_reports_it(
 @pytest.mark.parametrize(
     "model,masked,reason",
     [
-        ("gpt-image-2", False, "cli_cannot_pin_image_model"),
-        ("gpt-image-2", True, "cli_mask_not_supported"),
+        ("gpt-image-2.5-flare", False, "cli_cannot_pin_image_model"),
+        ("gpt-image-2.5-flare", True, "cli_mask_not_supported"),
         ("gemini-3-pro-image", False, "family_api_only"),
     ],
 )
@@ -299,8 +301,8 @@ def test_generate_runner_absent_cli_exits_success_and_writes_image(
     png,
 ):
     gi = generate_illustrations
-    outline = _write_gate_outline(tmp_path, "gpt-image-2")
-    _write_manifest(tmp_path, ["gpt-image-2"])
+    outline = _write_gate_outline(tmp_path, "gpt-image-2.5-flare")
+    _write_manifest(tmp_path, ["gpt-image-2.5-flare"])
     monkeypatch.setattr(cli, "probe_codex", lambda: cli.CliProbe("absent"))
     monkeypatch.setattr(
         gi, "load_secrets", lambda *a: ({"openai": "fixture-key"}, "/fake/secrets.json")
@@ -324,8 +326,8 @@ def test_generate_runner_present_failure_exits_nonzero(
     tmp_path,
 ):
     gi = generate_illustrations
-    outline = _write_gate_outline(tmp_path, "gpt-image-2")
-    _write_manifest(tmp_path, ["gpt-image-2"])
+    outline = _write_gate_outline(tmp_path, "gpt-image-2.5-flare")
+    _write_manifest(tmp_path, ["gpt-image-2.5-flare"])
     monkeypatch.setattr(
         cli,
         "probe_codex",
@@ -357,9 +359,9 @@ def test_missing_api_key_is_a_reported_cell_failure_without_provider_call(
         gi, "_call_openai_edit", lambda *a, **kw: pytest.fail("called API")
     )
     result = (
-        gi.edit_image("/unused.png", "erase", "gpt-image-2", gi.ImageKeys())
+        gi.edit_image("/unused.png", "erase", "gpt-image-2.5-flare", gi.ImageKeys())
         if edit
-        else gi.generate_image("cup", "gpt-image-2", gi.ImageKeys())
+        else gi.generate_image("cup", "gpt-image-2.5-flare", gi.ImageKeys())
     )
     assert result.data is None and "image_api_key_missing" in result.detail
     assert result.lane.lane == "api"
@@ -375,12 +377,12 @@ def test_mixed_grid_retains_native_success_when_api_key_is_missing(
     png,
 ):
     gi = generate_illustrations
-    outline = _write_gate_outline(tmp_path, "gpt-image-2")
+    outline = _write_gate_outline(tmp_path, "gpt-image-2.5-flare")
     candidates = _write_candidates(
         tmp_path,
         _candidates(
             slides={"FULL": 1},
-            models=["gpt-image-2", "gemini-3-pro-image"],
+            models=["gpt-image-2.5-flare", "gemini-3-pro-image"],
             styles=[{"name": "Ink", "anchors": {"FULL": "Ink drawing."}}],
         ),
     )
@@ -411,18 +413,18 @@ def test_v2_manifest_gate_uses_served_model_not_requested_model(
     native,
 ):
     gi = generate_illustrations
-    outline = _write_gate_outline(tmp_path, "gpt-image-2")
+    outline = _write_gate_outline(tmp_path, "gpt-image-2.5-flare")
     base = tmp_path / "style-explore"
     base.mkdir()
     (base / "image.png").write_bytes(png)
     lane = provider.select_image_lane(
-        "gpt-image-2", provider.ImageProviderOptions("auto", native)
+        "gpt-image-2.5-flare", provider.ImageProviderOptions("auto", native)
     )
     render = provider.ImageRender(png, "image/png", lane)
     result = {
         "style": "A",
         "format": "FULL",
-        "model": "gpt-image-2",
+        "model": "gpt-image-2.5-flare",
         "status": "OK",
         "rel_path": "image.png",
         "provenance": render.provenance(),
@@ -445,7 +447,7 @@ def test_v2_missing_provenance_never_becomes_bake_evidence(
     generate_illustrations, tmp_path, png, provenance
 ):
     gi = generate_illustrations
-    outline = _write_gate_outline(tmp_path, "gpt-image-2")
+    outline = _write_gate_outline(tmp_path, "gpt-image-2.5-flare")
     base = tmp_path / "style-explore"
     base.mkdir()
     (base / "image.png").write_bytes(png)
@@ -456,7 +458,7 @@ def test_v2_missing_provenance_never_becomes_bake_evidence(
             {
                 "style": "A",
                 "format": "FULL",
-                "model": "gpt-image-2",
+                "model": "gpt-image-2.5-flare",
                 "status": "OK",
                 "rel_path": "image.png",
                 "provenance": provenance,
@@ -470,7 +472,7 @@ def test_v2_missing_provenance_never_becomes_bake_evidence(
     "model,reason",
     [
         ("gemini-3-pro-image", "family_api_only"),
-        ("gpt-image-2", "cli_multiple_references_unverified"),
+        ("gpt-image-2.5-flare", "cli_multiple_references_unverified"),
     ],
 )
 def test_thumbnail_forced_cli_refuses_before_keys_and_images(
@@ -554,12 +556,12 @@ def test_native_style_grid_persists_observed_output_without_passing_bake_gate(
     png,
 ):
     gi = generate_illustrations
-    outline = _write_gate_outline(tmp_path, "gpt-image-2")
+    outline = _write_gate_outline(tmp_path, "gpt-image-2.5-flare")
     candidates = _write_candidates(
         tmp_path,
         _candidates(
             slides={"FULL": 1},
-            models=["gpt-image-2"],
+            models=["gpt-image-2.5-flare"],
             styles=[{"name": "Ink", "anchors": {"FULL": "Ink drawing."}}],
         ),
     )
@@ -592,8 +594,8 @@ def test_native_compare_labels_observed_model_and_output_file(
     capsys,
 ):
     gi = generate_illustrations
-    outline = _write_gate_outline(tmp_path, "gpt-image-2")
-    monkeypatch.setattr(gi, "COMPARE_MODELS", ["gpt-image-2"])
+    outline = _write_gate_outline(tmp_path, "gpt-image-2.5-flare")
+    monkeypatch.setattr(gi, "COMPARE_MODELS", ["gpt-image-2.5-flare"])
     gi.run_compare(
         str(outline), 1, lane_options=provider.ImageProviderOptions("cli", True)
     )
@@ -627,7 +629,7 @@ def test_build_uses_previous_native_edit_or_refuses_masked_cli(
             {"step": 2, "description": "full", "is_full": True},
         ]
     )
-    outline["model"] = "gpt-image-2"
+    outline["model"] = "gpt-image-2.5-flare"
     source = tmp_path / "slide-60.png"
     source.write_bytes(png)
     options = provider.ImageProviderOptions("cli", True)
@@ -680,7 +682,7 @@ def test_main_forwards_lane_options_to_every_render_mode(
     arguments,
 ):
     gi = generate_illustrations
-    outline = _write_gate_outline(tmp_path, "gpt-image-2")
+    outline = _write_gate_outline(tmp_path, "gpt-image-2.5-flare")
     seen = []
     monkeypatch.setattr(gi, mode, lambda *a, **kw: seen.append(kw["lane_options"]))
     monkeypatch.setattr(gi, "_cli_vault_path", None)

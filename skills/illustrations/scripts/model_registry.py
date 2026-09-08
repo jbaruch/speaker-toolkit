@@ -72,7 +72,7 @@ OPENAI_API_BASE = "https://api.openai.com/v1"
 # Tiers are coarse and drift with the market. The freshness check refreshes
 # both the roster and these tiers when new flagships ship — bump
 # REGISTRY_LAST_REVIEWED (ISO date) whenever this block is reconciled.
-REGISTRY_LAST_REVIEWED = "2026-06-15"
+REGISTRY_LAST_REVIEWED = "2026-09-08"
 REGISTRY_FRESHNESS_MAX_AGE_DAYS = 90
 
 MODEL_REGISTRY = [
@@ -116,13 +116,19 @@ MODEL_REGISTRY = [
     },
     {
         # Snapshot-pinned for reproducible illustration style; the rolling
-        # "gpt-image-2" alias resolves here so baked outlines still dispatch.
-        "id": "gpt-image-2-2026-04-21",
-        "display": "GPT Image 2",
+        # "gpt-image-2.5-flare" alias resolves here so baked outlines still
+        # dispatch. Flare is OpenAI's stated default of the two GPT Image 2.5
+        # models (2026-09-08); "gpt-image-2.5-sunburst" targets edit-precision
+        # workflows and can be ranked per talk via `--shortlist --add`. The
+        # retired "gpt-image-2" is deliberately NOT an alias here: remapping a
+        # baked outline to a different model would defeat the snapshot pin, and
+        # an outline that names it still dispatches by family prefix unchanged.
+        "id": "gpt-image-2.5-flare-2026-09-08",
+        "display": "GPT Image 2.5 Flare",
         "family": "openai",
-        "aliases": ["gpt-image-2"],
+        "aliases": ["gpt-image-2.5-flare"],
         "cost": "high",
-        "speed": "slow",
+        "speed": "medium",
         "quality": "high",
         "edit": "strong",
     },
