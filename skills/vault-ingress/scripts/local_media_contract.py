@@ -7,7 +7,9 @@ converts a VideoArtifactProbe already established in the same assessment.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import builtins
+import errno
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import math
 import re
@@ -127,30 +129,68 @@ _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _LANGUAGE = re.compile(r"[a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*\Z")
 
 
-# Closed shapes for a disclosable detail. A key is a short snake-case name and a
-# string value is a short identifier — an errno name, a reason code — never free
-# text, which is how a path or provider message would get in.
-_DETAIL_KEY = re.compile(r"[a-z][a-z0-9_]{0,63}")
-_DETAIL_VALUE = re.compile(r"[A-Za-z0-9_.:-]{1,64}")
+# Which diagnostic fields may be disclosed, and what each one must actually be.
+# A shape check is not a safety check: `[A-Za-z0-9_.:-]{1,64}` happily admits a
+# token or a relative filename, so a key is only disclosable if this owner can
+# say what the value means and verify it. Everything else is dropped.
+#
+# Exception class names are checked against real exception classes rather than
+# an identifier pattern, so a value shaped like a name but naming nothing is
+# refused along with everything else.
+_PROJECT_EXCEPTION_NAMES = frozenset({"SupervisorError", "LocalMediaError"})
+_REASON_CODE = re.compile(r"[a-z][a-z0-9_]{0,63}")
+
+
+def _is_errno(value: object) -> bool:
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and value in errno.errorcode
+    )
+
+
+def _is_errno_name(value: object) -> bool:
+    return isinstance(value, str) and (
+        value == "UNKNOWN" or value in set(errno.errorcode.values())
+    )
+
+
+def _is_exception_type_name(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    if value in _PROJECT_EXCEPTION_NAMES:
+        return True
+    candidate = getattr(builtins, value, None)
+    return isinstance(candidate, type) and issubclass(candidate, BaseException)
+
+
+def _is_reason_code(value: object) -> bool:
+    return isinstance(value, str) and _REASON_CODE.fullmatch(value) is not None
+
+
+DISCLOSABLE_DETAILS: Mapping[str, Callable[[object], bool]] = {
+    "cleanup_errno": _is_errno,
+    "cleanup_errno_name": _is_errno_name,
+    "cleanup_error_type": _is_exception_type_name,
+    "cleanup_cause_type": _is_exception_type_name,
+    "cleanup_reason_code": _is_reason_code,
+}
 
 
 def _safe_details(details: Mapping[str, object] | None) -> dict[str, object]:
-    """Keep only disclosable scalars, so no path or provider text can ride along.
+    """Keep only fields this owner can name and verify.
 
-    A value this reader cannot vouch for is dropped rather than trimmed: the
-    point of the contract is that a caller never has to audit what reached a log.
+    A field absent from `DISCLOSABLE_DETAILS` is dropped whatever it contains, so
+    the contract never has to reason about whether an unknown value was a path,
+    a token, or provider text.
     """
     if not details:
         return {}
-    safe: dict[str, object] = {}
-    for key, value in details.items():
-        if not isinstance(key, str) or _DETAIL_KEY.fullmatch(key) is None:
-            continue
-        if isinstance(value, bool) or isinstance(value, int):
-            safe[key] = value
-        elif isinstance(value, str) and _DETAIL_VALUE.fullmatch(value) is not None:
-            safe[key] = value
-    return safe
+    return {
+        key: value
+        for key, value in details.items()
+        if key in DISCLOSABLE_DETAILS and DISCLOSABLE_DETAILS[key](value)
+    }
 
 
 class LocalMediaError(ValueError):

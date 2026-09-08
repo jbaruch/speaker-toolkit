@@ -29,10 +29,14 @@ media_cleanup_failed: Underlying failure: cleanup_errno_name=EPERM,
 cleanup_error_type=PermissionError. Repair the bounded media owner's ...
 ```
 
-`details` is closed rather than trimmed: a key is a short snake-case name, a
-string value a short identifier, and anything else is dropped whole. A path or a
-provider message cannot ride along, which is the contract's whole job. A caller
-that passes nothing gets exactly the previous message.
+`details` is an explicit field allowlist, not a shape check. A shape check is not
+a safety check — `[A-Za-z0-9_.:-]{1,64}` happily admits a token or a relative
+filename — so each field is verified for what it actually is: an errno must be a
+real one, an errno name must be a real name, an exception-type name must name a
+real exception class, and a reason code must match the supervisor's own pattern.
+A field this owner cannot name is dropped whatever it contains, so the contract
+never has to reason about whether an unknown value was a path, a token, or
+provider text. A caller that passes nothing gets exactly the previous message.
 
 This is #438's first criterion only. Reproducing the fault, and deciding whether
 a cohort run should survive one cleanup failure instead of discarding 23
