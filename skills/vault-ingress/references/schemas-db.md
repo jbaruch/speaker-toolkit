@@ -745,7 +745,7 @@ a question the catalog cannot ask of itself:
 
 ```json
 "date_provenance": [{
-  "schema_version": 1,
+  "schema_version": 2,
   "talk_filename": "playlist-5jhzguKLEr4.md",
   "method": "live_broadcast_release",
   "evidence": "youtube 5jhzguKLEr4 was_live=true, release_timestamp 1453343702",
@@ -783,8 +783,16 @@ own requires one; `DATE_PROVENANCE_CEILING_REQUIRED_METHODS` names those.
 
 An absent or blank `date` leaves a ceiling standing alone, which is the case
 this collection exists for. Every other present value `parse_catalog_date`
-refuses — month precision, a non-string, a calendar-boundary year — refuses the
-ceiling instead of storing a bound nothing ever checks.
+refuses — a non-string, a calendar-boundary year — refuses the ceiling instead
+of storing a bound nothing ever checks.
+
+Record generation v2 is current; v1 stays readable and the owner migration
+restamps it, the way a v5 talk record and a v1 pptx record are handled — a
+current root does not mean current records. Each generation is held to the
+method enum it shipped with, so a v1 record naming a v2-only method is malformed
+rather than upgradable, and a malformed v1 record refuses instead of being
+restamped. `_migrate_date_provenance_records` owns the upgrade and counts it as
+`date_provenance` in the migration's record counts.
 
 The collection is the root v4 shape, for the same reason `markdown_decks` is the
 root v2 shape: a top-level key is part of the root record, and a version on each
@@ -794,9 +802,10 @@ root and preserves the records.
 
 One record per talk: a date established again replaces its account rather than
 appending a second one. The collection is optional — absent means nothing was
-recorded about a date, which is the state most of the catalog is in — and no
-migration owns it. Provenance is written by an owner who checked something,
-never inferred from a date that happens to be present.
+recorded about a date, which is the state most of the catalog is in. No
+migration creates a record; the owner migration only advances the generation of
+one that exists. Provenance is written by an owner who checked something, never
+inferred from a date that happens to be present.
 
 `skills/vault-ingress/scripts/establish-date-provenance.py` writes the ceiling
 records. It is a dry run by default and `--apply` requires the input digest from

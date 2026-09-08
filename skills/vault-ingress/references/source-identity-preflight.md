@@ -241,18 +241,23 @@ live metadata. The optional talk-level field has this shape:
 ```
 
 `video_id`, `title`, `speakers`, `duration_seconds`, and at least one of
+`recorded_date`/`upload_date` are the v1 evidence fields. `captured_at` records
+provenance for humans but is not used as source identity. Dates are ISO
+`YYYY-MM-DD`; `duration_seconds` is positive numeric data.
+
 An unrecorded catalog date reports what is known rather than that a comparison
 failed. With no bound recorded, `source_identity_date_uncheckable` names the
 repair — run `establish-date-provenance.py`, or establish the delivery date.
 With a bound recorded in `date_provenance`, the state is checkable instead:
 `source_identity_date_bounded_only` says the day is unknown but the recording
-predates a day the catalog holds, and a source date after that bound is
-`source_identity_date_exceeds_recorded_bound`, which blocks. The bound uses the
-same `UPLOAD_TIMEZONE_GRACE` every other date comparison here uses.
+predates a day the catalog holds.
 
-`recorded_date`/`upload_date` are the v1 evidence fields. `captured_at` records
-provenance for humans but is not used as source identity. Dates are ISO
-`YYYY-MM-DD`; `duration_seconds` is positive numeric data.
+Only `recorded_date` is compared against that bound, and a `recorded_date` after
+it is `source_identity_date_exceeds_recorded_bound`, which blocks. `upload_date`
+is exempt: the bound is on the DELIVERY, and a recording is routinely published
+long after it, so a later upload is ordinary rather than a contradiction. The
+comparison allows the same `UPLOAD_TIMEZONE_GRACE` every other date comparison
+here uses.
 
 `uploader`, `uploader_id`, `webpage_url`, and `webpage_video_id` are optional
 provider facts. An uploader identifies the publishing account, never a speaker;
