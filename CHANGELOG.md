@@ -1,5 +1,40 @@
 # Changelog
 
+### An upstream loss is not a fetch failure
+
+`audit-source-identities.py` filed every refused `yt-dlp` fetch as
+`metadata_fetch_failed` at `review_priority: high`, blocking the audit. Two
+catalogued recordings — `P01v0-2Dtzo` (NashDevOps 2020) and `wDKzRI8bT6Y`
+(DevFest Toulouse 2025) — are gone from YouTube, so those two findings re-read as
+fresh high-priority fetch errors on every run and could never clear.
+
+Refusals are classified now. `classify_fetch_failure` separates a provider
+verdict that the recording itself is gone (`source_unavailable_upstream`,
+non-blocking, `retryable: false`, `fetch_status: "unavailable"`, counted by the
+new `metadata_unavailable_count`) from every retryable refusal, which keeps
+`metadata_fetch_failed`.
+
+Access restrictions are tested first and outrank every unavailability signature.
+The region block is the case that forces the precedence: `This video is not
+available in your country` contains an unavailability signature verbatim, and the
+recording still exists for a viewer the provider will serve. Geo blocks, age
+gates, bot checks, members-only content and private videos therefore stay
+retryable rather than being filed as link rot.
+
+Both recordings were confirmed gone, not transiently unfetchable: a control fetch
+against a known-good ID succeeded in the same session, and `--geo-bypass-country`
+probes through US, NO and FR returned the identical message.
+
+The reference now records the decision the issue asked for: an unavailable source
+does not retract a claim already derived from it. Derived artifacts stand on their
+own receipts — the local artifact's digest, and the provider evidence captured at
+`captured_at` — neither of which is a live re-read. What is lost is forward
+capability: re-verification, re-download, and fresh extraction. `P01v0-2Dtzo` has
+a local archived copy and keeps all three; `wDKzRI8bT6Y` has only its transcripts,
+which are now the sole remaining record.
+
+Report contract v3. Closes #429.
+
 ## 0.20.139 — 2026-09-07
 
 ### A wrong path reads as a wrong path

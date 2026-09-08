@@ -119,11 +119,11 @@ identity without rejecting it or replacing the canonical recording.
 An owner-approved official-upload switch uses the separate atomic promotion
 contract in that reference, not a repair followed by an alias append.
 
-## Report contract (v2)
+## Report contract (v3)
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "captured_at": "2026-07-31T19:00:00Z",
   "database": "/vault/tracking-database.json",
   "complete": true,
@@ -132,6 +132,7 @@ contract in that reference, not a repair followed by an alias append.
   "unique_youtube_id_count": 1,
   "metadata_fetch_count": 1,
   "metadata_fetch_error_count": 0,
+  "metadata_unavailable_count": 0,
   "candidate_count": 1,
   "summary": {
     "finding_count": 1,
@@ -145,8 +146,10 @@ contract in that reference, not a repair followed by an alias append.
 
 `sources` contains one record per fetched ID, with the sorted talk indexes and
 filenames that caused the fetch, `fetch_status`, provider evidence, and any
-error. `talks` contains one record per active URL, its catalog comparison, and
-the proposed evidence. `findings` and `summary.by_code` are sorted; with the same
+error. `fetch_status` is `ok`, `error`, `invalid`, or `unavailable`.
+`metadata_fetch_error_count` counts every status but `ok` and `unavailable`;
+`metadata_unavailable_count` counts `unavailable` alone. `talks` contains one
+record per active URL, its catalog comparison, and the proposed evidence. `findings` and `summary.by_code` are sorted; with the same
 database, provider responses, and `captured_at`, the decoded JSON is identical.
 
 Stable finding codes:
@@ -156,7 +159,8 @@ Stable finding codes:
 | `active_youtube_url_invalid` | An active YouTube-looking URL has no valid ID |
 | `active_video_provider_unsupported` | Active URL is not a supported YouTube source; no fetch occurred |
 | `stored_youtube_id_mismatch` | URL identity disagrees with stored `youtube_id` |
-| `metadata_fetch_failed` | `yt-dlp` was missing, timed out, failed, or returned unusable JSON |
+| `metadata_fetch_failed` | `yt-dlp` was missing, timed out, failed, returned unusable JSON, or was refused access; retryable |
+| `source_unavailable_upstream` | The provider reports the recording itself is gone; not retryable and not blocking |
 | `provider_video_id_mismatch` | Returned provider ID differs from the requested ID; no proposal is emitted |
 | `provider_webpage_identity_mismatch` | Returned webpage names another ID; no proposal is emitted |
 | `provider_metadata_incomplete` | A stable capture field is absent/invalid |
@@ -167,6 +171,38 @@ Stable finding codes:
 | `stored_source_identity_differs` | Fresh stable facts differ from an existing evidence block |
 | `likely_non_delivery_clip` | Conservative title/duration signals suggest a demo, teaser, excerpt, or other non-delivery artifact |
 | `same_id_cross_talk_collision` | One ID is active on records with materially different titles or delivery dates |
+
+## Upstream Loss Versus Fetch Failure
+
+A refused fetch is classified before it becomes a finding. `classify_fetch_failure`
+owns the decision; its two signature tables and their precedence are named at the
+top of `skills/vault-ingress/scripts/audit-source-identities.py`.
+
+An access restriction always outranks an unavailability signature. A region block
+reads `This video is not available in your country`, which contains an
+unavailability signature verbatim, and the recording still exists for a viewer the
+provider will serve. Precedence, not the signature list, is what keeps a
+geo-blocked, age-gated, bot-checked, members-only or private recording out of the
+link-rot bucket.
+
+`source_unavailable_upstream` is absent from `ERROR_CODES`, so an upstream loss
+never sets `complete: false`. Recording it as a distinct code and status is what
+stops a permanent loss from re-reading as a fresh high-priority fetch error on
+every later run. Each finding carries `evidence.retryable`.
+
+### Derived claims survive the source
+
+An unavailable source does not retract a claim already derived from it. Every
+derived artifact stands on its own receipts — the local artifact's own digest,
+and the provider evidence captured at the time of capture with its `captured_at`.
+Neither is a live re-read of the provider, so neither weakens when the provider
+stops serving the recording.
+
+What is lost is forward capability, not past evidence: no re-verification against
+the provider, no re-download, and no fresh extraction for a recording held only
+upstream. A locally archived copy restores all three; without one, the derived
+artifacts are the only remaining record and must not be discarded to force a
+re-fetch.
 
 Title and explicit-event comparison are separate: an abbreviated title cannot
 waive a delivery's event identity. Their matching contract is owned by
