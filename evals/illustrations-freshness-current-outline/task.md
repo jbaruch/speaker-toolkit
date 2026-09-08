@@ -27,7 +27,7 @@ talk:
   architecture: "talklet"
 
 style_anchor:
-  model: "gpt-image-2"
+  model: "gpt-image-2.5-flare"
   full: |
     A clean technical-manual aesthetic: aged ivory paper, black ink line
     drawings with halftone shading, period-correct typography, no painterly
@@ -74,7 +74,7 @@ EOF
 touch -m talk-dir/outline.yaml
 ```
 
-The model picked in `style_anchor.model` (`gpt-image-2`) is one of the entries the comparison helper produced for the speaker this morning.
+The model picked in `style_anchor.model` (`gpt-image-2.5-flare`) is one of the entries the comparison helper produced for the speaker this morning.
 
 ## What the Speaker Asks
 

@@ -94,7 +94,7 @@ either version do not migrate or rewrite the input.
                 "binary": null, "version": null},
        "width": null, "height": null, "sha256": null, "warning_count": 0}},
     {"style": "Blueprint Schematic", "format": "FULL",
-     "model": "gpt-image-2", "model_resolved": "gpt-image-2-2026-04-21",
+     "model": "gpt-image-2.5-flare", "model_resolved": "gpt-image-2.5-flare-2026-09-08",
      "status": "FAIL", "error": "rate limited", "provenance": null}
   ]
 }
