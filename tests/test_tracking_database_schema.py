@@ -2444,3 +2444,217 @@ def test_migrating_a_pre_v2_root_without_the_collection_reaches_v2(
     assert tracking_database.assess_tracking_database(result.database).state == (
         "current"
     )
+
+
+# How a talk's delivery date was established (#430).
+
+
+def _provenance(**updates):
+    record = {
+        "schema_version": 1,
+        "talk_filename": "one.md",
+        "method": "organizer_program",
+        "evidence": "DevNexus 2015 published schedule, session page, retrieved 2026-09-08",
+        "established_at": "2026-09-08T00:00:00Z",
+    }
+    record.update(updates)
+    return record
+
+
+def _database_with_provenance(tracking_database, records, *, talk_date=None):
+    migrated = tracking_database.migrate_tracking_database(_legacy_database()).database
+    if talk_date is not None:
+        migrated["talks"][0]["date"] = talk_date
+    migrated["date_provenance"] = records
+    return migrated
+
+
+def test_a_provenance_record_leaves_the_database_current(tracking_database):
+    """The collection is optional and additive: no talk record changes shape."""
+    database = _database_with_provenance(tracking_database, [_provenance()])
+
+    assessment = tracking_database.assess_tracking_database(database)
+
+    assert assessment.state == "current"
+    assert assessment.usable is True
+    # The talk record is untouched: provenance lives beside it, so a legacy
+    # record keeps its own generation and needs no migration to carry one.
+    without = tracking_database.migrate_tracking_database(_legacy_database()).database
+    assert database["talks"] == without["talks"]
+
+
+def test_a_database_without_the_provenance_collection_stays_current(tracking_database):
+    """Absent means nothing recorded — the state half the catalog is in."""
+    database = tracking_database.migrate_tracking_database(_legacy_database()).database
+
+    assert "date_provenance" not in database
+    assert tracking_database.assess_tracking_database(database).state == "current"
+
+
+@pytest.mark.parametrize(
+    "method,basis",
+    [
+        ("live_broadcast_release", "proved"),
+        ("organizer_program", "proved"),
+        ("event_opening_day", "inferred"),
+        ("provider_upload_ceiling", "bounded"),
+    ],
+)
+def test_strength_is_read_from_the_method_never_stored(
+    tracking_database, method, basis
+):
+    """A record cannot claim a strength its method does not support."""
+    assert tracking_database.date_provenance_basis(method) == basis
+
+
+@pytest.mark.parametrize("method", ["proved", "guess", "", None, 3])
+def test_an_unknown_method_refuses_the_database(tracking_database, method):
+    database = _database_with_provenance(
+        tracking_database,
+        [_provenance(method=method, not_later_than="2016-01-21")],
+    )
+
+    with pytest.raises(tracking_database.TrackingDatabaseError):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_a_ceiling_only_method_must_carry_its_ceiling(tracking_database):
+    """`provider_upload_ceiling` establishes no day, so without one it says nothing."""
+    database = _database_with_provenance(
+        tracking_database, [_provenance(method="provider_upload_ceiling")]
+    )
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="not_later_than is required"
+    ):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_a_ceiling_that_contradicts_the_catalog_date_refuses(tracking_database):
+    """A provider upload cannot precede the recording it publishes."""
+    database = _database_with_provenance(
+        tracking_database,
+        [_provenance(not_later_than="2014-01-21")],
+        talk_date="2016-03-04",
+    )
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="cannot contradict"
+    ):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_a_ceiling_inside_the_timezone_grace_is_accepted(tracking_database):
+    """Same comparator and same grace as the live source-identity audit."""
+    database = _database_with_provenance(
+        tracking_database,
+        [_provenance(not_later_than="2016-03-03")],
+        talk_date="2016-03-04",
+    )
+
+    assert tracking_database.assess_tracking_database(database).state == "current"
+
+
+def test_a_ceiling_stands_alone_when_the_talk_has_no_date(tracking_database):
+    """The case this collection exists for: no date, but still a known bound."""
+    database = _database_with_provenance(
+        tracking_database,
+        [
+            _provenance(
+                method="provider_upload_ceiling",
+                evidence="youtube upload_date for 5jhzguKLEr4, captured 2026-08-18",
+                not_later_than="2016-01-21",
+            )
+        ],
+    )
+
+    assert "date" not in database["talks"][0]
+    assert tracking_database.assess_tracking_database(database).state == "current"
+
+
+def test_a_provenance_naming_no_talk_refuses_the_database(tracking_database):
+    database = _database_with_provenance(
+        tracking_database, [_provenance(talk_filename="absent.md")]
+    )
+
+    with pytest.raises(tracking_database.TrackingDatabaseError, match="names no talk"):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_a_second_provenance_for_one_talk_refuses_the_database(tracking_database):
+    """A date established again is a replacement, never an append."""
+    database = _database_with_provenance(
+        tracking_database, [_provenance(), _provenance(method="event_opening_day")]
+    )
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="second date provenance"
+    ):
+        tracking_database.assess_tracking_database(database)
+
+
+@pytest.mark.parametrize(
+    "field", ["talk_filename", "method", "evidence", "established_at"]
+)
+def test_a_missing_required_field_refuses_the_database(tracking_database, field):
+    record = _provenance()
+    del record[field]
+    database = _database_with_provenance(tracking_database, [record])
+
+    with pytest.raises(tracking_database.TrackingDatabaseError):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_an_unknown_field_refuses_the_database(tracking_database):
+    database = _database_with_provenance(
+        tracking_database, [_provenance(confidence="high")]
+    )
+
+    with pytest.raises(tracking_database.TrackingDatabaseError, match="unknown fields"):
+        tracking_database.assess_tracking_database(database)
+
+
+@pytest.mark.parametrize("version", [0, 2, "1", True, None])
+def test_a_record_generation_this_reader_cannot_name_refuses(
+    tracking_database, version
+):
+    database = _database_with_provenance(
+        tracking_database, [_provenance(schema_version=version)]
+    )
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="schema_version must be 1"
+    ):
+        tracking_database.assess_tracking_database(database)
+
+
+@pytest.mark.parametrize(
+    "value", ["2026-09-08", "not-a-time", "2026-09-08T00:00:00", ""]
+)
+def test_a_naive_or_malformed_timestamp_refuses(tracking_database, value):
+    database = _database_with_provenance(
+        tracking_database, [_provenance(established_at=value)]
+    )
+
+    with pytest.raises(tracking_database.TrackingDatabaseError):
+        tracking_database.assess_tracking_database(database)
+
+
+@pytest.mark.parametrize("value", ["2016", "2016-01", "20160121", "", 20160121])
+def test_a_ceiling_that_is_not_a_calendar_date_refuses(tracking_database, value):
+    """A ceiling is a day: a year would silently widen the bound it asserts."""
+    database = _database_with_provenance(
+        tracking_database, [_provenance(not_later_than=value)]
+    )
+
+    with pytest.raises(tracking_database.TrackingDatabaseError):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_the_collection_must_be_an_array(tracking_database):
+    database = _database_with_provenance(tracking_database, {"one.md": _provenance()})
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="must be an array"
+    ):
+        tracking_database.assess_tracking_database(database)

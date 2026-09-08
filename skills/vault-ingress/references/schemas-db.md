@@ -250,10 +250,11 @@ or root state; the standalone root-only mode below preserves their contracts.
 | vault-profile | dual reader | Parse schemas 0-3; treat unsupported generations as unavailable; never migrate |
 
 Current database schema 3 with config schema 2 requires all eight top-level
-state fields shown below. `source_title_equivalences`, `source_aliases`, and
-`markdown_decks` are optional owner collections. For `markdown_decks`,
-absent means no talk has a registered markdown deck, which is what every
-database written before root v2 says.
+state fields shown below. `source_title_equivalences`, `source_aliases`,
+`markdown_decks`, and `date_provenance` are optional owner collections. For
+`markdown_decks`, absent means no talk has a registered markdown deck, which is
+what every database written before root v2 says. For `date_provenance`, absent
+means nothing was recorded about how any delivery date was established.
 Missing legacy arrays become empty during owner migration. Current writers do
 not create them opportunistically. A schema-v1 improvement goal remains valid
 historical state; migration never fabricates the schema-v2 baseline provenance
@@ -736,6 +737,53 @@ reason to refuse the whole database. The collection is optional — absent means
 no registered deck, which is the correct reading of every database written
 before it existed — and no migration owns it: a deck is registered by an owner
 who knows where the file is, never inferred.
+
+`date_provenance` is a top-level collection for the same reason, and it answers
+a question the catalog cannot ask of itself:
+
+```json
+"date_provenance": [{
+  "schema_version": 1,
+  "talk_filename": "playlist-5jhzguKLEr4.md",
+  "method": "live_broadcast_release",
+  "evidence": "youtube 5jhzguKLEr4 was_live=true, release_timestamp 1453343702",
+  "established_at": "2026-09-08T00:00:00Z",
+  "not_later_than": "2016-01-21"
+}]
+```
+
+Half the catalog carries a bare year or nothing where a delivery day belongs.
+Before this collection a date proved from an organizer program, a date inferred
+from an event's opening day, and a date that is just a year were the same
+string, so each audit re-derived what the previous one had already established
+and left its working in an issue thread.
+
+`method` is the only strength signal, and it is not stored as one: readers call
+`tracking_database.date_provenance_basis()`, which maps a method to `proved`,
+`inferred`, or `bounded`. Keeping strength derived means a record cannot claim
+more than its method supports. The accepted methods and their mapping are
+`DATE_PROVENANCE_BASIS_BY_METHOD` in
+`skills/vault-ingress/scripts/tracking_database.py`.
+
+`evidence` is required and non-empty because a method names a kind of evidence,
+never the evidence: the field is the trace an owner follows to re-check the
+claim without reading GitHub.
+
+`not_later_than` is an independent fact rather than a weaker date. A provider
+upload cannot precede the recording it publishes, so a talk with no date at all
+still has a ceiling, and a talk with a proved day can carry one that corroborates
+it. It is compared against the talk's own `date` through `upload_predates_catalog`
+(`skills/vault-ingress/scripts/source_identity_matching.py`) — the same
+comparator and the same timezone grace the live source-identity audit uses — so
+a ceiling that contradicts the record it bounds refuses here rather than being
+stored beside a date it disagrees with. A method that establishes no day of its
+own requires one; `DATE_PROVENANCE_CEILING_REQUIRED_METHODS` names those.
+
+One record per talk: a date established again replaces its account rather than
+appending a second one. The collection is optional — absent means nothing was
+recorded about a date, which is the state most of the catalog is in — and no
+migration owns it. Provenance is written by an owner who checked something,
+never inferred from a date that happens to be present.
 
 `apply_reviewed_metadata` exists because `scan-shownotes.py --apply` refuses
 review-required entries by design: an approved catalog correction otherwise had
