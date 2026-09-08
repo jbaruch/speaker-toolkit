@@ -1294,7 +1294,7 @@ def validate_date_provenance(
     record: Mapping[str, object],
     *,
     label: str,
-    talk: Mapping[str, object] | None = None,
+    talks_by_filename: Mapping[object, Mapping[str, object]] | None = None,
 ) -> None:
     """Validate one record of how a talk's delivery date was established.
 
@@ -1312,6 +1312,10 @@ def validate_date_provenance(
     timezone grace the live source-identity audit uses, so a ceiling that
     contradicts the catalog refuses here instead of being stored as a fact that
     disagrees with the record beside it.
+
+    `talks_by_filename` binds the record to the catalog it describes. Given, an
+    unknown `talk_filename` refuses and the ceiling is compared against that
+    talk; omitted, the record is checked for shape alone.
     """
     _require_closed_shape(
         record,
@@ -1355,6 +1359,16 @@ def validate_date_provenance(
         raise TrackingDatabaseError(
             f"{label}.established_at must be a timezone-aware ISO-8601 timestamp"
         )
+    # Resolved here rather than by the caller so the lookup happens after
+    # `talk_filename` is a proven string: a JSON array in that field would raise
+    # an unhandled TypeError on set membership instead of naming the field.
+    talk: Mapping[str, object] | None = None
+    if talks_by_filename is not None:
+        if record["talk_filename"] not in talks_by_filename:
+            raise TrackingDatabaseError(
+                f"{label}.talk_filename names no talk: {record['talk_filename']!r}"
+            )
+        talk = talks_by_filename[record["talk_filename"]]
     ceiling_raw = record.get("not_later_than")
     if ceiling_raw is None:
         if method in DATE_PROVENANCE_CEILING_REQUIRED_METHODS:
@@ -1718,7 +1732,7 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
     equivalences = database.get("source_title_equivalences", [])
     if not isinstance(equivalences, list):
         raise TrackingDatabaseError("source_title_equivalences must be an array")
-    talks_by_filename = {
+    talks_by_filename: dict[object, Mapping[str, object]] = {
         talk.get("filename"): talk
         for talk in collections["talks"]
         if isinstance(talk, Mapping)
@@ -1787,14 +1801,10 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
                 f"date_provenance[{index}] must be a JSON object"
             )
         label = f"date_provenance[{index}]"
-        talk_filename = record.get("talk_filename")
-        if talk_filename not in known_filenames:
-            raise TrackingDatabaseError(
-                f"{label}.talk_filename names no talk: {talk_filename!r}"
-            )
         validate_date_provenance(
-            record, label=label, talk=talks_by_filename[talk_filename]
+            record, label=label, talks_by_filename=talks_by_filename
         )
+        talk_filename = record["talk_filename"]
         # One record per talk. A second would leave a reader choosing between
         # two accounts of the same date with nothing saying which is current;
         # a date established again is a replacement, not an append.

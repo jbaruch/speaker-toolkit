@@ -2658,3 +2658,22 @@ def test_the_collection_must_be_an_array(tracking_database):
         tracking_database.TrackingDatabaseError, match="must be an array"
     ):
         tracking_database.assess_tracking_database(database)
+
+
+@pytest.mark.parametrize("value", [[], {}, ["one.md"], 3, None, True, ""])
+def test_a_malformed_talk_filename_refuses_with_a_named_field(tracking_database, value):
+    """An unhashable value must name the field, not raise on set membership."""
+    database = _database_with_provenance(
+        tracking_database, [_provenance(talk_filename=value)]
+    )
+
+    with pytest.raises(tracking_database.TrackingDatabaseError) as exc:
+        tracking_database.assess_tracking_database(database)
+    assert "date_provenance[0].talk_filename" in str(exc.value)
+
+
+def test_shape_alone_is_checkable_without_a_catalog(tracking_database):
+    """Omitting the map checks the record without binding it to a talk."""
+    tracking_database.validate_date_provenance(
+        _provenance(talk_filename="not-in-any-catalog.md"), label="record"
+    )
