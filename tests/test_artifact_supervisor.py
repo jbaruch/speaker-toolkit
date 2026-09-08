@@ -2796,3 +2796,69 @@ def test_an_unnumbered_errno_still_classifies():
     assert artifact_supervisor.classify_cleanup_failure(error) == {
         "cleanup_error_type": "OSError"
     }
+
+
+def _wrapped(inner: BaseException, outer: BaseException) -> BaseException:
+    try:
+        try:
+            raise inner
+        except BaseException as caught:
+            raise outer from caught
+    except BaseException as raised:
+        return raised
+
+
+def test_an_os_failure_wrapped_by_the_supervisor_still_reports_its_errno():
+    """`terminate()` and `kill_seen()` both wrap an OSError before it reaches the
+    aggregation, so classifying the outer exception alone would report
+    SupervisorError for exactly the paths this exists to explain (#438)."""
+    wrapped = _wrapped(
+        PermissionError(1, "Operation not permitted", "/vault/private/media.mp4"),
+        artifact_supervisor.SupervisorError("worker_cleanup_failed"),
+    )
+
+    details = artifact_supervisor.classify_cleanup_failure(wrapped)
+
+    assert details == {
+        "cleanup_error_type": "SupervisorError",
+        "cleanup_reason_code": "worker_cleanup_failed",
+        "cleanup_errno": 1,
+        "cleanup_errno_name": "EPERM",
+        "cleanup_cause_type": "PermissionError",
+    }
+    assert "media.mp4" not in str(details)
+
+
+def test_the_cause_walk_stops_rather_than_chasing_an_unrelated_chain():
+    deepest = ProcessLookupError(3, "No such process")
+    chain: BaseException = deepest
+    for _ in range(artifact_supervisor._CLEANUP_CAUSE_MAX_DEPTH + 2):
+        chain = _wrapped(chain, RuntimeError("wrapper"))
+
+    details = artifact_supervisor.classify_cleanup_failure(chain)
+
+    assert "cleanup_errno" not in details
+    assert details["cleanup_error_type"] == "RuntimeError"
+
+
+def test_a_cyclic_cause_chain_terminates():
+    first = RuntimeError("first")
+    second = RuntimeError("second")
+    first.__cause__ = second
+    second.__cause__ = first
+
+    assert artifact_supervisor.classify_cleanup_failure(first) == {
+        "cleanup_error_type": "RuntimeError"
+    }
+
+
+def test_an_implicit_context_is_not_followed():
+    """`__context__` can carry an unrelated exception from elsewhere in the frame,
+    so only the explicit cause chain is read."""
+    unrelated = PermissionError(1, "Operation not permitted")
+    outer = artifact_supervisor.SupervisorError("worker_cleanup_failed")
+    outer.__context__ = unrelated
+
+    details = artifact_supervisor.classify_cleanup_failure(outer)
+
+    assert "cleanup_errno" not in details

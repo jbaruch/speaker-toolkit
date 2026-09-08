@@ -12,6 +12,14 @@ causes — the exception's class and its errno, with the symbolic name — and
 neither carries a filename, a command, or any caller-supplied value.
 `OSError.filename` is deliberately not read.
 
+The errno usually sits one frame down: `_ProcessController.terminate` and
+`_ProcessTreeMonitor.kill_seen` both wrap an OSError in a SupervisorError before
+it reaches the aggregation, so classifying the outer exception alone would report
+`SupervisorError` for exactly the paths this exists to explain. The explicit
+`__cause__` chain is followed to a bounded depth, and only that chain — an
+implicit `__context__` can carry an unrelated exception from elsewhere in the
+frame.
+
 `LocalMediaError` gained an optional `details`, so the owners pass that
 classification through instead of discarding it, and `calibrate-speech.py` names
 it in the refusal:
