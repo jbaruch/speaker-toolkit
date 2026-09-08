@@ -93,6 +93,23 @@ def _number(value: Any, low: float, high: float) -> float:
     return result
 
 
+def _degenerate_span(begin: Any, end: Any, bound: float | None) -> bool:
+    """True only for a span the receipt would otherwise accept as in-bounds.
+
+    A timestamp that is non-finite, negative, or past the sample is malformed
+    rather than degenerate. Returning False leaves it in ``words``, where
+    ``validate_word_sample`` refuses it with its own diagnostic.
+    """
+    if bound is None:
+        return False
+    try:
+        low = _number(begin, 0, bound)
+        high = _number(end, 0, bound)
+    except LocalMediaError:
+        return False
+    return high <= low
+
+
 def validate_word_diagnostic(value: Any) -> dict:
     """Closed numeric-only failure evidence, never source locators or words."""
     diagnostic = _object(
@@ -369,6 +386,12 @@ def normalize_word_result(
     words, segments, exclusions = [], [], []
     token_index = 0
     lexical = degenerate = 0
+    try:
+        bound = _number(sample_duration_seconds, 0, WORDS_MAX_SAMPLE_SECONDS)
+    except LocalMediaError:
+        bound = None
+    if bound is not None and bound <= 0:
+        bound = None
     for segment_index, segment in enumerate(value["segments"]):
         if not isinstance(segment, Mapping) or not isinstance(
             segment.get("words"), list
@@ -414,13 +437,11 @@ def normalize_word_result(
                 # token leaves the elapsed-time denominator untouched and moves
                 # the word count by one. Recorded, never repaired.
                 #
-                # Only a plain-number pair is judged here. A malformed timestamp
-                # is retained and refused by validate_word_sample below, which
-                # keeps its diagnostic rather than raising a comparison error.
-                if (
-                    type(retained["start_seconds"]) in (int, float)
-                    and type(retained["end_seconds"]) in (int, float)
-                    and retained["end_seconds"] <= retained["start_seconds"]
+                # Only a pair the receipt would otherwise accept is judged here.
+                # A malformed timestamp is retained and refused by
+                # validate_word_sample below, keeping its own diagnostic.
+                if _degenerate_span(
+                    retained["start_seconds"], retained["end_seconds"], bound
                 ):
                     degenerate += 1
                     exclusions.append(
@@ -447,7 +468,11 @@ def normalize_word_result(
             "model": copy.deepcopy(model),
             "language": value.get("language"),
             "language_probability": language_probability,
-            "language_probe_seconds": min(30.0, sample_duration_seconds),
+            # Comparing against an unvalidated duration would raise before the
+            # reader can refuse it; pass the caller's value through instead.
+            "language_probe_seconds": (
+                min(30.0, bound) if bound is not None else sample_duration_seconds
+            ),
             "words": words,
             "segments": segments,
             "token_exclusions": exclusions,

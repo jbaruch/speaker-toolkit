@@ -428,3 +428,41 @@ def test_the_reader_admits_a_receipt_inside_the_bound(words):
     """The writer's own output round-trips through the reader unchanged."""
     result = wide_normalized(words, wide_raw(200, {73}))
     assert words.validate_word_sample(copy.deepcopy(result)) == result
+
+
+@pytest.mark.parametrize(
+    "begin,end",
+    [
+        (float("inf"), float("inf")),
+        (float("-inf"), float("-inf")),
+        (float("nan"), float("nan")),
+        (-1, -1),
+        (10000, 10000),
+        (-0.5, -0.75),
+        (True, True),
+    ],
+)
+def test_an_out_of_contract_equal_pair_refuses_instead_of_excluding(words, begin, end):
+    """Non-finite, negative or past-the-sample is malformed, not degenerate."""
+    raw = wide_raw(200, set())
+    raw["segments"][0]["words"][7]["start"] = begin
+    raw["segments"][0]["words"][7]["end"] = end
+    with pytest.raises(words.LocalMediaError) as exc:
+        wide_normalized(words, raw)
+    assert exc.value.reason_code.startswith("whisper_word_sample_invalid")
+
+
+def test_a_malformed_sample_duration_never_licenses_an_exclusion(words):
+    """With no usable bound nothing is judged degenerate; the receipt refuses."""
+    with pytest.raises(words.LocalMediaError):
+        words.normalize_word_result(
+            wide_raw(200, {73}),
+            source_sha256="a" * 64,
+            sample_sha256="b" * 64,
+            source_duration_seconds=60,
+            sample_start_seconds=20,
+            sample_duration_seconds=None,
+            provider_version="0.4.3",
+            model=words.DEFAULT_WORD_MODEL,
+            language_probability=0.99,
+        )

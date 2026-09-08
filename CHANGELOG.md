@@ -41,10 +41,12 @@ case and thirty times the corpus rate.
 Exclusion is never repair, and #368's property survives: no word span is
 stretched, clipped or interpolated to make a sample pass. A zero-span token
 contributes no duration, so dropping it leaves the elapsed-time denominator
-untouched and moves the word count by one. `validate_word_sample()` still refuses
-any *retained* word with a non-positive span, and enforces the same admission
-share the writer applied, so a hand-built receipt cannot exclude its way past the
-bound.
+untouched and moves the word count by one. Only a span the receipt would otherwise
+accept is judged degenerate: a non-finite, negative or past-the-sample timestamp
+is malformed rather than degenerate, and still refuses.
+`validate_word_sample()` still refuses any *retained* word with a non-positive
+span, and enforces the same admission share the writer applied, so a hand-built
+receipt cannot exclude its way past the bound.
 
 Receipt schema v3, `pipeline_version` `sampled-words-v3`. v1 and v2 receipts are
 not accepted or auto-migrated: v2 refused on any degenerate token, so its
