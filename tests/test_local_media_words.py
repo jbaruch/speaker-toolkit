@@ -317,9 +317,7 @@ def test_one_degenerate_word_is_excluded_and_counted_not_refused(words):
         {"token_index": 73, "reason": "nonpositive_span"}
     ]
     # Excluded, never repaired: no retained word carries the degenerate stamp.
-    assert all(
-        word["end_seconds"] > word["start_seconds"] for word in result["words"]
-    )
+    assert all(word["end_seconds"] > word["start_seconds"] for word in result["words"])
     assert "w73" not in {word["text"] for word in result["words"]}
 
 
