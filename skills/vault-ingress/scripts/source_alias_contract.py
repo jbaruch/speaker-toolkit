@@ -139,21 +139,29 @@ def _url(value: Any, label: str) -> str:
     return text
 
 
-def source_identity_token(value: Any) -> str | None:
-    """Return the binding token one provider URL names, otherwise ``None``.
+def source_identity(value: Any) -> Any:
+    """Return the identity one provider URL names, otherwise ``None``.
 
-    Comparing tokens rather than bare provider IDs is what keeps a Vimeo and an
-    InfoQ recording that happen to share an ID from reading as one identity.
+    The single entry point into the URL parser for this module. A malformed URL
+    (``https://[broken``) reads as an absent identity: `parse_source_identity`
+    is total, so no raw ValueError escapes the alias ledger's typed failure or
+    the reader's, which is where the actionable message would have been lost.
     """
     # Resolve lazily: tracking_database owns this contract and ingress_contract
     # re-exports the talk schema from tracking_database. No parsing runs during
     # import, so both import orders use the existing provider parser safely.
     from ingress_contract import parse_source_identity
 
-    try:
-        identity = parse_source_identity(value)
-    except ValueError:
-        return None
+    return parse_source_identity(value)
+
+
+def source_identity_token(value: Any) -> str | None:
+    """Return the binding token one provider URL names, otherwise ``None``.
+
+    Comparing tokens rather than bare provider IDs is what keeps a Vimeo and an
+    InfoQ recording that happen to share an ID from reading as one identity.
+    """
+    identity = source_identity(value)
     return None if identity is None else identity.binding_token
 
 
@@ -338,9 +346,7 @@ def validate_alias_record(value: Any, *, label: str = "source_alias") -> None:
 
 def active_identity(talk: Mapping[str, Any]) -> str | None:
     """Return the token the talk's active source names, when it agrees itself."""
-    from ingress_contract import parse_source_identity
-
-    identity = parse_source_identity(talk.get("video_url"))
+    identity = source_identity(talk.get("video_url"))
     stored_youtube_id = (
         identity.video_id
         if identity is not None and identity.provider == "youtube"

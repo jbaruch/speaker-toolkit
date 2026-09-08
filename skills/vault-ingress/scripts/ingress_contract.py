@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import Mapping
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import ParseResult, parse_qs, urlparse
 
 from tracking_database import TALK_RECORD_SCHEMA_VERSION
 
@@ -111,7 +111,12 @@ def has_nonempty_source_field(talk: dict, field: str) -> bool:
 
 
 def parse_youtube_id(url: Any) -> str | None:
-    """Return an ID from supported YouTube URL forms, otherwise ``None``."""
+    """Return an ID from supported YouTube URL forms, otherwise ``None``.
+
+    Total: a malformed URL is an absent identity, never a raised ValueError.
+    Callers sit behind typed contracts whose actionable message a raw parser
+    exception would escape.
+    """
     if not isinstance(url, str) or not url.strip():
         return None
     candidate = url.strip()
@@ -122,7 +127,9 @@ def parse_youtube_id(url: Any) -> str | None:
         or candidate.startswith("youtu.be/")
     ):
         candidate = "https://" + candidate
-    parsed = urlparse(candidate)
+    parsed = _safe_urlparse(candidate)
+    if parsed is None:
+        return None
     host = (parsed.hostname or "").casefold().rstrip(".")
     if host.startswith("www."):
         host = host[4:]
@@ -146,14 +153,30 @@ def parse_youtube_id(url: Any) -> str | None:
     )
 
 
+def _safe_urlparse(candidate: str) -> ParseResult | None:
+    """Parse one URL, reading a malformed one as absent rather than raising.
+
+    `urlparse` raises ValueError on inputs like `https://[broken`. Every
+    identity parser here is documented total, and a raw exception from one of
+    them escapes the typed failure its caller promised.
+    """
+    try:
+        return urlparse(candidate)
+    except ValueError:
+        return None
+
+
 def is_youtube_url(url: Any) -> bool:
-    """Return whether ``url`` names a recognized YouTube host."""
+    """Return whether ``url`` names a recognized YouTube host. Total."""
     if not isinstance(url, str) or not url.strip():
         return False
     candidate = url.strip()
     if "://" not in candidate:
         candidate = "https://" + candidate
-    host = (urlparse(candidate).hostname or "").casefold().rstrip(".")
+    parsed = _safe_urlparse(candidate)
+    if parsed is None:
+        return False
+    host = (parsed.hostname or "").casefold().rstrip(".")
     return host in {
         "youtube.com",
         "www.youtube.com",
@@ -203,13 +226,15 @@ def parse_infoq_id(url: Any) -> str | None:
 
 
 def _parsed_provider_url(url: Any) -> tuple[str, list[str]] | None:
-    """Return one URL's normalized host and non-empty path segments."""
+    """Return one URL's normalized host and non-empty path segments. Total."""
     if not isinstance(url, str) or not url.strip():
         return None
     candidate = url.strip()
     if "://" not in candidate:
         candidate = "https://" + candidate
-    parsed = urlparse(candidate)
+    parsed = _safe_urlparse(candidate)
+    if parsed is None:
+        return None
     if parsed.scheme.casefold() not in {"http", "https"}:
         return None
     host = (parsed.hostname or "").casefold().rstrip(".")
@@ -314,13 +339,15 @@ def token_source_identity(value: Any) -> SourceIdentity | None:
 
 
 def parse_google_drive_id(url: Any) -> str | None:
-    """Return a stable file/deck ID from common Google Drive URL forms."""
+    """Return a stable file/deck ID from common Drive URL forms. Total."""
     if not isinstance(url, str) or not url.strip():
         return None
     candidate = url.strip()
     if "://" not in candidate:
         candidate = "https://" + candidate
-    parsed = urlparse(candidate)
+    parsed = _safe_urlparse(candidate)
+    if parsed is None:
+        return None
     host = (parsed.hostname or "").casefold().rstrip(".")
     if host not in {"drive.google.com", "docs.google.com"}:
         return None
@@ -337,7 +364,9 @@ def parse_google_drive_id(url: Any) -> str | None:
 def _valid_http_url(value: object) -> bool:
     if not isinstance(value, str) or not value.strip():
         return False
-    parsed = urlparse(value.strip())
+    parsed = _safe_urlparse(value.strip())
+    if parsed is None:
+        return False
     return parsed.scheme.casefold() in {"http", "https"} and bool(parsed.hostname)
 
 

@@ -667,3 +667,19 @@ def test_two_providers_sharing_an_id_are_not_one_identity():
     contract.validate_alias_record(
         _record(alias=alias, canonical=canonical), label="record"
     )
+
+
+@pytest.mark.parametrize("url", ["https://[broken", "https://[", "http://[::1"])
+def test_a_malformed_active_url_fails_typed_not_raw(tracking_database, url):
+    """A raw ValueError here would escape the ledger's typed failure and the
+    reader's, losing the actionable message (#427 review)."""
+    contract = importlib.import_module("source_alias_contract")
+    assert contract.active_identity({"video_url": url}) is None
+    assert contract.source_identity_token(url) is None
+
+    database = _database()
+    database["talks"][0]["video_url"] = url
+    database["talks"][0].pop("youtube_id", None)
+    database["source_aliases"] = [_record()]
+    with pytest.raises(contract.SourceAliasError):
+        contract.validate_alias_database(database)

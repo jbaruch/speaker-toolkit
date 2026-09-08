@@ -227,3 +227,26 @@ def test_the_separator_is_outside_the_youtube_alphabet(ingress_contract):
         )
         is None
     )
+
+
+# A URL `urlparse` itself rejects. Every parser here is documented total, so a
+# malformed URL is an absent identity rather than an escaping ValueError that
+# would take a caller's actionable message with it (#427 review).
+MALFORMED_URLS = ["https://[broken", "https://[", "http://[::1", "//[bad]"]
+
+
+@pytest.mark.parametrize("url", MALFORMED_URLS)
+def test_a_malformed_url_is_an_absent_identity_not_an_exception(ingress_contract, url):
+    assert ingress_contract.parse_source_identity(url) is None
+    assert ingress_contract.parse_youtube_id(url) is None
+    assert ingress_contract.parse_vimeo_id(url) is None
+    assert ingress_contract.parse_infoq_id(url) is None
+    assert ingress_contract.parse_google_drive_id(url) is None
+    assert ingress_contract.is_youtube_url(url) is False
+
+
+@pytest.mark.parametrize("url", MALFORMED_URLS)
+def test_a_malformed_url_reads_as_no_acquisition_source(ingress_contract, url):
+    assert ingress_contract.has_remote_video_acquisition({"video_url": url}) is False
+    assert ingress_contract.has_remote_slide_acquisition({"slides_url": url}) is False
+    assert ingress_contract.talk_source_identity({"video_url": url}) is None
