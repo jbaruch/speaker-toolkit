@@ -202,7 +202,7 @@ v1 and v2 for the rollout window.
 ### Schema versioning
 
 A schema-v4 database with current child records is an idempotent no-op.
-Earlier roots advance to v3; config v1 advances to v2 in the same pass.
+Earlier roots advance to v4; config v1 advances to v2 in the same pass.
 The root-only transition to v4 preserves every child value and does not
 create or infer any source alias. Before migration, queue `inspect` may read
 schema 0 and queue `recover` may close an active schema-0 lease in place.
@@ -211,7 +211,7 @@ schema fields; the established queue transition may advance a recovered claim
 receipt from v1 to v2 while adding its release fields.
 
 The owner migration is a preservation migration. Its only allowed semantic
-changes are advancing the root to schema v3, adding the validated historical
+changes are advancing the root to schema v4, adding the validated historical
 version to an unversioned owner record, creating absent owned arrays as empty
 arrays, and upgrading config v1 to v2. A missing exclusion list receives the canonical
 defaults; a valid owner-supplied list is preserved exactly. It
@@ -280,7 +280,7 @@ customization, not the owner default. See the
 
 ```json
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "config": {
     "schema_version": 2,
     "vault_root": "~/.claude/rhetoric-knowledge-vault",
