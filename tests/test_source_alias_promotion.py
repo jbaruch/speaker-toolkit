@@ -507,3 +507,23 @@ def test_promotion_contract_documents_history_and_evidence_boundary():
     for field in ("prior_state", "retired_alias", "source_added"):
         assert f"`{field}`" in reference
     assert "Never clear or relabel those receipts to bypass a gate" in reference
+
+
+def test_promotion_refuses_a_non_youtube_canonical(mutate_tracking_database):
+    """#427 opened the alias ledger to other providers; promotion writes
+    `youtube_id`, so it stays a YouTube-only operation rather than silently
+    stamping a Vimeo ID into a field that means something else."""
+    from test_source_alias_contract import _vimeo_provider
+
+    database = _database()
+    plan = _promotion(database)
+    plan["record"]["canonical"] = _vimeo_provider()
+    original = copy.deepcopy(database)
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError
+    ) as caught:
+        mutate_tracking_database.build_candidate(database, [plan])
+
+    assert "YouTube canonical only" in str(caught.value)
+    assert database == original

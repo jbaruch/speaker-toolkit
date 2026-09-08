@@ -613,3 +613,57 @@ def test_catalog_rollout_consumers_reference_owner_schema(relative):
         encoding="utf-8"
     )
     assert "### Schema versioning" in owner
+
+
+# ── #427: an alias can be recorded as the provider it actually is ──────
+def _vimeo_provider(video_id="1223667266"):
+    return {
+        "provider": "vimeo",
+        "video_id": video_id,
+        "url": f"https://vimeo.com/{video_id}",
+        "title": "Synthetic delivery",
+        "uploader": "Synthetic event channel",
+        "upload_date": "2026-01-02",
+        "duration_seconds": 2700,
+        "captured_at": "2026-02-01T12:00:00Z",
+    }
+
+
+def test_a_supported_non_youtube_upload_is_a_valid_reviewed_alias():
+    """Before #427 the ledger failed closed on every provider but YouTube."""
+    contract = importlib.import_module("source_alias_contract")
+    contract.validate_alias_record(_record(alias=_vimeo_provider()), label="record")
+
+
+def test_a_provider_block_still_refuses_a_url_that_names_another_id():
+    contract = importlib.import_module("source_alias_contract")
+    block = _vimeo_provider()
+    block["url"] = "https://vimeo.com/999999999"
+    with pytest.raises(contract.SourceAliasError):
+        contract.validate_alias_record(_record(alias=block), label="record")
+
+
+def test_a_provider_block_still_refuses_an_unsupported_provider():
+    contract = importlib.import_module("source_alias_contract")
+    block = _vimeo_provider()
+    block["provider"] = "twitch"
+    with pytest.raises(contract.SourceAliasError):
+        contract.validate_alias_record(_record(alias=block), label="record")
+
+
+def test_two_providers_sharing_an_id_are_not_one_identity():
+    """A bare-ID comparison would have read these as an alias of itself."""
+    contract = importlib.import_module("source_alias_contract")
+    shared = "123456789012"
+    canonical = _vimeo_provider(shared)
+    alias = dict(canonical)
+    alias.update(
+        {
+            "provider": "infoq",
+            "video_id": "java-puzzle",
+            "url": "https://www.infoq.com/presentations/java-puzzle/",
+        }
+    )
+    contract.validate_alias_record(
+        _record(alias=alias, canonical=canonical), label="record"
+    )
