@@ -1,5 +1,32 @@
 # Changelog
 
+### The date backlog is now countable
+
+`establish-date-provenance.py` records the provider ceiling for every talk whose
+delivery date is unrecorded, so the 26 catalog records carrying no date at all
+stop being an unbounded research question. Every one of them already has a
+stored `source_identity.upload_date`, so the bound costs no fetch.
+
+It writes `date_provenance` records only. It never writes a talk's `date`, never
+fetches from a provider, and never uses a method that claims a delivery day —
+the only thing it can add is a bound. A talk whose date already parses is left
+alone: a stored upload date says nothing about how a date that exists was
+arrived at, and one record per talk means writing a ceiling there would displace
+the real account.
+
+Every refusal is named rather than silently skipped —
+`date_already_comparable`, `date_present_but_uncomparable`,
+`provenance_already_recorded`, `no_provider_upload_date` — and the report's
+coverage block counts them, which is what makes backlog progress measurable
+across runs instead of re-derived by each audit. Running it twice is a no-op.
+
+Dry run by default; `--apply` requires the input digest from that dry run and
+commits through the owner transaction with a backup, like the migration CLI.
+`--as-of` pins `established_at` so a run is reproducible.
+
+Establishing actual delivery days — the live-broadcast method, and migrating the
+dates proved by hand in #333 — is separate work under #430.
+
 ## 0.20.142 — 2026-09-08
 
 ### A date now says how it was established

@@ -382,6 +382,14 @@ def read_tracking_database():
 
 
 @pytest.fixture(scope="session")
+def establish_date_provenance():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "establish-date-provenance.py"),
+        "establish_date_provenance",
+    )
+
+
+@pytest.fixture(scope="session")
 def queue_state():
     return _import_script(
         os.path.join(SCRIPTS_VI, "queue-state.py"),
