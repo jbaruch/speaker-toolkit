@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.140 — 2026-09-08
+
 ### An upstream loss is not a fetch failure
 
 `audit-source-identities.py` filed every refused `yt-dlp` fetch as
