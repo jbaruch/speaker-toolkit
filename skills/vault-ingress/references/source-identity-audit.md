@@ -119,15 +119,16 @@ identity without rejecting it or replacing the canonical recording.
 An owner-approved official-upload switch uses the separate atomic promotion
 contract in that reference, not a repair followed by an alias append.
 
-## Report contract (v3)
+## Report contract (v4)
 
 ```json
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "captured_at": "2026-07-31T19:00:00Z",
   "database": "/vault/tracking-database.json",
   "complete": true,
   "review_required": true,
+  "out_of_scope_talk_count": 0,
   "active_talk_count": 2,
   "unique_youtube_id_count": 1,
   "metadata_fetch_count": 1,
@@ -149,7 +150,10 @@ filenames that caused the fetch, `fetch_status`, provider evidence, and any
 error. `fetch_status` is `ok`, `error`, `invalid`, or `unavailable`.
 `metadata_fetch_error_count` counts every status but `ok` and `unavailable`;
 `metadata_unavailable_count` counts `unavailable` alone. `talks` contains one
-record per active URL, its catalog comparison, and the proposed evidence. `findings` and `summary.by_code` are sorted; with the same
+record per active URL, its `source_provider`, its catalog comparison, and the
+proposed evidence. `out_of_scope_talk_count` counts the active sources on a
+supported provider this YouTube audit does not fetch from; those never set
+`review_required`, because there is no fault to review. `findings` and `summary.by_code` are sorted; with the same
 database, provider responses, and `captured_at`, the decoded JSON is identical.
 
 Stable finding codes:
@@ -157,7 +161,8 @@ Stable finding codes:
 | Code | Meaning |
 |---|---|
 | `active_youtube_url_invalid` | An active YouTube-looking URL has no valid ID |
-| `active_video_provider_unsupported` | Active URL is not a supported YouTube source; no fetch occurred |
+| `active_video_provider_unsupported` | Active URL names no supported provider at all; no fetch occurred |
+| `active_source_provider_out_of_scope` | Active URL is a supported non-YouTube identity this audit does not fetch; no fault, no review |
 | `stored_youtube_id_mismatch` | URL identity disagrees with stored `youtube_id` |
 | `metadata_fetch_failed` | `yt-dlp` was missing, timed out, failed, returned unusable JSON, or was refused access; retryable |
 | `source_unavailable_upstream` | The provider reports the recording itself is gone; not retryable and not blocking |

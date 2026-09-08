@@ -139,28 +139,63 @@ def _url(value: Any, label: str) -> str:
     return text
 
 
-def youtube_identity(value: Any) -> str | None:
+def source_identity(value: Any) -> Any:
+    """Return the identity one provider URL names, otherwise ``None``.
+
+    The single entry point into the URL parser for this module. A malformed URL
+    (``https://[broken``) reads as an absent identity: `parse_source_identity`
+    is total, so no raw ValueError escapes the alias ledger's typed failure or
+    the reader's, which is where the actionable message would have been lost.
+    """
     # Resolve lazily: tracking_database owns this contract and ingress_contract
     # re-exports the talk schema from tracking_database. No parsing runs during
     # import, so both import orders use the existing provider parser safely.
-    from ingress_contract import parse_youtube_id
+    from ingress_contract import parse_source_identity
 
-    try:
-        return parse_youtube_id(value)
-    except ValueError:
-        return None
+    return parse_source_identity(value)
+
+
+def source_identity_token(value: Any) -> str | None:
+    """Return the binding token one provider URL names, otherwise ``None``.
+
+    Comparing tokens rather than bare provider IDs is what keeps a Vimeo and an
+    InfoQ recording that happen to share an ID from reading as one identity.
+    """
+    identity = source_identity(value)
+    return None if identity is None else identity.binding_token
+
+
+def record_identity_token(block: Mapping[str, Any]) -> str | None:
+    """Return the token one reviewed provider block names."""
+    from ingress_contract import source_identity_for
+
+    identity = source_identity_for(block.get("provider"), block.get("video_id"))
+    return None if identity is None else identity.binding_token
+
+
+def _bound_token(block: Mapping[str, Any], label: str) -> str:
+    """Return one validated block's token; absence is a contract bug, not data."""
+    token = record_identity_token(block)
+    if token is None:
+        _refuse(label, "provider block does not name a supported identity")
+    return token
 
 
 def _provider(value: Any, label: str) -> Mapping[str, Any]:
     record = _shape(value, PROVIDER_FIELDS, label)
     url = _url(record["url"], f"{label}.url")
-    identity = youtube_identity(url)
+    identity = source_identity_token(url)
     parsed = urlparse(url)
+    # The ambiguous-`v` check is a YouTube URL property; every other provider
+    # carries its ID in the path, where there is nothing to disambiguate.
     if (
-        record["provider"] != "youtube"
-        or identity is None
-        or record["video_id"] != identity
-        or (parsed.path == "/watch" and len(parse_qs(parsed.query).get("v", [])) != 1)
+        identity is None
+        or record_identity_token(record) != identity
+        or (
+            record["provider"] == "youtube"
+            and parsed.path == "/watch"
+            and len(parse_qs(parsed.query).get("v", [])) != 1
+        )
     ):
         _refuse(label, "unsupported provider or URL/ID disagreement")
     for field in ("title", "uploader"):
@@ -203,7 +238,7 @@ def _validate_alias_record(value: Any, *, label: str) -> Mapping[str, Any]:
     _timestamp(record["verified_at"], f"{label}.verified_at")
     alias = _provider(record["alias"], f"{label}.alias")
     canonical = _provider(record["canonical"], f"{label}.canonical")
-    if alias["video_id"] == canonical["video_id"]:
+    if record_identity_token(alias) == record_identity_token(canonical):
         _refuse(label, "an alias cannot name its own canonical identity")
     event = _shape(
         record["event"],
@@ -211,7 +246,10 @@ def _validate_alias_record(value: Any, *, label: str) -> Mapping[str, Any]:
         f"{label}.event",
     )
     event_url = _url(event["url"], f"{label}.event.url")
-    if youtube_identity(event_url) in {alias["video_id"], canonical["video_id"]}:
+    if source_identity_token(event_url) in {
+        record_identity_token(alias),
+        record_identity_token(canonical),
+    }:
         _refuse(label, "event evidence must be independent of the two provider pages")
     _text(event["conference"], f"{label}.event.conference")
     _date(event["date"], f"{label}.event.date")
@@ -271,7 +309,7 @@ def _validate_alias_record(value: Any, *, label: str) -> Mapping[str, Any]:
             _refuse(label, "unsupported prior-source-state schema version")
         old_url = _url(prior["video_url"], f"{label}.prior_state.video_url")
         old_id = prior["youtube_id"]
-        if youtube_identity(old_url) != alias["video_id"] or (
+        if source_identity_token(old_url) != record_identity_token(alias) or (
             not _missing(old_id) and old_id not in (None, "", alias["video_id"])
         ):
             _refuse(
@@ -299,22 +337,27 @@ def validate_alias_record(value: Any, *, label: str = "source_alias") -> None:
         if depth > MAX_RETIRED_ALIAS_DEPTH:
             _refuse(label, "retired alias history exceeds the supported depth")
         parent = _validate_alias_record(retired, label=f"{label}.retired_alias")
-        if (
-            parent["talk_filename"] != record["talk_filename"]
-            or parent["alias"]["video_id"] != record["canonical"]["video_id"]
-        ):
+        if parent["talk_filename"] != record["talk_filename"] or record_identity_token(
+            parent["alias"]
+        ) != record_identity_token(record["canonical"]):
             _refuse(label, "retired decision does not belong to the promoted identity")
         record = parent
 
 
 def active_identity(talk: Mapping[str, Any]) -> str | None:
-    identity = youtube_identity(talk.get("video_url"))
+    """Return the token the talk's active source names, when it agrees itself."""
+    identity = source_identity(talk.get("video_url"))
+    stored_youtube_id = (
+        identity.video_id
+        if identity is not None and identity.provider == "youtube"
+        else None
+    )
     stored = talk.get("youtube_id")
     if stored is not None and (
-        not isinstance(stored, str) or stored not in {"", identity}
+        not isinstance(stored, str) or stored not in {"", stored_youtube_id}
     ):
         return None
-    return identity
+    return None if identity is None else identity.binding_token
 
 
 def validate_alias_database(database: Mapping[str, Any]) -> None:
@@ -329,7 +372,7 @@ def validate_alias_database(database: Mapping[str, Any]) -> None:
         identity
         for talk in talks.values()
         for identity in (
-            youtube_identity(talk.get("video_url")),
+            source_identity_token(talk.get("video_url")),
             talk.get("youtube_id"),
         )
         if isinstance(identity, str) and identity
@@ -341,17 +384,20 @@ def validate_alias_database(database: Mapping[str, Any]) -> None:
         filename = record["talk_filename"]
         if filename not in talks:
             _refuse(label, "alias names no canonical talk")
-        identity = _text(record["alias"]["video_id"], f"{label}.alias.video_id")
+        _text(record["alias"]["video_id"], f"{label}.alias.video_id")
+        # The lineage graph is keyed by token, not by bare provider ID.
+        identity = _bound_token(record["alias"], f"{label}.alias")
         if identity in active_ids:
             _refuse(label, "accepted alias overlaps an active canonical source")
         if identity in edges:
             _refuse(label, "duplicate alias ownership")
         rejected = {
-            youtube_identity(rejection["url"])
+            source_identity_token(rejection["url"])
             for rejection in talks[filename].get("source_rejections", [])
             if rejection["source_type"] == "video"
         }
-        if identity in rejected or record["canonical"]["video_id"] in rejected:
+        canonical_token = _bound_token(record["canonical"], f"{label}.canonical")
+        if identity in rejected or canonical_token in rejected:
             _refuse(label, "accepted source overlaps the talk's rejection ledger")
         edges[identity] = record
     resolved: dict[str, str] = {}
@@ -361,7 +407,7 @@ def validate_alias_database(database: Mapping[str, Any]) -> None:
         if terminal is None:
             _refuse("source_aliases", "talk has no agreeing canonical URL/ID")
         visited = {identity}
-        target = record["canonical"]["video_id"]
+        target = _bound_token(record["canonical"], "source_aliases")
         while target != terminal:
             if resolved.get(target) == filename:
                 break
@@ -374,7 +420,7 @@ def validate_alias_database(database: Mapping[str, Any]) -> None:
                     "source_aliases",
                     "alias lineage does not end at its talk's canonical source",
                 )
-            target = parent["canonical"]["video_id"]
+            target = _bound_token(parent["canonical"], "source_aliases")
         for visited_identity in visited:
             resolved[visited_identity] = filename
 
@@ -383,7 +429,7 @@ def matched_alias(
     database: Mapping[str, Any], talk: Mapping[str, Any], url: Any
 ) -> Mapping[str, Any] | None:
     """Look up only a reviewed identity; callers first validate the database."""
-    identity = youtube_identity(url)
+    identity = source_identity_token(url)
     if identity is None:
         return None
     return next(
@@ -391,7 +437,7 @@ def matched_alias(
             record
             for record in database.get("source_aliases", [])
             if record["talk_filename"] == talk.get("filename")
-            and record["alias"]["video_id"] == identity
+            and record_identity_token(record["alias"]) == identity
         ),
         None,
     )

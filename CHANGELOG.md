@@ -1,5 +1,85 @@
 # Changelog
 
+### A talk published off YouTube can finally carry its own evidence
+
+JavaZone publishes to Vimeo. The 2026 talk arrived with a full evidence set —
+a published 1080p recording, a preserved local source, a Whisper transcript
+with schema-v2 timing and quality receipts, the delivered PDF — and could only
+be scored from the PDF. Eight of twenty-eight detections were lost, including
+the two that mattered most: `live-demo`, the defining finding of the delivery,
+and `display-of-high-value`, whose eval result exists only on the projected
+terminal because the narration misstates it. The weighted score fell 26.0 →
+18.0 with no thinner delivery behind it.
+
+It was not one talk hitting an edge. `2016-qcon-sf-java-puzzlers-ng-s02.md` has
+been sitting in the catalog on InfoQ for a decade, and between them those two
+talks owned all three blocking findings in an otherwise-clean 251-talk
+preflight — so preflight could not reach zero.
+
+Every lane resolved a bare `youtube_id`, and each failed differently. Preflight
+blocked a Vimeo ID as "not an 11-character YouTube ID". `_local_video_binding`
+returned nothing without a `youtube_id`, which nulled the trusted local-media
+digest, which turned a well-formed receipt with a correct hash into
+`receipt_owner_mismatch` — and left `delivery_video` reported as an unavailable
+source from the same absent binding. The alias ledger failed closed on every
+provider but YouTube, so the recording could not even be registered as a
+reviewed alias. The audit reported both talks as faults to review rather than
+as a lane it does not fetch from, costing an operator the cheap pre-check on
+any vault holding one. And the extractor named its artifacts from an
+11-character ID, so a manifest could not be produced for these talks at all.
+(The subagent `video_extracted` flow stays YouTube-only — nothing here acquires
+from another provider — so a non-YouTube manifest is an owner running the
+extractor against a source video they already hold. A talk published elsewhere
+registers its recording as `video_local_path`, which is the lane that carries
+its delivery-video and transcript evidence.)
+
+Talk identity is now a provider (`youtube`, `vimeo`, `infoq`) plus that
+provider's own ID, resolved once in `ingress_contract.py`. Artifacts bind to a
+**binding token** derived from it. A YouTube token is the bare ID, which is the
+property that made this safe to land: every stored artifact, manifest, receipt
+and filename binds to exactly the string it always did, and no vault content
+moves. Other providers carry a prefix (`vimeo+1223667266`,
+`infoq+java-puzzle`), which is also what keeps two providers sharing an ID from
+reading as one identity. InfoQ publishes no video ID at all — `infoq.com/
+presentations/java-puzzle/` — so its presentation slug is the identity, which
+is why the token could not simply be a different ID format.
+
+The separator is `+` because `-` was not safe. Review caught that with an
+in-alphabet separator the InfoQ slug `kafka` and a real YouTube ID
+`infoq-kafka` produce the same token, and every ownership, alias, and
+duplicate check keyed on that token would conflate two different recordings.
+A character no YouTube ID can contain makes the overlap unrepresentable
+rather than unlikely, and it makes the token's inverse total — one token, one
+identity, no reading to choose between.
+
+Two deliberate asymmetries. The YouTube-owned transcript provenance kinds
+(`youtube_captions`, `youtube_whisper`, `youtube_duration`) still compare the
+bare YouTube ID, because only a YouTube talk can satisfy them; the local-media
+kinds carry every other provider. And the owner-declared `video_local_path`
+keeps its permissive naming: a YouTube download lands as `{id}.mp4` and its
+name is identity evidence, while a room-camera capture is registered under the
+name it was captured with and the record's own declaration is what binds it.
+Requiring a derived filename there would have broken the working half of the
+lane this issue is about.
+
+Promotion is the one place that stayed YouTube-only. It writes the talk's
+`youtube_id`, so it refuses a non-YouTube canonical outright rather than
+stamping a foreign ID into a field that means something else.
+
+The extraction manifest goes to schema v5, where `source_video_id` is that
+binding token. v4 read it as a YouTube ID and stays readable: a YouTube ID is
+exactly its own token, so no vault record needs migrating and nothing needs
+re-extracting. What keeps the two contracts distinguishable is that a v4
+record may not carry a provider-prefixed token.
+
+The audit's report contract goes to v4: `out_of_scope_talk_count`, a per-talk
+`source_provider`, and `active_source_provider_out_of_scope` — low priority,
+never setting `review_required`, because a provider the audit does not fetch
+from is not a fault the talk committed.
+
+Closes #427. #428 was the same root cause found from the other direction and
+was closed as a duplicate.
+
 ## 0.20.150 — 2026-09-08
 
 ### feat(illustrations) — lean hard on GPT Image 2.5 whenever a talk has builds

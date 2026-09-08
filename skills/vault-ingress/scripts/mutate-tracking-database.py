@@ -70,7 +70,8 @@ from source_alias_contract import (
     SourceAliasError,
     active_identity,
     validate_alias_record,
-    youtube_identity,
+    record_identity_token,
+    source_identity_token,
 )
 
 
@@ -1137,16 +1138,22 @@ def _apply_promote_source_alias(
     if (
         record["relationship"] != "superseded_by_official_upload"
         or record["canonical_choice_reason"] is None
-        or active_identity(talk) != record["alias"]["video_id"]
+        or active_identity(talk) != record_identity_token(record["alias"])
     ):
         raise TrackingDatabaseMutationError(
             f"{label}: promotion requires the current source as alias, an official-upload relationship, and a reviewed reason"
         )
     _require_alias_delivery(talk, record, label=label)
     promoted_id = record["canonical"]["video_id"]
+    if record["canonical"]["provider"] != "youtube":
+        raise TrackingDatabaseMutationError(
+            f"{label}: promotion writes the talk's youtube_id and supports a "
+            "YouTube canonical only; record the upload as an alias instead"
+        )
+    promoted_token = record_identity_token(record["canonical"])
     for other in database["talks"]:
-        if other["filename"] != filename and promoted_id in (
-            youtube_identity(other.get("video_url")),
+        if other["filename"] != filename and promoted_token in (
+            source_identity_token(other.get("video_url")),
             other.get("youtube_id"),
         ):
             raise TrackingDatabaseMutationError(
@@ -1154,7 +1161,12 @@ def _apply_promote_source_alias(
             )
     existing = database.get("source_aliases", [])
     retired = next(
-        (item for item in existing if item["alias"]["video_id"] == promoted_id), None
+        (
+            item
+            for item in existing
+            if record_identity_token(item["alias"]) == promoted_token
+        ),
+        None,
     )
     if retired is not None and retired["talk_filename"] != filename:
         raise TrackingDatabaseMutationError(

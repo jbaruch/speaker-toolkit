@@ -309,6 +309,13 @@ def persist_results():
 
 
 @pytest.fixture(scope="session")
+def ingress_contract():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "ingress_contract.py"), "ingress_contract"
+    )
+
+
+@pytest.fixture(scope="session")
 def tracking_database_io():
     return _import_script(
         os.path.join(SCRIPTS_VI, "tracking_database_io.py"),

@@ -187,7 +187,21 @@ text.
   top of `skills/vault-ingress/scripts/batch-download-videos.py` for the report
   shape, the exit codes, and the closed failure vocabulary.
 
-  Only once this id's entry is `ok` or `skip`, extract:
+  This whole lane is YouTube-only: the downloader accepts 11-character YouTube
+  IDs and builds YouTube URLs, and no script here acquires from another
+  provider. Do not hand-place a file to work around that — a talk published
+  elsewhere takes the pre-registered lane instead. Register the recording on
+  the talk as `video_local_path` and set `slide_source` from the deck you
+  actually have (`pdf`, `both`, or `pptx`). The bounded video owner validates
+  that recording and reports `source_video_artifact_missing` /
+  `_unavailable` / `_unreadable` against it, so the check stays a script's,
+  never a judgment made here. The recording still carries delivery-video and
+  transcript evidence; only video-extracted slides are unavailable.
+
+  Only once this id's `results` entry is `ok` or `skip`, extract. The
+  extractor's third argument is the talk's source binding token, which for
+  this lane is the YouTube ID, so `{youtube_id}` in the paths below reads
+  exactly as before:
   ```bash
   "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/video-slide-extraction.py" \
     "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \

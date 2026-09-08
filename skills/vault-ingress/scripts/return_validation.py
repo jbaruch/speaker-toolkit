@@ -45,6 +45,7 @@ from catalog_io import (
 from ingress_contract import (
     ARCHIVAL_VIDEO_EXTRACTION_SCHEMA_VERSION,
     VIDEO_EXTRACTION_SCHEMA_VERSION,
+    YOUTUBE_BOUND_VIDEO_EXTRACTION_SCHEMA_VERSION,
     IngressContractError,
     has_local_source_artifact,
     has_pdf_source,
@@ -52,8 +53,11 @@ from ingress_contract import (
     has_remote_acquisition_source,
     has_transcript_source,
     has_video_source,
+    is_readable_video_extraction_version,
     source_capabilities,
+    talk_binding_token,
     validate_talk_record_schemas,
+    video_extraction_version_admits_token,
 )
 from pattern_evidence import (
     APPLICABILITY_INSPECTION_REASON_CODE,
@@ -277,7 +281,10 @@ SUBSTANTIVE_PROSE_FIELDS = frozenset(
 )
 LANGUAGE_RE = re.compile(r"^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$")
 CONDITION_ID_RE = re.compile(r"^[a-z0-9]+(?:[-_][a-z0-9]+)*$")
-VIDEO_SOURCE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+# Accepts a bare YouTube ID and a provider-qualified binding token; the
+# per-version rules in `validate_video_extraction_manifest` decide which of
+# those the manifest at hand is allowed to carry.
+VIDEO_SOURCE_ID_RE = re.compile(r"^[A-Za-z0-9_+-]+$")
 QUEUE_CLAIM_SCHEMA_VERSION = 7
 SOURCE_LOCATED_QUEUE_CLAIM_SCHEMA_VERSION = 4
 BASELINE_QUEUE_CLAIM_SCHEMA_VERSION = 3
@@ -1159,14 +1166,14 @@ def validate_video_extraction_manifest(structured: dict) -> VideoExtractionState
             "slide_source video_extracted requires a complete "
             "structured_data.video_extraction schema-v4 manifest"
         )
-    if manifest.get("schema_version") != VIDEO_EXTRACTION_SCHEMA_VERSION:
+    manifest_version = manifest.get("schema_version")
+    if not is_readable_video_extraction_version(manifest_version):
         # An archival record is separable from a malformed one: it was valid
         # under its own contract and names the exact repair (reacquire the
         # source, re-extract), so readers surface it as work rather than rot.
         reason = (
             "video_extraction.schema_version_archival"
-            if manifest.get("schema_version")
-            == ARCHIVAL_VIDEO_EXTRACTION_SCHEMA_VERSION
+            if manifest_version == ARCHIVAL_VIDEO_EXTRACTION_SCHEMA_VERSION
             else None
         )
         _manifest_error(
@@ -1191,6 +1198,16 @@ def validate_video_extraction_manifest(structured: dict) -> VideoExtractionState
     ):
         _manifest_error(
             "source_video_id", "must be a non-empty URL-safe identity token"
+        )
+    # The v4/v5 distinction is `video_extraction_version_admits_token`'s alone;
+    # the evidence readers ask the same function.
+    if not video_extraction_version_admits_token(manifest_version, source_video_id):
+        _manifest_error(
+            "source_video_id",
+            f"must be a YouTube ID in a schema-"
+            f"{YOUTUBE_BOUND_VIDEO_EXTRACTION_SCHEMA_VERSION} manifest; a "
+            f"provider-qualified token requires schema "
+            f"{VIDEO_EXTRACTION_SCHEMA_VERSION}",
         )
     source_video_path = _validate_absolute_manifest_path(
         manifest.get("source_video_path"), "source_video_path"
@@ -4498,15 +4515,17 @@ def validate_claim_against_talk(
                 f"{filename} return has no validated video_extraction manifest"
             )
         returned_id = manifest.get("source_video_id")
-        expected_id = talk.get("youtube_id")
-        if not isinstance(expected_id, str) or not expected_id.strip():
+        expected_id = talk_binding_token(talk)
+        if expected_id is None:
             raise ReturnValidationError(
-                f"{filename} has no youtube_id to bind the video extraction manifest"
+                f"{filename} has no source identity to bind the video extraction "
+                "manifest"
             )
         if returned_id != expected_id:
             raise ReturnValidationError(
                 "structured_data.video_extraction.source_video_id "
-                f"{returned_id!r} does not match talk youtube_id {expected_id!r}"
+                f"{returned_id!r} does not match talk source identity "
+                f"{expected_id!r}"
             )
     if (
         ret.get("status") in ANALYSIS_STATUSES

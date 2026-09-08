@@ -507,3 +507,50 @@ def test_promotion_contract_documents_history_and_evidence_boundary():
     for field in ("prior_state", "retired_alias", "source_added"):
         assert f"`{field}`" in reference
     assert "Never clear or relabel those receipts to bypass a gate" in reference
+
+
+def test_promotion_refuses_a_non_youtube_canonical(mutate_tracking_database):
+    """#427 opened the alias ledger to other providers; promotion writes
+    `youtube_id`, so it stays a YouTube-only operation rather than silently
+    stamping a Vimeo ID into a field that means something else."""
+    from test_source_alias_contract import _vimeo_provider
+
+    database = _database()
+    plan = _promotion(database)
+    plan["record"]["canonical"] = _vimeo_provider()
+    original = copy.deepcopy(database)
+
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError
+    ) as caught:
+        mutate_tracking_database.build_candidate(database, [plan])
+
+    assert "YouTube canonical only" in str(caught.value)
+    assert database == original
+
+
+# An all-digit YouTube ID is also a syntactically valid Vimeo ID, which is the
+# only way two providers can genuinely share a bare `video_id` string.
+SHARED_BARE_ID = "12345678901"
+
+
+def test_promotion_retires_by_token_not_by_bare_id(mutate_tracking_database):
+    """A Vimeo alias whose bare ID equals the promoted YouTube ID must not be
+    retired in its place (#427 review)."""
+    from test_source_alias_contract import _vimeo_provider
+
+    database = _database()
+    decoy = _record(
+        alias=_vimeo_provider(SHARED_BARE_ID),
+        canonical=_provider(database["talks"][0]["youtube_id"]),
+        relationship="valid_duplicate",
+    )
+    database["source_aliases"] = [decoy]
+
+    candidate, _ = mutate_tracking_database.build_candidate(
+        database, [_promotion(database, SHARED_BARE_ID)]
+    )
+
+    latest = candidate["source_aliases"][-1]
+    assert latest["retired_alias"] is None, "a bare-ID match retired the wrong record"
+    assert decoy in candidate["source_aliases"]

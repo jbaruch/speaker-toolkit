@@ -26,9 +26,11 @@ from artifact_locator import (
     materialize_native_root,
 )
 from ingress_contract import (
-    VIDEO_EXTRACTION_SCHEMA_VERSION,
+    SourceIdentity,
     has_remote_slide_acquisition,
     has_remote_video_acquisition,
+    talk_source_identity,
+    video_extraction_version_admits_token,
 )
 from artifact_metadata import canonicalize_trusted_artifact_locator
 from cloud_artifacts import unavailable_cloud_artifacts
@@ -643,13 +645,18 @@ def _declared_pdf_path(talk: Mapping[str, object]) -> tuple[str, object] | None:
     return None
 
 
-def _identity_duration(talk: Mapping[str, object], youtube_id: str) -> float | None:
+def _identity_duration(talk: Mapping[str, object]) -> float | None:
+    """Return the recorded provider duration when it names this talk's source.
+
+    Provider/source-owned duration only, never prior analysis prose.
+    """
+    source = talk_source_identity(talk)
     identity = talk.get("source_identity")
-    if not (
+    if source is None or not (
         isinstance(identity, Mapping)
         and identity.get("schema_version") == 1
-        and identity.get("provider") == "youtube"
-        and identity.get("video_id") == youtube_id
+        and identity.get("provider") == source.provider
+        and identity.get("video_id") == source.video_id
     ):
         return None
     duration = identity.get("duration_seconds")
@@ -661,14 +668,6 @@ def _identity_duration(talk: Mapping[str, object], youtube_id: str) -> float | N
     ):
         return None
     return float(duration)
-
-
-def _catalog_duration(talk: Mapping[str, object]) -> float | None:
-    """Return only provider/source-owned duration, never prior analysis prose."""
-    youtube_id = talk.get("youtube_id")
-    if isinstance(youtube_id, str):
-        return _identity_duration(talk, youtube_id)
-    return None
 
 
 def _selected_video_assessment(
@@ -699,28 +698,30 @@ def _video_unavailable_record(
 def _local_video_binding(
     vault_root: str | Path,
     owner: Mapping[str, object],
-    youtube_id: str | None,
+    identity: SourceIdentity | None,
 ) -> tuple[Path | None, str]:
     structured = owner.get("structured_data")
     manifest = (
         structured.get("video_extraction") if isinstance(structured, Mapping) else None
     )
     if isinstance(manifest, Mapping):
-        if youtube_id is None:
-            return None, "video_extraction manifest has no claimed video id"
+        if identity is None:
+            return None, "video_extraction manifest has no claimed source identity"
         if (
-            manifest.get("schema_version") != VIDEO_EXTRACTION_SCHEMA_VERSION
-            or manifest.get("source_video_id") != youtube_id
+            not video_extraction_version_admits_token(
+                manifest.get("schema_version"), manifest.get("source_video_id")
+            )
+            or manifest.get("source_video_id") != identity.binding_token
         ):
             return (
                 None,
-                "video_extraction manifest is not bound to the claimed video id",
+                "video_extraction manifest is not bound to the claimed source",
             )
         try:
             source_path = resolve_video_extraction_source(
                 vault_root,
                 manifest,
-                youtube_id,
+                identity.binding_token,
             )
         except PatternEvidenceError as exc:
             return None, str(exc)
@@ -737,7 +738,17 @@ def _local_video_binding(
             )
         except PatternEvidenceError as exc:
             return None, str(exc)
-        if youtube_id is not None and source_path.stem != youtube_id:
+        # A YouTube download lands in the shared store as `{id}.mp4`, so its
+        # name is itself identity evidence. Every other provider's recording is
+        # registered by the owner under the name it was captured with — a room
+        # camera file, a conference export — and the record's own declaration is
+        # what binds it. Renaming those to a derived token would prove nothing
+        # the declaration does not already prove.
+        if (
+            identity is not None
+            and identity.provider == "youtube"
+            and source_path.stem != identity.video_id
+        ):
             return None, f"{field} filename is not bound to youtube_id"
         return source_path, f"pre-registered local source video {source_path}"
     return None, "no predeclared local video artifact"
@@ -746,7 +757,7 @@ def _local_video_binding(
 def resolve_video_extraction_source(
     vault_root: str | Path,
     manifest: Mapping[str, object],
-    youtube_id: str,
+    source_token: str,
 ) -> Path:
     """Resolve one manifest MP4 lexically; the bounded probe owns leaf I/O."""
     source_path = _resolve_local_video_artifact(
@@ -755,9 +766,9 @@ def resolve_video_extraction_source(
         label="video_extraction.source_video_path",
         suffixes=frozenset({".mp4"}),
     )
-    if source_path.name != f"{youtube_id}.mp4":
+    if source_path.name != f"{source_token}.mp4":
         raise PatternEvidenceError(
-            "local source-video filename is not bound to youtube_id"
+            "local source-video filename is not bound to the source identity"
         )
     return source_path
 
@@ -765,7 +776,7 @@ def resolve_video_extraction_source(
 def _probe_video_manifest_artifacts(
     vault_root: str | Path,
     manifest: Mapping[str, object],
-    youtube_id: str,
+    identity: SourceIdentity,
 ) -> dict[str, tuple[PdfArtifactProbe, Path]]:
     """Bound every current manifest PDF before any part can be persisted."""
     artifacts = manifest.get("artifacts")
@@ -798,7 +809,7 @@ def _probe_video_manifest_artifacts(
                 f"video_extraction artifact {index} has an invalid scope"
             )
         if (
-            artifact.get("source_video_id") != youtube_id
+            artifact.get("source_video_id") != identity.binding_token
             or artifact.get("page_count") != count
         ):
             raise PatternEvidenceError(
@@ -840,7 +851,7 @@ def _probe_video_manifest_artifacts(
 def _trusted_video_slide_probe(
     vault_root: str | Path,
     owner: Mapping[str, object],
-    youtube_id: str,
+    identity: SourceIdentity,
     *,
     artifact_probes: Mapping[str, tuple[PdfArtifactProbe, Path]] | None = None,
     source_video_probe: VideoArtifactProbe | None = None,
@@ -863,13 +874,15 @@ def _trusted_video_slide_probe(
             artifact_probes = _probe_video_manifest_artifacts(
                 vault_root,
                 manifest,
-                youtube_id,
+                identity,
             )
         except PatternEvidenceError as exc:
             return None, str(exc), None
     trusted = (
-        manifest.get("schema_version") == VIDEO_EXTRACTION_SCHEMA_VERSION
-        and manifest.get("source_video_id") == youtube_id
+        video_extraction_version_admits_token(
+            manifest.get("schema_version"), manifest.get("source_video_id")
+        )
+        and manifest.get("source_video_id") == identity.binding_token
         and manifest.get("slide_region_method") == "manual"
         and manifest.get("slide_region_applied") is True
         and manifest.get("slide_region_verified") is True
@@ -881,7 +894,7 @@ def _trusted_video_slide_probe(
     )
     if not trusted:
         return None, "video slide-region provenance is not trusted", None
-    local_path, local_reason = _local_video_binding(vault_root, owner, youtube_id)
+    local_path, local_reason = _local_video_binding(vault_root, owner, identity)
     if local_path is None:
         return None, local_reason, None
     if source_video_probe is None:
@@ -923,7 +936,7 @@ def _trusted_video_slide_probe(
     if (
         artifact.get("trusted_for_authored_slide_analysis") is not True
         or artifact.get("crop_verified") is not True
-        or artifact.get("source_video_id") != youtube_id
+        or artifact.get("source_video_id") != identity.binding_token
         or artifact.get("source_video_path") != manifest.get("source_video_path")
         or artifact.get("page_count") != count
     ):
@@ -1071,12 +1084,12 @@ def _returned_slide_artifact(
             None,
         )
     if slide_source == "video_extracted":
-        youtube_id = talk.get("youtube_id")
-        if not isinstance(youtube_id, str) or _YOUTUBE_ID.fullmatch(youtube_id) is None:
+        identity = talk_source_identity(talk)
+        if identity is None:
             raise PatternEvidenceError(
-                "return video slides have no valid preclaim youtube_id"
+                "return video slides have no valid preclaim source identity"
             )
-        expected = f"slides/{youtube_id}.pdf"
+        expected = f"slides/{identity.binding_token}.pdf"
         if _nonempty(returned_path) and returned_path != expected:
             raise PatternEvidenceError(
                 f"return video slide path must be the identity-derived {expected!r}"
@@ -1091,7 +1104,7 @@ def _returned_slide_artifact(
             raise PatternEvidenceError(
                 "return video slides have no video_extraction manifest"
             )
-        local_path, local_reason = _local_video_binding(vault_root, ret, youtube_id)
+        local_path, local_reason = _local_video_binding(vault_root, ret, identity)
         if local_path is None:
             raise PatternEvidenceError(
                 "return video extraction source is unavailable: " + local_reason
@@ -1111,12 +1124,12 @@ def _returned_slide_artifact(
         artifact_probes = _probe_video_manifest_artifacts(
             vault_root,
             manifest,
-            youtube_id,
+            identity,
         )
         probe, reason, slide_path = _trusted_video_slide_probe(
             vault_root,
             ret,
-            youtube_id,
+            identity,
             artifact_probes=artifact_probes,
             source_video_probe=source_video_probe,
             video_evidence_assessment=video_evidence_assessment,
@@ -1269,7 +1282,7 @@ def _validate_transcript_quality_for_owner(
 
     provenance_kind = provenance.get("kind")
     owner_youtube_id = talk.get("youtube_id")
-    owner_duration = _catalog_duration(talk)
+    owner_duration = _identity_duration(talk)
     if provenance_kind == "youtube_duration":
         if provenance.get("video_id") != owner_youtube_id:
             return (
@@ -1361,13 +1374,9 @@ def validate_transcript_quality_for_owner(
     validity with a true receipt flag is therefore an owner/provenance or
     transcript-quality failure, not a missing-receipt failure.
     """
-    raw_youtube_id = talk.get("youtube_id")
-    youtube_id = (
-        raw_youtube_id
-        if isinstance(raw_youtube_id, str) and _YOUTUBE_ID.fullmatch(raw_youtube_id)
-        else None
+    local_media_path, _ = _local_video_binding(
+        vault_root, talk, talk_source_identity(talk)
     )
-    local_media_path, _ = _local_video_binding(vault_root, talk, youtube_id)
     local_media_duration: float | None = None
     local_media_sha256: str | None = None
     if local_media_path is not None:
@@ -1592,13 +1601,18 @@ def build_evidence_context(
     """Resolve preclaim sources plus identity-derived current-run artifacts."""
     selected_video_assessment = _selected_video_assessment(video_evidence_assessment)
     raw_youtube_id = talk.get("youtube_id")
+    # Two different questions. `bound_youtube_id` answers "does YouTube-owned
+    # provenance name this talk", which only a YouTube talk can satisfy.
+    # `bound_source_token` answers "which artifacts belong to this talk", which
+    # every supported provider answers. They are the same string on YouTube.
     bound_youtube_id = (
         raw_youtube_id
         if isinstance(raw_youtube_id, str) and _YOUTUBE_ID.fullmatch(raw_youtube_id)
         else None
     )
+    bound_identity = talk_source_identity(talk)
     predeclared_video_path, predeclared_video_reason = _local_video_binding(
-        vault_root, talk, bound_youtube_id
+        vault_root, talk, bound_identity
     )
     predeclared_video_duration: float | None = None
     predeclared_video_probe: VideoArtifactProbe | None = None
@@ -1627,7 +1641,7 @@ def build_evidence_context(
     }:
         canonical_transcript_source = cast(str, recorded_transcript_source)
     timing_owner_source = canonical_transcript_source or "unknown"
-    timing_owner_duration = _catalog_duration(talk)
+    timing_owner_duration = _identity_duration(talk)
     if timing_owner_duration is None:
         timing_owner_duration = predeclared_video_duration
     timing_owner_media_sha256 = (
@@ -1836,15 +1850,14 @@ def build_evidence_context(
         # static-slide lane unavailable without disturbing independent sources.
         slide_artifact_sha256s.pop("static_slides", None)
         slide_artifact_probes.pop("static_slides", None)
-        youtube_id = talk.get("youtube_id")
-        if isinstance(youtube_id, str) and _YOUTUBE_ID.fullmatch(youtube_id):
+        if bound_identity is not None:
             video_slide_path: Path | None = None
             try:
                 video_probe, video_slide_reason, video_slide_path = (
                     _trusted_video_slide_probe(
                         vault_root,
                         talk,
-                        youtube_id,
+                        bound_identity,
                         source_video_probe=predeclared_video_probe,
                         video_evidence_assessment=selected_video_assessment,
                     )
@@ -1876,8 +1889,8 @@ def build_evidence_context(
                 elif declared_pdf is None and talk.get("status") != "processed_partial":
                     expected_path = _resolve_local_pdf_artifact(
                         _canonical_pdf_root(vault_root),
-                        f"slides/{youtube_id}.pdf",
-                        label="youtube_id-derived video slide PDF",
+                        f"slides/{bound_identity.binding_token}.pdf",
+                        label="identity-derived video slide PDF",
                     )
                     try:
                         probe_pdf_artifact(
@@ -1896,7 +1909,7 @@ def build_evidence_context(
             static_slides_absence_complete = False
         else:
             source_reasons["static_slides"] = (
-                "video-extracted slides have no valid pre-return youtube_id"
+                "video-extracted slides have no valid pre-return source identity"
             )
     elif slide_source == "pdf":
         if pdf_count is not None:
@@ -2020,15 +2033,11 @@ def build_evidence_context(
         else predeclared_video_reason
     )
     video_probe = current_video_probe or predeclared_video_probe
-    if local_video_path is not None or bound_youtube_id is not None:
+    if local_video_path is not None or bound_identity is not None:
         if local_video_path is not None:
             if video_probe is not None:
                 probed_duration = video_probe.duration_seconds
-                identity_duration = (
-                    _identity_duration(talk, bound_youtube_id)
-                    if bound_youtube_id is not None
-                    else None
-                )
+                identity_duration = _identity_duration(talk)
                 tolerance = (
                     max(60.0, identity_duration * 0.05)
                     if identity_duration is not None
@@ -4246,17 +4255,10 @@ def assess_persisted_pattern_evidence_freshness(
         if isinstance(kind, str) and kind.startswith("preclaim:"):
             field = kind.removeprefix("preclaim:")
             if field == "video_local_path" and bounded_suffix == _VIDEO_SUFFIXES:
-                raw_youtube_id = talk.get("youtube_id")
-                bound_youtube_id = (
-                    raw_youtube_id
-                    if isinstance(raw_youtube_id, str)
-                    and _YOUTUBE_ID.fullmatch(raw_youtube_id)
-                    else None
-                )
                 legacy_video_path, _reason = _local_video_binding(
                     vault_root,
                     talk,
-                    bound_youtube_id,
+                    talk_source_identity(talk),
                 )
                 if legacy_video_path is not None:
                     return legacy_video_path.parent
@@ -4529,17 +4531,10 @@ def assess_persisted_pattern_evidence_freshness(
                 if isinstance(youtube_id, str) and _YOUTUBE_ID.fullmatch(youtube_id):
                     values.append(f"transcripts/{youtube_id}.txt")
         elif source == "delivery_video":
-            owner_youtube_id = talk.get("youtube_id")
-            bound_youtube_id = (
-                owner_youtube_id
-                if isinstance(owner_youtube_id, str)
-                and _YOUTUBE_ID.fullmatch(owner_youtube_id)
-                else None
-            )
             bound_path, _reason = _local_video_binding(
                 vault_root,
                 talk,
-                bound_youtube_id,
+                talk_source_identity(talk),
             )
             if bound_path is not None:
                 return [_lexical_absolute(bound_path)]

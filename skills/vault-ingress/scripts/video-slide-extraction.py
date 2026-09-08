@@ -5,7 +5,7 @@ Downloads frames via ffmpeg, resolves a slide-region crop, deduplicates using
 perceptual hashing, and writes separately scoped slide-region/context PDFs.
 
 Usage:
-    video-slide-extraction.py <video> <outdir> <youtube_id> [--fps 0.5]
+    video-slide-extraction.py <video> <outdir> <source_token> [--fps 0.5]
                               [--threshold 8]
                               [--region auto|none|LEFT,TOP,RIGHT,BOTTOM]
                               [--region-verified]
@@ -13,7 +13,10 @@ Usage:
 
     <video>       Path to downloaded MP4 video
     <outdir>      Directory for intermediate files and output artifacts
-    <youtube_id>  YouTube video ID (used for naming the output PDF)
+    <source_token>
+                  The talk's source binding token, used to name the output PDF:
+                  the bare ID for a YouTube talk, `vimeo+<id>` or
+                  `infoq+<slug>` for the other supported providers
     --fps         Frames per second to extract (default: 0.5 = 1 frame per 2s)
     --threshold   Largest perceptual-hash distance treated as the same slide
                   (default: 8). Higher values merge more and keep fewer frames.
@@ -41,7 +44,10 @@ import sys
 import tempfile
 
 from artifact_locator import ArtifactLocatorError, materialize_native_root
-from ingress_contract import YOUTUBE_ID_RE
+from ingress_contract import (
+    VIDEO_EXTRACTION_SCHEMA_VERSION,
+    is_source_binding_token,
+)
 from video_evidence import (
     VideoEvidenceAssessment,
     VideoEvidenceError,
@@ -59,10 +65,12 @@ PIPELINE_VERSION = "0.14.0"
 
 # Shape version of the structured_data.video_extraction record (distinct from
 # PIPELINE_VERSION, which tracks extractor behavior — this tracks the record's
-# field shape). Bump on any field add/remove/rename. Records written before this
-# field existed have no schema_version and are read as the legacy shape (0).
+# field shape). The number itself lives in ingress_contract so the producer and
+# every reader gate on one constant; a second copy here is how they drift apart.
+# Records written before this field existed have no schema_version and are read
+# as the legacy shape (0).
 # See skills/vault-ingress/references/schemas-db.md ("Video Extraction Output Schema").
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = VIDEO_EXTRACTION_SCHEMA_VERSION
 
 VIDEO_DEPENDENCY_INSTALL = (
     'pip install "ImageHash==4.3.2" "numpy==2.2.6" "Pillow==12.3.0" "filelock==3.32.2"'
@@ -90,10 +98,11 @@ except ImportError as exc:
 NormalizedSlideRegion = tuple[float, float, float, float]
 
 
-def validate_youtube_id(value: object) -> str:
-    """Return one canonical ingress YouTube ID or fail with a closed reason."""
-    if not isinstance(value, str) or YOUTUBE_ID_RE.fullmatch(value) is None:
-        raise ValueError("youtube_id_invalid")
+def validate_source_token(value: object) -> str:
+    """Return one canonical source binding token or fail with a closed reason."""
+    if not is_source_binding_token(value):
+        raise ValueError("source_token_invalid")
+    assert isinstance(value, str)  # narrowed by is_source_binding_token
     return value
 
 
@@ -240,10 +249,10 @@ def _video_run_lock(path):
     return FileLock(path)
 
 
-def _video_run_lock_path(output_dir: str, youtube_id: str) -> str:
+def _video_run_lock_path(output_dir: str, source_token: str) -> str:
     """Map one local output identity to a stable OS-temporary lock file."""
     identity = (
-        os.fsencode(os.path.normcase(output_dir)) + b"\0" + youtube_id.encode("ascii")
+        os.fsencode(os.path.normcase(output_dir)) + b"\0" + source_token.encode("ascii")
     )
     lock_name = f"{hashlib.sha256(identity).hexdigest()}.lock"
     lock_root = os.path.join(tempfile.gettempdir(), "speaker-toolkit-video-locks")
@@ -832,7 +841,7 @@ def combine_to_pdf(
     if artifact_scope == "full_frame_context" and slide_region is not None:
         raise ValueError("full_frame_context artifacts must preserve the full frame")
     if source_video_id is not None:
-        source_video_id = validate_youtube_id(source_video_id)
+        source_video_id = validate_source_token(source_video_id)
 
     if not unique_frames:
         print("  WARNING: No unique frames found", file=sys.stderr)
@@ -948,7 +957,7 @@ def artifact_record(
         crop_method == "manual" and crop_verified
     ):
         raise ValueError("authored-slide trust requires a verified manual crop")
-    source_video_id = validate_youtube_id(source_video_id)
+    source_video_id = validate_source_token(source_video_id)
     return {
         "path": canonical_path(path),
         "artifact_scope": artifact_scope,
@@ -967,7 +976,7 @@ def artifact_record(
 def _extract_slides_in_workspace(
     video_path,
     output_dir,
-    youtube_id,
+    source_token,
     frames_dir,
     source_receipt,
     published,
@@ -982,7 +991,7 @@ def _extract_slides_in_workspace(
     Args:
         video_path: Path to downloaded MP4
         output_dir: Directory for intermediate files and output PDF
-        youtube_id: YouTube video ID (used for naming)
+        source_token: the talk's source binding token (used for naming)
         source_receipt: Engine-owned receipt for the exact source generation,
                         stamped onto the manifest and every derivative record.
         published: Caller-owned list this appends each staged PDF path to the
@@ -1002,18 +1011,18 @@ def _extract_slides_in_workspace(
     Returns:
         dict with extraction results for structured_data
     """
-    youtube_id = validate_youtube_id(youtube_id)
+    source_token = validate_source_token(source_token)
     if fps <= 0:
         raise ValueError("fps must be greater than zero")
     output_dir = canonical_path(output_dir)
     source_video_path = canonical_path(video_path)
     slide_pdf = _confined_output_path(
         output_dir,
-        f"{youtube_id}.slide-region.pdf",
+        f"{source_token}.slide-region.pdf",
     )
-    context_pdf = _confined_output_path(output_dir, f"{youtube_id}.context.pdf")
+    context_pdf = _confined_output_path(output_dir, f"{source_token}.context.pdf")
 
-    print(f"Extracting video artifacts from {youtube_id}...", file=sys.stderr)
+    print(f"Extracting video artifacts from {source_token}...", file=sys.stderr)
 
     # Step 2: Extract frames
     frames = extract_frames(source_video_path, frames_dir, fps=fps)
@@ -1022,7 +1031,7 @@ def _extract_slides_in_workspace(
             "slide_source": "video_extracted",
             "schema_version": SCHEMA_VERSION,
             "pipeline_version": PIPELINE_VERSION,
-            "source_video_id": youtube_id,
+            "source_video_id": source_token,
             "source_video_path": source_video_path,
             "source_receipt": copy.deepcopy(source_receipt),
             "total_frames_extracted": 0,
@@ -1060,7 +1069,7 @@ def _extract_slides_in_workspace(
             slide_pdf,
             resolved_region,
             artifact_scope="slide_region",
-            source_video_id=youtube_id,
+            source_video_id=source_token,
             crop_method=region_provenance["slide_region_method"],
             crop_verified=region_provenance["slide_region_verified"],
             commit=False,
@@ -1072,7 +1081,7 @@ def _extract_slides_in_workspace(
                     slide_pdf_path,
                     "slide_region",
                     len(unique_frames),
-                    youtube_id,
+                    source_token,
                     source_video_path,
                     source_receipt,
                     crop_method=region_provenance["slide_region_method"],
@@ -1089,7 +1098,7 @@ def _extract_slides_in_workspace(
             unique_frames,
             context_pdf,
             artifact_scope="full_frame_context",
-            source_video_id=youtube_id,
+            source_video_id=source_token,
             commit=False,
         )
         if context_pdf_path:
@@ -1099,7 +1108,7 @@ def _extract_slides_in_workspace(
                     context_pdf_path,
                     "full_frame_context",
                     len(unique_frames),
-                    youtube_id,
+                    source_token,
                     source_video_path,
                     source_receipt,
                 )
@@ -1109,7 +1118,7 @@ def _extract_slides_in_workspace(
         "slide_source": "video_extracted",
         "schema_version": SCHEMA_VERSION,
         "pipeline_version": PIPELINE_VERSION,
-        "source_video_id": youtube_id,
+        "source_video_id": source_token,
         "source_video_path": source_video_path,
         "source_receipt": copy.deepcopy(source_receipt),
         "total_frames_extracted": len(frames),
@@ -1134,7 +1143,7 @@ def _extract_slides_in_workspace(
 def extract_slides_from_video(
     video_path,
     output_dir,
-    youtube_id,
+    source_token,
     fps=0.5,
     hash_threshold=8,
     slide_region: str | NormalizedSlideRegion = "auto",
@@ -1154,7 +1163,7 @@ def extract_slides_from_video(
     leave a half-bound PDF behind and a failed re-extraction leaves the previous
     run's artifacts exactly as it found them.
     """
-    youtube_id = validate_youtube_id(youtube_id)
+    source_token = validate_source_token(source_token)
     if expected_source_sha256 is not None:
         validate_expected_source_sha256(expected_source_sha256)
     if fps <= 0:
@@ -1162,7 +1171,7 @@ def extract_slides_from_video(
     output_dir = canonical_path(output_dir)
     source_video_path = canonical_path(video_path)
     os.makedirs(output_dir, exist_ok=True)
-    run_lock = _video_run_lock_path(output_dir, youtube_id)
+    run_lock = _video_run_lock_path(output_dir, source_token)
 
     with _video_run_lock(run_lock):
         assessment = VideoEvidenceAssessment()
@@ -1176,8 +1185,8 @@ def extract_slides_from_video(
                 reason_code="video_review_source_mismatch",
             )
         for filename in (
-            f"{youtube_id}.slide-region.pdf",
-            f"{youtube_id}.context.pdf",
+            f"{source_token}.slide-region.pdf",
+            f"{source_token}.context.pdf",
         ):
             destination = _confined_output_path(output_dir, filename)
             _recover_stale_pdf_publish(destination)
@@ -1191,7 +1200,7 @@ def extract_slides_from_video(
                 result = _extract_slides_in_workspace(
                     source_video_path,
                     output_dir,
-                    youtube_id,
+                    source_token,
                     frames_dir,
                     source_receipt,
                     published,
@@ -1224,7 +1233,9 @@ def main():
         "outdir", nargs="?", help="Directory for intermediate files and output PDF"
     )
     parser.add_argument(
-        "youtube_id", nargs="?", help="YouTube video ID (used for naming)"
+        "source_token",
+        nargs="?",
+        help="the talk's source binding token (used for naming)",
     )
     parser.add_argument(
         "--fps",
@@ -1270,14 +1281,14 @@ def main():
         print(json.dumps({"pipeline_version": PIPELINE_VERSION}))
         return
 
-    if None in (args.video, args.outdir, args.youtube_id):
-        parser.error("video, outdir, and youtube_id are required")
+    if None in (args.video, args.outdir, args.source_token):
+        parser.error("video, outdir, and source_token are required")
     if args.region_verified and not isinstance(args.region, tuple):
         parser.error(
             "--region-verified requires manual LEFT,TOP,RIGHT,BOTTOM coordinates"
         )
     try:
-        youtube_id = validate_youtube_id(args.youtube_id)
+        source_token = validate_source_token(args.source_token)
     except ValueError as exc:
         parser.error(str(exc))
 
@@ -1292,7 +1303,7 @@ def main():
         result = extract_slides_from_video(
             args.video,
             args.outdir,
-            youtube_id,
+            source_token,
             fps=args.fps,
             hash_threshold=args.threshold,
             slide_region=args.region,

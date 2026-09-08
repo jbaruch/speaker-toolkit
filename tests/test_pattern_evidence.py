@@ -27,6 +27,7 @@ if str(SCRIPTS) not in sys.path:
 
 artifact_supervisor = importlib.import_module("artifact_supervisor")
 artifact_metadata = importlib.import_module("artifact_metadata")
+ingress_contract = importlib.import_module("ingress_contract")
 pattern_evidence = importlib.import_module("pattern_evidence")
 pdf_evidence = importlib.import_module("pdf_evidence")
 pptx_evidence = importlib.import_module("pptx_evidence")
@@ -34,6 +35,7 @@ return_validation = importlib.import_module("return_validation")
 transcript_timing = importlib.import_module("transcript_timing")
 video_evidence = importlib.import_module("video_evidence")
 SYNTHETIC_VIDEO_ID = "abcdefghijk"
+SYNTHETIC_IDENTITY = ingress_contract.SourceIdentity("youtube", SYNTHETIC_VIDEO_ID)
 SYNTHETIC_DURATION = 600.0
 
 
@@ -997,7 +999,7 @@ def test_foreign_video_manifest_pdf_never_reaches_current_context_probe(
         pattern_evidence._probe_video_manifest_artifacts(
             tmp_path / "vault",
             manifest,
-            SYNTHETIC_VIDEO_ID,
+            SYNTHETIC_IDENTITY,
         )
 
     assert foreign_pdf not in str(caught.value)
@@ -1700,7 +1702,7 @@ def test_persisted_context_manifest_reanalysis_never_touches_pdf_in_owner(
     probe, reason, path = pattern_evidence._trusted_video_slide_probe(
         vault,
         {"structured_data": {"video_extraction": manifest}},
-        SYNTHETIC_VIDEO_ID,
+        SYNTHETIC_IDENTITY,
     )
 
     assert probe is None
@@ -3873,7 +3875,7 @@ def test_replaced_source_video_withdraws_authored_slide_trust(
     probe, reason, path = pattern_evidence._trusted_video_slide_probe(
         vault,
         owner,
-        SYNTHETIC_VIDEO_ID,
+        SYNTHETIC_IDENTITY,
         video_evidence_assessment=_TestVideoAssessment(),
     )
     assert probe is not None
@@ -3884,7 +3886,7 @@ def test_replaced_source_video_withdraws_authored_slide_trust(
     probe, reason, path = pattern_evidence._trusted_video_slide_probe(
         vault,
         owner,
-        SYNTHETIC_VIDEO_ID,
+        SYNTHETIC_IDENTITY,
         video_evidence_assessment=_TestVideoAssessment(),
     )
 
@@ -3927,7 +3929,7 @@ def test_derivatives_from_two_runs_are_rejected_before_persistence(
         pattern_evidence._probe_video_manifest_artifacts(
             vault,
             manifest,
-            SYNTHETIC_VIDEO_ID,
+            SYNTHETIC_IDENTITY,
         )
 
 
@@ -3960,3 +3962,207 @@ def test_detection_claim_leaves_non_string_sources_used_untouched() -> None:
         {"source": "a"},
         2,
     ]
+
+
+# ── #427: a talk published off YouTube carries its own evidence ────────
+#
+# JavaZone publishes to Vimeo and InfoQ to its own presentation pages. Both
+# talks had a full evidence set — a published recording, a preserved local
+# source, a validated transcript with a local-media quality receipt — and
+# could still only be scored from the slides PDF, because every binding lane
+# resolved a bare `youtube_id`. These are the two shapes from the live vault.
+VIMEO_TALK_URL = "https://vimeo.com/1223667266"
+VIMEO_TOKEN = "vimeo+1223667266"
+INFOQ_TALK_URL = "https://www.infoq.com/presentations/java-puzzle/"
+INFOQ_TOKEN = "infoq+java-puzzle"
+
+
+def _receipt_bound_transcript(vault: Path, media: Path) -> Path:
+    """Write the transcript plus the local-media receipt that owns it."""
+    transcript = vault / "transcripts" / "conference-talk.txt"
+    transcript.parent.mkdir(parents=True, exist_ok=True)
+    text = "\n".join(_transcript_lines())
+    transcript.write_text(text, encoding="utf-8")
+    transcript_timing.write_quality_receipt(
+        transcript,
+        text,
+        transcript_timing.build_quality_policy(
+            400,
+            trusted_duration_seconds=SYNTHETIC_DURATION,
+        ),
+        {
+            "kind": "local_media_duration",
+            "media_sha256": hashlib.sha256(media.read_bytes()).hexdigest(),
+            "duration_seconds": SYNTHETIC_DURATION,
+        },
+    )
+    return transcript
+
+
+def _manifest_bound_talk(vault: Path, *, video_url: str, token: str) -> dict:
+    """A talk whose preserved source video is declared by a v4 manifest."""
+    source_video = vault / "slides-rebuild" / token / f"{token}.mp4"
+    source_video.parent.mkdir(parents=True, exist_ok=True)
+    source_video.write_bytes(b"preserved conference recording bytes")
+    manifest = _untrusted_video_manifest(vault, source_video)
+    manifest["source_video_id"] = token
+    manifest["artifacts"][0]["source_video_id"] = token
+    transcript = _receipt_bound_transcript(vault, source_video)
+    return {
+        "filename": "2026-09-03-conference-talk.md",
+        "video_url": video_url,
+        "transcript_path": transcript.relative_to(vault).as_posix(),
+        "transcript_source": "whisper",
+        "slide_source": "none",
+        "structured_data": {"video_extraction": manifest},
+    }
+
+
+@pytest.mark.parametrize(
+    ("video_url", "token"),
+    [(VIMEO_TALK_URL, VIMEO_TOKEN), (INFOQ_TALK_URL, INFOQ_TOKEN)],
+)
+def test_non_youtube_talk_carries_transcript_and_video_evidence(
+    tmp_path: Path, video_url: str, token: str
+) -> None:
+    """The #427 headline: 8 of 28 detections were lost to an absent YouTube ID."""
+    vault = tmp_path / "vault"
+    talk = _manifest_bound_talk(vault, video_url=video_url, token=token)
+
+    context = pattern_evidence.build_evidence_context(
+        vault,
+        talk,
+        video_evidence_assessment=_TestVideoAssessment(),
+    )
+
+    verified = context["verified_evidence_sources"]
+    assert "transcript" in verified, context["transcript_reason"]
+    assert "delivery_video" in verified, context["source_reasons"]["delivery_video"]
+
+
+def test_non_youtube_receipt_still_rejects_another_talks_media(
+    tmp_path: Path,
+) -> None:
+    """Generalising the owner never widened it: a foreign digest stays foreign."""
+    vault = tmp_path / "vault"
+    talk = _manifest_bound_talk(vault, video_url=VIMEO_TALK_URL, token=VIMEO_TOKEN)
+    manifest = talk["structured_data"]["video_extraction"]
+    (vault / manifest["source_video_path"]).write_bytes(b"a different recording")
+
+    context = pattern_evidence.build_evidence_context(
+        vault,
+        talk,
+        video_evidence_assessment=_TestVideoAssessment(),
+    )
+
+    assert "transcript" not in context["verified_evidence_sources"]
+    assert "receipt_owner_mismatch" in context["transcript_reason"]
+
+
+def test_manifest_bound_to_another_provider_is_not_this_talks_source(
+    tmp_path: Path,
+) -> None:
+    """A Vimeo talk never adopts an InfoQ manifest that shares its shape."""
+    vault = tmp_path / "vault"
+    talk = _manifest_bound_talk(vault, video_url=VIMEO_TALK_URL, token=VIMEO_TOKEN)
+    talk["structured_data"]["video_extraction"]["source_video_id"] = INFOQ_TOKEN
+
+    bound_path, reason = pattern_evidence._local_video_binding(
+        vault,
+        talk,
+        ingress_contract.talk_source_identity(talk),
+    )
+
+    assert bound_path is None
+    assert "not bound to the claimed source" in reason
+
+
+def test_declared_local_recording_still_binds_without_a_manifest(
+    tmp_path: Path,
+) -> None:
+    """The owner-declared lane predates #427 and keeps its permissive naming."""
+    vault = tmp_path / "vault"
+    recording = vault / "videos" / "javazone-room-camera.mov"
+    recording.parent.mkdir(parents=True)
+    recording.write_bytes(b"owner-captured room recording bytes")
+    talk = {
+        "filename": "2026-09-03-conference-talk.md",
+        "video_url": VIMEO_TALK_URL,
+        "video_local_path": recording.relative_to(vault).as_posix(),
+    }
+
+    bound_path, reason = pattern_evidence._local_video_binding(
+        vault,
+        talk,
+        ingress_contract.talk_source_identity(talk),
+    )
+
+    assert bound_path == recording, reason
+
+
+def test_youtube_local_video_filename_still_binds_to_its_id(tmp_path: Path) -> None:
+    """The YouTube naming guarantee survives the generalisation."""
+    vault = tmp_path / "vault"
+    recording = vault / "videos" / "some-other-name.mp4"
+    recording.parent.mkdir(parents=True)
+    recording.write_bytes(b"mislabelled recording")
+    talk = {
+        "youtube_id": SYNTHETIC_VIDEO_ID,
+        "video_url": f"https://youtu.be/{SYNTHETIC_VIDEO_ID}",
+        "video_local_path": recording.relative_to(vault).as_posix(),
+    }
+
+    bound_path, reason = pattern_evidence._local_video_binding(
+        vault,
+        talk,
+        ingress_contract.talk_source_identity(talk),
+    )
+
+    assert bound_path is None
+    assert "not bound to youtube_id" in reason
+
+
+def test_a_v4_manifest_never_binds_a_provider_token(tmp_path: Path) -> None:
+    """The evidence reader enforces the same v4/v5 rule the validator does.
+
+    A v4 record was written when `source_video_id` held a YouTube ID. Accepting
+    a Vimeo token there in one reader and rejecting it in the other is the same
+    as having no rule (#427 review).
+    """
+    vault = tmp_path / "vault"
+    talk = _manifest_bound_talk(vault, video_url=VIMEO_TALK_URL, token=VIMEO_TOKEN)
+    manifest = talk["structured_data"]["video_extraction"]
+    manifest["schema_version"] = (
+        ingress_contract.YOUTUBE_BOUND_VIDEO_EXTRACTION_SCHEMA_VERSION
+    )
+
+    bound_path, reason = pattern_evidence._local_video_binding(
+        vault,
+        talk,
+        ingress_contract.talk_source_identity(talk),
+    )
+
+    assert bound_path is None
+    assert "not bound to the claimed source" in reason
+
+
+def test_a_v4_manifest_still_binds_its_youtube_id(tmp_path: Path) -> None:
+    """The predecessor stays readable; no vault record needs re-extraction."""
+    vault = tmp_path / "vault"
+    talk = _manifest_bound_talk(
+        vault,
+        video_url=f"https://youtu.be/{SYNTHETIC_VIDEO_ID}",
+        token=SYNTHETIC_VIDEO_ID,
+    )
+    manifest = talk["structured_data"]["video_extraction"]
+    manifest["schema_version"] = (
+        ingress_contract.YOUTUBE_BOUND_VIDEO_EXTRACTION_SCHEMA_VERSION
+    )
+
+    bound_path, reason = pattern_evidence._local_video_binding(
+        vault,
+        talk,
+        ingress_contract.talk_source_identity(talk),
+    )
+
+    assert bound_path is not None, reason

@@ -1072,7 +1072,7 @@ def test_video_manifest_identity_is_bound_to_the_claimed_talk(return_validation)
     )
     with pytest.raises(return_validation.ReturnValidationError) as excinfo:
         return_validation.validate_claim_against_talk(talk, value)
-    assert "does not match talk youtube_id" in str(excinfo.value)
+    assert "does not match talk source identity" in str(excinfo.value)
 
 
 def test_claim_generation_must_equal_talk_generation(return_validation):
@@ -2901,3 +2901,46 @@ def test_manifest_state_carries_the_canonical_receipt_for_lineage_readers(
     )
 
     assert state.source_receipt == manifest["source_receipt"]
+
+
+def test_a_v4_manifest_may_not_carry_a_provider_token(return_validation):
+    """The two readable contracts stay distinguishable (#427 review)."""
+    value = _video_return()
+    manifest = value["structured_data"]["video_extraction"]
+    manifest["schema_version"] = (
+        return_validation.YOUTUBE_BOUND_VIDEO_EXTRACTION_SCHEMA_VERSION
+    )
+    manifest["source_video_id"] = "vimeo+1223667266"
+
+    with pytest.raises(return_validation.ReturnValidationError) as excinfo:
+        return_validation.validate_video_extraction_manifest(value["structured_data"])
+
+    assert "must be a YouTube ID in a schema-4 manifest" in str(excinfo.value)
+
+
+def test_a_v4_manifest_with_a_youtube_id_still_reads(return_validation):
+    """A vault full of v4 records needs no migration and no re-extraction."""
+    value = _video_return()
+    manifest = value["structured_data"]["video_extraction"]
+    manifest["schema_version"] = (
+        return_validation.YOUTUBE_BOUND_VIDEO_EXTRACTION_SCHEMA_VERSION
+    )
+
+    state = return_validation.validate_video_extraction_manifest(
+        value["structured_data"]
+    )
+
+    assert state.source_video_id == manifest["source_video_id"]
+
+
+@pytest.mark.parametrize("version", [[], {}, "four", None, True, 4.0])
+def test_a_malformed_schema_version_is_typed_not_a_typeerror(
+    return_validation, version
+):
+    """A JSON document can hold an unhashable value; membership alone raised
+    TypeError past the caller's actionable message (#427 review)."""
+    value = _video_return()
+    value["structured_data"]["video_extraction"]["schema_version"] = version
+
+    with pytest.raises(return_validation.ReturnValidationError):
+        return_validation.validate_video_extraction_manifest(value["structured_data"])

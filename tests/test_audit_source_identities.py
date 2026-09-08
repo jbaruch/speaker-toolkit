@@ -1217,3 +1217,73 @@ def test_a_region_block_stays_a_retryable_fetch_failure(audit_source_identities)
     assert report["metadata_unavailable_count"] == 0
     # An active identity the audit could not verify still blocks.
     assert report["complete"] is False
+
+
+# ── #427: the cheap pre-check survives a non-YouTube source ────────────
+VIMEO_URL = "https://vimeo.com/1223667266"
+INFOQ_URL = "https://www.infoq.com/presentations/java-puzzle/"
+
+
+@pytest.mark.parametrize(
+    ("video_url", "provider"),
+    [(VIMEO_URL, "vimeo"), (INFOQ_URL, "infoq")],
+)
+def test_supported_non_youtube_source_is_out_of_scope_not_a_fault(
+    audit_source_identities, video_url, provider
+):
+    """The audit has no lane for it; that is not the talk's fault to review."""
+    calls = []
+
+    report = audit_source_identities.audit_database(
+        {"talks": [talk(video_url=video_url, youtube_id=None)]},
+        database_path="/vault/tracking-database.json",
+        metadata_fetcher=lambda video_id: calls.append(video_id),
+        captured_at=CAPTURED_AT,
+    )
+
+    assert calls == [], "an out-of-scope provider must not be fetched"
+    assert finding_codes(report) == ["active_source_provider_out_of_scope"]
+    assert report["findings"][0]["review_priority"] == "low"
+    assert provider in report["findings"][0]["message"]
+    assert report["talks"][0]["source_provider"] == provider
+    assert report["complete"] is True
+    assert report["review_required"] is False
+    assert report["out_of_scope_talk_count"] == 1
+
+
+def test_an_out_of_scope_source_never_masks_a_real_finding(
+    audit_source_identities,
+):
+    report = audit_source_identities.audit_database(
+        {
+            "talks": [
+                talk("vimeo.md", video_url=VIMEO_URL, youtube_id=None),
+                talk("broken.md", video_url="https://www.youtube.com/watch?v=short"),
+            ]
+        },
+        database_path="/vault/tracking-database.json",
+        metadata_fetcher=lambda video_id: metadata(video_id),
+        captured_at=CAPTURED_AT,
+    )
+
+    assert set(finding_codes(report)) == {
+        "active_source_provider_out_of_scope",
+        "active_youtube_url_invalid",
+    }
+    assert report["review_required"] is True
+    assert report["complete"] is False
+
+
+def test_a_wholly_unknown_provider_is_still_reported_as_unsupported(
+    audit_source_identities,
+):
+    report = audit_source_identities.audit_database(
+        {"talks": [talk(video_url="https://example.com/talks/1", youtube_id=None)]},
+        database_path="/vault/tracking-database.json",
+        metadata_fetcher=lambda video_id: metadata(video_id),
+        captured_at=CAPTURED_AT,
+    )
+
+    assert finding_codes(report) == ["active_video_provider_unsupported"]
+    assert report["talks"][0]["source_provider"] is None
+    assert report["review_required"] is True

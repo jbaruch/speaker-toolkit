@@ -22,6 +22,7 @@ import sys
 from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
 
+from ingress_contract import parse_source_identity
 from source_identity_matching import (
     event_agreement,
     expected_duration_seconds,
@@ -46,7 +47,7 @@ from tracking_database_io import (
 from ytdlp_runtime import YtDlpResolutionError, resolve_ytdlp
 
 
-REPORT_SCHEMA_VERSION = 3
+REPORT_SCHEMA_VERSION = 4
 SOURCE_IDENTITY_SCHEMA_VERSION = 1
 
 # Candidate mode reads scan-shownotes.py conflict entries. Only the video lane
@@ -147,6 +148,11 @@ CLIP_MARKERS = frozenset(
         "trailer",
     }
 )
+# A supported provider this YouTube audit does not fetch from. The talk is not
+# faulty and there is nothing to review: the audit simply has no lane for it.
+# Reporting it as a finding that demands review is what made an operator lose
+# the cheap pre-check on any vault holding one.
+OUT_OF_SCOPE_CODES = frozenset({"active_source_provider_out_of_scope"})
 ERROR_CODES = frozenset(
     {
         "active_youtube_url_invalid",
@@ -374,6 +380,12 @@ def provider_evidence(
 def proposed_source_identity(evidence: dict[str, Any]) -> dict[str, Any]:
     """Return provider facts only; uploader and upload date are not human identity."""
     return {key: value for key, value in evidence.items() if value is not None}
+
+
+def _review_priority(code: str) -> str:
+    if code in ERROR_CODES:
+        return "high"
+    return "low" if code in OUT_OF_SCOPE_CODES else "medium"
 
 
 def _finding(
@@ -836,10 +848,12 @@ def audit_database(
         active_count += 1
         filename = _filename(talk, index)
         video_id = parse_youtube_id(video_url)
+        source = parse_source_identity(video_url)
         audit = {
             "talk_index": index,
             "filename": filename,
             "active_video_url": video_url,
+            "source_provider": None if source is None else source.provider,
             "youtube_id": video_id,
             "stored_youtube_id": talk.get("youtube_id"),
             "catalog": {
@@ -854,20 +868,27 @@ def audit_database(
         talk_audits.append(audit)
         audits_by_index[index] = audit
         if video_id is None:
-            code = (
-                "active_youtube_url_invalid"
-                if is_youtube_url(video_url)
-                else "active_video_provider_unsupported"
-            )
+            if is_youtube_url(video_url):
+                code = "active_youtube_url_invalid"
+                message = "active video source cannot be audited as a YouTube identity"
+            elif source is not None:
+                code = "active_source_provider_out_of_scope"
+                message = (
+                    f"active video source is a supported {source.provider} identity "
+                    "this YouTube audit does not fetch"
+                )
+            else:
+                code = "active_video_provider_unsupported"
+                message = "active video source cannot be audited as a YouTube identity"
             findings.append(
                 _finding(
                     code,
                     None,
                     [index],
                     [filename],
-                    "active video source cannot be audited as a YouTube identity",
+                    message,
                     {"active_video_url": video_url},
-                    "high" if code in ERROR_CODES else "medium",
+                    _review_priority(code),
                 )
             )
             continue
@@ -1256,12 +1277,16 @@ def audit_database(
         1 for item in sources if item["fetch_status"] not in ("ok", "unavailable")
     )
     complete = not any(item["code"] in ERROR_CODES for item in findings)
+    out_of_scope = sum(1 for item in findings if item["code"] in OUT_OF_SCOPE_CODES)
     return {
         "schema_version": REPORT_SCHEMA_VERSION,
         "captured_at": captured,
         "database": database_name,
         "complete": complete,
-        "review_required": bool(findings),
+        "review_required": any(
+            item["code"] not in OUT_OF_SCOPE_CODES for item in findings
+        ),
+        "out_of_scope_talk_count": out_of_scope,
         "active_talk_count": active_count,
         "unique_youtube_id_count": len(groups),
         "metadata_fetch_count": len(set(groups) | set(candidate_members)),

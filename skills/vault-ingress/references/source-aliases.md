@@ -23,10 +23,14 @@ delivery date. Upload dates and uploader accounts are not delivery facts.
 Compare recording content, transcripts, or artifacts when available; retain
 the compared artifact hashes. Title similarity alone is not equivalence.
 
-The current record accepts the YouTube video lane. Unsupported providers or
-lanes fail closed; do not relabel them as YouTube. The auditor supplies provider
-facts, not an automatic alias decision or transcript comparison. An owner must
-review and approve the independent evidence before writing the plan.
+The record accepts every provider
+`skills/vault-ingress/scripts/ingress_contract.py` supports. A provider outside
+that set still fails closed; do not relabel it as one that is supported. Each
+block names the provider it was published on, and the ledger compares identities
+by binding token, so two providers that happen to share an ID stay two
+identities. The auditor supplies provider facts, not an automatic alias decision
+or transcript comparison. An owner must review and approve the independent
+evidence before writing the plan.
 
 ## Persisted shape
 
@@ -37,7 +41,8 @@ validation. Every record contains:
 - `schema_version`, `talk_filename`, and the reviewed `catalog_title`.
 - `source_type`, `alias`, and `canonical`. Each provider block carries
   `provider`, `video_id`, `url`, `title`, `uploader`, `upload_date`,
-  `duration_seconds`, and timezone-aware `captured_at`.
+  `duration_seconds`, and timezone-aware `captured_at`. `provider` must name a
+  supported provider and agree with what `url` and `video_id` identify.
 - `relationship` and nullable `canonical_choice_reason`; the reason explains
   the canonical choice without calling the alternate invalid.
 - `event`: independent `url`, `conference`, delivery `date`, and `speakers`.
@@ -110,6 +115,10 @@ Appending an alias does not change acquisition. For an owner-approved switch to
 a verified official upload, use `promote_source_alias` as the plan's sole
 mutation. Review independent event identity and recording comparison again;
 an existing alias decision alone does not authorize changing the canonical.
+
+Promotion writes the talk's `video_url` and `youtube_id`, so its `canonical`
+must be a YouTube upload; the writer refuses any other provider rather than
+stamping a foreign ID into `youtube_id`. Record such an upload as an alias.
 
 Supply a complete **v1** decision with the old current upload in `alias`, the
 new official upload in `canonical`, relationship

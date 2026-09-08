@@ -352,7 +352,7 @@ def test_extract_frames_enumerates_only_literal_numbered_jpegs(
         "ＡbCdEfGhI_1",
     ],
 )
-def test_video_pipeline_rejects_noncanonical_youtube_id_before_io(
+def test_video_pipeline_rejects_noncanonical_source_token_before_io(
     video_slide_extraction,
     monkeypatch,
     tmp_path,
@@ -376,7 +376,7 @@ def test_video_pipeline_rejects_noncanonical_youtube_id_before_io(
             youtube_id,
         )
 
-    assert str(caught.value) == "youtube_id_invalid"
+    assert str(caught.value) == "source_token_invalid"
     if isinstance(youtube_id, str) and youtube_id:
         assert youtube_id not in str(caught.value)
 
@@ -1115,7 +1115,7 @@ def test_success_cli_emits_only_result_json_on_stdout(
     "youtube_id",
     ["../escape-id", r"abc\defghij", YOUTUBE_ID + "\x00"],
 )
-def test_cli_rejects_noncanonical_youtube_id_before_pipeline_io(
+def test_cli_rejects_noncanonical_source_token_before_pipeline_io(
     video_slide_extraction,
     monkeypatch,
     capsys,
@@ -1142,7 +1142,7 @@ def test_cli_rejects_noncanonical_youtube_id_before_pipeline_io(
 
     assert caught.value.code == 2
     captured = capsys.readouterr()
-    assert "youtube_id_invalid" in captured.err
+    assert "source_token_invalid" in captured.err
     assert youtube_id not in captured.err
 
 
@@ -2197,3 +2197,28 @@ def test_a_backup_left_by_a_killed_publish_is_restored_next_run(
 
     assert open(context_pdf, "rb").read() == prior
     assert not os.path.exists(video_slide_extraction._pdf_backup_path(context_pdf))
+
+
+@pytest.mark.parametrize(
+    "source_token",
+    [YOUTUBE_ID, "vimeo+1223667266", "infoq+java-puzzle"],
+)
+def test_pipeline_names_artifacts_for_any_supported_provider(
+    video_slide_extraction, source_token
+):
+    """#427: a Vimeo or InfoQ talk can produce a manifest at all."""
+    assert video_slide_extraction.validate_source_token(source_token) == source_token
+
+
+# An 11-character token is a YouTube ID by construction, whatever it spells,
+# so the cases below are all longer than one.
+@pytest.mark.parametrize(
+    "source_token",
+    ["vimeo+1234", "infoq+Upper-Case", "vimeo+", "twitch+1223667266"],
+)
+def test_pipeline_rejects_a_malformed_provider_token(
+    video_slide_extraction, source_token
+):
+    with pytest.raises(ValueError) as caught:
+        video_slide_extraction.validate_source_token(source_token)
+    assert str(caught.value) == "source_token_invalid"
