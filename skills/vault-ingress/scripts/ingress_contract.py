@@ -62,6 +62,25 @@ def is_readable_video_extraction_version(value: Any) -> bool:
     )
 
 
+def video_extraction_version_admits_token(version: Any, token: Any) -> bool:
+    """Return whether a manifest of this version may carry this binding token.
+
+    The one place the v4/v5 distinction lives. A v4 record was written when
+    `source_video_id` held a YouTube ID, so it may not carry another provider's
+    token; a v5 record may carry any supported provider's, a YouTube ID
+    included. Every reader and the return validator ask here, because a rule
+    enforced in one reader and not the other is the same as no rule.
+    """
+    if not is_readable_video_extraction_version(version):
+        return False
+    identity = token_source_identity(token)
+    if identity is None:
+        return False
+    if version == YOUTUBE_BOUND_VIDEO_EXTRACTION_SCHEMA_VERSION:
+        return identity.provider == "youtube"
+    return True
+
+
 YOUTUBE_ID_RE = re.compile(r"[A-Za-z0-9_-]{11}")
 GOOGLE_DRIVE_ID_RE = re.compile(r"[A-Za-z0-9_-]{3,}")
 VIMEO_ID_RE = re.compile(r"[0-9]{6,12}")

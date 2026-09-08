@@ -4120,3 +4120,49 @@ def test_youtube_local_video_filename_still_binds_to_its_id(tmp_path: Path) -> N
 
     assert bound_path is None
     assert "not bound to youtube_id" in reason
+
+
+def test_a_v4_manifest_never_binds_a_provider_token(tmp_path: Path) -> None:
+    """The evidence reader enforces the same v4/v5 rule the validator does.
+
+    A v4 record was written when `source_video_id` held a YouTube ID. Accepting
+    a Vimeo token there in one reader and rejecting it in the other is the same
+    as having no rule (#427 review).
+    """
+    vault = tmp_path / "vault"
+    talk = _manifest_bound_talk(vault, video_url=VIMEO_TALK_URL, token=VIMEO_TOKEN)
+    manifest = talk["structured_data"]["video_extraction"]
+    manifest["schema_version"] = (
+        ingress_contract.YOUTUBE_BOUND_VIDEO_EXTRACTION_SCHEMA_VERSION
+    )
+
+    bound_path, reason = pattern_evidence._local_video_binding(
+        vault,
+        talk,
+        ingress_contract.talk_source_identity(talk),
+    )
+
+    assert bound_path is None
+    assert "not bound to the claimed source" in reason
+
+
+def test_a_v4_manifest_still_binds_its_youtube_id(tmp_path: Path) -> None:
+    """The predecessor stays readable; no vault record needs re-extraction."""
+    vault = tmp_path / "vault"
+    talk = _manifest_bound_talk(
+        vault,
+        video_url=f"https://youtu.be/{SYNTHETIC_VIDEO_ID}",
+        token=SYNTHETIC_VIDEO_ID,
+    )
+    manifest = talk["structured_data"]["video_extraction"]
+    manifest["schema_version"] = (
+        ingress_contract.YOUTUBE_BOUND_VIDEO_EXTRACTION_SCHEMA_VERSION
+    )
+
+    bound_path, reason = pattern_evidence._local_video_binding(
+        vault,
+        talk,
+        ingress_contract.talk_source_identity(talk),
+    )
+
+    assert bound_path is not None, reason

@@ -138,10 +138,26 @@ def test_declared_pairs_validate_against_their_provider(
     assert (identity is not None) is valid
 
 
-def test_supported_providers_are_the_ones_with_parsers(ingress_contract):
-    assert set(ingress_contract.SUPPORTED_SOURCE_PROVIDERS) == set(
-        ingress_contract._PROVIDER_ID_PATTERNS
-    )
+# One representative published URL per supported provider. The test below is
+# what keeps a provider from being declared supported without a working parser.
+PROVIDER_SAMPLE_URLS = {
+    "youtube": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "vimeo": "https://vimeo.com/1223667266",
+    "infoq": "https://www.infoq.com/presentations/java-puzzle/",
+}
+
+
+def test_every_supported_provider_has_a_sample_url(ingress_contract):
+    """A missing sample would make the parser test below vacuous."""
+    assert set(ingress_contract.SUPPORTED_SOURCE_PROVIDERS) == set(PROVIDER_SAMPLE_URLS)
+
+
+@pytest.mark.parametrize("provider", sorted(PROVIDER_SAMPLE_URLS))
+def test_every_supported_provider_parses_a_real_url(ingress_contract, provider):
+    identity = ingress_contract.parse_source_identity(PROVIDER_SAMPLE_URLS[provider])
+    assert identity is not None
+    assert identity.provider == provider
+    assert ingress_contract.source_identity_for(provider, identity.video_id) == identity
 
 
 @pytest.mark.parametrize(

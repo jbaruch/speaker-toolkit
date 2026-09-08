@@ -44,7 +44,6 @@ from catalog_io import (
 )
 from ingress_contract import (
     ARCHIVAL_VIDEO_EXTRACTION_SCHEMA_VERSION,
-    YOUTUBE_ID_RE,
     VIDEO_EXTRACTION_SCHEMA_VERSION,
     YOUTUBE_BOUND_VIDEO_EXTRACTION_SCHEMA_VERSION,
     IngressContractError,
@@ -55,10 +54,10 @@ from ingress_contract import (
     has_transcript_source,
     has_video_source,
     is_readable_video_extraction_version,
-    is_source_binding_token,
     source_capabilities,
     talk_binding_token,
     validate_talk_record_schemas,
+    video_extraction_version_admits_token,
 )
 from pattern_evidence import (
     APPLICABILITY_INSPECTION_REASON_CODE,
@@ -1200,27 +1199,15 @@ def validate_video_extraction_manifest(structured: dict) -> VideoExtractionState
         _manifest_error(
             "source_video_id", "must be a non-empty URL-safe identity token"
         )
-    # What separates the two readable contracts. A v4 record was written when
-    # the field held a YouTube ID, so it may not carry a provider-prefixed
-    # token; a v5 record may carry either, because a YouTube ID is its own
-    # token. Nothing rewrites a v4 record to say so.
-    if (
-        manifest_version == YOUTUBE_BOUND_VIDEO_EXTRACTION_SCHEMA_VERSION
-        and YOUTUBE_ID_RE.fullmatch(source_video_id) is None
-    ):
+    # The v4/v5 distinction is `video_extraction_version_admits_token`'s alone;
+    # the evidence readers ask the same function.
+    if not video_extraction_version_admits_token(manifest_version, source_video_id):
         _manifest_error(
             "source_video_id",
             f"must be a YouTube ID in a schema-"
             f"{YOUTUBE_BOUND_VIDEO_EXTRACTION_SCHEMA_VERSION} manifest; a "
             f"provider-qualified token requires schema "
             f"{VIDEO_EXTRACTION_SCHEMA_VERSION}",
-        )
-    elif (
-        manifest_version == VIDEO_EXTRACTION_SCHEMA_VERSION
-        and not is_source_binding_token(source_video_id)
-    ):
-        _manifest_error(
-            "source_video_id", "must be a supported provider's binding token"
         )
     source_video_path = _validate_absolute_manifest_path(
         manifest.get("source_video_path"), "source_video_path"
