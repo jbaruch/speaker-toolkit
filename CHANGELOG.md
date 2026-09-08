@@ -27,6 +27,11 @@ reviewed alias. The audit reported both talks as faults to review rather than
 as a lane it does not fetch from, costing an operator the cheap pre-check on
 any vault holding one. And the extractor named its artifacts from an
 11-character ID, so a manifest could not be produced for these talks at all.
+(The subagent `video_extracted` flow stays YouTube-only — nothing here acquires
+from another provider — so a non-YouTube manifest is an owner running the
+extractor against a source video they already hold. A talk published elsewhere
+registers its recording as `video_local_path`, which is the lane that carries
+its delivery-video and transcript evidence.)
 
 Talk identity is now a provider (`youtube`, `vimeo`, `infoq`) plus that
 provider's own ID, resolved once in `ingress_contract.py`. Artifacts bind to a

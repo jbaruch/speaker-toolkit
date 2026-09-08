@@ -187,20 +187,21 @@ text.
   top of `skills/vault-ingress/scripts/batch-download-videos.py` for the report
   shape, the exit codes, and the closed failure vocabulary.
 
-  The downloader is a YouTube lane: it accepts 11-character YouTube IDs and
-  builds YouTube URLs. A talk published on another supported provider never
-  reaches it, and its prerequisite is a different one — the orchestrator
-  acquires the recording itself and places it at
-  `{vault_root}/slides-rebuild/{source_token}/{source_token}.mp4`. Confirm that
-  file exists and is a readable MP4 before extracting; there is no downloader
-  report to branch on, and an absent file is a talk with no video source,
-  handled exactly as a `fail` entry is.
+  This whole lane is YouTube-only: the downloader accepts 11-character YouTube
+  IDs and builds YouTube URLs, and no script here acquires from another
+  provider. Do not hand-place a file to work around that — a talk published
+  elsewhere takes the pre-registered lane instead. Register the recording on
+  the talk as `video_local_path` and set `slide_source` from the deck you
+  actually have (`pdf`, `both`, or `pptx`). The bounded video owner validates
+  that recording and reports `source_video_artifact_missing` /
+  `_unavailable` / `_unreadable` against it, so the check stays a script's,
+  never a judgment made here. The recording still carries delivery-video and
+  transcript evidence; only video-extracted slides are unavailable.
 
-  Extract once the lane's prerequisite holds — this id's `results` entry is
-  `ok` or `skip` on YouTube, or the placed MP4 is confirmed on every other
-  provider. The extractor's third argument is the talk's source binding token
-  (the bare ID for a YouTube talk, `vimeo+<id>` or `infoq+<slug>` otherwise),
-  and `{youtube_id}` in the paths below is that token:
+  Only once this id's `results` entry is `ok` or `skip`, extract. The
+  extractor's third argument is the talk's source binding token, which for
+  this lane is the YouTube ID, so `{youtube_id}` in the paths below reads
+  exactly as before:
   ```bash
   "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/video-slide-extraction.py" \
     "{vault_root}/slides-rebuild/{youtube_id}/{youtube_id}.mp4" \
