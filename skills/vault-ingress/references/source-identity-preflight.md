@@ -241,6 +241,15 @@ live metadata. The optional talk-level field has this shape:
 ```
 
 `video_id`, `title`, `speakers`, `duration_seconds`, and at least one of
+An unrecorded catalog date reports what is known rather than that a comparison
+failed. With no bound recorded, `source_identity_date_uncheckable` names the
+repair — run `establish-date-provenance.py`, or establish the delivery date.
+With a bound recorded in `date_provenance`, the state is checkable instead:
+`source_identity_date_bounded_only` says the day is unknown but the recording
+predates a day the catalog holds, and a source date after that bound is
+`source_identity_date_exceeds_recorded_bound`, which blocks. The bound uses the
+same `UPLOAD_TIMEZONE_GRACE` every other date comparison here uses.
+
 `recorded_date`/`upload_date` are the v1 evidence fields. `captured_at` records
 provenance for humans but is not used as source identity. Dates are ISO
 `YYYY-MM-DD`; `duration_seconds` is positive numeric data.

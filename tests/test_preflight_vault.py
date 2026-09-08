@@ -129,7 +129,15 @@ def source_identity(**updates):
     return evidence
 
 
-def write_database(fixture, talks, config=None, *, current=False, equivalences=None):
+def write_database(
+    fixture,
+    talks,
+    config=None,
+    *,
+    current=False,
+    equivalences=None,
+    date_provenance=None,
+):
     database = {
         "config": config
         or {
@@ -140,6 +148,8 @@ def write_database(fixture, talks, config=None, *, current=False, equivalences=N
     }
     if equivalences is not None:
         database["source_title_equivalences"] = equivalences
+    if date_provenance is not None:
+        database["date_provenance"] = date_provenance
     if current:
         database.update(
             {
@@ -4579,3 +4589,91 @@ def test_a_catalog_retitle_after_review_re_gates_the_talk(
     report = preflight_vault.run_preflight(vault_fixture["database"])
 
     assert "source_identity_title_mismatch" in finding_codes(report, "blocking")
+
+
+# An uncomparable catalog date says what is known, not that a check failed (#430).
+
+
+def _provenance_record(**updates):
+    record = {
+        "schema_version": 2,
+        "talk_filename": "2026-07-30-perfect-ingress.md",
+        "method": "provider_upload_ceiling",
+        "evidence": f"stored source_identity.upload_date for youtube {VIDEO_ID}",
+        "established_at": "2026-08-01T00:00:00Z",
+        "not_later_than": "2026-07-31",
+    }
+    record.update(updates)
+    return record
+
+
+def test_an_unrecorded_date_with_no_bound_names_the_repair(
+    preflight_vault, vault_fixture
+):
+    materialize_transcript(vault_fixture)
+    talk = base_talk(date="", duration_seconds=2700, source_identity=source_identity())
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["database"])
+
+    codes = finding_codes(report, "warning")
+    assert "source_identity_date_uncheckable" in codes
+    finding = next(
+        item
+        for item in report["findings"]
+        if item["code"] == "source_identity_date_uncheckable"
+    )
+    assert "establish-date-provenance.py" in finding["message"]
+
+
+def test_a_recorded_bound_downgrades_the_finding_to_what_is_known(
+    preflight_vault, vault_fixture
+):
+    materialize_transcript(vault_fixture)
+    talk = base_talk(date="", duration_seconds=2700, source_identity=source_identity())
+    write_database(
+        vault_fixture, [talk], current=True, date_provenance=[_provenance_record()]
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["database"])
+
+    codes = finding_codes(report, "warning")
+    assert "source_identity_date_bounded_only" in codes
+    assert "source_identity_date_uncheckable" not in codes
+
+
+def test_a_source_date_after_the_recorded_bound_is_blocking(
+    preflight_vault, vault_fixture
+):
+    """The bound is checkable, which is the point of recording it."""
+    materialize_transcript(vault_fixture)
+    talk = base_talk(
+        date="",
+        duration_seconds=2700,
+        source_identity=source_identity(upload_date="2026-09-30"),
+    )
+    write_database(
+        vault_fixture, [talk], current=True, date_provenance=[_provenance_record()]
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["database"])
+
+    assert "source_identity_date_exceeds_recorded_bound" in finding_codes(
+        report, "blocking"
+    )
+    assert report["ok"] is False
+
+
+def test_a_month_precision_date_is_compared_at_its_year(preflight_vault, vault_fixture):
+    """#430 criterion 4: month precision leaves the uncheckable bucket."""
+    materialize_transcript(vault_fixture)
+    talk = base_talk(
+        date="2026-07", duration_seconds=2700, source_identity=source_identity()
+    )
+    write_database(vault_fixture, [talk])
+
+    report = preflight_vault.run_preflight(vault_fixture["database"])
+
+    codes = finding_codes(report, "warning")
+    assert "source_identity_date_uncheckable" not in codes
+    assert "source_identity_date_bounded_only" not in codes

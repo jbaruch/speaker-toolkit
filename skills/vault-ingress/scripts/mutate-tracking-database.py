@@ -35,12 +35,14 @@ from tracking_database import (
     THUMBNAIL_RECORD_SCHEMA_VERSION,
     THUMBNAIL_REQUIRED_FIELDS as OWNER_THUMBNAIL_REQUIRED_FIELDS,
     LEGACY_TALK_RECORD_SCHEMA_VERSION,
+    DATE_PROVENANCE_RECORD_SCHEMA_VERSION,
     MARKDOWN_DECK_RECORD_SCHEMA_VERSION,
     SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION,
     TALK_RECORD_SCHEMA_VERSION,
     TRACKING_DATABASE_SCHEMA_VERSION,
     TrackingDatabaseError,
     require_current_tracking_database,
+    validate_date_provenance,
     validate_markdown_deck,
     validate_source_title_equivalence,
 )
@@ -1273,6 +1275,99 @@ def _apply_record_markdown_deck(
     )
 
 
+def _apply_record_date_provenance(
+    database: dict[str, Any],
+    mutation: dict[str, Any],
+    changes: list[dict[str, Any]],
+    *,
+    index: int,
+) -> None:
+    """Record how one talk's delivery date was established (#430).
+
+    The account an owner reached by checking a source is exactly the kind of
+    judgment this CLI exists to persist: nothing derives it, and before this
+    collection it survived only in an issue thread. The talk is read for
+    existence only — nothing here touches the talk record or its `date`.
+
+    `established_at` is stated by the plan rather than read from the clock, so
+    the same plan applied twice produces the same bytes. `not_later_than` is
+    optional and omitted by leaving it out of the mutation.
+    Every other shape rule, including which methods may claim a delivery day,
+    belongs to `validate_date_provenance` and is not restated here.
+    """
+    label = f"mutations[{index}]"
+    _require_keys(
+        mutation,
+        required={
+            "kind",
+            "filename",
+            "expect",
+            "method",
+            "evidence",
+            "established_at",
+        },
+        optional={"not_later_than"},
+        label=label,
+    )
+    filename = _nonempty(mutation["filename"], f"{label}.filename")
+    talk = _talk_by_filename(database, filename)
+    _require_readable_talk_record(talk, filename=filename)
+    expect = mutation["expect"]
+    if not isinstance(expect, dict) or set(expect) != {"method"}:
+        raise TrackingDatabaseMutationError(
+            f"{label}.expect must be an object naming exactly method"
+        )
+    record = {
+        "schema_version": DATE_PROVENANCE_RECORD_SCHEMA_VERSION,
+        "talk_filename": filename,
+        "method": mutation["method"],
+        "evidence": mutation["evidence"],
+        "established_at": mutation["established_at"],
+    }
+    if "not_later_than" in mutation:
+        record["not_later_than"] = mutation["not_later_than"]
+    try:
+        validate_date_provenance(
+            record, label=label, talks_by_filename={filename: talk}
+        )
+    except TrackingDatabaseError as exc:
+        raise TrackingDatabaseMutationError(str(exc)) from exc
+
+    existing = database.get("date_provenance", [])
+    if not isinstance(existing, list):
+        raise TrackingDatabaseMutationError("date_provenance must be an array")
+    replaced: object = MISSING_MARKER
+    recorded_already = False
+    remaining: list[Any] = []
+    for recorded in existing:
+        if isinstance(recorded, dict) and recorded.get("talk_filename") == filename:
+            replaced = recorded.get("method", MISSING_MARKER)
+            recorded_already = True
+            continue
+        remaining.append(recorded)
+    # The same optimistic precondition every other talk-touching mutation
+    # carries: the plan states the account it believes is recorded, so an
+    # account that moved under it fails instead of being overwritten. `$missing`
+    # is how a plan says "nothing is recorded yet".
+    _expect_value(
+        exists=recorded_already,
+        actual=replaced,
+        expected=expect["method"],
+        label=f"{label}.expect.method",
+    )
+    database["date_provenance"] = sorted(
+        [*remaining, record],
+        key=lambda entry: entry.get("talk_filename", ""),
+    )
+    _record_change(
+        changes,
+        kind="record_date_provenance",
+        identity=filename,
+        before={"method": replaced},
+        after={"method": record["method"]},
+    )
+
+
 def _validate_metadata_values(values: object, label: str) -> None:
     """Every repaired catalog value is a non-empty trimmed string.
 
@@ -1930,6 +2025,8 @@ def build_candidate(
             _apply_promote_source_alias(candidate, mutation, changes, index=index)
         elif kind == "record_markdown_deck":
             _apply_record_markdown_deck(candidate, mutation, changes, index=index)
+        elif kind == "record_date_provenance":
+            _apply_record_date_provenance(candidate, mutation, changes, index=index)
         elif kind == "update_talk_publishing":
             _apply_update_talk(candidate, mutation, changes, index=index)
         elif kind == "update_talk_clarification":

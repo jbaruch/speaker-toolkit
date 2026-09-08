@@ -113,7 +113,9 @@ def test_a_dateless_talk_with_a_stored_upload_gets_a_ceiling(
     [
         (_talk("dated.md", date="2016-03-04"), "date_already_comparable"),
         (_talk("year.md", date="2016"), "date_already_comparable"),
-        (_talk("month.md", date="2016-03"), "date_present_but_uncomparable"),
+        # Month precision reads as its year now, so it is comparable and its
+        # provenance is a human question, not a ceiling this owner can supply.
+        (_talk("month.md", date="2016-03"), "date_already_comparable"),
         (_talk("junk.md", date="spring 2016"), "date_present_but_uncomparable"),
         (_talk("nosource.md", upload_date=None), "no_provider_upload_date"),
         (_talk("badupload.md", upload_date="20160121"), "no_provider_upload_date"),
@@ -179,7 +181,7 @@ def test_coverage_makes_backlog_progress_measurable(establish_date_provenance):
             _talk("b.md", date="2016"),
             _talk("c.md"),
             _talk("d.md"),
-            _talk("e.md", date="2016-03"),
+            _talk("e.md", date="spring 2016"),
             _talk("f.md", upload_date=None),
         ]
     )

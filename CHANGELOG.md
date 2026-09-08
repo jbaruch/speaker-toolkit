@@ -1,5 +1,39 @@
 # Changelog
 
+### An unrecorded date now says what is known
+
+`parse_catalog_date` reads `YYYY-MM`. A month is a real delivery whose day was
+never recorded, and it reads as its year: the month narrows nothing a year-level
+comparison uses, and inventing a day from it would manufacture precision the
+record does not carry. Eight catalog records leave the uncheckable bucket.
+
+Preflight's `source_identity_date_uncheckable` used to end in one warning that
+named no repair, on half the catalog, so it said nothing an owner could act on.
+It now names the repair, and a recorded bound changes the finding entirely:
+
+- no bound recorded — `source_identity_date_uncheckable`, naming
+  `establish-date-provenance.py`
+- bound recorded, source dates agree — `source_identity_date_bounded_only`, which
+  says the day is unknown but the recording predates a day the catalog holds
+- source date after the bound — `source_identity_date_exceeds_recorded_bound`,
+  blocking, because a recorded bound is checkable and that is the point of it
+
+The bound uses the same `UPLOAD_TIMEZONE_GRACE` as every other date comparison.
+
+`record_date_provenance` joins the owner mutations, so an account an owner
+reached by checking a source can be persisted the way every other owner judgment
+is. `established_at` comes from the plan rather than the clock, so the same plan
+applied twice produces the same bytes. Nothing here touches a talk record or its
+`date`.
+
+Provenance record generation v2: `third_party_record` joins the method enum for
+a dated account by someone other than the organizer — an attendee write-up, a
+co-presenter's talk list. It reads as `inferred` rather than `proved` even when
+it names the exact session, because erring toward the weaker classification is
+the direction this collection exists to protect. The generation moves for one
+added enum value for the same reason talk v8 exists; no v1 record was ever
+written, since the collection shipped empty and its only writer stamps current.
+
 ## 0.20.143 — 2026-09-08
 
 ### The date backlog is now countable

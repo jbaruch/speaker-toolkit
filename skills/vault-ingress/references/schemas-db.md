@@ -658,6 +658,7 @@ exact-type rule. The supported mutation kinds are:
 | `record_source_alias` | Append a reviewed inactive YouTube identity; exact canonical/ledger expectations and both input/output hashes bind apply; see [source-aliases.md](source-aliases.md) |
 | `promote_source_alias` | Sole mutation for an owner-reviewed official-upload switch; expect the complete talk and alias ledger, require both hashes, preserve superseded identity/history, and requeue without relabeling existing evidence; see [source-aliases.md](source-aliases.md#atomic-official-upload-promotion) |
 | `record_markdown_deck` | Register (or re-point) the markdown file one exact talk's deck was authored in, with `expect` naming the currently registered `deck_source_path` or the missing marker; upsert, one deck per talk |
+| `record_date_provenance` | Record (or replace) how one exact talk's delivery date was established, with `expect` naming the currently recorded `method` or the missing marker; `established_at` comes from the plan, never the clock; upsert, one account per talk |
 | `update_talk_publishing` | Set supported publishing fields on one exact talk filename, with `expect` covering exactly the same fields |
 | `update_talk_clarification` | Set complete object/array `blind_spot_observations` or `humor_postmortem` values on one exact talk, with matching field expectations |
 
@@ -765,6 +766,11 @@ and left its working in an issue thread.
 more than its method supports. The accepted methods and their mapping are
 `DATE_PROVENANCE_BASIS_BY_METHOD` in
 `skills/vault-ingress/scripts/tracking_database.py`.
+
+A dated account by someone other than the organizer — an attendee write-up, a
+co-presenter's talk list — reads as inferred rather than proved even when it
+names the exact session. Erring toward the weaker classification is the
+direction this collection exists to protect.
 
 `evidence` is required and non-empty because a method names a kind of evidence,
 never the evidence: the field is the trace an owner follows to re-check the

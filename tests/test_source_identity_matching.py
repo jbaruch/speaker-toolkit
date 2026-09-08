@@ -446,3 +446,24 @@ def test_a_year_above_the_boundary_still_compares(value):
         source_identity_matching.upload_predates_catalog(date(2016, 6, 1), parsed)
         is not None
     )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("2016-03", (None, 2016)),
+        ("1999-12", (None, 1999)),
+        ("2016-01", (None, 2016)),
+    ],
+)
+def test_month_precision_reads_as_its_year(value, expected):
+    """The month narrows nothing a year-level comparison uses, and inventing a
+    day from it would manufacture precision the record does not carry."""
+    assert source_identity_matching.parse_catalog_date(value) == expected
+
+
+@pytest.mark.parametrize(
+    "value", ["2016-13", "2016-00", "2016-3", "2016-032", "0001-03"]
+)
+def test_a_month_outside_the_calendar_stays_unreadable(value):
+    assert source_identity_matching.parse_catalog_date(value) is None

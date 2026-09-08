@@ -2235,7 +2235,7 @@ def test_a_foreign_generation_nested_entry_is_refused(tracking_database, version
     )
 
     with pytest.raises(
-        tracking_database.TrackingDatabaseError, match="schema_version must be 1"
+        tracking_database.TrackingDatabaseError, match="schema_version must be"
     ):
         tracking_database.migrate_tracking_database(database)
 
@@ -2333,7 +2333,7 @@ def test_a_foreign_deck_generation_is_refused(tracking_database, version):
     database = _database_with_decks(tracking_database, [_deck(schema_version=version)])
 
     with pytest.raises(
-        tracking_database.TrackingDatabaseError, match="schema_version must be 1"
+        tracking_database.TrackingDatabaseError, match="schema_version must be"
     ):
         tracking_database.assess_tracking_database(database)
 
@@ -2451,7 +2451,9 @@ def test_migrating_a_pre_v2_root_without_the_collection_reaches_v2(
 
 def _provenance(**updates):
     record = {
-        "schema_version": 1,
+        # Read from the owner so a generation bump is one line here rather than
+        # a hunt through every fixture that pinned it.
+        "schema_version": (_tracking_database.DATE_PROVENANCE_RECORD_SCHEMA_VERSION),
         "talk_filename": "one.md",
         "method": "organizer_program",
         "evidence": "DevNexus 2015 published schedule, session page, retrieved 2026-09-08",
@@ -2614,7 +2616,7 @@ def test_an_unknown_field_refuses_the_database(tracking_database):
         tracking_database.assess_tracking_database(database)
 
 
-@pytest.mark.parametrize("version", [0, 2, "1", True, None])
+@pytest.mark.parametrize("version", [0, 1, 3, "2", True, None])
 def test_a_record_generation_this_reader_cannot_name_refuses(
     tracking_database, version
 ):
@@ -2623,7 +2625,7 @@ def test_a_record_generation_this_reader_cannot_name_refuses(
     )
 
     with pytest.raises(
-        tracking_database.TrackingDatabaseError, match="schema_version must be 1"
+        tracking_database.TrackingDatabaseError, match="schema_version must be"
     ):
         tracking_database.assess_tracking_database(database)
 
@@ -2679,7 +2681,7 @@ def test_shape_alone_is_checkable_without_a_catalog(tracking_database):
     )
 
 
-@pytest.mark.parametrize("talk_date", ["2016-03", "spring 2016", "2016-3", "16-03-04"])
+@pytest.mark.parametrize("talk_date", ["spring 2016", "2016-3", "16-03-04", "2016-13"])
 def test_a_ceiling_refuses_when_the_catalog_date_cannot_be_compared(
     tracking_database, talk_date
 ):
@@ -2769,3 +2771,24 @@ def test_a_missing_date_key_still_lets_a_ceiling_stand_alone(tracking_database):
     database["talks"][0].pop("date", None)
 
     assert tracking_database.assess_tracking_database(database).state == "current"
+
+
+def test_a_month_precision_date_is_now_comparable_against_a_ceiling(tracking_database):
+    """`parse_catalog_date` reads YYYY-MM as its year, so a ceiling that
+    contradicts the year refuses instead of being stored unchecked."""
+    inside = _database_with_provenance(
+        tracking_database,
+        [_provenance(not_later_than="2016-06-01")],
+        talk_date="2016-03",
+    )
+    assert tracking_database.assess_tracking_database(inside).state == "current"
+
+    contradicting = _database_with_provenance(
+        tracking_database,
+        [_provenance(not_later_than="2014-06-01")],
+        talk_date="2016-03",
+    )
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="cannot contradict"
+    ):
+        tracking_database.assess_tracking_database(contradicting)

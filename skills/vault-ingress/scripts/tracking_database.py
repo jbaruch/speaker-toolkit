@@ -89,7 +89,12 @@ MARKDOWN_DECK_RECORD_SCHEMA_VERSION = 1
 # is the state half the catalog is in. No migration owns it, and it is absent
 # from `_RECORD_COUNT_KEYS`: provenance is established by an owner who checked
 # something, never inferred from a date that happens to be present.
-DATE_PROVENANCE_RECORD_SCHEMA_VERSION = 1
+# v2 adds `third_party_record` to the method enum (#430). A v1 reader would
+# refuse a v2 record, so the generation moves even though the field set is
+# unchanged — the same reason talk v8 exists for one added enum value. No v1
+# record was ever written: the collection shipped empty and its only writer
+# stamps the current generation.
+DATE_PROVENANCE_RECORD_SCHEMA_VERSION = 2
 
 READABLE_TRACKING_DATABASE_SCHEMA_VERSIONS = frozenset(
     {
@@ -260,9 +265,15 @@ DATE_PROVENANCE_OPTIONAL_FIELDS = frozenset({"not_later_than"})
 # honesty of this collection: `basis` is never stored, so a record cannot claim
 # a strength its method does not support.
 #
-#   proved   — direct evidence of the delivery day itself
-#   inferred — derived from something adjacent to the delivery
+#   proved   — the event's own record of the day, or the delivery itself
+#   inferred — a dated record next to the delivery rather than of it
 #   bounded  — establishes no day at all, only a ceiling
+#
+# `third_party_record` is an attendee write-up, a co-presenter's talk list, or
+# any dated account by someone other than the organizer. It reads as inferred
+# rather than proved even when it names the exact session: the writer was not
+# keeping the event's record, so erring toward the weaker classification is the
+# direction this collection exists to protect.
 #
 # A live broadcast's release timestamp is the stream running, which is why it
 # proves rather than bounds: for `was_live` media the provider's date is the
@@ -272,6 +283,7 @@ DATE_PROVENANCE_OPTIONAL_FIELDS = frozenset({"not_later_than"})
 DATE_PROVENANCE_BASIS_BY_METHOD = {
     "live_broadcast_release": "proved",
     "organizer_program": "proved",
+    "third_party_record": "inferred",
     "event_opening_day": "inferred",
     "provider_upload_ceiling": "bounded",
 }

@@ -24,6 +24,8 @@ YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
 EXPLICIT_YEAR_RE = re.compile(r"(?<!\d)\d{4}(?!\d)")
 ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
 CATALOG_YEAR_RE = re.compile(r"\d{4}")
+# A month-precision catalog date. Read as its year: see `parse_catalog_date`.
+CATALOG_MONTH_RE = re.compile(r"(?P<year>\d{4})-(?P<month>0[1-9]|1[0-2])")
 SHOWNOTES_EVENT_QUALIFIER_RE = re.compile(
     r"\s+at\s+(?P<event>\S(?:.*\S)?)\Z",
     re.IGNORECASE,
@@ -372,15 +374,23 @@ def event_agreement(
 def parse_catalog_date(value: Any) -> tuple[date | None, int] | None:
     """Return a catalog date as its exact day (when known) and its year.
 
-    A catalog record carries either a full ISO-8601 day or a bare `YYYY`, and a
-    bare year is a real delivery whose day was never recorded — not an absent
-    date. Returning the day and the year separately lets a caller compare at
-    whichever precision the record actually supports, so a coarse record stays
-    comparable instead of dropping out of the comparison entirely.
+    A catalog record carries a full ISO-8601 day, a `YYYY-MM` month, or a bare
+    `YYYY`, and each coarse form is a real delivery whose day was never recorded
+    — not an absent date. Returning the day and the year separately lets a
+    caller compare at whichever precision the record actually supports, so a
+    coarse record stays comparable instead of dropping out of the comparison
+    entirely.
+
+    A month reads as its year rather than a day. The month narrows nothing the
+    year-level comparison uses, and inventing a day from it — the first, the
+    last — would manufacture precision the record does not carry.
     """
     if not isinstance(value, str):
         return None
     value = value.strip()
+    month = CATALOG_MONTH_RE.fullmatch(value)
+    if month is not None:
+        value = month.group("year")
     if CATALOG_YEAR_RE.fullmatch(value):
         year = int(value)
         # `upload_predates_catalog` subtracts a day of timezone grace from the
