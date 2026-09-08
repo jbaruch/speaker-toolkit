@@ -780,9 +780,9 @@ a ceiling that contradicts the record it bounds refuses here rather than being
 stored beside a date it disagrees with. A method that establishes no day of its
 own requires one; `DATE_PROVENANCE_CEILING_REQUIRED_METHODS` names those.
 
-An absent or empty `date` leaves a ceiling standing alone, which is the case
-this collection exists for. A `date` that is present but outside what
-`parse_catalog_date` reads — month precision, or anything else — refuses the
+An absent or blank `date` leaves a ceiling standing alone, which is the case
+this collection exists for. Every other present value `parse_catalog_date`
+refuses — month precision, a non-string, a calendar-boundary year — refuses the
 ceiling instead of storing a bound nothing ever checks.
 
 The collection is the root v4 shape, for the same reason `markdown_decks` is the

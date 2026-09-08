@@ -1403,13 +1403,16 @@ def validate_date_provenance(
         return
     catalog = parse_catalog_date(talk.get("date"))
     recorded_date = talk.get("date")
-    # A date the comparator cannot read is not the same as no date. An absent or
-    # empty one leaves the ceiling standing alone, which is the case this
-    # collection exists for. A present-but-unreadable one — month precision, or
-    # anything else `parse_catalog_date` refuses — would store a bound nothing
-    # ever checks, so it refuses until the catalog value is one the comparator
-    # can reach.
-    if catalog is None and isinstance(recorded_date, str) and recorded_date.strip():
+    # A date the comparator cannot read is not the same as no date. Absent, or
+    # a string of whitespace, leaves the ceiling standing alone, which is the
+    # case this collection exists for. Every other present value the comparator
+    # refuses — month precision, a non-string, a calendar-boundary year — would
+    # store a bound nothing ever checks, so it refuses until the catalog value
+    # is one the comparator can reach.
+    absent = recorded_date is None or (
+        isinstance(recorded_date, str) and not recorded_date.strip()
+    )
+    if catalog is None and not absent:
         raise TrackingDatabaseError(
             f"{label}.not_later_than cannot be checked against the talk's date "
             f"{recorded_date!r}, which is neither YYYY nor an ISO-8601 calendar "

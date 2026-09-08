@@ -2731,3 +2731,41 @@ def test_a_bare_year_catalog_date_is_comparable(tracking_database):
         tracking_database.TrackingDatabaseError, match="cannot contradict"
     ):
         tracking_database.assess_tracking_database(contradicting)
+
+
+@pytest.mark.parametrize(
+    "talk_date",
+    [
+        2016,
+        ["2016-03-04"],
+        {"year": 2016},
+        True,
+        20160304,
+        "0000",
+        "0001",
+        "0001-05-05",
+    ],
+)
+def test_a_present_but_uncomparable_date_refuses_a_ceiling(
+    tracking_database, talk_date
+):
+    """The guard is about presence, not type: only absent lets a ceiling stand."""
+    database = _database_with_provenance(
+        tracking_database,
+        [_provenance(not_later_than="2014-01-21")],
+        talk_date=talk_date,
+    )
+
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="cannot be checked against"
+    ):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_a_missing_date_key_still_lets_a_ceiling_stand_alone(tracking_database):
+    database = _database_with_provenance(
+        tracking_database, [_provenance(not_later_than="2014-01-21")]
+    )
+    database["talks"][0].pop("date", None)
+
+    assert tracking_database.assess_tracking_database(database).state == "current"

@@ -422,3 +422,27 @@ def test_the_ledger_generation_matches_its_owner() -> None:
         source_identity_matching.SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION
         == tracking_database.SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION
     )
+
+
+@pytest.mark.parametrize("value", ["0000", "0001", "0001-05-05", "0001-01-01"])
+def test_a_calendar_boundary_year_reads_as_uncomparable(value):
+    """`upload_predates_catalog` subtracts a day of grace from the year's first
+    day, which underflows at years 0 and 1. Such a record is a typo, not a
+    delivery, so it must read as uncomparable rather than crash a caller."""
+    assert source_identity_matching.parse_catalog_date(value) is None
+    assert (
+        source_identity_matching.upload_predates_catalog(
+            date(2016, 1, 1), source_identity_matching.parse_catalog_date(value)
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize("value", ["0002", "0002-01-01", "2016", "2016-03-04"])
+def test_a_year_above_the_boundary_still_compares(value):
+    parsed = source_identity_matching.parse_catalog_date(value)
+    assert parsed is not None
+    assert (
+        source_identity_matching.upload_predates_catalog(date(2016, 6, 1), parsed)
+        is not None
+    )
