@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.150 — 2026-09-08
+
 ### feat(illustrations) — lean hard on GPT Image 2.5 whenever a talk has builds
 
 GPT Image 2.5 fixes the failure that made build chains fragile on every earlier
