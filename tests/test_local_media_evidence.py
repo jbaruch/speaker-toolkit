@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import stat
 import subprocess
 import sys
@@ -267,7 +269,9 @@ def test_workspace_is_fresh_private_and_cleanup_is_not_suppressed(media, monkeyp
     def cannot_cleanup(self):
         raise OSError("private cleanup failure")
 
-    with pytest.raises(media.LocalMediaError, match="media_cleanup_failed"):
+    with pytest.raises(
+        media.LocalMediaError, match="media_workspace_cleanup_failed"
+    ) as caught:
         with media.private_media_workspace() as workspace:
             path = Path(workspace["path"])
             workspaces.append(path)
@@ -276,9 +280,122 @@ def test_workspace_is_fresh_private_and_cleanup_is_not_suppressed(media, monkeyp
                 assert stat.S_IMODE(path.stat().st_mode) == 0o700
             monkeypatch.setattr(TemporaryDirectory, "cleanup", cannot_cleanup)
     monkeypatch.setattr(TemporaryDirectory, "cleanup", original)
+    # An error the retry cannot be about is refused on the first attempt.
+    assert caught.value.details["cleanup_attempts"] == 1
     assert len(workspaces) == 1
     original(directories[0])
     assert not workspaces[0].exists()
+
+
+def test_workspace_teardown_survives_a_lost_race_against_a_concurrent_create(
+    media, monkeypatch
+):
+    """The #438 fault: rmtree lists a directory, then removes it.
+
+    An entry created between those two steps fails the removal with ENOTEMPTY.
+    One attempt used to make that fatal, and a cohort tears a workspace down
+    twice per recording.
+    """
+    from tempfile import TemporaryDirectory
+
+    original = TemporaryDirectory.cleanup
+    attempts = []
+    slept = []
+    monkeypatch.setattr(media.time, "sleep", slept.append)
+
+    def racy_cleanup(self):
+        attempts.append(self.name)
+        if len(attempts) < 3:
+            straggler = Path(self.name) / f"fragment-{len(attempts)}.part"
+            straggler.write_bytes(b"a tool flushed this after the scan")
+            raise OSError(errno.ENOTEMPTY, "Directory not empty", self.name)
+        return original(self)
+
+    monkeypatch.setattr(TemporaryDirectory, "cleanup", racy_cleanup)
+    with media.private_media_workspace() as workspace:
+        path = Path(workspace["path"])
+    assert len(attempts) == 3
+    assert slept == [media.WORKSPACE_CLEANUP_BACKOFF_SECONDS] * 2
+    assert not path.exists()
+
+
+def test_workspace_teardown_still_fails_when_the_race_is_never_won(media, monkeypatch):
+    """A bounded retry, not an unbounded one: a writer that keeps producing
+    entries exhausts the attempts and the owner still refuses."""
+    from tempfile import TemporaryDirectory
+
+    original = TemporaryDirectory.cleanup
+    attempts = []
+    monkeypatch.setattr(media.time, "sleep", lambda _seconds: None)
+
+    def never_empty(self):
+        attempts.append(self.name)
+        raise OSError(errno.ENOTEMPTY, "Directory not empty", self.name)
+
+    monkeypatch.setattr(TemporaryDirectory, "cleanup", never_empty)
+    opened: list[Path] = []
+    with pytest.raises(media.LocalMediaError) as caught:
+        with media.private_media_workspace() as workspace:
+            opened.append(Path(workspace["path"]))
+    assert len(attempts) == media.WORKSPACE_CLEANUP_ATTEMPTS
+    assert caught.value.reason_code == "media_workspace_cleanup_failed"
+    # Bare `media_cleanup_failed` cost three investigations (#438).
+    assert caught.value.details == {
+        "cleanup_error_type": "OSError",
+        "cleanup_errno": errno.ENOTEMPTY,
+        "cleanup_errno_name": "ENOTEMPTY",
+        "cleanup_attempts": media.WORKSPACE_CLEANUP_ATTEMPTS,
+    }
+    monkeypatch.setattr(TemporaryDirectory, "cleanup", original)
+    shutil.rmtree(opened[0], ignore_errors=True)
+
+
+@pytest.mark.parametrize("number", sorted({errno.ENOTEMPTY, errno.EEXIST, errno.EBUSY}))
+def test_workspace_teardown_retries_every_occupied_directory_errno(
+    media, monkeypatch, number
+):
+    """POSIX lets a non-empty removal answer ENOTEMPTY or EEXIST; a held-open
+    entry answers EBUSY. All three mean something is in the directory."""
+    from tempfile import TemporaryDirectory
+
+    original = TemporaryDirectory.cleanup
+    attempts = []
+    monkeypatch.setattr(media.time, "sleep", lambda _seconds: None)
+
+    def occupied_once(self):
+        attempts.append(self.name)
+        if len(attempts) == 1:
+            raise OSError(number, os.strerror(number), self.name)
+        return original(self)
+
+    monkeypatch.setattr(TemporaryDirectory, "cleanup", occupied_once)
+    with media.private_media_workspace() as workspace:
+        path = Path(workspace["path"])
+    assert len(attempts) == 2
+    assert not path.exists()
+
+
+def test_workspace_teardown_does_not_retry_an_unrelated_failure(media, monkeypatch):
+    """The retry is for a lost race, not for a directory that cannot be
+    removed at all: EACCES fails on the first attempt, as it always did."""
+    from tempfile import TemporaryDirectory
+
+    original = TemporaryDirectory.cleanup
+    attempts = []
+
+    def denied(self):
+        attempts.append(self.name)
+        raise OSError(errno.EACCES, "Permission denied", self.name)
+
+    monkeypatch.setattr(TemporaryDirectory, "cleanup", denied)
+    opened: list[Path] = []
+    with pytest.raises(media.LocalMediaError) as caught:
+        with media.private_media_workspace() as workspace:
+            opened.append(Path(workspace["path"]))
+    assert attempts == [str(opened[0])]
+    assert caught.value.details["cleanup_errno_name"] == "EACCES"
+    monkeypatch.setattr(TemporaryDirectory, "cleanup", original)
+    shutil.rmtree(opened[0], ignore_errors=True)
 
 
 @pytest.mark.parametrize("cover_art", [False, True])
