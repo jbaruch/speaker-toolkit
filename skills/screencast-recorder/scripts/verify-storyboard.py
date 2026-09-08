@@ -527,7 +527,7 @@ def check_seam(previous, following, tolerances, findings, exercised):
         )
 
 
-def _is_number(value) -> TypeGuard[float]:
+def _is_number(value) -> TypeGuard[int | float]:
     """A real, finite number. `bool` is an `int` in Python and is not one.
 
     Finiteness matters: JSON admits NaN, and every comparison against NaN is

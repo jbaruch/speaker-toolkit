@@ -41,6 +41,27 @@ from a permission inside the same message. And the span report guarded `bool` on
 only one endpoint, so `{"start_seconds": 1.0, "end_seconds": False}` counted as
 degenerate — inflating the very number it exists to measure.
 
+`TypeGuard[float]` was also a lie: both guards return `True` for `int`, so the
+narrowing told static analysis a caller could assume a float. Corrected to
+`TypeGuard[int | float]` here and in `verify-storyboard.py`, which shipped the
+identical mistake in 0.20.138.
+## 0.20.139 — 2026-09-07
+
+### A wrong path reads as a wrong path
+
+`resolve-interpreter.py` decided between "vault root" and "database path" with
+`Path.is_file()` alone, so a path that *was* the intended database but did not
+exist took the vault-root branch and had the filename appended a second time:
+
+```
+ERROR: no tracking-database.json at /vault/tracking-database.json/tracking-database.json
+```
+
+A typo therefore looked like a structural problem, which is the opposite of what
+an actionable diagnostic should do. The name is checked before existence now,
+both accepted call shapes still work, and the reported path is the one the caller
+actually named.
+
 
 ## 0.20.138 — 2026-09-07
 

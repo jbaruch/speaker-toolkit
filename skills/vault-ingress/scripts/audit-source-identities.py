@@ -147,13 +147,14 @@ FETCH_FAILURE_MESSAGES = {
 
 
 def classify_fetch_failure(message: Any) -> dict:
-    """Sort a fetch failure into upstream-gone, transient, or unclassified.
+    """Sort a fetch failure into upstream-gone, transient, tooling, or unclassified.
 
     Deterministic string matching over an enumerated signature set, so it is a
     script rather than a judgement (`rules/script-delegation.md`). The point is
-    the operator's next action: an upstream-gone recording needs a decision
-    about its derived claims; a transient one needs a retry; an unclassified one
-    needs reading.
+    the operator's next action: an upstream-gone recording needs a decision about
+    its derived claims; a transient one needs a retry; a tooling one needs the
+    installation repaired, since retrying it fails identically forever; an
+    unclassified one needs reading, because the message did not establish which.
     """
     text = message.casefold() if isinstance(message, str) else ""
     for signature in UPSTREAM_GONE_SIGNATURES:

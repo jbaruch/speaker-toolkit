@@ -135,7 +135,7 @@ def validate_word_diagnostic(value: Any) -> dict:
     return diagnostic
 
 
-def _timestamp(value: Any) -> TypeGuard[float]:
+def _timestamp(value: Any) -> TypeGuard[int | float]:
     """A real number that is not a bool. `bool` is a `Real`, so it needs naming."""
     return isinstance(value, Real) and not isinstance(value, bool)
 
