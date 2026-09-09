@@ -208,9 +208,9 @@ def test_bundled_catalog_passes_structural_contract(audit_pattern_catalog):
     assert report["summary"]["observable"] == 83
     assert report["summary"]["unobservable"] == 30
     assert report["summary"]["positive_gated"] == 83
-    assert report["summary"]["absence_gated"] == 16
+    assert report["summary"]["absence_gated"] == 15
     assert report["summary"]["applicability_gated"] == 39
-    assert report["summary"]["positive_only"] == 67
+    assert report["summary"]["positive_only"] == 68
 
 
 def test_bundled_catalog_has_no_phase_or_inverse_polarity_debt(

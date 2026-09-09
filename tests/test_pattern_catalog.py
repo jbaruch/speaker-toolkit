@@ -104,7 +104,6 @@ ABSENCE_STATIC_IDS = frozenset(
         "analog-noise",
         "ant-fonts",
         "bookends",
-        "breadcrumbs",
         "cookie-cutter",
         "defy-defaults",
         "floodmarks",
@@ -127,7 +126,7 @@ EXPECTED_ABSENCE_GATES = {
     **{pattern_id: ["static_slides"] for pattern_id in ABSENCE_STATIC_IDS},
     **{pattern_id: ["transcript"] for pattern_id in ABSENCE_TRANSCRIPT_IDS},
 }
-assert len(EXPECTED_ABSENCE_GATES) == 16
+assert len(EXPECTED_ABSENCE_GATES) == 15
 APPLICABILITY_GATE_FIELDS = frozenset(
     {
         "not_applicable_when",
@@ -739,6 +738,7 @@ APP_VIDEO_GATE_IDS = frozenset(
         "a-la-carte-content",
         "backtracking",
         "brain-breaks",
+        "breadcrumbs",
         "context-keeper",
         "dead-demo",
         "dual-headed-monster",
@@ -762,7 +762,6 @@ APP_VIDEO_GATE_IDS = frozenset(
 APP_VISUAL_GATE_IDS = frozenset(
     {
         "bookends",
-        "breadcrumbs",
         "charred-trail",
         "crawling-code",
         "emergence",
@@ -809,7 +808,7 @@ OBSERVABLE_GATE_IDS = frozenset(
 )
 POSITIVE_ONLY_IDS = OBSERVABLE_GATE_IDS - frozenset(EXPECTED_ABSENCE_GATES)
 assert len(OBSERVABLE_GATE_IDS) == 83
-assert len(POSITIVE_ONLY_IDS) == 67
+assert len(POSITIVE_ONLY_IDS) == 68
 
 RECLASSIFIED_UNOBSERVABLE_IDS = frozenset(
     {
@@ -1712,3 +1711,47 @@ def test_every_transcript_evaluable_entry_can_cite_a_transcript():
             offenders.append((metadata.get("id"), path))
 
     assert offenders == [], [entry for entry, _ in offenders]
+
+
+# ── #453 / #454: orientation is not always carried by the deck ─────────
+ORIENTATION_PATTERN_IDS = ("breadcrumbs", "context-keeper")
+
+
+def test_breadcrumbs_cannot_score_absent_from_a_deck_alone():
+    """A rendered deck cannot prove the audience had no orientation cue.
+
+    The JavaZone 2026 delivery runs seven live demos with the deck off-screen
+    and orients the room from the terminal's status bar. Scoring that `absent`
+    from the deck asserted something false about a talk the audience could
+    follow the whole way.
+    """
+    metadata = _metadata(_path_for_id("breadcrumbs"))
+    assert metadata["absence_evaluable_from"] is None
+
+
+@pytest.mark.parametrize("pattern_id", ORIENTATION_PATTERN_IDS)
+def test_orientation_patterns_name_a_non_deck_carrier(pattern_id):
+    """The implementation list must not read as deck-exhaustive."""
+    body = _read(_path_for_id(pattern_id)).casefold()
+    assert "terminal" in body, f"{pattern_id} names no non-deck carrier"
+
+
+@pytest.mark.parametrize("pattern_id", ORIENTATION_PATTERN_IDS)
+def test_orientation_patterns_admit_the_delivery_video(pattern_id):
+    """A rail on the working surface is only visible in the recording."""
+    metadata = _metadata(_path_for_id(pattern_id))
+    assert "delivery_video" in metadata["evaluable_from"]
+    assert "delivery_video" in metadata["strong_evaluable_from"]
+
+
+def test_breadcrumbs_applicability_reads_the_delivery_not_the_deck():
+    """A talk sectioned by demo environment has sections its deck does not."""
+    metadata = _metadata(_path_for_id("breadcrumbs"))
+    assert metadata["applicability_evaluable_from"] == ["delivery_video"]
+
+
+def test_context_keeper_parent_is_broader_than_its_children():
+    """A non-deck device records against the parent, not the nearest child."""
+    body = _read(_path_for_id("context-keeper"))
+    assert "deck-resident implementations" in body
+    assert "broader than their union" in body
