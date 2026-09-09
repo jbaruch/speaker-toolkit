@@ -1,0 +1,36 @@
+{
+  "context": "Tests whether an orientation device carried by the projected working surface rather than the deck is scored on what the audience could see. The rendered PDF has no progress indicator; the delivery video shows a deliberate, persistent, three-state progress rail for most of the runtime. The failure this guards against is scoring `breadcrumbs` absent from the deck alone, which asserts the audience had no orientation cue while they were looking at one.",
+  "type": "weighted_checklist",
+  "checklist": [
+    {
+      "name": "Breadcrumbs is not scored absent",
+      "max_score": 25,
+      "description": "The report does not record `absent` for `breadcrumbs`. The entry's `absence_evaluable_from` is `null`, so no artifact authorizes an absence finding — the deck's lack of a progress indicator least of all, because the deck was off screen for most of the delivery."
+    },
+    {
+      "name": "The terminal rail is recognized as an orientation device",
+      "max_score": 25,
+      "description": "The report identifies the terminal status bar as a structural orientation mechanism rather than ignoring it, dismissing it as tooling or demo chrome, or treating it as unscoreable because it is not a slide."
+    },
+    {
+      "name": "It is recorded against a catalog entry, not dropped",
+      "max_score": 20,
+      "description": "The rail produces a positive outcome (`strong` or `moderate`) on `breadcrumbs`, on `context-keeper`, or on both. Recording it against the `context-keeper` parent is fully correct when the analyst judges that no child entry fits. Reporting both as `not_evaluable` while describing the rail in the notes does not satisfy this: the observation was made and then discarded."
+    },
+    {
+      "name": "The delivery video is cited as the source",
+      "max_score": 15,
+      "description": "Any positive outcome cites `delivery_video` as its evidence source. Citing `static_slides` for a device that appears only in the recording is wrong even when the outcome is right."
+    },
+    {
+      "name": "Applicability is read from the delivery, not the deck",
+      "max_score": 10,
+      "description": "The report does not rule `breadcrumbs` `not_applicable` on the grounds that the deck has fewer than three sections. The delivery has nine segments; the deck's page count does not establish the delivery's section inventory."
+    },
+    {
+      "name": "The three-state read is what earns a strong tier",
+      "max_score": 5,
+      "description": "Where a `strong` outcome is asserted, the justification rests on the completed / current / upcoming three-state display being recurring and visible across the relevant span, not merely on the rail existing."
+    }
+  ]
+}

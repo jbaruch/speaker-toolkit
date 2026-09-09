@@ -1730,13 +1730,6 @@ def test_breadcrumbs_cannot_score_absent_from_a_deck_alone():
 
 
 @pytest.mark.parametrize("pattern_id", ORIENTATION_PATTERN_IDS)
-def test_orientation_patterns_name_a_non_deck_carrier(pattern_id):
-    """The implementation list must not read as deck-exhaustive."""
-    body = _read(_path_for_id(pattern_id)).casefold()
-    assert "terminal" in body, f"{pattern_id} names no non-deck carrier"
-
-
-@pytest.mark.parametrize("pattern_id", ORIENTATION_PATTERN_IDS)
 def test_orientation_patterns_admit_the_delivery_video(pattern_id):
     """A rail on the working surface is only visible in the recording."""
     metadata = _metadata(_path_for_id(pattern_id))
@@ -1748,10 +1741,3 @@ def test_breadcrumbs_applicability_reads_the_delivery_not_the_deck():
     """A talk sectioned by demo environment has sections its deck does not."""
     metadata = _metadata(_path_for_id("breadcrumbs"))
     assert metadata["applicability_evaluable_from"] == ["delivery_video"]
-
-
-def test_context_keeper_parent_is_broader_than_its_children():
-    """A non-deck device records against the parent, not the nearest child."""
-    body = _read(_path_for_id("context-keeper"))
-    assert "deck-resident implementations" in body
-    assert "broader than their union" in body

@@ -40,6 +40,17 @@ ruled not-applicable on its deck's section count. It now reads the delivery
 video alone: the deck's own page count does not establish the delivery's
 section inventory.
 
+The first cut of this guarded the prose with substring assertions — that the
+entries contain the word "terminal", that Combinatorics contains a particular
+phrase. Review was right that those test wording, not behavior: they pass for
+prose that forbids terminal-based orientation and fail for valid whiteboard-only
+wording. The classification outcome is what matters, so it is graded by
+`evals/orientation-outside-the-deck`, which puts the JavaZone shape in front of
+an analyst and scores whether the rail is recognized, recorded against an entry
+rather than dropped, and cited to the delivery video. The unit tests keep only
+what is mechanically decidable: the absence gate, the applicability gate, and
+the evidence sources.
+
 One thing the issues asked for turned out to be already true and was left
 alone: `delivery_video` was already in both `evaluable_from` and
 `strong_evaluable_from`, and `video` already in `evidence_channels`, for both
