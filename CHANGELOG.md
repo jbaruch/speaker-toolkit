@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.153 — 2026-09-09
+
 ### Orientation is not always carried by the deck
 
 The JavaZone 2026 delivery of "The Right 300 Tokens Beat 100k Noisy Ones" runs
