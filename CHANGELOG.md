@@ -1,5 +1,64 @@
 # Changelog
 
+### Orientation is not always carried by the deck
+
+The JavaZone 2026 delivery of "The Right 300 Tokens Beat 100k Noisy Ones" runs
+seven live demos. The deck is off-screen for most of the talk, and the
+orientation job is done entirely by the terminal session's status bar —
+`talk | 0 slides | 1 demo01 | ... | 7 eval`, current window highlighted,
+completed to its left, upcoming to its right. That is the exact three-state
+progress display `breadcrumbs` calls a strong signal, staged deliberately and
+projected to the room for the majority of the runtime.
+
+The catalog could not see it, and worse, it could contradict it.
+`breadcrumbs` had `absence_evaluable_from: [static_slides]`, so the one
+artifact authorized to prove "no breadcrumbs" was a rendered PDF that was not
+on screen. A deck with no progress indicator scored the talk `absent` while
+the audience was looking at a progress indicator. That is not a missed
+detection — it is a false assertion, made from the narrowest available source.
+
+`absence_evaluable_from` is now `null`, matching `context-keeper`: positive
+detection only, and no artifact authorizes an absence. A rendered deck cannot
+prove the audience had no orientation cue, because the deck is not always what
+the audience was looking at.
+
+The rest was prose that had quietly become a definition. Both entries listed
+only deck-resident implementations — a progress bar on every slide, a sidebar
+topic list, a dedicated agenda slide before each section — so an analyst who
+found a real, deliberate, persistent orientation device that was not a slide
+had to force it into a child pattern that did not fit, or drop it. In this
+ingest it was dropped. Both entries now name non-deck carriers explicitly (a
+terminal status bar, an IDE tab strip, a whiteboard column, a physical prop),
+and `context-keeper`'s Combinatorics states that its named children are the
+deck-resident implementations while the parent is broader than their union, so
+a device with no child entry records against the parent rather than being
+forced into `breadcrumbs`.
+
+`breadcrumbs`'s applicability moved with it. `fewer-than-three-major-sections`
+was assessable from a deck, so a talk sectioned by demo environment could be
+ruled not-applicable on its deck's section count. It now reads the delivery
+video alone: the deck's own page count does not establish the delivery's
+section inventory.
+
+The first cut of this guarded the prose with substring assertions — that the
+entries contain the word "terminal", that Combinatorics contains a particular
+phrase. Review was right that those test wording, not behavior: they pass for
+prose that forbids terminal-based orientation and fail for valid whiteboard-only
+wording. The classification outcome is what matters, so it is graded by
+`evals/orientation-outside-the-deck`, which puts the JavaZone shape in front of
+an analyst and scores whether the rail is recognized, recorded against an entry
+rather than dropped, and cited to the delivery video. The unit tests keep only
+what is mechanically decidable: the absence gate, the applicability gate, and
+the evidence sources.
+
+One thing the issues asked for turned out to be already true and was left
+alone: `delivery_video` was already in both `evaluable_from` and
+`strong_evaluable_from`, and `video` already in `evidence_channels`, for both
+entries. The channels were never the narrow part — the absence rule and the
+prose were.
+
+Closes #453, #454.
+
 ## 0.20.152 — 2026-09-07
 
 ### Two vault-derived patterns from a talk that went live
