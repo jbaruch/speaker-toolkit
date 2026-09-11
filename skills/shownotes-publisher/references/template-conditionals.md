@@ -225,3 +225,11 @@ The layout emits a JSON-LD `PresentationDigitalDocument` block using:
 These are all derived — no extra authoring step needed. If a field
 is missing, the JSON-LD entry for it is missing too, which degrades
 SEO but doesn't break the page.
+
+## Agent Skill
+
+When `page.skill` exists, `talk.html` renders a Skill Available badge and
+includes `skill_section.html` beneath the media section. The include shows
+the skill name, description, install command, raw download link, and collapsed
+body. Without a matching skill file, the entire section and badge are absent.
+See [talk-skill.md](talk-skill.md) for source paths and verification.

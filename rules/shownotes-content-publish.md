@@ -15,11 +15,13 @@ alwaysApply: true
 - `assets/images/thumbnails/**` — talk thumbnail images the rendered pages reference.
 
 These are the only paths a direct push may modify, and both are content surfaces a reader consumes directly. No code, rule, skill, script, manifest, workflow file, or configuration is in scope. A push touching anything else is out of scope and forces branch + PR.
+`_skills/**` contains agent-loaded instructions and always takes branch + PR
+when changed. Include any accompanying talk page or thumbnail edits in the same PR.
 
 ## Enforcement
 
 - Form B client-side gate: `skills/shownotes-publisher/scripts/content-only-gate.sh` is the deterministic gate (per `jbaruch/coding-policy: script-delegation`). It enumerates every path the push would land on the protected branch (committed-but-unpushed commits in `origin/main..HEAD`, plus pending staged, unstaged, and untracked changes) and exits 0 only when every one matches a covered glob above. Any out-of-glob path exits non-zero.
-- `shownotes-publisher` Step 9 runs the gate before publishing and direct-pushes only on exit 0. An out-of-glob path, or an indeterminate gate result, forces an automatic branch + PR fallback — never an operator override.
+- `shownotes-publisher` Step 10 runs the gate before publishing and direct-pushes only on exit 0. An out-of-glob path, or an indeterminate gate result, forces an automatic branch + PR fallback — never an operator override.
 - The allowlist is the `ALLOWED_PREFIXES` constant at the top of the gate script. The globs above and that constant stay in sync.
 
 ## What Direct-Push Does NOT Carry
