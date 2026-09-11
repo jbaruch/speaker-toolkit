@@ -153,3 +153,27 @@ def test_not_a_git_repo_is_error(tmp_path: Path) -> None:
     result = _run(plain)
     assert result.returncode == 2
     assert "not a git work tree" in result.stderr
+
+
+@pytest.mark.parametrize("state", ["untracked", "staged", "committed", "deleted"])
+def test_talk_skill_requires_pr_in_every_push_state(repo: Path, state: str) -> None:
+    """Agent instructions never ride along on the human-content carve-out."""
+    rel = "_skills/geecon-2024/SKILL.md"
+    skill = repo / rel
+    skill.parent.mkdir(parents=True)
+    skill.write_text(
+        "---\nname: evaluate-claims\ndescription: Evaluate claims\n---\nMethod\n"
+    )
+    if state in {"staged", "committed", "deleted"}:
+        _git(repo, "add", rel)
+    if state in {"committed", "deleted"}:
+        _git(repo, "commit", "-qm", "Add skill")
+    if state == "deleted":
+        _git(repo, "push", "-q", "origin", "main")
+        skill.unlink()
+    page = repo / "_talks" / "geecon-2024.md"
+    page.parent.mkdir(parents=True)
+    page.write_text("# Evaluate claims\n")
+    result = _run(repo)
+    assert result.returncode == 1, result.stderr
+    assert _payload(result)["outside"] == [rel]

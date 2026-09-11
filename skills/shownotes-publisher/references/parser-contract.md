@@ -152,3 +152,10 @@ Fields present in some files but ignored by the parser:
 
 If you need a field that the parser doesn't extract today, propose
 the change at the parser level — don't paper over it in the template.
+
+## Talk skill attachment
+
+`_plugins/skill_processor.rb` reads `_skills/{talk_page_stem}/SKILL.md`
+and attaches `page.skill` to the matching talk. It is independent of body
+field extraction. No `**Skill:**` line or talk frontmatter field is needed.
+See [talk-skill.md](talk-skill.md) for the file and publishing contract.

@@ -58,6 +58,18 @@ omit the resource links section from shownotes.
 
 Read `publishing_process.shownotes`. If `enabled`:
 
+For the Jekyll shownotes site with `_plugins/markdown_parser.rb`, invoke
+`Skill(skill: "shownotes-publisher")` with the talk directory, configured
+site path, and supplied slides URL. It owns the page and the downloadable
+skill distilled from the talk, validation, and publishing. Resume below at
+live URL verification and tracking persistence after it completes. Do not
+bypass that flow with a page-only push. A pre-talk publish uses substantive
+notes and demos; it does not wait for a recording.
+
+For other shownotes systems, follow the page flow below and inspect their
+skill publishing contract before promising a downloadable skill. Do not
+assume Jekyll's `_skills/` convention works on another SSG.
+
 - Generate the talk page at
   `{shownotes.source.path_or_url}/{shownotes.source.talks_subdir}/{slug}.md`
   (adapt the extension for Hugo/Astro content collections if the SSG uses a

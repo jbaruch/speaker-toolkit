@@ -1,5 +1,19 @@
 # Changelog
 
+### Publish the talk's teaching as an Agent Skill
+
+Shownotes publishing now synthesizes a self-contained SKILL.md from the
+outline, speaker notes, demos, and available delivered transcript. Audiences
+can install the talk's reusable methods directly into their agents without
+fetching and processing subtitles. Pre-talk publishing uses substantive
+prepared material; video-only updates preserve existing skill edits.
+
+The publisher follows the shownotes site's `_skills/{talk-page-stem}/SKILL.md`
+contract, stages the skill with its page through a PR, and verifies the rendered
+section and byte-for-byte raw download locally and after deployment. Skill
+instructions stay outside the human-content direct-push carve-out. Phase 6
+and post-event Jekyll publishing delegate to this complete flow.
+
 ## 0.20.153 — 2026-09-09
 
 ### Orientation is not always carried by the deck

@@ -74,6 +74,15 @@ If `video_publishing` is not configured, ask interactively:
 - "How should the video appear in shownotes? (embed, link, or both)"
 - "Where in the shownotes should it go?"
 
+For the Jekyll shownotes site with `_plugins/markdown_parser.rb`, invoke
+`Skill(skill: "shownotes-publisher")` with the existing page and recording
+URL. It preserves the existing talk skill on a video-only update, creates
+one if missing, and reconciles newly available delivered teaching when a
+content refresh is requested. Resume at tracking persistence after verified
+publication; do not bypass its skill checks with a separate page-only push.
+
+For other shownotes systems, continue below.
+
 #### 3. Generate Shownotes Update
 
 Create the video section content based on `embed_method`:
