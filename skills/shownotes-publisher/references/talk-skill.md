@@ -59,9 +59,13 @@ must describe the real source; do not invent a license or compatibility need.
    500 lines and roughly 5000 tokens; trim before adding companion files,
    which this site's single-file download cannot supply.
 
-A workable body has an H1 naming the capability, an applicability paragraph,
-the method or decision criteria, one example, boundaries, and the source
-note. Adapt that structure to the actual teaching; do not pad sparse source
+Start the body with an H1 naming the capability. Its first content line
+declares the execution mode: `Process steps in order. Do not skip ahead.`
+for a sequential method, or an action-router preamble directing the agent
+to choose and execute only the matching action. Use flat `## Step N — Title`
+headings with explicit continuations or a stated finish; no decimal steps.
+Include applicability, the method or decision criteria, a grounded example,
+boundaries, and the source note where they serve that execution plan. Adapt that structure to the actual teaching; do not pad sparse source
 material to fill headings. If only an abstract/title is available, ask for
 substantive material and keep creation pending unless the user opts out.
 

@@ -405,8 +405,7 @@ cd "{shownotes_repo}"
 git add _talks/{talk_page_stem}.md [assets/images/thumbnails/{talk_page_stem}-thumbnail.png]
 git commit -m "Add shownotes: {Talk Title} at {Conference}"
 git push origin main
-gh run watch --exit-status {deploy_run_id}
-curl -fsI "{site.url}{site.baseurl}/talks/{talk_page_stem}/" | head -1   # expect: HTTP/2 200
+# Continue with deployment verification below.
 ```
 
 **Branch + PR flow:**
@@ -421,17 +420,32 @@ gh pr create --fill
 gh pr checks --watch --fail-fast
 # Complete the repository review and merge gates before deployment verification.
 # After merge, watch the Pages deployment and confirm 200:
-gh run watch --exit-status {deploy_run_id}
-curl -fsI "{site.url}{site.baseurl}/talks/{talk_page_stem}/" | head -1   # expect: HTTP/2 200
+# Continue with deployment verification below.
 ```
 
 Stage only the listed paths that exist or have tracked deletions; brackets
 above denote optional arguments. Follow the target repository's review and
-merge rules through merge; an open PR is not a published skill. Bind the
-Pages deploy run to the pushed or merged commit rather than trusting a
-previous successful run. Resolve `{deploy_run_id}` from the target site's
-Pages workflow with the pushed or merged commit as `headSha`, `push` event,
-and default branch; wait for that run to appear before watching it.
+merge rules through merge; an open PR is not a published skill. Resolve the deployment for the full pushed commit SHA (direct push) or
+merged commit SHA (PR) with the co-shipped helper:
+
+```bash
+python3 "{speaker_toolkit_root}/skills/shownotes-publisher/scripts/resolve-deploy-run.py" \
+  --repo "{owner}/{repo}" --workflow "{pages_workflow}" \
+  --commit "{published_commit_sha}" --event push --branch "{default_branch}"
+```
+
+Input: target repository, its Pages workflow filename or ID, full published
+commit SHA, event, and branch. Exit 0 returns JSON `database_id`; use that
+value as `{deploy_run_id}` below. The helper polls through enqueue latency
+and rejects absent or ambiguous matches and API errors with exit 1, JSON
+`ok: false`, and stderr. Stop on failure; do not select a latest run instead.
+
+```bash
+gh run watch --repo "{owner}/{repo}" --exit-status {deploy_run_id}
+curl -fsI "{site.url}{site.baseurl}/talks/{talk_page_stem}/" | head -1
+```
+
+Require a successful deployment and HTTP 200.
 
 When a skill exists, also run the live verification in
 [references/talk-skill.md](references/talk-skill.md#verification). Return

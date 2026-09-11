@@ -10,7 +10,8 @@ prepared material; video-only updates preserve existing skill edits.
 
 The publisher follows the shownotes site's `_skills/{talk-page-stem}/SKILL.md`
 contract, stages the skill with its page through a PR, and verifies the rendered
-section and byte-for-byte raw download locally and after deployment. Skill
+section and byte-for-byte raw download locally and after deployment. A tested
+resolver binds deployment verification to the exact published commit and workflow. Skill
 instructions stay outside the human-content direct-push carve-out. Phase 6
 and post-event Jekyll publishing delegate to this complete flow.
 
