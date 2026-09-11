@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.154 — 2026-09-11
+
 ### Publish the talk's teaching as an Agent Skill
 
 Shownotes publishing now synthesizes a self-contained SKILL.md from the
