@@ -1,5 +1,21 @@
 # Changelog
 
+### Make talk skills rhetoric-informed knowledge briefs
+
+Talk skills now supply the substance needed to summarize a talk and answer
+questions about it, replacing the earlier interpretation as operational
+playbooks. The delivery-specific rhetoric analysis drives the synthesis:
+argument progression, what examples establish, objections, callbacks, and
+consequential differences between the plan and live delivery. Transcript,
+slides, and demo evidence verify the facts; analysis supplies interpretation
+without becoming an unqualified source of intent or outcomes.
+
+The single-file brief includes the relevant knowledge directly. Its discovery
+surface targets the named talk, and its short instruction wrapper answers
+from that knowledge without retrieving a transcript for covered questions.
+Review now includes questions about why an example matters, with missing-analysis
+recovery and explicit provisional handling before a talk is delivered.
+
 ## 0.20.154 — 2026-09-11
 
 ### Publish the talk's teaching as an Agent Skill
