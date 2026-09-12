@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.155 — 2026-09-12
+
 ### Make talk skills rhetoric-informed knowledge briefs
 
 Talk skills now supply the substance needed to summarize a talk and answer
