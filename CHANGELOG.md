@@ -41,8 +41,15 @@ persisted it, so a recovery under a fresh run id is never reported twice, and
 recorded after Step 8, keeps a resumed run from offering or reporting before
 its rendering, summary, profile, and goal steps ran. Validation parses every
 stored timestamp and enforces the state-dependent field invariants; a
-symlinked report directory or copy path is refused; a replayed delivery
-recreates a copy that went missing; a blank deferral condition is refused.
+symlinked report directory or copy path, or a non-regular file at the copy
+path, is refused; a replayed delivery recreates a copy that went missing; a
+blank deferral condition is refused. Every recording command is replay-safe,
+answering an unchanged success for the inputs it already recorded and
+refusing only a conflicting answer. The report copy is named by the full
+digest, stored timestamps must be canonical UTC, the vault root is
+re-resolved on every re-read, a talk merged again under the same run is a new
+persisted fact that re-owes the downstream steps, and a session accepted after
+the report went out that changed profile inputs reopens the report.
 The end-to-end evaluation
 scenario and the clarification skill's seed-agenda contract follow separately.
 

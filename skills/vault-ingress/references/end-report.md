@@ -63,9 +63,11 @@ record it:
 ```
 
 Exit 0 installs a content-addressed copy at
-`{vault_root}/ingress-reports/{stem}.{digest prefix}.md` (the run id reduced
-to a safe filename stem, then the first characters of the text's SHA-256),
-binds it by digest, and stamps the run complete. Exit 2 with
+`{vault_root}/ingress-reports/{stem}.{sha256}.md` (the run id reduced to a
+safe filename stem, then the text's full SHA-256), binds it by digest, and
+stamps the run complete. A clarification session accepted after this
+delivery that changed profile inputs reopens the report: `pending` lists the
+run as `deliver_end_report` again and this step runs again. Exit 2 with
 `invalid_transition` means the downstream steps were never recorded (go back
 to Step 4's rendering and Steps 5–8) or the clarification obligation is
 unresolved (return to Step 9). Exit 2 with

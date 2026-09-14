@@ -117,7 +117,9 @@ Record the speaker's explicit answer, once:
   With `changed` and an existing `{vault_root}/speaker-profile.json`, the
   command refuses (`profile_refresh_required`) until Step 7 has re-run: do
   that, then record the session with `--profile-refreshed`, so the end report
-  reflects the answers.
+  reflects the answers. When the session followed a deferred offer answered
+  after the report was delivered, `changed` inputs reopen the report
+  (`report_reopened: true`): proceed through Step 10 to Step 11 again.
 
 - **declined** — note it and move on; the talks are not reprocessed.
 - **deferred** — `--return-condition` carries the speaker's own words for when

@@ -34,17 +34,21 @@ Every successful command emits one JSON object on stdout and exits 0. Known
 input/state errors emit a JSON error object on stdout, an actionable diagnostic
 on stderr, and exit 2. Mutating commands rewrite the ledger atomically under the
 same sibling lock discipline as the tracking database, only when state changed.
+Every recording command is replay-safe: repeating it with the inputs it already
+recorded is an unchanged success, so a caller that lost the first response can
+retry; only a conflicting answer is refused.
 
 Ledger: ``{vault_root}/ingress-obligations.json`` (schema 1, run records
 schema 1), owned by vault-ingress. Delivered reports are copied to
-``{vault_root}/ingress-reports/{stem}.{digest prefix}.md`` and bound to the
-ledger by SHA-256. Each recorded talk carries the run id of the closed claim
-that persisted it, so ``pending`` can reconcile the ledger against closed
-claims and name persisted talks the ledger does not cover (a whole run, or a
-later batch of a recorded run, that crashed between the merge and ``open``)
-without repeating talks recovered under a fresh run id. ``pending`` also lists
-every deferred offer with the speaker's return condition, so it can be raised
-again. Field meanings, transitions, and the reader/writer contract live in
+``{vault_root}/ingress-reports/{stem}.{sha256}.md`` and bound to the ledger by
+that digest. Each recorded talk carries the run id and release time of the
+closed claim that persisted it, so ``pending`` can reconcile the ledger against
+closed claims and name persisted talks the ledger does not cover (a whole run,
+a later batch of a recorded run, or a talk merged again under the same run,
+that crashed between the merge and ``open``) without repeating talks recovered
+under a fresh run id. ``pending`` also lists every deferred offer with the
+speaker's return condition, so it can be raised again. Field meanings,
+transitions, and the reader/writer contract live in
 ``skills/vault-ingress/references/schemas-obligations.md``.
 
 Recency policy (the delivery-recency buckets the clarification handoff keys on)
@@ -93,10 +97,9 @@ REPORTS_DIRECTORY = "ingress-reports"
 PROFILE_FILENAME = "speaker-profile.json"
 LEDGER_SCHEMA_VERSION = 1
 RUN_RECORD_SCHEMA_VERSION = 1
-# The report copy is content-addressed: ``{stem}.{digest prefix}.md`` with the
-# run id reduced to a safe filename stem, so two deliveries never overwrite each
+# The report copy is content-addressed: ``{stem}.{sha256}.md`` with the run id
+# reduced to a safe filename stem, so two deliveries never overwrite each
 # other and a ledger-edited run id can never name a path outside the directory.
-REPORT_DIGEST_PREFIX = 12
 _SAFE_STEM = re.compile(r"[^A-Za-z0-9._-]")
 _SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 # What ``persist-results.py`` stamps on the claim it closes; a talk whose claim
@@ -327,10 +330,16 @@ def _require_identifier(value: object, label: str) -> str:
 
 
 def _require_timestamp(value: object, label: str) -> None:
+    """Stored stamps are canonical UTC whole seconds, so they compare as text."""
     try:
-        parse_timestamp(value, label)
+        moment = parse_timestamp(value, label)
     except RunObligationsError as exc:
         raise _invalid(label, str(exc).removeprefix(label).strip()) from exc
+    if render_timestamp(moment) != value:
+        raise _invalid(
+            label,
+            f"{value!r} must be the canonical UTC form {render_timestamp(moment)!r}",
+        )
 
 
 def _require_timestamp_or_null(value: object, label: str, *, present: bool) -> None:
@@ -363,6 +372,7 @@ def _validate_talk(entry: Any, label: str) -> None:
             "days_since_delivery",
             "recency_bucket",
             "claim_run_id",
+            "claim_released_at",
         ),
         label,
     )
@@ -378,8 +388,8 @@ def _validate_talk(entry: Any, label: str) -> None:
     _require_choice(
         talk["recency_bucket"], OFFER_MODE_BY_BUCKET, f"{label}.recency_bucket"
     )
-    if talk["claim_run_id"] is not None:
-        _require_identifier(talk["claim_run_id"], f"{label}.claim_run_id")
+    _require_identifier(talk["claim_run_id"], f"{label}.claim_run_id")
+    _require_timestamp(talk["claim_released_at"], f"{label}.claim_released_at")
 
 
 def _validate_clarification(record: Any, label: str) -> None:
@@ -467,7 +477,9 @@ def _validate_downstream(record: Any, label: str) -> None:
 
 def _validate_report(record: Any, label: str) -> bool:
     report = _require_keys(
-        record, ("state", "delivered_at", "report_path", "report_sha256"), label
+        record,
+        ("state", "delivered_at", "report_path", "report_sha256", "reopened_at"),
+        label,
     )
     delivered = (
         _require_choice(
@@ -488,6 +500,8 @@ def _validate_report(record: Any, label: str) -> bool:
     else:
         _require_null(report["report_path"], f"{label}.report_path")
         _require_null(report["report_sha256"], f"{label}.report_sha256")
+    if report["reopened_at"] is not None:
+        _require_timestamp(report["reopened_at"], f"{label}.reopened_at")
     return delivered
 
 
@@ -629,14 +643,13 @@ def write_report_copy(
     """Install the delivered report beside the ledger, durably.
 
     Returns the content-addressed path and whether this call created it. An
-    existing copy with the same bytes is left alone, so a replayed or racing
-    delivery of identical text never rewrites it. A symlinked directory or
-    target is refused: the copy must land inside the vault, never through a
-    link that points elsewhere.
+    existing regular-file copy with the same bytes is left alone, so a
+    replayed or racing delivery of identical text never rewrites it. A
+    symlinked directory or target, or anything at the target that is not a
+    regular file, is refused: the copy lands inside the vault as a plain
+    file, never through a link or into a special file.
     """
-    target = (
-        directory / f"{safe_report_stem(run_id)}.{digest[:REPORT_DIGEST_PREFIX]}.md"
-    )
+    target = directory / f"{safe_report_stem(run_id)}.{digest}.md"
     if directory.is_symlink():
         raise _copy_failed(
             f"{directory} is a symbolic link; the report copy is installed only "
@@ -648,8 +661,14 @@ def write_report_copy(
             f"{target} is a symbolic link; remove it and re-run record-report"
         )
     try:
-        if target.exists() and target.read_bytes() == content:
-            return target, False
+        if target.exists():
+            if not target.is_file():
+                raise _copy_failed(
+                    f"{target} exists and is not a regular file; remove it and "
+                    "re-run record-report"
+                )
+            if target.read_bytes() == content:
+                return target, False
         directory.mkdir(parents=True, exist_ok=True)
         if directory.is_symlink():
             raise OSError("directory became a symbolic link")
@@ -725,16 +744,20 @@ class Context:
         self.database_path = materialize_native_authority(
             raw_database, authority="database_path"
         )
+        self.vault_root: Path | None = None
         self.database = self.refresh()
-        self.vault_root = resolve_vault_root_authority(
-            database_path=self.database_path, config=self.database.get("config")
-        )
+        assert self.vault_root is not None
         self.ledger_path = self.vault_root / LEDGER_FILENAME
         self.reports_directory = self.vault_root / REPORTS_DIRECTORY
         self.profile_path = self.vault_root / PROFILE_FILENAME
 
     def refresh(self) -> dict[str, Any]:
-        """Re-read the current database generation right before it is used."""
+        """Re-read the current database generation right before it is used.
+
+        The vault root is re-resolved from the fresh generation's config and
+        must agree with the one the command started under; obligations are
+        never written under an authority the database no longer asserts.
+        """
         try:
             snapshot = snapshot_tracking_database(self.database_path)
             database = decode_json_object(snapshot)
@@ -743,11 +766,26 @@ class Context:
             raise RunObligationsError(
                 str(exc), reason_code="database_unusable"
             ) from exc
+        vault_root = resolve_vault_root_authority(
+            database_path=self.database_path, config=database.get("config")
+        )
+        if self.vault_root is not None and vault_root != self.vault_root:
+            raise RunObligationsError(
+                f"the tracking database now asserts vault root {vault_root} "
+                f"but this command started under {self.vault_root}; re-run it",
+                reason_code="vault_root_changed",
+            )
+        self.vault_root = vault_root
         self.database = database
         return database
 
     def persisted_runs(self) -> dict[str, dict[str, Any]]:
-        """Runs whose closed claims say persist-results.py merged their talks."""
+        """Runs whose closed claims say persist-results.py merged their talks.
+
+        ``talks`` maps each filename to the newest release time of a claim
+        that persisted it under that run, so a talk merged again under the
+        same run id is a distinct persisted fact.
+        """
         runs: dict[str, dict[str, Any]] = {}
         for record in self.database["talks"]:
             if not isinstance(record, dict):
@@ -758,17 +796,15 @@ class Context:
             for run_id, released in persisted_claims(record):
                 entry = runs.setdefault(
                     run_id,
-                    {"run_id": run_id, "talks": [], "latest_released_at": None},
+                    {"run_id": run_id, "talks": {}, "latest_released_at": None},
                 )
-                if filename not in entry["talks"]:
-                    entry["talks"].append(filename)
+                if released > entry["talks"].get(filename, ""):
+                    entry["talks"][filename] = released
                 if (
                     entry["latest_released_at"] is None
                     or released > entry["latest_released_at"]
                 ):
                     entry["latest_released_at"] = released
-        for entry in runs.values():
-            entry["talks"].sort()
         return runs
 
     def talk(self, filename: str) -> dict[str, Any]:
@@ -805,9 +841,9 @@ def describe_talk(
 ) -> dict[str, Any]:
     """The talk as the run records it, linked to the claim that persisted it.
 
-    The link is this run's own closed claim when the talk has one; otherwise
-    the newest closed claim, which is how talks recovered under a fresh run id
-    stay tied to the run that actually persisted them.
+    The link is this run's own newest closed claim when the talk has one;
+    otherwise the newest closed claim of any run, which is how talks recovered
+    under a fresh run id stay tied to the run that actually persisted them.
     """
     record = context.talk(filename)
     claims = persisted_claims(record)
@@ -818,8 +854,8 @@ def describe_talk(
             "persist-results.py merged",
             reason_code="talk_not_persisted",
         )
-    own = [claim_run for claim_run, _released in claims if claim_run == run_id]
-    claim_run_id = own[0] if own else max(claims, key=lambda claim: claim[1])[0]
+    own = [claim for claim in claims if claim[0] == run_id]
+    claim_run_id, claim_released_at = max(own or claims, key=lambda claim: claim[1])
     delivered = parse_delivery_date(record.get("date"))
     days = (now.date() - delivered).days if delivered is not None else None
     return {
@@ -829,6 +865,7 @@ def describe_talk(
         "days_since_delivery": days,
         "recency_bucket": recency_bucket(days),
         "claim_run_id": claim_run_id,
+        "claim_released_at": claim_released_at,
     }
 
 
@@ -855,6 +892,7 @@ def new_run(run_id: str, now: str) -> dict[str, Any]:
             "delivered_at": None,
             "report_path": None,
             "report_sha256": None,
+            "reopened_at": None,
         },
         "completed_at": None,
     }
@@ -898,6 +936,15 @@ def _require_downstream(run: dict[str, Any], command: str) -> None:
         )
 
 
+def _conflict(run: dict[str, Any], command: str, detail: str) -> RunObligationsError:
+    return RunObligationsError(
+        f"run {run['run_id']!r} already recorded a different {command}: {detail}; "
+        "a retry must repeat the recorded inputs, and a changed answer is a "
+        "new transition, not a replay",
+        reason_code="invalid_transition",
+    )
+
+
 def command_open(context: Context, args: argparse.Namespace) -> dict[str, Any]:
     now = parse_timestamp(args.now, "--now")
     stamp = render_timestamp(now)
@@ -924,25 +971,33 @@ def command_open(context: Context, args: argparse.Namespace) -> dict[str, Any]:
     clarification = run["clarification"]
     recency_open = clarification["state"] in {STATE_OWED, STATE_NOT_APPLICABLE}
     context.refresh()
-    known = {str(talk["filename"]) for talk in run["talks"]}
-    # Recency is frozen once the offer is made; until then the newest ``--now``
-    # decides, so a resumed run does not over-promise an inline session for a
-    # talk that is no longer same-week.
-    talks = [
-        describe_talk(context, str(talk["filename"]), now, run_id)
-        if recency_open
-        else talk
-        for talk in run["talks"]
-        if talk["filename"] not in filenames
+    known = {str(talk["filename"]): talk for talk in run["talks"]}
+    fresh = {name: describe_talk(context, name, now, run_id) for name in filenames}
+    # A talk is new to the run when its filename is unrecorded or when a newer
+    # claim persisted it again since; either way the downstream steps are owed
+    # again. Recency is frozen once the offer is made: known talks keep their
+    # snapshot and only genuinely new ones are described, while before the
+    # offer the newest ``--now`` decides for every talk.
+    joined = [
+        name
+        for name, talk in fresh.items()
+        if name not in known
+        or known[name]["claim_released_at"] != talk["claim_released_at"]
     ]
-    talks.extend(describe_talk(context, name, now, run_id) for name in filenames)
+    talks: list[dict[str, Any]] = []
+    for name, talk in known.items():
+        if name in joined:
+            continue
+        if recency_open:
+            talks.append(describe_talk(context, name, now, run_id))
+        else:
+            talks.append(talk)
+    talks.extend(fresh[name] for name in joined)
     talks.sort(key=lambda talk: str(talk["filename"]))
     run["talks"] = talks
     if recency_open:
         _apply_recency(clarification, talks, stamp)
-    if any(name not in known for name in filenames):
-        # New talks need rendering, summary, profile, and goal steps again
-        # before anything is offered or reported.
+    if joined:
         run["downstream"] = {"state": DOWNSTREAM_OWED, "completed_at": None}
     if json.dumps(run, sort_keys=True) != before:
         run["updated_at"] = stamp
@@ -991,11 +1046,24 @@ def command_record_offer(context: Context, args: argparse.Namespace) -> dict[str
     def mutate(run: dict[str, Any], stamp: str, now: datetime) -> dict[str, Any]:
         _require_downstream(run, "record-offer")
         clarification = run["clarification"]
-        if clarification["state"] != STATE_OWED:
+        state = clarification["state"]
+        if state == STATE_OFFERED:
+            # Replay of a recorded offer: the same topics are the same fact.
+            if clarification["topics"] != topics:
+                raise _conflict(
+                    run, "offer", f"topics {clarification['topics']!r} stand"
+                )
+            return {"offered": True, "replayed": True}
+        if state == STATE_NOT_APPLICABLE:
+            return {
+                "offered": False,
+                "replayed": True,
+                "reason": f"run {run['run_id']!r} has nothing to clarify",
+            }
+        if state != STATE_OWED:
             raise RunObligationsError(
-                f"run {run['run_id']!r} clarification is "
-                f"{clarification['state']!r}; record-offer applies only while "
-                "the offer is owed",
+                f"run {run['run_id']!r} clarification is {state!r}; "
+                "record-offer applies only while the offer is owed",
                 reason_code="invalid_transition",
             )
         # The stored recency is a snapshot from the last ``open``. The offer is
@@ -1033,21 +1101,30 @@ def command_record_disposition(
 ) -> dict[str, Any]:
     disposition = args.disposition
     return_condition = (args.return_condition or "").strip() or None
+    if disposition == STATE_DEFERRED and return_condition is None:
+        raise RunObligationsError(
+            "a deferred offer needs --return-condition naming, in the "
+            "speaker's words, when it is raised again",
+            reason_code="invalid_arguments",
+        )
 
-    def mutate(run: dict[str, Any], stamp: str, _now: datetime) -> None:
+    def mutate(run: dict[str, Any], stamp: str, _now: datetime) -> dict[str, Any]:
         clarification = run["clarification"]
-        if clarification["state"] not in {STATE_OFFERED, STATE_DEFERRED}:
+        state = clarification["state"]
+        if state == disposition and (
+            disposition != STATE_DEFERRED
+            or clarification["return_condition"] == return_condition
+        ):
+            # Replay of the recorded answer: nothing moves, the session an
+            # accepted answer opened is left exactly as it is.
+            return {"replayed": True}
+        if state not in {STATE_OFFERED, STATE_DEFERRED}:
+            if state in DISPOSITIONS:
+                raise _conflict(run, "disposition", f"{state!r} stands")
             raise RunObligationsError(
-                f"run {run['run_id']!r} clarification is "
-                f"{clarification['state']!r}; a disposition needs a recorded "
-                "offer first, and only a deferred offer is answered again",
+                f"run {run['run_id']!r} clarification is {state!r}; a "
+                "disposition needs a recorded offer first",
                 reason_code="invalid_transition",
-            )
-        if disposition == STATE_DEFERRED and return_condition is None:
-            raise RunObligationsError(
-                "a deferred offer needs --return-condition naming, in the "
-                "speaker's words, when it is raised again",
-                reason_code="invalid_arguments",
             )
         clarification["state"] = disposition
         clarification["resolved_at"] = stamp
@@ -1064,6 +1141,7 @@ def command_record_disposition(
             if disposition == STATE_ACCEPTED
             else None
         )
+        return {}
 
     return _transition(context, args, mutate)
 
@@ -1074,7 +1152,7 @@ def command_record_session(
     refreshed = bool(args.profile_refreshed)
     inputs = args.profile_inputs
 
-    def mutate(run: dict[str, Any], stamp: str, _now: datetime) -> None:
+    def mutate(run: dict[str, Any], stamp: str, _now: datetime) -> dict[str, Any]:
         clarification = run["clarification"]
         session = clarification["session"]
         if clarification["state"] != STATE_ACCEPTED or session is None:
@@ -1083,10 +1161,17 @@ def command_record_session(
                 reason_code="invalid_transition",
             )
         if session["state"] == SESSION_COMPLETED:
-            raise RunObligationsError(
-                f"run {run['run_id']!r} clarification session already completed "
-                f"at {session['completed_at']}",
-                reason_code="invalid_transition",
+            if (
+                session["profile_inputs"] == inputs
+                and session["profile_refreshed"] == refreshed
+            ):
+                return {"replayed": True}
+            raise _conflict(
+                run,
+                "session completion",
+                f"profile_inputs={session['profile_inputs']!r}, "
+                f"profile_refreshed={session['profile_refreshed']!r} at "
+                f"{session['completed_at']}",
             )
         if (
             inputs == PROFILE_INPUTS_CHANGED
@@ -1103,17 +1188,33 @@ def command_record_session(
         session["completed_at"] = stamp
         session["profile_inputs"] = inputs
         session["profile_refreshed"] = refreshed
+        report = run["end_report"]
+        extras: dict[str, Any] = {}
+        if inputs == PROFILE_INPUTS_CHANGED and report["state"] == REPORT_DELIVERED:
+            # A session accepted after the report went out (a deferred offer
+            # raised again) changed what the report described; the run owes a
+            # fresh report that carries the refreshed profile.
+            run["end_report"] = {
+                "state": REPORT_OWED,
+                "delivered_at": None,
+                "report_path": None,
+                "report_sha256": None,
+                "reopened_at": stamp,
+            }
+            run["completed_at"] = None
+            extras["report_reopened"] = True
+        return extras
 
     return _transition(context, args, mutate)
 
 
 def command_record_report(context: Context, args: argparse.Namespace) -> dict[str, Any]:
-    report_file = Path(args.report_file)
     try:
+        report_file = Path(args.report_file)
         content = report_file.read_bytes()
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         raise RunObligationsError(
-            f"cannot read the delivered report {report_file}: {exc}",
+            f"cannot read the delivered report {args.report_file!r}: {exc}",
             reason_code="report_unreadable",
         ) from exc
     if not content.strip():
@@ -1161,40 +1262,47 @@ def open_required(
 ) -> list[dict[str, Any]]:
     """Persisted talks the ledger does not cover, reconciled against closed claims.
 
-    A talk is covered when some run record lists it with the ``claim_run_id``
-    of the claim that persisted it, whichever run id recorded it; recovery
-    under a fresh run id therefore counts. Two shapes remain. A recorded run
-    whose closed claims name uncovered talks persisted a later batch and
-    crashed before ``open``; every such run is listed with exactly those talks
-    (``missing_talks``, or ``talks_persisted_after_completion`` when the run's
-    report is already delivered — those talks need a fresh run id). A run with
-    no record at all is listed only when it is the newest such run and newer
-    than every recorded run's ``opened_at``: every run recorded later moved
-    past it under this contract, so older unrecorded history is history
-    (``unrecorded_run``).
+    A persisted fact is one closed claim: run id, filename, and release time.
+    It is covered when some run record lists the talk with that claim's run id
+    and release time, whichever run id recorded it; recovery under a fresh run
+    id therefore counts, and a talk merged again under the same run is a new
+    fact. Two shapes remain. A recorded run with uncovered facts persisted a
+    later batch (or re-merged a talk) and crashed before ``open``; every such
+    run is listed with exactly those talks (``missing_talks``, or
+    ``talks_persisted_after_completion`` when the run's report is already
+    delivered — those talks need a fresh run id). A run with no record at all
+    is listed only when it is the newest such run and newer than every
+    recorded run's ``opened_at``: every run recorded later moved past it under
+    this contract, so older unrecorded history is history (``unrecorded_run``).
     """
     records = {run["run_id"]: run for run in ledger["runs"]}
     covered = {
-        (talk["claim_run_id"], talk["filename"])
+        (talk["claim_run_id"], talk["filename"], talk["claim_released_at"])
         for run in ledger["runs"]
         for talk in run["talks"]
-        if talk["claim_run_id"] is not None
     }
     required: list[dict[str, Any]] = []
     unrecorded: list[dict[str, Any]] = []
     for run_id, entry in sorted(persisted.items()):
-        missing = [name for name in entry["talks"] if (run_id, name) not in covered]
+        missing = sorted(
+            name
+            for name, released in entry["talks"].items()
+            if (run_id, name, released) not in covered
+        )
         if not missing:
             continue
+        listed = {
+            "run_id": run_id,
+            "talks": missing,
+            "latest_released_at": entry["latest_released_at"],
+        }
         run = records.get(run_id)
         if run is None:
-            unrecorded.append({**entry, "talks": missing})
+            unrecorded.append(listed)
             continue
         required.append(
             {
-                "run_id": run_id,
-                "talks": missing,
-                "latest_released_at": entry["latest_released_at"],
+                **listed,
                 "reason": (
                     REASON_AFTER_COMPLETION
                     if run["completed_at"] is not None

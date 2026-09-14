@@ -27,11 +27,13 @@ SEED_RUN = "seed-run"
 SEED_RELEASED = "2026-09-01T00:00:00+00:00"
 
 
-def _persisted_claim(run_id: str, released_at: str, *, result_status="processed"):
+def _persisted_claim(
+    run_id: str, released_at: str, *, result_status="processed", batch_id="b1"
+):
     return {
         "schema_version": 2,
         "run_id": run_id,
-        "batch_id": "b1",
+        "batch_id": batch_id,
         "claimed_at": "2026-08-31T00:00:00+00:00",
         "previous_status": "pending",
         "reprocess_generation": 1,
@@ -115,7 +117,7 @@ def _ledger(tmp_path: Path):
 
 
 def _copy_path(tmp_path: Path, run_id: str, content: bytes) -> Path:
-    digest = hashlib.sha256(content).hexdigest()[:12]
+    digest = hashlib.sha256(content).hexdigest()
     stem = "".join(c if c.isalnum() or c in "._-" else "_" for c in run_id)
     return tmp_path / "ingress-reports" / f"{stem}.{digest}.md"
 
@@ -520,7 +522,8 @@ def test_each_disposition_is_explicit(
     else:
         assert run["clarification"]["return_condition"] is None
     assert _ok(fresh_db, "pending")["pending"][0]["next_action"] == next_action
-    code, repeat, _stderr = _run(
+    other = "accepted" if disposition == "declined" else "declined"
+    code, changed, _stderr = _run(
         fresh_db,
         "record-disposition",
         "--run-id",
@@ -528,16 +531,16 @@ def test_each_disposition_is_explicit(
         "--now",
         MUCH_LATER,
         "--disposition",
-        "declined",
+        other,
     )
-    assert repeat is not None
+    assert changed is not None
     if disposition == "deferred":
         # A deferred offer is the one answer that can be given again.
         assert code == 0
-        assert repeat["run"]["clarification"]["state"] == "declined"
+        assert changed["run"]["clarification"]["state"] == other
     else:
         assert code == 2
-        assert repeat["reason_code"] == "invalid_transition"
+        assert changed["reason_code"] == "invalid_transition"
 
 
 @pytest.mark.parametrize(
@@ -728,6 +731,7 @@ def test_a_delivered_report_is_copied_bound_and_completes_the_run(tmp_path, fres
         "delivered_at": LATER,
         "report_path": str(copied),
         "report_sha256": hashlib.sha256(report.read_bytes()).hexdigest(),
+        "reopened_at": None,
     }
     assert run["completed_at"] == LATER
     assert _ok(fresh_db, "pending") == {
@@ -1202,6 +1206,7 @@ def _valid_run(run_id: str = "r", **overrides):
                 "days_since_delivery": 4,
                 "recency_bucket": "same_week",
                 "claim_run_id": SEED_RUN,
+                "claim_released_at": SEED_RELEASED,
             }
         ],
         "downstream": {"state": "completed", "completed_at": NOW},
@@ -1220,6 +1225,7 @@ def _valid_run(run_id: str = "r", **overrides):
             "delivered_at": None,
             "report_path": None,
             "report_sha256": None,
+            "reopened_at": None,
         },
         "completed_at": None,
     }
@@ -1239,8 +1245,9 @@ def _apply_overrides(run, overrides):
 _DELIVERED = {
     "state": "delivered",
     "delivered_at": LATER,
-    "report_path": "/vault/ingress-reports/r.0123456789ab.md",
+    "report_path": "/vault/ingress-reports/r." + "a" * 64 + ".md",
     "report_sha256": "a" * 64,
+    "reopened_at": None,
 }
 _SESSION_DONE = {
     "state": "completed",
@@ -1366,6 +1373,16 @@ _ACCEPTED = {
         ),
         ({"talks.0.claim_run_id": "run 1"}, "claim_run_id 'run 1' contains whitespace"),
         ({"completed_at": 1}, "completed_at must be null in this state"),
+        ({"talks.0.claim_run_id": None}, "claim_run_id must be a non-empty string"),
+        (
+            {"talks.0.claim_released_at": "2026-09-01T02:00:00+02:00"},
+            "must be the canonical UTC form '2026-09-01T00:00:00+00:00'",
+        ),
+        (
+            {"opened_at": "2026-09-14T13:00:00+01:00"},
+            "opened_at '2026-09-14T13:00:00+01:00' must be the canonical UTC form",
+        ),
+        ({"end_report.reopened_at": "later"}, "reopened_at 'later' is malformed"),
     ],
     ids=[
         "clarification-null",
@@ -1410,6 +1427,10 @@ _ACCEPTED = {
         "talk-date",
         "talk-claim-id",
         "completed-type",
+        "talk-claim-id-null",
+        "talk-claim-released-noncanonical",
+        "opened-noncanonical",
+        "reopened-malformed",
     ],
 )
 def test_every_malformed_ledger_field_fails_structured(
@@ -1445,12 +1466,7 @@ def test_every_malformed_ledger_field_fails_structured(
             }
         ),
         _valid_run(**{**_ACCEPTED, "clarification.session": _SESSION_DONE}),
-        _valid_run(
-            **{
-                "downstream": {"state": "owed", "completed_at": None},
-                "talks.0.claim_run_id": None,
-            }
-        ),
+        _valid_run(downstream={"state": "owed", "completed_at": None}),
     ],
     ids=["owed", "deferred-delivered", "accepted-completed", "downstream-owed"],
 )
@@ -1505,3 +1521,331 @@ def test_the_entry_point_is_guarded(run_obligations):
     assert callable(run_obligations.main)
     assert run_obligations.LEDGER_SCHEMA_VERSION == 1
     assert run_obligations.RUN_RECORD_SCHEMA_VERSION == 1
+
+
+# ── replays are unchanged successes ───────────────────────────────────
+
+
+def test_a_replayed_offer_is_an_unchanged_success_and_a_changed_one_a_conflict(
+    fresh_db,
+):
+    run_id = _opened(fresh_db)
+    first = _ok(
+        fresh_db, "record-offer", "--run-id", run_id, "--now", NOW, "--topic", "aside"
+    )
+    replay = _ok(
+        fresh_db, "record-offer", "--run-id", run_id, "--now", LATER, "--topic", "aside"
+    )
+    assert replay["offered"] is True
+    assert replay["replayed"] is True
+    assert replay["written"] is False
+    assert replay["run"] == first["run"]
+    conflict = _refused(
+        fresh_db, "record-offer", "--run-id", run_id, "--now", LATER, "--topic", "other"
+    )
+    assert conflict["reason_code"] == "invalid_transition"
+    assert "different offer" in conflict["error"]
+
+
+def test_a_replayed_withdrawn_offer_stays_withdrawn(tmp_path):
+    database = _write_db(tmp_path, [_talk("fresh.md")])
+    _opened(database, "run-w")
+    requeued = _talk("fresh.md", status="needs-reprocessing", claim=None)
+    requeued["reprocess_generation"] = 1
+    requeued["_queue_claim_history"] = [_persisted_claim(SEED_RUN, SEED_RELEASED)]
+    _write_db(tmp_path, [requeued])
+    _ok(database, "record-offer", "--run-id", "run-w", "--now", LATER)
+    replay = _ok(database, "record-offer", "--run-id", "run-w", "--now", MUCH_LATER)
+    assert replay["offered"] is False
+    assert replay["replayed"] is True
+    assert replay["written"] is False
+
+
+@pytest.mark.parametrize(
+    ("disposition", "extra"),
+    [
+        ("declined", []),
+        ("accepted", []),
+        ("deferred", ["--return-condition", "after JavaZone"]),
+    ],
+)
+def test_a_replayed_disposition_changes_nothing(fresh_db, disposition, extra):
+    run_id = _opened(fresh_db)
+    _ok(fresh_db, "record-offer", "--run-id", run_id, "--now", NOW)
+    first = _ok(
+        fresh_db,
+        "record-disposition",
+        "--run-id",
+        run_id,
+        "--now",
+        LATER,
+        "--disposition",
+        disposition,
+        *extra,
+    )
+    replay = _ok(
+        fresh_db,
+        "record-disposition",
+        "--run-id",
+        run_id,
+        "--now",
+        MUCH_LATER,
+        "--disposition",
+        disposition,
+        *extra,
+    )
+    assert replay["replayed"] is True
+    assert replay["written"] is False
+    assert replay["run"] == first["run"]
+
+
+def test_a_replayed_acceptance_never_resets_a_completed_session(fresh_db):
+    run_id = _accepted(fresh_db)
+    _ok(
+        fresh_db,
+        "record-session",
+        "--run-id",
+        run_id,
+        "--now",
+        LATER,
+        "--profile-inputs",
+        "unchanged",
+    )
+    replay = _ok(
+        fresh_db,
+        "record-disposition",
+        "--run-id",
+        run_id,
+        "--now",
+        MUCH_LATER,
+        "--disposition",
+        "accepted",
+    )
+    assert replay["replayed"] is True
+    assert replay["run"]["clarification"]["session"]["state"] == "completed"
+    conflict = _refused(
+        fresh_db,
+        "record-disposition",
+        "--run-id",
+        run_id,
+        "--now",
+        MUCH_LATER,
+        "--disposition",
+        "declined",
+    )
+    assert conflict["reason_code"] == "invalid_transition"
+    assert "different disposition" in conflict["error"]
+
+
+def test_a_replayed_session_completion_keeps_its_first_timestamp(fresh_db):
+    run_id = _accepted(fresh_db)
+    first = _ok(
+        fresh_db,
+        "record-session",
+        "--run-id",
+        run_id,
+        "--now",
+        LATER,
+        "--profile-inputs",
+        "unchanged",
+    )
+    replay = _ok(
+        fresh_db,
+        "record-session",
+        "--run-id",
+        run_id,
+        "--now",
+        MUCH_LATER,
+        "--profile-inputs",
+        "unchanged",
+    )
+    assert replay["replayed"] is True
+    assert replay["written"] is False
+    assert replay["run"] == first["run"]
+    assert replay["run"]["clarification"]["session"]["completed_at"] == LATER
+    conflict = _refused(
+        fresh_db,
+        "record-session",
+        "--run-id",
+        run_id,
+        "--now",
+        MUCH_LATER,
+        "--profile-inputs",
+        "changed",
+        "--profile-refreshed",
+    )
+    assert conflict["reason_code"] == "invalid_transition"
+    assert "different session completion" in conflict["error"]
+
+
+def test_a_replayed_open_never_touches_a_frozen_snapshot(fresh_db):
+    run_id = _opened(fresh_db, "run-frozen")
+    offered = _ok(fresh_db, "record-offer", "--run-id", run_id, "--now", NOW)["run"]
+    replay = _open(fresh_db, run_id, "fresh.md", now=MUCH_LATER)
+    assert replay["written"] is False
+    assert replay["run"] == offered
+
+
+# ── a session after the report reopens it ─────────────────────────────
+
+
+def test_a_session_accepted_after_delivery_that_changed_inputs_reopens_the_report(
+    tmp_path, fresh_db
+):
+    run_id = _opened(fresh_db)
+    _ok(fresh_db, "record-offer", "--run-id", run_id, "--now", NOW)
+    _ok(
+        fresh_db,
+        "record-disposition",
+        "--run-id",
+        run_id,
+        "--now",
+        NOW,
+        "--disposition",
+        "deferred",
+        "--return-condition",
+        "after JavaZone",
+    )
+    first = _record_report(fresh_db, run_id, _report(tmp_path))
+    assert first["run"]["completed_at"] == LATER
+    _ok(
+        fresh_db,
+        "record-disposition",
+        "--run-id",
+        run_id,
+        "--now",
+        MUCH_LATER,
+        "--disposition",
+        "accepted",
+    )
+    done = _ok(
+        fresh_db,
+        "record-session",
+        "--run-id",
+        run_id,
+        "--now",
+        MUCH_LATER,
+        "--profile-inputs",
+        "changed",
+    )
+    assert done["report_reopened"] is True
+    assert done["run"]["end_report"] == {
+        "state": "owed",
+        "delivered_at": None,
+        "report_path": None,
+        "report_sha256": None,
+        "reopened_at": MUCH_LATER,
+    }
+    assert done["run"]["completed_at"] is None
+    assert _ok(fresh_db, "pending")["pending"][0]["next_action"] == "deliver_end_report"
+    again = _record_report(
+        fresh_db, run_id, _report(tmp_path, "# after the session\n"), now=MUCH_LATER
+    )
+    assert again["run"]["completed_at"] == MUCH_LATER
+    assert again["run"]["end_report"]["reopened_at"] == MUCH_LATER
+    assert _ok(fresh_db, "pending")["pending"] == []
+
+
+def test_a_late_session_with_unchanged_inputs_leaves_the_report_delivered(
+    tmp_path, fresh_db
+):
+    run_id = _opened(fresh_db)
+    _ok(fresh_db, "record-offer", "--run-id", run_id, "--now", NOW)
+    _ok(
+        fresh_db,
+        "record-disposition",
+        "--run-id",
+        run_id,
+        "--now",
+        NOW,
+        "--disposition",
+        "deferred",
+        "--return-condition",
+        "after JavaZone",
+    )
+    _record_report(fresh_db, run_id, _report(tmp_path))
+    _ok(
+        fresh_db,
+        "record-disposition",
+        "--run-id",
+        run_id,
+        "--now",
+        MUCH_LATER,
+        "--disposition",
+        "accepted",
+    )
+    done = _ok(
+        fresh_db,
+        "record-session",
+        "--run-id",
+        run_id,
+        "--now",
+        MUCH_LATER,
+        "--profile-inputs",
+        "unchanged",
+    )
+    assert "report_reopened" not in done
+    assert done["run"]["end_report"]["state"] == "delivered"
+    assert done["run"]["completed_at"] == LATER
+
+
+# ── a talk merged again under the same run ────────────────────────────
+
+
+def test_a_talk_merged_again_under_the_same_run_is_a_new_fact(tmp_path):
+    first_release = "2026-09-13T10:00:00+00:00"
+    second_release = "2026-09-13T12:00:00+00:00"
+    database = _db_with_claims(tmp_path, {"a.md": ("run-again", first_release)})
+    _opened(database, "run-again", "a.md")
+    assert _ok(database, "pending")["open_required"] == []
+    talk = _talk(
+        "a.md", claim=_persisted_claim("run-again", second_release, batch_id="b2")
+    )
+    talk["_queue_claim_history"] = [_persisted_claim("run-again", first_release)]
+    _write_db(tmp_path, [talk])
+    payload = _ok(database, "pending")
+    assert payload["open_required"] == [
+        {
+            "run_id": "run-again",
+            "talks": ["a.md"],
+            "latest_released_at": second_release,
+            "reason": "missing_talks",
+            "next_action": "open_obligations",
+        }
+    ]
+    reopened = _open(database, "run-again", "a.md", now=LATER)
+    assert reopened["run"]["talks"][0]["claim_released_at"] == second_release
+    assert reopened["run"]["downstream"] == {"state": "owed", "completed_at": None}
+    assert _ok(database, "pending")["open_required"] == []
+
+
+# ── more inputs that fail closed ──────────────────────────────────────
+
+
+def test_a_directory_at_the_copy_target_is_refused(tmp_path, fresh_db):
+    run_id = _declined(fresh_db)
+    report = _report(tmp_path)
+    _copy_path(tmp_path, run_id, report.read_bytes()).mkdir(parents=True)
+    payload = _refused(
+        fresh_db,
+        "record-report",
+        "--run-id",
+        run_id,
+        "--now",
+        LATER,
+        "--report-file",
+        str(report),
+    )
+    assert payload["reason_code"] == "report_copy_failed"
+    assert "not a regular file" in payload["error"]
+
+
+def test_a_database_asserting_another_vault_root_fails_closed(tmp_path):
+    database = _write_db(tmp_path, [_talk("fresh.md")])
+    payload = json.loads(database.read_text(encoding="utf-8"))
+    payload["config"]["vault_storage_path"] = str(tmp_path / "elsewhere")
+    database.write_text(json.dumps(payload), encoding="utf-8")
+    code, result, stderr = _run(database, "pending")
+    assert code == 2
+    assert result is not None and result["ok"] is False
+    assert result["error"] in stderr

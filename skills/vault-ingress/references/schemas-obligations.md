@@ -43,10 +43,18 @@ explicit disposition and the end report has been delivered.
 | `end_report` | object | the delivered report |
 | `completed_at` | timestamp or null | set by `record-report`; the run is complete |
 
-Timestamps are timezone-aware ISO-8601 normalized to UTC seconds; every
-command takes them from `--now`, never from the clock. Every read parses each
-stored timestamp and checks the state-dependent invariants below; a record
-that breaks one is refused as `ledger_invalid` naming the field.
+Timestamps are the canonical UTC whole-second ISO-8601 form
+(`2026-09-14T12:00:00+00:00`); every command takes them from `--now`, never
+from the clock, and stores the normalized form. Every read parses each stored
+timestamp, requires that canonical form so stamps compare as text, and checks
+the state-dependent invariants below; a record that breaks one is refused as
+`ledger_invalid` naming the field.
+
+Every recording command is replay-safe: repeating it with the inputs it
+already recorded is an unchanged success carrying `replayed: true`, so a
+caller that lost the first response can retry; a different answer to an
+already-answered question is refused as `invalid_transition` naming what
+stands. A replayed `open` never touches a frozen recency snapshot.
 
 ### Talk entry
 
@@ -57,7 +65,8 @@ that breaks one is refused as `ledger_invalid` naming the field.
 | `delivery_date` | the talk's `date` when it is a `YYYY-MM-DD` string, else null |
 | `days_since_delivery` | whole days between `delivery_date` and `--now`, else null |
 | `recency_bucket` | `same_week`, `recent`, `older`, or `unknown` |
-| `claim_run_id` | the run id of the closed `return_persisted` claim that persisted the talk: this run's own claim when it has one, else the newest; `open` refuses a talk with no such claim (`talk_not_persisted`) |
+| `claim_run_id` | the run id of the closed `return_persisted` claim that persisted the talk: this run's own newest claim when it has one, else the newest of any run; `open` refuses a talk with no such claim (`talk_not_persisted`) |
+| `claim_released_at` | that claim's `released_at`; together with `claim_run_id` and `filename` it names one persisted fact, so a talk merged again under the same run is a new fact that re-owes the downstream steps |
 
 Bucket boundaries and the rule that an undated or future-dated talk is
 `unknown` are the script's: see `run-obligations.py`, the top-of-file
@@ -128,11 +137,17 @@ on an offer. Once `offered`, the buckets and `offer_mode` are frozen; later
 |---|---|
 | `state` | `owed` or `delivered` |
 | `delivered_at` | when `record-report` accepted the delivered text |
-| `report_path` | `{vault_root}/ingress-reports/{stem}.{digest prefix}.md`, the byte-exact copy; `stem` is the run id with every character outside `A-Za-z0-9._-` replaced by `_`, so a ledger-edited id never names a path outside the directory |
+| `report_path` | `{vault_root}/ingress-reports/{stem}.{sha256}.md`, the byte-exact copy; `stem` is the run id with every character outside `A-Za-z0-9._-` replaced by `_`, so a ledger-edited id never names a path outside the directory, and the full digest keeps two texts from ever sharing a path |
 | `report_sha256` | digest of the delivered text |
+| `reopened_at` | when a clarification session accepted after delivery reported changed profile inputs, sending the run back to `owed` for a fresh report; null otherwise |
 
-Once `delivered`, all three fields are set and `completed_at` carries the
-same event; while `owed`, all four are null.
+Once `delivered`, path, digest, and `delivered_at` are set and
+`completed_at` carries the same event; while `owed`, all of them are null.
+A `record-session` that reports `changed` profile inputs after the report was
+delivered — the only way is a deferred offer answered again — resets the
+report to `owed`, stamps `reopened_at`, clears `completed_at`, and answers
+`report_reopened: true`; Step 11 runs again so the report carries the
+refreshed profile.
 
 `record-report` refuses (`invalid_transition`) until the downstream steps are
 recorded and the clarification is resolved: `declined`, `deferred`,
@@ -146,8 +161,9 @@ copy out from under a delivery that did bind it. Re-recording identical bytes
 changes nothing in the ledger but still verifies the copy, recreating one that
 went missing; different bytes add a second copy (the earlier one stays on
 disk) and re-stamp `delivered_at`. A symlinked `ingress-reports` directory or
-copy path is refused (`report_copy_failed`): the copy lands only in a real
-directory inside the vault.
+copy path, or anything at the copy path that is not a regular file, is refused
+(`report_copy_failed`): the copy lands only in a real directory inside the
+vault, as a plain file.
 
 ## Commands
 
@@ -164,7 +180,9 @@ directory inside the vault.
 
 Every command reads the tracking database through the owner's strict reader
 and requires the current generation (`database_unusable` otherwise); the
-ledger path is derived from the database-bound vault root.
+ledger path is derived from the database-bound vault root, which is
+re-resolved on every re-read and must not move while a command runs
+(`vault_root_changed`).
 
 Exit 0 emits one JSON object. A mutating command's object carries `written`
 (whether bytes were installed), `durability_state` (`durable`, `unchanged`, or
@@ -172,8 +190,9 @@ a named degradation such as `installed_verification_failed`), and `warnings`;
 every warning is also printed to stderr. Exit 2 emits
 `{"ok": false, "error", "reason_code"}` on stdout and the same message on
 stderr. Reason codes: `invalid_arguments`, `invalid_timestamp`,
-`database_unusable`, `talk_not_found`, `talk_not_persisted`, `run_not_found`,
-`invalid_transition`, `profile_refresh_required`, `report_unreadable`,
+`database_unusable`, `vault_root_changed`, `talk_not_found`,
+`talk_not_persisted`, `run_not_found`, `invalid_transition`,
+`profile_refresh_required`, `report_unreadable`,
 `report_empty`,
 `report_copy_failed`, `ledger_unreadable`, `ledger_invalid`,
 `ledger_schema_unsupported`, `ledger_write_failed`.
@@ -200,11 +219,12 @@ again when the speaker's condition is met.
 `open_required` reconciles the ledger against the tracking database: a claim
 closed with `release_reason: return_persisted` says its talk persisted, and a
 persisted talk the ledger does not cover crashed between the merge and `open`.
-A talk is covered when any run record lists it with the `claim_run_id` of the
-claim that persisted it, whichever run id recorded it, so a recovery under a
-fresh run id is never reported again. Each entry carries `run_id`, `talks`
-(only the uncovered ones), `latest_released_at`, `reason`, and
-`next_action: open_obligations`:
+A persisted fact is one closed claim: run id, filename, and release time. It
+is covered when any run record lists the talk with that claim's `claim_run_id`
+and `claim_released_at`, whichever run id recorded it, so a recovery under a
+fresh run id is never reported again and a talk merged again under the same
+run is a new fact. Each entry carries `run_id`, `talks` (only the uncovered
+ones), `latest_released_at`, `reason`, and `next_action: open_obligations`:
 
 | `reason` | Meaning | Action |
 |---|---|---|
