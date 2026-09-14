@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.163 — 2026-09-14
+
 ### Remove the eval suite
 
 The 28 `evals/` scenarios, their `eval-resources/` fixtures, and the
