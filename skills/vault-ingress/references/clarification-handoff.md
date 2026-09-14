@@ -54,8 +54,11 @@ with the `offer_mode` the offer must use:
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
   "{vault_root}/tracking-database.json" record-offer \
-  --run-id "{run_id}" --now "{iso_timestamp}" --topic "{topic}" [--topic ...]
+  --run-id "{run_id}" --now "{iso_timestamp}" --topics-from "{topics_file}"
 ```
+
+Write the candidate topics to `{topics_file}` first, one per line: a topic is
+analysis-derived text and never goes through a shell string.
 
 `offered: false` in the output means the database changed since the run
 opened and no analyzed talk is left; the run is recorded as not applicable and

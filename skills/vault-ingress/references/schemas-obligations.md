@@ -67,7 +67,7 @@ stands. A replayed `open` never touches a frozen recency snapshot.
 | Field | Meaning |
 |---|---|
 | `filename` | the talk's `filename` in the tracking database |
-| `status` | the talk's status at the time of `open` |
+| `status` | the talk's status at the time of `open`, one of the queue contract's known statuses |
 | `delivery_date` | the talk's `date` when it is a `YYYY-MM-DD` string, else null |
 | `days_since_delivery` | whole days between `delivery_date` and `--now`, else null |
 | `recency_bucket` | `same_week`, `recent`, `older`, or `unknown` |
@@ -149,7 +149,7 @@ on an offer. Once `offered`, the buckets and `offer_mode` are frozen; later
 |---|---|
 | `state` | `owed` or `delivered` |
 | `delivered_at` | when `record-report` accepted the delivered text |
-| `report_path` | `{vault_root}/ingress-reports/{stem}.{sha256}.md`, the byte-exact copy; `stem` is the run id with every character outside `A-Za-z0-9._-` replaced by `_`, bounded for long ids by the script's `REPORT_STEM_*` constants, so a ledger-edited id never names a path outside the directory, a long id never exceeds a filename limit, and the full digest keeps two texts from ever sharing a path |
+| `report_path` | `{vault_root}/ingress-reports/{stem}.{sha256}.md`, the byte-exact copy; `stem` is the run id with every character outside `A-Za-z0-9._-` replaced by `_`, bounded for long ids by the script's `REPORT_STEM_*` constants, so a ledger-edited id never names a path outside the directory, a long id never exceeds a filename limit, and the full digest keeps two texts from ever sharing a path. Validation recomputes this path from the run id and digest and refuses any other value |
 | `report_sha256` | digest of the delivered text |
 | `reopened_at` | when a clarification session accepted after delivery reported changed profile inputs, sending the run back to `owed` for a fresh report; null otherwise |
 
@@ -190,11 +190,18 @@ special file is `report_unreadable`.
 | `adopt --now` | — | creates the ledger with `adopted_at` and `adopted_facts`; replay-safe |
 | `open --run-id --now (--talk ... \| --talks-from) [--from-run]` | the ledger is adopted; every talk (from `--talk` or one per line in the `--talks-from` file) is a filename in the current tracking database with a closed `return_persisted` claim (under `--from-run` when given); a completed run accepts only an exact replay of its recorded facts; a run whose offer was answered accepts no new fact | creates or extends the run record; recomputes recency and `offer_mode` while unoffered; a new fact joining while the offer stands withdraws the offer; owes the downstream steps when a new fact joins |
 | `record-downstream --run-id --now` | the run exists | downstream `completed`; replay-safe |
-| `record-offer --run-id --now [--topic ...]` | downstream `completed`; state `owed` | refreshes recency, then `offered` with `topics` and `offered: true`; or, with no analyzed talk left, `not_applicable` and `offered: false` |
+| `record-offer --run-id --now [--topic ...] [--topics-from]` | downstream `completed`; state `owed` | refreshes recency, then `offered` with `topics` and `offered: true`; or, with no analyzed talk left, `not_applicable` and `offered: false` |
 | `record-disposition --run-id --now --disposition ... [--return-condition]` | state `offered` or `deferred`; `deferred` needs `--return-condition` | the disposition; `accepted` opens a pending session |
 | `record-session --run-id --now --profile-inputs changed\|unchanged [--profile-refreshed]` | state `accepted`, session pending; `changed` with `{vault_root}/speaker-profile.json` present needs `--profile-refreshed` (`profile_refresh_required` otherwise) | session `completed` with both flags recorded |
 | `record-report --run-id --now --report-file` | downstream `completed`; clarification resolved; non-empty file | copies the report, binds its digest, sets `completed_at` |
-| `dismiss --run-id --now --reason` | the ledger is adopted; the run has no record and is listed as `unrecorded_run` | records the exact facts listed now as deliberately not opened; a run listed again after an earlier dismissal renews that entry, adding the new facts (`renewed: true`); with nothing new listed, the same reason is a replay and another reason is refused |
+| `dismiss --run-id --now (--reason \| --reason-from)` | the ledger is adopted; the run has no record and is listed as `unrecorded_run` | records the exact facts listed now as deliberately not opened; a run listed again after an earlier dismissal renews that entry, adding the new facts (`renewed: true`); with nothing new listed, the same reason is a replay and another reason is refused |
+
+Free text — talk filenames, candidate topics, the speaker's reason — reaches
+the script through a file (`--talks-from`, `--topics-from`, `--reason-from`),
+one entry per line, never through a shell string. Run ids are chosen by the
+skill at Step 2 from letters, digits, `.`, `_`, and `-`, so the `{run_id}` and
+`{iso_timestamp}` placeholders in the references need no quoting beyond the
+double quotes shown.
 | `pending` | — | runs owing a step, deferred offers, and uncovered persisted facts |
 | `status --run-id` | the run exists | the record and its summary |
 

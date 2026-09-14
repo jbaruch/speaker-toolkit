@@ -80,7 +80,10 @@ so database content never passes through a shell string; a non-string
 delivery date is refused. An io-layer failure is reported through the closed
 diagnostics vocabulary rather than the decoder's text, so a rejected key or
 value is never echoed, and a newly created reports directory is synced into
-its parent.
+its parent. A recorded talk status must be one the queue contract knows, a
+delivered report path must be the one this vault binds for its digest, and
+candidate topics and dismissal reasons reach the script through files like
+the talk filenames do.
 The end-to-end evaluation
 scenario and the clarification skill's seed-agenda contract follow separately.
 

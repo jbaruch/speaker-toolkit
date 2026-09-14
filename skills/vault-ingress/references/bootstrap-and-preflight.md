@@ -517,8 +517,11 @@ later is listed again):
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
   "{vault_root}/tracking-database.json" dismiss \
-  --run-id "{run_id}" --now "{iso_timestamp}" --reason "{speaker's reason}"
+  --run-id "{run_id}" --now "{iso_timestamp}" --reason-from "{reason_file}"
 ```
+
+Write the speaker's reason, in their words, to `{reason_file}` first: it is
+free text and never goes through a shell string.
 
 Every listed run is opened or dismissed; none is left for a later run to
 hide.

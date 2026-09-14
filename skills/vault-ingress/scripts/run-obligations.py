@@ -20,7 +20,7 @@ Usage:
     run-obligations.py <tracking-database.json> record-downstream \
         --run-id <id> --now <ISO-8601>
     run-obligations.py <tracking-database.json> record-offer \
-        --run-id <id> --now <ISO-8601> [--topic <text> ...]
+        --run-id <id> --now <ISO-8601> [--topic <text> ...] [--topics-from <file>]
     run-obligations.py <tracking-database.json> record-disposition \
         --run-id <id> --now <ISO-8601> \
         --disposition accepted|declined|deferred [--return-condition <text>]
@@ -30,7 +30,7 @@ Usage:
     run-obligations.py <tracking-database.json> record-report \
         --run-id <id> --now <ISO-8601> --report-file <delivered-report.md>
     run-obligations.py <tracking-database.json> dismiss \
-        --run-id <id> --now <ISO-8601> --reason <text>
+        --run-id <id> --now <ISO-8601> (--reason <text> | --reason-from <file>)
     run-obligations.py <tracking-database.json> pending
     run-obligations.py <tracking-database.json> status --run-id <id>
 
@@ -82,7 +82,11 @@ import stat
 import sys
 from typing import Any
 
-from queue_claim_contract import QueueClaimContractError, require_queue_identifier
+from queue_claim_contract import (
+    KNOWN_STATUSES,
+    QueueClaimContractError,
+    require_queue_identifier,
+)
 from tracking_database import (
     TrackingDatabaseError,
     require_current_tracking_database,
@@ -485,9 +489,9 @@ def _validate_talk(entry: Any, label: str) -> None:
         ),
         label,
     )
-    for key in ("filename", "status"):
-        if not isinstance(talk[key], str) or not talk[key]:
-            raise _invalid(label, f"{key} must be a non-empty string")
+    if not isinstance(talk["filename"], str) or not talk["filename"]:
+        raise _invalid(label, "filename must be a non-empty string")
+    _require_choice(talk["status"], KNOWN_STATUSES, f"{label}.status")
     delivered = talk["delivery_date"]
     if delivered is not None and (
         not isinstance(delivered, str) or parse_delivery_date(delivered) is None
@@ -590,7 +594,8 @@ def _validate_downstream(record: Any, label: str) -> None:
     )
 
 
-def _validate_report(record: Any, label: str) -> bool:
+def _validate_report(record: Any, label: str, expected_path: Any) -> bool:
+    """``expected_path`` maps a digest to the copy path this vault binds."""
     report = _require_keys(
         record,
         ("state", "delivered_at", "report_path", "report_sha256", "reopened_at"),
@@ -606,12 +611,16 @@ def _validate_report(record: Any, label: str) -> bool:
         report["delivered_at"], f"{label}.delivered_at", present=delivered
     )
     if delivered:
-        if not isinstance(report["report_path"], str) or not report["report_path"]:
-            raise _invalid(label, "report_path must be set once delivered")
         if not isinstance(report["report_sha256"], str) or not _SHA256_HEX.match(
             report["report_sha256"]
         ):
             raise _invalid(label, "report_sha256 must be a hex SHA-256 once delivered")
+        bound = expected_path(report["report_sha256"])
+        if report["report_path"] != bound:
+            raise _invalid(
+                label,
+                f"report_path must be the bound copy {bound!r} for its digest",
+            )
     else:
         _require_null(report["report_path"], f"{label}.report_path")
         _require_null(report["report_sha256"], f"{label}.report_sha256")
@@ -620,7 +629,7 @@ def _validate_report(record: Any, label: str) -> bool:
     return delivered
 
 
-def _validate_run(run: dict[str, Any], label: str) -> None:
+def _validate_run(run: dict[str, Any], label: str, reports_directory: Path) -> None:
     """Refuse a run record whose shape a command would otherwise trip over."""
     _require_keys(
         run,
@@ -651,7 +660,13 @@ def _validate_run(run: dict[str, Any], label: str) -> None:
         _validate_talk(talk, f"{label} talks[{position}]")
     _validate_downstream(run["downstream"], f"{label} downstream")
     _validate_clarification(run["clarification"], f"{label} clarification")
-    delivered = _validate_report(run["end_report"], f"{label} end_report")
+    delivered = _validate_report(
+        run["end_report"],
+        f"{label} end_report",
+        lambda digest: str(
+            reports_directory / f"{safe_report_stem(str(run['run_id']))}.{digest}.md"
+        ),
+    )
     _require_timestamp_or_null(
         run["completed_at"], f"{label} completed_at", present=delivered
     )
@@ -668,8 +683,10 @@ def _validate_run(run: dict[str, Any], label: str) -> None:
             raise _invalid(label, "completed_at must equal end_report.delivered_at")
 
 
-def validate_ledger(payload: object, path: Path) -> dict[str, Any]:
-    """Accept only the owner's current ledger shape."""
+def validate_ledger(
+    payload: object, path: Path, reports_directory: Path
+) -> dict[str, Any]:
+    """Accept only the owner's current ledger shape, bound to this vault."""
     if not isinstance(payload, dict):
         raise RunObligationsError(
             f"obligations ledger {path} must be a JSON object",
@@ -740,14 +757,18 @@ def validate_ledger(payload: object, path: Path) -> dict[str, Any]:
                 reason_code="ledger_invalid",
             )
         seen.add(run_id)
-        _validate_run(run, f"obligations ledger {path} run {run_id!r}")
+        _validate_run(
+            run, f"obligations ledger {path} run {run_id!r}", reports_directory
+        )
     return payload
 
 
 # ── Ledger IO ─────────────────────────────────────────────────────────
 
 
-def load_ledger(path: Path) -> tuple[TrackingDatabaseSnapshot | None, dict[str, Any]]:
+def load_ledger(
+    path: Path, reports_directory: Path
+) -> tuple[TrackingDatabaseSnapshot | None, dict[str, Any]]:
     """Read the ledger with its generation, or an empty ledger when absent."""
     if not path.exists():
         return None, empty_ledger()
@@ -761,7 +782,7 @@ def load_ledger(path: Path) -> tuple[TrackingDatabaseSnapshot | None, dict[str, 
             else "ledger_unreadable"
         )
         raise _io_failure(exc, f"obligations ledger {path}", code) from exc
-    return snapshot, validate_ledger(payload, path)
+    return snapshot, validate_ledger(payload, path, reports_directory)
 
 
 def store_ledger(
@@ -1245,17 +1266,9 @@ def command_open(context: Context, args: argparse.Namespace) -> dict[str, Any]:
     stamp = render_timestamp(now)
     run_id = require_run_id(args.run_id)
     source_run = require_run_id(args.from_run) if args.from_run else None
-    filenames = list(args.talk)
-    if args.talks_from:
-        try:
-            listed = Path(args.talks_from).read_text(encoding="utf-8")
-        except (OSError, ValueError) as exc:
-            raise RunObligationsError(
-                f"cannot read --talks-from {args.talks_from!r}: {exc}",
-                reason_code="invalid_arguments",
-            ) from exc
-        filenames.extend(line.strip() for line in listed.splitlines() if line.strip())
-    filenames = list(dict.fromkeys(filenames))
+    filenames = list(
+        dict.fromkeys(list(args.talk) + _lines_from(args.talks_from, "--talks-from"))
+    )
     if not filenames:
         raise RunObligationsError(
             "open requires at least one talk, via --talk or a --talks-from file "
@@ -1263,7 +1276,7 @@ def command_open(context: Context, args: argparse.Namespace) -> dict[str, Any]:
             reason_code="invalid_arguments",
         )
     context.refresh()
-    snapshot, ledger = load_ledger(context.ledger_path)
+    snapshot, ledger = load_ledger(context.ledger_path, context.reports_directory)
     require_adopted(ledger, context.ledger_path)
     try:
         run = find_run(ledger, run_id)
@@ -1348,7 +1361,7 @@ def _transition(
     stamp = render_timestamp(now)
     run_id = require_run_id(args.run_id)
     context.refresh()
-    snapshot, ledger = load_ledger(context.ledger_path)
+    snapshot, ledger = load_ledger(context.ledger_path, context.reports_directory)
     require_adopted(ledger, context.ledger_path)
     run = find_run(ledger, run_id)
     before = json.dumps(run, sort_keys=True)
@@ -1376,8 +1389,24 @@ def command_record_downstream(
     return _transition(context, args, mutate)
 
 
+def _lines_from(path_text: str | None, option: str) -> list[str]:
+    """Free text arrives through a file, one entry per line, never a shell."""
+    if not path_text:
+        return []
+    try:
+        content = Path(path_text).read_text(encoding="utf-8")
+    except (OSError, ValueError) as exc:
+        raise RunObligationsError(
+            f"cannot read {option} {path_text!r}: {exc}",
+            reason_code="invalid_arguments",
+        ) from exc
+    return [line.strip() for line in content.splitlines() if line.strip()]
+
+
 def command_record_offer(context: Context, args: argparse.Namespace) -> dict[str, Any]:
     topics = [topic.strip() for topic in (args.topic or []) if topic.strip()]
+    topics.extend(_lines_from(args.topics_from, "--topics-from"))
+    topics = list(dict.fromkeys(topics))
 
     def mutate(run: dict[str, Any], stamp: str, now: datetime) -> dict[str, Any]:
         _require_downstream(run, "record-offer")
@@ -1699,7 +1728,7 @@ def command_adopt(context: Context, args: argparse.Namespace) -> dict[str, Any]:
     now = parse_timestamp(args.now, "--now")
     stamp = render_timestamp(now)
     context.refresh()
-    snapshot, ledger = load_ledger(context.ledger_path)
+    snapshot, ledger = load_ledger(context.ledger_path, context.reports_directory)
     if ledger.get("adopted_at") is None:
         history = sorted(
             fact_identity(fact, name)
@@ -1732,15 +1761,17 @@ def command_dismiss(context: Context, args: argparse.Namespace) -> dict[str, Any
     now = parse_timestamp(args.now, "--now")
     stamp = render_timestamp(now)
     run_id = require_run_id(args.run_id)
-    reason = (args.reason or "").strip()
+    reason = " ".join(
+        [(args.reason or "").strip()] + _lines_from(args.reason_from, "--reason-from")
+    ).strip()
     if not reason:
         raise RunObligationsError(
-            "dismiss needs --reason saying why this run's persisted talks are "
-            "not being opened",
+            "dismiss needs --reason or a --reason-from file saying why this "
+            "run's persisted talks are not being opened",
             reason_code="invalid_arguments",
         )
     context.refresh()
-    snapshot, ledger = load_ledger(context.ledger_path)
+    snapshot, ledger = load_ledger(context.ledger_path, context.reports_directory)
     require_adopted(ledger, context.ledger_path)
     if any(run["run_id"] == run_id for run in ledger["runs"]):
         raise RunObligationsError(
@@ -1810,7 +1841,7 @@ def command_dismiss(context: Context, args: argparse.Namespace) -> dict[str, Any
 
 
 def command_pending(context: Context, _args: argparse.Namespace) -> dict[str, Any]:
-    _snapshot, ledger = load_ledger(context.ledger_path)
+    _snapshot, ledger = load_ledger(context.ledger_path, context.reports_directory)
     adopted = isinstance(ledger.get("adopted_at"), str)
     pending = [
         summarize(run) for run in ledger["runs"] if next_action(run) != NEXT_NONE
@@ -1841,7 +1872,7 @@ def command_pending(context: Context, _args: argparse.Namespace) -> dict[str, An
 
 
 def command_status(context: Context, args: argparse.Namespace) -> dict[str, Any]:
-    _snapshot, ledger = load_ledger(context.ledger_path)
+    _snapshot, ledger = load_ledger(context.ledger_path, context.reports_directory)
     run = find_run(ledger, require_run_id(args.run_id))
     return {
         "ok": True,
@@ -1903,6 +1934,9 @@ def build_parser() -> JsonArgumentParser:
     offer.add_argument(
         "--topic", action="append", help="candidate clarification topic; repeat"
     )
+    offer.add_argument(
+        "--topics-from", help="a file naming candidate topics, one per line"
+    )
 
     disposition = actions.add_parser(
         "record-disposition", help="the speaker's explicit answer to the offer"
@@ -1941,7 +1975,10 @@ def build_parser() -> JsonArgumentParser:
         "dismiss", help="an uncovered run is deliberately not being opened"
     )
     with_run(dismiss)
-    dismiss.add_argument("--reason", required=True, help="why, in plain words")
+    dismiss.add_argument("--reason", help="why, in plain words")
+    dismiss.add_argument(
+        "--reason-from", help="a file holding the speaker's reason in their words"
+    )
 
     actions.add_parser("pending", help="list runs with unresolved obligations")
 

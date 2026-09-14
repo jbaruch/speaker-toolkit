@@ -1568,7 +1568,7 @@ def _apply_overrides(run, overrides):
 _DELIVERED = {
     "state": "delivered",
     "delivered_at": LATER,
-    "report_path": "/vault/ingress-reports/r." + "a" * 64 + ".md",
+    "report_path": "{reports}/r." + "a" * 64 + ".md",
     "report_sha256": "a" * 64,
     "reopened_at": None,
 }
@@ -1709,7 +1709,18 @@ _ACCEPTED = {
         ),
         ({"end_report": {"state": "sent"}}, "end_report lacks delivered_at"),
         ({"talks": [{"filename": "a.md"}]}, "talks[0] lacks status"),
-        ({"talks.0.status": []}, "talks[0] status must be a non-empty string"),
+        ({"talks.0.status": []}, "talks[0].status must be a string"),
+        ({"talks.0.status": "done"}, "status 'done' is not one of the known values"),
+        (
+            {
+                "end_report": {**_DELIVERED, "report_path": "/elsewhere/r.md"},
+                "completed_at": LATER,
+                "clarification.state": "declined",
+                "clarification.offered_at": NOW,
+                "clarification.resolved_at": NOW,
+            },
+            "report_path must be the bound copy",
+        ),
         (
             {"talks.0.recency_bucket": "soon"},
             "recency_bucket 'soon' is not one of the known values",
@@ -1784,6 +1795,8 @@ _ACCEPTED = {
         "report-keys",
         "talk-keys",
         "talk-status-list",
+        "talk-status-unknown",
+        "report-path-unbound",
         "talk-bucket",
         "talk-bucket-list",
         "talk-days-bool",
@@ -1803,7 +1816,10 @@ def test_every_malformed_ledger_field_fails_structured(
     run = _valid_run()
     _apply_overrides(run, overrides)
     (tmp_path / "ingress-obligations.json").write_text(
-        json.dumps({**ENVELOPE, "runs": [run]}), encoding="utf-8"
+        json.dumps({**ENVELOPE, "runs": [run]}).replace(
+            "{reports}", str(tmp_path / "ingress-reports")
+        ),
+        encoding="utf-8",
     )
     for command in (
         ["pending"],
@@ -1835,11 +1851,14 @@ def test_every_malformed_ledger_field_fails_structured(
     ids=["owed", "deferred-delivered", "accepted-completed", "downstream-owed"],
 )
 def test_a_well_formed_hand_written_ledger_is_accepted(tmp_path, fresh_db, run):
-    (tmp_path / "ingress-obligations.json").write_text(
-        json.dumps({**ENVELOPE, "runs": [run]}), encoding="utf-8"
+    text = json.dumps({**ENVELOPE, "runs": [run]}).replace(
+        "{reports}", str(tmp_path / "ingress-reports")
     )
+    (tmp_path / "ingress-obligations.json").write_text(text, encoding="utf-8")
     assert _ok(fresh_db, "pending")["ok"] is True
-    assert _ok(fresh_db, "status", "--run-id", "r")["run"] == run
+    assert (
+        _ok(fresh_db, "status", "--run-id", "r")["run"] == json.loads(text)["runs"][0]
+    )
 
 
 # ── module surface ────────────────────────────────────────────────────
@@ -2586,3 +2605,49 @@ def test_a_decoder_failure_in_the_ledger_never_echoes_its_content(tmp_path, fres
     assert "duplicate object key" in payload["error"]
     assert "SECRET-VALUE" not in payload["error"]
     assert "SECRET-VALUE" not in stderr
+
+
+def test_topics_and_reasons_arrive_through_files(tmp_path, fresh_db):
+    run_id = _opened(fresh_db)
+    topics = tmp_path / "topics.txt"
+    topics.write_text("$(id) is text, not a command\n\n aside \n", encoding="utf-8")
+    offered = _ok(
+        fresh_db,
+        "record-offer",
+        "--run-id",
+        run_id,
+        "--now",
+        NOW,
+        "--topic",
+        "aside",
+        "--topics-from",
+        str(topics),
+    )["run"]
+    assert offered["clarification"]["topics"] == [
+        "aside",
+        "$(id) is text, not a command",
+    ]
+    (tmp_path / "other").mkdir()
+    database = _db_with_claims(
+        tmp_path / "other", {"a.md": ("gone-run", "2026-09-10T00:00:00+00:00")}
+    )
+    reason = tmp_path / "reason.txt"
+    reason.write_text(
+        "  the speaker said: skip `$(rm -rf)` this one  \n", encoding="utf-8"
+    )
+    dismissed = _ok(
+        database,
+        "dismiss",
+        "--run-id",
+        "gone-run",
+        "--now",
+        NOW,
+        "--reason-from",
+        str(reason),
+    )
+    assert (
+        dismissed["dismissed"]["reason"]
+        == "the speaker said: skip `$(rm -rf)` this one"
+    )
+    nothing = _refused(database, "dismiss", "--run-id", "gone-run", "--now", NOW)
+    assert nothing["reason_code"] == "invalid_arguments"
