@@ -1,5 +1,29 @@
 # Changelog
 
+### Make clarification and the end report part of run completion
+
+A vault-ingress run could persist every batch, send the same-week clarification
+invitation, and stop: no answer recorded, no report delivered, and the next run
+skipped the invitation because no talk was newly processed (#456). Processing
+completion and run completion are now separate events. `run-obligations.py`
+keeps a vault-ingress-owned ledger, `ingress-obligations.json`, beside the
+tracking database: per run, the persisted talks with their delivery recency,
+the clarification offer through its explicit disposition and session, and the
+delivered end report bound by digest. Step 1 resumes any run with unresolved
+obligations before selecting new work; Step 4 opens them right after the merge;
+Step 9 records the offer before asking and the disposition after; the new Step
+11 delivers and records the end report, which the ledger refuses until the
+clarification obligation is resolved so the report can carry a profile refresh
+the answers caused. Silence, elapsed time, and an invitation merely sent never
+resolve anything.
+
+The recency buckets moved from handoff prose into the script's constants, and
+the handoff describes the interaction by mechanism, so a host without
+`AskUserQuestion` asks in plain text instead of skipping. An undated talk is
+bucketed like a recent one: recommend the session, never start it unasked.
+The end-to-end evaluation scenario and the clarification skill's seed-agenda
+contract follow separately.
+
 ## 0.20.155 — 2026-09-12
 
 ### Make talk skills rhetoric-informed knowledge briefs

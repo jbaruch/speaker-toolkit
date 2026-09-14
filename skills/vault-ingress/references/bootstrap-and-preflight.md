@@ -484,3 +484,20 @@ and prose counts are never trusted on their own.
 
 Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
 "X processed, Y remaining. PPTX: A cataloged, B matched, C extracted."
+
+Then check for a run that persisted talks but never finished with the speaker:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
+  "{vault_root}/tracking-database.json" pending
+```
+
+`count: 0` proceeds to Step 2. Otherwise, before selecting any new work, resume
+each listed run at the step its `next_action` names, using that run's recorded
+`run_id`: `offer_clarification`, `await_disposition`, and
+`complete_clarification_session` at Step 9 through
+[clarification-handoff.md](clarification-handoff.md); `deliver_end_report` at
+Step 11 through [end-report.md](end-report.md). A pending run with nothing left
+to process still owes the speaker its answer or its report; a completed
+processing claim never stands in for either. Ledger shape and the
+`next_action` vocabulary: [schemas-obligations.md](schemas-obligations.md).
