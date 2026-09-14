@@ -137,7 +137,6 @@ patterns, keep shape IDs contiguous.
 **Shownotes publishing destination** — Agents can now resolve published shownotes
 from `publishing_process.shownotes_site` in the speaker profile instead of
 searching the web. Resources-gathering rules document the read path.
-Fixed eval scenarios 12 and 13 with deterministic test data.
 
 **Test suite and CI** — comprehensive pytest coverage runs on every push and PR
 via GitHub Actions with ffmpeg, LibreOffice, and Tesseract-backed source lanes.

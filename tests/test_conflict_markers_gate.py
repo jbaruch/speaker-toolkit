@@ -177,7 +177,7 @@ def test_long_rules_and_here_docs_are_not_markers(tmp_path: Path) -> None:
 
 
 def test_binary_files_are_skipped_not_scanned(tmp_path: Path) -> None:
-    """A marker is a line of text; the repo's binaries are eval fixtures."""
+    """A marker is a line of text; a binary payload carries none."""
     repo = _repo(
         tmp_path,
         {

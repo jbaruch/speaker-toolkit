@@ -1,1 +1,0 @@
-Illustrations skill mode routing — pick the right mode given a single request

@@ -1,5 +1,18 @@
 # Changelog
 
+### Remove the eval suite
+
+The 28 `evals/` scenarios, their `eval-resources/` fixtures, and the
+`tessl-labs/tessl-skill-eval-scenarios` dependency that authored them are gone.
+No infrastructure runs them: the explicit `tessl eval run` CI step went in
+0.18.7, and no workflow in this repo has invoked the suite since. What remained
+was 118 files of task and criteria prose drifting from the skills they
+described, two tests pinning that prose to skill contracts, and the only
+binaries in the repo. Those tests go with the suite, and the conflict-marker
+gate's docstring no longer names eval fixtures as the reason it skips binaries.
+The end-to-end interaction eval that issue #456 asked for is withdrawn on the
+same grounds; the rest of that issue stands.
+
 ## 0.20.162 — 2026-09-14
 
 ### Make clarification and the end report part of run completion

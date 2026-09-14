@@ -687,31 +687,3 @@ def test_docs_distinguish_occurrence_only_and_policy_bound_contracts():
         assert "schema v5" in normalized.lower()
         assert "Section 15 v2" in normalized
         assert "Section 15 v3" in normalized
-
-
-def test_pattern_strategy_eval_fails_closed_on_deliberately_legacy_provenance():
-    task = (ROOT / "evals" / "pattern-strategy-4-tier" / "task.md").read_text(
-        encoding="utf-8"
-    )
-    criteria = json.loads(
-        (ROOT / "evals" / "pattern-strategy-4-tier" / "criteria.json").read_text(
-            encoding="utf-8"
-        )
-    )
-
-    assert "installed creator requires speaker-profile schema\n`5`" in task
-    assert "pattern-scoring schema `5`" in task
-    assert "schema v4 remains occurrence-only" in task
-    assert "speaker-toolkit-default@1" in task
-    assert '"schema_version": 4' in task
-    assert '"pattern_scoring_schema_version": 4' in task
-    assert "occurrence-compatible speaker-profile schema `4`" in task
-    assert '"pattern_catalog_fingerprint": "' + ("a" * 64) + '"' in task
-    assert '"baseline_talk_filenames"' in task
-    assert sum(item["max_score"] for item in criteria["checklist"]) == 100
-    assert criteria["checklist"][0]["name"] == "Legacy provenance fails closed"
-    assert "history-disabled" in criteria["checklist"][0]["description"]
-    assert any(
-        item["name"] == "No catalog recurrence from raw rows"
-        for item in criteria["checklist"]
-    )

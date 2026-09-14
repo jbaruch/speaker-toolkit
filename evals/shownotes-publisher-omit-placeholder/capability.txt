@@ -1,1 +1,0 @@
-Reject placeholder Slides/Video values; omit instead

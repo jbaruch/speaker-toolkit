@@ -11,7 +11,7 @@ of the diff never saw it.
 
 Every tracked text file is scanned on every run — one unreadable file must not
 hide a marker in the next one. Binary files are counted and skipped: a marker is
-a line of text, and the repo's binary artifacts are eval fixtures.
+a line of text.
 
 Usage: check_conflict_markers.py [<repo-root>]   (default: this repo)
 Stdout: one JSON object naming the scanned counts and every violation.

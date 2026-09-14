@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 
@@ -52,25 +51,3 @@ def test_video_extractor_delegates_downloader_outcomes_to_the_worker_contract() 
     assert "Branch on this id's `results` entry" in worker
     assert "only for an `ok` or `skip` entry" not in extractor
     assert "report with no `results` at all" not in extractor
-
-
-def test_speaker_profile_eval_requires_opaque_loader_outputs() -> None:
-    task = _read("evals/speaker-profile-from-vault/task.md")
-    criteria = json.loads(_read("evals/speaker-profile-from-vault/criteria.json"))
-    descriptions = "\n".join(item["description"] for item in criteria["checklist"])
-
-    assert "scripts/load-vault.py" in task
-    assert "opaque fixture" in task
-    assert "pattern_classification object emitted by load-vault.py" in descriptions
-    assert (
-        "uses only current_instrumentation_talks emitted by load-vault.py"
-        in descriptions
-    )
-    assert "contains at least one field with a numeric value" not in descriptions
-    for hardcoded_verdict in (
-        "mastery/novelty, antipattern-recurrence",
-        "trends and modes remain explicitly unavailable",
-        "Mastery/novelty, antipattern recurrence, underuse, and combinations",
-    ):
-        assert hardcoded_verdict not in task
-        assert hardcoded_verdict not in descriptions
