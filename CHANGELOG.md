@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.162 — 2026-09-14
+
 ### Make clarification and the end report part of run completion
 
 A vault-ingress run could persist every batch, send the same-week clarification
