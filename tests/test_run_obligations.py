@@ -123,6 +123,8 @@ def _ledger(tmp_path: Path):
 def _copy_path(tmp_path: Path, run_id: str, content: bytes) -> Path:
     digest = hashlib.sha256(content).hexdigest()
     stem = "".join(c if c.isalnum() or c in "._-" else "_" for c in run_id)
+    if len(stem) > 40:
+        stem = stem[:31] + "-" + hashlib.sha256(run_id.encode()).hexdigest()[:8]
     return tmp_path / "ingress-reports" / f"{stem}.{digest}.md"
 
 
@@ -1199,6 +1201,11 @@ def test_a_dismissal_is_explicit_replay_safe_and_never_for_a_recorded_run(tmp_pa
         database, "dismiss", "--run-id", "kept-run", "--now", NOW, "--reason", "no"
     )
     assert recorded["reason_code"] == "invalid_transition"
+    unlisted = _refused(
+        database, "dismiss", "--run-id", "never-ran", "--now", NOW, "--reason", "typo"
+    )
+    assert unlisted["reason_code"] == "invalid_transition"
+    assert "only a listed unrecorded_run" in unlisted["error"]
     _ok(database, "dismiss", "--run-id", "gone-run", "--now", NOW, "--reason", "dup")
     replay = _ok(
         database, "dismiss", "--run-id", "gone-run", "--now", LATER, "--reason", "dup"
@@ -1376,6 +1383,18 @@ def test_status_names_an_unknown_run(fresh_db):
         ),
         (["record-offer", "--run-id", "run-z"], "invalid_arguments"),
         (["record-session", "--run-id", "run-z", "--now", NOW], "invalid_arguments"),
+        (
+            [
+                "open",
+                "--run-id",
+                "run-z",
+                "--now",
+                "0001-01-01T00:00:00+01:00",
+                "--talk",
+                "fresh.md",
+            ],
+            "invalid_timestamp",
+        ),
         ([], "invalid_arguments"),
     ],
     ids=[
@@ -1385,6 +1404,7 @@ def test_status_names_an_unknown_run(fresh_db):
         "bad-run-id",
         "missing-now",
         "missing-profile-inputs",
+        "overflow",
         "no-action",
     ],
 )
@@ -1592,6 +1612,7 @@ _ACCEPTED = {
         ({"run_id": "r 1"}, "contains whitespace"),
         ({"run_id": ""}, "must be a non-empty string"),
         ({"opened_at": "Monday"}, "opened_at 'Monday' is malformed"),
+        ({"opened_at": "0001-01-01T00:00:00+01:00"}, "is out of range once normalized"),
         ({"updated_at": 5}, "updated_at must be a non-empty ISO-8601 timestamp"),
         (
             {"downstream": {"state": "done", "completed_at": None}},
@@ -1673,6 +1694,7 @@ _ACCEPTED = {
         "run-id-whitespace",
         "run-id-empty",
         "opened-malformed",
+        "opened-overflow",
         "updated-type",
         "downstream-state",
         "downstream-stamp-on-owed",
@@ -2248,3 +2270,90 @@ def test_two_batches_released_in_the_same_second_are_distinct_facts(tmp_path):
     assert reopened["talks"][0]["claim_batch_id"] == "b2"
     assert reopened["downstream"] == {"state": "owed", "completed_at": None}
     assert _ok(database, "pending")["open_required"] == []
+
+
+def test_a_run_answered_but_unreported_sends_late_talks_to_a_fresh_run(tmp_path):
+    database = _db_with_claims(
+        tmp_path,
+        {
+            "a.md": ("run-answered", "2026-09-13T10:00:00+00:00"),
+            "b.md": ("run-answered", "2026-09-13T11:00:00+00:00"),
+        },
+    )
+    _opened(database, "run-answered", "a.md")
+    _ok(database, "record-offer", "--run-id", "run-answered", "--now", NOW)
+    _ok(
+        database,
+        "record-disposition",
+        "--run-id",
+        "run-answered",
+        "--now",
+        NOW,
+        "--disposition",
+        "declined",
+    )
+    listed = _ok(database, "pending")["open_required"]
+    assert listed == [
+        {
+            "run_id": "run-answered",
+            "talks": ["b.md"],
+            "latest_released_at": "2026-09-13T11:00:00+00:00",
+            "reason": "talks_persisted_after_answer",
+            "next_action": "open_obligations",
+        }
+    ]
+    refused = _refused(
+        database, "open", "--run-id", "run-answered", "--now", LATER, "--talk", "b.md"
+    )
+    assert refused["reason_code"] == "invalid_transition"
+    recovered = _ok(
+        database,
+        "open",
+        "--run-id",
+        "run-answered-late",
+        "--now",
+        LATER,
+        "--talk",
+        "b.md",
+        "--from-run",
+        "run-answered",
+    )["run"]
+    assert recovered["talks"][0]["claim_run_id"] == "run-answered"
+    assert _ok(database, "pending")["open_required"] == []
+
+
+def test_a_dismissal_covers_only_the_facts_that_existed_when_it_was_recorded(tmp_path):
+    database = _db_with_claims(
+        tmp_path, {"a.md": ("gone-run", "2026-09-10T00:00:00+00:00")}
+    )
+    _ok(
+        database,
+        "dismiss",
+        "--run-id",
+        "gone-run",
+        "--now",
+        NOW,
+        "--reason",
+        "abandoned",
+    )
+    assert _ok(database, "pending")["open_required"] == []
+    talk = _talk("a.md", claim=_persisted_claim("gone-run", MUCH_LATER, batch_id="b9"))
+    talk["_queue_claim_history"] = [
+        _persisted_claim("gone-run", "2026-09-10T00:00:00+00:00")
+    ]
+    _write_db(tmp_path, [talk])
+    listed = _ok(database, "pending")["open_required"]
+    assert [(entry["run_id"], entry["talks"], entry["reason"]) for entry in listed] == [
+        ("gone-run", ["a.md"], "unrecorded_run")
+    ]
+
+
+def test_a_long_run_id_still_gets_its_report_copy(tmp_path, fresh_db):
+    run_id = "reparse-" + "x" * 300
+    _declined(fresh_db, run_id)
+    report = _report(tmp_path)
+    payload = _record_report(fresh_db, run_id, report)
+    copied = Path(payload["run"]["end_report"]["report_path"])
+    assert copied == _copy_path(tmp_path, run_id, report.read_bytes())
+    assert len(copied.name) < 120
+    assert copied.read_bytes() == report.read_bytes()

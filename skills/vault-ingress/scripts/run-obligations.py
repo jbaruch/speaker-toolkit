@@ -109,6 +109,9 @@ RUN_RECORD_SCHEMA_VERSION = 1
 # reduced to a safe filename stem, so two deliveries never overwrite each
 # other and a ledger-edited run id can never name a path outside the directory.
 _SAFE_STEM = re.compile(r"[^A-Za-z0-9._-]")
+REPORT_STEM_MAX = 40
+REPORT_STEM_PREFIX = 31
+REPORT_STEM_HASH = 8
 _SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 # What ``persist-results.py`` stamps on the claim it closes; a talk whose claim
 # carries it persisted, and one the ledger does not cover crashed between the
@@ -181,6 +184,7 @@ NEXT_NONE = "none"
 REASON_UNRECORDED = "unrecorded_run"
 REASON_MISSING_TALKS = "missing_talks"
 REASON_AFTER_COMPLETION = "talks_persisted_after_completion"
+REASON_AFTER_ANSWER = "talks_persisted_after_answer"
 
 PROFILE_INPUTS_CHANGED = "changed"
 PROFILE_INPUTS_UNCHANGED = "unchanged"
@@ -227,7 +231,14 @@ def parse_timestamp(value: object, label: str) -> datetime:
             f"{label} {value!r} has no timezone — append an explicit UTC offset",
             reason_code="invalid_timestamp",
         )
-    return moment.astimezone(timezone.utc).replace(microsecond=0)
+    try:
+        return moment.astimezone(timezone.utc).replace(microsecond=0)
+    except (OverflowError, ValueError) as exc:
+        raise RunObligationsError(
+            f"{label} {value!r} is out of range once normalized to UTC — use a "
+            "timestamp between years 1 and 9999 in UTC",
+            reason_code="invalid_timestamp",
+        ) from exc
 
 
 def render_timestamp(moment: datetime) -> str:
@@ -287,7 +298,17 @@ def next_action(run: dict[str, Any]) -> str:
 
 
 def safe_report_stem(run_id: str) -> str:
-    return _SAFE_STEM.sub("_", run_id) or "run"
+    """A filename stem for the run id: sanitized, and bounded for long ids.
+
+    A run id longer than ``REPORT_STEM_MAX`` characters keeps its first
+    ``REPORT_STEM_PREFIX`` characters plus a short hash of the whole id, so the
+    copy name stays under filesystem limits while distinct ids stay distinct.
+    """
+    stem = _SAFE_STEM.sub("_", run_id) or "run"
+    if len(stem) <= REPORT_STEM_MAX:
+        return stem
+    tag = hashlib.sha256(run_id.encode("utf-8")).hexdigest()[:REPORT_STEM_HASH]
+    return f"{stem[:REPORT_STEM_PREFIX]}-{tag}"
 
 
 def clarification_resolved(run: dict[str, Any]) -> bool:
@@ -1493,13 +1514,18 @@ def open_required(
     uncovered fact is listed, in run-id order, with exactly those talks: a
     recorded run as ``missing_talks`` (or ``talks_persisted_after_completion``
     when its report is already delivered — those talks need a fresh run id),
+    a recorded run whose offer was answered but whose report is still owed as
+    ``talks_persisted_after_answer`` (no fact joins an answered run either),
     a run with no record as ``unrecorded_run``. A run explicitly dismissed
-    with a reason is the only uncovered run left out; no later run's
-    existence stands in for coverage.
+    with a reason is left out for the facts that existed at the dismissal; a
+    fact it persisted afterwards is listed again. No later run's existence
+    stands in for coverage.
     """
     adopted_at = ledger["adopted_at"]
     records = {run["run_id"]: run for run in ledger["runs"]}
-    dismissed = {entry["run_id"] for entry in ledger["dismissed_runs"]}
+    dismissed = {
+        entry["run_id"]: entry["dismissed_at"] for entry in ledger["dismissed_runs"]
+    }
     covered_up_to: dict[tuple[str, str], tuple[str, int, str]] = {}
     for run in ledger["runs"]:
         for talk in run["talks"]:
@@ -1527,11 +1553,22 @@ def open_required(
             continue
         run = records.get(run_id)
         if run is None:
+            # A dismissal covers the facts that existed when it was recorded;
+            # a fact this run persisted afterwards is listed again.
             if run_id in dismissed:
-                continue
+                missing = sorted(
+                    name
+                    for name, facts in uncovered.items()
+                    if any(fact["released_at"] > dismissed[run_id] for fact in facts)
+                )
+                if not missing:
+                    continue
             reason = REASON_UNRECORDED
         elif run["completed_at"] is not None:
             reason = REASON_AFTER_COMPLETION
+        elif run["clarification"]["state"] in DISPOSITIONS:
+            # The offer was answered, so no new fact can join this run.
+            reason = REASON_AFTER_ANSWER
         else:
             reason = REASON_MISSING_TALKS
         required.append(
@@ -1595,6 +1632,11 @@ def command_dismiss(context: Context, args: argparse.Namespace) -> dict[str, Any
             "its obligations, not through dismissal",
             reason_code="invalid_transition",
         )
+    listed = {
+        entry["run_id"]
+        for entry in open_required(context.persisted_runs(), ledger)
+        if entry["reason"] == REASON_UNRECORDED
+    }
     for entry in ledger["dismissed_runs"]:
         if entry["run_id"] != run_id:
             continue
@@ -1611,6 +1653,12 @@ def command_dismiss(context: Context, args: argparse.Namespace) -> dict[str, Any
         raise RunObligationsError(
             f"run {run_id!r} was already dismissed at {entry['dismissed_at']} "
             f"for {entry['reason']!r}; a retry repeats that reason",
+            reason_code="invalid_transition",
+        )
+    if run_id not in listed:
+        raise RunObligationsError(
+            f"run {run_id!r} is not an uncovered persisted run in `pending`; "
+            "only a listed unrecorded_run can be dismissed",
             reason_code="invalid_transition",
         )
     entry = {"run_id": run_id, "dismissed_at": stamp, "reason": reason}

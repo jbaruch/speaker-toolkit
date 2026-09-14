@@ -66,6 +66,11 @@ by the claim's run, batch, generation, and release time together, a newer
 recorded fact supersedes the same run's earlier ones, a record claiming a
 delivered report without a completed downstream and an answered offer is
 refused, and a read failure on an existing copy is the structured failure.
+Late talks of a run whose offer was answered are routed to a fresh run id like
+those of a completed run, a dismissal applies only to a listed run and only to
+the facts that existed when it was recorded, a long run id gets a bounded copy
+name, and a timestamp that overflows UTC normalization is the structured
+timestamp error.
 The end-to-end evaluation
 scenario and the clarification skill's seed-agenda contract follow separately.
 

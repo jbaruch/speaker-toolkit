@@ -47,7 +47,8 @@ explicit disposition and the end report has been delivered.
 | `completed_at` | timestamp or null | set by `record-report`; the run is complete |
 
 Timestamps are the canonical UTC whole-second ISO-8601 form
-(`2026-09-14T12:00:00+00:00`); every command takes them from `--now`, never
+(`2026-09-14T12:00:00+00:00`), within years 1 to 9999 once normalized; every
+command takes them from `--now`, never
 from the clock, and stores the normalized form. Every read parses each stored
 timestamp, requires that canonical form so stamps compare as text, and checks
 the state-dependent invariants below; a record that breaks one is refused as
@@ -146,7 +147,7 @@ on an offer. Once `offered`, the buckets and `offer_mode` are frozen; later
 |---|---|
 | `state` | `owed` or `delivered` |
 | `delivered_at` | when `record-report` accepted the delivered text |
-| `report_path` | `{vault_root}/ingress-reports/{stem}.{sha256}.md`, the byte-exact copy; `stem` is the run id with every character outside `A-Za-z0-9._-` replaced by `_`, so a ledger-edited id never names a path outside the directory, and the full digest keeps two texts from ever sharing a path |
+| `report_path` | `{vault_root}/ingress-reports/{stem}.{sha256}.md`, the byte-exact copy; `stem` is the run id with every character outside `A-Za-z0-9._-` replaced by `_`, bounded for long ids by the script's `REPORT_STEM_*` constants, so a ledger-edited id never names a path outside the directory, a long id never exceeds a filename limit, and the full digest keeps two texts from ever sharing a path |
 | `report_sha256` | digest of the delivered text |
 | `reopened_at` | when a clarification session accepted after delivery reported changed profile inputs, sending the run back to `owed` for a fresh report; null otherwise |
 
@@ -256,7 +257,8 @@ later run's existence stands in for either. Each entry carries `run_id`,
 |---|---|---|
 | `missing_talks` | a recorded run's closed claims name talks its record lacks — a later batch that never opened | `open` the run with exactly those talks |
 | `talks_persisted_after_completion` | the same, on a run whose report is already delivered | open them under a fresh run id with `--from-run` naming the listed run, so the exact fact is covered even when another run merged the talk again since; `open` refuses a completed run |
-| `unrecorded_run` | a run with no record at all | `open` it with the listed talks (with `--from-run` when another run merged a talk again since), or `dismiss` it with a reason |
+| `talks_persisted_after_answer` | the same, on a run whose offer was answered but whose report is still owed | the same fresh-run-id recovery; a new fact never joins an answered run |
+| `unrecorded_run` | a run with no record at all | `open` it with the listed talks (with `--from-run` when another run merged a talk again since), or `dismiss` it with a reason; only a run listed here can be dismissed, and a dismissal covers the facts that existed when it was recorded — a fact the run persists afterwards is listed again |
 
 The exact coverage predicate is the script's rule — see `run-obligations.py`,
 the `open_required` docstring.

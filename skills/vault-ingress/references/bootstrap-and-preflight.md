@@ -505,11 +505,13 @@ Read all three lists. `open_required` names persisted talks the ledger does
 not cover (a crash between the merge and `open`), each with a `reason`: for
 `unrecorded_run` and `missing_talks`, run `open` for that run with exactly the
 talks listed, then treat it like any pending run; for
-`talks_persisted_after_completion`, open those talks under a fresh run id
-with `--from-run "{listed run_id}"`, which binds them to the exact fact that
-was left uncovered even when another run has merged the same talk since. An
-`unrecorded_run` the speaker decides not to pursue is dismissed instead, with
-the reason in their words, so it stops being listed:
+`talks_persisted_after_completion` and `talks_persisted_after_answer`, open
+those talks under a fresh run id with `--from-run "{listed run_id}"`, which
+binds them to the exact fact that was left uncovered even when another run
+has merged the same talk since. An `unrecorded_run` the speaker decides not
+to pursue is dismissed instead, with the reason in their words, so it stops
+being listed (only a listed run can be dismissed, and a fact it persists
+later is listed again):
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
