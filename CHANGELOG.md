@@ -77,7 +77,10 @@ facts it covers, so neither depends on a release time that persist-results
 may have stamped at midnight; a newer generation supersedes an older fact and
 the batch id is identity only; `open` reads persisted filenames from a file
 so database content never passes through a shell string; a non-string
-delivery date is refused.
+delivery date is refused. An io-layer failure is reported through the closed
+diagnostics vocabulary rather than the decoder's text, so a rejected key or
+value is never echoed, and a newly created reports directory is synced into
+its parent.
 The end-to-end evaluation
 scenario and the clarification skill's seed-agenda contract follow separately.
 

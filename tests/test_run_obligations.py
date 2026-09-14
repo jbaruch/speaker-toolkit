@@ -2552,3 +2552,37 @@ def test_open_reads_the_persisted_filenames_from_a_file(tmp_path, fresh_db):
         str(empty),
     )
     assert nothing["reason_code"] == "invalid_arguments"
+
+
+# ── rejected content is never echoed ──────────────────────────────────
+
+
+def test_a_decoder_failure_in_the_database_never_echoes_its_content(tmp_path):
+    database = tmp_path / "tracking-database.json"
+    database.write_text(
+        '{"schema_version": 4, "schema_version": "SECRET-VALUE-9f8e", "talks": []}',
+        encoding="utf-8",
+    )
+    code, payload, stderr = _run(database, "pending")
+    assert code == 2
+    assert payload is not None
+    assert payload["reason_code"] == "database_unusable"
+    assert "duplicate object key" in payload["error"]
+    assert "io reason: json_duplicate_key" in payload["error"]
+    assert "SECRET-VALUE" not in payload["error"]
+    assert "SECRET-VALUE" not in stderr
+
+
+def test_a_decoder_failure_in_the_ledger_never_echoes_its_content(tmp_path, fresh_db):
+    (tmp_path / "ingress-obligations.json").write_text(
+        '{"schema_version": 1, "runs": [], "runs": ["SECRET-VALUE-77aa"]}',
+        encoding="utf-8",
+    )
+    code, payload, stderr = _run(fresh_db, "pending")
+    assert code == 2
+    assert payload is not None
+    assert payload["reason_code"] == "ledger_invalid"
+    assert "obligations ledger" in payload["error"]
+    assert "duplicate object key" in payload["error"]
+    assert "SECRET-VALUE" not in payload["error"]
+    assert "SECRET-VALUE" not in stderr

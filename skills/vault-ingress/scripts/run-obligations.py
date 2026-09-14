@@ -88,6 +88,8 @@ from tracking_database import (
     require_current_tracking_database,
 )
 from tracking_database_io import (
+    DATABASE_READ_DIAGNOSTICS,
+    DATABASE_READ_FALLBACK,
     TrackingDatabaseIOError,
     TrackingDatabaseSnapshot,
     decode_json_object,
@@ -200,6 +202,23 @@ class RunObligationsError(Exception):
     def __init__(self, message: str, *, reason_code: str) -> None:
         super().__init__(message)
         self.reason_code = reason_code
+
+
+def _io_failure(
+    exc: TrackingDatabaseIOError, subject: str, reason_code: str
+) -> RunObligationsError:
+    """Report an io-layer failure through its closed vocabulary, never verbatim.
+
+    Decoder messages carry the rejected key or value; only the typed reason
+    code travels, mapped to the shared diagnostic text with the subject named.
+    """
+    _code, message = DATABASE_READ_DIAGNOSTICS.get(
+        exc.reason_code, DATABASE_READ_FALLBACK
+    )
+    return RunObligationsError(
+        f"{message.replace('tracking database', subject)} (io reason: {exc.reason_code})",
+        reason_code=reason_code,
+    )
 
 
 class JsonArgumentParser(argparse.ArgumentParser):
@@ -736,10 +755,12 @@ def load_ledger(path: Path) -> tuple[TrackingDatabaseSnapshot | None, dict[str, 
         snapshot = snapshot_tracking_database(path)
         payload = decode_json_object(snapshot)
     except TrackingDatabaseIOError as exc:
-        raise RunObligationsError(
-            f"cannot read obligations ledger {path}: {exc}",
-            reason_code="ledger_unreadable",
-        ) from exc
+        code = (
+            "ledger_invalid"
+            if exc.reason_code.startswith(("json_", "encoding_"))
+            else "ledger_unreadable"
+        )
+        raise _io_failure(exc, f"obligations ledger {path}", code) from exc
     return snapshot, validate_ledger(payload, path)
 
 
@@ -759,9 +780,8 @@ def store_ledger(
         else:
             result = write_json_object(snapshot, payload)
     except TrackingDatabaseIOError as exc:
-        raise RunObligationsError(
-            f"cannot write obligations ledger {path}: {exc}",
-            reason_code="ledger_write_failed",
+        raise _io_failure(
+            exc, f"obligations ledger {path}", "ledger_write_failed"
         ) from exc
     for warning in result.warnings:
         print(f"WARNING: obligations ledger {path}: {warning}", file=sys.stderr)
@@ -853,7 +873,16 @@ def write_report_copy(
     name = f"{safe_report_stem(run_id)}.{digest}.md"
     target = directory / name
     try:
+        created = not directory.exists()
         directory.mkdir(parents=True, exist_ok=True)
+        if created:
+            # A new directory entry is durable only once its parent is synced;
+            # a replay that changes nothing else must not leave it in doubt.
+            parent_fd = os.open(directory.parent, os.O_RDONLY)
+            try:
+                os.fsync(parent_fd)
+            finally:
+                os.close(parent_fd)
     except OSError as exc:
         raise _copy_failed(
             f"cannot create {directory}: {exc} — make its parent writable (or "
@@ -983,8 +1012,15 @@ class Context:
         try:
             snapshot = snapshot_tracking_database(self.database_path)
             database = decode_json_object(snapshot)
+        except TrackingDatabaseIOError as exc:
+            raise _io_failure(
+                exc, f"tracking database {self.database_path}", "database_unusable"
+            ) from exc
+        try:
             require_current_tracking_database(database)
-        except (TrackingDatabaseIOError, TrackingDatabaseError) as exc:
+        except TrackingDatabaseError as exc:
+            # The owner's own generation diagnostics name reason codes and
+            # record labels, never raw values.
             raise RunObligationsError(
                 str(exc), reason_code="database_unusable"
             ) from exc

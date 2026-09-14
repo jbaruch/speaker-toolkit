@@ -212,7 +212,11 @@ a named degradation such as `installed_verification_failed`), and `warnings`;
 every warning is also printed to stderr. Exit 2 emits
 `{"ok": false, "error", "reason_code"}` on stdout and the same message on
 stderr; a vault-root authority failure carries its own `reason_code` the same
-way. Reason codes: `invalid_arguments`, `invalid_timestamp`,
+way. A failure in the io layer — an unreadable file, a duplicate JSON key, a
+lost write race — is reported through that layer's closed diagnostic
+vocabulary with its typed io reason appended, never the decoder's own text,
+which can echo the rejected key or value. Reason codes: `invalid_arguments`,
+`invalid_timestamp`,
 `database_unusable`, `vault_root_changed`, `ledger_not_adopted`, `talk_not_found`,
 `talk_not_persisted`, `run_not_found`, `invalid_transition`,
 `profile_refresh_required`, `report_unreadable`,
