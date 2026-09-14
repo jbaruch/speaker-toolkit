@@ -15,7 +15,7 @@ is delivered.
 Usage:
     run-obligations.py <tracking-database.json> adopt --now <ISO-8601>
     run-obligations.py <tracking-database.json> open \
-        --run-id <id> --now <ISO-8601> --talk <talk.md> [--talk ...] \
+        --run-id <id> --now <ISO-8601> (--talk <talk.md> ... | --talks-from <file>) \
         [--from-run <run id whose closed claim persisted the talks>]
     run-obligations.py <tracking-database.json> record-downstream \
         --run-id <id> --now <ISO-8601>
@@ -43,9 +43,10 @@ recorded is an unchanged success, so a caller that lost the first response can
 retry; only a conflicting answer is refused.
 
 Ledger: ``{vault_root}/ingress-obligations.json`` (schema 1, run records
-schema 1), owned by vault-ingress and created by ``adopt``, which stamps the
-adoption boundary: claims closed before it are history, everything after it
-is reconciled. Delivered reports are copied to
+schema 1), owned by vault-ingress and created by ``adopt``, which records
+every claim already closed at adoption as history by its exact identity —
+never by time, which ``persist-results.py --run-date`` can stamp at midnight —
+so everything closed afterwards is reconciled. Delivered reports are copied to
 ``{vault_root}/ingress-reports/{stem}.{sha256}.md`` and bound to the ledger by
 that digest. Each recorded talk carries the run id and release time of the
 closed claim that persisted it, so ``pending`` can reconcile the ledger against
@@ -324,13 +325,55 @@ def clarification_resolved(run: dict[str, Any]) -> bool:
 # ── Ledger validation ─────────────────────────────────────────────────
 
 
-def empty_ledger(adopted_at: str | None = None) -> dict[str, Any]:
+def empty_ledger(
+    adopted_at: str | None = None, adopted_facts: list[list[Any]] | None = None
+) -> dict[str, Any]:
     return {
         "schema_version": LEDGER_SCHEMA_VERSION,
         "adopted_at": adopted_at,
+        "adopted_facts": adopted_facts or [],
         "dismissed_runs": [],
         "runs": [],
     }
+
+
+def fact_identity(fact: dict[str, Any], filename: str) -> list[Any]:
+    """The exact identity of one persisted fact, as the ledger stores it."""
+    return [
+        str(fact["run_id"]),
+        filename,
+        str(fact["batch_id"]),
+        int(fact["generation"]),
+        str(fact["released_at"]),
+    ]
+
+
+def _validate_fact_identity(value: object, label: str) -> tuple[Any, ...]:
+    if not isinstance(value, list) or len(value) != 5:
+        raise _invalid(
+            label, "must be [run_id, filename, batch_id, generation, released_at]"
+        )
+    run_id, filename, batch_id, generation, released_at = value
+    _require_identifier(run_id, f"{label}[0]")
+    if not isinstance(filename, str) or not filename:
+        raise _invalid(label, "[1] filename must be a non-empty string")
+    _require_identifier(batch_id, f"{label}[2]")
+    if type(generation) is not int or generation < 0:
+        raise _invalid(label, "[3] generation must be a non-negative integer")
+    _require_timestamp(released_at, f"{label}[4]")
+    return (run_id, filename, batch_id, generation, released_at)
+
+
+def _validate_fact_list(value: object, label: str) -> set[tuple[Any, ...]]:
+    if not isinstance(value, list):
+        raise _invalid(label, "must be an array of fact identities")
+    facts: set[tuple[Any, ...]] = set()
+    for index, entry in enumerate(value):
+        identity = _validate_fact_identity(entry, f"{label}[{index}]")
+        if identity in facts:
+            raise _invalid(label, f"[{index}] duplicates an identity")
+        facts.add(identity)
+    return facts
 
 
 def require_adopted(ledger: dict[str, Any], path: Path) -> str:
@@ -427,7 +470,9 @@ def _validate_talk(entry: Any, label: str) -> None:
         if not isinstance(talk[key], str) or not talk[key]:
             raise _invalid(label, f"{key} must be a non-empty string")
     delivered = talk["delivery_date"]
-    if delivered is not None and parse_delivery_date(delivered) is None:
+    if delivered is not None and (
+        not isinstance(delivered, str) or parse_delivery_date(delivered) is None
+    ):
         raise _invalid(label, "delivery_date must be a YYYY-MM-DD string or null")
     days = talk["days_since_delivery"]
     if days is not None and (type(days) is not int):
@@ -623,6 +668,9 @@ def validate_ledger(payload: object, path: Path) -> dict[str, Any]:
     if "adopted_at" not in payload:
         raise _invalid(label, "lacks adopted_at")
     _require_timestamp(payload["adopted_at"], f"{label} adopted_at")
+    if "adopted_facts" not in payload:
+        raise _invalid(label, "lacks adopted_facts")
+    _validate_fact_list(payload["adopted_facts"], f"{label} adopted_facts")
     dismissed = payload.get("dismissed_runs")
     if not isinstance(dismissed, list):
         raise _invalid(label, "must carry a dismissed_runs array")
@@ -630,7 +678,7 @@ def validate_ledger(payload: object, path: Path) -> dict[str, Any]:
     for index, entry in enumerate(dismissed):
         record = _require_keys(
             entry,
-            ("run_id", "dismissed_at", "reason"),
+            ("run_id", "dismissed_at", "reason", "facts"),
             f"{label} dismissed_runs[{index}]",
         )
         dismissed_id = _require_identifier(
@@ -646,6 +694,11 @@ def validate_ledger(payload: object, path: Path) -> dict[str, Any]:
         )
         if not isinstance(record["reason"], str) or not record["reason"].strip():
             raise _invalid(label, f"dismissed_runs[{index}].reason must say why")
+        for identity in _validate_fact_list(
+            record["facts"], f"{label} dismissed_runs[{index}].facts"
+        ):
+            if identity[0] != dismissed_id:
+                raise _invalid(label, f"dismissed_runs[{index}].facts name another run")
     runs = payload.get("runs")
     if not isinstance(runs, list):
         raise RunObligationsError(
@@ -896,8 +949,14 @@ def persisted_claims(record: dict[str, Any]) -> list[dict[str, Any]]:
     return found
 
 
-def _fact_order(fact: dict[str, Any]) -> tuple[str, int, str]:
-    return (str(fact["released_at"]), int(fact["generation"]), str(fact["batch_id"]))
+def _fact_order(fact: dict[str, Any]) -> tuple[int, str]:
+    """Newer means a later reprocess generation, then a later release.
+
+    The queue assigns each closed claim of a talk its own generation, so two
+    facts of one talk under one run never tie; the batch id is identity, never
+    order.
+    """
+    return (int(fact["generation"]), str(fact["released_at"]))
 
 
 class Context:
@@ -1150,10 +1209,21 @@ def command_open(context: Context, args: argparse.Namespace) -> dict[str, Any]:
     stamp = render_timestamp(now)
     run_id = require_run_id(args.run_id)
     source_run = require_run_id(args.from_run) if args.from_run else None
-    filenames = list(dict.fromkeys(args.talk))
+    filenames = list(args.talk)
+    if args.talks_from:
+        try:
+            listed = Path(args.talks_from).read_text(encoding="utf-8")
+        except (OSError, ValueError) as exc:
+            raise RunObligationsError(
+                f"cannot read --talks-from {args.talks_from!r}: {exc}",
+                reason_code="invalid_arguments",
+            ) from exc
+        filenames.extend(line.strip() for line in listed.splitlines() if line.strip())
+    filenames = list(dict.fromkeys(filenames))
     if not filenames:
         raise RunObligationsError(
-            "open requires at least one --talk filename",
+            "open requires at least one talk, via --talk or a --talks-from file "
+            "with one filename per line",
             reason_code="invalid_arguments",
         )
     context.refresh()
@@ -1498,85 +1568,88 @@ def command_record_report(context: Context, args: argparse.Namespace) -> dict[st
     return _transition(context, args, mutate)
 
 
-def open_required(
-    persisted: dict[str, dict[str, Any]], ledger: dict[str, Any]
-) -> list[dict[str, Any]]:
-    """Persisted facts after the adoption boundary that the ledger does not cover.
+def _excluded_facts(ledger: dict[str, Any]) -> set[tuple[Any, ...]]:
+    """Facts adoption recorded as history plus facts each dismissal covered."""
+    excluded = {tuple(identity) for identity in ledger["adopted_facts"]}
+    for entry in ledger["dismissed_runs"]:
+        excluded.update(tuple(identity) for identity in entry["facts"])
+    return excluded
 
-    A persisted fact is one closed claim: run id, filename, batch id,
-    reprocess generation, and release time. Facts released before
-    ``adopted_at`` are history and never listed. A later fact is covered when
-    some run record lists the talk linked to that claim, or to a newer claim
-    of the same run — a run that merged a talk again superseded its earlier
-    result — whichever run id recorded it; recovery under a fresh run id
-    therefore counts, and a talk merged again under the same run, even within
-    the same second, is a new fact until it is recorded. Every run with an
-    uncovered fact is listed, in run-id order, with exactly those talks: a
-    recorded run as ``missing_talks`` (or ``talks_persisted_after_completion``
-    when its report is already delivered — those talks need a fresh run id),
-    a recorded run whose offer was answered but whose report is still owed as
-    ``talks_persisted_after_answer`` (no fact joins an answered run either),
-    a run with no record as ``unrecorded_run``. A run explicitly dismissed
-    with a reason is left out for the facts that existed at the dismissal; a
-    fact it persisted afterwards is listed again. No later run's existence
-    stands in for coverage.
+
+def uncovered_facts(
+    persisted: dict[str, dict[str, Any]], ledger: dict[str, Any]
+) -> dict[str, dict[str, list[dict[str, Any]]]]:
+    """Persisted facts no record covers and no boundary or dismissal excludes.
+
+    A fact is covered when a run record lists the talk with exactly that
+    claim, or with a strictly newer claim of the same run (a later generation
+    or release) — a run that merged a talk again superseded its earlier
+    result — whichever run id recorded it.
     """
-    adopted_at = ledger["adopted_at"]
-    records = {run["run_id"]: run for run in ledger["runs"]}
-    dismissed = {
-        entry["run_id"]: entry["dismissed_at"] for entry in ledger["dismissed_runs"]
-    }
-    covered_up_to: dict[tuple[str, str], tuple[str, int, str]] = {}
+    excluded = _excluded_facts(ledger)
+    exact: set[tuple[Any, ...]] = set()
+    newest: dict[tuple[str, str], tuple[int, str]] = {}
     for run in ledger["runs"]:
         for talk in run["talks"]:
             link = _link(talk)
-            key = (link["run_id"], str(talk["filename"]))
+            name = str(talk["filename"])
+            exact.add(tuple(fact_identity(link, name)))
+            key = (link["run_id"], name)
             order = _fact_order(link)
-            if key not in covered_up_to or order > covered_up_to[key]:
-                covered_up_to[key] = order
-    required: list[dict[str, Any]] = []
-    for run_id, entry in sorted(persisted.items()):
-        uncovered = {
-            name: [
+            if key not in newest or order > newest[key]:
+                newest[key] = order
+    result: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    for run_id, entry in persisted.items():
+        for name, facts in entry["talks"].items():
+            open_facts = [
                 fact
                 for fact in facts
-                if fact["released_at"] >= adopted_at
-                and (
-                    (run_id, name) not in covered_up_to
-                    or _fact_order(fact) > covered_up_to[(run_id, name)]
+                if tuple(fact_identity(fact, name)) not in excluded
+                and tuple(fact_identity(fact, name)) not in exact
+                and not (
+                    (run_id, name) in newest
+                    and _fact_order(fact) < newest[(run_id, name)]
                 )
             ]
-            for name, facts in entry["talks"].items()
-        }
-        missing = sorted(name for name, facts in uncovered.items() if facts)
-        if not missing:
-            continue
+            if open_facts:
+                result.setdefault(run_id, {})[name] = open_facts
+    return result
+
+
+def open_required(
+    persisted: dict[str, dict[str, Any]], ledger: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Persisted facts the ledger neither covers nor excludes, per run.
+
+    A persisted fact is one closed claim: run id, filename, batch id,
+    reprocess generation, and release time. Facts recorded at adoption are
+    history and never listed; facts a dismissal covered are left out. Every
+    other uncovered fact (see ``uncovered_facts``) lists its run, in run-id
+    order, with exactly the talks concerned: a recorded run as
+    ``missing_talks``, or ``talks_persisted_after_completion`` when its report
+    is already delivered and ``talks_persisted_after_answer`` when its offer
+    was answered — in both of those no fact joins the run, so they need a
+    fresh run id — and a run with no record as ``unrecorded_run``. No later
+    run's existence and no timestamp stands in for coverage.
+    """
+    records = {run["run_id"]: run for run in ledger["runs"]}
+    required: list[dict[str, Any]] = []
+    for run_id, talks in sorted(uncovered_facts(persisted, ledger).items()):
         run = records.get(run_id)
         if run is None:
-            # A dismissal covers the facts that existed when it was recorded;
-            # a fact this run persisted afterwards is listed again.
-            if run_id in dismissed:
-                missing = sorted(
-                    name
-                    for name, facts in uncovered.items()
-                    if any(fact["released_at"] > dismissed[run_id] for fact in facts)
-                )
-                if not missing:
-                    continue
             reason = REASON_UNRECORDED
         elif run["completed_at"] is not None:
             reason = REASON_AFTER_COMPLETION
         elif run["clarification"]["state"] in DISPOSITIONS:
-            # The offer was answered, so no new fact can join this run.
             reason = REASON_AFTER_ANSWER
         else:
             reason = REASON_MISSING_TALKS
         required.append(
             {
                 "run_id": run_id,
-                "talks": missing,
+                "talks": sorted(talks),
                 "latest_released_at": max(
-                    fact["released_at"] for name in missing for fact in uncovered[name]
+                    fact["released_at"] for facts in talks.values() for fact in facts
                 ),
                 "reason": reason,
                 "next_action": NEXT_OPEN,
@@ -1592,13 +1665,20 @@ def command_adopt(context: Context, args: argparse.Namespace) -> dict[str, Any]:
     context.refresh()
     snapshot, ledger = load_ledger(context.ledger_path)
     if ledger.get("adopted_at") is None:
-        ledger = empty_ledger(stamp)
+        history = sorted(
+            fact_identity(fact, name)
+            for entry in context.persisted_runs().values()
+            for name, facts in entry["talks"].items()
+            for fact in facts
+        )
+        ledger = empty_ledger(stamp, history)
         outcome = store_ledger(context.ledger_path, snapshot, ledger)
         return {
             "ok": True,
             "ledger_path": str(context.ledger_path),
             **outcome,
             "adopted_at": stamp,
+            "adopted_fact_count": len(history),
         }
     return {
         "ok": True,
@@ -1632,23 +1712,32 @@ def command_dismiss(context: Context, args: argparse.Namespace) -> dict[str, Any
             "its obligations, not through dismissal",
             reason_code="invalid_transition",
         )
-    listed = {
-        entry["run_id"]
-        for entry in open_required(context.persisted_runs(), ledger)
-        if entry["reason"] == REASON_UNRECORDED
-    }
+    uncovered = uncovered_facts(context.persisted_runs(), ledger).get(run_id, {})
+    covering = sorted(
+        fact_identity(fact, name) for name, facts in uncovered.items() for fact in facts
+    )
     existing = next(
         (entry for entry in ledger["dismissed_runs"] if entry["run_id"] == run_id),
         None,
     )
-    if run_id in listed:
-        # Listed now means facts newer than any earlier dismissal exist; a
-        # dismissal today covers them, renewing an older entry in place.
+    if covering:
+        # Listed now means facts no earlier dismissal covered exist; today's
+        # dismissal names exactly those, renewing an older entry in place.
         if existing is None:
-            entry = {"run_id": run_id, "dismissed_at": stamp, "reason": reason}
+            entry = {
+                "run_id": run_id,
+                "dismissed_at": stamp,
+                "reason": reason,
+                "facts": covering,
+            }
             ledger["dismissed_runs"].append(entry)
             extras: dict[str, Any] = {}
         else:
+            known = {tuple(identity) for identity in existing["facts"]}
+            existing["facts"] = sorted(
+                [list(identity) for identity in known]
+                + [identity for identity in covering if tuple(identity) not in known]
+            )
             existing.update({"dismissed_at": stamp, "reason": reason})
             entry = existing
             extras = {"renewed": True}
@@ -1757,6 +1846,10 @@ def build_parser() -> JsonArgumentParser:
         action="append",
         default=[],
         help="filename persist-results.py merged; repeat per talk",
+    )
+    opened.add_argument(
+        "--talks-from",
+        help="a file naming persisted talks, one filename per line",
     )
     opened.add_argument(
         "--from-run",

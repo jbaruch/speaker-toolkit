@@ -493,8 +493,9 @@ Then check for a run that persisted talks but never finished with the speaker:
 ```
 
 `adopt_required: true` means this vault has no obligations ledger yet: adopt
-it now, before any batch, so every claim closed from here on is reconciled
-and everything before it is history, then read `pending` again:
+it now, before any batch, so every claim already closed is recorded as
+history by its exact identity and every claim closed from here on is
+reconciled, then read `pending` again:
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \

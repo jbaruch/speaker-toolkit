@@ -28,7 +28,16 @@ SEED_RELEASED = "2026-09-01T00:00:00+00:00"
 # The fixtures adopt the ledger after the seed claims closed, so seed facts are
 # history and never reconciled; claims in recovery tests close after this.
 ADOPTED = "2026-09-02T00:00:00+00:00"
-ENVELOPE = {"schema_version": 1, "adopted_at": ADOPTED, "dismissed_runs": []}
+ENVELOPE = {
+    "schema_version": 1,
+    "adopted_at": ADOPTED,
+    "adopted_facts": [],
+    "dismissed_runs": [],
+}
+
+
+def _identity(run_id, filename, released_at, *, batch_id="b1", generation=1):
+    return [run_id, filename, batch_id, generation, released_at]
 
 
 def _persisted_claim(
@@ -1032,14 +1041,14 @@ def test_a_deferred_offer_is_listed_until_it_is_answered_again(tmp_path, fresh_d
 
 
 def _db_with_claims(tmp_path: Path, claims: dict[str, tuple[str, str]]):
+    """Talks whose claims closed after adoption, so reconciliation sees them."""
+    if not (tmp_path / "ingress-obligations.json").exists():
+        _adopt(_write_db(tmp_path, [_talk(name, claim=None) for name in claims]))
     talks = [
         _talk(filename, claim=_persisted_claim(run_id, released_at))
         for filename, (run_id, released_at) in claims.items()
     ]
-    database = _write_db(tmp_path, talks)
-    if not (tmp_path / "ingress-obligations.json").exists():
-        _adopt(database)
-    return database
+    return _write_db(tmp_path, talks)
 
 
 def test_a_persisted_run_with_no_ledger_record_is_reported_for_opening(tmp_path):
@@ -1149,6 +1158,19 @@ def test_talks_persisted_under_a_completed_run_are_named_for_a_fresh_run_once(
 def test_every_uncovered_run_after_adoption_is_listed_until_opened_or_dismissed(
     tmp_path,
 ):
+    # ancient-run closed before adoption: history by identity, never listed.
+    ancient = _talk(
+        "old.md", claim=_persisted_claim("ancient-run", "2026-08-01T00:00:00+00:00")
+    )
+    _adopt(
+        _write_db(
+            tmp_path,
+            [
+                ancient,
+                *(_talk(name, claim=None) for name in ("mid.md", "new.md", "seen.md")),
+            ],
+        )
+    )
     database = _db_with_claims(
         tmp_path,
         {
@@ -1179,6 +1201,7 @@ def test_every_uncovered_run_after_adoption_is_listed_until_opened_or_dismissed(
         "run_id": "middle-run",
         "dismissed_at": NOW,
         "reason": "batch was re-run as newest-run",
+        "facts": [_identity("middle-run", "mid.md", "2026-09-10T00:00:00+00:00")],
     }
     assert _ok(database, "pending")["open_required"] == []
     assert _ledger(tmp_path)["dismissed_runs"] == [dismissed["dismissed"]]
@@ -1256,8 +1279,30 @@ def test_a_replayed_open_of_a_completed_run_is_an_unchanged_success(tmp_path):
             "adopted_at 'soon' is malformed",
         ),
         (
-            {"schema_version": 1, "adopted_at": ADOPTED, "runs": []},
+            {
+                "schema_version": 1,
+                "adopted_at": ADOPTED,
+                "adopted_facts": [],
+                "runs": [],
+            },
             "dismissed_runs array",
+        ),
+        (
+            {
+                "schema_version": 1,
+                "adopted_at": ADOPTED,
+                "dismissed_runs": [],
+                "runs": [],
+            },
+            "lacks adopted_facts",
+        ),
+        (
+            {**ENVELOPE, "adopted_facts": [["r", "a.md", "b1", 1]], "runs": []},
+            "adopted_facts[0] must be [run_id, filename, batch_id, generation, released_at]",
+        ),
+        (
+            {**ENVELOPE, "adopted_facts": [["r", "a.md", "b1", "1", NOW]], "runs": []},
+            "generation must be a non-negative integer",
         ),
         (
             {**ENVELOPE, "dismissed_runs": [{"run_id": "x"}], "runs": []},
@@ -1266,7 +1311,9 @@ def test_a_replayed_open_of_a_completed_run_is_an_unchanged_success(tmp_path):
         (
             {
                 **ENVELOPE,
-                "dismissed_runs": [{"run_id": "x", "dismissed_at": NOW, "reason": " "}],
+                "dismissed_runs": [
+                    {"run_id": "x", "dismissed_at": NOW, "reason": " ", "facts": []}
+                ],
                 "runs": [],
             },
             "dismissed_runs[0].reason must say why",
@@ -1275,8 +1322,23 @@ def test_a_replayed_open_of_a_completed_run_is_an_unchanged_success(tmp_path):
             {
                 **ENVELOPE,
                 "dismissed_runs": [
-                    {"run_id": "x", "dismissed_at": NOW, "reason": "a"},
-                    {"run_id": "x", "dismissed_at": NOW, "reason": "b"},
+                    {
+                        "run_id": "x",
+                        "dismissed_at": NOW,
+                        "reason": "a",
+                        "facts": [["y", "a.md", "b1", 1, NOW]],
+                    }
+                ],
+                "runs": [],
+            },
+            "dismissed_runs[0].facts name another run",
+        ),
+        (
+            {
+                **ENVELOPE,
+                "dismissed_runs": [
+                    {"run_id": "x", "dismissed_at": NOW, "reason": "a", "facts": []},
+                    {"run_id": "x", "dismissed_at": NOW, "reason": "b", "facts": []},
                 ],
                 "runs": [],
             },
@@ -1287,8 +1349,12 @@ def test_a_replayed_open_of_a_completed_run_is_an_unchanged_success(tmp_path):
         "no-adopted-at",
         "adopted-at-malformed",
         "no-dismissed-runs",
+        "no-adopted-facts",
+        "adopted-fact-shape",
+        "adopted-fact-generation",
         "dismissal-keys",
         "dismissal-reason",
+        "dismissal-foreign-fact",
         "dismissal-duplicate",
     ],
 )
@@ -1302,6 +1368,7 @@ def test_a_malformed_envelope_fails_structured(tmp_path, fresh_db, envelope, det
 
 
 def test_history_claims_count_and_other_release_reasons_do_not(tmp_path):
+    _adopt(_write_db(tmp_path, [_talk("h.md", claim=None)]))
     talk = _talk(
         "h.md",
         claim={
@@ -1314,7 +1381,6 @@ def test_history_claims_count_and_other_release_reasons_do_not(tmp_path):
         _persisted_claim("history-run", "2026-09-11T00:00:00+00:00")
     ]
     database = _write_db(tmp_path, [talk])
-    _adopt(database)
     payload = _ok(database, "pending")
     assert [entry["run_id"] for entry in payload["open_required"]] == ["history-run"]
 
@@ -1341,7 +1407,17 @@ def test_adoption_stamps_the_boundary_once(tmp_path, unadopted_db):
     first = _adopt(unadopted_db, now=NOW)
     assert first["written"] is True
     assert first["adopted_at"] == NOW
-    assert _ledger(tmp_path) == {**ENVELOPE, "adopted_at": NOW, "runs": []}
+    assert first["adopted_fact_count"] == 4
+    history = [
+        _identity(SEED_RUN, name, SEED_RELEASED)
+        for name in ("fresh.md", "older.md", "skipped.md", "undated.md")
+    ]
+    assert _ledger(tmp_path) == {
+        **ENVELOPE,
+        "adopted_at": NOW,
+        "adopted_facts": history,
+        "runs": [],
+    }
     replay = _adopt(unadopted_db, now=LATER)
     assert replay["replayed"] is True
     assert replay["written"] is False
@@ -1648,6 +1724,10 @@ _ACCEPTED = {
             "delivery_date must be a YYYY-MM-DD string or null",
         ),
         ({"talks.0.claim_run_id": "run 1"}, "claim_run_id 'run 1' contains whitespace"),
+        (
+            {"talks.0.delivery_date": 123},
+            "delivery_date must be a YYYY-MM-DD string or null",
+        ),
         ({"completed_at": 1}, "completed_at must be null in this state"),
         ({"talks.0.claim_run_id": None}, "claim_run_id must be a non-empty string"),
         (
@@ -1709,6 +1789,7 @@ _ACCEPTED = {
         "talk-days-bool",
         "talk-date",
         "talk-claim-id",
+        "talk-date-number",
         "completed-type",
         "talk-claim-id-null",
         "talk-claim-released-noncanonical",
@@ -2257,9 +2338,14 @@ def test_two_batches_released_in_the_same_second_are_distinct_facts(tmp_path):
     database = _db_with_claims(tmp_path, {"a.md": ("run-same-second", release)})
     _opened(database, "run-same-second", "a.md")
     assert _ok(database, "pending")["open_required"] == []
-    talk = _talk(
-        "a.md", claim=_persisted_claim("run-same-second", release, batch_id="b2")
-    )
+    # The queue gives every re-claim of a talk its own generation; only the
+    # release second is shared.
+    second = {
+        **_persisted_claim("run-same-second", release, batch_id="b2"),
+        "reprocess_generation": 2,
+    }
+    talk = _talk("a.md", claim=second)
+    talk["reprocess_generation"] = 2
     talk["_queue_claim_history"] = [_persisted_claim("run-same-second", release)]
     _write_db(tmp_path, [talk])
     listed = _ok(database, "pending")["open_required"]
@@ -2268,6 +2354,7 @@ def test_two_batches_released_in_the_same_second_are_distinct_facts(tmp_path):
     ]
     reopened = _open(database, "run-same-second", "a.md", now=LATER)["run"]
     assert reopened["talks"][0]["claim_batch_id"] == "b2"
+    assert reopened["talks"][0]["claim_generation"] == 2
     assert reopened["downstream"] == {"state": "owed", "completed_at": None}
     assert _ok(database, "pending")["open_required"] == []
 
@@ -2337,7 +2424,14 @@ def test_a_dismissal_covers_only_the_facts_that_existed_when_it_was_recorded(tmp
         "abandoned",
     )
     assert _ok(database, "pending")["open_required"] == []
-    talk = _talk("a.md", claim=_persisted_claim("gone-run", MUCH_LATER, batch_id="b9"))
+    # The next batch closes at the very second of the dismissal, with a later
+    # generation: an exact identity the dismissal never named, so it is listed.
+    later = {
+        **_persisted_claim("gone-run", NOW, batch_id="b9"),
+        "reprocess_generation": 2,
+    }
+    talk = _talk("a.md", claim=later)
+    talk["reprocess_generation"] = 2
     talk["_queue_claim_history"] = [
         _persisted_claim("gone-run", "2026-09-10T00:00:00+00:00")
     ]
@@ -2365,6 +2459,10 @@ def test_a_dismissal_covers_only_the_facts_that_existed_when_it_was_recorded(tmp
         "run_id": "gone-run",
         "dismissed_at": MUCH_LATER,
         "reason": "abandoned",
+        "facts": [
+            _identity("gone-run", "a.md", "2026-09-10T00:00:00+00:00"),
+            _identity("gone-run", "a.md", NOW, batch_id="b9", generation=2),
+        ],
     }
     assert _ok(database, "pending")["open_required"] == []
     assert len(_ledger(tmp_path)["dismissed_runs"]) == 1
@@ -2390,3 +2488,67 @@ def test_a_long_run_id_still_gets_its_report_copy(tmp_path, fresh_db):
     assert copied == _copy_path(tmp_path, run_id, report.read_bytes())
     assert len(copied.name) < 120
     assert copied.read_bytes() == report.read_bytes()
+
+
+def test_a_batch_stamped_before_adoption_but_closed_after_it_is_still_listed(
+    tmp_path,
+):
+    # persist-results.py --run-date stamps midnight; a batch merged after the
+    # noon adoption still carries a morning release time. Identity, not time,
+    # decides what is history.
+    database = _write_db(tmp_path, [_talk("a.md", claim=None)])
+    _adopt(database, now="2026-09-13T12:00:00+00:00")
+    _write_db(
+        tmp_path,
+        [_talk("a.md", claim=_persisted_claim("day-run", "2026-09-13T00:00:00+00:00"))],
+    )
+    listed = _ok(database, "pending")["open_required"]
+    assert [(entry["run_id"], entry["reason"]) for entry in listed] == [
+        ("day-run", "unrecorded_run")
+    ]
+
+
+def test_open_reads_the_persisted_filenames_from_a_file(tmp_path, fresh_db):
+    listing = tmp_path / "persisted.txt"
+    listing.write_text("fresh.md\n\n  older.md  \n", encoding="utf-8")
+    run = _ok(
+        fresh_db,
+        "open",
+        "--run-id",
+        "run-file",
+        "--now",
+        NOW,
+        "--talks-from",
+        str(listing),
+        "--talk",
+        "skipped.md",
+    )["run"]
+    assert [talk["filename"] for talk in run["talks"]] == [
+        "fresh.md",
+        "older.md",
+        "skipped.md",
+    ]
+    missing = _refused(
+        fresh_db,
+        "open",
+        "--run-id",
+        "run-file",
+        "--now",
+        NOW,
+        "--talks-from",
+        str(tmp_path / "absent.txt"),
+    )
+    assert missing["reason_code"] == "invalid_arguments"
+    empty = tmp_path / "empty.txt"
+    empty.write_text("\n", encoding="utf-8")
+    nothing = _refused(
+        fresh_db,
+        "open",
+        "--run-id",
+        "run-file",
+        "--now",
+        NOW,
+        "--talks-from",
+        str(empty),
+    )
+    assert nothing["reason_code"] == "invalid_arguments"

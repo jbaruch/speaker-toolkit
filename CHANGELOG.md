@@ -71,7 +71,13 @@ those of a completed run, a dismissal applies only to a listed run and only to
 the facts that existed when it was recorded, a long run id gets a bounded copy
 name, and a timestamp that overflows UTC normalization is the structured
 timestamp error. Dismissing a run that reappeared with newer facts renews the
-dismissal instead of replaying the stale one.
+dismissal instead of replaying the stale one. Adoption records the exact
+identity of every claim already closed, and a dismissal records the exact
+facts it covers, so neither depends on a release time that persist-results
+may have stamped at midnight; a newer generation supersedes an older fact and
+the batch id is identity only; `open` reads persisted filenames from a file
+so database content never passes through a shell string; a non-string
+delivery date is refused.
 The end-to-end evaluation
 scenario and the clarification skill's seed-agenda contract follow separately.
 

@@ -16,7 +16,8 @@ explicit disposition and the end report has been delivered.
   exact-generation check, staged candidate, atomic replace. Never edit the
   ledger by hand.
 - A missing ledger means the vault has not adopted this contract yet: `adopt
-  --now` at Step 1 creates it and stamps the reconciliation boundary. Until
+  --now` at Step 1 creates it and records every claim already closed as
+  history by exact identity. Until
   then `pending` reports `adopt_required: true` and reconciles nothing, and
   every other command refuses with `ledger_not_adopted`.
 - A ledger carrying another `schema_version` is refused with
@@ -28,8 +29,9 @@ explicit disposition and the end report has been delivered.
 | Field | Type | Meaning |
 |---|---|---|
 | `schema_version` | integer | `1` |
-| `adopted_at` | timestamp | the reconciliation boundary `adopt` stamped; claims closed before it are history |
-| `dismissed_runs` | array | `{run_id, dismissed_at, reason}` per run the operator chose not to open |
+| `adopted_at` | timestamp | when `adopt` ran |
+| `adopted_facts` | array | the exact identity (`[run_id, filename, batch_id, generation, released_at]`) of every claim already closed at adoption — history, never reconciled; identity rather than time, since `persist-results.py --run-date` can stamp a batch at midnight |
+| `dismissed_runs` | array | `{run_id, dismissed_at, reason, facts}` per run the operator chose not to open, `facts` being the exact identities that dismissal covered |
 | `runs` | array | one record per `run_id`, in the order runs were opened |
 
 ## Run Record
@@ -72,7 +74,7 @@ stands. A replayed `open` never touches a frozen recency snapshot.
 | `claim_run_id` | the run id of the closed `return_persisted` claim that persisted the talk: this run's own newest claim when it has one, else the newest of any run; `open` refuses a talk with no such claim (`talk_not_persisted`) |
 | `claim_batch_id` | that claim's `batch_id` |
 | `claim_generation` | that claim's `reprocess_generation` |
-| `claim_released_at` | that claim's `released_at`; with `claim_run_id`, `claim_batch_id`, and `claim_generation` it names one persisted fact — `persist-results.py` stamps one release time on a whole batch — so a talk merged again under the same run is a new fact that re-owes the downstream steps |
+| `claim_released_at` | that claim's `released_at`; with `claim_run_id`, `claim_batch_id`, and `claim_generation` it names one persisted fact — `persist-results.py` stamps one release time on a whole batch — so a talk merged again under the same run is a new fact that re-owes the downstream steps. Newer means a later generation, then a later release; the batch id is identity, never order |
 
 Bucket boundaries and the rule that an undated or future-dated talk is
 `unknown` are the script's; the reference to its constants lives in
@@ -185,14 +187,14 @@ special file is `report_unreadable`.
 
 | Command | Precondition | Effect |
 |---|---|---|
-| `adopt --now` | — | creates the ledger with `adopted_at`; replay-safe |
-| `open --run-id --now --talk ... [--from-run]` | the ledger is adopted; every `--talk` is a filename in the current tracking database with a closed `return_persisted` claim (under `--from-run` when given); a completed run accepts only an exact replay of its recorded facts; a run whose offer was answered accepts no new fact | creates or extends the run record; recomputes recency and `offer_mode` while unoffered; a new fact joining while the offer stands withdraws the offer; owes the downstream steps when a new fact joins |
+| `adopt --now` | — | creates the ledger with `adopted_at` and `adopted_facts`; replay-safe |
+| `open --run-id --now (--talk ... \| --talks-from) [--from-run]` | the ledger is adopted; every talk (from `--talk` or one per line in the `--talks-from` file) is a filename in the current tracking database with a closed `return_persisted` claim (under `--from-run` when given); a completed run accepts only an exact replay of its recorded facts; a run whose offer was answered accepts no new fact | creates or extends the run record; recomputes recency and `offer_mode` while unoffered; a new fact joining while the offer stands withdraws the offer; owes the downstream steps when a new fact joins |
 | `record-downstream --run-id --now` | the run exists | downstream `completed`; replay-safe |
 | `record-offer --run-id --now [--topic ...]` | downstream `completed`; state `owed` | refreshes recency, then `offered` with `topics` and `offered: true`; or, with no analyzed talk left, `not_applicable` and `offered: false` |
 | `record-disposition --run-id --now --disposition ... [--return-condition]` | state `offered` or `deferred`; `deferred` needs `--return-condition` | the disposition; `accepted` opens a pending session |
 | `record-session --run-id --now --profile-inputs changed\|unchanged [--profile-refreshed]` | state `accepted`, session pending; `changed` with `{vault_root}/speaker-profile.json` present needs `--profile-refreshed` (`profile_refresh_required` otherwise) | session `completed` with both flags recorded |
 | `record-report --run-id --now --report-file` | downstream `completed`; clarification resolved; non-empty file | copies the report, binds its digest, sets `completed_at` |
-| `dismiss --run-id --now --reason` | the ledger is adopted; the run has no record and is listed as `unrecorded_run` | records that its uncovered talks are deliberately not opened; a run listed again after an earlier dismissal renews that entry to cover the new facts (`renewed: true`); with nothing new listed, the same reason is a replay and another reason is refused |
+| `dismiss --run-id --now --reason` | the ledger is adopted; the run has no record and is listed as `unrecorded_run` | records the exact facts listed now as deliberately not opened; a run listed again after an earlier dismissal renews that entry, adding the new facts (`renewed: true`); with nothing new listed, the same reason is a replay and another reason is refused |
 | `pending` | — | runs owing a step, deferred offers, and uncovered persisted facts |
 | `status --run-id` | the run exists | the record and its summary |
 
@@ -239,17 +241,19 @@ as the snapshot it is; `record-offer` returns the mode the offer must use.
 again when the speaker's condition is met.
 
 `open_required` reconciles the ledger against the tracking database: a claim
-closed with `release_reason: return_persisted` after `adopted_at` says its
-talk persisted under this contract, and a persisted talk the ledger does not
-cover crashed between the merge and `open`. A persisted fact is one closed
-claim: run id, filename, batch id, reprocess generation, and release time.
-It is covered when any run record lists the talk linked to that claim, or to
-a newer claim of the same run (a run that merged a talk again superseded its
-earlier result), whichever run id recorded it, so a recovery under a fresh
-run id is never reported again and a talk merged again under the same run,
-even within the same second, is a new fact until it is recorded. An
-uncovered run stays listed until it is opened or dismissed with a reason; no
-later run's existence stands in for either. Each entry carries `run_id`,
+closed with `release_reason: return_persisted` says its talk persisted, and a
+persisted fact the ledger neither excludes nor covers crashed between the
+merge and `open`. A persisted fact is one closed claim: run id, filename,
+batch id, reprocess generation, and release time. It is excluded when
+`adopted_facts` or a dismissal's `facts` name that exact identity. It is
+covered when any run record lists the talk linked to that claim, or to a
+newer claim of the same run (a later generation or release — a run that
+merged a talk again superseded its earlier result), whichever run id
+recorded it, so a recovery under a fresh run id is never reported again and
+a talk merged again under the same run, even within the same second, is a
+new fact until it is recorded. An uncovered run stays listed until it is
+opened or dismissed; no later run's existence and no timestamp stands in for
+either. Each entry carries `run_id`,
 `talks` (only the uncovered ones), `latest_released_at`, `reason`, and
 `next_action: open_obligations`:
 

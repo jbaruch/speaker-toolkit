@@ -267,17 +267,17 @@ Proceed to Step 9.
 
 ## Step 9 — Clarification Handoff
 
-If this run persisted no talks and Step 1 resumed no obligations, there is no
-obligations record: finish here. Otherwise read the run's obligation and follow
+A run that persisted no talks and resumed no obligations has no obligations
+record. Such a run finishes here: Steps 10 and 11 do not run for it.
+
+Every other run reads its obligation and follows
 [Clarification Handoff](references/clarification-handoff.md) exactly. The
 ledger's `next_action` and `offer_mode` decide what to offer; record the offer
 before asking, ask one question, wait for the answer, and record the
 disposition. An unanswered offer stays pending for the next run; it is never a
 decline. When an accepted session finishes and changed profile inputs, re-run
 Step 7, and Step 8 when it changed improvement goals, before recording the
-session.
-
-Proceed immediately to Step 10.
+session. Then proceed immediately to Step 10.
 
 ## Step 10 — Offer Style Contribution
 
