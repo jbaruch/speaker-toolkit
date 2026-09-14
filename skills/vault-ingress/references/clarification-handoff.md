@@ -95,13 +95,13 @@ Record the speaker's explicit answer, once:
 ```
 
 - **accepted** — invoke `Skill(skill: "vault-clarification")` immediately,
-  carrying the recorded topics as the session's seed agenda. On a host with no
-  skill-invocation tool, read
-  `{speaker_toolkit_root}/skills/vault-clarification/SKILL.md` and execute its
-  steps in order; the session is never skipped for want of the named tool.
-  When the session finishes, record it, saying whether it changed profile
-  inputs (new confirmed intents, improvement goals, or rhetoric-summary
-  changes):
+  carrying the recorded topics as the session's seed agenda. That typed call
+  is the only way the session runs. A host that cannot make it leaves the
+  session `pending` in the ledger — never skipped, never simulated — and the
+  next run on a capable host resumes it through
+  `complete_clarification_session`. When the session finishes, record it,
+  saying whether it changed profile inputs (new confirmed intents,
+  improvement goals, or rhetoric-summary changes):
 
   ```bash
   "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \

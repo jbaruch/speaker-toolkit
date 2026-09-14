@@ -115,9 +115,12 @@ on an offer. Once `offered`, the buckets and `offer_mode` are frozen; later
 resolved: `declined`, `deferred`, `not_applicable`, or `accepted` with a
 completed session. An empty or whitespace-only file is refused
 (`report_empty`). The copy is content-addressed and installed with a directory
-fsync before the ledger commit binds it; a copy the commit then fails to bind
-is removed. Re-recording identical bytes is a no-op; different bytes add a
-second copy (the earlier one stays on disk) and re-stamp `delivered_at`.
+fsync before the ledger commit binds it. A copy the commit then fails to bind
+is retained: identical bytes always name the same file, so it is shared by
+every delivery of that text and the retry reuses it; removing it could take a
+copy out from under a delivery that did bind it. Re-recording identical bytes
+is a no-op; different bytes add a second copy (the earlier one stays on disk)
+and re-stamp `delivered_at`.
 
 ## Commands
 
@@ -154,7 +157,7 @@ repaired and never allowed to surface as a traceback.
 ## Reader Contract
 
 `pending` emits `{ok, ledger_path, ledger_present, pending: [...], count,
-deferred_offers: [...], unrecorded_runs: [...]}`. Each `pending` entry is a run
+deferred_offers: [...], open_required: [...]}`. Each `pending` entry is a run
 whose `next_action` is not `none`, carrying `run_id`, `opened_at`,
 `next_action`, `clarification_state`, `offer_mode`, `recency_as_of`,
 `end_report_state`, and `talk_count`. Treat an unoffered entry's `offer_mode`
@@ -164,14 +167,22 @@ as the snapshot it is; `record-offer` returns the mode the offer must use.
 `return_condition`, `topics`, and `resolved_at`, so the offer can be raised
 again when the speaker's condition is met.
 
-`unrecorded_runs` reconciles the ledger against the tracking database: a run
-whose closed claims carry `release_reason: return_persisted` persisted talks,
-and if it has no ledger record it crashed between the merge and `open`. At
-most one entry is reported — the newest such run, and only when it is newer
-than every recorded run's `opened_at`; which runs qualify is the script's rule
-(`run-obligations.py`, `unrecorded_run` docstring). The entry carries `run_id`,
-`talks`, `latest_released_at`, and `next_action: open_obligations`: run `open`
-for it with those talks, then resume at the step its record names.
+`open_required` reconciles the ledger against the tracking database: a claim
+closed with `release_reason: return_persisted` says its talk persisted, and a
+persisted talk the ledger does not cover crashed between the merge and `open`.
+Each entry carries `run_id`, `talks`, `latest_released_at`, `reason`, and
+`next_action: open_obligations`:
+
+| `reason` | Meaning | Action |
+|---|---|---|
+| `missing_talks` | a recorded run's closed claims name talks its record lacks — a later batch that never opened | `open` the run with exactly those talks |
+| `talks_persisted_after_completion` | the same, on a run whose report is already delivered | open them under a fresh run id; `open` refuses a completed run |
+| `unrecorded_run` | a run with no record at all | `open` it with the listed talks |
+
+Every recorded run with missing talks is listed. An unrecorded run is listed
+only when it is the newest such run and newer than every recorded run's
+`opened_at`; which runs qualify is the script's rule (`run-obligations.py`,
+`open_required` docstring).
 
 `next_action` is one of:
 

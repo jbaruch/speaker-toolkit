@@ -34,9 +34,11 @@ same sibling lock discipline as the tracking database, only when state changed.
 Ledger: ``{vault_root}/ingress-obligations.json`` (schema 1, run records
 schema 1), owned by vault-ingress. Delivered reports are copied to
 ``{vault_root}/ingress-reports/{run_id}.{digest}.md`` and bound to the ledger
-by SHA-256. ``pending`` also names the newest persisted run that never opened
-its obligations (a crash between the merge and ``open``) and every deferred
-offer with the speaker's return condition, so both can be raised again.
+by SHA-256. ``pending`` also reconciles the ledger against closed claims,
+naming persisted talks the ledger does not cover (a whole run, or a later
+batch of a recorded run, that crashed between the merge and ``open``), and
+lists every deferred offer with the speaker's return condition, so both can
+be raised again.
 Field meanings, transitions, and the reader/writer contract live in
 ``skills/vault-ingress/references/schemas-obligations.md``.
 
@@ -150,6 +152,9 @@ REPORT_OWED = "owed"
 REPORT_DELIVERED = "delivered"
 
 NEXT_OPEN = "open_obligations"
+REASON_UNRECORDED = "unrecorded_run"
+REASON_MISSING_TALKS = "missing_talks"
+REASON_AFTER_COMPLETION = "talks_persisted_after_completion"
 NEXT_OFFER = "offer_clarification"
 NEXT_AWAIT = "await_disposition"
 NEXT_SESSION = "complete_clarification_session"
@@ -784,8 +789,6 @@ def _transition(
     context: Context,
     args: argparse.Namespace,
     mutate: Any,
-    *,
-    on_commit_failure: Any = None,
 ) -> dict[str, Any]:
     now = parse_timestamp(args.now, "--now")
     stamp = render_timestamp(now)
@@ -796,12 +799,7 @@ def _transition(
     extras = mutate(run, stamp, now) or {}
     if json.dumps(run, sort_keys=True) != before:
         run["updated_at"] = stamp
-    try:
-        outcome = store_ledger(context.ledger_path, snapshot, ledger)
-    except RunObligationsError:
-        if on_commit_failure is not None:
-            on_commit_failure()
-        raise
+    outcome = store_ledger(context.ledger_path, snapshot, ledger)
     return {
         "ok": True,
         "ledger_path": str(context.ledger_path),
@@ -947,7 +945,6 @@ def command_record_report(context: Context, args: argparse.Namespace) -> dict[st
             reason_code="report_empty",
         )
     digest = hashlib.sha256(content).hexdigest()
-    created: list[Path] = []
 
     def mutate(run: dict[str, Any], stamp: str, _now: datetime) -> None:
         if not clarification_resolved(run):
@@ -961,53 +958,72 @@ def command_record_report(context: Context, args: argparse.Namespace) -> dict[st
         report = run["end_report"]
         if report["state"] == REPORT_DELIVERED and report["report_sha256"] == digest:
             return
-        copied, fresh = write_report_copy(
+        # The copy is installed before the ledger commit and kept whatever the
+        # commit does: content-addressed, it is shared by every delivery of
+        # these bytes, so a copy left unbound by a lost generation race is
+        # reused by the retry rather than removed from under a winner.
+        copied, _fresh = write_report_copy(
             context.reports_directory, run["run_id"], digest, content
         )
-        if fresh:
-            created.append(copied)
         report["state"] = REPORT_DELIVERED
         report["delivered_at"] = stamp
         report["report_path"] = str(copied)
         report["report_sha256"] = digest
         run["completed_at"] = stamp
 
-    def discard_copy() -> None:
-        # The ledger commit lost its generation race; the copy it would have
-        # bound is an orphan. Leave a copy another delivery already owns alone.
-        for path in created:
-            try:
-                path.unlink()
-            except OSError as exc:
-                print(
-                    f"WARNING: could not remove the unbound report copy {path}: {exc}",
-                    file=sys.stderr,
-                )
-
-    return _transition(context, args, mutate, on_commit_failure=discard_copy)
+    return _transition(context, args, mutate)
 
 
-def unrecorded_run(
+def open_required(
     persisted: dict[str, dict[str, Any]], ledger: dict[str, Any]
-) -> dict[str, Any] | None:
-    """The newest persisted run with no ledger record, if it postdates the ledger.
+) -> list[dict[str, Any]]:
+    """Persisted talks the ledger does not cover, reconciled against closed claims.
 
-    Every run recorded later than an unrecorded one moved past it under this
-    contract, so only the newest unrecorded run, newer than every recorded
-    run's ``opened_at``, is reported as unfinished. Older history is history.
+    Two shapes. A recorded run whose closed claims name talks its record lacks
+    persisted a later batch and crashed before ``open``; every such run is
+    listed with exactly the missing talks (``missing_talks``, or
+    ``talks_persisted_after_completion`` when the run's report is already
+    delivered — those talks need a fresh run id). A run with no record at all
+    is listed only when it is the newest such run and newer than every
+    recorded run's ``opened_at``: every run recorded later moved past it under
+    this contract, so older unrecorded history is history (``unrecorded_run``).
     """
-    recorded = {run["run_id"] for run in ledger["runs"]}
+    records = {run["run_id"]: run for run in ledger["runs"]}
+    required: list[dict[str, Any]] = []
+    for run_id, entry in sorted(persisted.items()):
+        run = records.get(run_id)
+        if run is None:
+            continue
+        known = {talk["filename"] for talk in run["talks"]}
+        missing = [name for name in entry["talks"] if name not in known]
+        if not missing:
+            continue
+        required.append(
+            {
+                "run_id": run_id,
+                "talks": missing,
+                "latest_released_at": entry["latest_released_at"],
+                "reason": (
+                    REASON_AFTER_COMPLETION
+                    if run["completed_at"] is not None
+                    else REASON_MISSING_TALKS
+                ),
+                "next_action": NEXT_OPEN,
+            }
+        )
     latest_recorded = max((run["opened_at"] for run in ledger["runs"]), default=None)
     candidates = [
         entry
         for run_id, entry in persisted.items()
-        if run_id not in recorded
+        if run_id not in records
         and (latest_recorded is None or entry["latest_released_at"] > latest_recorded)
     ]
-    if not candidates:
-        return None
-    newest = max(candidates, key=lambda entry: entry["latest_released_at"])
-    return {**newest, "next_action": NEXT_OPEN}
+    if candidates:
+        newest = max(candidates, key=lambda entry: entry["latest_released_at"])
+        required.append(
+            {**newest, "reason": REASON_UNRECORDED, "next_action": NEXT_OPEN}
+        )
+    return required
 
 
 def command_pending(context: Context, _args: argparse.Namespace) -> dict[str, Any]:
@@ -1025,7 +1041,6 @@ def command_pending(context: Context, _args: argparse.Namespace) -> dict[str, An
         for run in ledger["runs"]
         if run["clarification"]["state"] == STATE_DEFERRED
     ]
-    unrecorded = unrecorded_run(context.persisted_runs(), ledger)
     return {
         "ok": True,
         "ledger_path": str(context.ledger_path),
@@ -1033,7 +1048,7 @@ def command_pending(context: Context, _args: argparse.Namespace) -> dict[str, An
         "pending": pending,
         "count": len(pending),
         "deferred_offers": deferred,
-        "unrecorded_runs": [unrecorded] if unrecorded is not None else [],
+        "open_required": open_required(context.persisted_runs(), ledger),
     }
 
 

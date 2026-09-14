@@ -492,10 +492,12 @@ Then check for a run that persisted talks but never finished with the speaker:
   "{vault_root}/tracking-database.json" pending
 ```
 
-Read all three lists. `unrecorded_runs` names a run whose claims say its
-talks persisted but that never opened its obligations (a crash between the
-merge and `open`): run `open` for it with the talks it lists, then treat it
-like any pending run. `pending` lists runs owing an answer or a report: before
+Read all three lists. `open_required` names persisted talks the ledger does
+not cover (a crash between the merge and `open`), each with a `reason`: for
+`unrecorded_run` and `missing_talks`, run `open` for that run with exactly the
+talks listed, then treat it like any pending run; for
+`talks_persisted_after_completion`, open those talks under a fresh run id.
+`pending` lists runs owing an answer or a report: before
 selecting any new work, resume each at the step its `next_action` names, using
 that run's recorded `run_id` — `offer_clarification`, `await_disposition`, and
 `complete_clarification_session` at Step 9 through

@@ -19,10 +19,11 @@ resolve anything.
 
 The recency buckets moved from handoff prose into the script's constants, and
 the handoff describes the interaction by mechanism, so a host without
-`AskUserQuestion` asks in plain text and a host without a skill-invocation tool
-executes the clarification skill's steps directly instead of skipping. An
-undated talk is bucketed like a recent one: recommend the session, never start
-it unasked.
+`AskUserQuestion` asks in plain text instead of skipping; the typed
+`Skill(skill: "vault-clarification")` call stays the only way a session runs,
+and a host that cannot make it leaves the session pending in the ledger for a
+capable host. An undated talk is bucketed like a recent one: recommend the
+session, never start it unasked.
 
 Review rounds on #462 hardened the ledger: every field is validated before a
 command runs and every write reports its durability state; run ids share the
@@ -32,8 +33,9 @@ a path outside the vault; `record-offer` refreshes recency against the current
 database at the moment of the offer; a deferred offer can be answered again
 and `pending` lists it with the speaker's return condition; a session that
 changed profile inputs cannot be recorded until the profile is regenerated;
-and `pending` reconciles the ledger against closed claims, naming a run that
-persisted talks but never opened its obligations. The end-to-end evaluation
+and `pending` reconciles the ledger against closed claims, naming persisted
+talks the ledger does not cover, whether a whole run or a later batch of a
+recorded run. The end-to-end evaluation
 scenario and the clarification skill's seed-agenda contract follow separately.
 
 ## 0.20.155 — 2026-09-12

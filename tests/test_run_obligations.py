@@ -603,7 +603,7 @@ def test_a_delivered_report_is_copied_bound_and_completes_the_run(tmp_path, fres
         "pending": [],
         "count": 0,
         "deferred_offers": [],
-        "unrecorded_runs": [],
+        "open_required": [],
     }
     status = _ok(fresh_db, "status", "--run-id", run_id)
     assert status["summary"]["next_action"] == "none"
@@ -1164,11 +1164,12 @@ def test_a_persisted_run_with_no_ledger_record_is_reported_for_opening(tmp_path)
     )
     payload = _ok(database, "pending")
     assert payload["ledger_present"] is False
-    assert payload["unrecorded_runs"] == [
+    assert payload["open_required"] == [
         {
             "run_id": "crashed-run",
             "talks": ["a.md", "b.md"],
             "latest_released_at": "2026-09-13T10:05:00+00:00",
+            "reason": "unrecorded_run",
             "next_action": "open_obligations",
         }
     ]
@@ -1184,7 +1185,111 @@ def test_a_persisted_run_with_no_ledger_record_is_reported_for_opening(tmp_path)
         "--talk",
         "b.md",
     )
-    assert _ok(database, "pending")["unrecorded_runs"] == []
+    assert _ok(database, "pending")["open_required"] == []
+
+
+def test_a_later_batch_of_a_recorded_run_is_reported_with_only_its_missing_talks(
+    tmp_path,
+):
+    database = _db_with_claims(
+        tmp_path,
+        {
+            "a.md": ("run-two-batches", "2026-09-13T10:00:00+00:00"),
+            "b.md": ("run-two-batches", "2026-09-13T11:00:00+00:00"),
+            "c.md": ("run-two-batches", "2026-09-13T11:00:00+00:00"),
+        },
+    )
+    _ok(
+        database,
+        "open",
+        "--run-id",
+        "run-two-batches",
+        "--now",
+        "2026-09-13T10:30:00+00:00",
+        "--talk",
+        "a.md",
+    )
+    payload = _ok(database, "pending")
+    assert payload["open_required"] == [
+        {
+            "run_id": "run-two-batches",
+            "talks": ["b.md", "c.md"],
+            "latest_released_at": "2026-09-13T11:00:00+00:00",
+            "reason": "missing_talks",
+            "next_action": "open_obligations",
+        }
+    ]
+    _ok(
+        database,
+        "open",
+        "--run-id",
+        "run-two-batches",
+        "--now",
+        NOW,
+        "--talk",
+        "b.md",
+        "--talk",
+        "c.md",
+    )
+    assert _ok(database, "pending")["open_required"] == []
+    run = _ok(database, "status", "--run-id", "run-two-batches")["run"]
+    assert [talk["filename"] for talk in run["talks"]] == ["a.md", "b.md", "c.md"]
+
+
+def test_talks_persisted_under_a_completed_run_are_named_for_a_fresh_run(tmp_path):
+    database = _db_with_claims(
+        tmp_path, {"a.md": ("done-run", "2026-09-13T10:00:00+00:00")}
+    )
+    _ok(database, "open", "--run-id", "done-run", "--now", NOW, "--talk", "a.md")
+    _ok(database, "record-offer", "--run-id", "done-run", "--now", NOW)
+    _ok(
+        database,
+        "record-disposition",
+        "--run-id",
+        "done-run",
+        "--now",
+        NOW,
+        "--disposition",
+        "declined",
+    )
+    _ok(
+        database,
+        "record-report",
+        "--run-id",
+        "done-run",
+        "--now",
+        LATER,
+        "--report-file",
+        str(_report(tmp_path)),
+    )
+    _db_with_claims(
+        tmp_path,
+        {
+            "a.md": ("done-run", "2026-09-13T10:00:00+00:00"),
+            "late.md": ("done-run", "2026-09-15T10:00:00+00:00"),
+        },
+    )
+    payload = _ok(database, "pending")
+    assert payload["open_required"] == [
+        {
+            "run_id": "done-run",
+            "talks": ["late.md"],
+            "latest_released_at": "2026-09-15T10:00:00+00:00",
+            "reason": "talks_persisted_after_completion",
+            "next_action": "open_obligations",
+        }
+    ]
+    refused = _refused(
+        database,
+        "open",
+        "--run-id",
+        "done-run",
+        "--now",
+        MUCH_LATER,
+        "--talk",
+        "late.md",
+    )
+    assert refused["reason_code"] == "invalid_transition"
 
 
 def test_only_the_newest_unrecorded_run_newer_than_the_ledger_is_reported(tmp_path):
@@ -1208,7 +1313,7 @@ def test_only_the_newest_unrecorded_run_newer_than_the_ledger_is_reported(tmp_pa
         "seen.md",
     )
     payload = _ok(database, "pending")
-    assert [entry["run_id"] for entry in payload["unrecorded_runs"]] == ["newest-run"]
+    assert [entry["run_id"] for entry in payload["open_required"]] == ["newest-run"]
 
 
 def test_history_claims_count_and_other_release_reasons_do_not(tmp_path):
@@ -1224,7 +1329,7 @@ def test_history_claims_count_and_other_release_reasons_do_not(tmp_path):
     ]
     database = _write_db(tmp_path, [talk])
     payload = _ok(database, "pending")
-    assert [entry["run_id"] for entry in payload["unrecorded_runs"]] == ["history-run"]
+    assert [entry["run_id"] for entry in payload["open_required"]] == ["history-run"]
 
 
 def test_a_report_copy_that_cannot_be_written_records_nothing(tmp_path, fresh_db):
