@@ -10,8 +10,12 @@ explicit disposition and the end report has been delivered.
 
 - Owner: vault-ingress. `skills/vault-ingress/scripts/run-obligations.py` is
   the only writer and owns every shape change and migration.
-- Readers: vault-ingress Step 1 (`pending`) and Steps 9 and 11 (`status`).
-  vault-clarification and vault-profile never read it.
+- Readers: vault-ingress Step 1 (`pending`) and Steps 9 and 11 (`status`);
+  vault-clarification Step 2 (`pending`, `status`) to resolve the seed agenda
+  of a pending session. vault-profile never reads it.
+- A standalone vault-clarification session records the session it resolved
+  from `pending` through `record-session`, the same owner command vault-ingress
+  Step 9 uses; the script stays the only writer.
 - Every write goes through the tracking-database io helpers: sibling lock file,
   exact-generation check, staged candidate, atomic replace. Never edit the
   ledger by hand.

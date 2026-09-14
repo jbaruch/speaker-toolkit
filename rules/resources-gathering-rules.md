@@ -106,5 +106,5 @@ Supported template variables:
 | `{venue}` | Slugified venue name |
 
 If `publishing_process.shownotes` is absent or incomplete, ask the speaker
-during vault-clarification (Step 4 infrastructure capture) — the config
+during vault-clarification (Step 6 infrastructure capture) — the config
 object, not the individual legacy fields.

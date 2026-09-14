@@ -1,5 +1,27 @@
 # Changelog
 
+### Open the clarification session with the topics the speaker accepted
+
+vault-ingress Step 9 recorded the candidate topics in the run obligations
+ledger and invoked vault-clarification "carrying the recorded topics as the
+session's seed agenda", and vault-clarification never read them: its first
+question came from whatever the session found on its own (#456 part two).
+The typed call now carries `run_id`. vault-clarification's new Step 2 resolves
+the seed agenda through the ledger's owner script: `status --run-id` for the
+run the call names, or `pending` for an accepted session a host without the
+typed call left behind, so a standalone session picks it up instead of running
+beside it. Step 3 puts the recorded topics to the speaker first, in recorded
+order, before the session's own findings. Step 9 closes the ledger session: an
+ingress-invoked session returns `profile_inputs` and the covered topics for the
+handoff to record, and a standalone one records itself through
+`record-session`, invoking vault-profile when the ledger demands the refresh.
+The ledger schema lists vault-clarification among its readers; the script
+stays the only writer. The later steps renumber 3–9, and the resources-gathering
+rule's pointer at the infrastructure-capture step, already one off, follows.
+`tests/test_clarification_seed_agenda.py` pins the contract on both sides and
+binds the handoff's step references to the skill's titles. This closes #456;
+its eval criterion was withdrawn in 0.20.163.
+
 ## 0.20.163 — 2026-09-14
 
 ### Remove the eval suite

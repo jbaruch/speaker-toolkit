@@ -27,8 +27,9 @@ is a snapshot dated `recency_as_of`; the mode that counts is the one
   interrupted, and never answered. Put the same question again using the
   recorded `topics`. Silence was not an answer.
 - `complete_clarification_session` — the speaker accepted and the session did
-  not finish. Invoke `Skill(skill: "vault-clarification")` now with the
-  recorded topics as the seed agenda, then record the session (below).
+  not finish. Invoke `Skill(skill: "vault-clarification")` now, carrying
+  `run_id`; the skill reads the recorded `topics` from the run as its seed
+  agenda. Then record the session (below).
 - `deliver_end_report` or `none` — nothing to offer; proceed to Step 10.
 
 A run listed under `pending`'s `deferred_offers` whose `return_condition` the
@@ -102,13 +103,16 @@ Record the speaker's explicit answer, once:
 ```
 
 - **accepted** — invoke `Skill(skill: "vault-clarification")` immediately,
-  carrying the recorded topics as the session's seed agenda. That typed call
-  is the only way the session runs. A host that cannot make it leaves the
+  carrying `run_id`. The skill resolves the recorded `topics` from the run as
+  its seed agenda (its Step 2), opens the session with them (its Step 3), and
+  returns `profile_inputs` with the covered topics (its Step 9). That typed
+  call is the only way the session runs. A host that cannot make it leaves the
   session `pending` in the ledger — never skipped, never simulated — and the
   next run on a capable host resumes it through
-  `complete_clarification_session`. When the session finishes, record it,
-  saying whether it changed profile inputs (new confirmed intents,
-  improvement goals, or rhetoric-summary changes):
+  `complete_clarification_session`, or a standalone vault-clarification
+  session picks it up from `pending` and records it itself. When the session
+  returns, record it with the `profile_inputs` it reported (`changed` for new
+  confirmed intents, improvement goals, or rhetoric-summary changes):
 
   ```bash
   "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
