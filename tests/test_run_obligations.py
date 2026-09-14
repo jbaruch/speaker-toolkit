@@ -85,6 +85,28 @@ def _ledger(tmp_path: Path):
     return json.loads((tmp_path / "ingress-obligations.json").read_text("utf-8"))
 
 
+def _copy_path(tmp_path: Path, run_id: str, content: bytes) -> Path:
+    digest = hashlib.sha256(content).hexdigest()[:12]
+    stem = "".join(c if c.isalnum() or c in "._-" else "_" for c in run_id)
+    return tmp_path / "ingress-reports" / f"{stem}.{digest}.md"
+
+
+def _persisted_claim(run_id: str, released_at: str):
+    return {
+        "schema_version": 2,
+        "run_id": run_id,
+        "batch_id": "b1",
+        "claimed_at": "2026-09-01T00:00:00+00:00",
+        "previous_status": "pending",
+        "reprocess_generation": 1,
+        "state": "completed",
+        "released_at": released_at,
+        "release_reason": "return_persisted",
+        "result_status": "processed",
+        "result_payload_sha256": "0" * 64,
+    }
+
+
 @pytest.fixture
 def fresh_db(tmp_path: Path):
     return _write_db(
@@ -298,7 +320,12 @@ def test_a_disposition_needs_a_recorded_offer(fresh_db):
             "accepted",
             [],
             "complete_clarification_session",
-            {"state": "pending", "completed_at": None, "profile_refreshed": None},
+            {
+                "state": "pending",
+                "completed_at": None,
+                "profile_inputs": None,
+                "profile_refreshed": None,
+            },
         ),
     ],
 )
@@ -326,7 +353,7 @@ def test_each_disposition_is_explicit_and_answered_once(
     else:
         assert run["clarification"]["return_condition"] is None
     assert _ok(fresh_db, "pending")["pending"][0]["next_action"] == next_action
-    repeat = _refused(
+    code, repeat, _stderr = _run(
         fresh_db,
         "record-disposition",
         "--run-id",
@@ -336,7 +363,14 @@ def test_each_disposition_is_explicit_and_answered_once(
         "--disposition",
         "declined",
     )
-    assert repeat["reason_code"] == "invalid_transition"
+    assert repeat is not None
+    if disposition == "deferred":
+        # A deferred offer is the one answer that can be given again.
+        assert code == 0
+        assert repeat["run"]["clarification"]["state"] == "declined"
+    else:
+        assert code == 2
+        assert repeat["reason_code"] == "invalid_transition"
 
 
 def test_a_deferral_names_when_it_returns(fresh_db):
@@ -358,7 +392,16 @@ def test_a_deferral_names_when_it_returns(fresh_db):
 
 def test_the_session_completes_once_and_only_after_acceptance(fresh_db):
     run_id = _opened(fresh_db)
-    early = _refused(fresh_db, "record-session", "--run-id", run_id, "--now", NOW)
+    early = _refused(
+        fresh_db,
+        "record-session",
+        "--run-id",
+        run_id,
+        "--now",
+        NOW,
+        "--profile-inputs",
+        "unchanged",
+    )
     assert early["reason_code"] == "invalid_transition"
     _ok(fresh_db, "record-offer", "--run-id", run_id, "--now", NOW)
     _ok(
@@ -378,18 +421,106 @@ def test_the_session_completes_once_and_only_after_acceptance(fresh_db):
         run_id,
         "--now",
         LATER,
+        "--profile-inputs",
+        "changed",
         "--profile-refreshed",
     )["run"]
     assert run["clarification"]["session"] == {
         "state": "completed",
         "completed_at": LATER,
+        "profile_inputs": "changed",
         "profile_refreshed": True,
     }
     assert _ok(fresh_db, "pending")["pending"][0]["next_action"] == "deliver_end_report"
     twice = _refused(
-        fresh_db, "record-session", "--run-id", run_id, "--now", MUCH_LATER
+        fresh_db,
+        "record-session",
+        "--run-id",
+        run_id,
+        "--now",
+        MUCH_LATER,
+        "--profile-inputs",
+        "unchanged",
     )
     assert twice["reason_code"] == "invalid_transition"
+
+
+def _accepted(database: Path, run_id: str = "run-x") -> str:
+    _opened(database, run_id)
+    _ok(database, "record-offer", "--run-id", run_id, "--now", NOW)
+    _ok(
+        database,
+        "record-disposition",
+        "--run-id",
+        run_id,
+        "--now",
+        NOW,
+        "--disposition",
+        "accepted",
+    )
+    return run_id
+
+
+def test_changed_profile_inputs_need_a_refreshed_profile_when_one_exists(
+    tmp_path, fresh_db
+):
+    run_id = _accepted(fresh_db)
+    (tmp_path / "speaker-profile.json").write_text("{}", encoding="utf-8")
+    refused = _refused(
+        fresh_db,
+        "record-session",
+        "--run-id",
+        run_id,
+        "--now",
+        LATER,
+        "--profile-inputs",
+        "changed",
+    )
+    assert refused["reason_code"] == "profile_refresh_required"
+    assert "Step 7" in refused["error"]
+    still_pending = _ok(fresh_db, "status", "--run-id", run_id)
+    assert still_pending["run"]["clarification"]["session"]["state"] == "pending"
+    done = _ok(
+        fresh_db,
+        "record-session",
+        "--run-id",
+        run_id,
+        "--now",
+        LATER,
+        "--profile-inputs",
+        "changed",
+        "--profile-refreshed",
+    )
+    assert done["run"]["clarification"]["session"]["profile_refreshed"] is True
+
+
+@pytest.mark.parametrize(
+    ("profile_exists", "inputs"),
+    [(True, "unchanged"), (False, "changed")],
+    ids=["unchanged-inputs", "no-profile-to-refresh"],
+)
+def test_a_session_completes_without_a_refresh_when_none_is_owed(
+    tmp_path, fresh_db, profile_exists, inputs
+):
+    run_id = _accepted(fresh_db)
+    if profile_exists:
+        (tmp_path / "speaker-profile.json").write_text("{}", encoding="utf-8")
+    done = _ok(
+        fresh_db,
+        "record-session",
+        "--run-id",
+        run_id,
+        "--now",
+        LATER,
+        "--profile-inputs",
+        inputs,
+    )
+    assert done["run"]["clarification"]["session"] == {
+        "state": "completed",
+        "completed_at": LATER,
+        "profile_inputs": inputs,
+        "profile_refreshed": False,
+    }
 
 
 # ── end report ────────────────────────────────────────────────────────
@@ -456,7 +587,7 @@ def test_a_delivered_report_is_copied_bound_and_completes_the_run(tmp_path, fres
         str(report),
     )
     run = payload["run"]
-    copied = tmp_path / "ingress-reports" / f"{run_id}.md"
+    copied = _copy_path(tmp_path, run_id, report.read_bytes())
     assert copied.read_bytes() == report.read_bytes()
     assert run["end_report"] == {
         "state": "delivered",
@@ -471,6 +602,8 @@ def test_a_delivered_report_is_copied_bound_and_completes_the_run(tmp_path, fres
         "ledger_present": True,
         "pending": [],
         "count": 0,
+        "deferred_offers": [],
+        "unrecorded_runs": [],
     }
     status = _ok(fresh_db, "status", "--run-id", run_id)
     assert status["summary"]["next_action"] == "none"
@@ -569,7 +702,7 @@ def test_status_names_an_unknown_run(fresh_db):
         ),
         (["open", "--run-id", "run-z", "--now", NOW], "invalid_arguments"),
         (
-            ["open", "--run-id", "../escape", "--now", NOW, "--talk", "fresh.md"],
+            ["open", "--run-id", "run 2026", "--now", NOW, "--talk", "fresh.md"],
             "invalid_arguments",
         ),
         (["record-offer", "--run-id", "run-z"], "invalid_arguments"),
@@ -603,11 +736,12 @@ def test_a_malformed_ledger_is_named_not_repaired(tmp_path, fresh_db):
     )
     payload = _refused(fresh_db, "pending")
     assert payload["reason_code"] == "ledger_invalid"
-    assert "lacks opened_at" in payload["error"]
+    assert "lacks schema_version" in payload["error"]
 
 
 def _valid_run(**overrides):
     run = {
+        "schema_version": 1,
         "run_id": "r",
         "opened_at": NOW,
         "updated_at": NOW,
@@ -665,15 +799,44 @@ def _valid_run(**overrides):
                 "clarification.session": {
                     "state": "done",
                     "completed_at": None,
+                    "profile_inputs": None,
                     "profile_refreshed": None,
                 },
             },
-            "session.state is unknown",
+            "session.state 'done' is not one of the known values",
         ),
+        (
+            {
+                "clarification.state": "accepted",
+                "clarification.session": {
+                    "state": [],
+                    "completed_at": None,
+                    "profile_inputs": None,
+                    "profile_refreshed": None,
+                },
+            },
+            "session.state must be a string",
+        ),
+        ({"clarification.state": {}}, "clarification.state must be a string"),
+        ({"clarification.offer_mode": []}, "clarification.offer_mode must be a string"),
+        ({"end_report.state": ["delivered"]}, "end_report.state must be a string"),
+        (
+            {"schema_version": 2},
+            "run-record schema_version 2; this script reads 1 only",
+        ),
+        ({"schema_version": "1"}, "run-record schema_version '1'"),
+        ({"run_id": "r 1"}, "contains whitespace"),
+        ({"run_id": ""}, "must be a non-empty string"),
         ({"clarification.topics": "bilingual"}, "topics must be an array of strings"),
-        ({"clarification.offer_mode": "loud"}, "unknown clarification offer_mode"),
+        (
+            {"clarification.offer_mode": "loud"},
+            "offer_mode 'loud' is not one of the known values",
+        ),
         ({"end_report": {"state": "sent"}}, "end_report lacks delivered_at"),
-        ({"end_report.state": "sent"}, "end_report.state is unknown"),
+        (
+            {"end_report.state": "sent"},
+            "end_report.state 'sent' is not one of the known values",
+        ),
         ({"talks": [{"filename": "a.md"}]}, "talks[0] lacks status"),
         (
             {
@@ -687,7 +850,21 @@ def _valid_run(**overrides):
                     }
                 ]
             },
-            "recency_bucket is unknown",
+            "recency_bucket 'soon' is not one of the known values",
+        ),
+        (
+            {
+                "talks": [
+                    {
+                        "filename": "a.md",
+                        "status": "processed",
+                        "delivery_date": None,
+                        "days_since_delivery": None,
+                        "recency_bucket": [],
+                    }
+                ]
+            },
+            "recency_bucket must be a string",
         ),
         ({"completed_at": 1}, "completed_at must be a string or null"),
     ],
@@ -696,12 +873,21 @@ def _valid_run(**overrides):
         "session-on-unaccepted",
         "session-missing",
         "session-state",
+        "session-state-list",
+        "state-object",
+        "offer-mode-list",
+        "report-state-list",
+        "run-version-newer",
+        "run-version-string",
+        "run-id-whitespace",
+        "run-id-empty",
         "topics-type",
         "offer-mode",
         "report-keys",
         "report-state",
         "talk-keys",
         "talk-bucket",
+        "talk-bucket-list",
         "completed-type",
     ],
 )
@@ -756,11 +942,289 @@ def test_the_offer_is_withdrawn_when_the_database_no_longer_has_an_analyzed_talk
     database = _write_db(tmp_path, [_talk("fresh.md")])
     _ok(database, "open", "--run-id", "run-w", "--now", NOW, "--talk", "fresh.md")
     _write_db(tmp_path, [_talk("fresh.md", status="needs-reprocessing")])
-    payload = _refused(database, "record-offer", "--run-id", "run-w", "--now", LATER)
-    assert payload["reason_code"] == "invalid_transition"
+    payload = _ok(database, "record-offer", "--run-id", "run-w", "--now", LATER)
+    assert payload["offered"] is False
+    assert "nothing to ask" in payload["reason"]
+    assert payload["run"]["clarification"]["state"] == "not_applicable"
+    assert payload["run"]["clarification"]["offer_mode"] == "none"
+    assert payload["run"]["talks"][0]["status"] == "needs-reprocessing"
     status = _ok(database, "status", "--run-id", "run-w")
-    assert status["run"]["clarification"]["state"] == "owed"
-    assert status["summary"]["offer_mode"] == "inline"
+    assert status["run"]["clarification"]["state"] == "not_applicable"
+    assert status["summary"]["next_action"] == "deliver_end_report"
+    delivered = _ok(
+        database,
+        "record-report",
+        "--run-id",
+        "run-w",
+        "--now",
+        MUCH_LATER,
+        "--report-file",
+        str(_report(tmp_path)),
+    )
+    assert delivered["run"]["completed_at"] == MUCH_LATER
+    assert _ok(database, "pending")["pending"] == []
+
+
+def test_an_offer_that_is_made_says_so(fresh_db):
+    run_id = _opened(fresh_db)
+    payload = _ok(fresh_db, "record-offer", "--run-id", run_id, "--now", NOW)
+    assert payload["offered"] is True
+    assert "reason" not in payload
+
+
+# ── run ids and report paths ──────────────────────────────────────────
+
+
+def test_a_queue_style_run_id_with_a_slash_opens_and_reports_inside_the_vault(
+    tmp_path, fresh_db
+):
+    run_id = "reparse/2026-09-14"
+    _ok(fresh_db, "open", "--run-id", run_id, "--now", NOW, "--talk", "fresh.md")
+    _ok(fresh_db, "record-offer", "--run-id", run_id, "--now", NOW)
+    _ok(
+        fresh_db,
+        "record-disposition",
+        "--run-id",
+        run_id,
+        "--now",
+        NOW,
+        "--disposition",
+        "declined",
+    )
+    report = _report(tmp_path)
+    payload = _ok(
+        fresh_db,
+        "record-report",
+        "--run-id",
+        run_id,
+        "--now",
+        LATER,
+        "--report-file",
+        str(report),
+    )
+    copied = Path(payload["run"]["end_report"]["report_path"])
+    assert copied == _copy_path(tmp_path, run_id, report.read_bytes())
+    assert copied.parent == tmp_path / "ingress-reports"
+    assert copied.read_bytes() == report.read_bytes()
+
+
+def test_a_ledger_edited_run_id_cannot_name_a_path_outside_the_reports_directory(
+    tmp_path, fresh_db
+):
+    run = _valid_run(**{"run_id": "../../escape", "clarification.state": "declined"})
+    run["clarification"]["offered_at"] = NOW
+    run["clarification"]["resolved_at"] = NOW
+    (tmp_path / "ingress-obligations.json").write_text(
+        json.dumps({"schema_version": 1, "runs": [run]}), encoding="utf-8"
+    )
+    report = _report(tmp_path)
+    payload = _ok(
+        fresh_db,
+        "record-report",
+        "--run-id",
+        "../../escape",
+        "--now",
+        LATER,
+        "--report-file",
+        str(report),
+    )
+    copied = Path(payload["run"]["end_report"]["report_path"])
+    assert copied.parent == tmp_path / "ingress-reports"
+    assert copied.name.startswith(".._.._escape.")
+
+
+def test_two_different_deliveries_keep_both_copies(tmp_path, fresh_db):
+    run_id = _opened(fresh_db)
+    _ok(fresh_db, "record-offer", "--run-id", run_id, "--now", NOW)
+    _ok(
+        fresh_db,
+        "record-disposition",
+        "--run-id",
+        run_id,
+        "--now",
+        NOW,
+        "--disposition",
+        "declined",
+    )
+    first = _report(tmp_path, "# first\n")
+    _ok(
+        fresh_db,
+        "record-report",
+        "--run-id",
+        run_id,
+        "--now",
+        LATER,
+        "--report-file",
+        str(first),
+    )
+    second = _report(tmp_path, "# second\n")
+    payload = _ok(
+        fresh_db,
+        "record-report",
+        "--run-id",
+        run_id,
+        "--now",
+        MUCH_LATER,
+        "--report-file",
+        str(second),
+    )
+    assert _copy_path(tmp_path, run_id, b"# first\n").read_bytes() == b"# first\n"
+    assert Path(payload["run"]["end_report"]["report_path"]).read_bytes() == (
+        b"# second\n"
+    )
+    assert payload["run"]["end_report"]["delivered_at"] == MUCH_LATER
+
+
+# ── deferred offers come back ─────────────────────────────────────────
+
+
+def test_a_deferred_offer_is_listed_until_it_is_answered_again(tmp_path, fresh_db):
+    run_id = _opened(fresh_db)
+    _ok(fresh_db, "record-offer", "--run-id", run_id, "--now", NOW, "--topic", "aside")
+    _ok(
+        fresh_db,
+        "record-disposition",
+        "--run-id",
+        run_id,
+        "--now",
+        NOW,
+        "--disposition",
+        "deferred",
+        "--return-condition",
+        "after JavaZone",
+    )
+    _ok(
+        fresh_db,
+        "record-report",
+        "--run-id",
+        run_id,
+        "--now",
+        LATER,
+        "--report-file",
+        str(_report(tmp_path)),
+    )
+    pending = _ok(fresh_db, "pending")
+    assert pending["pending"] == []
+    assert pending["deferred_offers"] == [
+        {
+            "run_id": run_id,
+            "return_condition": "after JavaZone",
+            "topics": ["aside"],
+            "resolved_at": NOW,
+        }
+    ]
+    raised_again = _ok(
+        fresh_db,
+        "record-disposition",
+        "--run-id",
+        run_id,
+        "--now",
+        MUCH_LATER,
+        "--disposition",
+        "accepted",
+    )
+    assert raised_again["run"]["clarification"]["return_condition"] is None
+    assert raised_again["run"]["completed_at"] == LATER
+    pending = _ok(fresh_db, "pending")
+    assert pending["deferred_offers"] == []
+    assert pending["pending"][0]["next_action"] == "complete_clarification_session"
+    _ok(
+        fresh_db,
+        "record-session",
+        "--run-id",
+        run_id,
+        "--now",
+        MUCH_LATER,
+        "--profile-inputs",
+        "unchanged",
+    )
+    assert _ok(fresh_db, "pending")["pending"] == []
+
+
+# ── runs that persisted but never opened ──────────────────────────────
+
+
+def _db_with_claims(tmp_path: Path, claims: dict[str, tuple[str, str]]):
+    talks = []
+    for filename, (run_id, released_at) in claims.items():
+        talk = _talk(filename)
+        talk["reprocess_generation"] = 1
+        talk["_queue_claim"] = _persisted_claim(run_id, released_at)
+        talks.append(talk)
+    return _write_db(tmp_path, talks)
+
+
+def test_a_persisted_run_with_no_ledger_record_is_reported_for_opening(tmp_path):
+    database = _db_with_claims(
+        tmp_path,
+        {
+            "a.md": ("crashed-run", "2026-09-13T10:00:00+00:00"),
+            "b.md": ("crashed-run", "2026-09-13T10:05:00+00:00"),
+        },
+    )
+    payload = _ok(database, "pending")
+    assert payload["ledger_present"] is False
+    assert payload["unrecorded_runs"] == [
+        {
+            "run_id": "crashed-run",
+            "talks": ["a.md", "b.md"],
+            "latest_released_at": "2026-09-13T10:05:00+00:00",
+            "next_action": "open_obligations",
+        }
+    ]
+    _ok(
+        database,
+        "open",
+        "--run-id",
+        "crashed-run",
+        "--now",
+        NOW,
+        "--talk",
+        "a.md",
+        "--talk",
+        "b.md",
+    )
+    assert _ok(database, "pending")["unrecorded_runs"] == []
+
+
+def test_only_the_newest_unrecorded_run_newer_than_the_ledger_is_reported(tmp_path):
+    database = _db_with_claims(
+        tmp_path,
+        {
+            "old.md": ("ancient-run", "2026-08-01T00:00:00+00:00"),
+            "mid.md": ("middle-run", "2026-09-10T00:00:00+00:00"),
+            "new.md": ("newest-run", "2026-09-12T00:00:00+00:00"),
+            "seen.md": ("recorded-run", "2026-09-05T00:00:00+00:00"),
+        },
+    )
+    _ok(
+        database,
+        "open",
+        "--run-id",
+        "recorded-run",
+        "--now",
+        "2026-09-06T00:00:00+00:00",
+        "--talk",
+        "seen.md",
+    )
+    payload = _ok(database, "pending")
+    assert [entry["run_id"] for entry in payload["unrecorded_runs"]] == ["newest-run"]
+
+
+def test_history_claims_count_and_other_release_reasons_do_not(tmp_path):
+    talk = _talk("h.md")
+    talk["reprocess_generation"] = 1
+    talk["_queue_claim"] = {
+        **_persisted_claim("recovered-run", "2026-09-13T00:00:00+00:00"),
+        "state": "stale_recovered",
+        "release_reason": "lease_expired",
+    }
+    talk["_queue_claim_history"] = [
+        _persisted_claim("history-run", "2026-09-11T00:00:00+00:00")
+    ]
+    database = _write_db(tmp_path, [talk])
+    payload = _ok(database, "pending")
+    assert [entry["run_id"] for entry in payload["unrecorded_runs"]] == ["history-run"]
 
 
 def test_a_report_copy_that_cannot_be_written_records_nothing(tmp_path, fresh_db):

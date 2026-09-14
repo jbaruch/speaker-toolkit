@@ -19,7 +19,8 @@ Usage:
         --run-id <id> --now <ISO-8601> \
         --disposition accepted|declined|deferred [--return-condition <text>]
     run-obligations.py <tracking-database.json> record-session \
-        --run-id <id> --now <ISO-8601> [--profile-refreshed]
+        --run-id <id> --now <ISO-8601> --profile-inputs changed|unchanged \
+        [--profile-refreshed]
     run-obligations.py <tracking-database.json> record-report \
         --run-id <id> --now <ISO-8601> --report-file <delivered-report.md>
     run-obligations.py <tracking-database.json> pending
@@ -30,9 +31,12 @@ input/state errors emit a JSON error object on stdout, an actionable diagnostic
 on stderr, and exit 2. Mutating commands rewrite the ledger atomically under the
 same sibling lock discipline as the tracking database, only when state changed.
 
-Ledger: ``{vault_root}/ingress-obligations.json`` (schema 1), owned by
-vault-ingress. Delivered reports are copied to
-``{vault_root}/ingress-reports/{run_id}.md`` and bound to the ledger by SHA-256.
+Ledger: ``{vault_root}/ingress-obligations.json`` (schema 1, run records
+schema 1), owned by vault-ingress. Delivered reports are copied to
+``{vault_root}/ingress-reports/{run_id}.{digest}.md`` and bound to the ledger
+by SHA-256. ``pending`` also names the newest persisted run that never opened
+its obligations (a crash between the merge and ``open``) and every deferred
+offer with the speaker's return condition, so both can be raised again.
 Field meanings, transitions, and the reader/writer contract live in
 ``skills/vault-ingress/references/schemas-obligations.md``.
 
@@ -58,6 +62,7 @@ import sys
 import tempfile
 from typing import Any
 
+from queue_claim_contract import QueueClaimContractError, require_queue_identifier
 from tracking_database import (
     TrackingDatabaseError,
     require_current_tracking_database,
@@ -78,7 +83,18 @@ from vault_root_authority import (
 
 LEDGER_FILENAME = "ingress-obligations.json"
 REPORTS_DIRECTORY = "ingress-reports"
+PROFILE_FILENAME = "speaker-profile.json"
 LEDGER_SCHEMA_VERSION = 1
+RUN_RECORD_SCHEMA_VERSION = 1
+# The report copy is content-addressed: ``{run_id}.{digest prefix}.md`` with the
+# run id reduced to a safe filename stem, so two deliveries never overwrite each
+# other and a ledger-edited run id can never name a path outside the directory.
+REPORT_DIGEST_PREFIX = 12
+_SAFE_STEM = re.compile(r"[^A-Za-z0-9._-]")
+# What ``persist-results.py`` stamps on the claim it closes; a run whose claims
+# carry it but that has no ledger record persisted talks and never opened its
+# obligations (a crash between the merge and ``open``).
+PERSISTED_RELEASE_REASON = "return_persisted"
 
 # Talk statuses whose results can feed a clarification session. Skipped talks
 # are recorded for the end report's scope but never generate an offer.
@@ -133,14 +149,18 @@ SESSION_COMPLETED = "completed"
 REPORT_OWED = "owed"
 REPORT_DELIVERED = "delivered"
 
+NEXT_OPEN = "open_obligations"
 NEXT_OFFER = "offer_clarification"
 NEXT_AWAIT = "await_disposition"
 NEXT_SESSION = "complete_clarification_session"
 NEXT_REPORT = "deliver_end_report"
 NEXT_NONE = "none"
 
+PROFILE_INPUTS_CHANGED = "changed"
+PROFILE_INPUTS_UNCHANGED = "unchanged"
+PROFILE_INPUTS = (PROFILE_INPUTS_CHANGED, PROFILE_INPUTS_UNCHANGED)
+
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-_RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 class RunObligationsError(Exception):
@@ -238,6 +258,10 @@ def next_action(run: dict[str, Any]) -> str:
     return NEXT_NONE
 
 
+def safe_report_stem(run_id: str) -> str:
+    return _SAFE_STEM.sub("_", run_id) or "run"
+
+
 def clarification_resolved(run: dict[str, Any]) -> bool:
     clarification = run["clarification"]
     state = clarification["state"]
@@ -283,11 +307,12 @@ def validate_ledger(payload: object, path: Path) -> dict[str, Any]:
                 f"obligations ledger {path} runs[{index}] must be an object",
                 reason_code="ledger_invalid",
             )
-        run_id = run.get("run_id")
-        if not isinstance(run_id, str) or run_id in seen:
+        run_id = _require_identifier(
+            run.get("run_id"), f"obligations ledger {path} runs[{index}].run_id"
+        )
+        if run_id in seen:
             raise RunObligationsError(
-                f"obligations ledger {path} runs[{index}] has a missing or "
-                "duplicate run_id",
+                f"obligations ledger {path} runs[{index}] duplicates run_id {run_id!r}",
                 reason_code="ledger_invalid",
             )
         seen.add(run_id)
@@ -313,11 +338,29 @@ def _require_optional_text(value: object, label: str) -> None:
         raise _invalid(label, "must be a string or null")
 
 
+def _require_choice(value: object, choices: Any, label: str) -> str:
+    """Type before membership: a list or object must not raise TypeError."""
+    if not isinstance(value, str):
+        raise _invalid(label, "must be a string")
+    if value not in choices:
+        raise _invalid(label, f"{value!r} is not one of the known values")
+    return value
+
+
+def _require_identifier(value: object, label: str) -> str:
+    """Run ids share the queue claim's identifier contract."""
+    try:
+        return require_queue_identifier(value, label)
+    except QueueClaimContractError as exc:
+        raise _invalid(label, str(exc).removeprefix(label).strip()) from exc
+
+
 def _validate_run(run: dict[str, Any], label: str) -> None:
     """Refuse a run record whose shape a command would otherwise trip over."""
     _require_keys(
         run,
         (
+            "schema_version",
             "opened_at",
             "updated_at",
             "talks",
@@ -327,6 +370,13 @@ def _validate_run(run: dict[str, Any], label: str) -> None:
         ),
         label,
     )
+    version = run["schema_version"]
+    if type(version) is not int or version != RUN_RECORD_SCHEMA_VERSION:
+        raise _invalid(
+            label,
+            f"has run-record schema_version {version!r}; this script reads "
+            f"{RUN_RECORD_SCHEMA_VERSION} only",
+        )
     for key in ("opened_at", "updated_at"):
         if not isinstance(run[key], str):
             raise _invalid(label, f"{key} must be a string")
@@ -347,8 +397,11 @@ def _validate_run(run: dict[str, Any], label: str) -> None:
         )
         if not isinstance(entry["filename"], str):
             raise _invalid(label, f"talks[{position}].filename must be a string")
-        if entry["recency_bucket"] not in OFFER_MODE_BY_BUCKET:
-            raise _invalid(label, f"talks[{position}].recency_bucket is unknown")
+        _require_choice(
+            entry["recency_bucket"],
+            OFFER_MODE_BY_BUCKET,
+            f"{label} talks[{position}].recency_bucket",
+        )
     clarification = _require_keys(
         run["clarification"],
         (
@@ -363,10 +416,14 @@ def _validate_run(run: dict[str, Any], label: str) -> None:
         ),
         f"{label} clarification",
     )
-    if clarification["state"] not in CLARIFICATION_STATES:
-        raise _invalid(label, "has an unknown clarification state")
-    if clarification["offer_mode"] not in {*OFFER_MODE_PRECEDENCE, OFFER_MODE_NONE}:
-        raise _invalid(label, "has an unknown clarification offer_mode")
+    state = _require_choice(
+        clarification["state"], CLARIFICATION_STATES, f"{label} clarification.state"
+    )
+    _require_choice(
+        clarification["offer_mode"],
+        {*OFFER_MODE_PRECEDENCE, OFFER_MODE_NONE},
+        f"{label} clarification.offer_mode",
+    )
     if not isinstance(clarification["topics"], list) or not all(
         isinstance(topic, str) for topic in clarification["topics"]
     ):
@@ -374,17 +431,26 @@ def _validate_run(run: dict[str, Any], label: str) -> None:
     for key in ("recency_as_of", "offered_at", "resolved_at", "return_condition"):
         _require_optional_text(clarification[key], f"{label} clarification.{key}")
     session = clarification["session"]
-    if clarification["state"] == STATE_ACCEPTED:
+    if state == STATE_ACCEPTED:
         session = _require_keys(
             session,
-            ("state", "completed_at", "profile_refreshed"),
+            ("state", "completed_at", "profile_inputs", "profile_refreshed"),
             f"{label} clarification.session",
         )
-        if session["state"] not in {SESSION_PENDING, SESSION_COMPLETED}:
-            raise _invalid(label, "clarification.session.state is unknown")
+        _require_choice(
+            session["state"],
+            {SESSION_PENDING, SESSION_COMPLETED},
+            f"{label} clarification.session.state",
+        )
         _require_optional_text(
             session["completed_at"], f"{label} clarification.session.completed_at"
         )
+        if session["profile_inputs"] is not None:
+            _require_choice(
+                session["profile_inputs"],
+                PROFILE_INPUTS,
+                f"{label} clarification.session.profile_inputs",
+            )
         if session["profile_refreshed"] not in (None, True, False):
             raise _invalid(
                 label,
@@ -397,8 +463,9 @@ def _validate_run(run: dict[str, Any], label: str) -> None:
         ("state", "delivered_at", "report_path", "report_sha256"),
         f"{label} end_report",
     )
-    if report["state"] not in {REPORT_OWED, REPORT_DELIVERED}:
-        raise _invalid(label, "end_report.state is unknown")
+    _require_choice(
+        report["state"], {REPORT_OWED, REPORT_DELIVERED}, f"{label} end_report.state"
+    )
     for key in ("delivered_at", "report_path", "report_sha256"):
         _require_optional_text(report[key], f"{label} end_report.{key}")
 
@@ -447,13 +514,24 @@ def store_ledger(
     }
 
 
-def write_report_copy(directory: Path, run_id: str, content: bytes) -> Path:
-    """Place the delivered report beside the ledger with an atomic replace."""
-    target = directory / f"{run_id}.md"
+def write_report_copy(
+    directory: Path, run_id: str, digest: str, content: bytes
+) -> tuple[Path, bool]:
+    """Install the delivered report beside the ledger, durably.
+
+    Returns the content-addressed path and whether this call created it. An
+    existing copy with the same bytes is left alone, so a replayed or racing
+    delivery of identical text never rewrites it.
+    """
+    target = (
+        directory / f"{safe_report_stem(run_id)}.{digest[:REPORT_DIGEST_PREFIX]}.md"
+    )
     try:
+        if target.exists() and target.read_bytes() == content:
+            return target, False
         directory.mkdir(parents=True, exist_ok=True)
         descriptor, staged = tempfile.mkstemp(
-            prefix=f".{run_id}.", suffix=".tmp", dir=directory
+            prefix=f".{target.stem}.", suffix=".tmp", dir=directory
         )
     except OSError as exc:
         raise RunObligationsError(
@@ -468,6 +546,11 @@ def write_report_copy(directory: Path, run_id: str, content: bytes) -> Path:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(staged, target)
+        directory_descriptor = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
     except OSError as exc:
         if os.path.exists(staged):
             os.unlink(staged)
@@ -477,7 +560,7 @@ def write_report_copy(directory: Path, run_id: str, content: bytes) -> Path:
             "was not recorded",
             reason_code="report_copy_failed",
         ) from exc
-    return target
+    return target, True
 
 
 # ── Database context ──────────────────────────────────────────────────
@@ -490,6 +573,16 @@ class Context:
         self.database_path = materialize_native_authority(
             raw_database, authority="database_path"
         )
+        self.database = self.refresh()
+        self.vault_root = resolve_vault_root_authority(
+            database_path=self.database_path, config=self.database.get("config")
+        )
+        self.ledger_path = self.vault_root / LEDGER_FILENAME
+        self.reports_directory = self.vault_root / REPORTS_DIRECTORY
+        self.profile_path = self.vault_root / PROFILE_FILENAME
+
+    def refresh(self) -> dict[str, Any]:
+        """Re-read the current database generation right before it is used."""
         try:
             snapshot = snapshot_tracking_database(self.database_path)
             database = decode_json_object(snapshot)
@@ -499,11 +592,52 @@ class Context:
                 str(exc), reason_code="database_unusable"
             ) from exc
         self.database = database
-        self.vault_root = resolve_vault_root_authority(
-            database_path=self.database_path, config=database.get("config")
-        )
-        self.ledger_path = self.vault_root / LEDGER_FILENAME
-        self.reports_directory = self.vault_root / REPORTS_DIRECTORY
+        return database
+
+    def persisted_runs(self) -> dict[str, dict[str, Any]]:
+        """Runs whose closed claims say persist-results.py merged their talks."""
+        runs: dict[str, dict[str, Any]] = {}
+        for record in self.database["talks"]:
+            if not isinstance(record, dict):
+                continue
+            claims = [record.get("_queue_claim")]
+            history = record.get("_queue_claim_history")
+            if isinstance(history, list):
+                claims.extend(history)
+            for claim in claims:
+                if not isinstance(claim, dict):
+                    continue
+                if (
+                    claim.get("state") != "completed"
+                    or claim.get("release_reason") != PERSISTED_RELEASE_REASON
+                    or not isinstance(claim.get("run_id"), str)
+                    or not isinstance(claim.get("released_at"), str)
+                ):
+                    continue
+                try:
+                    released = parse_timestamp(claim["released_at"], "released_at")
+                except RunObligationsError:
+                    continue
+                entry = runs.setdefault(
+                    claim["run_id"],
+                    {
+                        "run_id": claim["run_id"],
+                        "talks": [],
+                        "latest_released_at": None,
+                    },
+                )
+                filename = record.get("filename")
+                if isinstance(filename, str) and filename not in entry["talks"]:
+                    entry["talks"].append(filename)
+                stamp = render_timestamp(released)
+                if (
+                    entry["latest_released_at"] is None
+                    or stamp > entry["latest_released_at"]
+                ):
+                    entry["latest_released_at"] = stamp
+        for entry in runs.values():
+            entry["talks"].sort()
+        return runs
 
     def talk(self, filename: str) -> dict[str, Any]:
         for record in self.database["talks"]:
@@ -528,13 +662,10 @@ def find_run(ledger: dict[str, Any], run_id: str) -> dict[str, Any]:
 
 
 def require_run_id(value: str) -> str:
-    if not _RUN_ID.match(value):
-        raise RunObligationsError(
-            f"run id {value!r} must be 1-128 characters of letters, digits, "
-            "'.', '_' or '-' and start with a letter or digit",
-            reason_code="invalid_arguments",
-        )
-    return value
+    try:
+        return require_queue_identifier(value, "--run-id")
+    except QueueClaimContractError as exc:
+        raise RunObligationsError(str(exc), reason_code="invalid_arguments") from exc
 
 
 def describe_talk(context: Context, filename: str, now: datetime) -> dict[str, Any]:
@@ -552,6 +683,7 @@ def describe_talk(context: Context, filename: str, now: datetime) -> dict[str, A
 
 def new_run(run_id: str, now: str) -> dict[str, Any]:
     return {
+        "schema_version": RUN_RECORD_SCHEMA_VERSION,
         "run_id": run_id,
         "opened_at": now,
         "updated_at": now,
@@ -617,6 +749,7 @@ def command_open(context: Context, args: argparse.Namespace) -> dict[str, Any]:
     before = json.dumps(run, sort_keys=True)
     clarification = run["clarification"]
     recency_open = clarification["state"] in {STATE_OWED, STATE_NOT_APPLICABLE}
+    context.refresh()
     # Recency is frozen once the offer is made; until then the newest ``--now``
     # decides, so a resumed run does not over-promise an inline session for a
     # talk that is no longer same-week.
@@ -651,6 +784,8 @@ def _transition(
     context: Context,
     args: argparse.Namespace,
     mutate: Any,
+    *,
+    on_commit_failure: Any = None,
 ) -> dict[str, Any]:
     now = parse_timestamp(args.now, "--now")
     stamp = render_timestamp(now)
@@ -658,17 +793,28 @@ def _transition(
     snapshot, ledger = load_ledger(context.ledger_path)
     run = find_run(ledger, run_id)
     before = json.dumps(run, sort_keys=True)
-    mutate(run, stamp, now)
+    extras = mutate(run, stamp, now) or {}
     if json.dumps(run, sort_keys=True) != before:
         run["updated_at"] = stamp
-    outcome = store_ledger(context.ledger_path, snapshot, ledger)
-    return {"ok": True, "ledger_path": str(context.ledger_path), **outcome, "run": run}
+    try:
+        outcome = store_ledger(context.ledger_path, snapshot, ledger)
+    except RunObligationsError:
+        if on_commit_failure is not None:
+            on_commit_failure()
+        raise
+    return {
+        "ok": True,
+        "ledger_path": str(context.ledger_path),
+        **outcome,
+        **extras,
+        "run": run,
+    }
 
 
 def command_record_offer(context: Context, args: argparse.Namespace) -> dict[str, Any]:
     topics = [topic for topic in (args.topic or []) if topic.strip()]
 
-    def mutate(run: dict[str, Any], stamp: str, now: datetime) -> None:
+    def mutate(run: dict[str, Any], stamp: str, now: datetime) -> dict[str, Any]:
         clarification = run["clarification"]
         if clarification["state"] != STATE_OWED:
             raise RunObligationsError(
@@ -681,21 +827,27 @@ def command_record_offer(context: Context, args: argparse.Namespace) -> dict[str
         # being made now, against the current database, so refresh before
         # freezing: a run resumed weeks later must not promise an inline
         # session for a talk that is no longer same-week.
+        context.refresh()
         talks = [
             describe_talk(context, str(talk["filename"]), now) for talk in run["talks"]
         ]
         run["talks"] = talks
         _apply_recency(clarification, talks, stamp)
         if clarification["state"] == STATE_NOT_APPLICABLE:
-            raise RunObligationsError(
-                f"run {run['run_id']!r} no longer has an analyzed talk to "
-                "clarify; the database changed since the run opened, so the "
-                "offer is recorded as not applicable and nothing is asked",
-                reason_code="invalid_transition",
-            )
+            # Persisted as not applicable: the database changed since the run
+            # opened and no analyzed talk remains, so nothing is asked and the
+            # report is no longer blocked on an offer.
+            return {
+                "offered": False,
+                "reason": (
+                    f"run {run['run_id']!r} no longer has an analyzed talk to "
+                    "clarify; recorded as not applicable, nothing to ask"
+                ),
+            }
         clarification["state"] = STATE_OFFERED
         clarification["offered_at"] = stamp
         clarification["topics"] = topics
+        return {"offered": True}
 
     return _transition(context, args, mutate)
 
@@ -708,11 +860,11 @@ def command_record_disposition(
 
     def mutate(run: dict[str, Any], stamp: str, _now: datetime) -> None:
         clarification = run["clarification"]
-        if clarification["state"] != STATE_OFFERED:
+        if clarification["state"] not in {STATE_OFFERED, STATE_DEFERRED}:
             raise RunObligationsError(
                 f"run {run['run_id']!r} clarification is "
                 f"{clarification['state']!r}; a disposition needs a recorded "
-                "offer first, and an offer is answered once",
+                "offer first, and only a deferred offer is answered again",
                 reason_code="invalid_transition",
             )
         if disposition == STATE_DEFERRED and not return_condition:
@@ -727,7 +879,12 @@ def command_record_disposition(
             return_condition if disposition == STATE_DEFERRED else None
         )
         clarification["session"] = (
-            {"state": SESSION_PENDING, "completed_at": None, "profile_refreshed": None}
+            {
+                "state": SESSION_PENDING,
+                "completed_at": None,
+                "profile_inputs": None,
+                "profile_refreshed": None,
+            }
             if disposition == STATE_ACCEPTED
             else None
         )
@@ -739,6 +896,7 @@ def command_record_session(
     context: Context, args: argparse.Namespace
 ) -> dict[str, Any]:
     refreshed = bool(args.profile_refreshed)
+    inputs = args.profile_inputs
 
     def mutate(run: dict[str, Any], stamp: str, _now: datetime) -> None:
         clarification = run["clarification"]
@@ -754,8 +912,20 @@ def command_record_session(
                 f"at {session['completed_at']}",
                 reason_code="invalid_transition",
             )
+        if (
+            inputs == PROFILE_INPUTS_CHANGED
+            and not refreshed
+            and context.profile_path.exists()
+        ):
+            raise RunObligationsError(
+                f"the session changed profile inputs and {context.profile_path} "
+                "exists; regenerate the profile (Step 7) first, then record the "
+                "session with --profile-refreshed",
+                reason_code="profile_refresh_required",
+            )
         session["state"] = SESSION_COMPLETED
         session["completed_at"] = stamp
+        session["profile_inputs"] = inputs
         session["profile_refreshed"] = refreshed
 
     return _transition(context, args, mutate)
@@ -777,6 +947,7 @@ def command_record_report(context: Context, args: argparse.Namespace) -> dict[st
             reason_code="report_empty",
         )
     digest = hashlib.sha256(content).hexdigest()
+    created: list[Path] = []
 
     def mutate(run: dict[str, Any], stamp: str, _now: datetime) -> None:
         if not clarification_resolved(run):
@@ -790,25 +961,79 @@ def command_record_report(context: Context, args: argparse.Namespace) -> dict[st
         report = run["end_report"]
         if report["state"] == REPORT_DELIVERED and report["report_sha256"] == digest:
             return
-        copied = write_report_copy(context.reports_directory, run["run_id"], content)
+        copied, fresh = write_report_copy(
+            context.reports_directory, run["run_id"], digest, content
+        )
+        if fresh:
+            created.append(copied)
         report["state"] = REPORT_DELIVERED
         report["delivered_at"] = stamp
         report["report_path"] = str(copied)
         report["report_sha256"] = digest
         run["completed_at"] = stamp
 
-    return _transition(context, args, mutate)
+    def discard_copy() -> None:
+        # The ledger commit lost its generation race; the copy it would have
+        # bound is an orphan. Leave a copy another delivery already owns alone.
+        for path in created:
+            try:
+                path.unlink()
+            except OSError as exc:
+                print(
+                    f"WARNING: could not remove the unbound report copy {path}: {exc}",
+                    file=sys.stderr,
+                )
+
+    return _transition(context, args, mutate, on_commit_failure=discard_copy)
+
+
+def unrecorded_run(
+    persisted: dict[str, dict[str, Any]], ledger: dict[str, Any]
+) -> dict[str, Any] | None:
+    """The newest persisted run with no ledger record, if it postdates the ledger.
+
+    Every run recorded later than an unrecorded one moved past it under this
+    contract, so only the newest unrecorded run, newer than every recorded
+    run's ``opened_at``, is reported as unfinished. Older history is history.
+    """
+    recorded = {run["run_id"] for run in ledger["runs"]}
+    latest_recorded = max((run["opened_at"] for run in ledger["runs"]), default=None)
+    candidates = [
+        entry
+        for run_id, entry in persisted.items()
+        if run_id not in recorded
+        and (latest_recorded is None or entry["latest_released_at"] > latest_recorded)
+    ]
+    if not candidates:
+        return None
+    newest = max(candidates, key=lambda entry: entry["latest_released_at"])
+    return {**newest, "next_action": NEXT_OPEN}
 
 
 def command_pending(context: Context, _args: argparse.Namespace) -> dict[str, Any]:
     _snapshot, ledger = load_ledger(context.ledger_path)
-    pending = [summarize(run) for run in ledger["runs"] if run["completed_at"] is None]
+    pending = [
+        summarize(run) for run in ledger["runs"] if next_action(run) != NEXT_NONE
+    ]
+    deferred = [
+        {
+            "run_id": run["run_id"],
+            "return_condition": run["clarification"]["return_condition"],
+            "topics": run["clarification"]["topics"],
+            "resolved_at": run["clarification"]["resolved_at"],
+        }
+        for run in ledger["runs"]
+        if run["clarification"]["state"] == STATE_DEFERRED
+    ]
+    unrecorded = unrecorded_run(context.persisted_runs(), ledger)
     return {
         "ok": True,
         "ledger_path": str(context.ledger_path),
         "ledger_present": context.ledger_path.exists(),
         "pending": pending,
         "count": len(pending),
+        "deferred_offers": deferred,
+        "unrecorded_runs": [unrecorded] if unrecorded is not None else [],
     }
 
 
@@ -870,6 +1095,12 @@ def build_parser() -> JsonArgumentParser:
         "record-session", help="the accepted clarification session completed"
     )
     with_run(session)
+    session.add_argument(
+        "--profile-inputs",
+        choices=PROFILE_INPUTS,
+        required=True,
+        help="whether the session changed confirmed intents, goals, or summary",
+    )
     session.add_argument(
         "--profile-refreshed",
         action="store_true",

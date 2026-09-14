@@ -492,12 +492,18 @@ Then check for a run that persisted talks but never finished with the speaker:
   "{vault_root}/tracking-database.json" pending
 ```
 
-`count: 0` proceeds to Step 2. Otherwise, before selecting any new work, resume
-each listed run at the step its `next_action` names, using that run's recorded
-`run_id`: `offer_clarification`, `await_disposition`, and
+Read all three lists. `unrecorded_runs` names a run whose claims say its
+talks persisted but that never opened its obligations (a crash between the
+merge and `open`): run `open` for it with the talks it lists, then treat it
+like any pending run. `pending` lists runs owing an answer or a report: before
+selecting any new work, resume each at the step its `next_action` names, using
+that run's recorded `run_id` — `offer_clarification`, `await_disposition`, and
 `complete_clarification_session` at Step 9 through
 [clarification-handoff.md](clarification-handoff.md); `deliver_end_report` at
-Step 11 through [end-report.md](end-report.md). A pending run with nothing left
-to process still owes the speaker its answer or its report; a completed
-processing claim never stands in for either. Ledger shape and the
-`next_action` vocabulary: [schemas-obligations.md](schemas-obligations.md).
+Step 11 through [end-report.md](end-report.md). `deferred_offers` lists offers
+the speaker deferred with their return conditions; one whose condition is now
+met is raised again at Step 9. A pending run with nothing left to process still
+owes the speaker its answer or its report; a completed processing claim never
+stands in for either. With nothing in any list, proceed to Step 2. Ledger shape
+and the `next_action` vocabulary:
+[schemas-obligations.md](schemas-obligations.md).

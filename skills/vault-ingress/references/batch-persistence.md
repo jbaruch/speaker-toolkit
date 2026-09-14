@@ -108,7 +108,7 @@ whether to run the gate.
   opening it, preventing atomic replacement from splitting the link and target.
 - **Record the run's obligations to the speaker — right after the merge commits.**
   Run
-  `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" {vault_root}/tracking-database.json open --run-id {run_id} --now {iso_timestamp} --talk {filename} [--talk ...]`
+  `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" "{vault_root}/tracking-database.json" open --run-id "{run_id}" --now "{iso_timestamp}" --talk "{filename}" [--talk "{filename}" ...]`
   with the exact filenames the merge persisted. It reads each talk's status
   and delivery date from the database, records the run's delivery recency and
   the clarification offer it now owes, and marks the end report owed. A closed

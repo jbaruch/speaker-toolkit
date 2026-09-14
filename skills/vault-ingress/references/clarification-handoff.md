@@ -27,6 +27,11 @@ is a snapshot dated `recency_as_of`; the mode that counts is the one
   recorded topics as the seed agenda, then record the session (below).
 - `deliver_end_report` or `none` — nothing to offer; proceed to Step 10.
 
+A run listed under `pending`'s `deferred_offers` whose `return_condition` the
+speaker has now met is raised again the same way: put the recorded offer with
+its `topics` and record the new answer below — `record-disposition` accepts an
+answer from `deferred`.
+
 ## Candidate Topics
 
 For every analyzed talk in the run, collect:
@@ -48,33 +53,35 @@ with the `offer_mode` the offer must use:
   --run-id "{run_id}" --now "{iso_timestamp}" --topic "{topic}" [--topic ...]
 ```
 
-Exit 2 with `invalid_transition` and a "no longer has an analyzed talk" message
-means the database changed since the run opened; nothing is asked — proceed to
-Step 10. Otherwise `run.clarification.offer_mode` names the strength. The
-bucket boundaries behind it are the script's (`run-obligations.py`,
-top-of-file constants):
+`offered: false` in the output means the database changed since the run
+opened and no analyzed talk is left; the run is recorded as not applicable and
+nothing is asked — proceed to Step 10. Otherwise
+`run.clarification.offer_mode` names the strength; which talks earn which mode
+is the script's rule (`run-obligations.py`, top-of-file constants):
 
-- **`inline`** (a same-week talk) — hand off inline, don't just recommend.
+- **`inline`** — hand off inline, don't just recommend.
   Memory of the delivery is sharpest right after the talk, and verbal beats
   that never reached the auto-captions (bilingual jokes in a non-primary
   language, improvised asides, fly-bys that weren't in the deck) are only
   recoverable now. Do NOT bury this as a closing recommendation. Offer an
   immediate session, showing the candidate topics so the speaker sees exactly
   what it would cover. Recommended answer: accept.
-- **`recommend_full`** (a recent or undated talk) — recommend the full session
-  with the topics, noting that some verbatim details may already be lost.
-  Ask whether to run it now; never start it unasked.
-- **`recommend_compressed`** (older talks only) — memory has decayed and
-  detailed recall is unreliable; recommend the compressed session instead of
-  the full one. Ask whether to run it now; never start it unasked.
+- **`recommend_full`** — recommend the full session with the topics, noting
+  that some verbatim details may already be lost. Ask whether to run it now;
+  never start it unasked.
+- **`recommend_compressed`** — memory has decayed and detailed recall is
+  unreliable; recommend the compressed session instead of the full one. Ask
+  whether to run it now; never start it unasked.
 
 Then ask exactly one question and wait for the answer. Use the host's
 single-question mechanism: `AskUserQuestion` with three options — accept
 (labeled "(Recommended)" for `inline`), decline, defer — where the host has it;
 otherwise one plain-text question naming the same three answers, then wait
 for the reply. A host without the named tool never turns the offer into a
-skip. An unanswered question leaves the run `offered`; the next run resumes it
-from Step 1 and asks again.
+skip. When the speaker chooses defer, ask one follow-up in plain text — "When
+should I raise this again?" — and pass the answer, in the speaker's words, as
+`--return-condition`. An unanswered question leaves the run `offered`; the next
+run resumes it from Step 1 and asks again.
 
 ## Record the Answer
 
@@ -88,17 +95,25 @@ Record the speaker's explicit answer, once:
 ```
 
 - **accepted** — invoke `Skill(skill: "vault-clarification")` immediately,
-  carrying the recorded topics as the session's seed agenda. When the session
-  finishes: if it recorded new confirmed intents, improvement goals, or
-  rhetoric-summary changes and `{vault_root}/speaker-profile.json` exists,
-  re-run Step 7 so the profile reflects the answers before the end report.
-  Then record the session, with `--profile-refreshed` when Step 7 re-ran:
+  carrying the recorded topics as the session's seed agenda. On a host with no
+  skill-invocation tool, read
+  `{speaker_toolkit_root}/skills/vault-clarification/SKILL.md` and execute its
+  steps in order; the session is never skipped for want of the named tool.
+  When the session finishes, record it, saying whether it changed profile
+  inputs (new confirmed intents, improvement goals, or rhetoric-summary
+  changes):
 
   ```bash
   "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
     "{vault_root}/tracking-database.json" record-session \
-    --run-id "{run_id}" --now "{iso_timestamp}" [--profile-refreshed]
+    --run-id "{run_id}" --now "{iso_timestamp}" \
+    --profile-inputs changed|unchanged [--profile-refreshed]
   ```
+
+  With `changed` and an existing `{vault_root}/speaker-profile.json`, the
+  command refuses (`profile_refresh_required`) until Step 7 has re-run: do
+  that, then record the session with `--profile-refreshed`, so the end report
+  reflects the answers.
 
 - **declined** — note it and move on; the talks are not reprocessed.
 - **deferred** — `--return-condition` carries the speaker's own words for when

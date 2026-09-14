@@ -19,10 +19,22 @@ resolve anything.
 
 The recency buckets moved from handoff prose into the script's constants, and
 the handoff describes the interaction by mechanism, so a host without
-`AskUserQuestion` asks in plain text instead of skipping. An undated talk is
-bucketed like a recent one: recommend the session, never start it unasked.
-The end-to-end evaluation scenario and the clarification skill's seed-agenda
-contract follow separately.
+`AskUserQuestion` asks in plain text and a host without a skill-invocation tool
+executes the clarification skill's steps directly instead of skipping. An
+undated talk is bucketed like a recent one: recommend the session, never start
+it unasked.
+
+Review rounds on #462 hardened the ledger: every field is validated before a
+command runs and every write reports its durability state; run ids share the
+queue claim's identifier contract and report copies are content-addressed
+under a sanitized stem, so a slash in a run id neither blocks `open` nor names
+a path outside the vault; `record-offer` refreshes recency against the current
+database at the moment of the offer; a deferred offer can be answered again
+and `pending` lists it with the speaker's return condition; a session that
+changed profile inputs cannot be recorded until the profile is regenerated;
+and `pending` reconciles the ledger against closed claims, naming a run that
+persisted talks but never opened its obligations. The end-to-end evaluation
+scenario and the clarification skill's seed-agenda contract follow separately.
 
 ## 0.20.155 — 2026-09-12
 
