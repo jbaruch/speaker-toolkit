@@ -2,9 +2,6 @@
   "name": "jbaruch/speaker-toolkit",
   "mode": "vendored",
   "dependencies": {
-    "tessl-labs/tessl-skill-eval-scenarios": {
-      "version": "latest"
-    },
     "jbaruch/coding-policy": {
       "version": "latest"
     }

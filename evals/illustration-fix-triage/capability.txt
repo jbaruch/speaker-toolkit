@@ -1,1 +1,0 @@
-Illustration editing workflow and prompt quality guardrails

@@ -1,14 +1,13 @@
 # Exclude build artifacts, CI, and dev/test files from the published plugin.
-# The plugin ships its context surfaces — skills/, rules/, evals/,
+# The plugin ships its context surfaces — skills/, rules/,
 # .tessl-plugin/plugin.json, README.md (see jbaruch/coding-policy:
-# context-artifacts; evals/ is a standard plugin directory the publish layer
-# runs, so it is NOT excluded). Everything below is repo-side tooling
-# consumers never load.
+# context-artifacts). Everything below is repo-side tooling consumers never
+# load.
 #
 # PATTERNS ARE GITIGNORE SEMANTICS: an unanchored "foo/" matches a directory
 # named foo at EVERY depth, not just the repo root. Anchor repo-root artifacts
 # with a leading slash so they cannot reach into skills/<name>/. Enforced by
-# scripts/check-package-contents.sh.
+# scripts/check_package_contents.py.
 
 # CI / workflows
 /.github/

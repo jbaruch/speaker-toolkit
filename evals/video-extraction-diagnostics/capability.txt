@@ -1,1 +1,0 @@
-Video extraction pitfall handling

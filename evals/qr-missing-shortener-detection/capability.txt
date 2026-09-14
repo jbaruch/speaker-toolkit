@@ -1,1 +1,0 @@
-QR generation gap detection: missing shortener config surfaced, not silently degraded
