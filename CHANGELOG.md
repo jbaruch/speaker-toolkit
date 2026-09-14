@@ -53,7 +53,15 @@ the report went out that changed profile inputs reopens the report. The
 ledger is created by an explicit `adopt` at Step 1 that stamps the
 reconciliation boundary; every uncovered run persisted after it stays listed
 until it is opened or dismissed with a reason, and an exact replay of `open`
-on a completed run is an unchanged success.
+on a completed run is an unchanged success. Recovery names the exact
+persisted fact through `open --from-run`, and a recency refresh never re-picks
+a talk's claim link, so a talk another run merged again since can still be
+recovered for the run that left it uncovered. A new fact joining a run while
+its offer stands withdraws the offer, and cannot join once the offer was
+answered. The report copy is installed relative to a descriptor on the real
+directory, the report input is read only as a regular file, every mutating
+command re-reads the database and re-checks the vault root before writing,
+and authority failures carry their reason code.
 The end-to-end evaluation
 scenario and the clarification skill's seed-agenda contract follow separately.
 

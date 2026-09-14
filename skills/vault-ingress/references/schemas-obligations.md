@@ -122,9 +122,13 @@ listed by `pending` until it completes. `not_applicable` is terminal. Silence,
 elapsed time, and an invitation merely sent cause no transition: an `offered`
 run stays pending until the speaker answers.
 
-The stored recency is a snapshot, labeled by `recency_as_of`. `open`
-recomputes it from the newest `--now` while the state is `owed` or
-`not_applicable`. `record-offer` recomputes it once more, against the current
+The stored recency is a snapshot, labeled by `recency_as_of`; a refresh never
+changes a talk's recorded claim link. `open` recomputes it from the newest
+`--now` while the state is `owed` or `not_applicable`; a new fact joining
+while the offer is `offered` withdraws the offer back to `owed` so Step 9
+makes it again for the fuller scope, and a new fact cannot join once the
+offer was answered — it goes under a fresh run id. `record-offer` recomputes
+it once more, against the current
 database and its own `--now`, at the moment the offer is made, and its output
 carries the `offer_mode` the offer must use; a run resumed weeks later never
 promises an inline session for a talk that is no longer same-week. If that
@@ -163,17 +167,20 @@ every delivery of that text and the retry reuses it; removing it could take a
 copy out from under a delivery that did bind it. Re-recording identical bytes
 changes nothing in the ledger but still verifies the copy, recreating one that
 went missing; different bytes add a second copy (the earlier one stays on
-disk) and re-stamp `delivered_at`. A symlinked `ingress-reports` directory or
-copy path, or anything at the copy path that is not a regular file, is refused
-(`report_copy_failed`): the copy lands only in a real directory inside the
-vault, as a plain file.
+disk) and re-stamp `delivered_at`. The copy is staged and installed relative
+to a descriptor opened on the real `ingress-reports` directory without
+following links, so a symlink at that path, or anything at the copy path that
+is not a regular file, is refused (`report_copy_failed`) and nothing that
+happens to the path mid-write can redirect the copy outside the vault. The
+`--report-file` input is likewise read only as a regular file; a link or a
+special file is `report_unreadable`.
 
 ## Commands
 
 | Command | Precondition | Effect |
 |---|---|---|
 | `adopt --now` | — | creates the ledger with `adopted_at`; replay-safe |
-| `open --run-id --now --talk ...` | the ledger is adopted; every `--talk` is a filename in the current tracking database with a closed `return_persisted` claim; a completed run accepts only an exact replay of its recorded facts | creates or extends the run record; recomputes recency and `offer_mode` while unoffered; owes the downstream steps when a new fact joins |
+| `open --run-id --now --talk ... [--from-run]` | the ledger is adopted; every `--talk` is a filename in the current tracking database with a closed `return_persisted` claim (under `--from-run` when given); a completed run accepts only an exact replay of its recorded facts; a run whose offer was answered accepts no new fact | creates or extends the run record; recomputes recency and `offer_mode` while unoffered; a new fact joining while the offer stands withdraws the offer; owes the downstream steps when a new fact joins |
 | `record-downstream --run-id --now` | the run exists | downstream `completed`; replay-safe |
 | `record-offer --run-id --now [--topic ...]` | downstream `completed`; state `owed` | refreshes recency, then `offered` with `topics` and `offered: true`; or, with no analyzed talk left, `not_applicable` and `offered: false` |
 | `record-disposition --run-id --now --disposition ... [--return-condition]` | state `offered` or `deferred`; `deferred` needs `--return-condition` | the disposition; `accepted` opens a pending session |
@@ -189,12 +196,15 @@ ledger path is derived from the database-bound vault root, which is
 re-resolved on every re-read and must not move while a command runs
 (`vault_root_changed`).
 
-Exit 0 emits one JSON object. A mutating command's object carries `written`
+Every mutating command re-reads the tracking database, re-checks the vault
+root, and re-validates the ledger immediately before it writes. Exit 0 emits
+one JSON object. A mutating command's object carries `written`
 (whether bytes were installed), `durability_state` (`durable`, `unchanged`, or
 a named degradation such as `installed_verification_failed`), and `warnings`;
 every warning is also printed to stderr. Exit 2 emits
 `{"ok": false, "error", "reason_code"}` on stdout and the same message on
-stderr. Reason codes: `invalid_arguments`, `invalid_timestamp`,
+stderr; a vault-root authority failure carries its own `reason_code` the same
+way. Reason codes: `invalid_arguments`, `invalid_timestamp`,
 `database_unusable`, `vault_root_changed`, `ledger_not_adopted`, `talk_not_found`,
 `talk_not_persisted`, `run_not_found`, `invalid_transition`,
 `profile_refresh_required`, `report_unreadable`,
@@ -238,8 +248,8 @@ later run's existence stands in for either. Each entry carries `run_id`,
 | `reason` | Meaning | Action |
 |---|---|---|
 | `missing_talks` | a recorded run's closed claims name talks its record lacks — a later batch that never opened | `open` the run with exactly those talks |
-| `talks_persisted_after_completion` | the same, on a run whose report is already delivered | open them under a fresh run id; `open` refuses a completed run |
-| `unrecorded_run` | a run with no record at all | `open` it with the listed talks, or `dismiss` it with a reason |
+| `talks_persisted_after_completion` | the same, on a run whose report is already delivered | open them under a fresh run id with `--from-run` naming the listed run, so the exact fact is covered even when another run merged the talk again since; `open` refuses a completed run |
+| `unrecorded_run` | a run with no record at all | `open` it with the listed talks (with `--from-run` when another run merged a talk again since), or `dismiss` it with a reason |
 
 The exact coverage predicate is the script's rule — see `run-obligations.py`,
 the `open_required` docstring.

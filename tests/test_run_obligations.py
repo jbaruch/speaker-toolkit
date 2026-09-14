@@ -332,14 +332,60 @@ def test_recency_moves_with_the_clock_until_the_offer_is_made(fresh_db):
     assert resumed["clarification"]["offer_mode"] == "recommend_full"
 
 
-def test_recency_freezes_once_the_offer_is_recorded(fresh_db):
+def test_a_talk_joining_while_the_offer_stands_withdraws_it(fresh_db):
     run_id = _opened(fresh_db, "run-g")
-    _ok(fresh_db, "record-offer", "--run-id", run_id, "--now", NOW)
+    _ok(fresh_db, "record-offer", "--run-id", run_id, "--now", NOW, "--topic", "aside")
     run = _open(fresh_db, run_id, "older.md", now=MUCH_LATER)["run"]
-    assert run["clarification"]["state"] == "offered"
-    assert run["clarification"]["offer_mode"] == "inline"
+    assert run["clarification"]["state"] == "owed"
+    assert run["clarification"]["offered_at"] is None
+    assert run["clarification"]["topics"] == []
+    assert run["clarification"]["recency_as_of"] == MUCH_LATER
     assert [t["filename"] for t in run["talks"]] == ["fresh.md", "older.md"]
-    assert run["talks"][0]["recency_bucket"] == "same_week"
+    assert run["downstream"]["state"] == "owed"
+    assert _ok(fresh_db, "pending")["pending"][0]["next_action"] == (
+        "complete_downstream_steps"
+    )
+    _downstream(fresh_db, run_id, now=MUCH_LATER)
+    again = _ok(
+        fresh_db,
+        "record-offer",
+        "--run-id",
+        run_id,
+        "--now",
+        MUCH_LATER,
+        "--topic",
+        "aside",
+        "--topic",
+        "the older talk's pacing",
+    )
+    assert again["offered"] is True
+    assert again["run"]["clarification"]["topics"] == [
+        "aside",
+        "the older talk's pacing",
+    ]
+
+
+@pytest.mark.parametrize("disposition", ["declined", "accepted"])
+def test_a_talk_cannot_join_a_run_whose_offer_was_answered(fresh_db, disposition):
+    run_id = _opened(fresh_db, "run-answered")
+    _ok(fresh_db, "record-offer", "--run-id", run_id, "--now", NOW)
+    _ok(
+        fresh_db,
+        "record-disposition",
+        "--run-id",
+        run_id,
+        "--now",
+        NOW,
+        "--disposition",
+        disposition,
+    )
+    refused = _refused(
+        fresh_db, "open", "--run-id", run_id, "--now", LATER, "--talk", "older.md"
+    )
+    assert refused["reason_code"] == "invalid_transition"
+    assert "fresh run id" in refused["error"]
+    replay = _open(fresh_db, run_id, "fresh.md", now=LATER)
+    assert replay["written"] is False
 
 
 def test_open_refuses_a_talk_the_database_does_not_hold(fresh_db):
@@ -850,7 +896,7 @@ def test_a_symlinked_reports_directory_is_refused(tmp_path, fresh_db):
         str(_report(tmp_path)),
     )
     assert payload["reason_code"] == "report_copy_failed"
-    assert "symbolic link" in payload["error"]
+    assert "not a real directory" in payload["error"]
     assert list(elsewhere.iterdir()) == []
     state = _ok(fresh_db, "status", "--run-id", run_id)["run"]["end_report"]["state"]
     assert state == "owed"
@@ -2029,3 +2075,97 @@ def test_a_database_asserting_another_vault_root_fails_closed(tmp_path):
     assert code == 2
     assert result is not None and result["ok"] is False
     assert result["error"] in stderr
+    assert isinstance(result["reason_code"], str) and result["reason_code"]
+
+
+# ── recovery names the exact persisted fact ───────────────────────────
+
+
+def test_recovery_after_another_run_reprocessed_the_talk_links_the_right_claim(
+    tmp_path,
+):
+    first_release = "2026-09-13T10:00:00+00:00"
+    later_release = "2026-09-14T10:00:00+00:00"
+    database = _db_with_claims(tmp_path, {"a.md": ("run-a", first_release)})
+    _opened(database, "run-a", "a.md")
+    _ok(database, "record-offer", "--run-id", "run-a", "--now", NOW)
+    _ok(
+        database,
+        "record-disposition",
+        "--run-id",
+        "run-a",
+        "--now",
+        NOW,
+        "--disposition",
+        "declined",
+    )
+    _record_report(database, "run-a", _report(tmp_path))
+    # run-a's report is out; then run-a merges a.md once more (a late batch),
+    # and run-b reprocesses the same talk afterwards.
+    talk = _talk("a.md", claim=_persisted_claim("run-b", later_release, batch_id="b3"))
+    talk["_queue_claim_history"] = [
+        _persisted_claim("run-a", first_release),
+        _persisted_claim("run-a", "2026-09-13T12:00:00+00:00", batch_id="b2"),
+    ]
+    _write_db(tmp_path, [talk])
+    listed = _ok(database, "pending")["open_required"]
+    assert [(entry["run_id"], entry["reason"]) for entry in listed] == [
+        ("run-a", "talks_persisted_after_completion"),
+        ("run-b", "unrecorded_run"),
+    ]
+    wrong = _refused(
+        database,
+        "open",
+        "--run-id",
+        "run-a-recovery",
+        "--now",
+        MUCH_LATER,
+        "--talk",
+        "a.md",
+        "--from-run",
+        "run-zzz",
+    )
+    assert wrong["reason_code"] == "talk_not_persisted"
+    recovered = _ok(
+        database,
+        "open",
+        "--run-id",
+        "run-a-recovery",
+        "--now",
+        MUCH_LATER,
+        "--talk",
+        "a.md",
+        "--from-run",
+        "run-a",
+    )["run"]
+    assert recovered["talks"][0]["claim_run_id"] == "run-a"
+    assert recovered["talks"][0]["claim_released_at"] == "2026-09-13T12:00:00+00:00"
+    listed = _ok(database, "pending")["open_required"]
+    assert [(entry["run_id"], entry["reason"]) for entry in listed] == [
+        ("run-b", "unrecorded_run")
+    ]
+    # A recency refresh keeps the recovered link instead of re-picking run-b.
+    _downstream(database, "run-a-recovery", now=MUCH_LATER)
+    offered = _ok(
+        database, "record-offer", "--run-id", "run-a-recovery", "--now", MUCH_LATER
+    )["run"]
+    assert offered["talks"][0]["claim_run_id"] == "run-a"
+    assert _ok(database, "pending")["open_required"] == listed
+
+
+def test_a_fifo_as_the_report_file_is_refused_not_read(tmp_path, fresh_db):
+    run_id = _declined(fresh_db)
+    fifo = tmp_path / "report.fifo"
+    os.mkfifo(fifo)
+    payload = _refused(
+        fresh_db,
+        "record-report",
+        "--run-id",
+        run_id,
+        "--now",
+        LATER,
+        "--report-file",
+        str(fifo),
+    )
+    assert payload["reason_code"] == "report_unreadable"
+    assert "regular file" in payload["error"]

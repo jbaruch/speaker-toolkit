@@ -274,7 +274,8 @@ ledger's `next_action` and `offer_mode` decide what to offer; record the offer
 before asking, ask one question, wait for the answer, and record the
 disposition. An unanswered offer stays pending for the next run; it is never a
 decline. When an accepted session finishes and changed profile inputs, re-run
-Step 7 before recording the session.
+Step 7, and Step 8 when it changed improvement goals, before recording the
+session.
 
 Proceed immediately to Step 10.
 
@@ -302,8 +303,10 @@ supplement it. Then record it:
   --run-id "{run_id}" --now "{iso_timestamp}" --report-file "{delivered_report_path}"
 ```
 
-Exit 0 closes the run's obligations. Exit 2 with `invalid_transition` means
-Step 9 is unfinished; return there. Finish here.
+Exit 0 closes the run's obligations. Exit 2 with `invalid_transition` names
+which prerequisite is missing: the downstream record (return to Step 4's
+rendering and Steps 5–8) or the clarification disposition (return to Step
+9). Finish here.
 
 ## Error Handling
 

@@ -15,7 +15,8 @@ is delivered.
 Usage:
     run-obligations.py <tracking-database.json> adopt --now <ISO-8601>
     run-obligations.py <tracking-database.json> open \
-        --run-id <id> --now <ISO-8601> --talk <talk.md> [--talk ...]
+        --run-id <id> --now <ISO-8601> --talk <talk.md> [--talk ...] \
+        [--from-run <run id whose closed claim persisted the talks>]
     run-obligations.py <tracking-database.json> record-downstream \
         --run-id <id> --now <ISO-8601>
     run-obligations.py <tracking-database.json> record-offer \
@@ -76,8 +77,8 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import sys
-import tempfile
 from typing import Any
 
 from queue_claim_contract import QueueClaimContractError, require_queue_identifier
@@ -687,75 +688,118 @@ def _copy_failed(detail: str) -> RunObligationsError:
     )
 
 
+def _open_directory_no_follow(directory: Path) -> int:
+    """A descriptor on the real directory; a symlink at that path is refused."""
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        return os.open(directory, flags)
+    except OSError as exc:
+        raise _copy_failed(
+            f"{directory} is not a real directory ({exc}); the report copy is "
+            "installed only in a plain directory inside the vault — replace "
+            "whatever occupies that path with a directory and re-run "
+            "record-report"
+        ) from exc
+
+
+def _read_regular_file(
+    descriptor_flags: int, name: str, *, dir_fd: int | None
+) -> bytes | None:
+    """Bytes of an existing regular file, None when nothing is there.
+
+    Anything else at the name — a link, a FIFO, a directory — is refused, so a
+    caller never blocks on or follows what it did not write.
+    """
+    try:
+        descriptor = os.open(name, descriptor_flags, dir_fd=dir_fd)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise _copy_failed(
+            f"{name} cannot be opened without following links ({exc})"
+        ) from exc
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise _copy_failed(
+                f"{name} exists and is not a regular file; remove it and re-run "
+                "record-report"
+            )
+        chunks: list[bytes] = []
+        while True:
+            chunk = os.read(descriptor, 1 << 20)
+            if not chunk:
+                return b"".join(chunks)
+            chunks.append(chunk)
+    finally:
+        os.close(descriptor)
+
+
 def write_report_copy(
     directory: Path, run_id: str, digest: str, content: bytes
 ) -> tuple[Path, bool]:
     """Install the delivered report beside the ledger, durably.
 
-    Returns the content-addressed path and whether this call created it. An
-    existing regular-file copy with the same bytes is left alone, so a
-    replayed or racing delivery of identical text never rewrites it. A
-    symlinked directory or target, or anything at the target that is not a
-    regular file, is refused: the copy lands inside the vault as a plain
-    file, never through a link or into a special file.
+    Returns the content-addressed path and whether this call created it. Every
+    step runs relative to a descriptor opened on the real directory without
+    following links, so nothing that happens to the path between the check
+    and the write can redirect the copy outside the vault. An existing
+    regular-file copy with the same bytes is left alone, so a replayed or
+    racing delivery of identical text never rewrites it; anything else at the
+    target is refused.
     """
-    target = directory / f"{safe_report_stem(run_id)}.{digest}.md"
-    if directory.is_symlink():
-        raise _copy_failed(
-            f"{directory} is a symbolic link; the report copy is installed only "
-            "in a real directory inside the vault — replace the link with a "
-            "directory and re-run record-report"
-        )
-    if target.is_symlink():
-        raise _copy_failed(
-            f"{target} is a symbolic link; remove it and re-run record-report"
-        )
+    name = f"{safe_report_stem(run_id)}.{digest}.md"
+    target = directory / name
     try:
-        if target.exists():
-            if not target.is_file():
-                raise _copy_failed(
-                    f"{target} exists and is not a regular file; remove it and "
-                    "re-run record-report"
-                )
-            if target.read_bytes() == content:
-                return target, False
         directory.mkdir(parents=True, exist_ok=True)
-        if directory.is_symlink():
-            raise OSError("directory became a symbolic link")
-        descriptor, staged = tempfile.mkstemp(
-            prefix=f".{target.stem}.", suffix=".tmp", dir=directory
-        )
     except OSError as exc:
         raise _copy_failed(
-            f"cannot stage the report copy under {directory}: {exc} — make it "
-            "a writable directory (or remove whatever occupies that path) and "
-            "re-run record-report"
+            f"cannot create {directory}: {exc} — make its parent writable (or "
+            "remove whatever occupies that path) and re-run record-report"
         ) from exc
+    dir_fd = _open_directory_no_follow(directory)
     try:
-        with os.fdopen(descriptor, "wb") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(staged, target)
-        directory_descriptor = os.open(directory, os.O_RDONLY)
+        no_follow = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | os.O_NONBLOCK
+        existing = _read_regular_file(no_follow, name, dir_fd=dir_fd)
+        if existing == content:
+            return target, False
+        staged = f".{name}.{os.getpid()}.tmp"
         try:
-            os.fsync(directory_descriptor)
-        finally:
-            os.close(directory_descriptor)
-    except OSError as exc:
-        try:
-            os.unlink(staged)
-        except OSError as cleanup:
-            # Best effort: the write failure is the error to report; a staged
-            # file that cannot be removed is named, never allowed to mask it.
-            print(
-                f"WARNING: staged report copy {staged} was not removed: {cleanup}",
-                file=sys.stderr,
+            descriptor = os.open(
+                staged,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+                dir_fd=dir_fd,
             )
-        raise _copy_failed(
-            f"cannot write the report copy {target}: {exc} — free the space or "
-            "fix the permissions and re-run record-report"
-        ) from exc
+        except OSError as exc:
+            raise _copy_failed(
+                f"cannot stage the report copy under {directory}: {exc} — make "
+                "it writable and re-run record-report"
+            ) from exc
+        try:
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(staged, name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+            os.fsync(dir_fd)
+        except OSError as exc:
+            try:
+                os.unlink(staged, dir_fd=dir_fd)
+            except OSError as cleanup:
+                # Best effort: the write failure is the error to report; a
+                # staged file that cannot be removed is named, never allowed
+                # to mask it.
+                print(
+                    f"WARNING: staged report copy {directory / staged} was not "
+                    f"removed: {cleanup}",
+                    file=sys.stderr,
+                )
+            raise _copy_failed(
+                f"cannot write the report copy {target}: {exc} — free the space "
+                "or fix the permissions and re-run record-report"
+            ) from exc
+    finally:
+        os.close(dir_fd)
     return target, True
 
 
@@ -886,26 +930,53 @@ def require_run_id(value: str) -> str:
         raise RunObligationsError(str(exc), reason_code="invalid_arguments") from exc
 
 
+def newest_claim(
+    claims: list[tuple[str, str]], run_id: str | None
+) -> tuple[str, str] | None:
+    """The newest closed claim under ``run_id``, or of any run when None."""
+    matching = [claim for claim in claims if run_id is None or claim[0] == run_id]
+    return max(matching, key=lambda claim: claim[1]) if matching else None
+
+
 def describe_talk(
-    context: Context, filename: str, now: datetime, run_id: str
+    context: Context,
+    filename: str,
+    now: datetime,
+    run_id: str,
+    *,
+    source_run: str | None = None,
+    keep: tuple[str, str] | None = None,
 ) -> dict[str, Any]:
     """The talk as the run records it, linked to the claim that persisted it.
 
-    The link is this run's own newest closed claim when the talk has one;
-    otherwise the newest closed claim of any run, which is how talks recovered
-    under a fresh run id stay tied to the run that actually persisted them.
+    ``keep`` preserves an already-recorded link through a recency refresh.
+    Otherwise the link is the newest closed claim of ``source_run`` when the
+    caller names one (recovery of an exact persisted fact under a fresh run
+    id), else this run's own newest claim, else the newest claim of any run.
     """
     record = context.talk(filename)
     claims = persisted_claims(record)
-    if not claims:
-        raise RunObligationsError(
-            f"talk {filename!r} has no closed return_persisted claim in "
-            f"{context.database_path}; open records only talks "
-            "persist-results.py merged",
-            reason_code="talk_not_persisted",
-        )
-    own = [claim for claim in claims if claim[0] == run_id]
-    claim_run_id, claim_released_at = max(own or claims, key=lambda claim: claim[1])
+    if keep is not None:
+        link: tuple[str, str] | None = keep
+    elif source_run is not None:
+        link = newest_claim(claims, source_run)
+        if link is None:
+            raise RunObligationsError(
+                f"talk {filename!r} has no closed return_persisted claim under "
+                f"run {source_run!r} in {context.database_path}; --from-run "
+                "names the run whose claim persisted the talk",
+                reason_code="talk_not_persisted",
+            )
+    else:
+        link = newest_claim(claims, run_id) or newest_claim(claims, None)
+        if link is None:
+            raise RunObligationsError(
+                f"talk {filename!r} has no closed return_persisted claim in "
+                f"{context.database_path}; open records only talks "
+                "persist-results.py merged",
+                reason_code="talk_not_persisted",
+            )
+    claim_run_id, claim_released_at = link
     delivered = parse_delivery_date(record.get("date"))
     days = (now.date() - delivered).days if delivered is not None else None
     return {
@@ -917,6 +988,10 @@ def describe_talk(
         "claim_run_id": claim_run_id,
         "claim_released_at": claim_released_at,
     }
+
+
+def _link(talk: dict[str, Any]) -> tuple[str, str]:
+    return (str(talk["claim_run_id"]), str(talk["claim_released_at"]))
 
 
 def new_run(run_id: str, now: str) -> dict[str, Any]:
@@ -999,12 +1074,14 @@ def command_open(context: Context, args: argparse.Namespace) -> dict[str, Any]:
     now = parse_timestamp(args.now, "--now")
     stamp = render_timestamp(now)
     run_id = require_run_id(args.run_id)
+    source_run = require_run_id(args.from_run) if args.from_run else None
     filenames = list(dict.fromkeys(args.talk))
     if not filenames:
         raise RunObligationsError(
             "open requires at least one --talk filename",
             reason_code="invalid_arguments",
         )
+    context.refresh()
     snapshot, ledger = load_ledger(context.ledger_path)
     require_adopted(ledger, context.ledger_path)
     try:
@@ -1014,26 +1091,27 @@ def command_open(context: Context, args: argparse.Namespace) -> dict[str, Any]:
         ledger["runs"].append(run)
     before = json.dumps(run, sort_keys=True)
     clarification = run["clarification"]
-    recency_open = clarification["state"] in {STATE_OWED, STATE_NOT_APPLICABLE}
-    context.refresh()
     known = {str(talk["filename"]): talk for talk in run["talks"]}
-    fresh = {name: describe_talk(context, name, now, run_id) for name in filenames}
-    # A talk is new to the run when its filename is unrecorded or when a newer
-    # claim persisted it again since; either way the downstream steps are owed
-    # again. Recency is frozen once the offer is made: known talks keep their
-    # snapshot and only genuinely new ones are described, while before the
-    # offer the newest ``--now`` decides for every talk.
-    joined = [
-        name
-        for name, talk in fresh.items()
-        if name not in known
-        or known[name]["claim_released_at"] != talk["claim_released_at"]
-    ]
+    # A talk joins the run as a new persisted fact when its filename is
+    # unrecorded, or when a newer claim persisted it again under the run the
+    # record links it to; a known talk otherwise keeps its recorded link.
+    joined: dict[str, dict[str, Any]] = {}
+    for name in filenames:
+        fresh = describe_talk(context, name, now, run_id, source_run=source_run)
+        if name not in known:
+            joined[name] = fresh
+            continue
+        recorded = known[name]
+        newer = newest_claim(
+            persisted_claims(context.talk(name)), recorded["claim_run_id"]
+        )
+        if newer is not None and newer != _link(recorded):
+            joined[name] = describe_talk(context, name, now, run_id, keep=newer)
     if run["completed_at"] is not None:
         if joined:
             raise RunObligationsError(
                 f"run {run_id!r} completed at {run['completed_at']}; open a new "
-                f"run id for {', '.join(joined)}",
+                f"run id for {', '.join(sorted(joined))}",
                 reason_code="invalid_transition",
             )
         # An exact replay of facts a completed run already recorded.
@@ -1044,15 +1122,30 @@ def command_open(context: Context, args: argparse.Namespace) -> dict[str, Any]:
             "replayed": True,
             "run": run,
         }
+    state = clarification["state"]
+    if joined and state in DISPOSITIONS:
+        raise RunObligationsError(
+            f"run {run_id!r} clarification is already {state!r}; a talk joining "
+            f"now would never be offered — open {', '.join(sorted(joined))} "
+            "under a fresh run id",
+            reason_code="invalid_transition",
+        )
+    if joined and state == STATE_OFFERED:
+        # The standing offer covers less than the run now does: withdraw it
+        # so Step 9 makes it again with the fuller topics and recency.
+        clarification.update({"state": STATE_OWED, "offered_at": None, "topics": []})
+    recency_open = clarification["state"] in {STATE_OWED, STATE_NOT_APPLICABLE}
     talks: list[dict[str, Any]] = []
     for name, talk in known.items():
         if name in joined:
             continue
         if recency_open:
-            talks.append(describe_talk(context, name, now, run_id))
+            # Recency follows the newest ``--now`` until the offer is made;
+            # the recorded claim link is preserved through the refresh.
+            talks.append(describe_talk(context, name, now, run_id, keep=_link(talk)))
         else:
             talks.append(talk)
-    talks.extend(fresh[name] for name in joined)
+    talks.extend(joined.values())
     talks.sort(key=lambda talk: str(talk["filename"]))
     run["talks"] = talks
     if recency_open:
@@ -1073,6 +1166,7 @@ def _transition(
     now = parse_timestamp(args.now, "--now")
     stamp = render_timestamp(now)
     run_id = require_run_id(args.run_id)
+    context.refresh()
     snapshot, ledger = load_ledger(context.ledger_path)
     require_adopted(ledger, context.ledger_path)
     run = find_run(ledger, run_id)
@@ -1131,9 +1225,10 @@ def command_record_offer(context: Context, args: argparse.Namespace) -> dict[str
         # being made now, against the current database, so refresh before
         # freezing: a run resumed weeks later must not promise an inline
         # session for a talk that is no longer same-week.
-        context.refresh()
         talks = [
-            describe_talk(context, str(talk["filename"]), now, run["run_id"])
+            describe_talk(
+                context, str(talk["filename"]), now, run["run_id"], keep=_link(talk)
+            )
             for talk in run["talks"]
         ]
         run["talks"] = talks
@@ -1270,14 +1365,24 @@ def command_record_session(
 
 
 def command_record_report(context: Context, args: argparse.Namespace) -> dict[str, Any]:
+    report_file = Path(args.report_file)
     try:
-        report_file = Path(args.report_file)
-        content = report_file.read_bytes()
-    except (OSError, ValueError) as exc:
+        content = _read_regular_file(
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | os.O_NONBLOCK,
+            str(report_file),
+            dir_fd=None,
+        )
+    except (OSError, ValueError, RunObligationsError) as exc:
         raise RunObligationsError(
-            f"cannot read the delivered report {args.report_file!r}: {exc}",
+            f"cannot read the delivered report {args.report_file!r} as a regular "
+            f"file: {exc}",
             reason_code="report_unreadable",
         ) from exc
+    if content is None:
+        raise RunObligationsError(
+            f"delivered report {args.report_file!r} does not exist",
+            reason_code="report_unreadable",
+        )
     if not content.strip():
         raise RunObligationsError(
             f"delivered report {report_file} is empty; the end report is the "
@@ -1377,6 +1482,7 @@ def command_adopt(context: Context, args: argparse.Namespace) -> dict[str, Any]:
     """Create the ledger and stamp the reconciliation boundary; replay-safe."""
     now = parse_timestamp(args.now, "--now")
     stamp = render_timestamp(now)
+    context.refresh()
     snapshot, ledger = load_ledger(context.ledger_path)
     if ledger.get("adopted_at") is None:
         ledger = empty_ledger(stamp)
@@ -1410,6 +1516,7 @@ def command_dismiss(context: Context, args: argparse.Namespace) -> dict[str, Any
             "not being opened",
             reason_code="invalid_arguments",
         )
+    context.refresh()
     snapshot, ledger = load_ledger(context.ledger_path)
     require_adopted(ledger, context.ledger_path)
     if any(run["run_id"] == run_id for run in ledger["runs"]):
@@ -1521,6 +1628,10 @@ def build_parser() -> JsonArgumentParser:
         default=[],
         help="filename persist-results.py merged; repeat per talk",
     )
+    opened.add_argument(
+        "--from-run",
+        help="recovery: the run whose closed claim persisted these talks",
+    )
 
     downstream = actions.add_parser(
         "record-downstream",
@@ -1602,8 +1713,9 @@ def main(argv: list[str] | None = None) -> int:
         payload = COMMANDS[args.action](context, args)
     except (RunObligationsError, VaultRootAuthorityError) as exc:
         payload: dict[str, Any] = {"ok": False, "error": str(exc)}
-        if isinstance(exc, RunObligationsError):
-            payload["reason_code"] = exc.reason_code
+        reason_code = getattr(exc, "reason_code", None)
+        if isinstance(reason_code, str):
+            payload["reason_code"] = reason_code
         print(str(exc), file=sys.stderr)
         print(json.dumps(payload, ensure_ascii=False))
         return 2
