@@ -70,7 +70,8 @@ Late talks of a run whose offer was answered are routed to a fresh run id like
 those of a completed run, a dismissal applies only to a listed run and only to
 the facts that existed when it was recorded, a long run id gets a bounded copy
 name, and a timestamp that overflows UTC normalization is the structured
-timestamp error.
+timestamp error. Dismissing a run that reappeared with newer facts renews the
+dismissal instead of replaying the stale one.
 The end-to-end evaluation
 scenario and the clarification skill's seed-agenda contract follow separately.
 

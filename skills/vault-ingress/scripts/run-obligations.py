@@ -1637,39 +1637,51 @@ def command_dismiss(context: Context, args: argparse.Namespace) -> dict[str, Any
         for entry in open_required(context.persisted_runs(), ledger)
         if entry["reason"] == REASON_UNRECORDED
     }
-    for entry in ledger["dismissed_runs"]:
-        if entry["run_id"] != run_id:
-            continue
-        if entry["reason"] == reason:
-            return {
-                "ok": True,
-                "ledger_path": str(context.ledger_path),
-                "written": False,
-                "durability_state": "unchanged",
-                "warnings": [],
-                "replayed": True,
-                "dismissed": entry,
-            }
-        raise RunObligationsError(
-            f"run {run_id!r} was already dismissed at {entry['dismissed_at']} "
-            f"for {entry['reason']!r}; a retry repeats that reason",
-            reason_code="invalid_transition",
-        )
-    if run_id not in listed:
+    existing = next(
+        (entry for entry in ledger["dismissed_runs"] if entry["run_id"] == run_id),
+        None,
+    )
+    if run_id in listed:
+        # Listed now means facts newer than any earlier dismissal exist; a
+        # dismissal today covers them, renewing an older entry in place.
+        if existing is None:
+            entry = {"run_id": run_id, "dismissed_at": stamp, "reason": reason}
+            ledger["dismissed_runs"].append(entry)
+            extras: dict[str, Any] = {}
+        else:
+            existing.update({"dismissed_at": stamp, "reason": reason})
+            entry = existing
+            extras = {"renewed": True}
+        outcome = store_ledger(context.ledger_path, snapshot, ledger)
+        return {
+            "ok": True,
+            "ledger_path": str(context.ledger_path),
+            **outcome,
+            **extras,
+            "dismissed": entry,
+        }
+    if existing is None:
         raise RunObligationsError(
             f"run {run_id!r} is not an uncovered persisted run in `pending`; "
             "only a listed unrecorded_run can be dismissed",
             reason_code="invalid_transition",
         )
-    entry = {"run_id": run_id, "dismissed_at": stamp, "reason": reason}
-    ledger["dismissed_runs"].append(entry)
-    outcome = store_ledger(context.ledger_path, snapshot, ledger)
-    return {
-        "ok": True,
-        "ledger_path": str(context.ledger_path),
-        **outcome,
-        "dismissed": entry,
-    }
+    if existing["reason"] == reason:
+        return {
+            "ok": True,
+            "ledger_path": str(context.ledger_path),
+            "written": False,
+            "durability_state": "unchanged",
+            "warnings": [],
+            "replayed": True,
+            "dismissed": existing,
+        }
+    raise RunObligationsError(
+        f"run {run_id!r} was already dismissed at {existing['dismissed_at']} "
+        f"for {existing['reason']!r} and nothing new is listed; a retry "
+        "repeats that reason",
+        reason_code="invalid_transition",
+    )
 
 
 def command_pending(context: Context, _args: argparse.Namespace) -> dict[str, Any]:

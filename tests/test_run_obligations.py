@@ -2346,6 +2346,39 @@ def test_a_dismissal_covers_only_the_facts_that_existed_when_it_was_recorded(tmp
     assert [(entry["run_id"], entry["talks"], entry["reason"]) for entry in listed] == [
         ("gone-run", ["a.md"], "unrecorded_run")
     ]
+    # Dismissing again, with the same or another reason, renews the entry to
+    # cover the facts that appeared since; a replay only counts when nothing
+    # new is listed.
+    renewed = _ok(
+        database,
+        "dismiss",
+        "--run-id",
+        "gone-run",
+        "--now",
+        MUCH_LATER,
+        "--reason",
+        "abandoned",
+    )
+    assert renewed["renewed"] is True
+    assert renewed["written"] is True
+    assert renewed["dismissed"] == {
+        "run_id": "gone-run",
+        "dismissed_at": MUCH_LATER,
+        "reason": "abandoned",
+    }
+    assert _ok(database, "pending")["open_required"] == []
+    assert len(_ledger(tmp_path)["dismissed_runs"]) == 1
+    replay = _ok(
+        database,
+        "dismiss",
+        "--run-id",
+        "gone-run",
+        "--now",
+        MUCH_LATER,
+        "--reason",
+        "abandoned",
+    )
+    assert replay["replayed"] is True
 
 
 def test_a_long_run_id_still_gets_its_report_copy(tmp_path, fresh_db):

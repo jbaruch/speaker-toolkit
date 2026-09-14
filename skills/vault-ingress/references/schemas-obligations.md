@@ -192,7 +192,7 @@ special file is `report_unreadable`.
 | `record-disposition --run-id --now --disposition ... [--return-condition]` | state `offered` or `deferred`; `deferred` needs `--return-condition` | the disposition; `accepted` opens a pending session |
 | `record-session --run-id --now --profile-inputs changed\|unchanged [--profile-refreshed]` | state `accepted`, session pending; `changed` with `{vault_root}/speaker-profile.json` present needs `--profile-refreshed` (`profile_refresh_required` otherwise) | session `completed` with both flags recorded |
 | `record-report --run-id --now --report-file` | downstream `completed`; clarification resolved; non-empty file | copies the report, binds its digest, sets `completed_at` |
-| `dismiss --run-id --now --reason` | the ledger is adopted; the run has no record | records that its uncovered talks are deliberately not opened; replay-safe for the same reason |
+| `dismiss --run-id --now --reason` | the ledger is adopted; the run has no record and is listed as `unrecorded_run` | records that its uncovered talks are deliberately not opened; a run listed again after an earlier dismissal renews that entry to cover the new facts (`renewed: true`); with nothing new listed, the same reason is a replay and another reason is refused |
 | `pending` | — | runs owing a step, deferred offers, and uncovered persisted facts |
 | `status --run-id` | the run exists | the record and its summary |
 
