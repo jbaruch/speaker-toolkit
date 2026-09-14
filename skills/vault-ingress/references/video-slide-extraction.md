@@ -15,7 +15,7 @@ This is the fourth slide acquisition path — used when a talk has `video_url` b
 Install Python dependencies:
 ```bash
 "{python_path}" -m pip install "ImageHash==4.3.2" "numpy==2.2.6" \
-  "Pillow==12.3.0" "filelock==3.32.2"
+  "Pillow==12.3.0" "filelock==3.32.6"
 ```
 
 These direct dependency pins are renewed by the repository's weekly Dependabot

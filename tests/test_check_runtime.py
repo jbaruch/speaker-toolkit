@@ -467,8 +467,8 @@ def test_module_probe_preserves_child_failure_reason(
 @pytest.mark.parametrize(
     ("module_name", "required_version", "actual_version"),
     [
-        ("psutil", "7.2.2", "7.2.1"),
-        ("filelock", "3.32.2", "3.25.0"),
+        ("psutil", check_runtime.PSUTIL_REQUIRED_VERSION, "7.2.1"),
+        ("filelock", check_runtime.FILELOCK_REQUIRED_VERSION, "3.25.0"),
     ],
 )
 def test_module_probe_preserves_incompatible_version_report(
@@ -1085,14 +1085,14 @@ def test_lane_requirements_match_the_configured_interpreter_contract() -> None:
     assert check_runtime.REPORT_SCHEMA_VERSION == 3
     assert check_runtime.MODULE_PROBE_SCHEMA_VERSION == 1
     assert check_runtime.PSUTIL_REQUIRED_VERSION == "7.2.2"
-    assert check_runtime.FILELOCK_REQUIRED_VERSION == "3.32.2"
+    assert check_runtime.FILELOCK_REQUIRED_VERSION == "3.32.6"
     assert check_runtime.IMAGEHASH_REQUIRED_VERSION == "4.3.2"
     assert check_runtime.NUMPY_REQUIRED_VERSION == "2.2.6"
     assert check_runtime.PILLOW_REQUIRED_VERSION == "12.3.0"
     assert check_runtime.YTDLP_REQUIRED_VERSION == "2026.8.19"
     assert check_runtime.REQUIRED_MODULE_VERSIONS == {
         "PIL": "12.3.0",
-        "filelock": "3.32.2",
+        "filelock": "3.32.6",
         "imagehash": "4.3.2",
         "numpy": "2.2.6",
         "psutil": "7.2.2",
