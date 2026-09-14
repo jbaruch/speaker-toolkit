@@ -497,15 +497,19 @@ not cover (a crash between the merge and `open`), each with a `reason`: for
 `unrecorded_run` and `missing_talks`, run `open` for that run with exactly the
 talks listed, then treat it like any pending run; for
 `talks_persisted_after_completion`, open those talks under a fresh run id.
-`pending` lists runs owing an answer or a report: before
-selecting any new work, resume each at the step its `next_action` names, using
-that run's recorded `run_id` — `offer_clarification`, `await_disposition`, and
+`pending` lists runs owing downstream steps, an answer, or a report: before
+selecting any new work, resume each at the earliest step its `next_action`
+names, using that run's recorded `run_id` — `complete_downstream_steps` at
+Step 4's rendering (when that batch's returns are still on disk; otherwise
+note the missing analyses for the end report) and then Steps 5–8, ending with
+`record-downstream`; `offer_clarification`, `await_disposition`, and
 `complete_clarification_session` at Step 9 through
 [clarification-handoff.md](clarification-handoff.md); `deliver_end_report` at
 Step 11 through [end-report.md](end-report.md). `deferred_offers` lists offers
 the speaker deferred with their return conditions; one whose condition is now
-met is raised again at Step 9. A pending run with nothing left to process still
+met is raised again at Step 9, and the rest stay listed for their conditions
+without blocking anything. A pending run with nothing left to process still
 owes the speaker its answer or its report; a completed processing claim never
-stands in for either. With nothing in any list, proceed to Step 2. Ledger shape
-and the `next_action` vocabulary:
-[schemas-obligations.md](schemas-obligations.md).
+stands in for either. Proceed to Step 2 once `pending` and `open_required` are
+empty and no deferred offer's condition has been met. Ledger shape and the
+`next_action` vocabulary: [schemas-obligations.md](schemas-obligations.md).

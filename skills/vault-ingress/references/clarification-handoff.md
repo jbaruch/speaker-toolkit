@@ -18,6 +18,10 @@ talks get an active handoff, not a footnote.
 is a snapshot dated `recency_as_of`; the mode that counts is the one
 `record-offer` returns below.
 
+- `complete_downstream_steps` — the run's rendering, summary, profile, and
+  goal steps were never recorded: go back to Step 4's rendering (when the
+  batch returns are still on disk) and Steps 5–8, run `record-downstream`,
+  then return here. `record-offer` refuses until then.
 - `offer_clarification` — compute the candidate topics and make the offer.
 - `await_disposition` — the offer was made earlier, possibly by a run that was
   interrupted, and never answered. Put the same question again using the

@@ -3,16 +3,20 @@
 
 Processing completion and run completion are different events. A queue claim
 closes when ``persist-results.py`` merges a batch; that says nothing about the
-speaker. This ledger records what the run still owes the speaker after the
-merge: the clarification offer and its disposition, the clarification session
-when the offer is accepted, and the end report. A run is complete only when
-every obligation carries an explicit disposition. Silence, elapsed time, and an
-invitation merely sent never resolve an obligation, so an interrupted run shows
-up in ``pending`` until the speaker answers or the report is delivered.
+speaker. This ledger records what the run still owes after the merge: the
+downstream steps that turn persisted returns into rendered analyses, summary,
+profile, and goal outcomes; the clarification offer and its disposition; the
+clarification session when the offer is accepted; and the end report. A run is
+complete only when every obligation carries an explicit disposition. Silence,
+elapsed time, and an invitation merely sent never resolve an obligation, so an
+interrupted run shows up in ``pending`` until the speaker answers or the report
+is delivered.
 
 Usage:
     run-obligations.py <tracking-database.json> open \
         --run-id <id> --now <ISO-8601> --talk <talk.md> [--talk ...]
+    run-obligations.py <tracking-database.json> record-downstream \
+        --run-id <id> --now <ISO-8601>
     run-obligations.py <tracking-database.json> record-offer \
         --run-id <id> --now <ISO-8601> [--topic <text> ...]
     run-obligations.py <tracking-database.json> record-disposition \
@@ -33,13 +37,14 @@ same sibling lock discipline as the tracking database, only when state changed.
 
 Ledger: ``{vault_root}/ingress-obligations.json`` (schema 1, run records
 schema 1), owned by vault-ingress. Delivered reports are copied to
-``{vault_root}/ingress-reports/{run_id}.{digest}.md`` and bound to the ledger
-by SHA-256. ``pending`` also reconciles the ledger against closed claims,
-naming persisted talks the ledger does not cover (a whole run, or a later
-batch of a recorded run, that crashed between the merge and ``open``), and
-lists every deferred offer with the speaker's return condition, so both can
-be raised again.
-Field meanings, transitions, and the reader/writer contract live in
+``{vault_root}/ingress-reports/{stem}.{digest prefix}.md`` and bound to the
+ledger by SHA-256. Each recorded talk carries the run id of the closed claim
+that persisted it, so ``pending`` can reconcile the ledger against closed
+claims and name persisted talks the ledger does not cover (a whole run, or a
+later batch of a recorded run, that crashed between the merge and ``open``)
+without repeating talks recovered under a fresh run id. ``pending`` also lists
+every deferred offer with the speaker's return condition, so it can be raised
+again. Field meanings, transitions, and the reader/writer contract live in
 ``skills/vault-ingress/references/schemas-obligations.md``.
 
 Recency policy (the delivery-recency buckets the clarification handoff keys on)
@@ -88,14 +93,15 @@ REPORTS_DIRECTORY = "ingress-reports"
 PROFILE_FILENAME = "speaker-profile.json"
 LEDGER_SCHEMA_VERSION = 1
 RUN_RECORD_SCHEMA_VERSION = 1
-# The report copy is content-addressed: ``{run_id}.{digest prefix}.md`` with the
+# The report copy is content-addressed: ``{stem}.{digest prefix}.md`` with the
 # run id reduced to a safe filename stem, so two deliveries never overwrite each
 # other and a ledger-edited run id can never name a path outside the directory.
 REPORT_DIGEST_PREFIX = 12
 _SAFE_STEM = re.compile(r"[^A-Za-z0-9._-]")
-# What ``persist-results.py`` stamps on the claim it closes; a run whose claims
-# carry it but that has no ledger record persisted talks and never opened its
-# obligations (a crash between the merge and ``open``).
+_SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+# What ``persist-results.py`` stamps on the claim it closes; a talk whose claim
+# carries it persisted, and one the ledger does not cover crashed between the
+# merge and ``open``.
 PERSISTED_RELEASE_REASON = "return_persisted"
 
 # Talk statuses whose results can feed a clarification session. Skipped talks
@@ -128,6 +134,7 @@ OFFER_MODE_PRECEDENCE = (
     OFFER_MODE_RECOMMEND_FULL,
     OFFER_MODE_RECOMMEND_COMPRESSED,
 )
+OFFER_MODES = frozenset({*OFFER_MODE_PRECEDENCE, OFFER_MODE_NONE})
 
 STATE_OWED = "owed"
 STATE_OFFERED = "offered"
@@ -148,18 +155,21 @@ CLARIFICATION_STATES = frozenset(
 DISPOSITIONS = (STATE_ACCEPTED, STATE_DECLINED, STATE_DEFERRED)
 SESSION_PENDING = "pending"
 SESSION_COMPLETED = "completed"
+DOWNSTREAM_OWED = "owed"
+DOWNSTREAM_COMPLETED = "completed"
 REPORT_OWED = "owed"
 REPORT_DELIVERED = "delivered"
 
 NEXT_OPEN = "open_obligations"
-REASON_UNRECORDED = "unrecorded_run"
-REASON_MISSING_TALKS = "missing_talks"
-REASON_AFTER_COMPLETION = "talks_persisted_after_completion"
+NEXT_DOWNSTREAM = "complete_downstream_steps"
 NEXT_OFFER = "offer_clarification"
 NEXT_AWAIT = "await_disposition"
 NEXT_SESSION = "complete_clarification_session"
 NEXT_REPORT = "deliver_end_report"
 NEXT_NONE = "none"
+REASON_UNRECORDED = "unrecorded_run"
+REASON_MISSING_TALKS = "missing_talks"
+REASON_AFTER_COMPLETION = "talks_persisted_after_completion"
 
 PROFILE_INPUTS_CHANGED = "changed"
 PROFILE_INPUTS_UNCHANGED = "unchanged"
@@ -248,6 +258,8 @@ def offer_mode_for(talks: list[dict[str, Any]]) -> str:
 
 
 def next_action(run: dict[str, Any]) -> str:
+    if run["downstream"]["state"] == DOWNSTREAM_OWED:
+        return NEXT_DOWNSTREAM
     clarification = run["clarification"]
     state = clarification["state"]
     if state == STATE_OWED:
@@ -277,11 +289,243 @@ def clarification_resolved(run: dict[str, Any]) -> bool:
     return False
 
 
-# ── Ledger IO ─────────────────────────────────────────────────────────
+# ── Ledger validation ─────────────────────────────────────────────────
 
 
 def empty_ledger() -> dict[str, Any]:
     return {"schema_version": LEDGER_SCHEMA_VERSION, "runs": []}
+
+
+def _invalid(label: str, detail: str) -> RunObligationsError:
+    return RunObligationsError(f"{label} {detail}", reason_code="ledger_invalid")
+
+
+def _require_keys(record: Any, keys: tuple[str, ...], label: str) -> dict[str, Any]:
+    if not isinstance(record, dict):
+        raise _invalid(label, "must be an object")
+    for key in keys:
+        if key not in record:
+            raise _invalid(label, f"lacks {key}")
+    return record
+
+
+def _require_choice(value: object, choices: Any, label: str) -> str:
+    """Type before membership: a list or object must not raise TypeError."""
+    if not isinstance(value, str):
+        raise _invalid(label, "must be a string")
+    if value not in choices:
+        raise _invalid(label, f"{value!r} is not one of the known values")
+    return value
+
+
+def _require_identifier(value: object, label: str) -> str:
+    """Run ids share the queue claim's identifier contract."""
+    try:
+        return require_queue_identifier(value, label)
+    except QueueClaimContractError as exc:
+        raise _invalid(label, str(exc).removeprefix(label).strip()) from exc
+
+
+def _require_timestamp(value: object, label: str) -> None:
+    try:
+        parse_timestamp(value, label)
+    except RunObligationsError as exc:
+        raise _invalid(label, str(exc).removeprefix(label).strip()) from exc
+
+
+def _require_timestamp_or_null(value: object, label: str, *, present: bool) -> None:
+    """A stamp is required exactly when its state says the event happened."""
+    if present:
+        if value is None:
+            raise _invalid(label, "must be set in this state")
+        _require_timestamp(value, label)
+    elif value is not None:
+        raise _invalid(label, "must be null in this state")
+
+
+def _require_null(value: object, label: str) -> None:
+    if value is not None:
+        raise _invalid(label, "must be null in this state")
+
+
+def _require_bool(value: object, label: str) -> None:
+    if not isinstance(value, bool):
+        raise _invalid(label, "must be a boolean")
+
+
+def _validate_talk(entry: Any, label: str) -> None:
+    talk = _require_keys(
+        entry,
+        (
+            "filename",
+            "status",
+            "delivery_date",
+            "days_since_delivery",
+            "recency_bucket",
+            "claim_run_id",
+        ),
+        label,
+    )
+    for key in ("filename", "status"):
+        if not isinstance(talk[key], str) or not talk[key]:
+            raise _invalid(label, f"{key} must be a non-empty string")
+    delivered = talk["delivery_date"]
+    if delivered is not None and parse_delivery_date(delivered) is None:
+        raise _invalid(label, "delivery_date must be a YYYY-MM-DD string or null")
+    days = talk["days_since_delivery"]
+    if days is not None and (type(days) is not int):
+        raise _invalid(label, "days_since_delivery must be an integer or null")
+    _require_choice(
+        talk["recency_bucket"], OFFER_MODE_BY_BUCKET, f"{label}.recency_bucket"
+    )
+    if talk["claim_run_id"] is not None:
+        _require_identifier(talk["claim_run_id"], f"{label}.claim_run_id")
+
+
+def _validate_clarification(record: Any, label: str) -> None:
+    clarification = _require_keys(
+        record,
+        (
+            "state",
+            "offer_mode",
+            "topics",
+            "recency_as_of",
+            "offered_at",
+            "resolved_at",
+            "return_condition",
+            "session",
+        ),
+        label,
+    )
+    state = _require_choice(
+        clarification["state"], CLARIFICATION_STATES, f"{label}.state"
+    )
+    _require_choice(clarification["offer_mode"], OFFER_MODES, f"{label}.offer_mode")
+    if not isinstance(clarification["topics"], list) or not all(
+        isinstance(topic, str) for topic in clarification["topics"]
+    ):
+        raise _invalid(label, "topics must be an array of strings")
+    if clarification["recency_as_of"] is not None:
+        _require_timestamp(clarification["recency_as_of"], f"{label}.recency_as_of")
+    offered = state not in {STATE_OWED, STATE_NOT_APPLICABLE}
+    resolved = state in {STATE_ACCEPTED, STATE_DECLINED, STATE_DEFERRED}
+    _require_timestamp_or_null(
+        clarification["offered_at"], f"{label}.offered_at", present=offered
+    )
+    _require_timestamp_or_null(
+        clarification["resolved_at"], f"{label}.resolved_at", present=resolved
+    )
+    condition = clarification["return_condition"]
+    if state == STATE_DEFERRED:
+        if not isinstance(condition, str) or not condition.strip():
+            raise _invalid(
+                label, "return_condition must name when to raise a deferred offer"
+            )
+    else:
+        _require_null(condition, f"{label}.return_condition")
+    session = clarification["session"]
+    if state != STATE_ACCEPTED:
+        _require_null(session, f"{label}.session")
+        return
+    session = _require_keys(
+        session,
+        ("state", "completed_at", "profile_inputs", "profile_refreshed"),
+        f"{label}.session",
+    )
+    session_state = _require_choice(
+        session["state"], {SESSION_PENDING, SESSION_COMPLETED}, f"{label}.session.state"
+    )
+    completed = session_state == SESSION_COMPLETED
+    _require_timestamp_or_null(
+        session["completed_at"], f"{label}.session.completed_at", present=completed
+    )
+    if completed:
+        _require_choice(
+            session["profile_inputs"], PROFILE_INPUTS, f"{label}.session.profile_inputs"
+        )
+        _require_bool(
+            session["profile_refreshed"], f"{label}.session.profile_refreshed"
+        )
+    else:
+        _require_null(session["profile_inputs"], f"{label}.session.profile_inputs")
+        _require_null(
+            session["profile_refreshed"], f"{label}.session.profile_refreshed"
+        )
+
+
+def _validate_downstream(record: Any, label: str) -> None:
+    downstream = _require_keys(record, ("state", "completed_at"), label)
+    state = _require_choice(
+        downstream["state"], {DOWNSTREAM_OWED, DOWNSTREAM_COMPLETED}, f"{label}.state"
+    )
+    _require_timestamp_or_null(
+        downstream["completed_at"],
+        f"{label}.completed_at",
+        present=state == DOWNSTREAM_COMPLETED,
+    )
+
+
+def _validate_report(record: Any, label: str) -> bool:
+    report = _require_keys(
+        record, ("state", "delivered_at", "report_path", "report_sha256"), label
+    )
+    delivered = (
+        _require_choice(
+            report["state"], {REPORT_OWED, REPORT_DELIVERED}, f"{label}.state"
+        )
+        == REPORT_DELIVERED
+    )
+    _require_timestamp_or_null(
+        report["delivered_at"], f"{label}.delivered_at", present=delivered
+    )
+    if delivered:
+        if not isinstance(report["report_path"], str) or not report["report_path"]:
+            raise _invalid(label, "report_path must be set once delivered")
+        if not isinstance(report["report_sha256"], str) or not _SHA256_HEX.match(
+            report["report_sha256"]
+        ):
+            raise _invalid(label, "report_sha256 must be a hex SHA-256 once delivered")
+    else:
+        _require_null(report["report_path"], f"{label}.report_path")
+        _require_null(report["report_sha256"], f"{label}.report_sha256")
+    return delivered
+
+
+def _validate_run(run: dict[str, Any], label: str) -> None:
+    """Refuse a run record whose shape a command would otherwise trip over."""
+    _require_keys(
+        run,
+        (
+            "schema_version",
+            "opened_at",
+            "updated_at",
+            "talks",
+            "downstream",
+            "clarification",
+            "end_report",
+            "completed_at",
+        ),
+        label,
+    )
+    version = run["schema_version"]
+    if type(version) is not int or version != RUN_RECORD_SCHEMA_VERSION:
+        raise _invalid(
+            label,
+            f"has run-record schema_version {version!r}; this script reads "
+            f"{RUN_RECORD_SCHEMA_VERSION} only",
+        )
+    for key in ("opened_at", "updated_at"):
+        _require_timestamp(run[key], f"{label} {key}")
+    if not isinstance(run["talks"], list):
+        raise _invalid(label, "talks must be an array")
+    for position, talk in enumerate(run["talks"]):
+        _validate_talk(talk, f"{label} talks[{position}]")
+    _validate_downstream(run["downstream"], f"{label} downstream")
+    _validate_clarification(run["clarification"], f"{label} clarification")
+    delivered = _validate_report(run["end_report"], f"{label} end_report")
+    _require_timestamp_or_null(
+        run["completed_at"], f"{label} completed_at", present=delivered
+    )
 
 
 def validate_ledger(payload: object, path: Path) -> dict[str, Any]:
@@ -325,154 +569,7 @@ def validate_ledger(payload: object, path: Path) -> dict[str, Any]:
     return payload
 
 
-def _invalid(label: str, detail: str) -> RunObligationsError:
-    return RunObligationsError(f"{label} {detail}", reason_code="ledger_invalid")
-
-
-def _require_keys(record: Any, keys: tuple[str, ...], label: str) -> dict[str, Any]:
-    if not isinstance(record, dict):
-        raise _invalid(label, "must be an object")
-    for key in keys:
-        if key not in record:
-            raise _invalid(label, f"lacks {key}")
-    return record
-
-
-def _require_optional_text(value: object, label: str) -> None:
-    if value is not None and not isinstance(value, str):
-        raise _invalid(label, "must be a string or null")
-
-
-def _require_choice(value: object, choices: Any, label: str) -> str:
-    """Type before membership: a list or object must not raise TypeError."""
-    if not isinstance(value, str):
-        raise _invalid(label, "must be a string")
-    if value not in choices:
-        raise _invalid(label, f"{value!r} is not one of the known values")
-    return value
-
-
-def _require_identifier(value: object, label: str) -> str:
-    """Run ids share the queue claim's identifier contract."""
-    try:
-        return require_queue_identifier(value, label)
-    except QueueClaimContractError as exc:
-        raise _invalid(label, str(exc).removeprefix(label).strip()) from exc
-
-
-def _validate_run(run: dict[str, Any], label: str) -> None:
-    """Refuse a run record whose shape a command would otherwise trip over."""
-    _require_keys(
-        run,
-        (
-            "schema_version",
-            "opened_at",
-            "updated_at",
-            "talks",
-            "clarification",
-            "end_report",
-            "completed_at",
-        ),
-        label,
-    )
-    version = run["schema_version"]
-    if type(version) is not int or version != RUN_RECORD_SCHEMA_VERSION:
-        raise _invalid(
-            label,
-            f"has run-record schema_version {version!r}; this script reads "
-            f"{RUN_RECORD_SCHEMA_VERSION} only",
-        )
-    for key in ("opened_at", "updated_at"):
-        if not isinstance(run[key], str):
-            raise _invalid(label, f"{key} must be a string")
-    _require_optional_text(run["completed_at"], f"{label} completed_at")
-    if not isinstance(run["talks"], list):
-        raise _invalid(label, "talks must be an array")
-    for position, talk in enumerate(run["talks"]):
-        entry = _require_keys(
-            talk,
-            (
-                "filename",
-                "status",
-                "delivery_date",
-                "days_since_delivery",
-                "recency_bucket",
-            ),
-            f"{label} talks[{position}]",
-        )
-        if not isinstance(entry["filename"], str):
-            raise _invalid(label, f"talks[{position}].filename must be a string")
-        _require_choice(
-            entry["recency_bucket"],
-            OFFER_MODE_BY_BUCKET,
-            f"{label} talks[{position}].recency_bucket",
-        )
-    clarification = _require_keys(
-        run["clarification"],
-        (
-            "state",
-            "offer_mode",
-            "topics",
-            "recency_as_of",
-            "offered_at",
-            "resolved_at",
-            "return_condition",
-            "session",
-        ),
-        f"{label} clarification",
-    )
-    state = _require_choice(
-        clarification["state"], CLARIFICATION_STATES, f"{label} clarification.state"
-    )
-    _require_choice(
-        clarification["offer_mode"],
-        {*OFFER_MODE_PRECEDENCE, OFFER_MODE_NONE},
-        f"{label} clarification.offer_mode",
-    )
-    if not isinstance(clarification["topics"], list) or not all(
-        isinstance(topic, str) for topic in clarification["topics"]
-    ):
-        raise _invalid(label, "clarification.topics must be an array of strings")
-    for key in ("recency_as_of", "offered_at", "resolved_at", "return_condition"):
-        _require_optional_text(clarification[key], f"{label} clarification.{key}")
-    session = clarification["session"]
-    if state == STATE_ACCEPTED:
-        session = _require_keys(
-            session,
-            ("state", "completed_at", "profile_inputs", "profile_refreshed"),
-            f"{label} clarification.session",
-        )
-        _require_choice(
-            session["state"],
-            {SESSION_PENDING, SESSION_COMPLETED},
-            f"{label} clarification.session.state",
-        )
-        _require_optional_text(
-            session["completed_at"], f"{label} clarification.session.completed_at"
-        )
-        if session["profile_inputs"] is not None:
-            _require_choice(
-                session["profile_inputs"],
-                PROFILE_INPUTS,
-                f"{label} clarification.session.profile_inputs",
-            )
-        if session["profile_refreshed"] not in (None, True, False):
-            raise _invalid(
-                label,
-                "clarification.session.profile_refreshed must be a boolean or null",
-            )
-    elif session is not None:
-        raise _invalid(label, "clarification.session belongs to an accepted offer only")
-    report = _require_keys(
-        run["end_report"],
-        ("state", "delivered_at", "report_path", "report_sha256"),
-        f"{label} end_report",
-    )
-    _require_choice(
-        report["state"], {REPORT_OWED, REPORT_DELIVERED}, f"{label} end_report.state"
-    )
-    for key in ("delivered_at", "report_path", "report_sha256"):
-        _require_optional_text(report[key], f"{label} end_report.{key}")
+# ── Ledger IO ─────────────────────────────────────────────────────────
 
 
 def load_ledger(path: Path) -> tuple[TrackingDatabaseSnapshot | None, dict[str, Any]]:
@@ -519,6 +616,13 @@ def store_ledger(
     }
 
 
+def _copy_failed(detail: str) -> RunObligationsError:
+    return RunObligationsError(
+        f"{detail}; the delivered text was not recorded",
+        reason_code="report_copy_failed",
+    )
+
+
 def write_report_copy(
     directory: Path, run_id: str, digest: str, content: bytes
 ) -> tuple[Path, bool]:
@@ -526,24 +630,37 @@ def write_report_copy(
 
     Returns the content-addressed path and whether this call created it. An
     existing copy with the same bytes is left alone, so a replayed or racing
-    delivery of identical text never rewrites it.
+    delivery of identical text never rewrites it. A symlinked directory or
+    target is refused: the copy must land inside the vault, never through a
+    link that points elsewhere.
     """
     target = (
         directory / f"{safe_report_stem(run_id)}.{digest[:REPORT_DIGEST_PREFIX]}.md"
     )
+    if directory.is_symlink():
+        raise _copy_failed(
+            f"{directory} is a symbolic link; the report copy is installed only "
+            "in a real directory inside the vault — replace the link with a "
+            "directory and re-run record-report"
+        )
+    if target.is_symlink():
+        raise _copy_failed(
+            f"{target} is a symbolic link; remove it and re-run record-report"
+        )
     try:
         if target.exists() and target.read_bytes() == content:
             return target, False
         directory.mkdir(parents=True, exist_ok=True)
+        if directory.is_symlink():
+            raise OSError("directory became a symbolic link")
         descriptor, staged = tempfile.mkstemp(
             prefix=f".{target.stem}.", suffix=".tmp", dir=directory
         )
     except OSError as exc:
-        raise RunObligationsError(
+        raise _copy_failed(
             f"cannot stage the report copy under {directory}: {exc} — make it "
             "a writable directory (or remove whatever occupies that path) and "
-            "re-run record-report; the delivered text was not recorded",
-            reason_code="report_copy_failed",
+            "re-run record-report"
         ) from exc
     try:
         with os.fdopen(descriptor, "wb") as handle:
@@ -557,18 +674,48 @@ def write_report_copy(
         finally:
             os.close(directory_descriptor)
     except OSError as exc:
-        if os.path.exists(staged):
+        try:
             os.unlink(staged)
-        raise RunObligationsError(
+        except OSError as cleanup:
+            # Best effort: the write failure is the error to report; a staged
+            # file that cannot be removed is named, never allowed to mask it.
+            print(
+                f"WARNING: staged report copy {staged} was not removed: {cleanup}",
+                file=sys.stderr,
+            )
+        raise _copy_failed(
             f"cannot write the report copy {target}: {exc} — free the space or "
-            "fix the permissions and re-run record-report; the delivered text "
-            "was not recorded",
-            reason_code="report_copy_failed",
+            "fix the permissions and re-run record-report"
         ) from exc
     return target, True
 
 
 # ── Database context ──────────────────────────────────────────────────
+
+
+def persisted_claims(record: dict[str, Any]) -> list[tuple[str, str]]:
+    """``(run_id, released_at)`` for every closed claim that persisted this talk."""
+    claims = [record.get("_queue_claim")]
+    history = record.get("_queue_claim_history")
+    if isinstance(history, list):
+        claims.extend(history)
+    found: list[tuple[str, str]] = []
+    for claim in claims:
+        if not isinstance(claim, dict):
+            continue
+        if (
+            claim.get("state") != "completed"
+            or claim.get("release_reason") != PERSISTED_RELEASE_REASON
+            or not isinstance(claim.get("run_id"), str)
+            or not isinstance(claim.get("released_at"), str)
+        ):
+            continue
+        try:
+            released = parse_timestamp(claim["released_at"], "released_at")
+        except RunObligationsError:
+            continue
+        found.append((claim["run_id"], render_timestamp(released)))
+    return found
 
 
 class Context:
@@ -605,41 +752,21 @@ class Context:
         for record in self.database["talks"]:
             if not isinstance(record, dict):
                 continue
-            claims = [record.get("_queue_claim")]
-            history = record.get("_queue_claim_history")
-            if isinstance(history, list):
-                claims.extend(history)
-            for claim in claims:
-                if not isinstance(claim, dict):
-                    continue
-                if (
-                    claim.get("state") != "completed"
-                    or claim.get("release_reason") != PERSISTED_RELEASE_REASON
-                    or not isinstance(claim.get("run_id"), str)
-                    or not isinstance(claim.get("released_at"), str)
-                ):
-                    continue
-                try:
-                    released = parse_timestamp(claim["released_at"], "released_at")
-                except RunObligationsError:
-                    continue
+            filename = record.get("filename")
+            if not isinstance(filename, str):
+                continue
+            for run_id, released in persisted_claims(record):
                 entry = runs.setdefault(
-                    claim["run_id"],
-                    {
-                        "run_id": claim["run_id"],
-                        "talks": [],
-                        "latest_released_at": None,
-                    },
+                    run_id,
+                    {"run_id": run_id, "talks": [], "latest_released_at": None},
                 )
-                filename = record.get("filename")
-                if isinstance(filename, str) and filename not in entry["talks"]:
+                if filename not in entry["talks"]:
                     entry["talks"].append(filename)
-                stamp = render_timestamp(released)
                 if (
                     entry["latest_released_at"] is None
-                    or stamp > entry["latest_released_at"]
+                    or released > entry["latest_released_at"]
                 ):
-                    entry["latest_released_at"] = stamp
+                    entry["latest_released_at"] = released
         for entry in runs.values():
             entry["talks"].sort()
         return runs
@@ -673,16 +800,35 @@ def require_run_id(value: str) -> str:
         raise RunObligationsError(str(exc), reason_code="invalid_arguments") from exc
 
 
-def describe_talk(context: Context, filename: str, now: datetime) -> dict[str, Any]:
+def describe_talk(
+    context: Context, filename: str, now: datetime, run_id: str
+) -> dict[str, Any]:
+    """The talk as the run records it, linked to the claim that persisted it.
+
+    The link is this run's own closed claim when the talk has one; otherwise
+    the newest closed claim, which is how talks recovered under a fresh run id
+    stay tied to the run that actually persisted them.
+    """
     record = context.talk(filename)
+    claims = persisted_claims(record)
+    if not claims:
+        raise RunObligationsError(
+            f"talk {filename!r} has no closed return_persisted claim in "
+            f"{context.database_path}; open records only talks "
+            "persist-results.py merged",
+            reason_code="talk_not_persisted",
+        )
+    own = [claim_run for claim_run, _released in claims if claim_run == run_id]
+    claim_run_id = own[0] if own else max(claims, key=lambda claim: claim[1])[0]
     delivered = parse_delivery_date(record.get("date"))
     days = (now.date() - delivered).days if delivered is not None else None
     return {
         "filename": filename,
-        "status": record.get("status"),
+        "status": str(record.get("status")),
         "delivery_date": delivered.isoformat() if delivered is not None else None,
         "days_since_delivery": days,
         "recency_bucket": recency_bucket(days),
+        "claim_run_id": claim_run_id,
     }
 
 
@@ -693,6 +839,7 @@ def new_run(run_id: str, now: str) -> dict[str, Any]:
         "opened_at": now,
         "updated_at": now,
         "talks": [],
+        "downstream": {"state": DOWNSTREAM_OWED, "completed_at": None},
         "clarification": {
             "state": STATE_OWED,
             "offer_mode": OFFER_MODE_NONE,
@@ -718,6 +865,7 @@ def summarize(run: dict[str, Any]) -> dict[str, Any]:
         "run_id": run["run_id"],
         "opened_at": run["opened_at"],
         "next_action": next_action(run),
+        "downstream_state": run["downstream"]["state"],
         "clarification_state": run["clarification"]["state"],
         "offer_mode": run["clarification"]["offer_mode"],
         "recency_as_of": run["clarification"]["recency_as_of"],
@@ -727,6 +875,27 @@ def summarize(run: dict[str, Any]) -> dict[str, Any]:
 
 
 # ── Commands ──────────────────────────────────────────────────────────
+
+
+def _apply_recency(
+    clarification: dict[str, Any], talks: list[dict[str, Any]], stamp: str
+) -> None:
+    mode = offer_mode_for(talks)
+    clarification["offer_mode"] = mode
+    clarification["recency_as_of"] = stamp
+    clarification["state"] = (
+        STATE_NOT_APPLICABLE if mode == OFFER_MODE_NONE else STATE_OWED
+    )
+
+
+def _require_downstream(run: dict[str, Any], command: str) -> None:
+    if run["downstream"]["state"] != DOWNSTREAM_COMPLETED:
+        raise RunObligationsError(
+            f"run {run['run_id']!r} has not recorded its downstream steps "
+            f"(rendering, summary, profile, goals); {command} follows "
+            "record-downstream, which follows Step 8",
+            reason_code="invalid_transition",
+        )
 
 
 def command_open(context: Context, args: argparse.Namespace) -> dict[str, Any]:
@@ -755,34 +924,30 @@ def command_open(context: Context, args: argparse.Namespace) -> dict[str, Any]:
     clarification = run["clarification"]
     recency_open = clarification["state"] in {STATE_OWED, STATE_NOT_APPLICABLE}
     context.refresh()
+    known = {str(talk["filename"]) for talk in run["talks"]}
     # Recency is frozen once the offer is made; until then the newest ``--now``
     # decides, so a resumed run does not over-promise an inline session for a
     # talk that is no longer same-week.
     talks = [
-        describe_talk(context, str(talk["filename"]), now) if recency_open else talk
+        describe_talk(context, str(talk["filename"]), now, run_id)
+        if recency_open
+        else talk
         for talk in run["talks"]
         if talk["filename"] not in filenames
     ]
-    talks.extend(describe_talk(context, filename, now) for filename in filenames)
+    talks.extend(describe_talk(context, name, now, run_id) for name in filenames)
     talks.sort(key=lambda talk: str(talk["filename"]))
     run["talks"] = talks
     if recency_open:
         _apply_recency(clarification, talks, stamp)
+    if any(name not in known for name in filenames):
+        # New talks need rendering, summary, profile, and goal steps again
+        # before anything is offered or reported.
+        run["downstream"] = {"state": DOWNSTREAM_OWED, "completed_at": None}
     if json.dumps(run, sort_keys=True) != before:
         run["updated_at"] = stamp
     outcome = store_ledger(context.ledger_path, snapshot, ledger)
     return {"ok": True, "ledger_path": str(context.ledger_path), **outcome, "run": run}
-
-
-def _apply_recency(
-    clarification: dict[str, Any], talks: list[dict[str, Any]], stamp: str
-) -> None:
-    mode = offer_mode_for(talks)
-    clarification["offer_mode"] = mode
-    clarification["recency_as_of"] = stamp
-    clarification["state"] = (
-        STATE_NOT_APPLICABLE if mode == OFFER_MODE_NONE else STATE_OWED
-    )
 
 
 def _transition(
@@ -809,10 +974,22 @@ def _transition(
     }
 
 
+def command_record_downstream(
+    context: Context, args: argparse.Namespace
+) -> dict[str, Any]:
+    def mutate(run: dict[str, Any], stamp: str, _now: datetime) -> None:
+        # Replay-safe: recording twice after a crash is the same fact twice.
+        if run["downstream"]["state"] != DOWNSTREAM_COMPLETED:
+            run["downstream"] = {"state": DOWNSTREAM_COMPLETED, "completed_at": stamp}
+
+    return _transition(context, args, mutate)
+
+
 def command_record_offer(context: Context, args: argparse.Namespace) -> dict[str, Any]:
-    topics = [topic for topic in (args.topic or []) if topic.strip()]
+    topics = [topic.strip() for topic in (args.topic or []) if topic.strip()]
 
     def mutate(run: dict[str, Any], stamp: str, now: datetime) -> dict[str, Any]:
+        _require_downstream(run, "record-offer")
         clarification = run["clarification"]
         if clarification["state"] != STATE_OWED:
             raise RunObligationsError(
@@ -827,7 +1004,8 @@ def command_record_offer(context: Context, args: argparse.Namespace) -> dict[str
         # session for a talk that is no longer same-week.
         context.refresh()
         talks = [
-            describe_talk(context, str(talk["filename"]), now) for talk in run["talks"]
+            describe_talk(context, str(talk["filename"]), now, run["run_id"])
+            for talk in run["talks"]
         ]
         run["talks"] = talks
         _apply_recency(clarification, talks, stamp)
@@ -854,7 +1032,7 @@ def command_record_disposition(
     context: Context, args: argparse.Namespace
 ) -> dict[str, Any]:
     disposition = args.disposition
-    return_condition = args.return_condition
+    return_condition = (args.return_condition or "").strip() or None
 
     def mutate(run: dict[str, Any], stamp: str, _now: datetime) -> None:
         clarification = run["clarification"]
@@ -865,10 +1043,10 @@ def command_record_disposition(
                 "offer first, and only a deferred offer is answered again",
                 reason_code="invalid_transition",
             )
-        if disposition == STATE_DEFERRED and not return_condition:
+        if disposition == STATE_DEFERRED and return_condition is None:
             raise RunObligationsError(
-                "a deferred offer needs --return-condition naming when it is "
-                "raised again",
+                "a deferred offer needs --return-condition naming, in the "
+                "speaker's words, when it is raised again",
                 reason_code="invalid_arguments",
             )
         clarification["state"] = disposition
@@ -947,6 +1125,7 @@ def command_record_report(context: Context, args: argparse.Namespace) -> dict[st
     digest = hashlib.sha256(content).hexdigest()
 
     def mutate(run: dict[str, Any], stamp: str, _now: datetime) -> None:
+        _require_downstream(run, "record-report")
         if not clarification_resolved(run):
             raise RunObligationsError(
                 f"run {run['run_id']!r} still owes its clarification "
@@ -956,15 +1135,18 @@ def command_record_report(context: Context, args: argparse.Namespace) -> dict[st
                 reason_code="invalid_transition",
             )
         report = run["end_report"]
-        if report["state"] == REPORT_DELIVERED and report["report_sha256"] == digest:
-            return
         # The copy is installed before the ledger commit and kept whatever the
         # commit does: content-addressed, it is shared by every delivery of
         # these bytes, so a copy left unbound by a lost generation race is
-        # reused by the retry rather than removed from under a winner.
+        # reused by the retry rather than removed from under a winner. A replay
+        # of the recorded digest still goes through here, so a copy deleted
+        # after delivery is recreated rather than reported as present.
         copied, _fresh = write_report_copy(
             context.reports_directory, run["run_id"], digest, content
         )
+        if report["state"] == REPORT_DELIVERED and report["report_sha256"] == digest:
+            report["report_path"] = str(copied)
+            return
         report["state"] = REPORT_DELIVERED
         report["delivered_at"] = stamp
         report["report_path"] = str(copied)
@@ -979,24 +1161,34 @@ def open_required(
 ) -> list[dict[str, Any]]:
     """Persisted talks the ledger does not cover, reconciled against closed claims.
 
-    Two shapes. A recorded run whose closed claims name talks its record lacks
-    persisted a later batch and crashed before ``open``; every such run is
-    listed with exactly the missing talks (``missing_talks``, or
-    ``talks_persisted_after_completion`` when the run's report is already
-    delivered — those talks need a fresh run id). A run with no record at all
-    is listed only when it is the newest such run and newer than every
-    recorded run's ``opened_at``: every run recorded later moved past it under
-    this contract, so older unrecorded history is history (``unrecorded_run``).
+    A talk is covered when some run record lists it with the ``claim_run_id``
+    of the claim that persisted it, whichever run id recorded it; recovery
+    under a fresh run id therefore counts. Two shapes remain. A recorded run
+    whose closed claims name uncovered talks persisted a later batch and
+    crashed before ``open``; every such run is listed with exactly those talks
+    (``missing_talks``, or ``talks_persisted_after_completion`` when the run's
+    report is already delivered — those talks need a fresh run id). A run with
+    no record at all is listed only when it is the newest such run and newer
+    than every recorded run's ``opened_at``: every run recorded later moved
+    past it under this contract, so older unrecorded history is history
+    (``unrecorded_run``).
     """
     records = {run["run_id"]: run for run in ledger["runs"]}
+    covered = {
+        (talk["claim_run_id"], talk["filename"])
+        for run in ledger["runs"]
+        for talk in run["talks"]
+        if talk["claim_run_id"] is not None
+    }
     required: list[dict[str, Any]] = []
+    unrecorded: list[dict[str, Any]] = []
     for run_id, entry in sorted(persisted.items()):
+        missing = [name for name in entry["talks"] if (run_id, name) not in covered]
+        if not missing:
+            continue
         run = records.get(run_id)
         if run is None:
-            continue
-        known = {talk["filename"] for talk in run["talks"]}
-        missing = [name for name in entry["talks"] if name not in known]
-        if not missing:
+            unrecorded.append({**entry, "talks": missing})
             continue
         required.append(
             {
@@ -1014,9 +1206,8 @@ def open_required(
     latest_recorded = max((run["opened_at"] for run in ledger["runs"]), default=None)
     candidates = [
         entry
-        for run_id, entry in persisted.items()
-        if run_id not in records
-        and (latest_recorded is None or entry["latest_released_at"] > latest_recorded)
+        for entry in unrecorded
+        if latest_recorded is None or entry["latest_released_at"] > latest_recorded
     ]
     if candidates:
         newest = max(candidates, key=lambda entry: entry["latest_released_at"])
@@ -1091,6 +1282,12 @@ def build_parser() -> JsonArgumentParser:
         help="filename persist-results.py merged; repeat per talk",
     )
 
+    downstream = actions.add_parser(
+        "record-downstream",
+        help="rendering, summary, profile, and goal steps completed for the run",
+    )
+    with_run(downstream)
+
     offer = actions.add_parser("record-offer", help="the offer was put to the speaker")
     with_run(offer)
     offer.add_argument(
@@ -1139,6 +1336,7 @@ def build_parser() -> JsonArgumentParser:
 
 COMMANDS = {
     "open": command_open,
+    "record-downstream": command_record_downstream,
     "record-offer": command_record_offer,
     "record-disposition": command_record_disposition,
     "record-session": command_record_session,

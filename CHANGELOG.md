@@ -35,7 +35,15 @@ and `pending` lists it with the speaker's return condition; a session that
 changed profile inputs cannot be recorded until the profile is regenerated;
 and `pending` reconciles the ledger against closed claims, naming persisted
 talks the ledger does not cover, whether a whole run or a later batch of a
-recorded run. The end-to-end evaluation
+recorded run. Each recorded talk carries the run id of the claim that
+persisted it, so a recovery under a fresh run id is never reported twice, and
+`open` refuses a talk no closed claim persisted. A `downstream` obligation,
+recorded after Step 8, keeps a resumed run from offering or reporting before
+its rendering, summary, profile, and goal steps ran. Validation parses every
+stored timestamp and enforces the state-dependent field invariants; a
+symlinked report directory or copy path is refused; a replayed delivery
+recreates a copy that went missing; a blank deferral condition is refused.
+The end-to-end evaluation
 scenario and the clarification skill's seed-agenda contract follow separately.
 
 ## 0.20.155 — 2026-09-12

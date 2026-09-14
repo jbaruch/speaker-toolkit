@@ -62,8 +62,12 @@ record it:
   --run-id "{run_id}" --now "{iso_timestamp}" --report-file "{delivered_report_path}"
 ```
 
-Exit 0 copies the text to `{vault_root}/ingress-reports/{run_id}.md`, binds it
-by digest, and stamps the run complete. Exit 2 with `invalid_transition` means
-the clarification obligation is unresolved; return to Step 9. Exit 2 with
+Exit 0 installs a content-addressed copy at
+`{vault_root}/ingress-reports/{stem}.{digest prefix}.md` (the run id reduced
+to a safe filename stem, then the first characters of the text's SHA-256),
+binds it by digest, and stamps the run complete. Exit 2 with
+`invalid_transition` means the downstream steps were never recorded (go back
+to Step 4's rendering and Steps 5–8) or the clarification obligation is
+unresolved (return to Step 9). Exit 2 with
 `report_empty` means a placeholder was passed; the report is the delivered
 text. Ledger shape and reason codes: [schemas-obligations.md](schemas-obligations.md).

@@ -38,12 +38,15 @@ explicit disposition and the end report has been delivered.
 | `opened_at` | timestamp | first `open` |
 | `updated_at` | timestamp | last command that changed the record |
 | `talks` | array | every talk `open` recorded for the run, sorted by filename |
+| `downstream` | object | `{state: owed \| completed, completed_at}` — the rendering, summary, profile, and goal steps (Step 4's rendering through Step 8) for the run's talks |
 | `clarification` | object | the offer, its disposition, and the session |
 | `end_report` | object | the delivered report |
 | `completed_at` | timestamp or null | set by `record-report`; the run is complete |
 
 Timestamps are timezone-aware ISO-8601 normalized to UTC seconds; every
-command takes them from `--now`, never from the clock.
+command takes them from `--now`, never from the clock. Every read parses each
+stored timestamp and checks the state-dependent invariants below; a record
+that breaks one is refused as `ledger_invalid` naming the field.
 
 ### Talk entry
 
@@ -54,10 +57,20 @@ command takes them from `--now`, never from the clock.
 | `delivery_date` | the talk's `date` when it is a `YYYY-MM-DD` string, else null |
 | `days_since_delivery` | whole days between `delivery_date` and `--now`, else null |
 | `recency_bucket` | `same_week`, `recent`, `older`, or `unknown` |
+| `claim_run_id` | the run id of the closed `return_persisted` claim that persisted the talk: this run's own claim when it has one, else the newest; `open` refuses a talk with no such claim (`talk_not_persisted`) |
 
 Bucket boundaries and the rule that an undated or future-dated talk is
 `unknown` are the script's: see `run-obligations.py`, the top-of-file
 constants `SAME_WEEK_MAX_DAYS`, `RECENT_MAX_DAYS`, and `OFFER_MODE_BY_BUCKET`.
+
+### Downstream steps
+
+`open` owes them whenever a new talk joins the run; `record-downstream`, run
+after Step 8, marks them `completed` with its `--now` and is replay-safe.
+`record-offer` and `record-report` refuse (`invalid_transition`) while they are
+owed, so a run resumed after a crash between the merge and Step 8 goes back
+through rendering, summary, profile, and goals before anything is offered or
+reported.
 
 ### Clarification
 
@@ -80,6 +93,13 @@ constants `SAME_WEEK_MAX_DAYS`, `RECENT_MAX_DAYS`, and `OFFER_MODE_BY_BUCKET`.
 | `declined` | the speaker declined | `record-disposition` |
 | `deferred` | the speaker deferred, with `return_condition`; answered again when that condition is met | `record-disposition` |
 | `not_applicable` | the run analyzed no talk | `open` |
+
+State-dependent invariants: `offered_at` is set from `offered` on and null
+before; `resolved_at` is set for `accepted`, `declined`, and `deferred` and
+null otherwise; `return_condition` is a non-blank string for `deferred` and
+null otherwise; `session` is an object only for `accepted`, with
+`completed_at`, `profile_inputs`, and a boolean `profile_refreshed` set once
+`completed` and null while `pending`.
 
 Transitions: `owed → offered → accepted | declined | deferred`; an accepted
 session goes `pending → completed` through `record-session`; a `deferred`
@@ -111,26 +131,34 @@ on an offer. Once `offered`, the buckets and `offer_mode` are frozen; later
 | `report_path` | `{vault_root}/ingress-reports/{stem}.{digest prefix}.md`, the byte-exact copy; `stem` is the run id with every character outside `A-Za-z0-9._-` replaced by `_`, so a ledger-edited id never names a path outside the directory |
 | `report_sha256` | digest of the delivered text |
 
-`record-report` refuses (`invalid_transition`) until the clarification is
-resolved: `declined`, `deferred`, `not_applicable`, or `accepted` with a
-completed session. An empty or whitespace-only file is refused
+Once `delivered`, all three fields are set and `completed_at` carries the
+same event; while `owed`, all four are null.
+
+`record-report` refuses (`invalid_transition`) until the downstream steps are
+recorded and the clarification is resolved: `declined`, `deferred`,
+`not_applicable`, or `accepted` with a completed session. An empty or
+whitespace-only file is refused
 (`report_empty`). The copy is content-addressed and installed with a directory
 fsync before the ledger commit binds it. A copy the commit then fails to bind
 is retained: identical bytes always name the same file, so it is shared by
 every delivery of that text and the retry reuses it; removing it could take a
 copy out from under a delivery that did bind it. Re-recording identical bytes
-is a no-op; different bytes add a second copy (the earlier one stays on disk)
-and re-stamp `delivered_at`.
+changes nothing in the ledger but still verifies the copy, recreating one that
+went missing; different bytes add a second copy (the earlier one stays on
+disk) and re-stamp `delivered_at`. A symlinked `ingress-reports` directory or
+copy path is refused (`report_copy_failed`): the copy lands only in a real
+directory inside the vault.
 
 ## Commands
 
 | Command | Precondition | Effect |
 |---|---|---|
-| `open --run-id --now --talk ...` | every `--talk` is a filename in the current tracking database; the run is not completed | creates or extends the run record; recomputes recency and `offer_mode` while unoffered |
-| `record-offer --run-id --now [--topic ...]` | state `owed` | refreshes recency, then `offered` with `topics` and `offered: true`; or, with no analyzed talk left, `not_applicable` and `offered: false` |
+| `open --run-id --now --talk ...` | every `--talk` is a filename in the current tracking database with a closed `return_persisted` claim; the run is not completed | creates or extends the run record; recomputes recency and `offer_mode` while unoffered; owes the downstream steps when a new talk joins |
+| `record-downstream --run-id --now` | the run exists | downstream `completed`; replay-safe |
+| `record-offer --run-id --now [--topic ...]` | downstream `completed`; state `owed` | refreshes recency, then `offered` with `topics` and `offered: true`; or, with no analyzed talk left, `not_applicable` and `offered: false` |
 | `record-disposition --run-id --now --disposition ... [--return-condition]` | state `offered` or `deferred`; `deferred` needs `--return-condition` | the disposition; `accepted` opens a pending session |
 | `record-session --run-id --now --profile-inputs changed\|unchanged [--profile-refreshed]` | state `accepted`, session pending; `changed` with `{vault_root}/speaker-profile.json` present needs `--profile-refreshed` (`profile_refresh_required` otherwise) | session `completed` with both flags recorded |
-| `record-report --run-id --now --report-file` | clarification resolved; non-empty file | copies the report, binds its digest, sets `completed_at` |
+| `record-report --run-id --now --report-file` | downstream `completed`; clarification resolved; non-empty file | copies the report, binds its digest, sets `completed_at` |
 | `pending` | — | runs with `completed_at` null and their `next_action` |
 | `status --run-id` | the run exists | the record and its summary |
 
@@ -144,23 +172,25 @@ a named degradation such as `installed_verification_failed`), and `warnings`;
 every warning is also printed to stderr. Exit 2 emits
 `{"ok": false, "error", "reason_code"}` on stdout and the same message on
 stderr. Reason codes: `invalid_arguments`, `invalid_timestamp`,
-`database_unusable`, `talk_not_found`, `run_not_found`, `invalid_transition`,
-`profile_refresh_required`, `report_unreadable`, `report_empty`,
+`database_unusable`, `talk_not_found`, `talk_not_persisted`, `run_not_found`,
+`invalid_transition`, `profile_refresh_required`, `report_unreadable`,
+`report_empty`,
 `report_copy_failed`, `ledger_unreadable`, `ledger_invalid`,
 `ledger_schema_unsupported`, `ledger_write_failed`.
 
-Every read validates the whole ledger — required keys, container types, state
-vocabularies, and the state-dependent `session` shape — before any command
-runs; a malformed field is refused as `ledger_invalid` naming the field, never
-repaired and never allowed to surface as a traceback.
+Every read validates the whole ledger — required keys, container types,
+timestamps, state vocabularies, and the state-dependent invariants above —
+before any command runs; a malformed field is refused as `ledger_invalid`
+naming the field, never repaired and never allowed to surface as a traceback.
 
 ## Reader Contract
 
 `pending` emits `{ok, ledger_path, ledger_present, pending: [...], count,
 deferred_offers: [...], open_required: [...]}`. Each `pending` entry is a run
 whose `next_action` is not `none`, carrying `run_id`, `opened_at`,
-`next_action`, `clarification_state`, `offer_mode`, `recency_as_of`,
-`end_report_state`, and `talk_count`. Treat an unoffered entry's `offer_mode`
+`next_action`, `downstream_state`, `clarification_state`, `offer_mode`,
+`recency_as_of`, `end_report_state`, and `talk_count`. Treat an unoffered
+entry's `offer_mode`
 as the snapshot it is; `record-offer` returns the mode the offer must use.
 
 `deferred_offers` lists every run whose offer is `deferred`, with `run_id`,
@@ -170,7 +200,10 @@ again when the speaker's condition is met.
 `open_required` reconciles the ledger against the tracking database: a claim
 closed with `release_reason: return_persisted` says its talk persisted, and a
 persisted talk the ledger does not cover crashed between the merge and `open`.
-Each entry carries `run_id`, `talks`, `latest_released_at`, `reason`, and
+A talk is covered when any run record lists it with the `claim_run_id` of the
+claim that persisted it, whichever run id recorded it, so a recovery under a
+fresh run id is never reported again. Each entry carries `run_id`, `talks`
+(only the uncovered ones), `latest_released_at`, `reason`, and
 `next_action: open_obligations`:
 
 | `reason` | Meaning | Action |
@@ -179,16 +212,15 @@ Each entry carries `run_id`, `talks`, `latest_released_at`, `reason`, and
 | `talks_persisted_after_completion` | the same, on a run whose report is already delivered | open them under a fresh run id; `open` refuses a completed run |
 | `unrecorded_run` | a run with no record at all | `open` it with the listed talks |
 
-Every recorded run with missing talks is listed. An unrecorded run is listed
-only when it is the newest such run and newer than every recorded run's
-`opened_at`; which runs qualify is the script's rule (`run-obligations.py`,
-`open_required` docstring).
+Which uncovered runs are listed, and how many, is the script's rule — see
+`run-obligations.py`, the `open_required` docstring.
 
 `next_action` is one of:
 
 | `next_action` | Resume at |
 |---|---|
 | `open_obligations` | Step 1: `open` the run with the listed talks |
+| `complete_downstream_steps` | Step 4's rendering when the batch returns are still on disk, then Steps 5–8, then `record-downstream` |
 | `offer_clarification` | Step 9: compute topics and make the offer |
 | `await_disposition` | Step 9: put the recorded offer to the speaker again and wait |
 | `complete_clarification_session` | Step 9: run the accepted session, then record it |

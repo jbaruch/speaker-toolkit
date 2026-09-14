@@ -252,6 +252,14 @@ using every active goal and the current full-cohort baseline:
 
 Require one valid assessment per goal before one expectation-bound transaction,
 then re-read and report comparable, rebaseline, and unverifiable outcomes.
+Then record that the run's downstream steps are done:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
+  "{vault_root}/tracking-database.json" record-downstream \
+  --run-id "{run_id}" --now "{iso_timestamp}"
+```
+
 Proceed to Step 9.
 
 ## Step 9 — Clarification Handoff
