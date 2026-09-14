@@ -405,6 +405,14 @@ def queue_state():
 
 
 @pytest.fixture(scope="session")
+def run_obligations():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "run-obligations.py"),
+        "run_obligations",
+    )
+
+
+@pytest.fixture(scope="session")
 def scan_shownotes_module():
     return _import_script(
         os.path.join(SCRIPTS_VI, "scan-shownotes.py"),

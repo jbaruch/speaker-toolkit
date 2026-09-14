@@ -484,3 +484,60 @@ and prose counts are never trusted on their own.
 
 Read `rhetoric-style-summary.md` and `slide-design-spec.md`. Report:
 "X processed, Y remaining. PPTX: A cataloged, B matched, C extracted."
+
+Then check for a run that persisted talks but never finished with the speaker:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
+  "{vault_root}/tracking-database.json" pending
+```
+
+`adopt_required: true` means this vault has no obligations ledger yet: adopt
+it now, before any batch, so every claim already closed is recorded as
+history by its exact identity and every claim closed from here on is
+reconciled, then read `pending` again:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
+  "{vault_root}/tracking-database.json" adopt --now "{iso_timestamp}"
+```
+
+Read all three lists. `open_required` names persisted talks the ledger does
+not cover (a crash between the merge and `open`), each with a `reason`: for
+`unrecorded_run` and `missing_talks`, run `open` for that run with exactly the
+talks listed, then treat it like any pending run; for
+`talks_persisted_after_completion` and `talks_persisted_after_answer`, open
+those talks under a fresh run id with `--from-run "{listed run_id}"`, which
+binds them to the exact fact that was left uncovered even when another run
+has merged the same talk since. An `unrecorded_run` the speaker decides not
+to pursue is dismissed instead, with the reason in their words, so it stops
+being listed (only a listed run can be dismissed, and a fact it persists
+later is listed again):
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
+  "{vault_root}/tracking-database.json" dismiss \
+  --run-id "{run_id}" --now "{iso_timestamp}" --reason-from "{reason_file}"
+```
+
+Write the speaker's reason, in their words, to `{reason_file}` first: it is
+free text and never goes through a shell string.
+
+Every listed run is opened or dismissed; none is left for a later run to
+hide.
+`pending` lists runs owing downstream steps, an answer, or a report: before
+selecting any new work, resume each at the earliest step its `next_action`
+names, using that run's recorded `run_id` — `complete_downstream_steps` at
+Step 4's rendering (when that batch's returns are still on disk; otherwise
+note the missing analyses for the end report) and then Steps 5–8, ending with
+`record-downstream`; `offer_clarification`, `await_disposition`, and
+`complete_clarification_session` at Step 9 through
+[clarification-handoff.md](clarification-handoff.md); `deliver_end_report` at
+Step 11 through [end-report.md](end-report.md). `deferred_offers` lists offers
+the speaker deferred with their return conditions; one whose condition is now
+met is raised again at Step 9, and the rest stay listed for their conditions
+without blocking anything. A pending run with nothing left to process still
+owes the speaker its answer or its report; a completed processing claim never
+stands in for either. Proceed to Step 2 once `pending` and `open_required` are
+empty and no deferred offer's condition has been met. Ledger shape and the
+`next_action` vocabulary: [schemas-obligations.md](schemas-obligations.md).

@@ -1,5 +1,92 @@
 # Changelog
 
+### Make clarification and the end report part of run completion
+
+A vault-ingress run could persist every batch, send the same-week clarification
+invitation, and stop: no answer recorded, no report delivered, and the next run
+skipped the invitation because no talk was newly processed (#456). Processing
+completion and run completion are now separate events. `run-obligations.py`
+keeps a vault-ingress-owned ledger, `ingress-obligations.json`, beside the
+tracking database: per run, the persisted talks with their delivery recency,
+the clarification offer through its explicit disposition and session, and the
+delivered end report bound by digest. Step 1 resumes any run with unresolved
+obligations before selecting new work; Step 4 opens them right after the merge;
+Step 9 records the offer before asking and the disposition after; the new Step
+11 delivers and records the end report, which the ledger refuses until the
+clarification obligation is resolved so the report can carry a profile refresh
+the answers caused. Silence, elapsed time, and an invitation merely sent never
+resolve anything.
+
+The recency buckets moved from handoff prose into the script's constants, and
+the handoff describes the interaction by mechanism, so a host without
+`AskUserQuestion` asks in plain text instead of skipping; the typed
+`Skill(skill: "vault-clarification")` call stays the only way a session runs,
+and a host that cannot make it leaves the session pending in the ledger for a
+capable host. An undated talk is bucketed like a recent one: recommend the
+session, never start it unasked.
+
+Review rounds on #462 hardened the ledger: every field is validated before a
+command runs and every write reports its durability state; run ids share the
+queue claim's identifier contract and report copies are content-addressed
+under a sanitized stem, so a slash in a run id neither blocks `open` nor names
+a path outside the vault; `record-offer` refreshes recency against the current
+database at the moment of the offer; a deferred offer can be answered again
+and `pending` lists it with the speaker's return condition; a session that
+changed profile inputs cannot be recorded until the profile is regenerated;
+and `pending` reconciles the ledger against closed claims, naming persisted
+talks the ledger does not cover, whether a whole run or a later batch of a
+recorded run. Each recorded talk carries the run id of the claim that
+persisted it, so a recovery under a fresh run id is never reported twice, and
+`open` refuses a talk no closed claim persisted. A `downstream` obligation,
+recorded after Step 8, keeps a resumed run from offering or reporting before
+its rendering, summary, profile, and goal steps ran. Validation parses every
+stored timestamp and enforces the state-dependent field invariants; a
+symlinked report directory or copy path, or a non-regular file at the copy
+path, is refused; a replayed delivery recreates a copy that went missing; a
+blank deferral condition is refused. Every recording command is replay-safe,
+answering an unchanged success for the inputs it already recorded and
+refusing only a conflicting answer. The report copy is named by the full
+digest, stored timestamps must be canonical UTC, the vault root is
+re-resolved on every re-read, a talk merged again under the same run is a new
+persisted fact that re-owes the downstream steps, and a session accepted after
+the report went out that changed profile inputs reopens the report. The
+ledger is created by an explicit `adopt` at Step 1 that stamps the
+reconciliation boundary; every uncovered run persisted after it stays listed
+until it is opened or dismissed with a reason, and an exact replay of `open`
+on a completed run is an unchanged success. Recovery names the exact
+persisted fact through `open --from-run`, and a recency refresh never re-picks
+a talk's claim link, so a talk another run merged again since can still be
+recovered for the run that left it uncovered. A new fact joining a run while
+its offer stands withdraws the offer, and cannot join once the offer was
+answered. The report copy is installed relative to a descriptor on the real
+directory, the report input is read only as a regular file, every mutating
+command re-reads the database and re-checks the vault root before writing,
+and authority failures carry their reason code. A persisted fact is identified
+by the claim's run, batch, generation, and release time together, a newer
+recorded fact supersedes the same run's earlier ones, a record claiming a
+delivered report without a completed downstream and an answered offer is
+refused, and a read failure on an existing copy is the structured failure.
+Late talks of a run whose offer was answered are routed to a fresh run id like
+those of a completed run, a dismissal applies only to a listed run and only to
+the facts that existed when it was recorded, a long run id gets a bounded copy
+name, and a timestamp that overflows UTC normalization is the structured
+timestamp error. Dismissing a run that reappeared with newer facts renews the
+dismissal instead of replaying the stale one. Adoption records the exact
+identity of every claim already closed, and a dismissal records the exact
+facts it covers, so neither depends on a release time that persist-results
+may have stamped at midnight; a newer generation supersedes an older fact and
+the batch id is identity only; `open` reads persisted filenames from a file
+so database content never passes through a shell string; a non-string
+delivery date is refused. An io-layer failure is reported through the closed
+diagnostics vocabulary rather than the decoder's text, so a rejected key or
+value is never echoed, and a newly created reports directory is synced into
+its parent. A recorded talk status must be one the queue contract knows, a
+delivered report path must be the one this vault binds for its digest, and
+candidate topics and dismissal reasons reach the script through files like
+the talk filenames do.
+The end-to-end evaluation
+scenario and the clarification skill's seed-agenda contract follow separately.
+
 ## 0.20.155 — 2026-09-12
 
 ### Make talk skills rhetoric-informed knowledge briefs

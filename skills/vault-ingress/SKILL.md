@@ -43,6 +43,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | 8 | Verify active improvement goals against current provenance |
 | 9 | Hand fresh findings to clarification using the delivery-recency policy |
 | 10 | Offer opt-in contribution of new visually evidenced styles |
+| 11 | Deliver the end report and close the run's obligations |
 
 ## Key Files & References
 
@@ -56,7 +57,9 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | [references/batch-persistence.md](references/batch-persistence.md) | Step 4 validation, persistence, rendering, and feedback sequence |
 | [references/queue-selection.md](references/queue-selection.md) | Step 2 normalization, claims, freshness, replay, and recovery contract |
 | [references/pptx-followup.md](references/pptx-followup.md) | Step 6 bounded PPTX follow-up and visual-evidence contract |
-| [references/clarification-handoff.md](references/clarification-handoff.md) | Step 9 topic selection and recency-bucket handoff contract |
+| [references/clarification-handoff.md](references/clarification-handoff.md) | Step 9 topic selection, offer, disposition, and session contract |
+| [references/end-report.md](references/end-report.md) | Step 11 speaker-facing end report contract |
+| [references/schemas-obligations.md](references/schemas-obligations.md) | Run obligations ledger — clarification and report state that outlives a claim |
 | [references/rhetoric-dimensions.md](references/rhetoric-dimensions.md) | 14 analysis dimensions |
 | [references/subagent-instructions.md](references/subagent-instructions.md) | Step 3 per-talk procedure — transcript download, slide acquisition, fallback chains, return-JSON shape |
 | [references/local-media-acquisition.md](references/local-media-acquisition.md) | Bounded audio/video acquisition, runtime gates, fact reuse, and failure preservation |
@@ -121,7 +124,8 @@ preserved local recording declared by
 Never pre-open, hash, hydrate, or call `ffprobe` directly. Video failure disables
 only video evidence; retain independent transcript/PDF/PPTX evidence. Then read
 the summary/spec and report processed, remaining, cataloged, matched, and
-extracted counts.
+extracted counts. A prior run's unanswered clarification offer or undelivered
+end report resumes here, per the reference, before any new selection.
 
 ## Step 2 — Select Talks to Process
 
@@ -173,7 +177,8 @@ Then execute [Batch Persistence](references/batch-persistence.md) in order:
 4. After the final batch, aggregate catalog feedback without editing the catalog.
 
 Any failure stops the sequence. A successful merge closes the lease and emits
-the complete post-batch baseline. Proceed immediately to Step 5.
+the complete post-batch baseline. Then record the batch's obligations (the
+reference's obligations bullet). Proceed immediately to Step 5.
 
 ## Step 5 — Update Rhetoric Summary
 
@@ -236,7 +241,8 @@ Proceed immediately to Step 8.
 
 ## Step 8 — Verify Improvement Goals
 
-Skip when no goal is active. Otherwise follow
+With no active goal, skip the goal assessment and go straight to the
+downstream record below. Otherwise follow
 [Improvement Goal Verification](references/processing-rules.md#improvement-goal-verification)
 using every active goal and the current full-cohort baseline:
 
@@ -247,27 +253,60 @@ using every active goal and the current full-cohort baseline:
 
 Require one valid assessment per goal before one expectation-bound transaction,
 then re-read and report comparable, rebaseline, and unverifiable outcomes.
+Then, with or without active goals, record that the run's downstream steps
+are done. A run that persisted no talks and resumed no obligations has no
+record to update: skip this command, and Step 9 finishes such a run.
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
+  "{vault_root}/tracking-database.json" record-downstream \
+  --run-id "{run_id}" --now "{iso_timestamp}"
+```
+
 Proceed to Step 9.
 
-## Step 9 — Same-Week Clarification Trigger
+## Step 9 — Clarification Handoff
 
-If no talk was processed, finish. Otherwise compute candidate topics and follow
-[Clarification Handoff](references/clarification-handoff.md).
+A run that persisted no talks and resumed no obligations has no obligations
+record. Such a run finishes here: Steps 10 and 11 do not run for it.
 
-- **≤7 days:** offer to run `Skill(skill: "vault-clarification")` inline; on
-  acceptance, invoke it with the candidate topics as handoff context.
-- **7–30 days:** recommend the full session with topics; do not auto-invoke.
-- **30+ days:** recommend the compressed session; do not auto-invoke.
-
-After any clarification interaction finishes, proceed immediately to Step 10.
+Every other run reads its obligation and follows
+[Clarification Handoff](references/clarification-handoff.md) exactly. The
+ledger's `next_action` and `offer_mode` decide what to offer; record the offer
+before asking, ask one question, wait for the answer, and record the
+disposition. An unanswered offer stays pending for the next run; it is never a
+decline. When an accepted session finishes and changed profile inputs, re-run
+Step 7, and Step 8 when it changed improvement goals, before recording the
+session. Then proceed immediately to Step 10.
 
 ## Step 10 — Offer Style Contribution
 
 For a newly discovered, visually evidenced reusable style, follow
 [skills/illustrations/references/style-catalog.md](../illustrations/references/style-catalog.md#discoveries-and-opt-in-contribution).
 Offer contribution as one separate question; never upload automatically.
-If no new reusable style was observed, finish silently. Otherwise finish after
-the contribution decision and any explicitly approved submission.
+If no new reusable style was observed, proceed silently to Step 11. Otherwise
+proceed to Step 11 after the contribution decision and any explicitly approved
+submission.
+
+## Step 11 — Deliver the End Report
+
+Compose and deliver the speaker-facing report per
+[End Report](references/end-report.md): scope, findings, patterns and
+antipatterns with their evidence, goal outcomes, profile changes, badges or an
+explicit no-new-badges line, and the clarification outcome, under its
+provenance restrictions. Deliver it in the conversation; artifact paths
+supplement it. Then record it:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
+  "{vault_root}/tracking-database.json" record-report \
+  --run-id "{run_id}" --now "{iso_timestamp}" --report-file "{delivered_report_path}"
+```
+
+Exit 0 closes the run's obligations. Exit 2 with `invalid_transition` names
+which prerequisite is missing: the downstream record (return to Step 4's
+rendering and Steps 5–8) or the clarification disposition (return to Step
+9). Finish here.
 
 ## Error Handling
 
