@@ -178,8 +178,7 @@ Then execute [Batch Persistence](references/batch-persistence.md) in order:
 
 Any failure stops the sequence. A successful merge closes the lease and emits
 the complete post-batch baseline. Then record the batch's obligations (the
-reference's obligations bullet) so an interrupted run still owes the speaker
-its clarification and its report. Proceed immediately to Step 5.
+reference's obligations bullet). Proceed immediately to Step 5.
 
 ## Step 5 — Update Rhetoric Summary
 

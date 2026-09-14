@@ -170,13 +170,22 @@ def test_open_replays_without_rewriting(tmp_path, fresh_db):
     first = _ok(
         fresh_db, "open", "--run-id", "run-d", "--now", NOW, "--talk", "fresh.md"
     )
+    assert first["durability_state"] == "durable"
+    assert first["warnings"] == []
     raw_before = (tmp_path / "ingress-obligations.json").read_bytes()
     second = _ok(
-        fresh_db, "open", "--run-id", "run-d", "--now", LATER, "--talk", "fresh.md"
+        fresh_db, "open", "--run-id", "run-d", "--now", NOW, "--talk", "fresh.md"
     )
     assert second["written"] is False
+    assert second["durability_state"] == "unchanged"
     assert second["run"]["updated_at"] == first["run"]["updated_at"] == NOW
     assert (tmp_path / "ingress-obligations.json").read_bytes() == raw_before
+    refreshed = _ok(
+        fresh_db, "open", "--run-id", "run-d", "--now", LATER, "--talk", "fresh.md"
+    )
+    assert refreshed["written"] is True
+    assert refreshed["run"]["clarification"]["recency_as_of"] == LATER
+    assert refreshed["run"]["updated_at"] == LATER
 
 
 def test_a_later_batch_joins_the_run_and_strengthens_the_offer(fresh_db):
@@ -594,7 +603,195 @@ def test_a_malformed_ledger_is_named_not_repaired(tmp_path, fresh_db):
     )
     payload = _refused(fresh_db, "pending")
     assert payload["reason_code"] == "ledger_invalid"
-    assert "lacks talks" in payload["error"]
+    assert "lacks opened_at" in payload["error"]
+
+
+def _valid_run(**overrides):
+    run = {
+        "run_id": "r",
+        "opened_at": NOW,
+        "updated_at": NOW,
+        "talks": [
+            {
+                "filename": "fresh.md",
+                "status": "processed",
+                "delivery_date": "2026-09-10",
+                "days_since_delivery": 4,
+                "recency_bucket": "same_week",
+            }
+        ],
+        "clarification": {
+            "state": "owed",
+            "offer_mode": "inline",
+            "topics": [],
+            "recency_as_of": NOW,
+            "offered_at": None,
+            "resolved_at": None,
+            "return_condition": None,
+            "session": None,
+        },
+        "end_report": {
+            "state": "owed",
+            "delivered_at": None,
+            "report_path": None,
+            "report_sha256": None,
+        },
+        "completed_at": None,
+    }
+    for path, value in overrides.items():
+        target = run
+        *parents, leaf = path.split(".")
+        for parent in parents:
+            target = target[parent]
+        target[leaf] = value
+    return run
+
+
+@pytest.mark.parametrize(
+    ("overrides", "detail"),
+    [
+        ({"clarification": None}, "clarification must be an object"),
+        (
+            {"clarification.state": "owed", "clarification.session": {}},
+            "session belongs to an accepted offer",
+        ),
+        (
+            {"clarification.state": "accepted"},
+            "clarification.session must be an object",
+        ),
+        (
+            {
+                "clarification.state": "accepted",
+                "clarification.session": {
+                    "state": "done",
+                    "completed_at": None,
+                    "profile_refreshed": None,
+                },
+            },
+            "session.state is unknown",
+        ),
+        ({"clarification.topics": "bilingual"}, "topics must be an array of strings"),
+        ({"clarification.offer_mode": "loud"}, "unknown clarification offer_mode"),
+        ({"end_report": {"state": "sent"}}, "end_report lacks delivered_at"),
+        ({"end_report.state": "sent"}, "end_report.state is unknown"),
+        ({"talks": [{"filename": "a.md"}]}, "talks[0] lacks status"),
+        (
+            {
+                "talks": [
+                    {
+                        "filename": "a.md",
+                        "status": "processed",
+                        "delivery_date": None,
+                        "days_since_delivery": None,
+                        "recency_bucket": "soon",
+                    }
+                ]
+            },
+            "recency_bucket is unknown",
+        ),
+        ({"completed_at": 1}, "completed_at must be a string or null"),
+    ],
+    ids=[
+        "clarification-null",
+        "session-on-unaccepted",
+        "session-missing",
+        "session-state",
+        "topics-type",
+        "offer-mode",
+        "report-keys",
+        "report-state",
+        "talk-keys",
+        "talk-bucket",
+        "completed-type",
+    ],
+)
+def test_every_malformed_ledger_field_fails_structured(
+    tmp_path, fresh_db, overrides, detail
+):
+    run = _valid_run()
+    for path, value in overrides.items():
+        target = run
+        *parents, leaf = path.split(".")
+        for parent in parents:
+            target = target[parent]
+        target[leaf] = value
+    (tmp_path / "ingress-obligations.json").write_text(
+        json.dumps({"schema_version": 1, "runs": [run]}), encoding="utf-8"
+    )
+    for command in (
+        ["pending"],
+        ["status", "--run-id", "r"],
+        ["record-offer", "--run-id", "r", "--now", NOW],
+    ):
+        payload = _refused(fresh_db, *command)
+        assert payload["reason_code"] == "ledger_invalid"
+        assert detail in payload["error"]
+
+
+def test_a_well_formed_hand_written_ledger_is_accepted(tmp_path, fresh_db):
+    (tmp_path / "ingress-obligations.json").write_text(
+        json.dumps({"schema_version": 1, "runs": [_valid_run()]}), encoding="utf-8"
+    )
+    assert (
+        _ok(fresh_db, "pending")["pending"][0]["next_action"] == "offer_clarification"
+    )
+
+
+def test_the_offer_refreshes_recency_against_the_current_database(fresh_db):
+    _ok(fresh_db, "open", "--run-id", "run-r", "--now", NOW, "--talk", "fresh.md")
+    stale = _ok(fresh_db, "status", "--run-id", "run-r")
+    assert stale["summary"]["offer_mode"] == "inline"
+    assert stale["summary"]["recency_as_of"] == NOW
+    run = _ok(fresh_db, "record-offer", "--run-id", "run-r", "--now", MUCH_LATER)["run"]
+    assert run["clarification"]["state"] == "offered"
+    assert run["clarification"]["offer_mode"] == "recommend_full"
+    assert run["clarification"]["recency_as_of"] == MUCH_LATER
+    assert run["talks"][0]["recency_bucket"] == "recent"
+    assert run["talks"][0]["days_since_delivery"] == 20
+
+
+def test_the_offer_is_withdrawn_when_the_database_no_longer_has_an_analyzed_talk(
+    tmp_path,
+):
+    database = _write_db(tmp_path, [_talk("fresh.md")])
+    _ok(database, "open", "--run-id", "run-w", "--now", NOW, "--talk", "fresh.md")
+    _write_db(tmp_path, [_talk("fresh.md", status="needs-reprocessing")])
+    payload = _refused(database, "record-offer", "--run-id", "run-w", "--now", LATER)
+    assert payload["reason_code"] == "invalid_transition"
+    status = _ok(database, "status", "--run-id", "run-w")
+    assert status["run"]["clarification"]["state"] == "owed"
+    assert status["summary"]["offer_mode"] == "inline"
+
+
+def test_a_report_copy_that_cannot_be_written_records_nothing(tmp_path, fresh_db):
+    run_id = _opened(fresh_db)
+    _ok(fresh_db, "record-offer", "--run-id", run_id, "--now", NOW)
+    _ok(
+        fresh_db,
+        "record-disposition",
+        "--run-id",
+        run_id,
+        "--now",
+        NOW,
+        "--disposition",
+        "declined",
+    )
+    (tmp_path / "ingress-reports").write_text("not a directory", encoding="utf-8")
+    payload = _refused(
+        fresh_db,
+        "record-report",
+        "--run-id",
+        run_id,
+        "--now",
+        LATER,
+        "--report-file",
+        str(_report(tmp_path)),
+    )
+    assert payload["reason_code"] == "report_copy_failed"
+    assert "record-report" in payload["error"]
+    status = _ok(fresh_db, "status", "--run-id", run_id)
+    assert status["run"]["end_report"]["state"] == "owed"
+    assert status["run"]["completed_at"] is None
 
 
 # ── module surface ────────────────────────────────────────────────────

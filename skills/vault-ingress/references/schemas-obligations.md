@@ -64,6 +64,7 @@ constants `SAME_WEEK_MAX_DAYS`, `RECENT_MAX_DAYS`, and `OFFER_MODE_BY_BUCKET`.
 |---|---|
 | `state` | one of the states below |
 | `offer_mode` | `inline`, `recommend_full`, `recommend_compressed`, or `none` — the strongest bucket among the run's analyzed talks (`processed`, `processed_partial`); skipped talks never drive it |
+| `recency_as_of` | the `--now` the stored recency and `offer_mode` were last computed from; null before the first computation |
 | `topics` | the candidate topics recorded with the offer |
 | `offered_at` | when the offer was put to the speaker |
 | `resolved_at` | when the disposition was recorded |
@@ -84,10 +85,16 @@ session goes `pending → completed` through `record-session`. `not_applicable`
 is terminal. Silence, elapsed time, and an invitation merely sent cause no
 transition: an `offered` run stays pending until the speaker answers.
 
-Recency is recomputed from the newest `--now` on every `open` while the state
-is `owed` or `not_applicable`, so a run resumed weeks later does not promise an
-inline session for a talk that is no longer same-week. Once `offered`, the
-buckets and `offer_mode` are frozen; later `open` calls only append talks.
+The stored recency is a snapshot, labeled by `recency_as_of`. `open`
+recomputes it from the newest `--now` while the state is `owed` or
+`not_applicable`. `record-offer` recomputes it once more, against the current
+database and its own `--now`, at the moment the offer is made, and its output
+carries the `offer_mode` the offer must use; a run resumed weeks later never
+promises an inline session for a talk that is no longer same-week. If that
+refresh finds no analyzed talk left (a talk was requeued since `open`), the
+state becomes `not_applicable` and `record-offer` refuses with
+`invalid_transition` — nothing is asked. Once `offered`, the buckets and
+`offer_mode` are frozen; later `open` calls only append talks.
 
 ### End report
 
@@ -109,7 +116,7 @@ replace the copy and re-stamp `delivered_at`.
 | Command | Precondition | Effect |
 |---|---|---|
 | `open --run-id --now --talk ...` | every `--talk` is a filename in the current tracking database; the run is not completed | creates or extends the run record; recomputes recency and `offer_mode` while unoffered |
-| `record-offer --run-id --now [--topic ...]` | state `owed` | `offered`, stores `topics` |
+| `record-offer --run-id --now [--topic ...]` | state `owed`; an analyzed talk still present | refreshes recency, then `offered`, stores `topics` |
 | `record-disposition --run-id --now --disposition ... [--return-condition]` | state `offered`; `deferred` needs `--return-condition` | terminal disposition; `accepted` opens a pending session |
 | `record-session --run-id --now [--profile-refreshed]` | state `accepted`, session pending | session `completed` |
 | `record-report --run-id --now --report-file` | clarification resolved; non-empty file | copies the report, binds its digest, sets `completed_at` |
@@ -120,17 +127,28 @@ Every command reads the tracking database through the owner's strict reader
 and requires the current generation (`database_unusable` otherwise); the
 ledger path is derived from the database-bound vault root.
 
-Exit 0 emits one JSON object. Exit 2 emits `{"ok": false, "error", "reason_code"}`
-on stdout and the same message on stderr. Reason codes: `invalid_arguments`,
-`invalid_timestamp`, `database_unusable`, `talk_not_found`, `run_not_found`,
-`invalid_transition`, `report_unreadable`, `report_empty`, `ledger_unreadable`,
+Exit 0 emits one JSON object. A mutating command's object carries `written`
+(whether bytes were installed), `durability_state` (`durable`, `unchanged`, or
+a named degradation such as `installed_verification_failed`), and `warnings`;
+every warning is also printed to stderr. Exit 2 emits
+`{"ok": false, "error", "reason_code"}` on stdout and the same message on
+stderr. Reason codes: `invalid_arguments`, `invalid_timestamp`,
+`database_unusable`, `talk_not_found`, `run_not_found`, `invalid_transition`,
+`report_unreadable`, `report_empty`, `report_copy_failed`, `ledger_unreadable`,
 `ledger_invalid`, `ledger_schema_unsupported`, `ledger_write_failed`.
+
+Every read validates the whole ledger — required keys, container types, state
+vocabularies, and the state-dependent `session` shape — before any command
+runs; a malformed field is refused as `ledger_invalid` naming the field, never
+repaired and never allowed to surface as a traceback.
 
 ## Reader Contract
 
 `pending` emits `{ok, ledger_path, ledger_present, pending: [...], count}`.
 Each entry carries `run_id`, `opened_at`, `next_action`, `clarification_state`,
-`offer_mode`, `end_report_state`, and `talk_count`. `next_action` is one of:
+`offer_mode`, `recency_as_of`, `end_report_state`, and `talk_count`. Treat an
+unoffered entry's `offer_mode` as the snapshot it is; `record-offer` returns the
+mode the offer must use. `next_action` is one of:
 
 | `next_action` | Resume at |
 |---|---|

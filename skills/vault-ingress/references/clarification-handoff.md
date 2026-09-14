@@ -14,7 +14,9 @@ talks get an active handoff, not a footnote.
   "{vault_root}/tracking-database.json" status --run-id "{run_id}"
 ```
 
-`summary.next_action` decides what this step does:
+`summary.next_action` decides what this step does. The summary's `offer_mode`
+is a snapshot dated `recency_as_of`; the mode that counts is the one
+`record-offer` returns below.
 
 - `offer_clarification` — compute the candidate topics and make the offer.
 - `await_disposition` — the offer was made earlier, possibly by a run that was
@@ -36,8 +38,21 @@ For every analyzed talk in the run, collect:
 
 ## Make the Offer
 
-`clarification.offer_mode` names the strength. The bucket boundaries behind it
-are the script's (`run-obligations.py`, top-of-file constants):
+Record the offer first. The command refreshes each talk's recency against the
+current database and this moment's `--now`, freezes it, and returns the run
+with the `offer_mode` the offer must use:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
+  "{vault_root}/tracking-database.json" record-offer \
+  --run-id "{run_id}" --now "{iso_timestamp}" --topic "{topic}" [--topic ...]
+```
+
+Exit 2 with `invalid_transition` and a "no longer has an analyzed talk" message
+means the database changed since the run opened; nothing is asked — proceed to
+Step 10. Otherwise `run.clarification.offer_mode` names the strength. The
+bucket boundaries behind it are the script's (`run-obligations.py`,
+top-of-file constants):
 
 - **`inline`** (a same-week talk) — hand off inline, don't just recommend.
   Memory of the delivery is sharpest right after the talk, and verbal beats
@@ -52,14 +67,6 @@ are the script's (`run-obligations.py`, top-of-file constants):
 - **`recommend_compressed`** (older talks only) — memory has decayed and
   detailed recall is unreliable; recommend the compressed session instead of
   the full one. Ask whether to run it now; never start it unasked.
-
-Record the offer before asking:
-
-```bash
-"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
-  "{vault_root}/tracking-database.json" record-offer \
-  --run-id "{run_id}" --now "{iso_timestamp}" --topic "{topic}" [--topic ...]
-```
 
 Then ask exactly one question and wait for the answer. Use the host's
 single-question mechanism: `AskUserQuestion` with three options — accept

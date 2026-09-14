@@ -37,9 +37,12 @@ Field meanings, transitions, and the reader/writer contract live in
 ``skills/vault-ingress/references/schemas-obligations.md``.
 
 Recency policy (the delivery-recency buckets the clarification handoff keys on)
-is encoded once, here, in the constants below. ``open`` reads each talk's
-``date`` from the tracking database and computes ``days_since_delivery`` from
-``--now``; the handoff never recomputes ``today - date`` by hand.
+is encoded once, here, in the constants below. ``open`` and ``record-offer``
+read each talk's ``date`` from the tracking database and compute
+``days_since_delivery`` from ``--now``; the stored recency is a snapshot
+labeled ``recency_as_of``, refreshed by ``record-offer`` at the moment the offer
+is made and frozen from then on. The handoff never recomputes ``today - date``
+by hand and reads the offer mode from ``record-offer``'s own output.
 """
 
 from __future__ import annotations
@@ -288,19 +291,116 @@ def validate_ledger(payload: object, path: Path) -> dict[str, Any]:
                 reason_code="ledger_invalid",
             )
         seen.add(run_id)
-        for key in ("talks", "clarification", "end_report"):
-            if key not in run:
-                raise RunObligationsError(
-                    f"obligations ledger {path} run {run_id!r} lacks {key}",
-                    reason_code="ledger_invalid",
-                )
-        if run["clarification"].get("state") not in CLARIFICATION_STATES:
-            raise RunObligationsError(
-                f"obligations ledger {path} run {run_id!r} has an unknown "
-                "clarification state",
-                reason_code="ledger_invalid",
-            )
+        _validate_run(run, f"obligations ledger {path} run {run_id!r}")
     return payload
+
+
+def _invalid(label: str, detail: str) -> RunObligationsError:
+    return RunObligationsError(f"{label} {detail}", reason_code="ledger_invalid")
+
+
+def _require_keys(record: Any, keys: tuple[str, ...], label: str) -> dict[str, Any]:
+    if not isinstance(record, dict):
+        raise _invalid(label, "must be an object")
+    for key in keys:
+        if key not in record:
+            raise _invalid(label, f"lacks {key}")
+    return record
+
+
+def _require_optional_text(value: object, label: str) -> None:
+    if value is not None and not isinstance(value, str):
+        raise _invalid(label, "must be a string or null")
+
+
+def _validate_run(run: dict[str, Any], label: str) -> None:
+    """Refuse a run record whose shape a command would otherwise trip over."""
+    _require_keys(
+        run,
+        (
+            "opened_at",
+            "updated_at",
+            "talks",
+            "clarification",
+            "end_report",
+            "completed_at",
+        ),
+        label,
+    )
+    for key in ("opened_at", "updated_at"):
+        if not isinstance(run[key], str):
+            raise _invalid(label, f"{key} must be a string")
+    _require_optional_text(run["completed_at"], f"{label} completed_at")
+    if not isinstance(run["talks"], list):
+        raise _invalid(label, "talks must be an array")
+    for position, talk in enumerate(run["talks"]):
+        entry = _require_keys(
+            talk,
+            (
+                "filename",
+                "status",
+                "delivery_date",
+                "days_since_delivery",
+                "recency_bucket",
+            ),
+            f"{label} talks[{position}]",
+        )
+        if not isinstance(entry["filename"], str):
+            raise _invalid(label, f"talks[{position}].filename must be a string")
+        if entry["recency_bucket"] not in OFFER_MODE_BY_BUCKET:
+            raise _invalid(label, f"talks[{position}].recency_bucket is unknown")
+    clarification = _require_keys(
+        run["clarification"],
+        (
+            "state",
+            "offer_mode",
+            "topics",
+            "recency_as_of",
+            "offered_at",
+            "resolved_at",
+            "return_condition",
+            "session",
+        ),
+        f"{label} clarification",
+    )
+    if clarification["state"] not in CLARIFICATION_STATES:
+        raise _invalid(label, "has an unknown clarification state")
+    if clarification["offer_mode"] not in {*OFFER_MODE_PRECEDENCE, OFFER_MODE_NONE}:
+        raise _invalid(label, "has an unknown clarification offer_mode")
+    if not isinstance(clarification["topics"], list) or not all(
+        isinstance(topic, str) for topic in clarification["topics"]
+    ):
+        raise _invalid(label, "clarification.topics must be an array of strings")
+    for key in ("recency_as_of", "offered_at", "resolved_at", "return_condition"):
+        _require_optional_text(clarification[key], f"{label} clarification.{key}")
+    session = clarification["session"]
+    if clarification["state"] == STATE_ACCEPTED:
+        session = _require_keys(
+            session,
+            ("state", "completed_at", "profile_refreshed"),
+            f"{label} clarification.session",
+        )
+        if session["state"] not in {SESSION_PENDING, SESSION_COMPLETED}:
+            raise _invalid(label, "clarification.session.state is unknown")
+        _require_optional_text(
+            session["completed_at"], f"{label} clarification.session.completed_at"
+        )
+        if session["profile_refreshed"] not in (None, True, False):
+            raise _invalid(
+                label,
+                "clarification.session.profile_refreshed must be a boolean or null",
+            )
+    elif session is not None:
+        raise _invalid(label, "clarification.session belongs to an accepted offer only")
+    report = _require_keys(
+        run["end_report"],
+        ("state", "delivered_at", "report_path", "report_sha256"),
+        f"{label} end_report",
+    )
+    if report["state"] not in {REPORT_OWED, REPORT_DELIVERED}:
+        raise _invalid(label, "end_report.state is unknown")
+    for key in ("delivered_at", "report_path", "report_sha256"):
+        _require_optional_text(report[key], f"{label} end_report.{key}")
 
 
 def load_ledger(path: Path) -> tuple[TrackingDatabaseSnapshot | None, dict[str, Any]]:
@@ -320,8 +420,14 @@ def load_ledger(path: Path) -> tuple[TrackingDatabaseSnapshot | None, dict[str, 
 
 def store_ledger(
     path: Path, snapshot: TrackingDatabaseSnapshot | None, payload: dict[str, Any]
-) -> bool:
-    """Commit the ledger atomically against the generation that was read."""
+) -> dict[str, Any]:
+    """Commit the ledger atomically against the generation that was read.
+
+    The returned fields say what the write achieved. ``durability_state`` other
+    than ``durable`` or ``unchanged`` means the bytes were installed but a
+    verification or directory fsync failed; every such warning also goes to
+    stderr so a caller reading only the exit code still sees it.
+    """
     try:
         if snapshot is None:
             result = initialize_tracking_database(path, payload)
@@ -332,26 +438,45 @@ def store_ledger(
             f"cannot write obligations ledger {path}: {exc}",
             reason_code="ledger_write_failed",
         ) from exc
-    return bool(result.installed)
+    for warning in result.warnings:
+        print(f"WARNING: obligations ledger {path}: {warning}", file=sys.stderr)
+    return {
+        "written": bool(result.installed),
+        "durability_state": result.durability_state,
+        "warnings": list(result.warnings),
+    }
 
 
 def write_report_copy(directory: Path, run_id: str, content: bytes) -> Path:
     """Place the delivered report beside the ledger with an atomic replace."""
-    directory.mkdir(parents=True, exist_ok=True)
     target = directory / f"{run_id}.md"
-    descriptor, staged = tempfile.mkstemp(
-        prefix=f".{run_id}.", suffix=".tmp", dir=directory
-    )
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        descriptor, staged = tempfile.mkstemp(
+            prefix=f".{run_id}.", suffix=".tmp", dir=directory
+        )
+    except OSError as exc:
+        raise RunObligationsError(
+            f"cannot stage the report copy under {directory}: {exc} — make it "
+            "a writable directory (or remove whatever occupies that path) and "
+            "re-run record-report; the delivered text was not recorded",
+            reason_code="report_copy_failed",
+        ) from exc
     try:
         with os.fdopen(descriptor, "wb") as handle:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(staged, target)
-    except OSError:
+    except OSError as exc:
         if os.path.exists(staged):
             os.unlink(staged)
-        raise
+        raise RunObligationsError(
+            f"cannot write the report copy {target}: {exc} — free the space or "
+            "fix the permissions and re-run record-report; the delivered text "
+            "was not recorded",
+            reason_code="report_copy_failed",
+        ) from exc
     return target
 
 
@@ -435,6 +560,7 @@ def new_run(run_id: str, now: str) -> dict[str, Any]:
             "state": STATE_OWED,
             "offer_mode": OFFER_MODE_NONE,
             "topics": [],
+            "recency_as_of": None,
             "offered_at": None,
             "resolved_at": None,
             "return_condition": None,
@@ -457,6 +583,7 @@ def summarize(run: dict[str, Any]) -> dict[str, Any]:
         "next_action": next_action(run),
         "clarification_state": run["clarification"]["state"],
         "offer_mode": run["clarification"]["offer_mode"],
+        "recency_as_of": run["clarification"]["recency_as_of"],
         "end_report_state": run["end_report"]["state"],
         "talk_count": len(run["talks"]),
     }
@@ -502,20 +629,22 @@ def command_open(context: Context, args: argparse.Namespace) -> dict[str, Any]:
     talks.sort(key=lambda talk: str(talk["filename"]))
     run["talks"] = talks
     if recency_open:
-        mode = offer_mode_for(talks)
-        clarification["offer_mode"] = mode
-        clarification["state"] = (
-            STATE_NOT_APPLICABLE if mode == OFFER_MODE_NONE else STATE_OWED
-        )
+        _apply_recency(clarification, talks, stamp)
     if json.dumps(run, sort_keys=True) != before:
         run["updated_at"] = stamp
-    written = store_ledger(context.ledger_path, snapshot, ledger)
-    return {
-        "ok": True,
-        "ledger_path": str(context.ledger_path),
-        "written": written,
-        "run": run,
-    }
+    outcome = store_ledger(context.ledger_path, snapshot, ledger)
+    return {"ok": True, "ledger_path": str(context.ledger_path), **outcome, "run": run}
+
+
+def _apply_recency(
+    clarification: dict[str, Any], talks: list[dict[str, Any]], stamp: str
+) -> None:
+    mode = offer_mode_for(talks)
+    clarification["offer_mode"] = mode
+    clarification["recency_as_of"] = stamp
+    clarification["state"] = (
+        STATE_NOT_APPLICABLE if mode == OFFER_MODE_NONE else STATE_OWED
+    )
 
 
 def _transition(
@@ -529,28 +658,39 @@ def _transition(
     snapshot, ledger = load_ledger(context.ledger_path)
     run = find_run(ledger, run_id)
     before = json.dumps(run, sort_keys=True)
-    mutate(run, stamp)
+    mutate(run, stamp, now)
     if json.dumps(run, sort_keys=True) != before:
         run["updated_at"] = stamp
-    written = store_ledger(context.ledger_path, snapshot, ledger)
-    return {
-        "ok": True,
-        "ledger_path": str(context.ledger_path),
-        "written": written,
-        "run": run,
-    }
+    outcome = store_ledger(context.ledger_path, snapshot, ledger)
+    return {"ok": True, "ledger_path": str(context.ledger_path), **outcome, "run": run}
 
 
 def command_record_offer(context: Context, args: argparse.Namespace) -> dict[str, Any]:
     topics = [topic for topic in (args.topic or []) if topic.strip()]
 
-    def mutate(run: dict[str, Any], stamp: str) -> None:
+    def mutate(run: dict[str, Any], stamp: str, now: datetime) -> None:
         clarification = run["clarification"]
         if clarification["state"] != STATE_OWED:
             raise RunObligationsError(
                 f"run {run['run_id']!r} clarification is "
                 f"{clarification['state']!r}; record-offer applies only while "
                 "the offer is owed",
+                reason_code="invalid_transition",
+            )
+        # The stored recency is a snapshot from the last ``open``. The offer is
+        # being made now, against the current database, so refresh before
+        # freezing: a run resumed weeks later must not promise an inline
+        # session for a talk that is no longer same-week.
+        talks = [
+            describe_talk(context, str(talk["filename"]), now) for talk in run["talks"]
+        ]
+        run["talks"] = talks
+        _apply_recency(clarification, talks, stamp)
+        if clarification["state"] == STATE_NOT_APPLICABLE:
+            raise RunObligationsError(
+                f"run {run['run_id']!r} no longer has an analyzed talk to "
+                "clarify; the database changed since the run opened, so the "
+                "offer is recorded as not applicable and nothing is asked",
                 reason_code="invalid_transition",
             )
         clarification["state"] = STATE_OFFERED
@@ -566,7 +706,7 @@ def command_record_disposition(
     disposition = args.disposition
     return_condition = args.return_condition
 
-    def mutate(run: dict[str, Any], stamp: str) -> None:
+    def mutate(run: dict[str, Any], stamp: str, _now: datetime) -> None:
         clarification = run["clarification"]
         if clarification["state"] != STATE_OFFERED:
             raise RunObligationsError(
@@ -600,7 +740,7 @@ def command_record_session(
 ) -> dict[str, Any]:
     refreshed = bool(args.profile_refreshed)
 
-    def mutate(run: dict[str, Any], stamp: str) -> None:
+    def mutate(run: dict[str, Any], stamp: str, _now: datetime) -> None:
         clarification = run["clarification"]
         session = clarification["session"]
         if clarification["state"] != STATE_ACCEPTED or session is None:
@@ -638,7 +778,7 @@ def command_record_report(context: Context, args: argparse.Namespace) -> dict[st
         )
     digest = hashlib.sha256(content).hexdigest()
 
-    def mutate(run: dict[str, Any], stamp: str) -> None:
+    def mutate(run: dict[str, Any], stamp: str, _now: datetime) -> None:
         if not clarification_resolved(run):
             raise RunObligationsError(
                 f"run {run['run_id']!r} still owes its clarification "
