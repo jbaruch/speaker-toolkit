@@ -492,11 +492,31 @@ Then check for a run that persisted talks but never finished with the speaker:
   "{vault_root}/tracking-database.json" pending
 ```
 
+`adopt_required: true` means this vault has no obligations ledger yet: adopt
+it now, before any batch, so every claim closed from here on is reconciled
+and everything before it is history, then read `pending` again:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
+  "{vault_root}/tracking-database.json" adopt --now "{iso_timestamp}"
+```
+
 Read all three lists. `open_required` names persisted talks the ledger does
 not cover (a crash between the merge and `open`), each with a `reason`: for
 `unrecorded_run` and `missing_talks`, run `open` for that run with exactly the
 talks listed, then treat it like any pending run; for
-`talks_persisted_after_completion`, open those talks under a fresh run id.
+`talks_persisted_after_completion`, open those talks under a fresh run id. An
+`unrecorded_run` the speaker decides not to pursue is dismissed instead, with
+the reason in their words, so it stops being listed:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
+  "{vault_root}/tracking-database.json" dismiss \
+  --run-id "{run_id}" --now "{iso_timestamp}" --reason "{speaker's reason}"
+```
+
+Every listed run is opened or dismissed; none is left for a later run to
+hide.
 `pending` lists runs owing downstream steps, an answer, or a report: before
 selecting any new work, resume each at the earliest step its `next_action`
 names, using that run's recorded `run_id` — `complete_downstream_steps` at

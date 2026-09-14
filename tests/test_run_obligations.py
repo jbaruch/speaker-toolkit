@@ -25,6 +25,10 @@ LATER = "2026-09-14T12:30:00+00:00"
 MUCH_LATER = "2026-09-30T09:00:00+00:00"
 SEED_RUN = "seed-run"
 SEED_RELEASED = "2026-09-01T00:00:00+00:00"
+# The fixtures adopt the ledger after the seed claims closed, so seed facts are
+# history and never reconciled; claims in recovery tests close after this.
+ADOPTED = "2026-09-02T00:00:00+00:00"
+ENVELOPE = {"schema_version": 1, "adopted_at": ADOPTED, "dismissed_runs": []}
 
 
 def _persisted_claim(
@@ -128,18 +132,30 @@ def _report(tmp_path: Path, text: str = "# Ingress report\n\nTwo talks processed
     return path
 
 
+def _fresh_talks():
+    return [
+        _talk("fresh.md", date="2026-09-10"),
+        _talk("older.md", status="processed_partial", date="2026-01-01"),
+        _talk("skipped.md", status="skipped_no_sources", date="2026-09-12"),
+        _talk("undated.md", date=None),
+        _talk("unpersisted.md", claim=None),
+    ]
+
+
+def _adopt(database: Path, now: str = ADOPTED):
+    return _ok(database, "adopt", "--now", now)
+
+
 @pytest.fixture
 def fresh_db(tmp_path: Path):
-    return _write_db(
-        tmp_path,
-        [
-            _talk("fresh.md", date="2026-09-10"),
-            _talk("older.md", status="processed_partial", date="2026-01-01"),
-            _talk("skipped.md", status="skipped_no_sources", date="2026-09-12"),
-            _talk("undated.md", date=None),
-            _talk("unpersisted.md", claim=None),
-        ],
-    )
+    database = _write_db(tmp_path, _fresh_talks())
+    _adopt(database)
+    return database
+
+
+@pytest.fixture
+def unadopted_db(tmp_path: Path):
+    return _write_db(tmp_path, _fresh_talks())
 
 
 def _open(database: Path, run_id: str, *talks: str, now: str = NOW):
@@ -248,6 +264,7 @@ def test_the_run_links_a_talk_to_its_own_claim_when_it_has_one(tmp_path):
         _persisted_claim("older-run", "2026-09-05T00:00:00+00:00")
     ]
     database = _write_db(tmp_path, [talk])
+    _adopt(database)
     run = _open(database, "run-own", "own.md")["run"]
     assert run["talks"][0]["claim_run_id"] == "run-own"
     recovered = _open(database, "fresh-id", "own.md")["run"]
@@ -345,7 +362,7 @@ def test_open_refuses_a_talk_no_closed_claim_persisted(fresh_db):
         "unpersisted.md",
     )
     assert payload["reason_code"] == "talk_not_persisted"
-    assert _ok(fresh_db, "pending")["ledger_present"] is False
+    assert _ok(fresh_db, "pending")["pending"] == []
 
 
 # ── downstream steps ──────────────────────────────────────────────────
@@ -441,6 +458,7 @@ def test_the_offer_is_withdrawn_when_the_database_no_longer_has_an_analyzed_talk
     tmp_path,
 ):
     database = _write_db(tmp_path, [_talk("fresh.md")])
+    _adopt(database)
     _opened(database, "run-w")
     requeued = _talk("fresh.md", status="needs-reprocessing", claim=None)
     requeued["reprocess_generation"] = 1
@@ -738,6 +756,8 @@ def test_a_delivered_report_is_copied_bound_and_completes_the_run(tmp_path, fres
         "ok": True,
         "ledger_path": str(tmp_path / "ingress-obligations.json"),
         "ledger_present": True,
+        "adopt_required": False,
+        "adopted_at": ADOPTED,
         "pending": [],
         "count": 0,
         "deferred_offers": [],
@@ -894,7 +914,7 @@ def test_a_ledger_edited_run_id_cannot_name_a_path_outside_the_reports_directory
         {"state": "declined", "offered_at": NOW, "resolved_at": NOW}
     )
     (tmp_path / "ingress-obligations.json").write_text(
-        json.dumps({"schema_version": 1, "runs": [run]}), encoding="utf-8"
+        json.dumps({**ENVELOPE, "runs": [run]}), encoding="utf-8"
     )
     report = _report(tmp_path)
     payload = _record_report(fresh_db, "../../escape", report)
@@ -968,7 +988,10 @@ def _db_with_claims(tmp_path: Path, claims: dict[str, tuple[str, str]]):
         _talk(filename, claim=_persisted_claim(run_id, released_at))
         for filename, (run_id, released_at) in claims.items()
     ]
-    return _write_db(tmp_path, talks)
+    database = _write_db(tmp_path, talks)
+    if not (tmp_path / "ingress-obligations.json").exists():
+        _adopt(database)
+    return database
 
 
 def test_a_persisted_run_with_no_ledger_record_is_reported_for_opening(tmp_path):
@@ -980,7 +1003,6 @@ def test_a_persisted_run_with_no_ledger_record_is_reported_for_opening(tmp_path)
         },
     )
     payload = _ok(database, "pending")
-    assert payload["ledger_present"] is False
     assert payload["open_required"] == [
         {
             "run_id": "crashed-run",
@@ -1076,7 +1098,9 @@ def test_talks_persisted_under_a_completed_run_are_named_for_a_fresh_run_once(
     assert _ok(database, "pending")["open_required"] == []
 
 
-def test_only_the_newest_unrecorded_run_newer_than_the_ledger_is_reported(tmp_path):
+def test_every_uncovered_run_after_adoption_is_listed_until_opened_or_dismissed(
+    tmp_path,
+):
     database = _db_with_claims(
         tmp_path,
         {
@@ -1087,8 +1111,141 @@ def test_only_the_newest_unrecorded_run_newer_than_the_ledger_is_reported(tmp_pa
         },
     )
     _open(database, "recorded-run", "seen.md", now="2026-09-06T00:00:00+00:00")
-    payload = _ok(database, "pending")
-    assert [entry["run_id"] for entry in payload["open_required"]] == ["newest-run"]
+    listed = [entry["run_id"] for entry in _ok(database, "pending")["open_required"]]
+    assert listed == ["middle-run", "newest-run"]
+    # Opening the newer one never hides the older one.
+    _open(database, "newest-run", "new.md", now="2026-09-13T00:00:00+00:00")
+    listed = [entry["run_id"] for entry in _ok(database, "pending")["open_required"]]
+    assert listed == ["middle-run"]
+    dismissed = _ok(
+        database,
+        "dismiss",
+        "--run-id",
+        "middle-run",
+        "--now",
+        NOW,
+        "--reason",
+        "batch was re-run as newest-run",
+    )
+    assert dismissed["dismissed"] == {
+        "run_id": "middle-run",
+        "dismissed_at": NOW,
+        "reason": "batch was re-run as newest-run",
+    }
+    assert _ok(database, "pending")["open_required"] == []
+    assert _ledger(tmp_path)["dismissed_runs"] == [dismissed["dismissed"]]
+
+
+def test_a_dismissal_is_explicit_replay_safe_and_never_for_a_recorded_run(tmp_path):
+    database = _db_with_claims(
+        tmp_path,
+        {
+            "a.md": ("gone-run", "2026-09-10T00:00:00+00:00"),
+            "b.md": ("kept-run", "2026-09-11T00:00:00+00:00"),
+        },
+    )
+    _open(database, "kept-run", "b.md")
+    blank = _refused(
+        database, "dismiss", "--run-id", "gone-run", "--now", NOW, "--reason", "  "
+    )
+    assert blank["reason_code"] == "invalid_arguments"
+    recorded = _refused(
+        database, "dismiss", "--run-id", "kept-run", "--now", NOW, "--reason", "no"
+    )
+    assert recorded["reason_code"] == "invalid_transition"
+    _ok(database, "dismiss", "--run-id", "gone-run", "--now", NOW, "--reason", "dup")
+    replay = _ok(
+        database, "dismiss", "--run-id", "gone-run", "--now", LATER, "--reason", "dup"
+    )
+    assert replay["replayed"] is True
+    assert replay["written"] is False
+    conflict = _refused(
+        database, "dismiss", "--run-id", "gone-run", "--now", LATER, "--reason", "other"
+    )
+    assert conflict["reason_code"] == "invalid_transition"
+    assert _ok(database, "pending")["open_required"] == []
+
+
+def test_a_replayed_open_of_a_completed_run_is_an_unchanged_success(tmp_path):
+    database = _db_with_claims(
+        tmp_path, {"a.md": ("done-run", "2026-09-13T10:00:00+00:00")}
+    )
+    _opened(database, "done-run", "a.md")
+    _ok(database, "record-offer", "--run-id", "done-run", "--now", NOW)
+    _ok(
+        database,
+        "record-disposition",
+        "--run-id",
+        "done-run",
+        "--now",
+        NOW,
+        "--disposition",
+        "declined",
+    )
+    done = _record_report(database, "done-run", _report(tmp_path))
+    replay = _open(database, "done-run", "a.md", now=MUCH_LATER)
+    assert replay["replayed"] is True
+    assert replay["written"] is False
+    assert replay["run"] == done["run"]
+
+
+@pytest.mark.parametrize(
+    ("envelope", "detail"),
+    [
+        ({"schema_version": 1, "dismissed_runs": [], "runs": []}, "lacks adopted_at"),
+        (
+            {
+                "schema_version": 1,
+                "adopted_at": "soon",
+                "dismissed_runs": [],
+                "runs": [],
+            },
+            "adopted_at 'soon' is malformed",
+        ),
+        (
+            {"schema_version": 1, "adopted_at": ADOPTED, "runs": []},
+            "dismissed_runs array",
+        ),
+        (
+            {**ENVELOPE, "dismissed_runs": [{"run_id": "x"}], "runs": []},
+            "dismissed_runs[0] lacks dismissed_at",
+        ),
+        (
+            {
+                **ENVELOPE,
+                "dismissed_runs": [{"run_id": "x", "dismissed_at": NOW, "reason": " "}],
+                "runs": [],
+            },
+            "dismissed_runs[0].reason must say why",
+        ),
+        (
+            {
+                **ENVELOPE,
+                "dismissed_runs": [
+                    {"run_id": "x", "dismissed_at": NOW, "reason": "a"},
+                    {"run_id": "x", "dismissed_at": NOW, "reason": "b"},
+                ],
+                "runs": [],
+            },
+            "dismissed_runs[1] duplicates 'x'",
+        ),
+    ],
+    ids=[
+        "no-adopted-at",
+        "adopted-at-malformed",
+        "no-dismissed-runs",
+        "dismissal-keys",
+        "dismissal-reason",
+        "dismissal-duplicate",
+    ],
+)
+def test_a_malformed_envelope_fails_structured(tmp_path, fresh_db, envelope, detail):
+    (tmp_path / "ingress-obligations.json").write_text(
+        json.dumps(envelope), encoding="utf-8"
+    )
+    payload = _refused(fresh_db, "pending")
+    assert payload["reason_code"] == "ledger_invalid"
+    assert detail in payload["error"]
 
 
 def test_history_claims_count_and_other_release_reasons_do_not(tmp_path):
@@ -1104,6 +1261,7 @@ def test_history_claims_count_and_other_release_reasons_do_not(tmp_path):
         _persisted_claim("history-run", "2026-09-11T00:00:00+00:00")
     ]
     database = _write_db(tmp_path, [talk])
+    _adopt(database)
     payload = _ok(database, "pending")
     assert [entry["run_id"] for entry in payload["open_required"]] == ["history-run"]
 
@@ -1111,12 +1269,33 @@ def test_history_claims_count_and_other_release_reasons_do_not(tmp_path):
 # ── inputs, ledger, and database gates ────────────────────────────────
 
 
-def test_pending_is_empty_before_any_run_opened(tmp_path, fresh_db):
-    payload = _ok(fresh_db, "pending")
+def test_nothing_is_reconciled_before_the_ledger_is_adopted(tmp_path, unadopted_db):
+    payload = _ok(unadopted_db, "pending")
     assert payload["ledger_present"] is False
+    assert payload["adopt_required"] is True
+    assert payload["adopted_at"] is None
     assert payload["pending"] == []
-    assert payload["deferred_offers"] == []
+    assert payload["open_required"] == []
     assert not (tmp_path / "ingress-obligations.json").exists()
+    refused = _refused(
+        unadopted_db, "open", "--run-id", "run-0", "--now", NOW, "--talk", "fresh.md"
+    )
+    assert refused["reason_code"] == "ledger_not_adopted"
+    assert "adopt --now" in refused["error"]
+
+
+def test_adoption_stamps_the_boundary_once(tmp_path, unadopted_db):
+    first = _adopt(unadopted_db, now=NOW)
+    assert first["written"] is True
+    assert first["adopted_at"] == NOW
+    assert _ledger(tmp_path) == {**ENVELOPE, "adopted_at": NOW, "runs": []}
+    replay = _adopt(unadopted_db, now=LATER)
+    assert replay["replayed"] is True
+    assert replay["written"] is False
+    assert replay["adopted_at"] == NOW
+    payload = _ok(unadopted_db, "pending")
+    assert payload["adopt_required"] is False
+    assert payload["adopted_at"] == NOW
 
 
 def test_status_names_an_unknown_run(fresh_db):
@@ -1185,7 +1364,7 @@ def test_a_ledger_from_another_generation_is_not_read(tmp_path, fresh_db):
 
 def test_a_malformed_ledger_is_named_not_repaired(tmp_path, fresh_db):
     (tmp_path / "ingress-obligations.json").write_text(
-        json.dumps({"schema_version": 1, "runs": [{"run_id": "r"}]}), encoding="utf-8"
+        json.dumps({**ENVELOPE, "runs": [{"run_id": "r"}]}), encoding="utf-8"
     )
     payload = _refused(fresh_db, "pending")
     assert payload["reason_code"] == "ledger_invalid"
@@ -1439,7 +1618,7 @@ def test_every_malformed_ledger_field_fails_structured(
     run = _valid_run()
     _apply_overrides(run, overrides)
     (tmp_path / "ingress-obligations.json").write_text(
-        json.dumps({"schema_version": 1, "runs": [run]}), encoding="utf-8"
+        json.dumps({**ENVELOPE, "runs": [run]}), encoding="utf-8"
     )
     for command in (
         ["pending"],
@@ -1472,7 +1651,7 @@ def test_every_malformed_ledger_field_fails_structured(
 )
 def test_a_well_formed_hand_written_ledger_is_accepted(tmp_path, fresh_db, run):
     (tmp_path / "ingress-obligations.json").write_text(
-        json.dumps({"schema_version": 1, "runs": [run]}), encoding="utf-8"
+        json.dumps({**ENVELOPE, "runs": [run]}), encoding="utf-8"
     )
     assert _ok(fresh_db, "pending")["ok"] is True
     assert _ok(fresh_db, "status", "--run-id", "r")["run"] == run
@@ -1549,6 +1728,7 @@ def test_a_replayed_offer_is_an_unchanged_success_and_a_changed_one_a_conflict(
 
 def test_a_replayed_withdrawn_offer_stays_withdrawn(tmp_path):
     database = _write_db(tmp_path, [_talk("fresh.md")])
+    _adopt(database)
     _opened(database, "run-w")
     requeued = _talk("fresh.md", status="needs-reprocessing", claim=None)
     requeued["reprocess_generation"] = 1

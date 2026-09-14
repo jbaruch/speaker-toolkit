@@ -49,7 +49,11 @@ refusing only a conflicting answer. The report copy is named by the full
 digest, stored timestamps must be canonical UTC, the vault root is
 re-resolved on every re-read, a talk merged again under the same run is a new
 persisted fact that re-owes the downstream steps, and a session accepted after
-the report went out that changed profile inputs reopens the report.
+the report went out that changed profile inputs reopens the report. The
+ledger is created by an explicit `adopt` at Step 1 that stamps the
+reconciliation boundary; every uncovered run persisted after it stays listed
+until it is opened or dismissed with a reason, and an exact replay of `open`
+on a completed run is an unchanged success.
 The end-to-end evaluation
 scenario and the clarification skill's seed-agenda contract follow separately.
 

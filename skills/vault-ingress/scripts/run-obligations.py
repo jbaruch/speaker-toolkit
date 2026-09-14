@@ -13,6 +13,7 @@ interrupted run shows up in ``pending`` until the speaker answers or the report
 is delivered.
 
 Usage:
+    run-obligations.py <tracking-database.json> adopt --now <ISO-8601>
     run-obligations.py <tracking-database.json> open \
         --run-id <id> --now <ISO-8601> --talk <talk.md> [--talk ...]
     run-obligations.py <tracking-database.json> record-downstream \
@@ -27,6 +28,8 @@ Usage:
         [--profile-refreshed]
     run-obligations.py <tracking-database.json> record-report \
         --run-id <id> --now <ISO-8601> --report-file <delivered-report.md>
+    run-obligations.py <tracking-database.json> dismiss \
+        --run-id <id> --now <ISO-8601> --reason <text>
     run-obligations.py <tracking-database.json> pending
     run-obligations.py <tracking-database.json> status --run-id <id>
 
@@ -39,16 +42,20 @@ recorded is an unchanged success, so a caller that lost the first response can
 retry; only a conflicting answer is refused.
 
 Ledger: ``{vault_root}/ingress-obligations.json`` (schema 1, run records
-schema 1), owned by vault-ingress. Delivered reports are copied to
+schema 1), owned by vault-ingress and created by ``adopt``, which stamps the
+adoption boundary: claims closed before it are history, everything after it
+is reconciled. Delivered reports are copied to
 ``{vault_root}/ingress-reports/{stem}.{sha256}.md`` and bound to the ledger by
 that digest. Each recorded talk carries the run id and release time of the
 closed claim that persisted it, so ``pending`` can reconcile the ledger against
-closed claims and name persisted talks the ledger does not cover (a whole run,
-a later batch of a recorded run, or a talk merged again under the same run,
-that crashed between the merge and ``open``) without repeating talks recovered
-under a fresh run id. ``pending`` also lists every deferred offer with the
-speaker's return condition, so it can be raised again. Field meanings,
-transitions, and the reader/writer contract live in
+closed claims and name every persisted fact after the boundary that the ledger
+does not cover (a whole run, a later batch of a recorded run, or a talk merged
+again under the same run, that crashed between the merge and ``open``) without
+repeating talks recovered under a fresh run id. An uncovered run stays listed
+until it is opened or explicitly dismissed with a reason; a later run's
+existence never stands in for either. ``pending`` also lists every deferred
+offer with the speaker's return condition, so it can be raised again. Field
+meanings, transitions, and the reader/writer contract live in
 ``skills/vault-ingress/references/schemas-obligations.md``.
 
 Recency policy (the delivery-recency buckets the clarification handoff keys on)
@@ -295,8 +302,24 @@ def clarification_resolved(run: dict[str, Any]) -> bool:
 # ── Ledger validation ─────────────────────────────────────────────────
 
 
-def empty_ledger() -> dict[str, Any]:
-    return {"schema_version": LEDGER_SCHEMA_VERSION, "runs": []}
+def empty_ledger(adopted_at: str | None = None) -> dict[str, Any]:
+    return {
+        "schema_version": LEDGER_SCHEMA_VERSION,
+        "adopted_at": adopted_at,
+        "dismissed_runs": [],
+        "runs": [],
+    }
+
+
+def require_adopted(ledger: dict[str, Any], path: Path) -> str:
+    adopted_at = ledger.get("adopted_at")
+    if not isinstance(adopted_at, str):
+        raise RunObligationsError(
+            f"obligations ledger {path} does not exist yet; run `adopt --now` "
+            "at Step 1, before any batch, to set the reconciliation boundary",
+            reason_code="ledger_not_adopted",
+        )
+    return adopted_at
 
 
 def _invalid(label: str, detail: str) -> RunObligationsError:
@@ -557,6 +580,33 @@ def validate_ledger(payload: object, path: Path) -> dict[str, Any]:
             "speaker-toolkit or inspect the ledger by hand",
             reason_code="ledger_schema_unsupported",
         )
+    label = f"obligations ledger {path}"
+    if "adopted_at" not in payload:
+        raise _invalid(label, "lacks adopted_at")
+    _require_timestamp(payload["adopted_at"], f"{label} adopted_at")
+    dismissed = payload.get("dismissed_runs")
+    if not isinstance(dismissed, list):
+        raise _invalid(label, "must carry a dismissed_runs array")
+    dismissed_ids: set[str] = set()
+    for index, entry in enumerate(dismissed):
+        record = _require_keys(
+            entry,
+            ("run_id", "dismissed_at", "reason"),
+            f"{label} dismissed_runs[{index}]",
+        )
+        dismissed_id = _require_identifier(
+            record["run_id"], f"{label} dismissed_runs[{index}].run_id"
+        )
+        if dismissed_id in dismissed_ids:
+            raise _invalid(
+                label, f"dismissed_runs[{index}] duplicates {dismissed_id!r}"
+            )
+        dismissed_ids.add(dismissed_id)
+        _require_timestamp(
+            record["dismissed_at"], f"{label} dismissed_runs[{index}].dismissed_at"
+        )
+        if not isinstance(record["reason"], str) or not record["reason"].strip():
+            raise _invalid(label, f"dismissed_runs[{index}].reason must say why")
     runs = payload.get("runs")
     if not isinstance(runs, list):
         raise RunObligationsError(
@@ -956,17 +1006,12 @@ def command_open(context: Context, args: argparse.Namespace) -> dict[str, Any]:
             reason_code="invalid_arguments",
         )
     snapshot, ledger = load_ledger(context.ledger_path)
+    require_adopted(ledger, context.ledger_path)
     try:
         run = find_run(ledger, run_id)
     except RunObligationsError:
         run = new_run(run_id, stamp)
         ledger["runs"].append(run)
-    if run["completed_at"] is not None:
-        raise RunObligationsError(
-            f"run {run_id!r} completed at {run['completed_at']}; open a new "
-            "run id for further processing",
-            reason_code="invalid_transition",
-        )
     before = json.dumps(run, sort_keys=True)
     clarification = run["clarification"]
     recency_open = clarification["state"] in {STATE_OWED, STATE_NOT_APPLICABLE}
@@ -984,6 +1029,21 @@ def command_open(context: Context, args: argparse.Namespace) -> dict[str, Any]:
         if name not in known
         or known[name]["claim_released_at"] != talk["claim_released_at"]
     ]
+    if run["completed_at"] is not None:
+        if joined:
+            raise RunObligationsError(
+                f"run {run_id!r} completed at {run['completed_at']}; open a new "
+                f"run id for {', '.join(joined)}",
+                reason_code="invalid_transition",
+            )
+        # An exact replay of facts a completed run already recorded.
+        return {
+            "ok": True,
+            "ledger_path": str(context.ledger_path),
+            **store_ledger(context.ledger_path, snapshot, ledger),
+            "replayed": True,
+            "run": run,
+        }
     talks: list[dict[str, Any]] = []
     for name, talk in known.items():
         if name in joined:
@@ -1014,6 +1074,7 @@ def _transition(
     stamp = render_timestamp(now)
     run_id = require_run_id(args.run_id)
     snapshot, ledger = load_ledger(context.ledger_path)
+    require_adopted(ledger, context.ledger_path)
     run = find_run(ledger, run_id)
     before = json.dumps(run, sort_keys=True)
     extras = mutate(run, stamp, now) or {}
@@ -1260,73 +1321,135 @@ def command_record_report(context: Context, args: argparse.Namespace) -> dict[st
 def open_required(
     persisted: dict[str, dict[str, Any]], ledger: dict[str, Any]
 ) -> list[dict[str, Any]]:
-    """Persisted talks the ledger does not cover, reconciled against closed claims.
+    """Persisted facts after the adoption boundary that the ledger does not cover.
 
     A persisted fact is one closed claim: run id, filename, and release time.
-    It is covered when some run record lists the talk with that claim's run id
-    and release time, whichever run id recorded it; recovery under a fresh run
-    id therefore counts, and a talk merged again under the same run is a new
-    fact. Two shapes remain. A recorded run with uncovered facts persisted a
-    later batch (or re-merged a talk) and crashed before ``open``; every such
-    run is listed with exactly those talks (``missing_talks``, or
-    ``talks_persisted_after_completion`` when the run's report is already
-    delivered — those talks need a fresh run id). A run with no record at all
-    is listed only when it is the newest such run and newer than every
-    recorded run's ``opened_at``: every run recorded later moved past it under
-    this contract, so older unrecorded history is history (``unrecorded_run``).
+    Facts released before ``adopted_at`` are history and never listed. A later
+    fact is covered when some run record lists the talk with that claim's run
+    id and release time, whichever run id recorded it; recovery under a fresh
+    run id therefore counts, and a talk merged again under the same run is a
+    new fact. Every run with an uncovered fact is listed, in run-id order,
+    with exactly those talks: a recorded run as ``missing_talks`` (or
+    ``talks_persisted_after_completion`` when its report is already delivered
+    — those talks need a fresh run id), a run with no record as
+    ``unrecorded_run``. A run explicitly dismissed with a reason is the only
+    uncovered run left out; no later run's existence stands in for coverage.
     """
+    adopted_at = ledger["adopted_at"]
     records = {run["run_id"]: run for run in ledger["runs"]}
+    dismissed = {entry["run_id"] for entry in ledger["dismissed_runs"]}
     covered = {
         (talk["claim_run_id"], talk["filename"], talk["claim_released_at"])
         for run in ledger["runs"]
         for talk in run["talks"]
     }
     required: list[dict[str, Any]] = []
-    unrecorded: list[dict[str, Any]] = []
     for run_id, entry in sorted(persisted.items()):
         missing = sorted(
             name
             for name, released in entry["talks"].items()
-            if (run_id, name, released) not in covered
+            if released >= adopted_at and (run_id, name, released) not in covered
         )
         if not missing:
             continue
-        listed = {
-            "run_id": run_id,
-            "talks": missing,
-            "latest_released_at": entry["latest_released_at"],
-        }
         run = records.get(run_id)
         if run is None:
-            unrecorded.append(listed)
-            continue
+            if run_id in dismissed:
+                continue
+            reason = REASON_UNRECORDED
+        elif run["completed_at"] is not None:
+            reason = REASON_AFTER_COMPLETION
+        else:
+            reason = REASON_MISSING_TALKS
         required.append(
             {
-                **listed,
-                "reason": (
-                    REASON_AFTER_COMPLETION
-                    if run["completed_at"] is not None
-                    else REASON_MISSING_TALKS
-                ),
+                "run_id": run_id,
+                "talks": missing,
+                "latest_released_at": max(entry["talks"][name] for name in missing),
+                "reason": reason,
                 "next_action": NEXT_OPEN,
             }
-        )
-    latest_recorded = max((run["opened_at"] for run in ledger["runs"]), default=None)
-    candidates = [
-        entry
-        for entry in unrecorded
-        if latest_recorded is None or entry["latest_released_at"] > latest_recorded
-    ]
-    if candidates:
-        newest = max(candidates, key=lambda entry: entry["latest_released_at"])
-        required.append(
-            {**newest, "reason": REASON_UNRECORDED, "next_action": NEXT_OPEN}
         )
     return required
 
 
+def command_adopt(context: Context, args: argparse.Namespace) -> dict[str, Any]:
+    """Create the ledger and stamp the reconciliation boundary; replay-safe."""
+    now = parse_timestamp(args.now, "--now")
+    stamp = render_timestamp(now)
+    snapshot, ledger = load_ledger(context.ledger_path)
+    if ledger.get("adopted_at") is None:
+        ledger = empty_ledger(stamp)
+        outcome = store_ledger(context.ledger_path, snapshot, ledger)
+        return {
+            "ok": True,
+            "ledger_path": str(context.ledger_path),
+            **outcome,
+            "adopted_at": stamp,
+        }
+    return {
+        "ok": True,
+        "ledger_path": str(context.ledger_path),
+        "written": False,
+        "durability_state": "unchanged",
+        "warnings": [],
+        "replayed": True,
+        "adopted_at": ledger["adopted_at"],
+    }
+
+
+def command_dismiss(context: Context, args: argparse.Namespace) -> dict[str, Any]:
+    """Record that an uncovered run is deliberately not being opened."""
+    now = parse_timestamp(args.now, "--now")
+    stamp = render_timestamp(now)
+    run_id = require_run_id(args.run_id)
+    reason = (args.reason or "").strip()
+    if not reason:
+        raise RunObligationsError(
+            "dismiss needs --reason saying why this run's persisted talks are "
+            "not being opened",
+            reason_code="invalid_arguments",
+        )
+    snapshot, ledger = load_ledger(context.ledger_path)
+    require_adopted(ledger, context.ledger_path)
+    if any(run["run_id"] == run_id for run in ledger["runs"]):
+        raise RunObligationsError(
+            f"run {run_id!r} has an obligations record; it completes through "
+            "its obligations, not through dismissal",
+            reason_code="invalid_transition",
+        )
+    for entry in ledger["dismissed_runs"]:
+        if entry["run_id"] != run_id:
+            continue
+        if entry["reason"] == reason:
+            return {
+                "ok": True,
+                "ledger_path": str(context.ledger_path),
+                "written": False,
+                "durability_state": "unchanged",
+                "warnings": [],
+                "replayed": True,
+                "dismissed": entry,
+            }
+        raise RunObligationsError(
+            f"run {run_id!r} was already dismissed at {entry['dismissed_at']} "
+            f"for {entry['reason']!r}; a retry repeats that reason",
+            reason_code="invalid_transition",
+        )
+    entry = {"run_id": run_id, "dismissed_at": stamp, "reason": reason}
+    ledger["dismissed_runs"].append(entry)
+    outcome = store_ledger(context.ledger_path, snapshot, ledger)
+    return {
+        "ok": True,
+        "ledger_path": str(context.ledger_path),
+        **outcome,
+        "dismissed": entry,
+    }
+
+
 def command_pending(context: Context, _args: argparse.Namespace) -> dict[str, Any]:
     _snapshot, ledger = load_ledger(context.ledger_path)
+    adopted = isinstance(ledger.get("adopted_at"), str)
     pending = [
         summarize(run) for run in ledger["runs"] if next_action(run) != NEXT_NONE
     ]
@@ -1344,10 +1467,14 @@ def command_pending(context: Context, _args: argparse.Namespace) -> dict[str, An
         "ok": True,
         "ledger_path": str(context.ledger_path),
         "ledger_present": context.ledger_path.exists(),
+        "adopt_required": not adopted,
+        "adopted_at": ledger.get("adopted_at"),
         "pending": pending,
         "count": len(pending),
         "deferred_offers": deferred,
-        "open_required": open_required(context.persisted_runs(), ledger),
+        "open_required": (
+            open_required(context.persisted_runs(), ledger) if adopted else []
+        ),
     }
 
 
@@ -1378,6 +1505,11 @@ def build_parser() -> JsonArgumentParser:
             sub.add_argument(
                 "--now", required=True, help="timezone-aware ISO-8601 event time"
             )
+
+    adopt = actions.add_parser(
+        "adopt", help="create the ledger and stamp the reconciliation boundary"
+    )
+    adopt.add_argument("--now", required=True, help="timezone-aware ISO-8601 time")
 
     opened = actions.add_parser(
         "open", help="record the run's obligations for a persisted batch"
@@ -1435,6 +1567,12 @@ def build_parser() -> JsonArgumentParser:
         "--report-file", required=True, help="the delivered report text"
     )
 
+    dismiss = actions.add_parser(
+        "dismiss", help="an uncovered run is deliberately not being opened"
+    )
+    with_run(dismiss)
+    dismiss.add_argument("--reason", required=True, help="why, in plain words")
+
     actions.add_parser("pending", help="list runs with unresolved obligations")
 
     status = actions.add_parser("status", help="show one run's obligations")
@@ -1443,12 +1581,14 @@ def build_parser() -> JsonArgumentParser:
 
 
 COMMANDS = {
+    "adopt": command_adopt,
     "open": command_open,
     "record-downstream": command_record_downstream,
     "record-offer": command_record_offer,
     "record-disposition": command_record_disposition,
     "record-session": command_record_session,
     "record-report": command_record_report,
+    "dismiss": command_dismiss,
     "pending": command_pending,
     "status": command_status,
 }

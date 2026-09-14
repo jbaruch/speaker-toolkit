@@ -15,9 +15,10 @@ explicit disposition and the end report has been delivered.
 - Every write goes through the tracking-database io helpers: sibling lock file,
   exact-generation check, staged candidate, atomic replace. Never edit the
   ledger by hand.
-- A missing ledger means no run has opened obligations; the first `open`
-  creates it. `pending` on a missing ledger reports `ledger_present: false`
-  and an empty list.
+- A missing ledger means the vault has not adopted this contract yet: `adopt
+  --now` at Step 1 creates it and stamps the reconciliation boundary. Until
+  then `pending` reports `adopt_required: true` and reconciles nothing, and
+  every other command refuses with `ledger_not_adopted`.
 - A ledger carrying another `schema_version` is refused with
   `ledger_schema_unsupported`; the reader neither repairs nor downgrades it.
   Update speaker-toolkit, or inspect the file by hand.
@@ -27,6 +28,8 @@ explicit disposition and the end report has been delivered.
 | Field | Type | Meaning |
 |---|---|---|
 | `schema_version` | integer | `1` |
+| `adopted_at` | timestamp | the reconciliation boundary `adopt` stamped; claims closed before it are history |
+| `dismissed_runs` | array | `{run_id, dismissed_at, reason}` per run the operator chose not to open |
 | `runs` | array | one record per `run_id`, in the order runs were opened |
 
 ## Run Record
@@ -86,7 +89,7 @@ reported.
 | Field | Meaning |
 |---|---|
 | `state` | one of the states below |
-| `offer_mode` | `inline`, `recommend_full`, `recommend_compressed`, or `none` — the strongest bucket among the run's analyzed talks (`processed`, `processed_partial`); skipped talks never drive it |
+| `offer_mode` | `inline`, `recommend_full`, `recommend_compressed`, or `none`; how the run's talks decide it is the script's rule, referenced from [clarification-handoff.md](clarification-handoff.md#make-the-offer) |
 | `recency_as_of` | the `--now` the stored recency and `offer_mode` were last computed from; null before the first computation |
 | `topics` | the candidate topics recorded with the offer |
 | `offered_at` | when the offer was put to the speaker |
@@ -169,13 +172,15 @@ vault, as a plain file.
 
 | Command | Precondition | Effect |
 |---|---|---|
-| `open --run-id --now --talk ...` | every `--talk` is a filename in the current tracking database with a closed `return_persisted` claim; the run is not completed | creates or extends the run record; recomputes recency and `offer_mode` while unoffered; owes the downstream steps when a new talk joins |
+| `adopt --now` | — | creates the ledger with `adopted_at`; replay-safe |
+| `open --run-id --now --talk ...` | the ledger is adopted; every `--talk` is a filename in the current tracking database with a closed `return_persisted` claim; a completed run accepts only an exact replay of its recorded facts | creates or extends the run record; recomputes recency and `offer_mode` while unoffered; owes the downstream steps when a new fact joins |
 | `record-downstream --run-id --now` | the run exists | downstream `completed`; replay-safe |
 | `record-offer --run-id --now [--topic ...]` | downstream `completed`; state `owed` | refreshes recency, then `offered` with `topics` and `offered: true`; or, with no analyzed talk left, `not_applicable` and `offered: false` |
 | `record-disposition --run-id --now --disposition ... [--return-condition]` | state `offered` or `deferred`; `deferred` needs `--return-condition` | the disposition; `accepted` opens a pending session |
 | `record-session --run-id --now --profile-inputs changed\|unchanged [--profile-refreshed]` | state `accepted`, session pending; `changed` with `{vault_root}/speaker-profile.json` present needs `--profile-refreshed` (`profile_refresh_required` otherwise) | session `completed` with both flags recorded |
 | `record-report --run-id --now --report-file` | downstream `completed`; clarification resolved; non-empty file | copies the report, binds its digest, sets `completed_at` |
-| `pending` | — | runs with `completed_at` null and their `next_action` |
+| `dismiss --run-id --now --reason` | the ledger is adopted; the run has no record | records that its uncovered talks are deliberately not opened; replay-safe for the same reason |
+| `pending` | — | runs owing a step, deferred offers, and uncovered persisted facts |
 | `status --run-id` | the run exists | the record and its summary |
 
 Every command reads the tracking database through the owner's strict reader
@@ -190,7 +195,7 @@ a named degradation such as `installed_verification_failed`), and `warnings`;
 every warning is also printed to stderr. Exit 2 emits
 `{"ok": false, "error", "reason_code"}` on stdout and the same message on
 stderr. Reason codes: `invalid_arguments`, `invalid_timestamp`,
-`database_unusable`, `vault_root_changed`, `talk_not_found`,
+`database_unusable`, `vault_root_changed`, `ledger_not_adopted`, `talk_not_found`,
 `talk_not_persisted`, `run_not_found`, `invalid_transition`,
 `profile_refresh_required`, `report_unreadable`,
 `report_empty`,
@@ -204,8 +209,9 @@ naming the field, never repaired and never allowed to surface as a traceback.
 
 ## Reader Contract
 
-`pending` emits `{ok, ledger_path, ledger_present, pending: [...], count,
-deferred_offers: [...], open_required: [...]}`. Each `pending` entry is a run
+`pending` emits `{ok, ledger_path, ledger_present, adopt_required,
+adopted_at, pending: [...], count, deferred_offers: [...], open_required:
+[...]}`. Each `pending` entry is a run
 whose `next_action` is not `none`, carrying `run_id`, `opened_at`,
 `next_action`, `downstream_state`, `clarification_state`, `offer_mode`,
 `recency_as_of`, `end_report_state`, and `talk_count`. Treat an unoffered
@@ -217,23 +223,26 @@ as the snapshot it is; `record-offer` returns the mode the offer must use.
 again when the speaker's condition is met.
 
 `open_required` reconciles the ledger against the tracking database: a claim
-closed with `release_reason: return_persisted` says its talk persisted, and a
-persisted talk the ledger does not cover crashed between the merge and `open`.
-A persisted fact is one closed claim: run id, filename, and release time. It
-is covered when any run record lists the talk with that claim's `claim_run_id`
-and `claim_released_at`, whichever run id recorded it, so a recovery under a
-fresh run id is never reported again and a talk merged again under the same
-run is a new fact. Each entry carries `run_id`, `talks` (only the uncovered
-ones), `latest_released_at`, `reason`, and `next_action: open_obligations`:
+closed with `release_reason: return_persisted` after `adopted_at` says its
+talk persisted under this contract, and a persisted talk the ledger does not
+cover crashed between the merge and `open`. A persisted fact is one closed
+claim: run id, filename, and release time. It is covered when any run record
+lists the talk with that claim's `claim_run_id` and `claim_released_at`,
+whichever run id recorded it, so a recovery under a fresh run id is never
+reported again and a talk merged again under the same run is a new fact. An
+uncovered run stays listed until it is opened or dismissed with a reason; no
+later run's existence stands in for either. Each entry carries `run_id`,
+`talks` (only the uncovered ones), `latest_released_at`, `reason`, and
+`next_action: open_obligations`:
 
 | `reason` | Meaning | Action |
 |---|---|---|
 | `missing_talks` | a recorded run's closed claims name talks its record lacks — a later batch that never opened | `open` the run with exactly those talks |
 | `talks_persisted_after_completion` | the same, on a run whose report is already delivered | open them under a fresh run id; `open` refuses a completed run |
-| `unrecorded_run` | a run with no record at all | `open` it with the listed talks |
+| `unrecorded_run` | a run with no record at all | `open` it with the listed talks, or `dismiss` it with a reason |
 
-Which uncovered runs are listed, and how many, is the script's rule — see
-`run-obligations.py`, the `open_required` docstring.
+The exact coverage predicate is the script's rule — see `run-obligations.py`,
+the `open_required` docstring.
 
 `next_action` is one of:
 
