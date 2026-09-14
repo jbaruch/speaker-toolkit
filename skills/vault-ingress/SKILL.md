@@ -254,7 +254,8 @@ using every active goal and the current full-cohort baseline:
 Require one valid assessment per goal before one expectation-bound transaction,
 then re-read and report comparable, rebaseline, and unverifiable outcomes.
 Then, with or without active goals, record that the run's downstream steps
-are done:
+are done. A run that persisted no talks and resumed no obligations has no
+record to update: skip this command, and Step 9 finishes such a run.
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \

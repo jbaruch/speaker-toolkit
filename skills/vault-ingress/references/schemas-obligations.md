@@ -69,8 +69,8 @@ stands. A replayed `open` never touches a frozen recency snapshot.
 | `claim_released_at` | that claim's `released_at`; together with `claim_run_id` and `filename` it names one persisted fact, so a talk merged again under the same run is a new fact that re-owes the downstream steps |
 
 Bucket boundaries and the rule that an undated or future-dated talk is
-`unknown` are the script's: see `run-obligations.py`, the top-of-file
-constants `SAME_WEEK_MAX_DAYS`, `RECENT_MAX_DAYS`, and `OFFER_MODE_BY_BUCKET`.
+`unknown` are the script's; the reference to its constants lives in
+[clarification-handoff.md](clarification-handoff.md#make-the-offer).
 
 ### Downstream steps
 
