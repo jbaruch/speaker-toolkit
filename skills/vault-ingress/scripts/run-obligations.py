@@ -396,6 +396,8 @@ def _validate_talk(entry: Any, label: str) -> None:
             "days_since_delivery",
             "recency_bucket",
             "claim_run_id",
+            "claim_batch_id",
+            "claim_generation",
             "claim_released_at",
         ),
         label,
@@ -413,6 +415,10 @@ def _validate_talk(entry: Any, label: str) -> None:
         talk["recency_bucket"], OFFER_MODE_BY_BUCKET, f"{label}.recency_bucket"
     )
     _require_identifier(talk["claim_run_id"], f"{label}.claim_run_id")
+    _require_identifier(talk["claim_batch_id"], f"{label}.claim_batch_id")
+    generation = talk["claim_generation"]
+    if type(generation) is not int or generation < 0:
+        raise _invalid(label, "claim_generation must be a non-negative integer")
     _require_timestamp(talk["claim_released_at"], f"{label}.claim_released_at")
 
 
@@ -564,6 +570,17 @@ def _validate_run(run: dict[str, Any], label: str) -> None:
     _require_timestamp_or_null(
         run["completed_at"], f"{label} completed_at", present=delivered
     )
+    if delivered:
+        # A report goes out only after the downstream steps and the offer's
+        # answer; a record claiming otherwise is not one this script wrote.
+        if run["downstream"]["state"] != DOWNSTREAM_COMPLETED:
+            raise _invalid(label, "end_report is delivered while downstream is owed")
+        if run["clarification"]["state"] in {STATE_OWED, STATE_OFFERED}:
+            raise _invalid(
+                label, "end_report is delivered while the offer has no answer"
+            )
+        if run["completed_at"] != run["end_report"]["delivered_at"]:
+            raise _invalid(label, "completed_at must equal end_report.delivered_at")
 
 
 def validate_ledger(payload: object, path: Path) -> dict[str, Any]:
@@ -707,8 +724,10 @@ def _read_regular_file(
 ) -> bytes | None:
     """Bytes of an existing regular file, None when nothing is there.
 
-    Anything else at the name — a link, a FIFO, a directory — is refused, so a
-    caller never blocks on or follows what it did not write.
+    Anything else at the name — a link, a FIFO, a directory — is refused, and
+    a filesystem failure while inspecting or reading it is reported as the
+    structured copy failure, so a caller never blocks on, follows, or
+    tracebacks over what it did not write.
     """
     try:
         descriptor = os.open(name, descriptor_flags, dir_fd=dir_fd)
@@ -730,8 +749,18 @@ def _read_regular_file(
             if not chunk:
                 return b"".join(chunks)
             chunks.append(chunk)
+    except OSError as exc:
+        raise _copy_failed(
+            f"{name} could not be read ({exc}); check the filesystem and re-run "
+            "record-report"
+        ) from exc
     finally:
-        os.close(descriptor)
+        try:
+            os.close(descriptor)
+        except OSError as exc:
+            print(
+                f"WARNING: descriptor for {name} did not close: {exc}", file=sys.stderr
+            )
 
 
 def write_report_copy(
@@ -806,20 +835,28 @@ def write_report_copy(
 # ── Database context ──────────────────────────────────────────────────
 
 
-def persisted_claims(record: dict[str, Any]) -> list[tuple[str, str]]:
-    """``(run_id, released_at)`` for every closed claim that persisted this talk."""
+def persisted_claims(record: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every closed claim that persisted this talk, by its full identity.
+
+    ``persist-results.py`` stamps one ``released_at`` on a whole batch, so the
+    identity of a persisted fact is the claim's run id, batch id, reprocess
+    generation, and release time together.
+    """
     claims = [record.get("_queue_claim")]
     history = record.get("_queue_claim_history")
     if isinstance(history, list):
         claims.extend(history)
-    found: list[tuple[str, str]] = []
+    found: list[dict[str, Any]] = []
     for claim in claims:
         if not isinstance(claim, dict):
             continue
+        generation = claim.get("reprocess_generation")
         if (
             claim.get("state") != "completed"
             or claim.get("release_reason") != PERSISTED_RELEASE_REASON
             or not isinstance(claim.get("run_id"), str)
+            or not isinstance(claim.get("batch_id"), str)
+            or type(generation) is not int
             or not isinstance(claim.get("released_at"), str)
         ):
             continue
@@ -827,8 +864,19 @@ def persisted_claims(record: dict[str, Any]) -> list[tuple[str, str]]:
             released = parse_timestamp(claim["released_at"], "released_at")
         except RunObligationsError:
             continue
-        found.append((claim["run_id"], render_timestamp(released)))
+        found.append(
+            {
+                "run_id": claim["run_id"],
+                "batch_id": claim["batch_id"],
+                "generation": generation,
+                "released_at": render_timestamp(released),
+            }
+        )
     return found
+
+
+def _fact_order(fact: dict[str, Any]) -> tuple[str, int, str]:
+    return (str(fact["released_at"]), int(fact["generation"]), str(fact["batch_id"]))
 
 
 class Context:
@@ -876,9 +924,8 @@ class Context:
     def persisted_runs(self) -> dict[str, dict[str, Any]]:
         """Runs whose closed claims say persist-results.py merged their talks.
 
-        ``talks`` maps each filename to the newest release time of a claim
-        that persisted it under that run, so a talk merged again under the
-        same run id is a distinct persisted fact.
+        ``talks`` maps each filename to every persisted fact under that run,
+        so a talk merged again under the same run id is a distinct fact.
         """
         runs: dict[str, dict[str, Any]] = {}
         for record in self.database["talks"]:
@@ -887,18 +934,17 @@ class Context:
             filename = record.get("filename")
             if not isinstance(filename, str):
                 continue
-            for run_id, released in persisted_claims(record):
+            for fact in persisted_claims(record):
                 entry = runs.setdefault(
-                    run_id,
-                    {"run_id": run_id, "talks": {}, "latest_released_at": None},
+                    fact["run_id"],
+                    {"run_id": fact["run_id"], "talks": {}, "latest_released_at": None},
                 )
-                if released > entry["talks"].get(filename, ""):
-                    entry["talks"][filename] = released
+                entry["talks"].setdefault(filename, []).append(fact)
                 if (
                     entry["latest_released_at"] is None
-                    or released > entry["latest_released_at"]
+                    or fact["released_at"] > entry["latest_released_at"]
                 ):
-                    entry["latest_released_at"] = released
+                    entry["latest_released_at"] = fact["released_at"]
         return runs
 
     def talk(self, filename: str) -> dict[str, Any]:
@@ -931,11 +977,13 @@ def require_run_id(value: str) -> str:
 
 
 def newest_claim(
-    claims: list[tuple[str, str]], run_id: str | None
-) -> tuple[str, str] | None:
+    claims: list[dict[str, Any]], run_id: str | None
+) -> dict[str, Any] | None:
     """The newest closed claim under ``run_id``, or of any run when None."""
-    matching = [claim for claim in claims if run_id is None or claim[0] == run_id]
-    return max(matching, key=lambda claim: claim[1]) if matching else None
+    matching = [
+        claim for claim in claims if run_id is None or claim["run_id"] == run_id
+    ]
+    return max(matching, key=_fact_order) if matching else None
 
 
 def describe_talk(
@@ -945,7 +993,7 @@ def describe_talk(
     run_id: str,
     *,
     source_run: str | None = None,
-    keep: tuple[str, str] | None = None,
+    keep: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The talk as the run records it, linked to the claim that persisted it.
 
@@ -957,7 +1005,7 @@ def describe_talk(
     record = context.talk(filename)
     claims = persisted_claims(record)
     if keep is not None:
-        link: tuple[str, str] | None = keep
+        link: dict[str, Any] | None = keep
     elif source_run is not None:
         link = newest_claim(claims, source_run)
         if link is None:
@@ -976,7 +1024,6 @@ def describe_talk(
                 "persist-results.py merged",
                 reason_code="talk_not_persisted",
             )
-    claim_run_id, claim_released_at = link
     delivered = parse_delivery_date(record.get("date"))
     days = (now.date() - delivered).days if delivered is not None else None
     return {
@@ -985,13 +1032,20 @@ def describe_talk(
         "delivery_date": delivered.isoformat() if delivered is not None else None,
         "days_since_delivery": days,
         "recency_bucket": recency_bucket(days),
-        "claim_run_id": claim_run_id,
-        "claim_released_at": claim_released_at,
+        "claim_run_id": link["run_id"],
+        "claim_batch_id": link["batch_id"],
+        "claim_generation": link["generation"],
+        "claim_released_at": link["released_at"],
     }
 
 
-def _link(talk: dict[str, Any]) -> tuple[str, str]:
-    return (str(talk["claim_run_id"]), str(talk["claim_released_at"]))
+def _link(talk: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "run_id": str(talk["claim_run_id"]),
+        "batch_id": str(talk["claim_batch_id"]),
+        "generation": int(talk["claim_generation"]),
+        "released_at": str(talk["claim_released_at"]),
+    }
 
 
 def new_run(run_id: str, now: str) -> dict[str, Any]:
@@ -1103,7 +1157,7 @@ def command_open(context: Context, args: argparse.Namespace) -> dict[str, Any]:
             continue
         recorded = known[name]
         newer = newest_claim(
-            persisted_claims(context.talk(name)), recorded["claim_run_id"]
+            persisted_claims(context.talk(name)), str(recorded["claim_run_id"])
         )
         if newer is not None and newer != _link(recorded):
             joined[name] = describe_talk(context, name, now, run_id, keep=newer)
@@ -1428,33 +1482,47 @@ def open_required(
 ) -> list[dict[str, Any]]:
     """Persisted facts after the adoption boundary that the ledger does not cover.
 
-    A persisted fact is one closed claim: run id, filename, and release time.
-    Facts released before ``adopted_at`` are history and never listed. A later
-    fact is covered when some run record lists the talk with that claim's run
-    id and release time, whichever run id recorded it; recovery under a fresh
-    run id therefore counts, and a talk merged again under the same run is a
-    new fact. Every run with an uncovered fact is listed, in run-id order,
-    with exactly those talks: a recorded run as ``missing_talks`` (or
-    ``talks_persisted_after_completion`` when its report is already delivered
-    — those talks need a fresh run id), a run with no record as
-    ``unrecorded_run``. A run explicitly dismissed with a reason is the only
-    uncovered run left out; no later run's existence stands in for coverage.
+    A persisted fact is one closed claim: run id, filename, batch id,
+    reprocess generation, and release time. Facts released before
+    ``adopted_at`` are history and never listed. A later fact is covered when
+    some run record lists the talk linked to that claim, or to a newer claim
+    of the same run — a run that merged a talk again superseded its earlier
+    result — whichever run id recorded it; recovery under a fresh run id
+    therefore counts, and a talk merged again under the same run, even within
+    the same second, is a new fact until it is recorded. Every run with an
+    uncovered fact is listed, in run-id order, with exactly those talks: a
+    recorded run as ``missing_talks`` (or ``talks_persisted_after_completion``
+    when its report is already delivered — those talks need a fresh run id),
+    a run with no record as ``unrecorded_run``. A run explicitly dismissed
+    with a reason is the only uncovered run left out; no later run's
+    existence stands in for coverage.
     """
     adopted_at = ledger["adopted_at"]
     records = {run["run_id"]: run for run in ledger["runs"]}
     dismissed = {entry["run_id"] for entry in ledger["dismissed_runs"]}
-    covered = {
-        (talk["claim_run_id"], talk["filename"], talk["claim_released_at"])
-        for run in ledger["runs"]
-        for talk in run["talks"]
-    }
+    covered_up_to: dict[tuple[str, str], tuple[str, int, str]] = {}
+    for run in ledger["runs"]:
+        for talk in run["talks"]:
+            link = _link(talk)
+            key = (link["run_id"], str(talk["filename"]))
+            order = _fact_order(link)
+            if key not in covered_up_to or order > covered_up_to[key]:
+                covered_up_to[key] = order
     required: list[dict[str, Any]] = []
     for run_id, entry in sorted(persisted.items()):
-        missing = sorted(
-            name
-            for name, released in entry["talks"].items()
-            if released >= adopted_at and (run_id, name, released) not in covered
-        )
+        uncovered = {
+            name: [
+                fact
+                for fact in facts
+                if fact["released_at"] >= adopted_at
+                and (
+                    (run_id, name) not in covered_up_to
+                    or _fact_order(fact) > covered_up_to[(run_id, name)]
+                )
+            ]
+            for name, facts in entry["talks"].items()
+        }
+        missing = sorted(name for name, facts in uncovered.items() if facts)
         if not missing:
             continue
         run = records.get(run_id)
@@ -1470,7 +1538,9 @@ def open_required(
             {
                 "run_id": run_id,
                 "talks": missing,
-                "latest_released_at": max(entry["talks"][name] for name in missing),
+                "latest_released_at": max(
+                    fact["released_at"] for name in missing for fact in uncovered[name]
+                ),
                 "reason": reason,
                 "next_action": NEXT_OPEN,
             }

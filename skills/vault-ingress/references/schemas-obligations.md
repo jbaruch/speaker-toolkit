@@ -69,7 +69,9 @@ stands. A replayed `open` never touches a frozen recency snapshot.
 | `days_since_delivery` | whole days between `delivery_date` and `--now`, else null |
 | `recency_bucket` | `same_week`, `recent`, `older`, or `unknown` |
 | `claim_run_id` | the run id of the closed `return_persisted` claim that persisted the talk: this run's own newest claim when it has one, else the newest of any run; `open` refuses a talk with no such claim (`talk_not_persisted`) |
-| `claim_released_at` | that claim's `released_at`; together with `claim_run_id` and `filename` it names one persisted fact, so a talk merged again under the same run is a new fact that re-owes the downstream steps |
+| `claim_batch_id` | that claim's `batch_id` |
+| `claim_generation` | that claim's `reprocess_generation` |
+| `claim_released_at` | that claim's `released_at`; with `claim_run_id`, `claim_batch_id`, and `claim_generation` it names one persisted fact — `persist-results.py` stamps one release time on a whole batch — so a talk merged again under the same run is a new fact that re-owes the downstream steps |
 
 Bucket boundaries and the rule that an undated or future-dated talk is
 `unknown` are the script's; the reference to its constants lives in
@@ -148,8 +150,11 @@ on an offer. Once `offered`, the buckets and `offer_mode` are frozen; later
 | `report_sha256` | digest of the delivered text |
 | `reopened_at` | when a clarification session accepted after delivery reported changed profile inputs, sending the run back to `owed` for a fresh report; null otherwise |
 
-Once `delivered`, path, digest, and `delivered_at` are set and
-`completed_at` carries the same event; while `owed`, all of them are null.
+Once `delivered`, path, digest, and `delivered_at` are set, `completed_at`
+equals `delivered_at`, the downstream steps are `completed`, and the offer
+has an answer (any state but `owed` or `offered`); while `owed`, path,
+digest, `delivered_at`, and `completed_at` are null. A record claiming
+delivery without those is refused as `ledger_invalid`.
 A `record-session` that reports `changed` profile inputs after the report was
 delivered — the only way is a deferred offer answered again — resets the
 report to `owed`, stamps `reopened_at`, clears `completed_at`, and answers
@@ -236,10 +241,12 @@ again when the speaker's condition is met.
 closed with `release_reason: return_persisted` after `adopted_at` says its
 talk persisted under this contract, and a persisted talk the ledger does not
 cover crashed between the merge and `open`. A persisted fact is one closed
-claim: run id, filename, and release time. It is covered when any run record
-lists the talk with that claim's `claim_run_id` and `claim_released_at`,
-whichever run id recorded it, so a recovery under a fresh run id is never
-reported again and a talk merged again under the same run is a new fact. An
+claim: run id, filename, batch id, reprocess generation, and release time.
+It is covered when any run record lists the talk linked to that claim, or to
+a newer claim of the same run (a run that merged a talk again superseded its
+earlier result), whichever run id recorded it, so a recovery under a fresh
+run id is never reported again and a talk merged again under the same run,
+even within the same second, is a new fact until it is recorded. An
 uncovered run stays listed until it is opened or dismissed with a reason; no
 later run's existence stands in for either. Each entry carries `run_id`,
 `talks` (only the uncovered ones), `latest_released_at`, `reason`, and

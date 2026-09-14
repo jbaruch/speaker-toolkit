@@ -61,7 +61,11 @@ its offer stands withdraws the offer, and cannot join once the offer was
 answered. The report copy is installed relative to a descriptor on the real
 directory, the report input is read only as a regular file, every mutating
 command re-reads the database and re-checks the vault root before writing,
-and authority failures carry their reason code.
+and authority failures carry their reason code. A persisted fact is identified
+by the claim's run, batch, generation, and release time together, a newer
+recorded fact supersedes the same run's earlier ones, a record claiming a
+delivered report without a completed downstream and an answered offer is
+refused, and a read failure on an existing copy is the structured failure.
 The end-to-end evaluation
 scenario and the clarification skill's seed-agenda contract follow separately.
 

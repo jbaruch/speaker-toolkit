@@ -1431,6 +1431,8 @@ def _valid_run(run_id: str = "r", **overrides):
                 "days_since_delivery": 4,
                 "recency_bucket": "same_week",
                 "claim_run_id": SEED_RUN,
+                "claim_batch_id": "b1",
+                "claim_generation": 1,
                 "claim_released_at": SEED_RELEASED,
             }
         ],
@@ -1553,6 +1555,34 @@ _ACCEPTED = {
             "report_sha256 must be a hex SHA-256",
         ),
         ({"end_report": _DELIVERED}, "completed_at must be set in this state"),
+        (
+            {"end_report": _DELIVERED, "completed_at": LATER},
+            "delivered while the offer has no answer",
+        ),
+        (
+            {
+                "end_report": _DELIVERED,
+                "completed_at": LATER,
+                "clarification.state": "declined",
+                "clarification.offered_at": NOW,
+                "clarification.resolved_at": NOW,
+                "downstream": {"state": "owed", "completed_at": None},
+            },
+            "delivered while downstream is owed",
+        ),
+        (
+            {
+                "end_report": _DELIVERED,
+                "completed_at": MUCH_LATER,
+                "clarification.state": "declined",
+                "clarification.offered_at": NOW,
+                "clarification.resolved_at": NOW,
+            },
+            "completed_at must equal end_report.delivered_at",
+        ),
+        ({"talks.0.claim_batch_id": ""}, "claim_batch_id must be a non-empty string"),
+        ({"talks.0.claim_generation": -1}, "claim_generation must be a non-negative"),
+        ({"talks.0.claim_generation": "1"}, "claim_generation must be a non-negative"),
         ({"completed_at": LATER}, "completed_at must be null in this state"),
         (
             {"schema_version": 2},
@@ -1631,6 +1661,12 @@ _ACCEPTED = {
         "delivered-needs-stamp",
         "report-digest",
         "delivered-needs-completed",
+        "delivered-without-answer",
+        "delivered-without-downstream",
+        "completed-differs-from-delivered",
+        "claim-batch-empty",
+        "claim-generation-negative",
+        "claim-generation-string",
         "completed-on-owed",
         "run-version-newer",
         "run-version-string",
@@ -2169,3 +2205,46 @@ def test_a_fifo_as_the_report_file_is_refused_not_read(tmp_path, fresh_db):
     )
     assert payload["reason_code"] == "report_unreadable"
     assert "regular file" in payload["error"]
+
+
+def test_a_read_failure_on_an_existing_copy_is_the_structured_failure(
+    tmp_path, run_obligations, monkeypatch
+):
+    directory = tmp_path / "ingress-reports"
+    directory.mkdir()
+    content = b"# report\n"
+    digest = hashlib.sha256(content).hexdigest()
+    (directory / f"run-x.{digest}.md").write_bytes(content)
+    real_read = os.read
+
+    def failing_read(descriptor, size):
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(run_obligations.os, "read", failing_read)
+    with pytest.raises(run_obligations.RunObligationsError) as caught:
+        run_obligations.write_report_copy(directory, "run-x", digest, content)
+    monkeypatch.setattr(run_obligations.os, "read", real_read)
+    assert caught.value.reason_code == "report_copy_failed"
+    assert "could not be read" in str(caught.value)
+    assert (directory / f"run-x.{digest}.md").read_bytes() == content
+    assert sorted(path.name for path in directory.iterdir()) == [f"run-x.{digest}.md"]
+
+
+def test_two_batches_released_in_the_same_second_are_distinct_facts(tmp_path):
+    release = "2026-09-13T10:00:00+00:00"
+    database = _db_with_claims(tmp_path, {"a.md": ("run-same-second", release)})
+    _opened(database, "run-same-second", "a.md")
+    assert _ok(database, "pending")["open_required"] == []
+    talk = _talk(
+        "a.md", claim=_persisted_claim("run-same-second", release, batch_id="b2")
+    )
+    talk["_queue_claim_history"] = [_persisted_claim("run-same-second", release)]
+    _write_db(tmp_path, [talk])
+    listed = _ok(database, "pending")["open_required"]
+    assert [(entry["run_id"], entry["talks"], entry["reason"]) for entry in listed] == [
+        ("run-same-second", ["a.md"], "missing_talks")
+    ]
+    reopened = _open(database, "run-same-second", "a.md", now=LATER)["run"]
+    assert reopened["talks"][0]["claim_batch_id"] == "b2"
+    assert reopened["downstream"] == {"state": "owed", "completed_at": None}
+    assert _ok(database, "pending")["open_required"] == []
