@@ -241,7 +241,8 @@ Proceed immediately to Step 8.
 
 ## Step 8 — Verify Improvement Goals
 
-Skip when no goal is active. Otherwise follow
+With no active goal, skip the goal assessment and go straight to the
+downstream record below. Otherwise follow
 [Improvement Goal Verification](references/processing-rules.md#improvement-goal-verification)
 using every active goal and the current full-cohort baseline:
 
@@ -252,7 +253,8 @@ using every active goal and the current full-cohort baseline:
 
 Require one valid assessment per goal before one expectation-bound transaction,
 then re-read and report comparable, rebaseline, and unverifiable outcomes.
-Then record that the run's downstream steps are done:
+Then, with or without active goals, record that the run's downstream steps
+are done:
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
@@ -264,7 +266,8 @@ Proceed to Step 9.
 
 ## Step 9 — Clarification Handoff
 
-Read the run's obligation and follow
+If this run persisted no talks and Step 1 resumed no obligations, there is no
+obligations record: finish here. Otherwise read the run's obligation and follow
 [Clarification Handoff](references/clarification-handoff.md) exactly. The
 ledger's `next_action` and `offer_mode` decide what to offer; record the offer
 before asking, ask one question, wait for the answer, and record the
