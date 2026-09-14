@@ -143,10 +143,10 @@ Proceed immediately to Step 3.
 
 Open with the seed agenda when Step 2 found one: put each recorded topic to
 the speaker in its recorded order, one topic per `AskUserQuestion`, before
-anything this session finds on its own. The speaker accepted the session on
-those topics, so a topic the speaker chooses not to discuss is answered as
-such and moves on, never dropped silently. Then, or from the start of a
-standalone session, ask about each surprising, contradictory, or ambiguous
+anything this session finds on its own. A topic the speaker chooses not to
+discuss is answered as such and moves on, never dropped silently. Then, or
+from the start of a standalone session, ask about each surprising,
+contradictory, or ambiguous
 observation, one topic at a time: intentional vs accidental patterns, invisible
 context, conflicting signals, and flagged improvement areas. Update summary and
 DB after each answer. Use the typed mutation protocol above for the DB portion;

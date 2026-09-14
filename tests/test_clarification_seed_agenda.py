@@ -109,12 +109,24 @@ def test_tracking_write_window_names_the_renumbered_steps() -> None:
     assert "Steps 2–8" not in skill
 
 
+def _bullet(text: str, start: str, end: str) -> str:
+    """The normalized text of one list item, from its opening marker to the next."""
+    begin = text.index(start)
+    return _normalized(text[begin : text.index(end, begin)])
+
+
 def test_handoff_carries_the_run_id_and_names_the_skill_steps() -> None:
     handoff = _read(HANDOFF)
     steps = _steps(_read(SKILL))
 
     assert "carrying the recorded topics as the session's seed agenda" not in handoff
-    assert _normalized(handoff).count("carrying `run_id`") == 2
+    resumption = _bullet(
+        handoff, "- `complete_clarification_session` —", "- `deliver_end_report`"
+    )
+    acceptance = _bullet(handoff, "- **accepted** —", "- **declined** —")
+    for branch in (resumption, acceptance):
+        assert 'Skill(skill: "vault-clarification")' in branch
+        assert "carrying `run_id`" in branch
     for step, title in (
         (2, "Resolve the Seed Agenda"),
         (3, "Rhetoric Clarification"),
