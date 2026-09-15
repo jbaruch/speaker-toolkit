@@ -1525,6 +1525,32 @@ def test_session_agenda_refuses_a_run_without_a_pending_session(fresh_db):
     assert _ok(fresh_db, "session-agenda")["session"] is None
 
 
+def test_session_agenda_hands_over_the_recorded_order_until_recorded(fresh_db):
+    """The behavior the seed-agenda contract rests on, end to end."""
+    topics = ["Zoom pacing", "Anecdote timing", "Bilingual joke"]
+    run_id = _accepted_with_topics(fresh_db, "run-x", *topics)
+
+    handed = _ok(fresh_db, "session-agenda")["session"]["topics"]
+
+    assert handed == topics
+    assert handed != sorted(handed)
+    _ok(
+        fresh_db,
+        "record-session",
+        "--run-id",
+        run_id,
+        "--now",
+        LATER,
+        "--profile-inputs",
+        "unchanged",
+    )
+    after = _ok(fresh_db, "session-agenda")
+    assert after["session"] is None
+    assert after["pending_sessions"] == []
+    refused = _refused(fresh_db, "session-agenda", "--run-id", run_id)
+    assert refused["reason_code"] == "invalid_transition"
+
+
 def test_session_agenda_before_adoption(unadopted_db):
     payload = _ok(unadopted_db, "session-agenda")
 

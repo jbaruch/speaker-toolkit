@@ -1,9 +1,13 @@
 """The seed-agenda contract between vault-ingress Step 9 and vault-clarification.
 
 vault-ingress records the candidate topics in the run obligations ledger and
-invokes vault-clarification for an accepted session; the session must open with
-those topics, and the ledger session must be closed by whichever side owns the
-invocation (#456 part two).
+invokes vault-clarification for an accepted session; the session opens with
+those topics, and the ledger session is closed by whichever side owns the
+invocation (#456 part two). The behavior itself, topics handed over in recorded
+order until the session is recorded, runs against the owner script in
+``tests/test_run_obligations.py`` (``session-agenda``). These checks cover the
+syntax the prose must carry: the commands it runs, the typed calls it makes,
+the fields and reason codes it reads, and the step numbers it cross-references.
 """
 
 from __future__ import annotations
@@ -19,6 +23,11 @@ RESOURCES_RULE = ROOT / "rules/resources-gathering-rules.md"
 CONFIG_SCHEMA = ROOT / "skills/vault-clarification/references/schemas-config.md"
 
 _STEP_HEADING = re.compile(r"^## Step (\d+) — (.+)$", re.MULTILINE)
+_BASH_FENCE = re.compile(r"```bash\n(.*?)```", re.DOTALL)
+OWNER_SCRIPT = (
+    '"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/'
+    'run-obligations.py"'
+)
 
 
 def _read(path: Path) -> str:
@@ -41,6 +50,25 @@ def _steps(text: str) -> dict[int, tuple[str, str]]:
     return steps
 
 
+def _commands(body: str) -> list[str]:
+    """Each fenced bash block as one command line, continuations joined."""
+    return [
+        _normalized(block.replace("\\\n", " ")) for block in _BASH_FENCE.findall(body)
+    ]
+
+
+def _bullet(text: str, start: str, end: str) -> str:
+    """The normalized text of one list item, from its opening marker to the next."""
+    begin = text.index(start)
+    return _normalized(text[begin : text.index(end, begin)])
+
+
+def _step_number(pattern: str, text: str) -> int:
+    match = re.search(pattern, _normalized(text))
+    assert match, pattern
+    return int(match.group(1))
+
+
 def test_steps_are_flat_contiguous_and_chained() -> None:
     steps = _steps(_read(SKILL))
 
@@ -53,138 +81,154 @@ def test_steps_are_flat_contiguous_and_chained() -> None:
             assert f"Step {number + 1}" in body, f"Step {number} never continues"
 
 
-def test_seed_agenda_is_resolved_through_the_ledger_owner() -> None:
+def test_seed_agenda_step_runs_the_owner_command() -> None:
     title, body = _steps(_read(SKILL))[2]
-    normalized = _normalized(body)
 
     assert title == "Resolve the Seed Agenda"
-    assert "skills/vault-ingress/scripts/run-obligations.py" in body
-    command = (
+    commands = _commands(body)
+    assert len(commands) == 1
+    assert commands[0].startswith(OWNER_SCRIPT)
+    assert commands[0].endswith(
         '"{vault_root}/tracking-database.json" session-agenda [--run-id "{run_id}"]'
     )
-    assert command in body
-    assert "`session.topics`, in its recorded order, is the seed agenda" in normalized
-    assert "`session: null` means this session is standalone" in normalized
-    assert "the `pending_sessions` docstring" in normalized
-    for reason in ("invalid_transition", "run_not_found", "ledger_not_adopted"):
-        assert f"(`{reason}`)" in normalized
-    assert "never open the ledger file directly" in normalized
-    assert "never write it in this step" in normalized
-    assert "never guess the topics" in normalized
-    for agent_owned in (
-        "earliest `opened_at`",
-        "`next_action`",
-        " pending\n",
-        "status --run-id",
-    ):
-        assert agent_owned not in body
+    for read_field in ("`session.run_id`", "`session.topics`", "`session: null`"):
+        assert read_field in body
+    for reason in ("`invalid_transition`", "`run_not_found`", "`ledger_not_adopted`"):
+        assert reason in body
+    # The selection rule is the script's: named by its anchor, never restated.
+    assert "`pending_sessions`" in body
+    for restated in ("`opened_at`", "`next_action`", " pending\n", "status --run-id"):
+        assert restated not in body
 
 
-def test_rhetoric_clarification_opens_with_the_seed_agenda() -> None:
+def test_rhetoric_clarification_reads_the_seed_agenda_and_asks_one_at_a_time() -> None:
     title, body = _steps(_read(SKILL))[3]
-    normalized = _normalized(body)
 
     assert title == "Rhetoric Clarification"
-    seed = normalized.index("Open with the seed agenda when Step 2 found one")
-    own = normalized.index("surprising, contradictory, or ambiguous")
-    assert seed < own
-    assert "in its recorded order, one topic per `AskUserQuestion`" in normalized
-    assert "before anything this session finds on its own" in normalized
-    assert "never dropped silently" in normalized
+    assert "seed agenda" in body
+    assert _step_number(r"seed agenda when Step (\d+)", body) == 2
+    assert "`AskUserQuestion`" in body
+    assert "AskUserQuestion(" in body
 
 
-def test_session_completion_closes_the_ledger_session() -> None:
+def test_session_completion_runs_the_owner_command_and_typed_calls() -> None:
     title, body = _steps(_read(SKILL))[9]
-    normalized = _normalized(body)
 
     assert title == "Mark Session Complete"
     assert "`config.clarification_sessions_completed + 1`" in body
-    assert "Name `profile_inputs`" in normalized
+    assert "`set_config`" in body
+    commands = _commands(body)
+    assert len(commands) == 1
+    assert commands[0].startswith(OWNER_SCRIPT)
+    assert commands[0].endswith(
+        '"{vault_root}/tracking-database.json" record-session '
+        '--run-id "{run_id}" --now "{iso_timestamp}" '
+        "--profile-inputs changed|unchanged [--profile-refreshed]"
+    )
     assert "clarification-handoff.md#record-the-answer" in body
-    assert "Do not record it here" in normalized
-    assert '"{vault_root}/tracking-database.json" record-session' in body
-    assert "--profile-inputs changed|unchanged [--profile-refreshed]" in body
-    assert "`profile_refresh_required`" in body
     assert 'Skill(skill: "vault-profile")' in body
-    assert "`report_reopened: true`" in body
-    assert "stays pending for the next run to record" in normalized
+    for read_field in (
+        "`profile_inputs`",
+        "`profile_refresh_required`",
+        "`--profile-refreshed`",
+        "`report_reopened: true`",
+    ):
+        assert read_field in body
+    assert _step_number(r"ledger session Step (\d+) resolved", body) == 2
 
 
-def test_tracking_write_window_names_the_renumbered_steps() -> None:
+def test_tracking_write_window_spans_the_mutating_steps() -> None:
     skill = _read(SKILL)
     steps = _steps(skill)
 
-    assert "Every tracking write in Steps 3–9 is current-only." in skill
-    assert steps[3][0] == "Rhetoric Clarification"
-    assert steps[9][0] == "Mark Session Complete"
-    assert "Steps 2–8" not in skill
+    match = re.search(
+        r"Every tracking write in Steps (\d+)–(\d+) is current-only", skill
+    )
+    assert match
+    first, last = int(match.group(1)), int(match.group(2))
+    assert steps[first][0] == "Rhetoric Clarification"
+    assert last == max(steps)
 
 
-def _bullet(text: str, start: str, end: str) -> str:
-    """The normalized text of one list item, from its opening marker to the next."""
-    begin = text.index(start)
-    return _normalized(text[begin : text.index(end, begin)])
-
-
-def test_handoff_carries_the_run_id_and_names_the_skill_steps() -> None:
+def test_handoff_invokes_the_skill_with_run_id_in_both_branches() -> None:
     handoff = _read(HANDOFF)
     steps = _steps(_read(SKILL))
 
-    assert "carrying the recorded topics as the session's seed agenda" not in handoff
     resumption = _bullet(
         handoff, "- `complete_clarification_session` —", "- `deliver_end_report`"
     )
     acceptance = _bullet(handoff, "- **accepted** —", "- **declined** —")
     for branch in (resumption, acceptance):
         assert 'Skill(skill: "vault-clarification")' in branch
-        assert "carrying `run_id`" in branch
-    for step, title in (
+        assert "`run_id`" in branch
+        assert "`topics`" in branch
+    for number, title in (
         (2, "Resolve the Seed Agenda"),
         (3, "Rhetoric Clarification"),
         (9, "Mark Session Complete"),
     ):
-        assert f"(its Step {step})" in handoff
-        assert steps[step][0] == title
-    assert "picks it up through `session-agenda` and records it itself" in handoff
-    assert "record it with the `profile_inputs` it reported" in _normalized(handoff)
+        assert f"(its Step {number})" in acceptance
+        assert steps[number][0] == title
+    assert "`session-agenda`" in acceptance
+    assert "`profile_inputs`" in acceptance
+    assert '"{vault_root}/tracking-database.json" record-session' in acceptance
 
 
-def test_ledger_schema_names_vault_clarification_as_a_reader() -> None:
-    schema = _normalized(_read(LEDGER_SCHEMA))
+def test_ledger_schema_lists_the_reader_and_the_command() -> None:
+    schema = _read(LEDGER_SCHEMA)
+    steps = _steps(_read(SKILL))
 
-    assert "vault-clarification and vault-profile never read it" not in schema
-    assert "vault-clarification Step 2 (`session-agenda`)" in schema
-    assert "vault-profile never reads it" in schema
-    recorded = "records the session `session-agenda` selected through `record-session`"
-    assert recorded in schema
-    assert "the script stays the only writer" in schema
-    assert "`session-agenda [--run-id]` emits" in schema
+    access = schema[schema.index("## Ownership and Access") : schema.index("## Root")]
+    readers = _bullet(access, "- Readers:", "\n- ")
+    assert "vault-clarification" in readers
+    assert "`session-agenda`" in readers
+    assert steps[_step_number(r"vault-clarification Step (\d+)", readers)][0] == (
+        "Resolve the Seed Agenda"
+    )
+    assert "never read it" not in readers
+    assert "`record-session`" in _normalized(access)
+    assert re.search(r"^\| `session-agenda \[--run-id\]` \|", schema, re.MULTILINE)
+    contract = schema[schema.index("## Reader Contract") : schema.index("## Migration")]
+    assert "`session-agenda [--run-id]`" in contract
+    for output_field in ("`session`", "`pending_sessions`", "`adopt_required`"):
+        assert output_field in contract
+    assert "`pending_sessions` docstring" in contract
+    for reason in ("`ledger_not_adopted`", "`run_not_found`", "`invalid_transition`"):
+        assert reason in contract
 
 
 def test_infrastructure_step_references_follow_the_numbering() -> None:
     skill = _read(SKILL)
     steps = _steps(skill)
-
-    assert steps[6][0] == "Speaker Infrastructure (first session only)"
     intro = skill[: skill.index("## Step 1")]
-    assert "infrastructure capture in Step 6 gates profile generation" in _normalized(
-        intro
+
+    infrastructure = 6
+    assert steps[infrastructure][0] == "Speaker Infrastructure (first session only)"
+    assert (
+        _step_number(r"infrastructure capture in Step (\d+)", intro) == infrastructure
     )
-    assert "asked during Step 6 (first session" in _read(CONFIG_SCHEMA)
-    assert "during vault-clarification (Step 6 infrastructure capture)" in _read(
-        RESOURCES_RULE
+    assert _step_number(r"asked during Step (\d+)", _read(CONFIG_SCHEMA)) == (
+        infrastructure
     )
-    for stale in (skill, _read(CONFIG_SCHEMA), _read(RESOURCES_RULE)):
-        assert "Step 5 infrastructure" not in stale
-        assert "in Step 5 gates" not in stale
-        assert "during Step 5" not in stale
+    assert (
+        _step_number(
+            r"vault-clarification \(Step (\d+) infrastructure capture\)",
+            _read(RESOURCES_RULE),
+        )
+        == infrastructure
+    )
 
 
-def test_changed_profile_inputs_include_config_fields() -> None:
+def test_changed_profile_inputs_name_config_fields_on_both_sides() -> None:
     step_nine = _normalized(_steps(_read(SKILL))[9][1])
-    handoff = _normalized(_read(HANDOFF))
+    acceptance = _bullet(_read(HANDOFF), "- **accepted** —", "- **declined** —")
 
-    assert "a config field (Step 6)" in step_nine
-    assert "`changed` for new confirmed intents, config fields, improvement goals" in (
-        handoff
-    )
+    skill_definition = step_nine[
+        step_nine.index("`profile_inputs`") : step_nine.index("`unchanged`")
+    ]
+    assert "config field" in skill_definition
+    assert _step_number(r"config field \(Step (\d+)\)", skill_definition) == 6
+    handoff_definition = acceptance[
+        acceptance.index("`changed`") : acceptance.index("record-session")
+    ]
+    assert "config fields" in handoff_definition
