@@ -190,8 +190,10 @@ def test_ledger_schema_lists_the_reader_and_the_command() -> None:
     assert re.search(r"^\| `session-agenda \[--run-id\]` \|", schema, re.MULTILINE)
     contract = schema[schema.index("## Reader Contract") : schema.index("## Migration")]
     assert "`session-agenda [--run-id]`" in contract
-    for output_field in ("`session`", "`pending_sessions`", "`adopt_required`"):
-        assert output_field in contract
+    emitted = re.search(r"`session-agenda \[--run-id\]` emits `\{([^}]*)\}`", contract)
+    assert emitted
+    for output_field in ("adopt_required", "session", "pending_sessions"):
+        assert output_field in re.split(r",\s*", emitted.group(1))
     assert "`pending_sessions` docstring" in contract
     for reason in ("`ledger_not_adopted`", "`run_not_found`", "`invalid_transition`"):
         assert reason in contract
