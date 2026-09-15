@@ -1917,6 +1917,20 @@ def _session_view(run: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _session_recovery(action: str) -> str:
+    """What to do when a named run has no pending session, by its next action."""
+    if action in (NEXT_REPORT, NEXT_NONE):
+        return (
+            "its session is already recorded; run `session-agenda` without "
+            "--run-id to select a session that is still pending"
+        )
+    return (
+        f"resume vault-ingress at the step `{action}` names (see `status "
+        "--run-id`) so the offer reaches `accepted`, or run `session-agenda` "
+        "without --run-id to select a session that is already pending"
+    )
+
+
 def command_session_agenda(
     context: Context, args: argparse.Namespace
 ) -> dict[str, Any]:
@@ -1935,12 +1949,13 @@ def command_session_agenda(
     else:
         require_adopted(ledger, context.ledger_path)
         selected = find_run(ledger, require_run_id(args.run_id))
-        if next_action(selected) != NEXT_SESSION:
+        action = next_action(selected)
+        if action != NEXT_SESSION:
             raise RunObligationsError(
                 f"run {selected['run_id']!r} has no pending clarification "
                 f"session: its clarification is "
                 f"{selected['clarification']['state']!r} and its next action is "
-                f"{next_action(selected)!r}",
+                f"{action!r}; {_session_recovery(action)}",
                 reason_code="invalid_transition",
             )
     return {

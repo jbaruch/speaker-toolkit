@@ -1520,6 +1520,13 @@ def test_session_agenda_refuses_a_run_without_a_pending_session(fresh_db):
         assert payload["reason_code"] == "invalid_transition"
         assert run_id in payload["error"]
         assert state in payload["error"]
+        assert "without --run-id" in payload["error"]
+    offered = _opened(fresh_db, "run-offered")
+    _ok(fresh_db, "record-offer", "--run-id", offered, "--now", NOW)
+    awaiting = _refused(fresh_db, "session-agenda", "--run-id", offered)
+    assert awaiting["reason_code"] == "invalid_transition"
+    assert "await_disposition" in awaiting["error"]
+    assert "resume vault-ingress" in awaiting["error"]
     unknown = _refused(fresh_db, "session-agenda", "--run-id", "never-opened")
     assert unknown["reason_code"] == "run_not_found"
     assert _ok(fresh_db, "session-agenda")["session"] is None
