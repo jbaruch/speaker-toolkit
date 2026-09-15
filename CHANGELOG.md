@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.164 — 2026-09-15
+
 ### Open the clarification session with the topics the speaker accepted
 
 vault-ingress Step 9 recorded the candidate topics in the run obligations
