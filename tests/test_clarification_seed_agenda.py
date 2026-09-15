@@ -16,6 +16,7 @@ SKILL = ROOT / "skills/vault-clarification/SKILL.md"
 HANDOFF = ROOT / "skills/vault-ingress/references/clarification-handoff.md"
 LEDGER_SCHEMA = ROOT / "skills/vault-ingress/references/schemas-obligations.md"
 RESOURCES_RULE = ROOT / "rules/resources-gathering-rules.md"
+CONFIG_SCHEMA = ROOT / "skills/vault-clarification/references/schemas-config.md"
 
 _STEP_HEADING = re.compile(r"^## Step (\d+) — (.+)$", re.MULTILINE)
 
@@ -160,10 +161,30 @@ def test_ledger_schema_names_vault_clarification_as_a_reader() -> None:
     assert "`session-agenda [--run-id]` emits" in schema
 
 
-def test_resources_rule_points_at_the_infrastructure_step() -> None:
-    steps = _steps(_read(SKILL))
+def test_infrastructure_step_references_follow_the_numbering() -> None:
+    skill = _read(SKILL)
+    steps = _steps(skill)
 
     assert steps[6][0] == "Speaker Infrastructure (first session only)"
+    intro = skill[: skill.index("## Step 1")]
+    assert "infrastructure capture in Step 6 gates profile generation" in _normalized(
+        intro
+    )
+    assert "asked during Step 6 (first session" in _read(CONFIG_SCHEMA)
     assert "during vault-clarification (Step 6 infrastructure capture)" in _read(
         RESOURCES_RULE
+    )
+    for stale in (skill, _read(CONFIG_SCHEMA), _read(RESOURCES_RULE)):
+        assert "Step 5 infrastructure" not in stale
+        assert "in Step 5 gates" not in stale
+        assert "during Step 5" not in stale
+
+
+def test_changed_profile_inputs_include_config_fields() -> None:
+    step_nine = _normalized(_steps(_read(SKILL))[9][1])
+    handoff = _normalized(_read(HANDOFF))
+
+    assert "a config field (Step 6)" in step_nine
+    assert "`changed` for new confirmed intents, config fields, improvement goals" in (
+        handoff
     )

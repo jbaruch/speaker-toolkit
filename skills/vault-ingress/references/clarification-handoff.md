@@ -112,7 +112,8 @@ Record the speaker's explicit answer, once:
   `complete_clarification_session`, or a standalone vault-clarification
   session picks it up through `session-agenda` and records it itself. When the session
   returns, record it with the `profile_inputs` it reported (`changed` for new
-  confirmed intents, improvement goals, or rhetoric-summary changes):
+  confirmed intents, config fields, improvement goals, or rhetoric-summary
+  changes):
 
   ```bash
   "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \

@@ -17,7 +17,7 @@ user_invocable: true
 Process steps in order. Do not skip ahead.
 
 Each step's output informs the next. The first-session infrastructure capture in
-Step 5 gates profile generation downstream.
+Step 6 gates profile generation downstream.
 
 Resolve the absolute path of this loaded `SKILL.md`, then set
 `speaker_toolkit_root` to the plugin root two directories above the directory
@@ -281,9 +281,9 @@ field.
 
 Then close the ledger session Step 2 resolved; a standalone session with no
 seed agenda finishes here. Name `profile_inputs`: `changed` when this session
-wrote a confirmed intent, created, retired, or changed an improvement goal, or
-edited the rhetoric summary; `unchanged` otherwise. List the recorded topics
-the session covered.
+wrote a confirmed intent, a config field (Step 6), or the rhetoric summary, or
+created, retired, or changed an improvement goal; `unchanged` otherwise. List
+the recorded topics the session covered.
 
 - Invoked from vault-ingress Step 9: return `run_id`, `profile_inputs`, and the
   covered topics to the caller, which records the session per
