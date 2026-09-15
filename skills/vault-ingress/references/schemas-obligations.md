@@ -11,11 +11,11 @@ explicit disposition and the end report has been delivered.
 - Owner: vault-ingress. `skills/vault-ingress/scripts/run-obligations.py` is
   the only writer and owns every shape change and migration.
 - Readers: vault-ingress Step 1 (`pending`) and Steps 9 and 11 (`status`);
-  vault-clarification Step 2 (`pending`, `status`) to resolve the seed agenda
-  of a pending session. vault-profile never reads it.
-- A standalone vault-clarification session records the session it resolved
-  from `pending` through `record-session`, the same owner command vault-ingress
-  Step 9 uses; the script stays the only writer.
+  vault-clarification Step 2 (`session-agenda`) to resolve the seed agenda of
+  a pending session. vault-profile never reads it.
+- A standalone vault-clarification session records the session
+  `session-agenda` selected through `record-session`, the same owner command
+  vault-ingress Step 9 uses; the script stays the only writer.
 - Every write goes through the tracking-database io helpers: sibling lock file,
   exact-generation check, staged candidate, atomic replace. Never edit the
   ledger by hand.
@@ -208,6 +208,7 @@ skill at Step 2 from letters, digits, `.`, `_`, and `-`, so the `{run_id}` and
 double quotes shown.
 | `pending` | — | runs owing a step, deferred offers, and uncovered persisted facts |
 | `status --run-id` | the run exists | the record and its summary |
+| `session-agenda [--run-id]` | with `--run-id`: the ledger is adopted, the run exists, and its session is pending | the accepted session to run with its seed agenda, or null; read-only |
 
 Every command reads the tracking database through the owner's strict reader
 and requires the current generation (`database_unusable` otherwise); the
@@ -281,6 +282,17 @@ either. Each entry carries `run_id`,
 
 The exact coverage predicate is the script's rule — see `run-obligations.py`,
 the `open_required` docstring.
+
+`session-agenda [--run-id]` emits `{ok, ledger_path, ledger_present,
+adopt_required, adopted_at, session, pending_sessions}`. `session` is null or
+one accepted session that has not completed: `run_id`, `opened_at`,
+`offered_at`, `resolved_at`, `offer_mode`, `topics` in recorded order, and the
+run's `summary`. `pending_sessions` lists every such run id in selection
+order; the selection rule is the script's (`run-obligations.py`, the
+`pending_sessions` docstring). With `--run-id` the named run's session is
+returned, or the command refuses: `ledger_not_adopted`, `run_not_found`, or
+`invalid_transition` when that run has no pending session, naming what
+stands.
 
 `next_action` is one of:
 

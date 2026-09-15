@@ -7,10 +7,13 @@ ledger and invoked vault-clarification "carrying the recorded topics as the
 session's seed agenda", and vault-clarification never read them: its first
 question came from whatever the session found on its own (#456 part two).
 The typed call now carries `run_id`. vault-clarification's new Step 2 resolves
-the seed agenda through the ledger's owner script: `status --run-id` for the
-run the call names, or `pending` for an accepted session a host without the
-typed call left behind, so a standalone session picks it up instead of running
-beside it. Step 3 puts the recorded topics to the speaker first, in recorded
+the seed agenda through a new read-only owner command, `session-agenda`: the
+named run's session, or, without `--run-id`, the accepted session that never
+finished, so a standalone session picks up what a host without the typed call
+left behind instead of running beside it. Which pending session comes first is
+the script's rule (`pending_sessions`, earliest `opened_at`), covered in
+`tests/test_run_obligations.py`, after the policy review refused the same
+selection in prose. Step 3 puts the recorded topics to the speaker first, in recorded
 order, before the session's own findings. Step 9 closes the ledger session: an
 ingress-invoked session returns `profile_inputs` and the covered topics for the
 handoff to record, and a standalone one records itself through

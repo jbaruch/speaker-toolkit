@@ -68,7 +68,7 @@ nothing. The canonical command and operation contract is in
 | `rhetoric-style-summary.md` | Running rhetoric & style narrative |
 | `analyses/{talk_filename}.md` | Per-talk analysis files |
 | `ingress-obligations.json` | Run obligations ledger, owned by vault-ingress — the session's seed agenda; read and closed only through `run-obligations.py` |
-| [../vault-ingress/references/schemas-obligations.md](../vault-ingress/references/schemas-obligations.md) | Ledger schema, states, and the `pending` / `status` reader contract |
+| [../vault-ingress/references/schemas-obligations.md](../vault-ingress/references/schemas-obligations.md) | Ledger schema, states, and the `session-agenda` reader contract |
 | [references/schemas-config.md](references/schemas-config.md) | Config fields + confirmed intents schema |
 | [references/humor-post-mortem.md](references/humor-post-mortem.md) | Protocol for grading humor effectiveness |
 | [references/blind-spot-moments.md](references/blind-spot-moments.md) | Protocol for capturing audience/room data |
@@ -110,32 +110,22 @@ offered this session. It lives in the run obligations ledger
 which only `run-obligations.py` writes. Read it through that owner: never open
 the ledger file directly, and never write it in this step.
 
-Without a `run_id` in the call, look for a session that is still pending:
-
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
-  "{vault_root}/tracking-database.json" pending
+  "{vault_root}/tracking-database.json" session-agenda [--run-id "{run_id}"]
 ```
 
-A `pending` entry whose `next_action` is `complete_clarification_session` is
-an accepted session that never finished; its `run_id` is this session's run.
-With several, take the earliest `opened_at` and leave the others pending for a
-later session. `adopt_required: true`, or no such entry, means this session is
-standalone: it has no seed agenda and touches the ledger no further.
-
-With a `run_id`, from the call or from `pending`, read the run:
-
-```bash
-"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
-  "{vault_root}/tracking-database.json" status --run-id "{run_id}"
-```
-
-Require `summary.next_action` to be `complete_clarification_session`; any
-other value means the run has no session to run (never accepted, or already
-completed), so stop and report the summary to the caller instead of running
-one. `run.clarification.topics`, in its recorded order, is the seed agenda.
-Exit 2 writes `{"ok": false, "error", "reason_code"}` to stdout and the same
-message to stderr: stop and report it; never guess the topics.
+Pass `--run-id` when the call carries one. Without it, the command selects the
+accepted session that never finished, if any; which one, when several are
+pending, is the script's rule (`run-obligations.py`, the `pending_sessions`
+docstring). Exit 0 with `session: null` means this session is standalone: it
+has no seed agenda and touches the ledger no further. Otherwise
+`session.run_id` is this session's run and `session.topics`, in its recorded
+order, is the seed agenda. Exit 2 writes `{"ok": false, "error",
+"reason_code"}` to stdout and the same message to stderr: a named run with no
+pending session (`invalid_transition`), an unknown run (`run_not_found`), or a
+ledger not yet adopted (`ledger_not_adopted`). Stop and report it; never guess
+the topics.
 
 Proceed immediately to Step 3.
 
@@ -300,7 +290,7 @@ the session covered.
   [Clarification Handoff](../vault-ingress/references/clarification-handoff.md#record-the-answer).
   Do not record it here; the caller owns the profile refresh the record may
   require.
-- Standalone, with a session resolved from `pending`: record it yourself, once:
+- Standalone, with a session `session-agenda` selected: record it yourself, once:
 
   ```bash
   "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \

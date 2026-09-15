@@ -110,7 +110,7 @@ Record the speaker's explicit answer, once:
   session `pending` in the ledger — never skipped, never simulated — and the
   next run on a capable host resumes it through
   `complete_clarification_session`, or a standalone vault-clarification
-  session picks it up from `pending` and records it itself. When the session
+  session picks it up through `session-agenda` and records it itself. When the session
   returns, record it with the `profile_inputs` it reported (`changed` for new
   confirmed intents, improvement goals, or rhetoric-summary changes):
 

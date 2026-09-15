@@ -58,15 +58,25 @@ def test_seed_agenda_is_resolved_through_the_ledger_owner() -> None:
 
     assert title == "Resolve the Seed Agenda"
     assert "skills/vault-ingress/scripts/run-obligations.py" in body
-    assert '"{vault_root}/tracking-database.json" pending' in body
-    assert '"{vault_root}/tracking-database.json" status --run-id "{run_id}"' in body
-    assert "`next_action` is `complete_clarification_session`" in normalized
-    agenda = "`run.clarification.topics`, in its recorded order, is the seed agenda"
-    assert agenda in normalized
+    command = (
+        '"{vault_root}/tracking-database.json" session-agenda [--run-id "{run_id}"]'
+    )
+    assert command in body
+    assert "`session.topics`, in its recorded order, is the seed agenda" in normalized
+    assert "`session: null` means this session is standalone" in normalized
+    assert "the `pending_sessions` docstring" in normalized
+    for reason in ("invalid_transition", "run_not_found", "ledger_not_adopted"):
+        assert f"(`{reason}`)" in normalized
     assert "never open the ledger file directly" in normalized
     assert "never write it in this step" in normalized
-    assert "`adopt_required: true`, or no such entry" in normalized
     assert "never guess the topics" in normalized
+    for agent_owned in (
+        "earliest `opened_at`",
+        "`next_action`",
+        " pending\n",
+        "status --run-id",
+    ):
+        assert agent_owned not in body
 
 
 def test_rhetoric_clarification_opens_with_the_seed_agenda() -> None:
@@ -134,7 +144,7 @@ def test_handoff_carries_the_run_id_and_names_the_skill_steps() -> None:
     ):
         assert f"(its Step {step})" in handoff
         assert steps[step][0] == title
-    assert "picks it up from `pending` and records it itself" in handoff
+    assert "picks it up through `session-agenda` and records it itself" in handoff
     assert "record it with the `profile_inputs` it reported" in _normalized(handoff)
 
 
@@ -142,11 +152,12 @@ def test_ledger_schema_names_vault_clarification_as_a_reader() -> None:
     schema = _normalized(_read(LEDGER_SCHEMA))
 
     assert "vault-clarification and vault-profile never read it" not in schema
-    assert "vault-clarification Step 2 (`pending`, `status`)" in schema
+    assert "vault-clarification Step 2 (`session-agenda`)" in schema
     assert "vault-profile never reads it" in schema
-    recorded = "records the session it resolved from `pending` through `record-session`"
+    recorded = "records the session `session-agenda` selected through `record-session`"
     assert recorded in schema
     assert "the script stays the only writer" in schema
+    assert "`session-agenda [--run-id]` emits" in schema
 
 
 def test_resources_rule_points_at_the_infrastructure_step() -> None:
