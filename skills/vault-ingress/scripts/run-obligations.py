@@ -33,6 +33,7 @@ Usage:
         --run-id <id> --now <ISO-8601> (--reason <text> | --reason-from <file>)
     run-obligations.py <tracking-database.json> pending
     run-obligations.py <tracking-database.json> status --run-id <id>
+    run-obligations.py <tracking-database.json> session-agenda [--run-id <id>]
 
 Every successful command emits one JSON object on stdout and exits 0. Known
 input/state errors emit a JSON error object on stdout, an actionable diagnostic
@@ -56,7 +57,11 @@ again under the same run, that crashed between the merge and ``open``) without
 repeating talks recovered under a fresh run id. An uncovered run stays listed
 until it is opened or explicitly dismissed with a reason; a later run's
 existence never stands in for either. ``pending`` also lists every deferred
-offer with the speaker's return condition, so it can be raised again. Field
+offer with the speaker's return condition, so it can be raised again.
+``session-agenda`` is vault-clarification's read: the accepted session that
+has not completed, with the topics recorded at the offer as its seed agenda,
+selected here (see ``pending_sessions``) so the session never picks one by
+hand. Field
 meanings, transitions, and the reader/writer contract live in
 ``skills/vault-ingress/references/schemas-obligations.md``.
 
@@ -1885,6 +1890,85 @@ def command_status(context: Context, args: argparse.Namespace) -> dict[str, Any]
 # ── CLI ───────────────────────────────────────────────────────────────
 
 
+def pending_sessions(ledger: dict[str, Any]) -> list[dict[str, Any]]:
+    """Accepted sessions that have not completed, earliest ``opened_at`` first.
+
+    Stored timestamps are canonical, so text order is time order; two runs
+    opened in the same second keep the ledger's opening order.
+    """
+    candidates = [
+        (run["opened_at"], index, run)
+        for index, run in enumerate(ledger["runs"])
+        if next_action(run) == NEXT_SESSION
+    ]
+    return [run for _stamp, _index, run in sorted(candidates, key=lambda c: c[:2])]
+
+
+def _session_view(run: dict[str, Any]) -> dict[str, Any]:
+    clarification = run["clarification"]
+    return {
+        "run_id": run["run_id"],
+        "opened_at": run["opened_at"],
+        "offered_at": clarification["offered_at"],
+        "resolved_at": clarification["resolved_at"],
+        "offer_mode": clarification["offer_mode"],
+        "topics": list(clarification["topics"]),
+        "summary": summarize(run),
+    }
+
+
+def _session_recovery(action: str) -> str:
+    """What to do when a named run has no pending session, by its next action."""
+    if action in (NEXT_REPORT, NEXT_NONE):
+        return (
+            "its session is already recorded; run `session-agenda` without "
+            "--run-id to select a session that is still pending"
+        )
+    return (
+        f"resume vault-ingress at the step `{action}` names (see `status "
+        "--run-id`) so the offer reaches `accepted`, or run `session-agenda` "
+        "without --run-id to select a session that is already pending"
+    )
+
+
+def command_session_agenda(
+    context: Context, args: argparse.Namespace
+) -> dict[str, Any]:
+    """The clarification session to run, with its seed agenda; read-only.
+
+    Without ``--run-id`` the first of ``pending_sessions`` is selected, or
+    ``session`` is null when none is pending. With ``--run-id`` the named run
+    must exist and its session must be pending; any other state is refused as
+    ``invalid_transition`` naming what stands.
+    """
+    _snapshot, ledger = load_ledger(context.ledger_path, context.reports_directory)
+    adopted = isinstance(ledger.get("adopted_at"), str)
+    sessions = pending_sessions(ledger)
+    if args.run_id is None:
+        selected = sessions[0] if sessions else None
+    else:
+        require_adopted(ledger, context.ledger_path)
+        selected = find_run(ledger, require_run_id(args.run_id))
+        action = next_action(selected)
+        if action != NEXT_SESSION:
+            raise RunObligationsError(
+                f"run {selected['run_id']!r} has no pending clarification "
+                f"session: its clarification is "
+                f"{selected['clarification']['state']!r} and its next action is "
+                f"{action!r}; {_session_recovery(action)}",
+                reason_code="invalid_transition",
+            )
+    return {
+        "ok": True,
+        "ledger_path": str(context.ledger_path),
+        "ledger_present": context.ledger_path.exists(),
+        "adopt_required": not adopted,
+        "adopted_at": ledger.get("adopted_at"),
+        "session": _session_view(selected) if selected is not None else None,
+        "pending_sessions": [run["run_id"] for run in sessions],
+    }
+
+
 def build_parser() -> JsonArgumentParser:
     parser = JsonArgumentParser(description=(__doc__ or "").split("\n")[0])
     parser.add_argument("database", help="tracking-database.json path")
@@ -1955,7 +2039,10 @@ def build_parser() -> JsonArgumentParser:
         "--profile-inputs",
         choices=PROFILE_INPUTS,
         required=True,
-        help="whether the session changed confirmed intents, goals, or summary",
+        help=(
+            "whether the session changed confirmed intents, config fields, goals,"
+            " or the summary"
+        ),
     )
     session.add_argument(
         "--profile-refreshed",
@@ -1984,6 +2071,12 @@ def build_parser() -> JsonArgumentParser:
 
     status = actions.add_parser("status", help="show one run's obligations")
     with_run(status, now=False)
+
+    agenda = actions.add_parser(
+        "session-agenda",
+        help="the accepted clarification session to run, with its seed agenda",
+    )
+    agenda.add_argument("--run-id", help="that run's session, or a refusal")
     return parser
 
 
@@ -1998,6 +2091,7 @@ COMMANDS = {
     "dismiss": command_dismiss,
     "pending": command_pending,
     "status": command_status,
+    "session-agenda": command_session_agenda,
 }
 
 

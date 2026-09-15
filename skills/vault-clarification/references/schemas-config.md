@@ -2,7 +2,7 @@
 
 ## Config Fields — Clarification Session Questions
 
-Fields below `template_skip_patterns` are asked during Step 5 (first session
+Fields below `template_skip_patterns` are asked during Step 6 (first session
 only) when empty. The question column shows what to ask the speaker.
 
 | Config field | Question |

@@ -1427,6 +1427,147 @@ def test_adoption_stamps_the_boundary_once(tmp_path, unadopted_db):
     assert payload["adopted_at"] == NOW
 
 
+# ── session-agenda ────────────────────────────────────────────────────
+
+
+def _accepted_with_topics(database: Path, run_id: str, *topics: str, now: str = NOW):
+    _open(database, run_id, "fresh.md", now=now)
+    _downstream(database, run_id, now=now)
+    arguments = ["record-offer", "--run-id", run_id, "--now", now]
+    for topic in topics:
+        arguments += ["--topic", topic]
+    _ok(database, *arguments)
+    _ok(
+        database,
+        "record-disposition",
+        "--run-id",
+        run_id,
+        "--now",
+        now,
+        "--disposition",
+        "accepted",
+    )
+    return run_id
+
+
+def test_session_agenda_is_null_without_a_pending_session(fresh_db):
+    _declined(fresh_db, "run-x")
+
+    payload = _ok(fresh_db, "session-agenda")
+
+    assert payload["adopt_required"] is False
+    assert payload["session"] is None
+    assert payload["pending_sessions"] == []
+
+
+def test_session_agenda_returns_the_accepted_session_with_its_topics(fresh_db):
+    _accepted_with_topics(fresh_db, "run-x", "Pacing in the demo", "The bilingual joke")
+
+    payload = _ok(fresh_db, "session-agenda")
+
+    session = payload["session"]
+    assert session["run_id"] == "run-x"
+    assert session["topics"] == ["Pacing in the demo", "The bilingual joke"]
+    assert session["offer_mode"] == "inline"
+    assert session["summary"]["next_action"] == "complete_clarification_session"
+    assert payload["pending_sessions"] == ["run-x"]
+    assert _ledger(fresh_db.parent)["runs"][0]["clarification"]["session"] == {
+        "state": "pending",
+        "completed_at": None,
+        "profile_inputs": None,
+        "profile_refreshed": None,
+    }
+
+
+def test_session_agenda_selects_the_earliest_opened_session(fresh_db):
+    _accepted_with_topics(fresh_db, "run-late", "Later topic", now=LATER)
+    _accepted_with_topics(fresh_db, "run-early", "Earlier topic", now=NOW)
+
+    payload = _ok(fresh_db, "session-agenda")
+
+    assert payload["session"]["run_id"] == "run-early"
+    assert payload["session"]["topics"] == ["Earlier topic"]
+    assert payload["pending_sessions"] == ["run-early", "run-late"]
+
+
+def test_session_agenda_names_the_run_it_is_asked_for(fresh_db):
+    _accepted_with_topics(fresh_db, "run-early", "Earlier topic", now=NOW)
+    _accepted_with_topics(fresh_db, "run-late", "Later topic", now=LATER)
+
+    payload = _ok(fresh_db, "session-agenda", "--run-id", "run-late")
+
+    assert payload["session"]["run_id"] == "run-late"
+    assert payload["session"]["topics"] == ["Later topic"]
+    assert payload["pending_sessions"] == ["run-early", "run-late"]
+
+
+def test_session_agenda_refuses_a_run_without_a_pending_session(fresh_db):
+    _declined(fresh_db, "run-declined")
+    accepted = _accepted(fresh_db, "run-done")
+    _ok(
+        fresh_db,
+        "record-session",
+        "--run-id",
+        accepted,
+        "--now",
+        LATER,
+        "--profile-inputs",
+        "unchanged",
+    )
+
+    for run_id, state in (("run-declined", "declined"), ("run-done", "accepted")):
+        payload = _refused(fresh_db, "session-agenda", "--run-id", run_id)
+        assert payload["reason_code"] == "invalid_transition"
+        assert run_id in payload["error"]
+        assert state in payload["error"]
+        assert "without --run-id" in payload["error"]
+    offered = _opened(fresh_db, "run-offered")
+    _ok(fresh_db, "record-offer", "--run-id", offered, "--now", NOW)
+    awaiting = _refused(fresh_db, "session-agenda", "--run-id", offered)
+    assert awaiting["reason_code"] == "invalid_transition"
+    assert "await_disposition" in awaiting["error"]
+    assert "resume vault-ingress" in awaiting["error"]
+    unknown = _refused(fresh_db, "session-agenda", "--run-id", "never-opened")
+    assert unknown["reason_code"] == "run_not_found"
+    assert _ok(fresh_db, "session-agenda")["session"] is None
+
+
+def test_session_agenda_hands_over_the_recorded_order_until_recorded(fresh_db):
+    """The behavior the seed-agenda contract rests on, end to end."""
+    topics = ["Zoom pacing", "Anecdote timing", "Bilingual joke"]
+    run_id = _accepted_with_topics(fresh_db, "run-x", *topics)
+
+    handed = _ok(fresh_db, "session-agenda")["session"]["topics"]
+
+    assert handed == topics
+    assert handed != sorted(handed)
+    _ok(
+        fresh_db,
+        "record-session",
+        "--run-id",
+        run_id,
+        "--now",
+        LATER,
+        "--profile-inputs",
+        "unchanged",
+    )
+    after = _ok(fresh_db, "session-agenda")
+    assert after["session"] is None
+    assert after["pending_sessions"] == []
+    refused = _refused(fresh_db, "session-agenda", "--run-id", run_id)
+    assert refused["reason_code"] == "invalid_transition"
+
+
+def test_session_agenda_before_adoption(unadopted_db):
+    payload = _ok(unadopted_db, "session-agenda")
+
+    assert payload["adopt_required"] is True
+    assert payload["session"] is None
+    assert payload["pending_sessions"] == []
+    refused = _refused(unadopted_db, "session-agenda", "--run-id", "run-x")
+    assert refused["reason_code"] == "ledger_not_adopted"
+
+
 def test_status_names_an_unknown_run(fresh_db):
     payload = _refused(fresh_db, "status", "--run-id", "never-opened")
     assert payload["reason_code"] == "run_not_found"

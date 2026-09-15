@@ -5,8 +5,10 @@ description: >
   Resolves ambiguities in rhetoric observations, validates findings, captures speaker
   intent, conducts humor post-mortems, and probes for blind-spot moments invisible to
   transcripts. Stores confirmed intents and infrastructure config in the tracking database.
+  Opens with the topics vault-ingress recorded when the speaker accepted the session,
+  and closes that session in the run obligations ledger.
   Triggers: "run clarification session", "humor post-mortem", "blind spot review",
-  "capture speaker intent", "clarify rhetoric findings".
+  "capture speaker intent", "clarify rhetoric findings", "resume clarification session".
 user_invocable: true
 ---
 
@@ -15,7 +17,7 @@ user_invocable: true
 Process steps in order. Do not skip ahead.
 
 Each step's output informs the next. The first-session infrastructure capture in
-Step 5 gates profile generation downstream.
+Step 6 gates profile generation downstream.
 
 Resolve the absolute path of this loaded `SKILL.md`, then set
 `speaker_toolkit_root` to the plugin root two directories above the directory
@@ -25,6 +27,11 @@ vault paths remain consumer-owned.
 
 Run after vault-ingress has processed talks. Purpose: resolve ambiguities, validate
 findings, capture intent, and fill in speaker infrastructure config.
+
+vault-ingress Step 9 invokes this skill for an accepted session, and that call
+carries `run_id`: the run in `{vault_root}/ingress-obligations.json` whose
+session is pending. A call without `run_id` is standalone; Step 2 still checks
+the ledger for a session left pending by a host that could not make the call.
 
 The vault lives at `~/.claude/rhetoric-knowledge-vault/` (may be a symlink).
 Set `host_python` to the current host's explicit absolute interpreter path (not
@@ -60,6 +67,8 @@ nothing. The canonical command and operation contract is in
 | `tracking-database.json` | Source of truth — config, confirmed intents |
 | `rhetoric-style-summary.md` | Running rhetoric & style narrative |
 | `analyses/{talk_filename}.md` | Per-talk analysis files |
+| `ingress-obligations.json` | Run obligations ledger, owned by vault-ingress — the session's seed agenda; read and closed only through `run-obligations.py` |
+| [../vault-ingress/references/schemas-obligations.md](../vault-ingress/references/schemas-obligations.md) | Ledger schema, states, and the `session-agenda` reader contract |
 | [references/schemas-config.md](references/schemas-config.md) | Config fields + confirmed intents schema |
 | [references/humor-post-mortem.md](references/humor-post-mortem.md) | Protocol for grading humor effectiveness |
 | [references/blind-spot-moments.md](references/blind-spot-moments.md) | Protocol for capturing audience/room data |
@@ -84,7 +93,7 @@ with the migration report as handoff context, then finish this clarification run
 Exit 2 writes one error object to stdout plus an `ERROR:` diagnostic to stderr;
 stop without changing session state.
 
-Every tracking write in Steps 2–8 is current-only. Preserve the owner-current root,
+Every tracking write in Steps 3–9 is current-only. Preserve the owner-current root,
 config schema 2, talk schema 8, and every unrelated record. Stamp confirmed
 intents with schema 1 and new improvement goals with schema 2. Capture the exact
 input bytes immediately before each write, reject a changed generation, validate
@@ -93,13 +102,47 @@ turn this authorized writer into an implicit migrator.
 
 Proceed immediately to Step 2.
 
-## Step 2 — Rhetoric Clarification
+## Step 2 — Resolve the Seed Agenda
 
-For each surprising, contradictory, or ambiguous observation, ask one topic at a time
-via `AskUserQuestion`: intentional vs accidental patterns, invisible context,
-conflicting signals, and flagged improvement areas. Update summary and DB after each answer.
-Use the typed mutation protocol above for the DB portion; do not batch answers into
-one unreviewed write at the end.
+The seed agenda is the list of candidate topics vault-ingress recorded when it
+offered this session. It lives in the run obligations ledger
+([../vault-ingress/references/schemas-obligations.md](../vault-ingress/references/schemas-obligations.md)),
+which only `run-obligations.py` writes. Read it through that owner: never open
+the ledger file directly, and never write it in this step.
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
+  "{vault_root}/tracking-database.json" session-agenda [--run-id "{run_id}"]
+```
+
+Pass `--run-id` when the call carries one. Without it, the command selects the
+accepted session that never finished, if any; which one, when several are
+pending, is the script's rule (`run-obligations.py`, the `pending_sessions`
+docstring). Exit 0 with `session: null` means this session is standalone: it
+has no seed agenda and touches the ledger no further. Otherwise
+`session.run_id` is this session's run and `session.topics`, in its recorded
+order, is the seed agenda. Exit 2 writes `{"ok": false, "error",
+"reason_code"}` to stdout and the same message to stderr: a named run with no
+pending session (`invalid_transition`), an unknown run (`run_not_found`), or a
+ledger not yet adopted (`ledger_not_adopted`). Stop and report it; never guess
+the topics.
+
+Proceed immediately to Step 3.
+
+## Step 3 — Rhetoric Clarification
+
+Open with the seed agenda when Step 2 found one: put each recorded topic to
+the speaker in its recorded order, one topic per `AskUserQuestion` where the
+host has it, otherwise one plain-text question per topic, and wait for each
+answer before the next topic. Do this before anything this session finds on
+its own. A topic the speaker chooses not to discuss is answered as such and
+moves on, never dropped silently. Then, or
+from the start of a standalone session, ask about each surprising,
+contradictory, or ambiguous
+observation, one topic at a time: intentional vs accidental patterns, invisible
+context, conflicting signals, and flagged improvement areas. Update summary and
+DB after each answer. Use the typed mutation protocol above for the DB portion;
+do not batch answers into one unreviewed write at the end.
 
 Example clarification question:
 ```
@@ -114,35 +157,35 @@ AskUserQuestion(
 )
 ```
 
-Proceed immediately to Step 3.
+Proceed immediately to Step 4.
 
-## Step 3 — Blind Spot Moments
+## Step 4 — Blind Spot Moments
 
 Follow [references/blind-spot-moments.md](references/blind-spot-moments.md) — ask about audience reactions,
 physical performance, and room context that transcripts cannot capture.
 
-Proceed immediately to Step 4.
+Proceed immediately to Step 5.
 
-## Step 4 — Humor Post-Mortem
+## Step 5 — Humor Post-Mortem
 
 Follow [references/humor-post-mortem.md](references/humor-post-mortem.md) — walk through detected humor beats,
 grade effectiveness, capture spontaneous material.
 
-Proceed immediately to Step 5.
+Proceed immediately to Step 6.
 
-## Step 5 — Speaker Infrastructure (first session only)
+## Step 6 — Speaker Infrastructure (first session only)
 
 If `config.clarification_sessions_completed` is already ≥ 1, skip this step and
-proceed immediately to Step 6.
+proceed immediately to Step 7.
 
 Otherwise, ask for any empty config fields (`speaker_name` through `publishing_process.*`).
 See [references/schemas-config.md](references/schemas-config.md) for the full field list and questions to ask.
 Persist each confirmed answer with `set_config`, expecting the exact value observed
 by the latest strict read.
 
-Proceed immediately to Step 6.
+Proceed immediately to Step 7.
 
-## Step 6 — Structured Intent Capture
+## Step 7 — Structured Intent Capture
 
 Persist each confirmed intent with `upsert_confirmed_intent`, expecting either the
 exact existing record for that pattern or `{"$missing": true}`.
@@ -158,9 +201,9 @@ Example:
 ```
 See [references/schemas-config.md](references/schemas-config.md) for the full schema.
 
-Proceed immediately to Step 7.
+Proceed immediately to Step 8.
 
-## Step 7 — Set Improvement Goals
+## Step 8 — Set Improvement Goals
 
 Close the coaching loop. Review Section 15 of `rhetoric-style-summary.md` as narrative
 coaching context, plus any `regressed`/`stalled` goals from a prior session, then ask
@@ -224,12 +267,12 @@ Improvement Goal Verification.
 
 If Section 15 has no speaker-selected pattern target, or the validated profile has no
 non-empty matching raw-score-comparable current pattern cohort, say so and skip
-pattern goal-setting. Proceed to Step 8. Independent pacing goals may still be
+pattern goal-setting. Proceed to Step 9. Independent pacing goals may still be
 available.
 
-Proceed immediately to Step 8.
+Proceed immediately to Step 9.
 
-## Step 8 — Mark Session Complete
+## Step 9 — Mark Session Complete
 
 Using the latest strict read, persist
 `config.clarification_sessions_completed + 1` with `set_config`, expecting the
@@ -238,11 +281,41 @@ requires >= 1).
 The owner mutation preserves `config.schema_version: 2` and every unrelated
 field.
 
+Then close the ledger session Step 2 resolved; a standalone session with no
+seed agenda finishes here. Name `profile_inputs`: `changed` when this session
+wrote a confirmed intent, a config field (Step 6), or the rhetoric summary, or
+created, retired, or changed an improvement goal; `unchanged` otherwise. List
+the recorded topics the session covered.
+
+- Invoked from vault-ingress Step 9: return `run_id`, `profile_inputs`, and the
+  covered topics to the caller, which records the session per
+  [Clarification Handoff](../vault-ingress/references/clarification-handoff.md#record-the-answer).
+  Do not record it here; the caller owns the profile refresh the record may
+  require.
+- Standalone, with a session `session-agenda` selected: record it yourself, once:
+
+  ```bash
+  "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
+    "{vault_root}/tracking-database.json" record-session \
+    --run-id "{run_id}" --now "{iso_timestamp}" --profile-inputs changed|unchanged [--profile-refreshed]
+  ```
+
+  Exit 2 with `profile_refresh_required` means `changed` inputs and an existing
+  `{vault_root}/speaker-profile.json`: invoke `Skill(skill: "vault-profile")`
+  with the resolved `{vault_root}` and exact `{python_path}` as handoff
+  context, then repeat the command with `--profile-refreshed`.
+  `report_reopened: true` in the output means the run's end report is owed
+  again; say so, and the next vault-ingress run delivers it. Any other exit 2
+  is reported as returned, and the session stays pending for the next run to
+  record.
+
 Finish here.
 
 ## Important Notes
 
 - One topic at a time — don't dump all questions at once.
+- The seed agenda is the ledger's: never invent a recorded topic, never drop one,
+  and never touch `ingress-obligations.json` except through `run-obligations.py`.
 - Update the summary and apply one reviewed typed DB plan after each answer, not in
   a batch at the end.
 - After completing a session, suggest running the **vault-profile** skill if 10+ talks
