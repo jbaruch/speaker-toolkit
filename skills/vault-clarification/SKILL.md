@@ -132,9 +132,11 @@ Proceed immediately to Step 3.
 ## Step 3 — Rhetoric Clarification
 
 Open with the seed agenda when Step 2 found one: put each recorded topic to
-the speaker in its recorded order, one topic per `AskUserQuestion`, before
-anything this session finds on its own. A topic the speaker chooses not to
-discuss is answered as such and moves on, never dropped silently. Then, or
+the speaker in its recorded order, one topic per `AskUserQuestion` where the
+host has it, otherwise one plain-text question per topic, and wait for each
+answer before the next topic. Do this before anything this session finds on
+its own. A topic the speaker chooses not to discuss is answered as such and
+moves on, never dropped silently. Then, or
 from the start of a standalone session, ask about each surprising,
 contradictory, or ambiguous
 observation, one topic at a time: intentional vs accidental patterns, invisible

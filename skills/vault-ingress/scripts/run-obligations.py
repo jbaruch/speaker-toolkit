@@ -2024,7 +2024,10 @@ def build_parser() -> JsonArgumentParser:
         "--profile-inputs",
         choices=PROFILE_INPUTS,
         required=True,
-        help="whether the session changed confirmed intents, goals, or summary",
+        help=(
+            "whether the session changed confirmed intents, config fields, goals,"
+            " or the summary"
+        ),
     )
     session.add_argument(
         "--profile-refreshed",

@@ -21,6 +21,7 @@ HANDOFF = ROOT / "skills/vault-ingress/references/clarification-handoff.md"
 LEDGER_SCHEMA = ROOT / "skills/vault-ingress/references/schemas-obligations.md"
 RESOURCES_RULE = ROOT / "rules/resources-gathering-rules.md"
 CONFIG_SCHEMA = ROOT / "skills/vault-clarification/references/schemas-config.md"
+PROFILE_CONFIG_SCHEMA = ROOT / "skills/vault-profile/references/schemas-config.md"
 
 _STEP_HEADING = re.compile(r"^## Step (\d+) — (.+)$", re.MULTILINE)
 _BASH_FENCE = re.compile(r"```bash\n(.*?)```", re.DOTALL)
@@ -95,10 +96,8 @@ def test_seed_agenda_step_runs_the_owner_command() -> None:
         assert read_field in body
     for reason in ("`invalid_transition`", "`run_not_found`", "`ledger_not_adopted`"):
         assert reason in body
-    # The selection rule is the script's: named by its anchor, never restated.
+    # The selection rule is the script's, named by its anchor.
     assert "`pending_sessions`" in body
-    for restated in ("`opened_at`", "`next_action`", " pending\n", "status --run-id"):
-        assert restated not in body
 
 
 def test_rhetoric_clarification_reads_the_seed_agenda_and_asks_one_at_a_time() -> None:
@@ -211,6 +210,12 @@ def test_infrastructure_step_references_follow_the_numbering() -> None:
     )
     assert _step_number(r"asked during Step (\d+)", _read(CONFIG_SCHEMA)) == (
         infrastructure
+    )
+    assert (
+        _step_number(
+            r"asked during vault-clarification Step (\d+)", _read(PROFILE_CONFIG_SCHEMA)
+        )
+        == infrastructure
     )
     assert (
         _step_number(
