@@ -90,7 +90,7 @@ markdown-deck = [
 whisper = [
     "mlx-whisper==0.4.3",
     # Resolve a pinned model revision before native transcription; weekly Dependabot.
-    "huggingface-hub==1.4.1",
+    "huggingface-hub==1.31.0",
 ]
 
 [tool.setuptools]
