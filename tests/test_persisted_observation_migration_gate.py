@@ -8,6 +8,8 @@ strength of its container's shape.
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 
 import pytest
 
@@ -60,6 +62,70 @@ class TestRequeue:
         gate.gate_persisted_observations(database)
 
         assert database["talks"][0]["pattern_observations"] == original
+
+    @pytest.mark.parametrize("status", ["processed", "processed_partial"])
+    def test_migration_with_completed_claim_is_readable_and_preserves_history(
+        self, gate, read_tracking_database, tmp_path, status
+    ) -> None:
+        observations = {"patterns_detected": "not a list"}
+        talk = _talk(copy.deepcopy(observations), status=status)
+        claim = {
+            "schema_version": 2,
+            "run_id": "completed-run",
+            "batch_id": "completed-batch",
+            "claimed_at": "2026-07-31T17:00:00+00:00",
+            "previous_status": "pending",
+            "reprocess_generation": 2,
+            "state": "completed",
+            "released_at": "2026-07-31T17:30:00+00:00",
+            "release_reason": "return_persisted",
+            "result_status": status,
+            "result_payload_sha256": "0" * 64,
+        }
+        history = [{**claim, "batch_id": "earlier-batch", "reprocess_generation": 1}]
+        talk.update(
+            reprocess_generation=2,
+            _queue_claim=copy.deepcopy(claim),
+            _queue_claim_history=copy.deepcopy(history),
+        )
+        path = tmp_path / "tracking-database.json"
+        path.write_text(json.dumps(_database(talk)), encoding="utf-8")
+        before = read_tracking_database.execute(path)
+
+        report = gate.execute(path, apply=True, expected_sha256=before["sha256"])
+
+        after = read_tracking_database.execute(path)
+        assert after["ok"] is True
+        assert after["sha256"] == report["output_sha256"]
+        requeued = after["database"]["talks"][0]
+        assert requeued["status"] == "needs-reprocessing"
+        assert requeued["pattern_observations"] == observations
+        assert requeued["_queue_claim"] == claim
+        assert requeued["_queue_claim_history"] == history
+        assert requeued["reprocess_generation"] == 2
+        repeated = gate.execute(path, apply=False, expected_sha256=after["sha256"])
+        assert repeated["changed"] is False
+        assert repeated["output_sha256"] == after["sha256"]
+
+    def test_invalid_post_gate_candidate_is_refused_before_backup_or_write(
+        self, gate, tmp_path, monkeypatch
+    ) -> None:
+        path = tmp_path / "tracking-database.json"
+        raw = json.dumps(_database(_talk(None))).encode("utf-8")
+        path.write_bytes(raw)
+
+        def invalid_requeue(database):
+            database["talks"][0]["status"] = "unrecognized-status"
+            return {"repaired": 0, "requeued": 1}
+
+        monkeypatch.setattr(gate, "gate_persisted_observations", invalid_requeue)
+        with pytest.raises(gate.TrackingDatabaseMigrationError, match="unknown"):
+            gate.execute(
+                path, apply=True, expected_sha256=hashlib.sha256(raw).hexdigest()
+            )
+
+        assert path.read_bytes() == raw
+        assert not (tmp_path / ".backups").exists()
 
 
 class TestScope:
