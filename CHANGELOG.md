@@ -1,5 +1,13 @@
 # Changelog
 
+### Preserve completed claims when migration requeues corrupt observations
+
+The persisted-observation migration now shares its deliberate requeue reason
+with the queue contract. A talk requeued for corrupt observations remains
+readable with its completed claim and earlier claim history intact. Migration
+also validates its complete candidate after the observation gate, before any
+backup or write, so a later lifecycle defect cannot install unreadable state.
+
 ## 0.20.164 — 2026-09-15
 
 ### Open the clarification session with the topics the speaker accepted

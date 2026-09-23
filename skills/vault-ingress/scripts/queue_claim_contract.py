@@ -111,13 +111,16 @@ LEGACY_REPROCESS_REASONS = frozenset(
 # finally published, a hand-recovered transcript. The evidence changed, the
 # recorded identity did not, so this is not a `source_identity_correction`.
 SOURCE_ADDED_REPROCESS_REASON = "source_added"
-# Reasons an owner sets by hand to move a talk with a completed claim back to
+# The full migration found a corrupt persisted observation block. Keep the
+# completed claim as evidence of its prior outcome while the talk awaits repair.
+PERSISTED_OBSERVATION_REPROCESS_REASON = "persisted_observation_invalid"
+# Reasons an owner sets to move a talk with a completed claim back to
 # `needs-reprocessing`. `is_deliberate_reprocess_reason` accepts these plus the
 # structured `pattern_scoring_generation:` form the normalizer writes; a claim's
 # `result_status` may disagree with the talk status under any of them, and every
 # other disagreement is drift.
 DELIBERATE_REPROCESS_REASONS = LEGACY_REPROCESS_REASONS | frozenset(
-    {SOURCE_ADDED_REPROCESS_REASON}
+    {SOURCE_ADDED_REPROCESS_REASON, PERSISTED_OBSERVATION_REPROCESS_REASON}
 )
 
 QUEUE_CLAIM_SCHEMA_UNSUPPORTED_REASON = "queue_claim_schema_version_unsupported"

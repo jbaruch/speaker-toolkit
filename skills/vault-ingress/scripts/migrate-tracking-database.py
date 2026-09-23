@@ -29,10 +29,12 @@ from persisted_pattern_observations import (
     apply_swapped_field_repairs,
     assess_persisted_pattern_observations,
 )
+from queue_claim_contract import PERSISTED_OBSERVATION_REPROCESS_REASON
 from return_validation import ReturnValidationError, load_catalog
 from tracking_database import (
     TrackingDatabaseError,
     TrackingDatabaseRepairError,
+    assess_tracking_database,
     migrate_tracking_database,
     migrate_tracking_database_root,
     repair_missing_qr_schema_versions,
@@ -129,6 +131,16 @@ def execute(
             if repair_missing_qr_versions or root_only
             else gate_persisted_observations(migration.database)
         )
+        # The observation gate can change lifecycle state after migration's
+        # initial validation. Never install a candidate the strict reader rejects.
+        candidate_assessment = assess_tracking_database(migration.database)
+        if not candidate_assessment.usable:
+            raise TrackingDatabaseError(
+                "migration candidate has no usable owner state: "
+                + ", ".join(candidate_assessment.reason_codes)
+                + "; update the toolkit or repair the reported owner state, "
+                "rerun the dry run, and retry migration"
+            )
         changed = migration.changed or any(observation_counts.values())
         rendered = render_json_object(migration.database) if changed else snapshot.raw
     except TrackingDatabaseRepairError as exc:
@@ -204,7 +216,7 @@ def execute(
 # stamp.
 COMPLETED_STATUSES = frozenset({"processed", "processed_partial"})
 REPAIRED_REASON = "persisted_observation_repaired"
-REQUEUE_REASON = "persisted_observation_invalid"
+REQUEUE_REASON = PERSISTED_OBSERVATION_REPROCESS_REASON
 
 
 def gate_persisted_observations(database: dict) -> dict[str, int]:

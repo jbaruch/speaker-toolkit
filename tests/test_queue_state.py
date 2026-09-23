@@ -1521,7 +1521,14 @@ def test_generation_requeue_preserves_completed_claim_until_next_claim(
     assert replacement["_queue_claim_history"] == [completed_claim]
 
 
-@pytest.mark.parametrize("reason", ["please_run_this_again", ["not", "a", "reason"]])
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "please_run_this_again",
+        ["not", "a", "reason"],
+        "persisted_observation_invalid:operator_hunch",
+    ],
+)
 def test_completed_claim_status_drift_rejects_unowned_reprocess_reason(
     tmp_path, reason
 ):
@@ -2382,7 +2389,10 @@ def test_a_requeue_reason_outside_the_deliberate_set_is_drift():
 def test_deliberate_reprocess_reasons_extend_the_legacy_set():
     assert queue_claim_contract.DELIBERATE_REPROCESS_REASONS == (
         queue_claim_contract.LEGACY_REPROCESS_REASONS
-        | {queue_claim_contract.SOURCE_ADDED_REPROCESS_REASON}
+        | {
+            queue_claim_contract.SOURCE_ADDED_REPROCESS_REASON,
+            queue_claim_contract.PERSISTED_OBSERVATION_REPROCESS_REASON,
+        }
     )
     assert queue_claim_contract.is_deliberate_reprocess_reason(
         queue_claim_contract.SOURCE_ADDED_REPROCESS_REASON
