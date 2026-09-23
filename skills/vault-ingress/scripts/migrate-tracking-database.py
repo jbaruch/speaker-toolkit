@@ -138,6 +138,8 @@ def execute(
             raise TrackingDatabaseError(
                 "migration candidate has no usable owner state: "
                 + ", ".join(candidate_assessment.reason_codes)
+                + "; update the toolkit or repair the reported owner state, "
+                "rerun the dry run, and retry migration"
             )
         changed = migration.changed or any(observation_counts.values())
         rendered = render_json_object(migration.database) if changed else snapshot.raw

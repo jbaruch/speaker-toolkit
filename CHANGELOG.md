@@ -1,7 +1,5 @@
 # Changelog
 
-## Unreleased
-
 ### Preserve completed claims when migration requeues corrupt observations
 
 The persisted-observation migration now shares its deliberate requeue reason
