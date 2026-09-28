@@ -33,8 +33,10 @@ Stdout (JSON):
       ]
     }
 
-Duration parsing: the first integer in `talk_duration_estimate` is the value;
-an "hour"/"hr" unit multiplies it by 60 (so "1 hour" -> 60). Talks with no
+Duration parsing: an hour quantity in `talk_duration_estimate` ("h", "hr",
+"hour", decimals allowed) converts to minutes and adds a directly following
+minute quantity ("2 h 01 min" -> 121, "1.5 hours" -> 90). Otherwise the first
+integer is the value in minutes ("~45-50 min" -> 45). Talks with no
 parseable minutes, missing/zero slide_count, or zero minutes are skipped (not
 scored). Budget band: the entry with the largest duration <= the talk's minutes
 (band duration read from `duration_min` or `duration_minutes`), or the smallest
@@ -59,17 +61,29 @@ MIN_TALKS_FOR_TREND = 4
 DEFAULT_WORST_N = 5
 
 
+_HOURS_MINUTES = re.compile(
+    r"(\d+(?:\.\d+)?)\s*(?:h|hrs?|hours?)\b(?:\s*(\d+)\s*(?:m|mins?|minutes?)\b)?",
+    re.IGNORECASE,
+)
+
+
 def parse_minutes(estimate: object) -> int | None:
-    """First integer in the string, ×60 when an hour unit is present."""
+    """Minutes in a duration estimate.
+
+    An hour quantity ("2 h", "1.5 hours", "2 h 01 min") converts to minutes and
+    adds a directly following minute quantity. Otherwise the first integer is
+    read as minutes ("35 min", "45-50 min" -> 45).
+    """
     if not isinstance(estimate, str):
         return None
+    hours = _HOURS_MINUTES.search(estimate)
+    if hours is not None:
+        value = round(float(hours.group(1)) * 60) + int(hours.group(2) or 0)
+        return value or None
     match = re.search(r"\d+", estimate)
     if match is None:
         return None
-    value = int(match.group())
-    if re.search(r"\b(hour|hr)s?\b", estimate, re.IGNORECASE):
-        value *= 60
-    return value or None
+    return int(match.group()) or None
 
 
 def _band_minutes(band: dict) -> int:

@@ -35,6 +35,18 @@ def test_parse_minutes_hours_multiply(compute_pacing_adherence):
     assert compute_pacing_adherence.parse_minutes("2 hrs") == 120
 
 
+def test_parse_minutes_hour_and_minute_components(compute_pacing_adherence):
+    parse = compute_pacing_adherence.parse_minutes
+    assert parse("About 2 h 01 min recording") == 121
+    assert parse("2h") == 120
+    assert parse("1 hour 15 minutes") == 75
+    assert parse("1.5 hours") == 90
+
+
+def test_parse_minutes_minute_range_keeps_first_value(compute_pacing_adherence):
+    assert compute_pacing_adherence.parse_minutes("~45-50 min") == 45
+
+
 def test_parse_minutes_unparseable_is_none(compute_pacing_adherence):
     assert compute_pacing_adherence.parse_minutes("") is None
     assert compute_pacing_adherence.parse_minutes("about a while") is None
