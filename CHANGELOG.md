@@ -1,5 +1,17 @@
 # Changelog
 
+### Read hour-and-minute durations in pacing adherence
+
+`compute-pacing-adherence.py` took the first integer of a duration estimate
+and multiplied it by 60 only for "hour"/"hr". An estimate like "About 2 h 01
+min" parsed as 2 minutes, and the two-hour WeAreDevelopers NA 2026 workshop
+scored 7.0 slides per minute, "367%" over budget. An hour quantity now
+converts to minutes, bare "h" and decimals included, and adds a directly
+following minute quantity. Compact "2h01m" and leading-dot ".5 hours" also
+parse. Minute-only estimates keep the first-integer reading. A quantity longer
+than six digits is rejected as malformed input with an actionable diagnostic,
+and parsing stays linear on long digit runs.
+
 ## 0.20.165 — 2026-09-23
 
 ### Preserve completed claims when migration requeues corrupt observations

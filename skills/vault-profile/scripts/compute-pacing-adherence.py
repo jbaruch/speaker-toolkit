@@ -33,8 +33,12 @@ Stdout (JSON):
       ]
     }
 
-Duration parsing: the first integer in `talk_duration_estimate` is the value;
-an "hour"/"hr" unit multiplies it by 60 (so "1 hour" -> 60). Talks with no
+Duration parsing: an hour quantity in `talk_duration_estimate` ("h", "hr",
+"hour", decimals allowed) converts to minutes and adds a directly following
+minute quantity ("2 h 01 min" -> 121, "2h01m" -> 121, "1.5 hours" -> 90,
+".5 hours" -> 30). A quantity longer than six digits is malformed input and
+exits 1 with a diagnostic. Otherwise the first
+integer is the value in minutes ("~45-50 min" -> 45). Talks with no
 parseable minutes, missing/zero slide_count, or zero minutes are skipped (not
 scored). Budget band: the entry with the largest duration <= the talk's minutes
 (band duration read from `duration_min` or `duration_minutes`), or the smallest
@@ -51,6 +55,7 @@ from __future__ import annotations
 
 import json
 import re
+from fractions import Fraction
 import sys
 
 
@@ -59,17 +64,50 @@ MIN_TALKS_FOR_TREND = 4
 DEFAULT_WORST_N = 5
 
 
+# A unit ends where letters end, so compact "2h01m" matches while "5 happy" does not.
+# The quantity starts only at a number's first character and has one reading, so
+# a long digit run is scanned linearly instead of backtracking.
+_HOURS_MINUTES = re.compile(
+    r"(?<![\d.])(\d+(?:\.\d+)?|\.\d+)\s*(?:hours?|hrs?|h)(?![a-z])"
+    r"(?:\s*(\d+)\s*(?:minutes?|mins?|m)(?![a-z]))?",
+    re.IGNORECASE,
+)
+
+
+# No talk runs a million minutes; a longer quantity is malformed input, not a duration.
+_MAX_QUANTITY_DIGITS = 6
+
+
+def _quantity(text: str, estimate: str) -> str:
+    if len(text.replace(".", "")) > _MAX_QUANTITY_DIGITS:
+        raise ValueError(
+            f"talk_duration_estimate quantity {text[:12]}... is longer than "
+            f"{_MAX_QUANTITY_DIGITS} digits; write minutes like '45 min' or "
+            f"'2 h 01 min' (estimate starts {estimate[:40]!r})"
+        )
+    return text
+
+
 def parse_minutes(estimate: object) -> int | None:
-    """First integer in the string, ×60 when an hour unit is present."""
+    """Minutes in a duration estimate.
+
+    An hour quantity ("2 h", "1.5 hours", "2 h 01 min") converts to minutes and
+    adds a directly following minute quantity. Otherwise the first integer is
+    read as minutes ("35 min", "45-50 min" -> 45).
+    """
     if not isinstance(estimate, str):
         return None
+    hours = _HOURS_MINUTES.search(estimate)
+    if hours is not None:
+        # Fraction keeps decimal hours exact; no float can overflow.
+        hour_text = _quantity(hours.group(1), estimate)
+        minute_text = _quantity(hours.group(2) or "0", estimate)
+        value = round(Fraction(hour_text) * 60) + int(minute_text)
+        return value or None
     match = re.search(r"\d+", estimate)
     if match is None:
         return None
-    value = int(match.group())
-    if re.search(r"\b(hour|hr)s?\b", estimate, re.IGNORECASE):
-        value *= 60
-    return value or None
+    return int(_quantity(match.group(), estimate)) or None
 
 
 def _band_minutes(band: dict) -> int:
