@@ -1,0 +1,698 @@
+"""Tests for skills/screencast-editor/scripts — Camtasia screencast editing.
+
+Fixtures are synthetic but shaped from a real Camtasia 2025 project and .trec:
+the default screen + camera track layout, the transcript keyframes the
+dynamic-caption feature writes, and the TSCM records that carry the pointer.
+Each behaviour below is one that failed, or would have failed, on a real edit.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import shutil
+import struct
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+SCRIPTS = (
+    Path(__file__).resolve().parents[1] / "skills" / "screencast-editor" / "scripts"
+)
+RATE = 705600000
+sys.path.insert(0, str(SCRIPTS))
+
+import camtasia_model as model  # noqa: E402
+
+
+def load(name: str):
+    spec = importlib.util.spec_from_file_location(
+        name.replace("-", "_"), SCRIPTS / f"{name}.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+build_project = load("build-project")
+apply_captions = load("apply-captions")
+audit_framing = load("audit-framing")
+chapters = load("chapters")
+transcript = load("transcript")
+trec_pointer = load("trec-pointer")
+framing_stills = load("framing-stills")
+screen_changes = load("screen-changes")
+
+
+# ------------------------------------------------------------------ fixtures
+
+
+def keyframes(words: list[tuple[float, str]]) -> list[dict]:
+    return [
+        {"endTime": round(t * RATE), "time": round(t * RATE), "value": w, "duration": 0}
+        for t, w in words
+    ]
+
+
+def template(
+    duration: float = 60.0, words: list[tuple[float, str]] | None = None
+) -> dict:
+    """Camtasia's project for a fresh 4K screen + camera + mic recording."""
+    ticks = round(duration * RATE)
+    audio = {"range": [0, 1], "type": 2, "trackRect": [0, 0, 0, 0], "parameters": {}}
+    if words is not None:
+        audio["parameters"]["transcription"] = {
+            "type": "string",
+            "keyframes": keyframes([(0.0, "%GAP"), *words]),
+        }
+    return {
+        "title": "",
+        "editRate": RATE,
+        "width": 1920.0,
+        "height": 1080.0,
+        "sourceBin": [
+            {
+                "id": 1,
+                "src": "take.trec",
+                "rect": [0, 0, 3840, 2160],
+                "sourceTracks": [
+                    {"type": 0, "trackRect": [0, 0, 3840, 2160]},
+                    {"type": 0, "trackRect": [0, 0, 3840, 2160]},
+                    audio,
+                ],
+            }
+        ],
+        "timeline": {
+            "sceneTrack": {
+                "scenes": [
+                    {
+                        "csml": {
+                            "tracks": [
+                                {
+                                    "trackIndex": 0,
+                                    "medias": [
+                                        {
+                                            "id": 3,
+                                            "_type": "ScreenVMFile",
+                                            "src": 1,
+                                            "trackNumber": 0,
+                                            "attributes": {"ident": "take"},
+                                            "parameters": {
+                                                "scale0": 0.5,
+                                                "scale1": 0.5,
+                                                "cursorScale": 1.0,
+                                            },
+                                            "effects": [],
+                                            "start": 0,
+                                            "duration": ticks,
+                                            "mediaStart": 0,
+                                            "mediaDuration": ticks,
+                                            "scalar": 1,
+                                            "animationTracks": {},
+                                        }
+                                    ],
+                                    "parameters": {},
+                                },
+                                {
+                                    "trackIndex": 1,
+                                    "medias": [
+                                        {
+                                            "id": 4,
+                                            "_type": "UnifiedMedia",
+                                            "video": {
+                                                "id": 5,
+                                                "_type": "VMFile",
+                                                "src": 1,
+                                                "trackNumber": 1,
+                                                "attributes": {"ident": "take"},
+                                                "parameters": {
+                                                    "scale0": 1 / 6,
+                                                    "scale1": 1 / 6,
+                                                    "translation0": 640.0,
+                                                    "translation1": -360.0,
+                                                },
+                                                "effects": [],
+                                                "start": 0,
+                                                "duration": ticks,
+                                                "mediaStart": 0,
+                                                "mediaDuration": ticks,
+                                                "scalar": 1,
+                                            },
+                                            "audio": {
+                                                "id": 6,
+                                                "_type": "AMFile",
+                                                "src": 1,
+                                                "trackNumber": 2,
+                                                "attributes": {},
+                                                "parameters": {},
+                                                "effects": [],
+                                                "start": 0,
+                                                "duration": ticks,
+                                                "mediaStart": 0,
+                                                "mediaDuration": ticks,
+                                                "scalar": 1,
+                                            },
+                                            "effects": [],
+                                            "start": 0,
+                                            "duration": ticks,
+                                            "mediaStart": 0,
+                                            "mediaDuration": ticks,
+                                            "scalar": 1,
+                                        }
+                                    ],
+                                    "parameters": {},
+                                },
+                            ]
+                        }
+                    }
+                ]
+            },
+            "trackAttributes": [
+                {"ident": "", "audioMuted": False},
+                {"ident": "", "audioMuted": False},
+            ],
+        },
+    }
+
+
+def plan(**over) -> dict:
+    base = {
+        "shots": [
+            {"start": 1.0, "end": 10.0, "kind": "speaker", "label": "Intro"},
+            {
+                "start": 10.0,
+                "end": 20.0,
+                "kind": "screen",
+                "label": "Roles",
+                "cues": [[10.0, 1.06, 0.5, 0.5], [12.0, 1.7, 0.14, 0.72]],
+            },
+            {"start": 20.0, "end": 30.0, "kind": "speaker", "label": "Close"},
+        ]
+    }
+    base.update(over)
+    return base
+
+
+def write(path: Path, data) -> Path:
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return path
+
+
+def trec_bytes(
+    pointer: list[tuple[float, int, int]],
+    rect=(-1920, 0, 1920, 1080),
+    wide: bool = True,
+) -> bytes:
+    def record(guid: bytes, payload: bytes) -> bytes:
+        return (
+            struct.pack(">I", 1)
+            + b"DATA"
+            + struct.pack(">Q", 4 + 4 + 8 + 16 + len(payload))
+            + guid
+            + payload
+        )
+
+    pointer_body = struct.pack("<II", 1, 16) + b"".join(
+        struct.pack("<dii", *s) for s in pointer
+    )
+    rect_body = struct.pack("<II", 1, 24) + struct.pack("<diiii", 0.0, *rect)
+    body = record(bytes.fromhex("2b7b6afc7a1f11e283d00017f200be7f"), b"\x01" * 12)
+    body += record(model.CAPTURE_RECT_GUID, rect_body) + record(
+        model.POINTER_PATH_GUID, pointer_body
+    )
+    ftyp = struct.pack(">I4s", 16, b"ftyp") + b"qt  \x00\x00\x00\x00"
+    if wide:
+        return ftyp + struct.pack(">I4sQ", 1, b"TSCM", 16 + len(body)) + body
+    return ftyp + struct.pack(">I4s", 8 + len(body), b"TSCM") + body
+
+
+# ------------------------------------------------------------------ model
+
+
+def test_tick_snaps_to_frames():
+    assert model.tick(1.0, RATE) == RATE
+    assert model.tick(1.01, RATE) == model.tick(1.0, RATE)
+    assert model.tick(1.02, RATE) == 31 * RATE // 30
+
+
+@pytest.mark.parametrize("zoom", [1.06, 1.4, 1.7, 2.0, 3.0])
+@pytest.mark.parametrize(
+    "x,y", [(0.0, 0.0), (1.0, 1.0), (0.5, 0.5), (0.14, 0.22), (0.9, 0.05)]
+)
+def test_framing_never_exposes_an_edge_or_the_menu_bar(zoom, x, y):
+    canvas = model.Canvas()
+    x0, y0, x1, y1 = model.visible_rect(zoom, x, y, canvas)
+    assert x0 >= -1e-9 and x1 <= 1 + 1e-9 and y1 <= 1 + 1e-9
+    assert y0 >= canvas.menubar / canvas.height - 1e-9
+
+
+def test_wide_framing_hides_exactly_the_menu_bar():
+    # A 6% push is enough to hide 28 of 1080 points while staying centered.
+    assert model.frame(1.06, 0.5, 0.5)["translation1"] == 0
+
+
+@pytest.mark.parametrize(
+    "mutate,message",
+    [
+        (lambda p: p["shots"][0].update(end=9.5), "gap or overlap"),
+        (
+            lambda p: p["shots"].insert(
+                0, {"start": 0.5, "end": 1.0, "kind": "speaker"}
+            ),
+            "shorter than one second",
+        ),
+        (lambda p: p["shots"][1]["cues"][0].__setitem__(0, 11.0), "first cue"),
+        (lambda p: p["shots"][1]["cues"][1].__setitem__(1, 0.9), "zoom below 1.0"),
+        (
+            lambda p: p["shots"][1]["cues"].append([25.0, 1.2, 0.5, 0.5]),
+            "outside the shot",
+        ),
+        (lambda p: p["shots"][0].update(kind="camera"), "kind must be"),
+    ],
+)
+def test_plan_validation(tmp_path, mutate, message):
+    bad = plan()
+    mutate(bad)
+    with pytest.raises(ValueError, match=message):
+        model.load_plan(write(tmp_path / "plan.json", bad))
+
+
+@pytest.mark.parametrize("wide", [True, False])
+def test_pointer_and_capture_rect_come_out_of_the_tscm_atom(wide):
+    records = model.tscm_records(
+        trec_bytes([(0.5, -960, 540), (1.0, -1900, 30)], wide=wide)
+    )
+    assert model.capture_rect(records) == (-1920, 0, 1920, 1080)
+    assert model.pointer_path(records) == [(0.5, -960, 540), (1.0, -1900, 30)]
+
+
+def test_a_file_without_tscm_is_not_a_camtasia_recording():
+    with pytest.raises(ValueError, match="not a Camtasia recording"):
+        model.tscm_records(struct.pack(">I4s", 16, b"ftyp") + b"\x00" * 8)
+
+
+def test_trec_pointer_normalizes_to_the_captured_display(tmp_path):
+    take = tmp_path / "take.trec"
+    take.write_bytes(trec_bytes([(0.5, -960, 540)]))
+    result = trec_pointer.extract(take)
+    assert result["capture"] == {"x": -1920, "y": 0, "width": 1920, "height": 1080}
+    assert result["samples"] == [[0.5, 0.5, 0.5]]
+
+
+# ------------------------------------------------------------------ audit
+
+
+def samples_resting_on(x, y, arrive=13.0):
+    """Pointer idle mid-screen, moved during the shot, then rests on (x, y)."""
+    return [[0.0, 0.5, 0.5], [arrive - 1, 0.3, 0.6], [arrive, x, y]]
+
+
+def test_audit_flags_a_pan_away_from_where_the_pointer_rests():
+    # The pointer settles on a row at y=0.62, then a pan to the top cuts it off.
+    bad = plan()
+    bad["shots"][1]["cues"].append([15.0, 1.7, 0.14, 0.22])
+    report = audit_framing.audit(bad, samples_resting_on(0.04, 0.62))
+    assert report[0]["pointing"], report
+
+
+def test_audit_passes_when_the_framing_holds_the_pointer():
+    report = audit_framing.audit(plan(), samples_resting_on(0.04, 0.62))
+    assert report[0]["pointing"] == []
+
+
+def test_a_pointer_left_by_an_earlier_shot_is_resting_not_pointing():
+    samples = [[0.0, 0.9, 0.1]]  # never moves; zoomed view excludes it
+    report = audit_framing.audit(plan(), samples)
+    assert report[0]["pointing"] == [] and report[0]["resting_samples"] > 0
+
+
+def test_a_pointer_travelling_into_frame_is_not_a_miss():
+    samples = [[0.0, 0.9, 0.1]] + [
+        [14.0 + i * 0.05, 0.9 - i * 0.04, 0.1 + i * 0.03] for i in range(20)
+    ]
+    report = audit_framing.audit(plan(), samples)
+    assert report[0]["pointing"] == []
+
+
+# ------------------------------------------------------------------ build
+
+
+def test_build_tiles_the_edit_speaker_first():
+    project = build_project.build(template(), plan())
+    tracks = model.tracks(project)
+    screen, inset, speaker = (t["medias"] for t in tracks)
+    assert [m["attributes"]["ident"] for m in speaker] == ["Intro", "Close"]
+    assert speaker[0]["start"] == 0 and speaker[0]["mediaStart"] == model.tick(
+        1.0, RATE
+    )
+    assert screen[0]["start"] == model.tick(10.0, RATE) - model.tick(1.0, RATE)
+    assert inset[0]["duration"] == sum(m["duration"] for m in screen + speaker)
+    assert project["timeline"]["trackAttributes"][2]["audioMuted"] is True
+
+
+def test_build_keyframes_each_cue_as_a_move_that_ends_on_it():
+    project = build_project.build(template(), plan())
+    clip = model.tracks(project)[0]["medias"][0]
+    move = clip["animationTracks"]["visual"][0]
+    assert move["endTime"] == model.tick(12.0, RATE) - model.tick(10.0, RATE)
+    assert move["duration"] == model.tick(0.8, RATE)
+    assert clip["parameters"]["scale0"]["defaultValue"] == pytest.approx(0.5 * 1.06)
+    assert clip["parameters"]["scale0"]["keyframes"][0]["value"] == pytest.approx(
+        0.5 * 1.7
+    )
+
+
+def test_build_sizes_the_inset_in_canvas_pixels_and_adds_noise_removal():
+    project = build_project.build(template(), plan(inset={"height": 270}))
+    unified = model.tracks(project)[1]["medias"][0]
+    assert unified["video"]["parameters"]["scale0"] == pytest.approx(270 / 2160)
+    assert [e["effectName"] for e in unified["video"]["effects"]] == [
+        "RoundCorners",
+        "Border",
+    ]
+    assert unified["audio"]["effects"][0]["effectName"] == "VSTEffect-DFN3NoiseRemoval"
+
+
+def test_build_rejects_a_plan_past_the_end_of_the_take():
+    with pytest.raises(ValueError, match="past the end"):
+        build_project.build(template(duration=25.0), plan())
+
+
+def test_build_cli_clones_the_take_and_refuses_to_overwrite(tmp_path):
+    raw = tmp_path / "raw.cmproj"
+    raw.mkdir()
+    (raw / "take.trec").write_bytes(b"not really a movie")
+    write(raw / "project.tscproj", template())
+    out = tmp_path / "edit.cmproj"
+    args = [str(raw), str(write(tmp_path / "plan.json", plan())), "--out", str(out)]
+    assert build_project.main(args) == 0
+    saved = json.loads((out / "project.tscproj").read_text())
+    assert saved["sourceBin"][0]["src"] == "./media/take.trec"
+    assert (out / "media" / "take.trec").read_bytes() == b"not really a movie"
+    for companion in ("bookmarks.plist", "docPrefs", "shot-plan.json"):
+        assert (out / companion).is_file()
+    assert build_project.main(args) == 2
+
+
+# ------------------------------------------------------------------ captions
+
+HEARD = [
+    (1.0, "Hey,"),
+    (1.3, "I'm"),
+    (1.5, "Marc"),
+    (1.8, "from"),
+    (2.0, "Port."),
+    (3.0, "I"),
+    (3.2, "downloaded"),
+    (4.0, "downgraded"),
+    (4.5, "the"),
+    (4.7, "lead."),
+    (6.0, "I"),
+    (6.2, "show"),
+    (6.4, "you"),
+    (6.6, "something"),
+    (6.8, "cool."),
+]
+
+
+def heard_keyframes(gaps=(2.4, 5.2)):
+    rows = [(0.0, "%GAP"), *HEARD, *[(g, "%GAP") for g in gaps]]
+    return keyframes(sorted(rows))
+
+
+def corrected(text: str) -> list[str]:
+    return text.split()
+
+
+def test_captions_keep_camtasias_onsets_and_fix_the_words():
+    out, stats = apply_captions.rebuild(
+        heard_keyframes(),
+        corrected(
+            "Hey, I'm Baruch from Port. I downgraded the lead. I showed you something cool."
+        ),
+        {},
+    )
+    words = [(k["time"] / RATE, k["value"]) for k in out if k["value"] != "%GAP"]
+    assert words[2] == (1.5, "Baruch")
+    assert dict((w, t) for t, w in words)["showed"] == 6.2
+    assert stats["words"] == 14
+
+
+def test_a_dropped_false_start_takes_the_timing_of_the_last_word_spoken():
+    out, _ = apply_captions.rebuild(
+        heard_keyframes(),
+        corrected(
+            "Hey, I'm Baruch from Port. I downgraded the lead. I show you something cool."
+        ),
+        {},
+    )
+    times = {k["value"]: k["time"] / RATE for k in out}
+    assert times["downgraded"] == 4.0  # not 3.2, where "downloaded" was said
+
+
+def test_pauses_survive_only_at_sentence_ends():
+    out, stats = apply_captions.rebuild(
+        heard_keyframes(gaps=(2.4, 3.1)),
+        corrected(
+            "Hey, I'm Baruch from Port. I downgraded the lead. I show you something cool."
+        ),
+        {},
+    )
+    values = [k["value"] for k in out]
+    assert values[values.index("Port.") + 1] == "%GAP"
+    assert "%GAP" not in values[values.index("Port.") + 2 : values.index("lead.")]
+    assert stats["pauses"] == 1
+
+
+def test_words_sharing_an_onset_keep_their_order():
+    heard = keyframes([(0.0, "%GAP"), (1.0, "go"), (2.0, "build")])
+    out, _ = apply_captions.rebuild(
+        heard, corrected("Now go build something cool."), {}
+    )
+    assert [k["value"] for k in out if k["value"] != "%GAP"] == corrected(
+        "Now go build something cool."
+    )
+
+
+def test_override_moves_a_word_to_its_measured_onset():
+    out, _ = apply_captions.rebuild(
+        heard_keyframes(),
+        corrected(
+            "Hey, I'm Baruch from Port. I downgraded the lead. I show you something cool."
+        ),
+        {"downgraded": round(4.2 * RATE)},
+    )
+    assert {k["value"]: k["time"] for k in out}["downgraded"] == round(4.2 * RATE)
+
+
+def test_an_override_that_breaks_the_order_is_refused():
+    with pytest.raises(ValueError, match="backwards"):
+        apply_captions.rebuild(
+            heard_keyframes(),
+            corrected("Hey, I'm Baruch from Port."),
+            {"hey": round(9 * RATE)},
+        )
+
+
+def caption_project(words=True, callout=True) -> dict:
+    p = template(words=HEARD if words else None)
+    if callout:
+        model.tracks(p).append(
+            {
+                "trackIndex": 3,
+                "medias": [
+                    {
+                        "_type": "Callout",
+                        "parameters": {"translation1": -384.0},
+                        "def": {
+                            "modifier": "dynamicCaption",
+                            "width": 1920.0,
+                            "height": 400.0,
+                            "font": {"size": 128.0},
+                            "textAttributes": {
+                                "keyframes": [
+                                    {"value": [{"name": "fontSize", "value": 96.0}]}
+                                ]
+                            },
+                        },
+                    }
+                ],
+            }
+        )
+    return p
+
+
+def test_apply_captions_cli_restyles_and_keeps_a_backup(tmp_path):
+    bundle = tmp_path / "edit.cmproj"
+    bundle.mkdir()
+    write(bundle / "project.tscproj", caption_project())
+    text = tmp_path / "captions.txt"
+    text.write_text(
+        "Hey, I'm Baruch from Port. I downgraded the lead. I showed you something cool.\n"
+    )
+    assert apply_captions.main([str(bundle), str(text)]) == 0
+    saved = json.loads((bundle / "project.tscproj").read_text())
+    callout = model.tracks(saved)[2]["medias"][0]
+    assert (
+        callout["def"]["width"],
+        callout["def"]["height"],
+        callout["def"]["font"]["size"],
+    ) == (700.0, 170.0, 64.0)
+    assert callout["def"]["textAttributes"]["keyframes"][0]["value"][0]["value"] == 64.0
+    assert callout["parameters"]["translation1"] == -430.0
+    assert len(list(bundle.glob("before-captions-*.tscproj"))) == 1
+
+
+@pytest.mark.parametrize(
+    "words,callout,message",
+    [
+        (False, True, "no Camtasia transcript"),
+        (True, False, "no dynamic-caption callout"),
+    ],
+)
+def test_apply_captions_needs_camtasias_captions_first(
+    tmp_path, capsys, words, callout, message
+):
+    bundle = tmp_path / "edit.cmproj"
+    bundle.mkdir()
+    write(bundle / "project.tscproj", caption_project(words, callout))
+    text = tmp_path / "captions.txt"
+    text.write_text("Hey.\n")
+    assert apply_captions.main([str(bundle), str(text)]) == 1
+    assert message in capsys.readouterr().err
+
+
+# ------------------------------------------------------------------ transcript and chapters
+
+WORDS = [
+    (1.0 + i, w)
+    for i, w in enumerate(
+        "Hey, I'm Baruch. Now, the judge rules. So we need to stop. With that, bye.".split()
+    )
+]
+
+
+def test_transcript_groups_words_into_sentences():
+    sentences = transcript.sentences(WORDS)
+    assert [s["text"] for s in sentences][:2] == [
+        "Hey, I'm Baruch.",
+        "Now, the judge rules.",
+    ]
+    assert sentences[0]["end"] == sentences[1]["start"]
+
+
+def test_chapters_are_timed_from_caption_words_minus_the_head_trim():
+    words = [(t * 10, w) for t, w in WORDS]
+    placed = chapters.place(
+        words,
+        [
+            {"title": "Intro", "phrase": None},
+            {"title": "The judge", "phrase": "Now, the judge"},
+            {"title": "Stopping", "phrase": "So we need"},
+        ],
+        trim=5.0,
+        end=200.0,
+    )
+    assert [(chapters.clock(t), title) for t, title in placed] == [
+        ("0:00", "Intro"),
+        ("0:35", "The judge"),
+        ("1:15", "Stopping"),
+    ]
+
+
+def test_a_chapter_under_ten_seconds_is_refused():
+    with pytest.raises(ValueError, match="shorter than 10s"):
+        chapters.place(
+            WORDS,
+            [
+                {"title": "Intro", "phrase": None},
+                {"title": "Judge", "phrase": "Now, the judge"},
+            ],
+            0.0,
+            100.0,
+        )
+
+
+def test_the_first_chapter_must_start_at_zero():
+    with pytest.raises(ValueError, match="0:00"):
+        chapters.place(
+            WORDS, [{"title": "Judge", "phrase": "Now, the judge"}], 0.0, 100.0
+        )
+
+
+def test_a_missing_phrase_is_named():
+    with pytest.raises(ValueError, match="not found"):
+        chapters.place(
+            WORDS,
+            [
+                {"title": "Intro", "phrase": None},
+                {"title": "X", "phrase": "never said"},
+            ],
+            0.0,
+            100.0,
+        )
+
+
+# ------------------------------------------------------------------ ffmpeg-backed
+
+
+@pytest.fixture
+def two_page_video(tmp_path) -> Path:
+    """A 2-second 'screen': red for a second, then blue."""
+    assert shutil.which("ffmpeg"), "ffmpeg is a declared system dependency"
+    out = tmp_path / "screen.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=red:s=384x216:d=1:r=30",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=blue:s=384x216:d=1:r=30",
+            "-filter_complex",
+            "[0][1]concat=n=2:v=1",
+            "-pix_fmt",
+            "yuv420p",
+            str(out),
+        ],
+        check=True,
+    )
+    return out
+
+
+def test_screen_changes_finds_the_page_switch(two_page_video):
+    found = screen_changes.changes(two_page_video, "0:0", 0.01, 10)
+    assert found and abs(found[0] - 1.0) <= 0.1
+
+
+def test_crop_matches_the_planned_view():
+    w, h, x, y = framing_stills.crop_for(2.0, 0.5, 0.5, 3840, 2160, model.Canvas())
+    assert (w, h, x, y) == (1920, 1080, 960, 540)
+
+
+def test_framing_stills_renders_one_still_per_cue_and_a_sheet(tmp_path, two_page_video):
+    short = {
+        "shots": [
+            {
+                "start": 0.0,
+                "end": 1.6,
+                "kind": "screen",
+                "cues": [[0.0, 1.06, 0.5, 0.5], [1.0, 1.5, 0.3, 0.6]],
+            }
+        ],
+        "inset": {"height": 54, "x": 100, "y": -60},
+        "canvas": {"width": 384, "height": 216, "menubar": 6},
+    }
+    stills = framing_stills.render(two_page_video, short, tmp_path / "stills", "0:0")
+    assert [s.name for s in stills] == ["still-01.png", "still-02.png"]
+    assert (tmp_path / "stills" / "sheet.png").is_file()
+    assert not list((tmp_path / "stills").glob("raw-*.png"))

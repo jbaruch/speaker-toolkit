@@ -1,0 +1,117 @@
+{
+ "RoundCorners": {
+  "effectName": "RoundCorners",
+  "bypassed": false,
+  "category": "categoryVisualEffects",
+  "parameters": {
+   "radius": {
+    "type": "double",
+    "defaultValue": 144.0,
+    "interp": "linr",
+    "uiHints": {
+     "userInterfaceType": 0,
+     "unitType": 0
+    }
+   },
+   "top-left": {
+    "type": "double",
+    "defaultValue": 1.0,
+    "interp": "linr",
+    "uiHints": {
+     "userInterfaceType": 0,
+     "unitType": 0
+    }
+   },
+   "top-right": {
+    "type": "double",
+    "defaultValue": 1.0,
+    "interp": "linr",
+    "uiHints": {
+     "userInterfaceType": 0,
+     "unitType": 0
+    }
+   },
+   "bottom-left": {
+    "type": "double",
+    "defaultValue": 1.0,
+    "interp": "linr",
+    "uiHints": {
+     "userInterfaceType": 0,
+     "unitType": 0
+    }
+   },
+   "bottom-right": {
+    "type": "double",
+    "defaultValue": 1.0,
+    "interp": "linr",
+    "uiHints": {
+     "userInterfaceType": 0,
+     "unitType": 0
+    }
+   }
+  }
+ },
+ "Border": {
+  "effectName": "Border",
+  "bypassed": false,
+  "category": "categoryVisualEffects",
+  "parameters": {
+   "enabled": 1,
+   "color-red": {
+    "type": "double",
+    "defaultValue": 1.0,
+    "interp": "linr",
+    "uiHints": {
+     "userInterfaceType": 0,
+     "unitType": 0
+    }
+   },
+   "color-green": {
+    "type": "double",
+    "defaultValue": 1.0,
+    "interp": "linr",
+    "uiHints": {
+     "userInterfaceType": 0,
+     "unitType": 0
+    }
+   },
+   "color-blue": {
+    "type": "double",
+    "defaultValue": 1.0,
+    "interp": "linr",
+    "uiHints": {
+     "userInterfaceType": 0,
+     "unitType": 0
+    }
+   },
+   "color-alpha": {
+    "type": "double",
+    "defaultValue": 1.0,
+    "interp": "linr",
+    "uiHints": {
+     "userInterfaceType": 0,
+     "unitType": 0
+    }
+   },
+   "width": {
+    "type": "double",
+    "defaultValue": 4.0,
+    "interp": "linr",
+    "uiHints": {
+     "userInterfaceType": 0,
+     "unitType": 0
+    }
+   },
+   "type": 1
+  }
+ },
+ "NoiseRemoval": {
+  "effectName": "VSTEffect-DFN3NoiseRemoval",
+  "bypassed": false,
+  "category": "categoryAudioEffects",
+  "parameters": {
+   "Amount": 0.8,
+   "Bypass": 0.0
+  }
+ }
+}

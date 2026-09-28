@@ -153,6 +153,8 @@ executionEnvironments = [
         "skills/vault-clarification/scripts",
         "skills/vault-ingress/scripts",
     ] },
+    # screencast-editor CLIs share one model module in their own directory.
+    { root = "skills/screencast-editor/scripts", extraPaths = ["skills/screencast-editor/scripts"] },
     { root = "skills/vault-ingress/scripts", extraPaths = ["skills/vault-ingress/scripts"] },
     { root = "skills/vault-profile/scripts", extraPaths = [
         "skills/vault-profile/scripts",
@@ -165,6 +167,7 @@ executionEnvironments = [
         "scripts",
         "skills/illustrations/scripts",
         "skills/presentation-creator/scripts",
+        "skills/screencast-editor/scripts",
         "skills/vault-clarification/scripts",
         "skills/vault-ingress/scripts",
         "skills/vault-profile/scripts",
