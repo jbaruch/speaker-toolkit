@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.166 — 2026-09-28
+
 ### Read hour-and-minute durations in pacing adherence
 
 `compute-pacing-adherence.py` took the first integer of a duration estimate
