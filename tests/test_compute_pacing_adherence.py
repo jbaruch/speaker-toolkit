@@ -6,6 +6,8 @@ Fixtures are built programmatically (per testing-standards); no random inputs.
 import io
 import json
 
+import pytest
+
 
 BUDGETS = [
     {"duration_min": 20, "max_slides": 30, "slides_per_min": 1.5},
@@ -45,9 +47,15 @@ def test_parse_minutes_hour_and_minute_components(compute_pacing_adherence):
     assert parse(".5 hours") == 30
 
 
-def test_parse_minutes_oversized_hours_stay_exact(compute_pacing_adherence):
-    huge = "9" * 400
-    assert compute_pacing_adherence.parse_minutes(f"{huge} h") == int(huge) * 60
+def test_parse_minutes_rejects_implausibly_long_quantities(compute_pacing_adherence):
+    parse = compute_pacing_adherence.parse_minutes
+    for estimate in (
+        "9" * 400 + " h",
+        "7" * 20000 + " min",
+        "2 h " + "1" * 50 + " min",
+    ):
+        with pytest.raises(ValueError, match="longer than 6 digits"):
+            parse(estimate)
 
 
 def test_parse_minutes_word_starting_with_h_is_not_an_hour(compute_pacing_adherence):
@@ -234,3 +242,24 @@ def test_main_rejects_malformed_budget(compute_pacing_adherence, monkeypatch, ca
     err = capsys.readouterr().err
     assert rc == 1
     assert "ERROR" in err
+
+
+def test_main_reports_implausible_duration(
+    compute_pacing_adherence, monkeypatch, capsys
+):
+    payload = {
+        "talks": [
+            {
+                "filename": "t.md",
+                "date": "2026-01-01",
+                "slide_count": 10,
+                "talk_duration_estimate": "9" * 400 + " h",
+            }
+        ],
+        "slide_budgets": BUDGETS,
+    }
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
+    rc = compute_pacing_adherence.main()
+    err = capsys.readouterr().err
+    assert rc == 1
+    assert "longer than 6 digits" in err

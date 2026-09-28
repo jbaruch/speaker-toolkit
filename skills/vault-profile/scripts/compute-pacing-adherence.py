@@ -36,8 +36,8 @@ Stdout (JSON):
 Duration parsing: an hour quantity in `talk_duration_estimate` ("h", "hr",
 "hour", decimals allowed) converts to minutes and adds a directly following
 minute quantity ("2 h 01 min" -> 121, "2h01m" -> 121, "1.5 hours" -> 90,
-".5 hours" -> 30). Arithmetic is exact, so an oversized quantity cannot
-overflow. Otherwise the first
+".5 hours" -> 30). A quantity longer than six digits is malformed input and
+exits 1 with a diagnostic. Otherwise the first
 integer is the value in minutes ("~45-50 min" -> 45). Talks with no
 parseable minutes, missing/zero slide_count, or zero minutes are skipped (not
 scored). Budget band: the entry with the largest duration <= the talk's minutes
@@ -65,11 +65,27 @@ DEFAULT_WORST_N = 5
 
 
 # A unit ends where letters end, so compact "2h01m" matches while "5 happy" does not.
+# The quantity starts only at a number's first character and has one reading, so
+# a long digit run is scanned linearly instead of backtracking.
 _HOURS_MINUTES = re.compile(
-    r"(\d*\.?\d+)\s*(?:hours?|hrs?|h)(?![a-z])"
+    r"(?<![\d.])(\d+(?:\.\d+)?|\.\d+)\s*(?:hours?|hrs?|h)(?![a-z])"
     r"(?:\s*(\d+)\s*(?:minutes?|mins?|m)(?![a-z]))?",
     re.IGNORECASE,
 )
+
+
+# No talk runs a million minutes; a longer quantity is malformed input, not a duration.
+_MAX_QUANTITY_DIGITS = 6
+
+
+def _quantity(text: str, estimate: str) -> str:
+    if len(text.replace(".", "")) > _MAX_QUANTITY_DIGITS:
+        raise ValueError(
+            f"talk_duration_estimate quantity {text[:12]}... is longer than "
+            f"{_MAX_QUANTITY_DIGITS} digits; write minutes like '45 min' or "
+            f"'2 h 01 min' (estimate starts {estimate[:40]!r})"
+        )
+    return text
 
 
 def parse_minutes(estimate: object) -> int | None:
@@ -83,14 +99,15 @@ def parse_minutes(estimate: object) -> int | None:
         return None
     hours = _HOURS_MINUTES.search(estimate)
     if hours is not None:
-        # Fraction keeps the arithmetic exact: an oversized quantity is a large
-        # integer, never a float that overflows to infinity.
-        value = round(Fraction(hours.group(1)) * 60) + int(hours.group(2) or 0)
+        # Fraction keeps decimal hours exact; no float can overflow.
+        hour_text = _quantity(hours.group(1), estimate)
+        minute_text = _quantity(hours.group(2) or "0", estimate)
+        value = round(Fraction(hour_text) * 60) + int(minute_text)
         return value or None
     match = re.search(r"\d+", estimate)
     if match is None:
         return None
-    return int(match.group()) or None
+    return int(_quantity(match.group(), estimate)) or None
 
 
 def _band_minutes(band: dict) -> int:
