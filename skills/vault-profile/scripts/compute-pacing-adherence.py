@@ -35,7 +35,9 @@ Stdout (JSON):
 
 Duration parsing: an hour quantity in `talk_duration_estimate` ("h", "hr",
 "hour", decimals allowed) converts to minutes and adds a directly following
-minute quantity ("2 h 01 min" -> 121, "1.5 hours" -> 90). Otherwise the first
+minute quantity ("2 h 01 min" -> 121, "2h01m" -> 121, "1.5 hours" -> 90,
+".5 hours" -> 30). Arithmetic is exact, so an oversized quantity cannot
+overflow. Otherwise the first
 integer is the value in minutes ("~45-50 min" -> 45). Talks with no
 parseable minutes, missing/zero slide_count, or zero minutes are skipped (not
 scored). Budget band: the entry with the largest duration <= the talk's minutes
@@ -53,6 +55,7 @@ from __future__ import annotations
 
 import json
 import re
+from fractions import Fraction
 import sys
 
 
@@ -61,8 +64,10 @@ MIN_TALKS_FOR_TREND = 4
 DEFAULT_WORST_N = 5
 
 
+# A unit ends where letters end, so compact "2h01m" matches while "5 happy" does not.
 _HOURS_MINUTES = re.compile(
-    r"(\d+(?:\.\d+)?)\s*(?:h|hrs?|hours?)\b(?:\s*(\d+)\s*(?:m|mins?|minutes?)\b)?",
+    r"(\d*\.?\d+)\s*(?:hours?|hrs?|h)(?![a-z])"
+    r"(?:\s*(\d+)\s*(?:minutes?|mins?|m)(?![a-z]))?",
     re.IGNORECASE,
 )
 
@@ -78,7 +83,9 @@ def parse_minutes(estimate: object) -> int | None:
         return None
     hours = _HOURS_MINUTES.search(estimate)
     if hours is not None:
-        value = round(float(hours.group(1)) * 60) + int(hours.group(2) or 0)
+        # Fraction keeps the arithmetic exact: an oversized quantity is a large
+        # integer, never a float that overflows to infinity.
+        value = round(Fraction(hours.group(1)) * 60) + int(hours.group(2) or 0)
         return value or None
     match = re.search(r"\d+", estimate)
     if match is None:

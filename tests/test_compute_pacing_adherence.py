@@ -41,6 +41,17 @@ def test_parse_minutes_hour_and_minute_components(compute_pacing_adherence):
     assert parse("2h") == 120
     assert parse("1 hour 15 minutes") == 75
     assert parse("1.5 hours") == 90
+    assert parse("2h01m") == 121
+    assert parse(".5 hours") == 30
+
+
+def test_parse_minutes_oversized_hours_stay_exact(compute_pacing_adherence):
+    huge = "9" * 400
+    assert compute_pacing_adherence.parse_minutes(f"{huge} h") == int(huge) * 60
+
+
+def test_parse_minutes_word_starting_with_h_is_not_an_hour(compute_pacing_adherence):
+    assert compute_pacing_adherence.parse_minutes("5 happy minutes") == 5
 
 
 def test_parse_minutes_minute_range_keeps_first_value(compute_pacing_adherence):
