@@ -1249,3 +1249,26 @@ def test_an_all_speaker_rerun_clears_earlier_stills(tmp_path, two_page_video):
     speaker_only = {"shots": [{"start": 0.0, "end": 1.6, "kind": "speaker"}]}
     assert framing_stills.render(two_page_video, speaker_only, out, "0:0") == []
     assert not list(out.glob("still-*.png")) and not (out / "sheet.png").exists()
+
+
+@pytest.mark.parametrize(
+    "value", ["downgraded=-1", "downgraded=inf", "downgraded=nan", "downgraded=soon"]
+)
+def test_override_seconds_must_be_a_real_onset(value):
+    with pytest.raises(ValueError, match="non-negative number"):
+        apply_captions.parse_overrides([value], corrected(TEXT), RATE)
+
+
+@pytest.mark.parametrize(
+    "content,message",
+    [
+        ('{"samples": [[1, "a", 0.5]]}', "finite numbers"),
+        ('{"samples": [[1, 0.5, Infinity]]}', "finite numbers"),
+        ('{"samples": [[2, 0.5, 0.5], [1, 0.5, 0.5]]}', "time order"),
+    ],
+)
+def test_audit_rejects_bad_pointer_samples(tmp_path, content, message):
+    pointer = tmp_path / "pointer.json"
+    pointer.write_text(content)
+    with pytest.raises(ValueError, match=message):
+        audit_framing.load_samples(pointer)

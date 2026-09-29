@@ -84,8 +84,24 @@ def load_samples(path: Path) -> list[list[float]]:
         raise ValueError(f"cannot read pointer samples {path}: {e}") from e
     if not isinstance(samples, list) or not samples:
         raise ValueError(f"{path} holds no pointer samples; rerun trec-pointer.py")
-    if not all(isinstance(r, list) and len(r) == 3 for r in samples):
-        raise ValueError(f"{path}: every sample must be [seconds, x, y]")
+    for row in samples:
+        if not (
+            isinstance(row, list)
+            and len(row) == 3
+            and all(
+                isinstance(v, (int, float))
+                and not isinstance(v, bool)
+                and math.isfinite(v)
+                for v in row
+            )
+        ):
+            raise ValueError(
+                f"{path}: every sample must be [seconds, x, y] finite numbers, got {row!r}"
+            )
+    if any(b[0] < a[0] for a, b in zip(samples, samples[1:])):
+        raise ValueError(
+            f"{path}: samples must be in time order; regenerate it with trec-pointer.py"
+        )
     return samples
 
 

@@ -24,6 +24,7 @@ import argparse
 import bisect
 import difflib
 import json
+import math
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -195,7 +196,15 @@ def parse_overrides(values: list[str], text: list[str], rate: int) -> dict[int, 
             raise ValueError(
                 f"--override {v!r}: {word!r} occurs {len(found)} times; name one as {word}#N=SECONDS"
             )
-        out[index] = round(float(seconds) * rate)
+        try:
+            onset = float(seconds)
+        except ValueError:
+            onset = math.nan
+        if not math.isfinite(onset) or onset < 0:
+            raise ValueError(
+                f"--override {v!r}: SECONDS must be a non-negative number of source seconds"
+            )
+        out[index] = round(onset * rate)
     return out
 
 

@@ -40,8 +40,9 @@ reports back, resume at the step each one names.
 python3 "{speaker_toolkit_root}/skills/screencast-recorder/scripts/resolve-interpreter.py" <vault_root>
 ```
 
-Set `python_path` from its output; it is the interpreter for every command
-below. On exit 1, repair through `Skill(skill: "vault-ingress")`. Never fall
+Stdout: `{"ok": true, "python_path", "vault_root", "database"}`. Set
+`python_path` from it; it is the interpreter for every command below. On exit
+1, repair through `Skill(skill: "vault-ingress")`. Never fall
 back to whichever `python3` is on `PATH`. Proceed immediately to Step 2.
 
 ## Step 2 — Request the transcript
@@ -58,8 +59,10 @@ confirms.
 "{python_path}" "{speaker_toolkit_root}/skills/screencast-editor/scripts/transcript.py" <raw.cmproj> > transcript.json
 ```
 
-Word onsets are source seconds and are the only clock for cuts. Proceed
-immediately to Step 4.
+Output: `{"words": [[seconds, word]], "sentences": [{"start", "end", "text"}]}`
+in source seconds; the last sentence has no `end`. Exit 1 means the project has
+no transcript: return to Step 2. Word onsets are the only clock for cuts.
+Proceed immediately to Step 4.
 
 ## Step 4 — Map what the screen shows
 
@@ -74,8 +77,10 @@ camera layout.
 "{python_path}" "{speaker_toolkit_root}/skills/screencast-editor/scripts/trec-pointer.py" <recording.trec> --out pointer.json
 ```
 
-Screen changes are page switches and scrolls. The pointer path comes from the
-recording's metadata, not the pixels. Proceed immediately to Step 5.
+`changes.json` is `{"changes": [seconds]}`: page switches and scrolls.
+`pointer.json` is `{"capture": {"x", "y", "width", "height"}, "samples":
+[[seconds, x, y]]}` with x and y normalized to the captured display. Exit 1
+from either names what failed (ffmpeg, or no pointer data in the recording). Proceed immediately to Step 5.
 
 ## Step 5 — Write the shot plan
 
@@ -91,8 +96,9 @@ immediately to Step 6, or to Step 8 when the plan has no screen shots.
 "{python_path}" "{speaker_toolkit_root}/skills/screencast-editor/scripts/audit-framing.py" shot-plan.json pointer.json
 ```
 
-Exit 1 names each shot whose framing cuts off what the presenter points at.
-Fix the plan and rerun until exit 0. Proceed immediately to Step 7.
+Stdout lists each screen shot with its `pointing` misses. Exit 1 names each
+shot whose framing cuts off what the presenter points at; exit 2 is an invalid
+plan or pointer file. Fix the plan and rerun until exit 0. Proceed immediately to Step 7.
 
 ## Step 7 — Look at every framing
 
@@ -100,7 +106,8 @@ Fix the plan and rerun until exit 0. Proceed immediately to Step 7.
 "{python_path}" "{speaker_toolkit_root}/skills/screencast-editor/scripts/framing-stills.py" <recording.trec> shot-plan.json --out stills
 ```
 
-Read `stills/sheet.png` and any still in doubt. The red box is the inset's
+Stdout: `{"stills": [paths], "sheet": path}`; exit 1 names an ffmpeg or write
+failure. Read `stills/sheet.png` and any still in doubt. The red box is the inset's
 footprint: it must never cover text being read. Fix the plan and return to
 Step 6 for any still that fails. Proceed immediately to Step 8.
 
@@ -110,8 +117,9 @@ Step 6 for any still that fails. Proceed immediately to Step 8.
 "{python_path}" "{speaker_toolkit_root}/skills/screencast-editor/scripts/build-project.py" <raw.cmproj> shot-plan.json --out "<title>.cmproj"
 ```
 
-A rerun with the same inputs is a no-op; a different existing bundle is never
-overwritten. Read
+Stdout: `{"project", "screen_shots", "speaker_shots"}`, plus `"unchanged": true`
+on a no-op rerun. Exit 1 is an invalid template or plan; exit 2 means `--out`
+already holds a different edit and is never overwritten. Read
 [rules/camtasia-validation-authority.md](../../rules/camtasia-validation-authority.md)
 and ask the user to open the bundle and confirm its observations 1 to 4.
 Finish here;
@@ -136,7 +144,10 @@ not a verbatim record. Then:
 For a word whose measured onset differs, pass `--override WORD=SECONDS` when the
 word occurs once in the captions, or `--override WORD#N=SECONDS` for its Nth
 occurrence; a repeated word without `#N` is refused. Pass the size and position
-flags for a different inset. Ask the user to confirm
+flags for a different inset. Stdout: `{"words", "matched", "interpolated",
+"pauses", "backup"}`; exit 1 names the problem (project open, no transcript or
+caption callout, bad override, unrelated text) and leaves the project unchanged.
+Ask the user to confirm
 observations 5 and 6 of the Camtasia validation rule. Finish here; resume at
 Step 10 with their corrections, or at Step 11 when they approve.
 
@@ -148,7 +159,8 @@ Write `chapters.json` (first entry's phrase null), then:
 "{python_path}" "{speaker_toolkit_root}/skills/screencast-editor/scripts/chapters.py" "<title>.cmproj" chapters.json
 ```
 
-Exit 1 names what YouTube would reject: a missing phrase, or a chapter list
+Stdout: `{"chapters": [{"seconds", "clock", "title"}], "lines"}`. Exit 1 names
+what YouTube would reject, or a malformed chapters file: a missing phrase, or a chapter list
 that breaks the length and count limits in `chapters.py`. Fix and rerun. Write
 the description around its `lines`, linking only public sources you have
 verified. Ask the user to export and upload the video. Finish here; resume at
@@ -162,7 +174,8 @@ Pick three to five engaged moments and extract exact screen frames:
 "{python_path}" "{speaker_toolkit_root}/skills/screencast-editor/scripts/extract-frames.py" <recording.trec> --stream 0:0 --at <seconds> --out thumb --prefix screen
 ```
 
-Ask the user which background to use, per the `thumbnail-generation-rules`
+Stdout: `{"frames": [paths]}`; exit 1 means a time lies outside the recording
+or ffmpeg failed. Ask the user which background to use, per the `thumbnail-generation-rules`
 rule. Finish here; resume at Step 13 when the user picks.
 
 ## Step 13 — Resolve the speaker photo
