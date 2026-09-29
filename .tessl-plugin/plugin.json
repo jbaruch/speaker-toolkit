@@ -1,7 +1,7 @@
 {
   "name": "jbaruch/speaker-toolkit",
   "version": "0.20.166",
-  "description": "Seven-skill presentation system: ingest talks into a rhetoric vault, run interactive clarification, generate a speaker profile, create presentations that match your documented patterns, produce the deck illustrations + thumbnail visual layer, create and publish talk-content Agent Skills with talk pages to a Jekyll shownotes site, and verify a recorded screencast against its storyboard. Includes a 113-entry Presentation Patterns taxonomy (83 observable: 64 patterns + 19 antipatterns; 30 unobservable: 21 patterns + 9 antipatterns) for scoring, brainstorming, and go-live preparation.",
+  "description": "Eight-skill presentation system: ingest talks into a rhetoric vault, run interactive clarification, generate a speaker profile, create presentations that match your documented patterns, produce the deck illustrations + thumbnail visual layer, create and publish talk-content Agent Skills with talk pages to a Jekyll shownotes site, verify a recorded screencast against its storyboard, and edit a Camtasia screencast into a speaker-first video with corrected captions and chapters, all informed by a 113-entry Presentation Patterns taxonomy (83 observable: 64 patterns + 19 antipatterns; 30 unobservable: 21 patterns + 9 antipatterns) for scoring, brainstorming, and go-live preparation.",
   "private": false,
   "skills": [
     "skills/vault-ingress",
@@ -10,7 +10,8 @@
     "skills/presentation-creator",
     "skills/illustrations",
     "skills/shownotes-publisher",
-    "skills/screencast-recorder"
+    "skills/screencast-recorder",
+    "skills/screencast-editor"
   ],
   "rules": [
     "rules/vault-language-policy.md",
@@ -25,6 +26,7 @@
     "rules/interaction-rules.md",
     "rules/tessl-version-floating.md",
     "rules/shownotes-content-publish.md",
-    "rules/transcript-fetch-authority.md"
+    "rules/transcript-fetch-authority.md",
+    "rules/camtasia-validation-authority.md"
   ]
 }

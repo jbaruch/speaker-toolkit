@@ -13,6 +13,7 @@ SKILLS_ROOT = REPO_ROOT / "skills"
 EXPECTED_SKILLS = {
     "illustrations",
     "screencast-recorder",
+    "screencast-editor",
     "presentation-creator",
     "shownotes-publisher",
     "vault-clarification",

@@ -2,7 +2,7 @@
 
 [![tessl](https://img.shields.io/endpoint?url=https%3A%2F%2Fapi.tessl.io%2Fv1%2Fbadges%2Fjbaruch%2Fspeaker-toolkit)](https://tessl.io/registry/jbaruch/speaker-toolkit)
 
-A seven-skill presentation system for conference speakers: analyze your existing talks to extract your rhetoric patterns, create new presentations that match your documented style, produce the deck illustrations + thumbnail visual layer, publish talk pages to a Jekyll shownotes site, and verify a recorded screencast against its storyboard.
+An eight-skill presentation system for conference speakers: analyze your existing talks to extract your rhetoric patterns, create new presentations that match your documented style, produce the deck illustrations + thumbnail visual layer, publish talk pages to a Jekyll shownotes site, verify a recorded screencast against its storyboard, and edit a Camtasia screencast into a finished video.
 
 ## What's New (0.19.0)
 
@@ -145,7 +145,7 @@ See [CHANGELOG.md](CHANGELOG.md) for full history.
 
 ## How It Works
 
-The toolkit is built on seven skills connected by a shared **rhetoric vault** — a directory of structured knowledge about how you present.
+The toolkit is built on eight skills connected by a shared **rhetoric vault** — a directory of structured knowledge about how you present.
 
 ```
                    VAULT
@@ -168,6 +168,18 @@ The toolkit is built on seven skills connected by a shared **rhetoric vault** �
 - **illustrations** owns the deck illustration strategy, generation, build chains, and YouTube thumbnails. Invoked by presentation-creator at the relevant phases (Phase 2 strategy, Phase 5 application, Phase 7 thumbnail).
 - **shownotes-publisher** creates a downloadable Agent Skill containing each talk's substance and writes talk pages into a Jekyll-based shownotes site (e.g., `speaking.jbaru.ch`). Encodes the custom parser's format contract so authored content actually renders: abstract is one paragraph, video field absent = "coming soon" badge, slides/video URLs must be markdown links, no frontmatter title, etc. Uses the delivery-specific rhetoric analysis, reconciled with notes, demos, and transcripts, to explain the thesis, argument, example roles, and caveats. Audience agents can summarize the talk and answer questions from the skill without retrieving a transcript. Publishes `_skills/{talk-page-stem}/SKILL.md` with the page through a PR and verifies the download. Runs before or after delivery; video-only updates preserve existing skills.
 - **screencast-recorder** verifies a recorded screen sequence against its approved storyboard — route and data revision, content framing and label readability at delivery size, deliberate pans, the pointer landing on what it clicks, clip-to-clip continuity, and whether each visual proof happens while its phrase is actually spoken. Verification only: it does not record. The unchecked pixel axis reports `unverified`, never `pass`.
+- **screencast-editor** turns a Camtasia for Mac recording (screen, camera and mic in one take) into a speaker-first video. It plans cuts between sentences from Camtasia's own word timings, zooms the screen evidence clear of the presenter inset, audits every framing against the pointer path recorded in the `.trec`, generates the Camtasia project, replaces the dynamic-caption words with a corrected transcript while keeping Camtasia's onsets, and times YouTube chapters from the captions. It composes the thumbnail from exact frames of the take with the illustrations skill's thumbnail script.
+
+| Skill | Role |
+|---|---|
+| `vault-ingress` | Parse recorded talks into the rhetoric vault |
+| `vault-clarification` | Validate findings and capture intent with the speaker |
+| `vault-profile` | Generate the structured speaker profile |
+| `presentation-creator` | Build new talks from the documented rhetoric |
+| `illustrations` | Deck illustrations, build chains, and YouTube thumbnails |
+| `shownotes-publisher` | Publish talk pages and downloadable talk skills |
+| `screencast-recorder` | Verify a recorded screen sequence against its storyboard |
+| `screencast-editor` | Edit a Camtasia for Mac take into a captioned, chaptered video |
 
 The vault skills never run simultaneously with the creator skills. You build the vault first (once, then incrementally), then use the creator whenever you need a new talk. The vault grows over time as you parse more talks, and the creator automatically picks up new patterns.
 
@@ -306,6 +318,7 @@ The plugin ships persistent rules (auto-loaded by the agent at runtime via `.tes
 | [`tessl-version-floating`](rules/tessl-version-floating.md) | Authority-of-record for the `tessl.json` floating-spec carve-out (paired with `scripts/check_tessl_pins.py`). |
 | [`shownotes-content-publish`](rules/shownotes-content-publish.md) | Authority-of-record for the shownotes content direct-push carve-out (paired with `skills/shownotes-publisher/scripts/content-only-gate.sh`). |
 | [`transcript-fetch-authority`](rules/transcript-fetch-authority.md) | Authority-of-record for the Whisper layer's platform-bound untestable carve-out (paired with `skills/vault-ingress/scripts/fetch-transcript.py`). |
+| [`camtasia-validation-authority`](rules/camtasia-validation-authority.md) | Authority-of-record for the Camtasia rendering boundary's platform-bound untestable carve-out (paired with `skills/screencast-editor/scripts/build-project.py` and `apply-captions.py`). |
 
 ## Vault Skills Details
 

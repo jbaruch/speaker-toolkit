@@ -1,6 +1,6 @@
 ---
 alwaysApply: false
-applyTo: "skills/illustrations/**, skills/presentation-creator/** — when generating a presentation thumbnail"
+applyTo: "skills/illustrations/**, skills/presentation-creator/**, skills/screencast-editor/** — when generating a presentation or screencast YouTube thumbnail"
 ---
 
 # Thumbnail Generation Rules

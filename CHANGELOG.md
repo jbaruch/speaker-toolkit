@@ -1,5 +1,44 @@
 # Changelog
 
+### Add screencast-editor: produce a Camtasia screencast, captions and chapters
+
+A new skill turns a Camtasia recording of screen, camera and mic into a
+speaker-first video. It is built from a shipped 5.5-minute talk-to-camera edit
+and the lessons of an earlier scripted demo, and every script was replayed
+against that edit's real project and recording: the rebuilt project matches it
+clip for clip, the corrected captions match keyframe for keyframe, and the
+chapters match line for line.
+
+- Cuts are planned between sentences from Camtasia's own word onsets, which
+  measured closer to the audio than Whisper's (first word: audio 1.45 s,
+  Camtasia 1.31 s, Whisper 0.96 s).
+- `trec-pointer.py` reads the pointer path from the recording's TSCM atom. The
+  pointer is not in the screen pixels, so `audit-framing.py` replays it against
+  the plan; it catches a pan that framed out the row the presenter was
+  pointing at, which no still can show.
+- `screen-changes.py` and `framing-stills.py` decode from the start, because
+  seeking into Camtasia's TSCC2 screen stream lands seconds off.
+- `build-project.py` writes a new bundle with the recording cloned inside,
+  since Camtasia deleted the temporary project during this very edit.
+- `apply-captions.py` replaces Camtasia's dynamic-caption words with corrected
+  English and keeps its onsets: dropped false starts take the timing of the
+  last word spoken, pauses survive only at sentence ends, and the caption box
+  is resized clear of the inset.
+- `chapters.py` times YouTube chapters from the caption words as JSON and
+  refuses a chapter under ten seconds or fewer than three chapters.
+- Writes are safe to repeat. The builder stages the bundle and renames it into
+  place, treats an identical rerun as a no-op, and keeps effects the user
+  applied. The caption pass refuses a project Camtasia has open, writes
+  atomically, and never overwrites an earlier backup.
+- `extract-frames.py` pulls exact screen and camera frames for the thumbnail,
+  which the skill composes with the illustrations thumbnail script; a camera
+  frame stands in as the speaker photo when the profile has none.
+- `apply-captions.py --override WORD#N=SECONDS` targets one occurrence of a
+  repeated word.
+- `rules/camtasia-validation-authority.md` is the authority of record for the
+  one untestable boundary, Camtasia rendering a generated project, with a
+  six-step manual validation procedure.
+
 ## 0.20.166 — 2026-09-28
 
 ### Read hour-and-minute durations in pacing adherence

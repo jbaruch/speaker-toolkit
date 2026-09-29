@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+"""Extract the recorded pointer path from a Camtasia .trec.
+
+The pointer is not in the screen pixels: Camtasia records it separately, in the
+TSCM atom at the end of the file. Stills can never show where the presenter was
+pointing; this can.
+
+Usage:
+    trec-pointer.py <recording.trec> [--out pointer.json]
+
+Output: {"capture": {"x","y","width","height"}, "samples": [[seconds, nx, ny], ...]}
+where nx, ny are normalized to the captured display, top-left origin.
+Exit 0 on success, 1 when the file carries no pointer data, 2 on usage error.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+# The sibling module resolves only after the sys.path insert above.
+import camtasia_model as model  # noqa: E402
+
+
+def extract(recording: Path) -> dict:
+    records = model.tscm_records(model.read_top_level_atom(recording, b"TSCM"))
+    x, y, width, height = model.capture_rect(records)
+    path = model.pointer_path(records)
+    if not path:
+        raise ValueError(f"{recording} recorded no pointer movement")
+    samples = [
+        [round(t, 4), round((px - x) / width, 5), round((py - y) / height, 5)]
+        for t, px, py in path
+    ]
+    return {
+        "capture": {"x": x, "y": y, "width": width, "height": height},
+        "samples": samples,
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
+    parser.add_argument("recording", type=Path)
+    parser.add_argument("--out", type=Path)
+    args = parser.parse_args(argv)
+    try:
+        result = extract(args.recording)
+    except ValueError as e:
+        print(f"trec-pointer: {e}", file=sys.stderr)
+        return 1
+    text = json.dumps(result)
+    if args.out:
+        try:
+            args.out.write_text(text + "\n", encoding="utf-8")
+        except OSError as e:
+            print(
+                f"trec-pointer: cannot write {args.out}: {e}; choose a writable --out",
+                file=sys.stderr,
+            )
+            return 1
+        print(
+            f"{len(result['samples'])} pointer samples -> {args.out}", file=sys.stderr
+        )
+    else:
+        print(text)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
