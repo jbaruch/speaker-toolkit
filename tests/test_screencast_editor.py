@@ -974,3 +974,30 @@ def test_audit_refuses_empty_or_malformed_pointer_data(tmp_path, content):
     pointer.write_text(content)
     with pytest.raises(ValueError):
         audit_framing.load_samples(pointer)
+
+
+def test_a_failed_clone_falls_back_to_a_copy(tmp_path, monkeypatch):
+    source = tmp_path / "take.trec"
+    source.write_bytes(b"movie")
+    target = tmp_path / "copy.trec"
+    monkeypatch.setattr(build_project.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        build_project.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 1, stdout="", stderr="clone unsupported"
+        ),
+    )
+    build_project.clone(source, target)
+    assert target.read_bytes() == b"movie"
+
+
+@pytest.mark.parametrize("damage", ["media/take.trec", "shot-plan.json", "docPrefs"])
+def test_a_damaged_bundle_is_not_reported_unchanged(tmp_path, capsys, damage):
+    raw = raw_bundle(tmp_path)
+    out = tmp_path / "edit.cmproj"
+    args = [str(raw), str(write(tmp_path / "plan.json", plan())), "--out", str(out)]
+    assert build_project.main(args) == 0
+    (out / damage).unlink()
+    assert build_project.main(args) == 2
+    assert damage in capsys.readouterr().err

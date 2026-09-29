@@ -229,11 +229,48 @@ def build(template: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
 
 
 def clone(source: Path, target: Path) -> None:
-    """Copy the recording into the bundle; an APFS clone on macOS costs no space."""
+    """Copy the recording into the bundle, as an APFS clone where one is possible.
+
+    A clone costs no space but only works within one APFS volume; anywhere else
+    this falls back to an ordinary copy rather than failing.
+    """
     if sys.platform == "darwin":
-        subprocess.run(["cp", "-c", str(source), str(target)], check=True)
-    else:
-        shutil.copy2(source, target)
+        cloned = subprocess.run(
+            ["cp", "-c", str(source), str(target)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if cloned.returncode == 0:
+            return
+        if target.exists():
+            target.unlink()
+    shutil.copy2(source, target)
+
+
+def bundle_differences(
+    out: Path, project: dict[str, Any], plan: dict[str, Any], recording: Path
+) -> list[str]:
+    """What in an existing bundle differs from what this run would write."""
+    differences = []
+    existing = out / model.PROJECT_FILE
+    if not existing.is_file() or existing.read_text(encoding="utf-8") != serialize(
+        project
+    ):
+        differences.append(model.PROJECT_FILE)
+    saved_plan = out / "shot-plan.json"
+    if (
+        not saved_plan.is_file()
+        or json.loads(saved_plan.read_text(encoding="utf-8")) != plan
+    ):
+        differences.append("shot-plan.json")
+    media = out / "media" / recording.name
+    if not media.is_file() or media.stat().st_size != recording.stat().st_size:
+        differences.append(f"media/{recording.name}")
+    for companion in ("bookmarks.plist", "docPrefs"):
+        if not (out / companion).is_file():
+            differences.append(companion)
+    return differences
 
 
 def serialize(project: dict[str, Any]) -> str:
@@ -255,7 +292,7 @@ def write_bundle(
             json.dumps(plan, indent=1), encoding="utf-8"
         )
         staging.rename(out)
-    except (OSError, subprocess.CalledProcessError):
+    except OSError:
         if staging.exists():
             shutil.rmtree(staging)
         raise
@@ -295,20 +332,19 @@ def main(argv: list[str] | None = None) -> int:
         "speaker_shots": sum(s["kind"] == "speaker" for s in plan["shots"]),
     }
     if args.out.exists():
-        existing = args.out / model.PROJECT_FILE
-        if existing.is_file() and existing.read_text(encoding="utf-8") == serialize(
-            project
-        ):
+        differences = bundle_differences(args.out, project, plan, recording)
+        if not differences:
             print(json.dumps({**summary, "unchanged": True}))
             return 0
         print(
-            f"build-project: {args.out} already holds a different edit; choose a new --out",
+            f"build-project: {args.out} already exists and differs in {', '.join(differences)}; "
+            "choose a new --out",
             file=sys.stderr,
         )
         return 2
     try:
         write_bundle(args.out, project, plan, recording)
-    except (OSError, subprocess.CalledProcessError) as e:
+    except OSError as e:
         print(
             f"build-project: could not write {args.out}: {e}; nothing was left behind",
             file=sys.stderr,

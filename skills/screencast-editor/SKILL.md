@@ -28,9 +28,8 @@ Read it before the first edit of a session. File formats:
 [skills/screencast-editor/references/camtasia-format.md](references/camtasia-format.md).
 
 Camtasia owns any project it has open. Never write a project file until the
-user has saved and closed it. Never screenshot the whole screen: other apps and
-private conversations are on it. Look at pixels only through the stills this
-skill renders.
+user has saved and closed it. Never screenshot the whole screen. Look at pixels
+only through the stills this skill renders.
 
 Steps 2, 8, 9, and 10 hand work to the user and end the turn. When the user
 reports back, resume at the step each one names.
@@ -108,7 +107,8 @@ Step 6 for any still that fails. Proceed immediately to Step 8.
 A rerun with the same inputs is a no-op; a different existing bundle is never
 overwritten. Read
 [rules/camtasia-validation-authority.md](../../rules/camtasia-validation-authority.md)
-and ask the user to open the bundle and confirm its observations. Finish here;
+and ask the user to open the bundle and confirm its observations 1 to 4.
+Finish here;
 resume at Step 9 when the user approves the cut, or at Step 5 with their
 changes, building into a new bundle name.
 
@@ -151,6 +151,6 @@ verified. Proceed immediately to Step 12.
 Skill(skill: "illustrations")
 ```
 
-Enter its thumbnail step. With no speaker photo configured, extract a frame
-from the recording's camera track where the speaker is engaged and looking at
-the lens: it is a real photograph. Finish here.
+Enter its thumbnail step. With no speaker photo configured, pass a frame from
+the recording's camera track where the speaker is engaged and looking at the
+lens as the speaker photo. Finish here.
