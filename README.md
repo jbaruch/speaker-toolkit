@@ -170,6 +170,17 @@ The toolkit is built on eight skills connected by a shared **rhetoric vault** â€
 - **screencast-recorder** verifies a recorded screen sequence against its approved storyboard â€” route and data revision, content framing and label readability at delivery size, deliberate pans, the pointer landing on what it clicks, clip-to-clip continuity, and whether each visual proof happens while its phrase is actually spoken. Verification only: it does not record. The unchecked pixel axis reports `unverified`, never `pass`.
 - **screencast-editor** turns a Camtasia for Mac recording (screen, camera and mic in one take) into a speaker-first video. It plans cuts between sentences from Camtasia's own word timings, zooms the screen evidence clear of the presenter inset, audits every framing against the pointer path recorded in the `.trec`, generates the Camtasia project, replaces the dynamic-caption words with a corrected transcript while keeping Camtasia's onsets, and times YouTube chapters from the captions. It composes the thumbnail from exact frames of the take with the illustrations skill's thumbnail script.
 
+| Skill | Role |
+|---|---|
+| `vault-ingress` | Parse recorded talks into the rhetoric vault |
+| `vault-clarification` | Validate findings and capture intent with the speaker |
+| `vault-profile` | Generate the structured speaker profile |
+| `presentation-creator` | Build new talks from the documented rhetoric |
+| `illustrations` | Deck illustrations, build chains, and YouTube thumbnails |
+| `shownotes-publisher` | Publish talk pages and downloadable talk skills |
+| `screencast-recorder` | Verify a recorded screen sequence against its storyboard |
+| `screencast-editor` | Edit a Camtasia for Mac take into a captioned, chaptered video |
+
 The vault skills never run simultaneously with the creator skills. You build the vault first (once, then incrementally), then use the creator whenever you need a new talk. The vault grows over time as you parse more talks, and the creator automatically picks up new patterns.
 
 ## Installation

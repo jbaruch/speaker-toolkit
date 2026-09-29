@@ -133,8 +133,10 @@ not a verbatim record. Then:
 "{python_path}" "{speaker_toolkit_root}/skills/screencast-editor/scripts/apply-captions.py" "<title>.cmproj" captions.txt
 ```
 
-Pass `--override WORD=SECONDS` for a word whose measured onset differs, and the
-size and position flags for a different inset. Ask the user to confirm
+For a word whose measured onset differs, pass `--override WORD=SECONDS` when the
+word occurs once in the captions, or `--override WORD#N=SECONDS` for its Nth
+occurrence; a repeated word without `#N` is refused. Pass the size and position
+flags for a different inset. Ask the user to confirm
 observations 5 and 6 of the Camtasia validation rule. Finish here; resume at
 Step 10 with their corrections, or at Step 11 when they approve.
 

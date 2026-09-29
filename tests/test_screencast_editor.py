@@ -1192,3 +1192,19 @@ def test_other_platforms_are_refused_not_assumed_closed(monkeypatch):
     monkeypatch.setattr(model.sys, "platform", "win32")
     with pytest.raises(ValueError, match="Camtasia for Mac only"):
         model.camtasia_open_files()
+
+
+def test_a_malformed_template_is_diagnosed_not_crashed(tmp_path, capsys):
+    raw = tmp_path / "raw.cmproj"
+    raw.mkdir()
+    broken = template()
+    del broken["timeline"]["sceneTrack"]
+    write(raw / "project.tscproj", broken)
+    args = [
+        str(raw),
+        str(write(tmp_path / "plan.json", plan())),
+        "--out",
+        str(tmp_path / "edit.cmproj"),
+    ]
+    assert build_project.main(args) == 1
+    assert "not a Camtasia screen + camera recording project" in capsys.readouterr().err

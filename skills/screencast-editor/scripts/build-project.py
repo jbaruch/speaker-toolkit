@@ -322,8 +322,14 @@ def main(argv: list[str] | None = None) -> int:
         template_path = model.project_file(args.template)
         template = model.load_project(template_path)
         plan = model.load_plan(args.plan)
-        project = build(template, plan)
-        recording = Path(project["sourceBin"][0]["src"])
+        try:
+            project = build(template, plan)
+            recording = Path(project["sourceBin"][0]["src"])
+        except (KeyError, IndexError, TypeError) as e:
+            raise ValueError(
+                f"{template_path} is not a Camtasia screen + camera recording project "
+                f"(missing or malformed {e}); open the recording in Camtasia, save, and pass that project"
+            ) from e
         if not recording.is_absolute():
             recording = template_path.parent / recording
         if not recording.is_file():
