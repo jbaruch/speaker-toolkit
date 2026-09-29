@@ -31,6 +31,9 @@ Camtasia owns any project it has open. Never write a project file until the
 user has saved and closed it. Never screenshot the whole screen. Look at pixels
 only through the stills this skill renders.
 
+Every script prints its diagnostics on stderr and exits 2 on a usage error
+(bad or missing arguments); each step lists its other outcomes.
+
 Steps 2, 8, 9, 10, 11, 12, 13, and 14 hand work to the user and end the turn. When the user
 reports back, resume at the step each one names.
 
@@ -199,8 +202,11 @@ ask the user to confirm it. Finish here; resume at Step 15 when confirmed.
 ## Step 15 — Compose the thumbnail
 
 ```bash
-"{python_path}" "{speaker_toolkit_root}/skills/illustrations/scripts/generate-thumbnail.py" --slide-image thumb/<screen-frame>.png --speaker-photo <photo> --title "<TITLE>" --aesthetic <photo|comic_book> --vault <vault_root> --output thumbnail.png
+"{python_path}" "{speaker_toolkit_root}/skills/screencast-editor/scripts/compose-thumbnail.py" --slide-image thumb/<screen-frame>.png --speaker-photo <photo> --title "<TITLE>" --aesthetic <photo|comic_book> --vault <vault_root> --output thumbnail.png
 ```
 
-Choose the aesthetic by the rule's precedence, read the result, and iterate
-one change at a time on request. Finish here.
+It runs the illustrations thumbnail generator and writes `thumbnail.png`.
+Stdout: `{"thumbnail", "width", "height", "bytes"}`; the generator's progress
+goes to stderr. Exit 1 means the generator failed or wrote no PNG. Choose the
+aesthetic by the rule's precedence, read the result, and iterate one change at
+a time on request. Finish here.

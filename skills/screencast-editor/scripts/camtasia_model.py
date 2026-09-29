@@ -127,6 +127,27 @@ def plan_canvas(plan: dict[str, Any]) -> Canvas:
     )
 
 
+def validate_look(plan: dict[str, Any]) -> None:
+    """Optional `inset` and `noise_removal` fields: types and ranges."""
+    inset = plan.get("inset", {})
+    if not isinstance(inset, dict):
+        raise ValueError("'inset' must be an object")
+    for key in ("height", "x", "y", "corner_radius", "border_width"):
+        if key in inset and not _number(inset[key]):
+            raise ValueError(f"inset.{key} must be a finite number")
+    if inset.get("height", 1) <= 0:
+        raise ValueError("inset.height must be positive (canvas pixels)")
+    for key in ("corner_radius", "border_width"):
+        if inset.get(key, 0) < 0:
+            raise ValueError(f"inset.{key} cannot be negative")
+    color = inset.get("border_color", "#A78BFA")
+    if not (isinstance(color, str) and re.fullmatch(r"#?[0-9A-Fa-f]{6}", color)):
+        raise ValueError("inset.border_color must be a hex colour like #A78BFA")
+    noise = plan.get("noise_removal", 0.8)
+    if not _number(noise) or not 0 <= noise <= 1:
+        raise ValueError("noise_removal must be a number from 0 (off) to 1")
+
+
 def load_plan(path: Path) -> dict[str, Any]:
     """Read and validate a shot plan. Raises ValueError with the first problem."""
     try:
@@ -141,6 +162,7 @@ def load_plan(path: Path) -> dict[str, Any]:
         raise ValueError(f"{path}: needs a non-empty 'shots' list")
     shots = plan["shots"]
     canvas = plan_canvas(plan)
+    validate_look(plan)
     floor = min_zoom(canvas)
     for i, s in enumerate(shots):
         where = f"{path}: shot {i + 1}"

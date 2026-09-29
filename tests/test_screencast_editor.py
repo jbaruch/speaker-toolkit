@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import shutil
 import struct
 import subprocess
@@ -1272,3 +1273,97 @@ def test_audit_rejects_bad_pointer_samples(tmp_path, content, message):
     pointer.write_text(content)
     with pytest.raises(ValueError, match=message):
         audit_framing.load_samples(pointer)
+
+
+@pytest.mark.parametrize(
+    "look,message",
+    [
+        ({"inset": [1]}, "'inset' must be an object"),
+        ({"inset": {"height": float("inf")}}, "inset.height must be a finite"),
+        ({"inset": {"height": -5}}, "must be positive"),
+        ({"inset": {"border_color": "purple"}}, "hex colour"),
+        ({"noise_removal": 1.5}, "from 0 (off) to 1"),
+    ],
+)
+def test_bad_look_settings_are_plan_errors(tmp_path, look, message):
+    with pytest.raises(ValueError, match=re.escape(message)):
+        model.load_plan(write(tmp_path / "plan.json", plan(**look)))
+
+
+@pytest.mark.parametrize(
+    "flag,value",
+    [("--width", "nan"), ("--height", "-1"), ("--font-size", "0"), ("--y", "inf")],
+)
+def test_caption_box_numbers_must_be_real(tmp_path, flag, value):
+    with pytest.raises(SystemExit) as exit_info:
+        apply_captions.main([str(tmp_path), str(tmp_path / "c.txt"), flag, value])
+    assert exit_info.value.code == 2
+
+
+def fake_generator(tmp_path: Path, body: str) -> Path:
+    script = tmp_path / "fake-generate-thumbnail.py"
+    script.write_text(body)
+    return script
+
+
+def test_compose_thumbnail_emits_a_receipt_and_moves_chatter_to_stderr(
+    tmp_path, capsys
+):
+    compose_thumbnail = load("compose-thumbnail")
+    png = (
+        b"\x89PNG\r\n\x1a\n"
+        + struct.pack(">I4sII", 13, b"IHDR", 1280, 720)
+        + b"\x00" * 16
+    )
+    generator = fake_generator(
+        tmp_path,
+        "import sys\n"
+        "out = sys.argv[sys.argv.index('--output') + 1]\n"
+        f"open(out, 'wb').write({png!r})\n"
+        "print('Thumbnail saved: ' + out)\n",
+    )
+    out = tmp_path / "thumbnail.png"
+    args = [
+        "--slide-image",
+        "s.png",
+        "--speaker-photo",
+        "p.png",
+        "--title",
+        "GOOD BEATS PERFECT",
+        "--aesthetic",
+        "comic_book",
+        "--vault",
+        str(tmp_path),
+        "--output",
+        str(out),
+    ]
+    assert compose_thumbnail.main(args, generator=generator) == 0
+    captured = capsys.readouterr()
+    receipt = json.loads(captured.out)
+    assert (receipt["width"], receipt["height"]) == (1280, 720)
+    assert "Thumbnail saved" in captured.err
+
+
+def test_compose_thumbnail_fails_when_no_png_is_written(tmp_path, capsys):
+    compose_thumbnail = load("compose-thumbnail")
+    generator = fake_generator(tmp_path, "print('pretending')\n")
+    args = [
+        "--slide-image",
+        "s.png",
+        "--speaker-photo",
+        "p.png",
+        "--title",
+        "T",
+        "--aesthetic",
+        "photo",
+        "--vault",
+        str(tmp_path),
+        "--output",
+        str(tmp_path / "t.png"),
+    ]
+    assert compose_thumbnail.main(args, generator=generator) == 1
+    assert "wrote no" in capsys.readouterr().err
+
+
+def test_compose_thumbnail_points_at_the_shipped_generator():
+    assert load("compose-thumbnail").GENERATOR.is_file()

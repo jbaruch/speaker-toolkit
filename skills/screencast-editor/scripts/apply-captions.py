@@ -208,6 +208,20 @@ def parse_overrides(values: list[str], text: list[str], rate: int) -> dict[int, 
     return out
 
 
+def positive(value: str) -> float:
+    number = float(value)
+    if not math.isfinite(number) or number <= 0:
+        raise argparse.ArgumentTypeError("must be a positive number")
+    return number
+
+
+def finite(value: str) -> float:
+    number = float(value)
+    if not math.isfinite(number):
+        raise argparse.ArgumentTypeError("must be a finite number")
+    return number
+
+
 def backup_project(path: Path, now: datetime | None = None) -> Path:
     """Copy the project to a new before-captions snapshot; never overwrites one."""
     stamp = (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
@@ -234,11 +248,11 @@ def main(argv: list[str] | None = None) -> int:
         default=[],
         help="WORD=SECONDS, or WORD#N=SECONDS for the Nth occurrence: a measured onset",
     )
-    parser.add_argument("--width", type=float, default=700.0)
-    parser.add_argument("--height", type=float, default=170.0)
-    parser.add_argument("--font-size", type=float, default=64.0)
-    parser.add_argument("--x", type=float, default=0.0)
-    parser.add_argument("--y", type=float, default=-430.0)
+    parser.add_argument("--width", type=positive, default=700.0)
+    parser.add_argument("--height", type=positive, default=170.0)
+    parser.add_argument("--font-size", type=positive, default=64.0)
+    parser.add_argument("--x", type=finite, default=0.0)
+    parser.add_argument("--y", type=finite, default=-430.0)
     args = parser.parse_args(argv)
     try:
         path = model.project_file(args.project)
