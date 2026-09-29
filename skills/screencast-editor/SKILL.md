@@ -63,8 +63,11 @@ immediately to Step 4.
 
 ## Step 4 — Map what the screen shows
 
-A take with no screen footage (all presenter) skips Steps 4, 6, and 7: its plan
-has only speaker shots. Proceed immediately to Step 5 for such a take.
+A screen + camera take whose edit uses no screen footage skips Steps 4, 6, and
+7: its plan has only speaker shots, and the unused screen track stays in the
+recording. Proceed immediately to Step 5 for such a take. A camera-only
+recording is out of scope: `build-project.py` requires Camtasia's screen +
+camera layout.
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/screencast-editor/scripts/screen-changes.py" <recording.trec> > changes.json

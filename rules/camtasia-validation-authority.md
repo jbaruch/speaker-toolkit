@@ -9,7 +9,6 @@ description: Authority of record for the Camtasia rendering boundary's Platform-
 ## Carve-Out Claimed
 
 - `jbaruch/coding-policy: testing-standards` Platform-Bound Untestable Carve-Out.
-- This rule is the authority of record satisfying precondition 3: it names the carve-out, the exempt artifact, and the manual validation procedure.
 - Qualifying condition: Camtasia is a licensed macOS and Windows GUI application with no headless mode, so no CI runner can open a project and render it.
 
 ## Covered Artifact

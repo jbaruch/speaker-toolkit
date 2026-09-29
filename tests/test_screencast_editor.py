@@ -1098,3 +1098,24 @@ def test_an_unwritable_pointer_output_is_reported(tmp_path, capsys):
     target = tmp_path / "missing-dir" / "pointer.json"
     assert trec_pointer.main([str(take), "--out", str(target)]) == 1
     assert "choose a writable --out" in capsys.readouterr().err
+
+
+def test_an_all_speaker_plan_builds_from_a_screen_and_camera_take():
+    speaker_only = {
+        "shots": [
+            {"start": 1.0, "end": 30.0, "kind": "speaker", "label": "All presenter"}
+        ]
+    }
+    project = build_project.build(template(), speaker_only)
+    screen, inset, speaker = (t["medias"] for t in model.tracks(project))
+    assert screen == [] and [m["attributes"]["ident"] for m in speaker] == [
+        "All presenter"
+    ]
+    assert inset[0]["duration"] == speaker[0]["duration"]
+
+
+def test_a_camera_only_recording_is_refused():
+    t = template()
+    model.tracks(t)[0]["medias"] = []
+    with pytest.raises(ValueError, match="screen on track 0"):
+        build_project.build(t, plan())
