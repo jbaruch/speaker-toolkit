@@ -547,7 +547,13 @@ def caption_project(words=True, callout=True) -> dict:
     return p
 
 
-def test_apply_captions_cli_restyles_and_keeps_a_backup(tmp_path):
+@pytest.fixture
+def closed_projects(monkeypatch):
+    """Camtasia holds nothing open; the open-file probe is platform-bound."""
+    monkeypatch.setattr(model, "camtasia_open_files", lambda: [])
+
+
+def test_apply_captions_cli_restyles_and_keeps_a_backup(tmp_path, closed_projects):
     bundle = tmp_path / "edit.cmproj"
     bundle.mkdir()
     write(bundle / "project.tscproj", caption_project())
@@ -576,7 +582,7 @@ def test_apply_captions_cli_restyles_and_keeps_a_backup(tmp_path):
     ],
 )
 def test_apply_captions_needs_camtasias_captions_first(
-    tmp_path, capsys, words, callout, message
+    tmp_path, capsys, closed_projects, words, callout, message
 ):
     bundle = tmp_path / "edit.cmproj"
     bundle.mkdir()
@@ -832,8 +838,7 @@ def test_an_open_project_is_refused(tmp_path):
         model.ensure_closed(bundle, open_files=[])
 
 
-def test_two_caption_passes_keep_two_backups(tmp_path, monkeypatch):
-    monkeypatch.setattr(model, "camtasia_open_files", lambda: [])
+def test_two_caption_passes_keep_two_backups(tmp_path, closed_projects):
     bundle = tmp_path / "edit.cmproj"
     bundle.mkdir()
     write(bundle / "project.tscproj", caption_project())
@@ -1172,3 +1177,18 @@ def test_extract_frames_refuses_a_time_past_the_end(tmp_path, two_page_video):
             two_page_video, "0:0", [0.2, 9.0], tmp_path / "thumb", "screen"
         )
     assert not (tmp_path / "thumb").exists()
+
+
+def test_an_unrelated_transcript_is_refused():
+    with pytest.raises(ValueError, match="shares no words"):
+        apply_captions.rebuild(
+            heard_keyframes(),
+            corrected("Completely different sentences about gardening."),
+            {},
+        )
+
+
+def test_other_platforms_are_refused_not_assumed_closed(monkeypatch):
+    monkeypatch.setattr(model.sys, "platform", "win32")
+    with pytest.raises(ValueError, match="Camtasia for Mac only"):
+        model.camtasia_open_files()

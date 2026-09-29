@@ -1,8 +1,8 @@
 ---
 name: screencast-editor
 description: >
-  Edit a talk-to-camera or demo screencast recorded in Camtasia (screen, camera
-  and mic in one take) into a speaker-first video: plan cuts on sentence
+  Edit a talk-to-camera or demo screencast recorded in Camtasia for Mac
+  (screen, camera and mic in one take) into a speaker-first video: plan cuts on sentence
   boundaries from Camtasia's own word timings, frame and zoom the screen
   evidence, audit the framing against the recorded pointer, generate the
   Camtasia project, correct the dynamic captions, time the YouTube chapters,

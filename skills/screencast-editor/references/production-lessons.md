@@ -134,7 +134,7 @@ intercepted.
 sleeps measured 803 ms. Warps do not reset the HID idle timer and produced 19
 minutes of lock screen.
 
-**Pointer motion that reads as a hand: duration about `min(900, max(180, distance * 0.55))` ms, wait for a stable target box, settle 350 ms before the click, park 70 px inset from a corner.**
+**Pointer motion should read as a hand: longer moves take longer, the pointer waits for its target to stop moving, settles before the click, and parks clear of text.**
 Scrolls use the same ease-in-out curve as the pointer so content and cursor share
 a feel.
 
@@ -195,16 +195,13 @@ Unquantized ticks put cut points between frames. Clip `start`, `duration`,
 `mediaStart` and `mediaDuration` are ticks; keyframe times are ticks relative to
 the clip start.
 
-**Clip speed is `scalar`, stored as the exact fraction `duration/mediaDuration` as a string (for example "57/47"), or integer 1.**
-Stretching, trimming head (advance `mediaStart`) and trimming tail (shorten
-`mediaDuration`) natively leave the narration untouched and the edit editable.
+**Retime a clip with Camtasia's native clip speed or trims, never by re-rendering.**
+Native speed and trims leave the narration untouched and the edit editable; the
+storage format is in `skills/screencast-editor/references/camtasia-format.md`.
 
-**Zoom and pan are keyframe animations on `scale0/scale1/translation0/translation1`; capture the JSON shape from a zoom made by hand in Camtasia.**
-An animated parameter becomes `{type, defaultValue, interp: 'eioe', keyframes: [...]}`
-and the clip needs matching `animationTracks.visual` entries. An ease-in-out
-ending on the cue reads well; its length is `MOVE_SECONDS` in
-`skills/screencast-editor/scripts/camtasia_model.py`. Establish wide, enlarge
-the named item, return wide.
+**Zoom and pan are native keyframe animations; generate them with `build` in `skills/screencast-editor/scripts/build-project.py` rather than writing the JSON by hand.**
+An ease-in-out ending on the cue reads well. Establish wide, enlarge the named
+item, return wide.
 
 **Translation is center-relative in canvas pixels, with `translation1` positive up; clamp so no canvas edge is ever exposed.**
 The framing and its clamps, including the menu-bar floor, live in `frame` and
@@ -247,8 +244,8 @@ argument moved to camera and the screen returned on the sentence that named
 evidence, which also fixed a stretch of thin footage.
 
 **Cut only at sentence boundaries, using word onsets, and close on a stable frame with a one-second tail.**
-Store edit rows in untrimmed narration seconds so a phrase found in the
-transcript pastes straight in, and convert with `frame = round((s - trimIn) * fps)`.
+Store edit rows in untrimmed source seconds so a phrase found in the
+transcript pastes straight in; `build-project.py` converts them to timeline ticks.
 
 **Find head and tail trim with `silencedetect`.**
 It found 7.67 s of leading silence on one take; trimming just inside that kept the

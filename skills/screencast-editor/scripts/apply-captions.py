@@ -61,6 +61,17 @@ def align(heard: list[tuple[int, str]], text: list[str]) -> tuple[list[int], int
             stop = heard[i2][0] if i2 < len(heard) else heard[i2 - 1][0]
             for d in range(j2 - j1):
                 times[j1 + d] = start + (stop - start) * d // (j2 - j1)
+    shared = sum(
+        j2 - j1
+        for tag, _i1, _i2, j1, j2 in difflib.SequenceMatcher(
+            None, a, b, autojunk=False
+        ).get_opcodes()
+        if tag == "equal"
+    )
+    if shared == 0:
+        raise ValueError(
+            "the corrected text shares no words with Camtasia's transcript; is it the right take?"
+        )
     matched = sum(t is not None for t in times)
     known = [i for i, t in enumerate(times) if t is not None]
     if not known:

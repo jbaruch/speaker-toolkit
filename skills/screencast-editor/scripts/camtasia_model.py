@@ -206,13 +206,17 @@ def project_file(target: Path) -> Path:
 
 
 def camtasia_open_files() -> list[str]:
-    """Paths Camtasia holds open. Empty when Camtasia is not running or cannot run here.
+    """Paths Camtasia for Mac holds open; empty only when Camtasia is not running.
 
     A failure to ask is an error, never "nothing open": treating it as closed
-    would let a caption pass overwrite a live project.
+    would let a caption pass overwrite a live project. Other platforms cannot be
+    checked, so they are refused.
     """
     if sys.platform != "darwin":
-        return []
+        raise ValueError(
+            f"cannot check for an open Camtasia project on {sys.platform}; "
+            "this skill supports Camtasia for Mac only"
+        )
     for tool in ("pgrep", "lsof"):
         if shutil.which(tool) is None:
             raise ValueError(

@@ -9,11 +9,12 @@ description: Authority of record for the Camtasia rendering boundary's Platform-
 ## Carve-Out Claimed
 
 - `jbaruch/coding-policy: testing-standards` Platform-Bound Untestable Carve-Out.
-- Qualifying condition: Camtasia is a licensed macOS and Windows GUI application with no headless mode, so no CI runner can open a project and render it.
+- Qualifying condition: Camtasia for Mac is a licensed GUI application with no headless mode, so no CI runner can open a project and render it.
+- Scope: Camtasia for Mac only. The screencast editor refuses to modify a project on any other platform.
 
 ## Covered Artifact
 
-- Exempt: Camtasia's acceptance and rendering of a project written by `skills/screencast-editor/scripts/build-project.py` or modified by `skills/screencast-editor/scripts/apply-captions.py`. That is whether the app opens the bundle, draws the planned framing and inset, and shows the corrected dynamic captions.
+- Exempt: Camtasia for Mac's acceptance and rendering of a project written by `skills/screencast-editor/scripts/build-project.py` or modified by `skills/screencast-editor/scripts/apply-captions.py`. That is whether the app opens the bundle, draws the planned framing and inset, and shows the corrected dynamic captions.
 - Not exempt: every byte those scripts write. Timing, framing geometry, clamping, effect ownership, caption alignment, staging, and refusal paths are deterministic and tested.
 
 ## Precondition 1 — CI-Runnable Pieces Are Extracted and Tested
