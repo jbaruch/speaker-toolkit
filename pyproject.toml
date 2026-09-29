@@ -79,7 +79,7 @@ lint = [
 # authors no presenterm decks should not carry a PDF engine.
 # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
 markdown-deck = [
-    "weasyprint==69.0",
+    "weasyprint==70.0",
 ]
 # Local Whisper transcription, used by vault-ingress/scripts/fetch-transcript.py
 # when a video has no caption track. Optional and not in the base dependency set
