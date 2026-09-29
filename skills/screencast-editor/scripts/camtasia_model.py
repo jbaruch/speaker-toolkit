@@ -295,10 +295,41 @@ def atomic_write_text(path: Path, text: str) -> None:
 
 
 def load_project(path: Path) -> dict[str, Any]:
+    """Read a Camtasia project and check the structure every script relies on."""
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        project = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
         raise ValueError(f"cannot read Camtasia project {path}: {e}") from e
+    problem = project_shape_problem(project)
+    if problem:
+        raise ValueError(
+            f"{path} is not a Camtasia project ({problem}); save it from Camtasia and retry"
+        )
+    return project
+
+
+def project_shape_problem(project: object) -> str | None:
+    """The first structural gap in a project, or None when it has the expected shape."""
+    if not isinstance(project, dict):
+        return "not a JSON object"
+    rate = project.get("editRate")
+    if not (isinstance(rate, int) and not isinstance(rate, bool) and rate > 0):
+        return "no positive integer editRate"
+    sources = project.get("sourceBin")
+    if not isinstance(sources, list) or not all(
+        isinstance(s, dict) and isinstance(s.get("sourceTracks", []), list)
+        for s in sources
+    ):
+        return "no sourceBin list"
+    try:
+        scene_tracks = project["timeline"]["sceneTrack"]["scenes"][0]["csml"]["tracks"]
+    except (KeyError, IndexError, TypeError):
+        return "no timeline.sceneTrack.scenes[0].csml.tracks"
+    if not isinstance(scene_tracks, list) or not all(
+        isinstance(t, dict) and isinstance(t.get("medias"), list) for t in scene_tracks
+    ):
+        return "tracks without media lists"
+    return None
 
 
 def tracks(project: dict[str, Any]) -> list[dict[str, Any]]:

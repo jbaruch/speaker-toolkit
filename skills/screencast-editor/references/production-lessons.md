@@ -313,7 +313,7 @@ One take measured -30.13 LUFS in and -15.98 LUFS out.
 Nine defects, including a lock screen, the wrong app and a spinner in the payoff,
 passed every automated check.
 
-**Review frames at cue times named by timeline second, and review the cut with narration over it, never the silent screen lane.**
+**Review the settled framing of every cue (the stills `framing-stills.py` renders), and review the cut with narration over it, never the silent screen lane.**
 OCR of sampled frames is a hint, not a pass; UI text OCRs as noise.
 
 **Verify framing against source frames, then require the human's playback review in Camtasia.**

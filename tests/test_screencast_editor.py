@@ -1201,7 +1201,7 @@ def test_a_malformed_template_is_diagnosed_not_crashed(tmp_path, capsys):
     raw = tmp_path / "raw.cmproj"
     raw.mkdir()
     broken = template()
-    del broken["timeline"]["sceneTrack"]
+    del model.tracks(broken)[0]["medias"][0]["mediaDuration"]
     write(raw / "project.tscproj", broken)
     args = [
         str(raw),
@@ -1448,3 +1448,36 @@ def test_a_thumbnail_title_over_five_words_is_refused(tmp_path):
     with pytest.raises(SystemExit) as exit_info:
         compose_thumbnail.main(args, generator=tmp_path / "unused.py")
     assert exit_info.value.code == 2
+
+
+@pytest.mark.parametrize(
+    "project,problem",
+    [
+        ([], "not a JSON object"),
+        ({"editRate": "fast"}, "editRate"),
+        ({"editRate": RATE, "sourceBin": {}}, "sourceBin"),
+        ({"editRate": RATE, "sourceBin": [], "timeline": {}}, "csml.tracks"),
+    ],
+)
+def test_malformed_projects_are_diagnosed(tmp_path, capsys, project, problem):
+    bundle = tmp_path / "raw.cmproj"
+    bundle.mkdir()
+    write(bundle / "project.tscproj", project)
+    assert transcript.main([str(bundle)]) == 1
+    err = capsys.readouterr().err
+    assert "is not a Camtasia project" in err and problem in err
+
+
+def test_a_late_cue_is_sampled_after_itself_not_before():
+    late = {
+        "shots": [
+            {
+                "start": 0.0,
+                "end": 5.0,
+                "kind": "screen",
+                "cues": [[0.0, 1.06, 0.5, 0.5], [4.9, 1.5, 0.5, 0.5]],
+            }
+        ]
+    }
+    frames = framing_stills.cue_frames(late)
+    assert frames[-1][0] >= round(4.9 * framing_stills.SAMPLE_FPS)

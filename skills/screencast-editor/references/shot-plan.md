@@ -41,7 +41,8 @@
 - The screen appears while the words point at it and leaves when they stop.
 - Cut only between sentences, using the transcript's word onsets: end a shot
   after the last word of a sentence and before the first of the next.
-- Enter each screen shot wide (zoom 1.06), then push in to what is named.
+- Prefer entering a new page wide, then pushing in to what is named; a shot
+  that returns to a page already shown can keep its earlier framing.
 - Frame a text view (an issue, a doc) as its whole column, left of the inset:
   zoom 1.4 with focal x 0.517 fits a GitHub issue on a 1920x1080 canvas. Larger
   zooms cut words at the edge.

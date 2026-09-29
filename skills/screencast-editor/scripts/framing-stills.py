@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Render a proxy still for every framing cue in a shot plan, plus a contact sheet.
 
-Each still is the exact frame at the cue (decoded from the start, because the
-TSCC2 screen codec does not seek accurately), cropped to the planned framing,
+Each still is the exact frame SETTLE seconds after its cue, once the move has
+finished (decoded from the start, because the TSCC2 screen codec does not seek
+accurately), cropped to the planned framing,
 with the picture-in-picture footprint outlined. Look at every still: a page
 load or a correct crop in numbers is not a visual pass.
 
@@ -49,7 +50,8 @@ def cue_frames(plan: dict) -> list[tuple[int, list[float]]]:
         if shot["kind"] != "screen":
             continue
         for cue in shot["cues"]:
-            t = min(cue[0] + SETTLE, shot["end"] - 0.2)
+            # After the move settles, but never before the cue or past the shot.
+            t = max(cue[0], min(cue[0] + SETTLE, shot["end"] - 0.2))
             frames.append((round(t * SAMPLE_FPS), cue))
     return sorted(frames, key=lambda f: f[0])
 

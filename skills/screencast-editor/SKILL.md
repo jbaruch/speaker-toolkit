@@ -34,7 +34,7 @@ only through the stills this skill renders.
 Every script prints its diagnostics on stderr and exits 2 on a usage error
 (bad or missing arguments); each step lists its other outcomes.
 
-Steps 2, 8, 9, 10, 11, 12, 13, and 14 hand work to the user and end the turn. When the user
+Steps 2, 8, 9, 10, 13, 14, 15, 16, and 17 hand work to the user and end the turn. When the user
 reports back, resume at the step each one names.
 
 ## Step 1 — Resolve the interpreter
@@ -163,13 +163,16 @@ Write `chapters.json` (first entry's phrase null), then:
 ```
 
 Stdout: `{"chapters": [{"seconds", "clock", "title"}], "lines"}`. Exit 1 names
-what YouTube would reject, or a malformed chapters file: a missing phrase, or a chapter list
-that breaks the length and count limits in `chapters.py`. Fix and rerun. Write
-the description around its `lines`, linking only public sources you have
-verified. Ask the user to export and upload the video. Finish here; resume at
-Step 12 when they have.
+what YouTube would reject, or a malformed chapters file: a missing phrase, or a
+chapter list that breaks the length and count limits in `chapters.py`. Fix and
+rerun. Proceed immediately to Step 12.
 
-## Step 12 — Offer thumbnail backgrounds
+## Step 12 — Draft the description
+
+Write the video description around the chapter `lines`, linking only public
+sources you have verified. Proceed immediately to Step 13.
+
+## Step 13 — Offer thumbnail backgrounds
 
 Pick three to five engaged moments and extract exact screen frames:
 
@@ -178,13 +181,14 @@ Pick three to five engaged moments and extract exact screen frames:
 ```
 
 Stdout: `{"frames": [paths]}`; exit 1 means a time lies outside the recording
-or ffmpeg failed. Ask the user which background to use, per the `thumbnail-generation-rules`
-rule. Finish here; resume at Step 13 when the user picks.
+or ffmpeg failed. Ask the user which background to use, per the
+`thumbnail-generation-rules` rule. Finish here; resume at Step 14 when the user
+picks.
 
-## Step 13 — Resolve the speaker photo
+## Step 14 — Resolve the speaker photo
 
 Use `publishing_process.thumbnail.speaker_photo_path` from the speaker profile
-when it is set, and proceed immediately to Step 14. Otherwise extract candidate
+when it is set, and proceed immediately to Step 15. Otherwise extract candidate
 camera frames:
 
 ```bash
@@ -192,23 +196,28 @@ camera frames:
 ```
 
 Ask the user for a photo path or URL, offering these frames as the
-alternative. Finish here; resume at Step 14 with their choice.
+alternative. Finish here; resume at Step 15 with their choice.
 
-## Step 14 — Confirm the thumbnail title
+## Step 15 — Confirm the thumbnail title
 
 Propose a hook title within the `thumbnail-generation-rules` word limit and
-ask the user to confirm it. Finish here; resume at Step 15 when confirmed.
+ask the user to confirm it. Finish here; resume at Step 16 when confirmed.
 
-## Step 15 — Compose the thumbnail
+## Step 16 — Compose the thumbnail
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/screencast-editor/scripts/compose-thumbnail.py" --slide-image thumb/<screen-frame>.png --speaker-photo <photo> --title "<TITLE>" --aesthetic <photo|comic_book> --vault <vault_root> --output thumbnail.png
 ```
 
-It runs the illustrations thumbnail generator and writes `thumbnail.png`.
-Stdout: `{"thumbnail", "format", "width", "height", "bytes"}`; a JPEG fallback
-is renamed to `.jpg`, and the generator's progress goes to stderr. Exit 1 means
-the generator failed or wrote no image; exit 2 includes a title over the word
-limit. Choose the
-aesthetic by the rule's precedence, read the result, and iterate one change at
-a time on request. Finish here.
+It runs the illustrations thumbnail generator. Stdout: `{"thumbnail",
+"format", "width", "height", "bytes"}`; a JPEG fallback is renamed to `.jpg`,
+and the generator's progress goes to stderr. Exit 1 means the generator failed
+or wrote no image; exit 2 includes a title over the word limit. Choose the
+aesthetic by the rule's precedence and read the result. Ask the user to approve
+it. Finish here; resume at Step 16 with one change at a time, or at Step 17
+when they approve.
+
+## Step 17 — Hand off the release
+
+Ask the user to export the video from Camtasia, upload it, and publish it with
+the description and the thumbnail. Finish here.
