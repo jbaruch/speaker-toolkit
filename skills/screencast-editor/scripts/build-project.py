@@ -28,6 +28,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -251,25 +252,31 @@ def clone(source: Path, target: Path) -> None:
 def bundle_differences(
     out: Path, project: dict[str, Any], plan: dict[str, Any], recording: Path
 ) -> list[str]:
-    """What in an existing bundle differs from what this run would write."""
+    """What in an existing bundle differs from what this run would write.
+
+    Every member is compared by content; a member that cannot be read counts as
+    different, so a damaged bundle is reported rather than crashing the check.
+    """
+    expected: dict[str, Callable[[Path], bool]] = {
+        model.PROJECT_FILE: lambda f: (
+            f.read_text(encoding="utf-8") == serialize(project)
+        ),
+        "shot-plan.json": lambda f: json.loads(f.read_text(encoding="utf-8")) == plan,
+        f"media/{recording.name}": lambda f: (
+            model.file_digest(f) == model.file_digest(recording)
+        ),
+    }
+    for name, data in model.companion_bytes().items():
+        expected[name] = lambda f, data=data: f.read_bytes() == data
     differences = []
-    existing = out / model.PROJECT_FILE
-    if not existing.is_file() or existing.read_text(encoding="utf-8") != serialize(
-        project
-    ):
-        differences.append(model.PROJECT_FILE)
-    saved_plan = out / "shot-plan.json"
-    if (
-        not saved_plan.is_file()
-        or json.loads(saved_plan.read_text(encoding="utf-8")) != plan
-    ):
-        differences.append("shot-plan.json")
-    media = out / "media" / recording.name
-    if not media.is_file() or media.stat().st_size != recording.stat().st_size:
-        differences.append(f"media/{recording.name}")
-    for companion in ("bookmarks.plist", "docPrefs"):
-        if not (out / companion).is_file():
-            differences.append(companion)
+    for name, matches in expected.items():
+        member = out / name
+        try:
+            same = member.is_file() and matches(member)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            same = False
+        if not same:
+            differences.append(name)
     return differences
 
 

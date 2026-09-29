@@ -24,7 +24,7 @@ project is open, Camtasia keeps a `~project.tscproj` beside it.
   to the clip, plus `animationTracks.visual` entries `{"endTime", "duration"}`.
 - The rounded inset is the native `RoundCorners` effect followed by an
   alpha-aware `Border` (`type` 1); AI noise removal is the audio effect
-  `VSTEffect-DFN3NoiseRemoval`. Definitions: `scripts/camtasia-effects.json`.
+  `VSTEffect-DFN3NoiseRemoval`. Definitions: `skills/screencast-editor/scripts/camtasia-effects.json`.
 
 ## Dynamic captions
 

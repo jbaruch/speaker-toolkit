@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -75,8 +76,25 @@ def clear_outputs(out: Path) -> None:
 
 
 def render(recording: Path, plan: dict, out: Path, stream: str) -> list[Path]:
+    """Render into a staging directory; replace the previous set only on success."""
+    staging = out.with_name(f".{out.name}.staging")
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True)
+    try:
+        produced = render_into(recording, plan, staging, stream)
+    except (ValueError, OSError):
+        shutil.rmtree(staging)
+        raise
     out.mkdir(parents=True, exist_ok=True)
     clear_outputs(out)
+    for item in [*produced, staging / "sheet.png"]:
+        item.replace(out / item.name)
+    shutil.rmtree(staging)
+    return [out / p.name for p in produced]
+
+
+def render_into(recording: Path, plan: dict, out: Path, stream: str) -> list[Path]:
     frames = cue_frames(plan)
     probe = launch(
         [

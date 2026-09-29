@@ -7,6 +7,7 @@ project open.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import plistlib
 import re
@@ -268,14 +269,30 @@ def transcript_words(project: dict[str, Any]) -> list[tuple[float, str]]:
     return [(k["time"] / rate, k["value"]) for k in keyframes if k["value"] != "%GAP"]
 
 
-def write_companions(bundle: Path) -> None:
+def companion_bytes() -> dict[str, bytes]:
     """The files Camtasia's Open dialog expects next to project.tscproj."""
+    return {
+        "bookmarks.plist": plistlib.dumps({}),
+        "docPrefs": plistlib.dumps(
+            {"DocPrefPlayheadTime": "0", "SaveAsStandaloneProject": 1}
+        ),
+    }
+
+
+def write_companions(bundle: Path) -> None:
     for sub in ("media", "originals", "recordings"):
         (bundle / sub).mkdir(parents=True, exist_ok=True)
-    (bundle / "bookmarks.plist").write_bytes(plistlib.dumps({}))
-    (bundle / "docPrefs").write_bytes(
-        plistlib.dumps({"DocPrefPlayheadTime": "0", "SaveAsStandaloneProject": 1})
-    )
+    for name, data in companion_bytes().items():
+        (bundle / name).write_bytes(data)
+
+
+def file_digest(path: Path) -> str:
+    """SHA-256 of a file, read in chunks: recordings run to gigabytes."""
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 # --------------------------------------------------------------------- .trec pointer

@@ -201,14 +201,15 @@ Stretching, trimming head (advance `mediaStart`) and trimming tail (shorten
 
 **Zoom and pan are keyframe animations on `scale0/scale1/translation0/translation1`; capture the JSON shape from a zoom made by hand in Camtasia.**
 An animated parameter becomes `{type, defaultValue, interp: 'eioe', keyframes: [...]}`
-and the clip needs matching `animationTracks.visual` entries. Transitions of 0.8 s
-ease-in-out ending on the cue read well. Establish wide, enlarge the named item,
-return wide.
+and the clip needs matching `animationTracks.visual` entries. An ease-in-out
+ending on the cue reads well; its length is `MOVE_SECONDS` in
+`skills/screencast-editor/scripts/camtasia_model.py`. Establish wide, enlarge
+the named item, return wide.
 
 **Translation is center-relative in canvas pixels, with `translation1` positive up; clamp so no canvas edge is ever exposed.**
-For a `W x H` area at zoom `z` and normalized focus `(x, y)`: `tx = clamp((0.5 - x) * W * z, ±(W/2)(z-1))`,
-`ty = clamp((y - 0.5) * H * z, ±(H/2)(z-1))`. Compute against the visual area,
-never its padding.
+The framing and its clamps, including the menu-bar floor, live in `frame` and
+`min_zoom` in `skills/screencast-editor/scripts/camtasia_model.py`; call them
+rather than recomputing. Compute against the visual area, never its padding.
 
 **Push screen footage in about 6% (zoom 1.06) so the macOS menu bar and clock never show, and clamp every zoom and pan so the menu bar stays hidden.**
 A pan clamped only to the canvas edge can still slide the menu bar back into view.

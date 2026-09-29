@@ -1001,3 +1001,45 @@ def test_a_damaged_bundle_is_not_reported_unchanged(tmp_path, capsys, damage):
     (out / damage).unlink()
     assert build_project.main(args) == 2
     assert damage in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "member,content",
+    [
+        ("media/take.trec", b"MOVIE"),  # same size, different recording
+        ("docPrefs", b"not a plist"),
+        ("shot-plan.json", b"{broken"),
+    ],
+)
+def test_a_changed_bundle_member_is_named_not_crashed(
+    tmp_path, capsys, member, content
+):
+    raw = raw_bundle(tmp_path)
+    out = tmp_path / "edit.cmproj"
+    args = [str(raw), str(write(tmp_path / "plan.json", plan())), "--out", str(out)]
+    assert build_project.main(args) == 0
+    (out / member).write_bytes(content)
+    assert build_project.main(args) == 2
+    assert member in capsys.readouterr().err
+
+
+def test_a_failed_rerender_keeps_the_previous_stills(tmp_path, two_page_video):
+    out = tmp_path / "stills"
+    good = {
+        "shots": [
+            {
+                "start": 0.0,
+                "end": 1.6,
+                "kind": "screen",
+                "cues": [[0.0, 1.06, 0.5, 0.5]],
+            }
+        ],
+        "canvas": {"width": 384, "height": 216, "menubar": 6},
+    }
+    framing_stills.render(two_page_video, good, out, "0:0")
+    before = (out / "still-01.png").read_bytes()
+    with pytest.raises(ValueError):
+        framing_stills.render(two_page_video, good, out, "0:5")
+    assert (out / "still-01.png").read_bytes() == before
+    assert (out / "sheet.png").is_file()
+    assert not (tmp_path / ".stills.staging").exists()
