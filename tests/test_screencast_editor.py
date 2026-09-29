@@ -1208,3 +1208,44 @@ def test_a_malformed_template_is_diagnosed_not_crashed(tmp_path, capsys):
     ]
     assert build_project.main(args) == 1
     assert "not a Camtasia screen + camera recording project" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "spec,message",
+    [
+        (["Intro"], "chapter 1 needs"),
+        ({"title": "Intro"}, "must be a list"),
+        ([{"title": "Intro", "phrase": 3}], "must be null or"),
+        ([{"phrase": None}], "chapter 1 needs"),
+    ],
+)
+def test_malformed_chapter_files_are_explained(tmp_path, capsys, spec, message):
+    bundle = tmp_path / "edit.cmproj"
+    bundle.mkdir()
+    write(bundle / "project.tscproj", template(words=[(t * 10, w) for t, w in WORDS]))
+    assert (
+        chapters.main(
+            [str(bundle), str(write(tmp_path / "c.json", spec)), "--trim-start", "5"]
+        )
+        == 1
+    )
+    assert message in capsys.readouterr().err
+
+
+def test_an_all_speaker_rerun_clears_earlier_stills(tmp_path, two_page_video):
+    out = tmp_path / "stills"
+    good = {
+        "shots": [
+            {
+                "start": 0.0,
+                "end": 1.6,
+                "kind": "screen",
+                "cues": [[0.0, 1.06, 0.5, 0.5]],
+            }
+        ],
+        "canvas": {"width": 384, "height": 216, "menubar": 6},
+    }
+    framing_stills.render(two_page_video, good, out, "0:0")
+    speaker_only = {"shots": [{"start": 0.0, "end": 1.6, "kind": "speaker"}]}
+    assert framing_stills.render(two_page_video, speaker_only, out, "0:0") == []
+    assert not list(out.glob("still-*.png")) and not (out / "sheet.png").exists()

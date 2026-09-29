@@ -82,6 +82,8 @@ def render(recording: Path, plan: dict, out: Path, stream: str) -> list[Path]:
     A plan with no screen shots has nothing to frame and renders nothing.
     """
     if not cue_frames(plan):
+        if out.is_dir():
+            clear_outputs(out)
         return []
     staging = out.with_name(f".{out.name}.staging")
     if staging.exists():

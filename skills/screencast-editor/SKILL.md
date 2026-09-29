@@ -31,7 +31,7 @@ Camtasia owns any project it has open. Never write a project file until the
 user has saved and closed it. Never screenshot the whole screen. Look at pixels
 only through the stills this skill renders.
 
-Steps 2, 8, 9, 10, 11, 12, and 13 hand work to the user and end the turn. When the user
+Steps 2, 8, 9, 10, 11, 12, 13, and 14 hand work to the user and end the turn. When the user
 reports back, resume at the step each one names.
 
 ## Step 1 — Resolve the interpreter
@@ -154,29 +154,39 @@ the description around its `lines`, linking only public sources you have
 verified. Ask the user to export and upload the video. Finish here; resume at
 Step 12 when they have.
 
-## Step 12 — Offer thumbnail candidates
+## Step 12 — Offer thumbnail backgrounds
 
-Pick three to five engaged moments and extract exact frames of each stream:
+Pick three to five engaged moments and extract exact screen frames:
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/screencast-editor/scripts/extract-frames.py" <recording.trec> --stream 0:0 --at <seconds> --out thumb --prefix screen
+```
+
+Ask the user which background to use, per the `thumbnail-generation-rules`
+rule. Finish here; resume at Step 13 when the user picks.
+
+## Step 13 — Resolve the speaker photo
+
+Use `publishing_process.thumbnail.speaker_photo_path` from the speaker profile
+when it is set, and proceed immediately to Step 14. Otherwise extract candidate
+camera frames:
+
+```bash
 "{python_path}" "{speaker_toolkit_root}/skills/screencast-editor/scripts/extract-frames.py" <recording.trec> --stream 0:1 --at <seconds> --out thumb --prefix camera
 ```
 
-Screen frames are background candidates; camera frames are real photographs
-of the speaker, for when the profile has no speaker photo. Ask the user which
-background to use, per the `thumbnail-generation-rules` rule. Finish here;
-resume at Step 13 when the user picks.
+Ask the user for a photo path or URL, offering these frames as the
+alternative. Finish here; resume at Step 14 with their choice.
 
-## Step 13 — Confirm the thumbnail title
+## Step 14 — Confirm the thumbnail title
 
 Propose a hook title within the `thumbnail-generation-rules` word limit and
-ask the user to confirm it. Finish here; resume at Step 14 when confirmed.
+ask the user to confirm it. Finish here; resume at Step 15 when confirmed.
 
-## Step 14 — Compose the thumbnail
+## Step 15 — Compose the thumbnail
 
 ```bash
-"{python_path}" "{speaker_toolkit_root}/skills/illustrations/scripts/generate-thumbnail.py" --slide-image thumb/<screen-frame>.png --speaker-photo thumb/<camera-frame>.png --title "<TITLE>" --aesthetic <photo|comic_book> --vault <vault_root> --output thumbnail.png
+"{python_path}" "{speaker_toolkit_root}/skills/illustrations/scripts/generate-thumbnail.py" --slide-image thumb/<screen-frame>.png --speaker-photo <photo> --title "<TITLE>" --aesthetic <photo|comic_book> --vault <vault_root> --output thumbnail.png
 ```
 
 Choose the aesthetic by the rule's precedence, read the result, and iterate

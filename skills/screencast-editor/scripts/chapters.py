@@ -40,6 +40,28 @@ def clock(seconds: float) -> str:
     )
 
 
+def validate_chapters(chapters: object) -> list[dict]:
+    """The chapters file must be a list of {"title": str, "phrase": str | null}."""
+    if not isinstance(chapters, list):
+        raise ValueError(
+            'chapters.json must be a list of {"title": ..., "phrase": ...} objects'
+        )
+    for i, c in enumerate(chapters, 1):
+        if (
+            not isinstance(c, dict)
+            or not isinstance(c.get("title"), str)
+            or not c["title"].strip()
+        ):
+            raise ValueError(f"chapter {i} needs a non-empty string 'title'")
+        if c.get("phrase") is not None and (
+            not isinstance(c["phrase"], str) or not c["phrase"].split()
+        ):
+            raise ValueError(
+                f"chapter {i}: 'phrase' must be null or the words the chapter starts on"
+            )
+    return chapters
+
+
 def place(
     words: list[tuple[float, str]], chapters: list[dict], trim: float, end: float
 ) -> list[tuple[float, str]]:
@@ -86,7 +108,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         path = model.project_file(args.project)
         words = model.transcript_words(model.load_project(path))
-        chapters = json.loads(args.chapters.read_text(encoding="utf-8"))
+        chapters = validate_chapters(
+            json.loads(args.chapters.read_text(encoding="utf-8"))
+        )
         trim, end = args.trim_start, None
         plan_path = path.parent / "shot-plan.json"
         if plan_path.is_file():
