@@ -206,7 +206,9 @@ ask the user to confirm it. Finish here; resume at Step 15 when confirmed.
 ```
 
 It runs the illustrations thumbnail generator and writes `thumbnail.png`.
-Stdout: `{"thumbnail", "width", "height", "bytes"}`; the generator's progress
-goes to stderr. Exit 1 means the generator failed or wrote no PNG. Choose the
+Stdout: `{"thumbnail", "format", "width", "height", "bytes"}`; a JPEG fallback
+is renamed to `.jpg`, and the generator's progress goes to stderr. Exit 1 means
+the generator failed or wrote no image; exit 2 includes a title over the word
+limit. Choose the
 aesthetic by the rule's precedence, read the result, and iterate one change at
 a time on request. Finish here.

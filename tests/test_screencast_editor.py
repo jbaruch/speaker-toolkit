@@ -1098,12 +1098,14 @@ def test_an_unwritable_stills_directory_is_reported(tmp_path, two_page_video, ca
     blocker.write_text("a file where the directory should be")
     good = {
         "shots": [
+            {"start": 0.0, "end": 1.0, "kind": "speaker"},
             {
-                "start": 0.0,
-                "end": 1.6,
+                "start": 1.0,
+                "end": 2.0,
                 "kind": "screen",
-                "cues": [[0.0, 1.06, 0.5, 0.5]],
-            }
+                "cues": [[1.0, 1.06, 0.5, 0.5]],
+            },
+            {"start": 2.0, "end": 3.0, "kind": "speaker"},
         ],
         "canvas": {"width": 384, "height": 216, "menubar": 6},
     }
@@ -1367,3 +1369,82 @@ def test_compose_thumbnail_fails_when_no_png_is_written(tmp_path, capsys):
 
 def test_compose_thumbnail_points_at_the_shipped_generator():
     assert load("compose-thumbnail").GENERATOR.is_file()
+
+
+@pytest.mark.parametrize("first,last", [("screen", "speaker"), ("speaker", "screen")])
+def test_the_presenter_owns_the_opening_and_close(tmp_path, first, last):
+    shots = [
+        {"start": 0.0, "end": 5.0, "kind": first, "cues": [[0.0, 1.06, 0.5, 0.5]]},
+        {"start": 5.0, "end": 10.0, "kind": "speaker"},
+        {"start": 10.0, "end": 15.0, "kind": last, "cues": [[10.0, 1.06, 0.5, 0.5]]},
+    ]
+    with pytest.raises(ValueError, match="opening and the close"):
+        model.load_plan(write(tmp_path / "plan.json", {"shots": shots}))
+
+
+def test_a_transcript_of_only_pauses_is_no_transcript(tmp_path, capsys):
+    bundle = tmp_path / "raw.cmproj"
+    bundle.mkdir()
+    silent = template(words=[])
+    model.audio_source_track(silent)["parameters"]["transcription"]["keyframes"] = (
+        keyframes([(0.0, "%GAP"), (3.0, "%GAP")])
+    )
+    write(bundle / "project.tscproj", silent)
+    assert transcript.main([str(bundle)]) == 1
+    assert "only pauses" in capsys.readouterr().err
+
+
+def test_a_jpeg_fallback_is_renamed_to_match(tmp_path, capsys):
+    compose_thumbnail = load("compose-thumbnail")
+    jpeg = (
+        b"\xff\xd8"
+        + b"\xff\xc0"
+        + struct.pack(">HBHH", 17, 8, 720, 1280)
+        + b"\x00" * 12
+    )
+    generator = fake_generator(
+        tmp_path,
+        "import sys\n"
+        "out = sys.argv[sys.argv.index('--output') + 1]\n"
+        f"open(out, 'wb').write({jpeg!r})\n",
+    )
+    args = [
+        "--slide-image",
+        "s.png",
+        "--speaker-photo",
+        "p.png",
+        "--title",
+        "GOOD BEATS PERFECT",
+        "--aesthetic",
+        "photo",
+        "--vault",
+        str(tmp_path),
+        "--output",
+        str(tmp_path / "thumbnail.png"),
+    ]
+    assert compose_thumbnail.main(args, generator=generator) == 0
+    receipt = json.loads(capsys.readouterr().out)
+    assert receipt["format"] == "jpg" and receipt["thumbnail"].endswith("thumbnail.jpg")
+    assert (receipt["width"], receipt["height"]) == (1280, 720)
+    assert not (tmp_path / "thumbnail.png").exists()
+
+
+def test_a_thumbnail_title_over_five_words_is_refused(tmp_path):
+    compose_thumbnail = load("compose-thumbnail")
+    args = [
+        "--slide-image",
+        "s.png",
+        "--speaker-photo",
+        "p.png",
+        "--title",
+        "one two three four five six",
+        "--aesthetic",
+        "photo",
+        "--vault",
+        str(tmp_path),
+        "--output",
+        str(tmp_path / "t.png"),
+    ]
+    with pytest.raises(SystemExit) as exit_info:
+        compose_thumbnail.main(args, generator=tmp_path / "unused.py")
+    assert exit_info.value.code == 2

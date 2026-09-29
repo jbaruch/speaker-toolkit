@@ -21,6 +21,7 @@
 - `shots` tile the edit with no gap or overlap. The first start is the head
   trim, the last end the tail. `camtasia_model.load_plan` enforces the minimum
   shot length (`MIN_SHOT_SECONDS`).
+- The first and last shots are `speaker`; the validator enforces it.
 - `kind: "speaker"` is the presenter full-frame. `kind: "screen"` is the screen
   with the presenter inset.
 - A cue is `[time, zoom, x, y]`: the framing that is complete at `time`, reached

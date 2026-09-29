@@ -204,6 +204,10 @@ def load_plan(path: Path) -> dict[str, Any]:
             raise ValueError(
                 f"{where}: zoom below {floor:.3f} exposes the canvas edge or the menu bar"
             )
+    if shots[0]["kind"] != "speaker" or shots[-1]["kind"] != "speaker":
+        raise ValueError(
+            f"{path}: the presenter owns the opening and the close; make the first and last shots 'speaker'"
+        )
     for i, (a, b) in enumerate(zip(shots, shots[1:])):
         if a["end"] != b["start"]:
             raise ValueError(
@@ -319,7 +323,12 @@ def transcript_words(project: dict[str, Any]) -> list[tuple[float, str]]:
             "no Camtasia transcript — add dynamic captions in Camtasia, save, and close"
         )
     rate = project["editRate"]
-    return [(k["time"] / rate, k["value"]) for k in keyframes if k["value"] != "%GAP"]
+    words = [(k["time"] / rate, k["value"]) for k in keyframes if k["value"] != "%GAP"]
+    if not words:
+        raise ValueError(
+            "Camtasia's transcript has no words, only pauses: check the mic track, then add dynamic captions again"
+        )
+    return words
 
 
 def companion_bytes() -> dict[str, bytes]:
