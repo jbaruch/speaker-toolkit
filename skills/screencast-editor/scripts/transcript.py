@@ -21,6 +21,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+# The sibling module resolves only after the sys.path insert above.
 import camtasia_model as model  # noqa: E402
 
 

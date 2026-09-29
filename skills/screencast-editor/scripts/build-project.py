@@ -32,6 +32,7 @@ from collections.abc import Callable
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+# The sibling module resolves only after the sys.path insert above.
 import camtasia_model as model  # noqa: E402
 
 EFFECTS = Path(__file__).resolve().parent / "camtasia-effects.json"

@@ -24,6 +24,7 @@ SCRIPTS = (
 RATE = 705600000
 sys.path.insert(0, str(SCRIPTS))
 
+# The sibling module resolves only after the sys.path insert above.
 import camtasia_model as model  # noqa: E402
 
 
@@ -480,24 +481,42 @@ def test_words_sharing_an_onset_keep_their_order():
     )
 
 
+TEXT = "Hey, I'm Baruch from Port. I downgraded the lead. I show you something cool."
+
+
 def test_override_moves_a_word_to_its_measured_onset():
-    out, _ = apply_captions.rebuild(
-        heard_keyframes(),
-        corrected(
-            "Hey, I'm Baruch from Port. I downgraded the lead. I show you something cool."
-        ),
-        {"downgraded": round(4.2 * RATE)},
-    )
+    text = corrected(TEXT)
+    overrides = apply_captions.parse_overrides(["downgraded=4.2"], text, RATE)
+    out, _ = apply_captions.rebuild(heard_keyframes(), text, overrides)
     assert {k["value"]: k["time"] for k in out}["downgraded"] == round(4.2 * RATE)
 
 
+def test_a_repeated_word_needs_its_occurrence():
+    text = corrected(TEXT)
+    with pytest.raises(ValueError, match="occurs 2 times; name one as I#N"):
+        apply_captions.parse_overrides(["I=3.0"], text, RATE)
+    overrides = apply_captions.parse_overrides(["I#2=6.1"], text, RATE)
+    assert overrides == {text.index("I", text.index("I") + 1): round(6.1 * RATE)}
+
+
+@pytest.mark.parametrize(
+    "value,message",
+    [
+        ("banana=1", "not in the captions"),
+        ("I#3=1", "#1 to #2"),
+        ("nope", "WORD=SECONDS"),
+    ],
+)
+def test_bad_overrides_say_how_to_fix_them(value, message):
+    with pytest.raises(ValueError, match=message):
+        apply_captions.parse_overrides([value], corrected(TEXT), RATE)
+
+
 def test_an_override_that_breaks_the_order_is_refused():
-    with pytest.raises(ValueError, match="backwards"):
-        apply_captions.rebuild(
-            heard_keyframes(),
-            corrected("Hey, I'm Baruch from Port."),
-            {"hey": round(9 * RATE)},
-        )
+    text = corrected("Hey, I'm Baruch from Port.")
+    overrides = apply_captions.parse_overrides(["hey=9"], text, RATE)
+    with pytest.raises(ValueError, match="before 'Hey,'|give it an onset between"):
+        apply_captions.rebuild(heard_keyframes(), text, overrides)
 
 
 def caption_project(words=True, callout=True) -> dict:
@@ -1119,3 +1138,37 @@ def test_a_camera_only_recording_is_refused():
     model.tracks(t)[0]["medias"] = []
     with pytest.raises(ValueError, match="screen on track 0"):
         build_project.build(t, plan())
+
+
+@pytest.mark.parametrize(
+    "mutate,message",
+    [
+        (lambda p: p["shots"][0].update(start=-1.0), "negative time"),
+        (lambda p: p["shots"][2].update(end=float("inf")), "must be numbers"),
+        (lambda p: p["shots"][1]["cues"][1].__setitem__(2, 1.4), "within the screen"),
+        (lambda p: p.update(canvas={"height": 20, "menubar": 28}), "menu bar shorter"),
+    ],
+)
+def test_impossible_plan_values_are_refused(tmp_path, mutate, message):
+    bad = plan()
+    mutate(bad)
+    with pytest.raises(ValueError, match=message):
+        model.load_plan(write(tmp_path / "plan.json", bad))
+
+
+def test_extract_frames_picks_exact_frames(tmp_path, two_page_video):
+    extract_frames = load("extract-frames")
+    frames = extract_frames.extract(
+        two_page_video, "0:0", [0.2, 1.5], tmp_path / "thumb", "screen"
+    )
+    assert [f.name for f in frames] == ["screen-0.2.png", "screen-1.5.png"]
+    assert not list(tmp_path.glob(".thumb*"))
+
+
+def test_extract_frames_refuses_a_time_past_the_end(tmp_path, two_page_video):
+    extract_frames = load("extract-frames")
+    with pytest.raises(ValueError, match="inside the recording"):
+        extract_frames.extract(
+            two_page_video, "0:0", [0.2, 9.0], tmp_path / "thumb", "screen"
+        )
+    assert not (tmp_path / "thumb").exists()

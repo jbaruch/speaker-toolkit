@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import plistlib
 import re
 import shutil
@@ -96,17 +97,33 @@ def visible_rect(
 
 
 def _number(value: object) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+    )
 
 
 def plan_canvas(plan: dict[str, Any]) -> Canvas:
     c = plan.get("canvas", {})
     if not isinstance(c, dict):
         raise ValueError("'canvas' must be an object")
+    values = {
+        k: c.get(k, d)
+        for k, d in (("width", 1920), ("height", 1080), ("menubar", MENUBAR_POINTS))
+    }
+    if not all(_number(v) for v in values.values()):
+        raise ValueError("canvas width, height and menubar must be finite numbers")
+    if (
+        values["width"] <= 0
+        or values["height"] <= 0
+        or not 0 <= values["menubar"] < values["height"]
+    ):
+        raise ValueError(
+            "canvas needs a positive size and a menu bar shorter than its height"
+        )
     return Canvas(
-        float(c.get("width", 1920)),
-        float(c.get("height", 1080)),
-        float(c.get("menubar", MENUBAR_POINTS)),
+        float(values["width"]), float(values["height"]), float(values["menubar"])
     )
 
 
@@ -133,6 +150,8 @@ def load_plan(path: Path) -> dict[str, Any]:
             raise ValueError(f"{where}: kind must be 'speaker' or 'screen'")
         if not (_number(s.get("start")) and _number(s.get("end"))):
             raise ValueError(f"{where}: start and end must be numbers (source seconds)")
+        if s["start"] < 0:
+            raise ValueError(f"{where}: starts before the recording (negative time)")
         if s["end"] <= s["start"]:
             raise ValueError(f"{where}: ends before it starts")
         if s["end"] - s["start"] < MIN_SHOT_SECONDS:
@@ -147,6 +166,10 @@ def load_plan(path: Path) -> dict[str, Any]:
                 raise ValueError(
                     f"{where}: every cue must be [time, zoom, x, y] numbers"
                 )
+        if any(not (0 <= c[2] <= 1 and 0 <= c[3] <= 1) for c in cues):
+            raise ValueError(
+                f"{where}: a cue's focal point must lie within the screen (0 to 1)"
+            )
         if cues[0][0] != s["start"]:
             raise ValueError(f"{where}: the first cue must sit at the shot start")
         if any(not (s["start"] <= c[0] <= s["end"]) for c in cues):

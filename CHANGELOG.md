@@ -30,6 +30,11 @@ chapters match line for line.
   place, treats an identical rerun as a no-op, and keeps effects the user
   applied. The caption pass refuses a project Camtasia has open, writes
   atomically, and never overwrites an earlier backup.
+- `extract-frames.py` pulls exact screen and camera frames for the thumbnail,
+  which the skill composes with the illustrations thumbnail script; a camera
+  frame stands in as the speaker photo when the profile has none.
+- `apply-captions.py --override WORD#N=SECONDS` targets one occurrence of a
+  repeated word.
 - `rules/camtasia-validation-authority.md` is the authority of record for the
   one untestable boundary, Camtasia rendering a generated project, with a
   six-step manual validation procedure.

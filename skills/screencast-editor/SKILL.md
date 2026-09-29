@@ -5,8 +5,8 @@ description: >
   and mic in one take) into a speaker-first video: plan cuts on sentence
   boundaries from Camtasia's own word timings, frame and zoom the screen
   evidence, audit the framing against the recorded pointer, generate the
-  Camtasia project, correct the dynamic captions, and time the YouTube
-  chapters. Use when the user has a new Camtasia recording to edit, wants
+  Camtasia project, correct the dynamic captions, time the YouTube chapters,
+  and compose the thumbnail from frames of the take. Use when the user has a new Camtasia recording to edit, wants
   captions fixed, zooms adjusted, chapters or a description with time marks,
   or asks how to produce a screencast like a previous one.
 user_invocable: true
@@ -31,7 +31,7 @@ Camtasia owns any project it has open. Never write a project file until the
 user has saved and closed it. Never screenshot the whole screen. Look at pixels
 only through the stills this skill renders.
 
-Steps 2, 8, 9, and 10 hand work to the user and end the turn. When the user
+Steps 2, 8, 9, 10, 11, 12, and 13 hand work to the user and end the turn. When the user
 reports back, resume at the step each one names.
 
 ## Step 1 — Resolve the interpreter
@@ -149,14 +149,33 @@ Write `chapters.json` (first entry's phrase null), then:
 Exit 1 names what YouTube would reject: a missing phrase, or a chapter list
 that breaks the length and count limits in `chapters.py`. Fix and rerun. Write
 the description around its `lines`, linking only public sources you have
-verified. Proceed immediately to Step 12.
+verified. Ask the user to export and upload the video. Finish here; resume at
+Step 12 when they have.
 
-## Step 12 — Make the thumbnail
+## Step 12 — Offer thumbnail candidates
 
+Pick three to five engaged moments and extract exact frames of each stream:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/screencast-editor/scripts/extract-frames.py" <recording.trec> --stream 0:0 --at <seconds> --out thumb --prefix screen
+"{python_path}" "{speaker_toolkit_root}/skills/screencast-editor/scripts/extract-frames.py" <recording.trec> --stream 0:1 --at <seconds> --out thumb --prefix camera
 ```
-Skill(skill: "illustrations")
+
+Screen frames are background candidates; camera frames are real photographs
+of the speaker, for when the profile has no speaker photo. Ask the user which
+background to use, per the `thumbnail-generation-rules` rule. Finish here;
+resume at Step 13 when the user picks.
+
+## Step 13 — Confirm the thumbnail title
+
+Propose a hook title within the `thumbnail-generation-rules` word limit and
+ask the user to confirm it. Finish here; resume at Step 14 when confirmed.
+
+## Step 14 — Compose the thumbnail
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/illustrations/scripts/generate-thumbnail.py" --slide-image thumb/<screen-frame>.png --speaker-photo thumb/<camera-frame>.png --title "<TITLE>" --aesthetic <photo|comic_book> --vault <vault_root> --output thumbnail.png
 ```
 
-Enter its thumbnail step. With no speaker photo configured, pass a frame from
-the recording's camera track where the speaker is engaged and looking at the
-lens as the speaker photo. Finish here.
+Choose the aesthetic by the rule's precedence, read the result, and iterate
+one change at a time on request. Finish here.
