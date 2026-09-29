@@ -30,10 +30,10 @@ Run on macOS with Camtasia installed, against a real screen + camera recording.
 2. Scrub every screen shot. Observe: each zoom ends on its cue, no canvas edge or menu bar shows, and the rounded inset sits bottom right with its border.
 3. Scrub every speaker shot. Observe: the presenter fills the frame and no inset shows.
 4. Play across three cuts. Observe: the audio is continuous with no doubled voice.
-5. Add dynamic captions, save, close, run Step 9, and reopen. Observe: the corrected words show with the new size and position, a new caption block starts at each sentence, and the highlight tracks the speech.
-6. Close the project and rerun Step 9. Observe: it succeeds and writes a second backup. With the project open, observe: it refuses and leaves the file unchanged.
+5. Add dynamic captions, save, close, run the skill's Step 10 (`apply-captions.py`), and reopen. Observe: the corrected words show with the new size and position, a new caption block starts at each sentence, and the highlight tracks the speech.
+6. Close the project and rerun Step 10. Observe: it succeeds and writes a second backup. With the project open, observe: it refuses and leaves the file unchanged.
 
-A pass requires all six observations.
+A pass requires all six observations. The skill's Step 10 is not complete until steps 5 and 6 pass.
 
 ## Scope Limits
 

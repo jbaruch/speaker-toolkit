@@ -128,8 +128,9 @@ not a verbatim record. Then:
 ```
 
 Pass `--override WORD=SECONDS` for a word whose measured onset differs, and the
-size and position flags for a different inset. Ask the user to review. Finish
-here; resume at Step 10 with their corrections, or at Step 11 when they approve.
+size and position flags for a different inset. Ask the user to confirm
+observations 5 and 6 of the Camtasia validation rule. Finish here; resume at
+Step 10 with their corrections, or at Step 11 when they approve.
 
 ## Step 11 — Time the chapters
 
