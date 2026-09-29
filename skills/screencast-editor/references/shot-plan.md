@@ -19,15 +19,17 @@
 ```
 
 - `shots` tile the edit with no gap or overlap. The first start is the head
-  trim, the last end the tail. No shot is shorter than one second.
+  trim, the last end the tail. `camtasia_model.load_plan` enforces the minimum
+  shot length (`MIN_SHOT_SECONDS`).
 - `kind: "speaker"` is the presenter full-frame. `kind: "screen"` is the screen
   with the presenter inset.
 - A cue is `[time, zoom, x, y]`: the framing that is complete at `time`, reached
-  by a 0.8-second ease. `(x, y)` is the focal point in normalized source
+  by an ease of `MOVE_SECONDS`. `(x, y)` is the focal point in normalized source
   coordinates, top-left origin. The first cue sits at the shot start.
-- `zoom` is relative to fit and never below 1.0. Every framing is clamped so no
-  canvas edge shows and the macOS menu bar (`canvas.menubar` pixels at fit)
-  stays off screen.
+- `zoom` is relative to fit. `camtasia_model.min_zoom(canvas)` is the floor: the
+  smallest zoom that keeps the macOS menu bar (`canvas.menubar` pixels at fit)
+  off screen without exposing a canvas edge. The validator rejects anything
+  below it, and every framing is clamped the same way.
 - `inset` is in canvas pixels, center-relative, y up. `noise_removal` is the
   Camtasia AI Noise Removal amount on the mic; 0 disables it.
 

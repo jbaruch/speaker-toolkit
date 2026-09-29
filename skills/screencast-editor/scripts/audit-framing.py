@@ -27,8 +27,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import camtasia_model as model  # noqa: E402
 
-TRANSITION = 0.8  # seconds a framing move takes; samples inside it are skipped
-
 
 def audit(plan: dict, samples: list[list[float]], step: float = 0.25) -> list[dict]:
     canvas = model.plan_canvas(plan)
@@ -51,7 +49,7 @@ def audit(plan: dict, samples: list[list[float]], step: float = 0.25) -> list[di
         misses = []
         t = shot["start"]
         while t < shot["end"]:
-            if any(0 < c[0] - t < TRANSITION for c in cues[1:]):
+            if any(0 < c[0] - t < model.MOVE_SECONDS for c in cues[1:]):
                 t += step
                 continue
             cue = [c for c in cues if c[0] <= t][-1]
@@ -77,6 +75,19 @@ def audit(plan: dict, samples: list[list[float]], step: float = 0.25) -> list[di
     return report
 
 
+def load_samples(path: Path) -> list[list[float]]:
+    """Pointer samples from trec-pointer.py; refuses an empty or malformed path."""
+    try:
+        samples = json.loads(path.read_text(encoding="utf-8")).get("samples")
+    except (OSError, json.JSONDecodeError, AttributeError) as e:
+        raise ValueError(f"cannot read pointer samples {path}: {e}") from e
+    if not isinstance(samples, list) or not samples:
+        raise ValueError(f"{path} holds no pointer samples; rerun trec-pointer.py")
+    if not all(isinstance(r, list) and len(r) == 3 for r in samples):
+        raise ValueError(f"{path}: every sample must be [seconds, x, y]")
+    return samples
+
+
 def positive_seconds(value: str) -> float:
     step = float(value)
     if not math.isfinite(step) or step <= 0:
@@ -92,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         plan = model.load_plan(args.plan)
-        samples = json.loads(args.pointer.read_text(encoding="utf-8"))["samples"]
+        samples = load_samples(args.pointer)
     except (ValueError, OSError, KeyError) as e:
         print(f"audit-framing: {e}", file=sys.stderr)
         return 2

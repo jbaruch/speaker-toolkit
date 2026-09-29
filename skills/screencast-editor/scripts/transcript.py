@@ -25,7 +25,11 @@ import camtasia_model as model  # noqa: E402
 
 
 def sentences(words: list[tuple[float, str]]) -> list[dict]:
-    """Group words into sentences; `end` is the onset of the next sentence."""
+    """Group words into sentences; `end` is the onset of the next sentence.
+
+    The last sentence has no `end`: nothing after it marks where its final word
+    stops, and inventing one would cut that word off.
+    """
     out: list[dict] = []
     current: list[tuple[float, str]] = []
     for t, w in words:
@@ -39,8 +43,6 @@ def sentences(words: list[tuple[float, str]]) -> list[dict]:
         out.append({"start": current[0][0], "text": " ".join(x for _, x in current)})
     for a, b in zip(out, out[1:]):
         a["end"] = b["start"]
-    if out:
-        out[-1]["end"] = words[-1][0]
     return out
 
 

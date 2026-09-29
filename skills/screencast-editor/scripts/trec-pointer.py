@@ -27,9 +27,12 @@ import camtasia_model as model  # noqa: E402
 def extract(recording: Path) -> dict:
     records = model.tscm_records(model.read_top_level_atom(recording, b"TSCM"))
     x, y, width, height = model.capture_rect(records)
+    path = model.pointer_path(records)
+    if not path:
+        raise ValueError(f"{recording} recorded no pointer movement")
     samples = [
         [round(t, 4), round((px - x) / width, 5), round((py - y) / height, 5)]
-        for t, px, py in model.pointer_path(records)
+        for t, px, py in path
     ]
     return {
         "capture": {"x": x, "y": y, "width": width, "height": height},

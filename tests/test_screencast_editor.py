@@ -262,7 +262,7 @@ def test_wide_framing_hides_exactly_the_menu_bar():
             lambda p: p["shots"].insert(
                 0, {"start": 0.5, "end": 1.0, "kind": "speaker"}
             ),
-            "shorter than one second",
+            "shorter than",
         ),
         (lambda p: p["shots"][1]["cues"][0].__setitem__(0, 11.0), "first cue"),
         (lambda p: p["shots"][1]["cues"][1].__setitem__(1, 0.9), "zoom below 1.0"),
@@ -894,3 +894,83 @@ def test_rerendering_clears_stale_stills(tmp_path, two_page_video):
 def test_a_missing_stream_is_reported(tmp_path, two_page_video):
     with pytest.raises(ValueError, match="no video stream"):
         framing_stills.render(two_page_video, plan(), tmp_path / "stills", "0:5")
+
+
+def test_backups_never_collide_under_a_frozen_clock(tmp_path):
+    from datetime import datetime, timezone
+
+    project = tmp_path / "project.tscproj"
+    project.write_text("{}")
+    frozen = datetime(2026, 9, 28, 17, 32, tzinfo=timezone.utc)
+    first = apply_captions.backup_project(project, now=frozen)
+    second = apply_captions.backup_project(project, now=frozen)
+    assert first.name == "before-captions-20260928T173200Z.tscproj"
+    assert second.name == "before-captions-20260928T173200Z-1.tscproj"
+
+
+def test_a_failed_open_file_check_is_an_error_not_closed(monkeypatch):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command[0])
+        code = 0 if command[0] == "pgrep" else 1
+        return subprocess.CompletedProcess(
+            command, code, stdout="", stderr="permission denied"
+        )
+
+    monkeypatch.setattr(model.sys, "platform", "darwin")
+    monkeypatch.setattr(model.shutil, "which", lambda tool: f"/usr/bin/{tool}")
+    monkeypatch.setattr(model.subprocess, "run", fake_run)
+    with pytest.raises(ValueError, match="permission denied"):
+        model.camtasia_open_files()
+    assert calls == ["pgrep", "lsof"]
+
+
+def test_camtasia_not_running_means_nothing_open(monkeypatch):
+    monkeypatch.setattr(model.sys, "platform", "darwin")
+    monkeypatch.setattr(model.shutil, "which", lambda tool: f"/usr/bin/{tool}")
+    monkeypatch.setattr(
+        model.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 1, stdout="", stderr=""
+        ),
+    )
+    assert model.camtasia_open_files() == []
+
+
+def test_the_first_chapter_must_have_a_null_phrase():
+    words = [(t * 10, w) for t, w in WORDS]
+    with pytest.raises(ValueError, match="null phrase"):
+        chapters.place(
+            words,
+            [
+                {"title": "Hey", "phrase": "Hey,"},
+                {"title": "Judge", "phrase": "Now, the judge"},
+                {"title": "Stop", "phrase": "So we need"},
+            ],
+            20.0,
+            200.0,
+        )
+
+
+def test_the_last_sentence_has_no_invented_end():
+    sentences = transcript.sentences(WORDS)
+    assert "end" not in sentences[-1]
+
+
+def test_a_recording_without_pointer_movement_is_refused(tmp_path):
+    take = tmp_path / "take.trec"
+    take.write_bytes(trec_bytes([]))
+    with pytest.raises(ValueError, match="no pointer movement"):
+        trec_pointer.extract(take)
+
+
+@pytest.mark.parametrize(
+    "content", ['{"samples": []}', '{"samples": [[1, 2]]}', "[]", "not json"]
+)
+def test_audit_refuses_empty_or_malformed_pointer_data(tmp_path, content):
+    pointer = tmp_path / "pointer.json"
+    pointer.write_text(content)
+    with pytest.raises(ValueError):
+        audit_framing.load_samples(pointer)

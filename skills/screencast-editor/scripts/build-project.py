@@ -34,7 +34,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import camtasia_model as model  # noqa: E402
 
 EFFECTS = Path(__file__).resolve().parent / "camtasia-effects.json"
-MOVE_SECONDS = 0.8
 DEFAULT_INSET = {
     "height": 324.0,
     "x": 640.0,
@@ -147,7 +146,7 @@ def build(template: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
         visual = []
         for raw, z, x, y in cues[1:]:
             end = tick(raw) - tick(shot["start"])
-            length = min(tick(MOVE_SECONDS), end)
+            length = min(tick(model.MOVE_SECONDS), end)
             visual.append({"endTime": end, "duration": length})
             for k, v in params(z, x, y).items():
                 animated[k]["keyframes"].append(

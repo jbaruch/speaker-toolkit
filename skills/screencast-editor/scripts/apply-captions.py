@@ -159,13 +159,20 @@ def parse_overrides(values: list[str], rate: int) -> dict[str, int]:
     return out
 
 
-def backup_project(path: Path) -> Path:
-    """Copy the project to a new, never-overwritten before-captions snapshot."""
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    backup = path.parent / f"before-captions-{stamp}.tscproj"
-    with backup.open("xb") as target:
-        target.write(path.read_bytes())
-    return backup
+def backup_project(path: Path, now: datetime | None = None) -> Path:
+    """Copy the project to a new before-captions snapshot; never overwrites one."""
+    stamp = (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
+    data = path.read_bytes()
+    for attempt in range(1000):
+        suffix = "" if attempt == 0 else f"-{attempt}"
+        backup = path.parent / f"before-captions-{stamp}{suffix}.tscproj"
+        try:
+            with backup.open("xb") as target:
+                target.write(data)
+        except FileExistsError:
+            continue
+        return backup
+    raise OSError(f"no free backup name for {stamp} in {path.parent}")
 
 
 def main(argv: list[str] | None = None) -> int:

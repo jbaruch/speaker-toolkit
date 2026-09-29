@@ -42,6 +42,8 @@ def clock(seconds: float) -> str:
 def place(
     words: list[tuple[float, str]], chapters: list[dict], trim: float, end: float
 ) -> list[tuple[float, str]]:
+    if not chapters or chapters[0].get("phrase") is not None:
+        raise ValueError("the first chapter must start at 0:00 (give it a null phrase)")
     norm = [model.normalize(w) for _, w in words]
     out: list[tuple[float, str]] = []
     cursor = 0

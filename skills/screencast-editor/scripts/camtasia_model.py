@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any
 
 FPS = 30
+MIN_SHOT_SECONDS = 1.0  # a visible shot shorter than this reads as a glitch
+MOVE_SECONDS = 0.8  # the ease into each framing cue
 MENUBAR_POINTS = 28  # macOS menu bar height at 1920x1080 points
 PROJECT_FILE = "project.tscproj"
 OPEN_PROJECT_FILE = "~project.tscproj"
@@ -132,8 +134,8 @@ def load_plan(path: Path) -> dict[str, Any]:
             raise ValueError(f"{where}: start and end must be numbers (source seconds)")
         if s["end"] <= s["start"]:
             raise ValueError(f"{where}: ends before it starts")
-        if s["end"] - s["start"] < 1.0:
-            raise ValueError(f"{where}: shorter than one second")
+        if s["end"] - s["start"] < MIN_SHOT_SECONDS:
+            raise ValueError(f"{where}: shorter than {MIN_SHOT_SECONDS} s")
         if s["kind"] != "screen":
             continue
         cues = s.get("cues")
@@ -176,12 +178,35 @@ def project_file(target: Path) -> Path:
 
 
 def camtasia_open_files() -> list[str]:
-    """Paths Camtasia holds open, via lsof on macOS; empty where Camtasia cannot run."""
-    if sys.platform != "darwin" or shutil.which("lsof") is None:
+    """Paths Camtasia holds open. Empty when Camtasia is not running or cannot run here.
+
+    A failure to ask is an error, never "nothing open": treating it as closed
+    would let a caption pass overwrite a live project.
+    """
+    if sys.platform != "darwin":
         return []
+    for tool in ("pgrep", "lsof"):
+        if shutil.which(tool) is None:
+            raise ValueError(
+                f"cannot tell whether Camtasia has the project open: {tool} is missing"
+            )
+    running = subprocess.run(
+        ["pgrep", "-x", "Camtasia"], capture_output=True, text=True, check=False
+    )
+    if running.returncode == 1:
+        return []
+    if running.returncode != 0:
+        raise ValueError(
+            f"cannot tell whether Camtasia is running: {running.stderr.strip()}"
+        )
     result = subprocess.run(
         ["lsof", "-Fn", "-c", "Camtasia"], capture_output=True, text=True, check=False
     )
+    if result.returncode != 0 or not result.stdout:
+        raise ValueError(
+            f"cannot list Camtasia's open files ({result.stderr.strip() or 'lsof exit ' + str(result.returncode)}); "
+            "quit Camtasia or close the project, then rerun"
+        )
     return [line[1:] for line in result.stdout.splitlines() if line.startswith("n")]
 
 
