@@ -26,6 +26,7 @@
     "rules/interaction-rules.md",
     "rules/tessl-version-floating.md",
     "rules/shownotes-content-publish.md",
-    "rules/transcript-fetch-authority.md"
+    "rules/transcript-fetch-authority.md",
+    "rules/camtasia-validation-authority.md"
   ]
 }

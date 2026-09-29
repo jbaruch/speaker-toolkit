@@ -24,8 +24,15 @@ chapters match line for line.
   English and keeps its onsets: dropped false starts take the timing of the
   last word spoken, pauses survive only at sentence ends, and the caption box
   is resized clear of the inset.
-- `chapters.py` times YouTube chapters from the caption words and refuses one
-  under ten seconds.
+- `chapters.py` times YouTube chapters from the caption words as JSON and
+  refuses a chapter under ten seconds or fewer than three chapters.
+- Writes are safe to repeat. The builder stages the bundle and renames it into
+  place, treats an identical rerun as a no-op, and keeps effects the user
+  applied. The caption pass refuses a project Camtasia has open, writes
+  atomically, and never overwrites an earlier backup.
+- `rules/camtasia-validation-authority.md` is the authority of record for the
+  one untestable boundary, Camtasia rendering a generated project, with a
+  six-step manual validation procedure.
 
 ## 0.20.166 — 2026-09-28
 

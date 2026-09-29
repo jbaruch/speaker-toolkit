@@ -1,7 +1,8 @@
 """Shared model for Camtasia screencast editing: time, framing, projects, pointer.
 
 Imported by the sibling CLIs in this directory. Pure functions and small file
-helpers only; nothing here talks to Camtasia, ffmpeg, or the network.
+helpers; the only external process is `lsof`, to tell whether Camtasia has a
+project open.
 """
 
 from __future__ import annotations
@@ -9,7 +10,10 @@ from __future__ import annotations
 import json
 import plistlib
 import re
+import shutil
 import struct
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -19,14 +23,20 @@ MENUBAR_POINTS = 28  # macOS menu bar height at 1920x1080 points
 PROJECT_FILE = "project.tscproj"
 OPEN_PROJECT_FILE = "~project.tscproj"
 
-# GUIDs of the records inside a .trec's TSCM atom, as raw little-endian bytes.
+# GUIDs of the records inside a .trec's TSCM atom, as raw bytes.
 POINTER_PATH_GUID = bytes.fromhex("2b7b6af27a1f11e283d00017f200be7f")
 CAPTURE_RECT_GUID = bytes.fromhex("2b7b6af67a1f11e283d00017f200be7f")
+
+SENTENCE_END = re.compile(r"[.?!][\"”’)]?$")
 
 
 def tick(seconds: float, edit_rate: int, fps: int = FPS) -> int:
     """Seconds to Camtasia ticks, snapped to a frame boundary."""
     return round(seconds * fps) * edit_rate // fps
+
+
+def normalize(word: str) -> str:
+    return re.sub(r"[^a-z0-9']", "", word.lower().replace("’", "'"))
 
 
 # --------------------------------------------------------------------- framing
@@ -39,6 +49,11 @@ class Canvas:
     menubar: float = MENUBAR_POINTS  # canvas pixels hidden at the top at fit
 
 
+def min_zoom(canvas: Canvas = Canvas()) -> float:
+    """Smallest zoom that hides the menu bar without exposing the bottom edge."""
+    return canvas.height / (canvas.height - canvas.menubar)
+
+
 def frame(
     zoom: float, x: float, y: float, canvas: Canvas = Canvas()
 ) -> dict[str, float]:
@@ -46,8 +61,14 @@ def frame(
 
     (x, y) is normalized source position, top-left origin. Camtasia translation
     is center-relative in canvas pixels with y UP. The result never exposes a
-    canvas edge and never reveals the menu bar.
+    canvas edge and never reveals the menu bar; a zoom too small to do both is
+    refused.
     """
+    if zoom < min_zoom(canvas) - 1e-9:
+        raise ValueError(
+            f"zoom {zoom} cannot hide the menu bar without exposing an edge; "
+            f"use at least {min_zoom(canvas):.3f}"
+        )
     w, h = canvas.width * zoom, canvas.height * zoom
     half_w, half_h = canvas.width / 2, canvas.height / 2
     tx = max(-(w / 2 - half_w), min(w / 2 - half_w, (0.5 - x) * w))
@@ -71,6 +92,21 @@ def visible_rect(
 # --------------------------------------------------------------------- plan
 
 
+def _number(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def plan_canvas(plan: dict[str, Any]) -> Canvas:
+    c = plan.get("canvas", {})
+    if not isinstance(c, dict):
+        raise ValueError("'canvas' must be an object")
+    return Canvas(
+        float(c.get("width", 1920)),
+        float(c.get("height", 1080)),
+        float(c.get("menubar", MENUBAR_POINTS)),
+    )
+
+
 def load_plan(path: Path) -> dict[str, Any]:
     """Read and validate a shot plan. Raises ValueError with the first problem."""
     try:
@@ -84,31 +120,38 @@ def load_plan(path: Path) -> dict[str, Any]:
     ):
         raise ValueError(f"{path}: needs a non-empty 'shots' list")
     shots = plan["shots"]
+    canvas = plan_canvas(plan)
+    floor = min_zoom(canvas)
     for i, s in enumerate(shots):
         where = f"{path}: shot {i + 1}"
+        if not isinstance(s, dict):
+            raise ValueError(f"{where}: must be an object")
         if s.get("kind") not in ("speaker", "screen"):
             raise ValueError(f"{where}: kind must be 'speaker' or 'screen'")
-        if not (
-            isinstance(s.get("start"), (int, float))
-            and isinstance(s.get("end"), (int, float))
-        ):
+        if not (_number(s.get("start")) and _number(s.get("end"))):
             raise ValueError(f"{where}: start and end must be numbers (source seconds)")
         if s["end"] <= s["start"]:
             raise ValueError(f"{where}: ends before it starts")
         if s["end"] - s["start"] < 1.0:
             raise ValueError(f"{where}: shorter than one second")
-        if s["kind"] == "screen":
-            cues = s.get("cues")
-            if not cues or any(len(c) != 4 for c in cues):
+        if s["kind"] != "screen":
+            continue
+        cues = s.get("cues")
+        if not isinstance(cues, list) or not cues:
+            raise ValueError(f"{where}: screen shots need cues of [time, zoom, x, y]")
+        for c in cues:
+            if not (isinstance(c, list) and len(c) == 4 and all(_number(v) for v in c)):
                 raise ValueError(
-                    f"{where}: screen shots need cues of [time, zoom, x, y]"
+                    f"{where}: every cue must be [time, zoom, x, y] numbers"
                 )
-            if cues[0][0] != s["start"]:
-                raise ValueError(f"{where}: the first cue must sit at the shot start")
-            if any(not (s["start"] <= c[0] <= s["end"]) for c in cues):
-                raise ValueError(f"{where}: a cue falls outside the shot")
-            if any(c[1] < 1.0 for c in cues):
-                raise ValueError(f"{where}: zoom below 1.0 exposes the canvas edge")
+        if cues[0][0] != s["start"]:
+            raise ValueError(f"{where}: the first cue must sit at the shot start")
+        if any(not (s["start"] <= c[0] <= s["end"]) for c in cues):
+            raise ValueError(f"{where}: a cue falls outside the shot")
+        if any(c[1] < floor - 1e-9 for c in cues):
+            raise ValueError(
+                f"{where}: zoom below {floor:.3f} exposes the canvas edge or the menu bar"
+            )
     for i, (a, b) in enumerate(zip(shots, shots[1:])):
         if a["end"] != b["start"]:
             raise ValueError(
@@ -117,29 +160,55 @@ def load_plan(path: Path) -> dict[str, Any]:
     return plan
 
 
-def plan_canvas(plan: dict[str, Any]) -> Canvas:
-    c = plan.get("canvas", {})
-    return Canvas(
-        float(c.get("width", 1920)),
-        float(c.get("height", 1080)),
-        float(c.get("menubar", MENUBAR_POINTS)),
-    )
-
-
 # --------------------------------------------------------------------- project
 
 
 def project_file(target: Path) -> Path:
-    """The .tscproj for a bundle, a saved project file, or Camtasia's open copy."""
+    """The saved project file of a bundle (or the file itself)."""
     if target.suffix == ".tscproj":
         return target
-    for name in (PROJECT_FILE, OPEN_PROJECT_FILE):
-        candidate = target / name
-        if candidate.is_file() and candidate.stat().st_size > 0:
-            return candidate
+    candidate = target / PROJECT_FILE
+    if candidate.is_file() and candidate.stat().st_size > 0:
+        return candidate
     raise ValueError(
         f"no saved {PROJECT_FILE} in {target} — save the project in Camtasia first"
     )
+
+
+def camtasia_open_files() -> list[str]:
+    """Paths Camtasia holds open, via lsof on macOS; empty where Camtasia cannot run."""
+    if sys.platform != "darwin" or shutil.which("lsof") is None:
+        return []
+    result = subprocess.run(
+        ["lsof", "-Fn", "-c", "Camtasia"], capture_output=True, text=True, check=False
+    )
+    return [line[1:] for line in result.stdout.splitlines() if line.startswith("n")]
+
+
+def ensure_closed(bundle: Path, open_files: list[str] | None = None) -> None:
+    """Refuse to write a project Camtasia has open; its next save would undo the edit.
+
+    A closed bundle keeps an empty open-copy marker, so the marker only counts
+    when it has content. An open project also holds its recording open.
+    """
+    marker = bundle / OPEN_PROJECT_FILE
+    if marker.is_file() and marker.stat().st_size > 0:
+        raise ValueError(
+            f"{bundle} is open in Camtasia — save and close it, then rerun"
+        )
+    prefix = str(bundle.resolve()) + "/"
+    held = camtasia_open_files() if open_files is None else open_files
+    if any(path.startswith(prefix) for path in held):
+        raise ValueError(
+            f"{bundle} is open in Camtasia — save and close it, then rerun"
+        )
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    """Write beside the target, then replace it in one step."""
+    staging = path.with_name(f".{path.name}.writing")
+    staging.write_text(text, encoding="utf-8")
+    staging.replace(path)
 
 
 def load_project(path: Path) -> dict[str, Any]:
@@ -187,32 +256,59 @@ def write_companions(bundle: Path) -> None:
 # --------------------------------------------------------------------- .trec pointer
 
 
+def _atom_header(read, offset: int, total: int) -> tuple[int, bytes, int]:
+    size, kind = struct.unpack(">I4s", read(offset, 8))
+    header = 8
+    if size == 1:
+        size = struct.unpack(">Q", read(offset + 8, 8))[0]
+        header = 16
+    elif size == 0:
+        size = total - offset
+    if size < header:
+        raise ValueError("malformed MP4 atom header")
+    return size, kind, header
+
+
 def top_level_atom(data: bytes, kind: bytes) -> bytes:
     """Body of the first top-level MP4 atom of `kind`, honouring 64-bit sizes."""
     offset = 0
     while offset + 8 <= len(data):
-        size, found = struct.unpack(">I4s", data[offset : offset + 8])
-        header = 8
-        if size == 1:
-            size = struct.unpack(">Q", data[offset + 8 : offset + 16])[0]
-            header = 16
-        elif size == 0:
-            size = len(data) - offset
-        if size < header:
-            raise ValueError("malformed MP4 atom header")
+        size, found, header = _atom_header(
+            lambda o, n: data[o : o + n], offset, len(data)
+        )
         if found == kind:
             return data[offset + header : offset + size]
         offset += size
     raise ValueError(f"no {kind.decode()} atom — not a Camtasia recording")
 
 
-def tscm_records(data: bytes) -> dict[bytes, bytes]:
-    """Records of the trailing TSCM atom, keyed by GUID bytes.
+def read_top_level_atom(path: Path, kind: bytes) -> bytes:
+    """Like `top_level_atom`, but seeks through the file: recordings run to gigabytes."""
+    try:
+        with path.open("rb") as f:
+            total = f.seek(0, 2)
+
+            def read(offset: int, n: int) -> bytes:
+                f.seek(offset)
+                return f.read(n)
+
+            offset = 0
+            while offset + 8 <= total:
+                size, found, header = _atom_header(read, offset, total)
+                if found == kind:
+                    return read(offset + header, size - header)
+                offset += size
+    except OSError as e:
+        raise ValueError(f"cannot read {path}: {e}") from e
+    raise ValueError(f"no {kind.decode()} atom — not a Camtasia recording")
+
+
+def tscm_records(blob: bytes) -> dict[bytes, bytes]:
+    """Records of a TSCM atom body, keyed by GUID bytes.
 
     Layout per record: <u32 BE count> b'DATA' <u64 BE length> <16-byte GUID>
     <payload>, where length spans the whole record from the count field on.
     """
-    blob = top_level_atom(data, b"TSCM")
     records: dict[bytes, bytes] = {}
     offset = 0
     while True:
@@ -251,12 +347,3 @@ def pointer_path(records: dict[bytes, bytes]) -> list[tuple[float, int, int]]:
         raise ValueError(f"unexpected pointer sample size {entry}")
     count = (len(body) - 8) // 16
     return [struct.unpack("<dii", body[8 + i * 16 : 24 + i * 16]) for i in range(count)]
-
-
-# --------------------------------------------------------------------- captions text
-
-SENTENCE_END = re.compile(r"[.?!][\"”’)]?$")
-
-
-def normalize(word: str) -> str:
-    return re.sub(r"[^a-z0-9']", "", word.lower().replace("’", "'"))

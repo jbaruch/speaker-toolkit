@@ -66,9 +66,8 @@ immediately to Step 4.
 "{python_path}" "{speaker_toolkit_root}/skills/screencast-editor/scripts/trec-pointer.py" <recording.trec> --out pointer.json
 ```
 
-Screen changes are page switches and scrolls, decoded from the start because
-the screen codec does not seek accurately. The pointer path is not in the
-pixels; it comes from the recording's metadata. Proceed immediately to Step 5.
+Screen changes are page switches and scrolls. The pointer path comes from the
+recording's metadata, not the pixels. Proceed immediately to Step 5.
 
 ## Step 5 — Write the shot plan
 
@@ -102,8 +101,10 @@ Step 6 for any still that fails. Proceed immediately to Step 8.
 "{python_path}" "{speaker_toolkit_root}/skills/screencast-editor/scripts/build-project.py" <raw.cmproj> shot-plan.json --out "<title>.cmproj"
 ```
 
-It writes a new bundle with the recording cloned inside and refuses to
-overwrite. Ask the user to open it and review the cut. For changes, edit the
+It writes a new bundle with the recording cloned inside; a rerun with the same
+inputs is a no-op, and a different existing bundle is never overwritten. Ask the
+user to open it and review the cut, following the observations in the
+`camtasia-validation-authority` rule. For changes, edit the
 plan, rerun Steps 6 to 8 into a new bundle name. Proceed immediately to Step 9
 once the user approves the cut.
 
@@ -130,8 +131,8 @@ Write `chapters.json` (first entry's phrase null), then:
 "{python_path}" "{speaker_toolkit_root}/skills/screencast-editor/scripts/chapters.py" "<title>.cmproj" chapters.json
 ```
 
-Exit 1 names a missing phrase or a chapter under ten seconds; merge and rerun.
-Write the description around the chapter lines, linking only public sources
+Exit 1 names a missing phrase, a chapter under ten seconds, or fewer than
+three chapters; fix and rerun. Write the description around its `lines`, linking only public sources
 you have verified. Proceed immediately to Step 11.
 
 ## Step 11 — Make the thumbnail

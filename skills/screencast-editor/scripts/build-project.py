@@ -10,9 +10,13 @@ audio clip on track 1, and full-frame presenter shots on a muted track 2.
 Usage:
     build-project.py <recording-project> <shot-plan.json> --out <new.cmproj>
 
-Refuses to overwrite. Exit 0 on success, 1 on an invalid template or plan,
-2 on usage error. Open the result in Camtasia and export from there, so
-Camtasia's own audio effects are included.
+The bundle is staged beside the target and renamed into place only when
+complete. Rerunning with the same inputs is a no-op; a different existing
+bundle is never overwritten. Effects the user applied to the template's camera
+and mic clips are kept; this script only owns the rounded inset (RoundCorners,
+Border) and AI noise removal. Exit 0 on success, 1 on an invalid template or
+plan, 2 on usage error or a conflicting existing bundle. Export from Camtasia,
+so its audio effects are included.
 """
 
 from __future__ import annotations
@@ -39,14 +43,48 @@ DEFAULT_INSET = {
     "border_color": "#A78BFA",
     "border_width": 4,
 }
+OWNED_VIDEO_EFFECTS = ("RoundCorners", "Border")
+NOISE_EFFECT = "VSTEffect-DFN3NoiseRemoval"
 
 
-def clone(source: Path, target: Path) -> None:
-    """Copy the recording into the bundle; an APFS clone on macOS costs no space."""
-    if sys.platform == "darwin":
-        subprocess.run(["cp", "-c", str(source), str(target)], check=True)
-    else:
-        shutil.copy2(source, target)
+def source_height(project: dict[str, Any], src: int, track: int = 0) -> float:
+    for source in project["sourceBin"]:
+        if source["id"] == src:
+            rect = source["sourceTracks"][track]["trackRect"]
+            return float(rect[3] - rect[1])
+    raise ValueError(f"source {src} is not in the source bin")
+
+
+def inset_effects(
+    existing: list[dict[str, Any]], inset: dict[str, Any], library: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """User effects first, then this script's rounded inset in its required order."""
+    rounded, border = (
+        copy.deepcopy(library["RoundCorners"]),
+        copy.deepcopy(library["Border"]),
+    )
+    rounded["parameters"]["radius"]["defaultValue"] = float(inset["corner_radius"])
+    color = str(inset["border_color"]).lstrip("#")
+    for i, channel in enumerate(("red", "green", "blue")):
+        border["parameters"][f"color-{channel}"]["defaultValue"] = (
+            int(color[i * 2 : i * 2 + 2], 16) / 255
+        )
+    border["parameters"]["width"]["defaultValue"] = inset["border_width"]
+    border["parameters"]["type"] = 1
+    kept = [e for e in existing if e.get("effectName") not in OWNED_VIDEO_EFFECTS]
+    return kept + [rounded, border]
+
+
+def noise_effects(
+    existing: list[dict[str, Any]], amount: float, library: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """User effects kept; noise removal set to `amount`, or removed at 0."""
+    kept = [e for e in existing if e.get("effectName") != NOISE_EFFECT]
+    if amount <= 0:
+        return kept
+    noise = copy.deepcopy(library["NoiseRemoval"])
+    noise["parameters"]["Amount"] = float(amount)
+    return kept + [noise]
 
 
 def build(template: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
@@ -82,6 +120,15 @@ def build(template: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
     base_scale = canvas.height / source_height(p, screen0["src"])
     next_id = max(m["id"] for t in tr for m in t["medias"]) + 100
 
+    def params(z: float, x: float, y: float) -> dict[str, float]:
+        f = model.frame(z, x, y, canvas)
+        return {
+            "scale0": base_scale * z,
+            "scale1": base_scale * z,
+            "translation0": f["translation0"],
+            "translation1": f["translation1"],
+        }
+
     screens = []
     for shot in shots:
         if shot["kind"] != "screen":
@@ -92,16 +139,6 @@ def build(template: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
         m["attributes"]["ident"] = shot.get("label", "")
         place(m, shot["start"], shot["end"])
         cues = shot["cues"]
-
-        def params(z: float, x: float, y: float) -> dict[str, float]:
-            f = model.frame(z, x, y, canvas)
-            return {
-                "scale0": base_scale * z,
-                "scale1": base_scale * z,
-                "translation0": f["translation0"],
-                "translation1": f["translation1"],
-            }
-
         base = params(*cues[0][1:])
         animated: dict[str, dict[str, Any]] = {
             k: {"type": "double", "defaultValue": v, "interp": "eioe", "keyframes": []}
@@ -128,7 +165,7 @@ def build(template: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
     tr[0]["medias"] = screens
 
     inset = {**DEFAULT_INSET, **plan.get("inset", {})}
-    effects = json.loads(EFFECTS.read_text(encoding="utf-8"))
+    library = json.loads(EFFECTS.read_text(encoding="utf-8"))
     place(unified, t0, t1)
     for part in (unified["video"], unified["audio"]):
         place(part, t0, t1)
@@ -143,23 +180,14 @@ def build(template: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
         translation0=inset["x"],
         translation1=inset["y"],
     )
-    rounded, border = (
-        copy.deepcopy(effects["RoundCorners"]),
-        copy.deepcopy(effects["Border"]),
+    unified["video"]["effects"] = inset_effects(
+        unified["video"].get("effects", []), inset, library
     )
-    rounded["parameters"]["radius"]["defaultValue"] = float(inset["corner_radius"])
-    color = inset["border_color"].lstrip("#")
-    for i, channel in enumerate(("red", "green", "blue")):
-        border["parameters"][f"color-{channel}"]["defaultValue"] = (
-            int(color[i * 2 : i * 2 + 2], 16) / 255
-        )
-    border["parameters"]["width"]["defaultValue"] = inset["border_width"]
-    border["parameters"]["type"] = 1
-    unified["video"]["effects"] = [rounded, border]
-    if plan.get("noise_removal", 0.8):
-        noise = copy.deepcopy(effects["NoiseRemoval"])
-        noise["parameters"]["Amount"] = float(plan.get("noise_removal", 0.8))
-        unified["audio"]["effects"] = [noise]
+    unified["audio"]["effects"] = noise_effects(
+        unified["audio"].get("effects", []),
+        float(plan.get("noise_removal", 0.8)),
+        library,
+    )
 
     speaker = []
     for shot in shots:
@@ -178,7 +206,11 @@ def build(template: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
                 "translation0": 0,
                 "translation1": 0,
             },
-            "effects": [],
+            "effects": [
+                e
+                for e in unified["video"]["effects"]
+                if e.get("effectName") not in OWNED_VIDEO_EFFECTS
+            ],
             "scalar": 1,
             "animationTracks": {},
         }
@@ -197,12 +229,37 @@ def build(template: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
     return p
 
 
-def source_height(project: dict[str, Any], src: int, track: int = 0) -> float:
-    for source in project["sourceBin"]:
-        if source["id"] == src:
-            rect = source["sourceTracks"][track]["trackRect"]
-            return float(rect[3] - rect[1])
-    raise ValueError(f"source {src} is not in the source bin")
+def clone(source: Path, target: Path) -> None:
+    """Copy the recording into the bundle; an APFS clone on macOS costs no space."""
+    if sys.platform == "darwin":
+        subprocess.run(["cp", "-c", str(source), str(target)], check=True)
+    else:
+        shutil.copy2(source, target)
+
+
+def serialize(project: dict[str, Any]) -> str:
+    return json.dumps(project, indent=2, ensure_ascii=False)
+
+
+def write_bundle(
+    out: Path, project: dict[str, Any], plan: dict[str, Any], recording: Path
+) -> None:
+    """Stage the complete bundle beside `out`, then rename it into place."""
+    staging = out.with_name(f".{out.name}.staging")
+    if staging.exists():
+        shutil.rmtree(staging)
+    try:
+        model.write_companions(staging)
+        clone(recording, staging / "media" / recording.name)
+        (staging / model.PROJECT_FILE).write_text(serialize(project), encoding="utf-8")
+        (staging / "shot-plan.json").write_text(
+            json.dumps(plan, indent=1), encoding="utf-8"
+        )
+        staging.rename(out)
+    except (OSError, subprocess.CalledProcessError):
+        if staging.exists():
+            shutil.rmtree(staging)
+        raise
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -217,19 +274,14 @@ def main(argv: list[str] | None = None) -> int:
         "--out", type=Path, required=True, help="new .cmproj bundle to create"
     )
     args = parser.parse_args(argv)
-    if args.out.exists():
-        print(
-            f"build-project: {args.out} already exists; refusing to overwrite",
-            file=sys.stderr,
-        )
-        return 2
     try:
-        template = model.load_project(model.project_file(args.template))
+        template_path = model.project_file(args.template)
+        template = model.load_project(template_path)
         plan = model.load_plan(args.plan)
         project = build(template, plan)
         recording = Path(project["sourceBin"][0]["src"])
         if not recording.is_absolute():
-            recording = model.project_file(args.template).parent / recording
+            recording = template_path.parent / recording
         if not recording.is_file():
             raise ValueError(
                 f"recording {recording} is missing — Camtasia's temporary folder is not an archive"
@@ -237,25 +289,33 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as e:
         print(f"build-project: {e}", file=sys.stderr)
         return 1
-    model.write_companions(args.out)
-    clone(recording, args.out / "media" / recording.name)
     project["sourceBin"][0]["src"] = f"./media/{recording.name}"
-    (args.out / model.PROJECT_FILE).write_text(
-        json.dumps(project, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
-    (args.out / "shot-plan.json").write_text(
-        json.dumps(plan, indent=1), encoding="utf-8"
-    )
-    screens = sum(s["kind"] == "screen" for s in plan["shots"])
-    print(
-        json.dumps(
-            {
-                "project": str(args.out),
-                "screen_shots": screens,
-                "speaker_shots": len(plan["shots"]) - screens,
-            }
+    summary = {
+        "project": str(args.out),
+        "screen_shots": sum(s["kind"] == "screen" for s in plan["shots"]),
+        "speaker_shots": sum(s["kind"] == "speaker" for s in plan["shots"]),
+    }
+    if args.out.exists():
+        existing = args.out / model.PROJECT_FILE
+        if existing.is_file() and existing.read_text(encoding="utf-8") == serialize(
+            project
+        ):
+            print(json.dumps({**summary, "unchanged": True}))
+            return 0
+        print(
+            f"build-project: {args.out} already holds a different edit; choose a new --out",
+            file=sys.stderr,
         )
-    )
+        return 2
+    try:
+        write_bundle(args.out, project, plan, recording)
+    except (OSError, subprocess.CalledProcessError) as e:
+        print(
+            f"build-project: could not write {args.out}: {e}; nothing was left behind",
+            file=sys.stderr,
+        )
+        return 1
+    print(json.dumps(summary))
     return 0
 
 

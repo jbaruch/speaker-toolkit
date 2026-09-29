@@ -11,8 +11,9 @@ Usage:
     apply-captions.py <project.cmproj> <captions.txt> [--override WORD=SECONDS ...]
         [--width 700] [--height 170] [--font-size 64] [--x 0] [--y -430]
 
-The project must be saved and CLOSED in Camtasia. The previous project file is
-kept as before-captions-<UTC>.tscproj inside the bundle. Exit 0 on success, 1
+The project must be saved and closed in Camtasia; the script refuses an open
+one. The previous project file is kept as before-captions-<UTC>.tscproj inside
+the bundle, and the new one replaces it in a single step. Exit 0 on success, 1
 when the project has no transcript or no dynamic-caption callout, 2 on usage
 error.
 """
@@ -23,7 +24,6 @@ import argparse
 import bisect
 import difflib
 import json
-import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -159,9 +159,18 @@ def parse_overrides(values: list[str], rate: int) -> dict[str, int]:
     return out
 
 
+def backup_project(path: Path) -> Path:
+    """Copy the project to a new, never-overwritten before-captions snapshot."""
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    backup = path.parent / f"before-captions-{stamp}.tscproj"
+    with backup.open("xb") as target:
+        target.write(path.read_bytes())
+    return backup
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
-    parser.add_argument("project", type=Path)
+    parser.add_argument("project", type=Path, help="the edited .cmproj bundle")
     parser.add_argument("captions", type=Path, help="corrected transcript, plain text")
     parser.add_argument(
         "--override", action="append", default=[], help="WORD=SECONDS measured onset"
@@ -174,6 +183,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         path = model.project_file(args.project)
+        model.ensure_closed(path.parent)
         project = model.load_project(path)
         track = model.audio_source_track(project)
         keyframes = (
@@ -192,10 +202,15 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     track["parameters"]["transcription"]["keyframes"] = new_keyframes
     restyle(callout, args.width, args.height, args.font_size, args.x, args.y)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    backup = path.parent / f"before-captions-{stamp}.tscproj"
-    shutil.copy2(path, backup)
-    path.write_text(json.dumps(project, indent=2, ensure_ascii=False), encoding="utf-8")
+    try:
+        backup = backup_project(path)
+        model.atomic_write_text(path, json.dumps(project, indent=2, ensure_ascii=False))
+    except OSError as e:
+        print(
+            f"apply-captions: could not write {path}: {e}; the project file is unchanged",
+            file=sys.stderr,
+        )
+        return 1
     print(json.dumps({**stats, "backup": str(backup)}))
     return 0
 

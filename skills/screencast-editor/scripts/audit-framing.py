@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import bisect
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -76,11 +77,18 @@ def audit(plan: dict, samples: list[list[float]], step: float = 0.25) -> list[di
     return report
 
 
+def positive_seconds(value: str) -> float:
+    step = float(value)
+    if not math.isfinite(step) or step <= 0:
+        raise argparse.ArgumentTypeError("--step must be a positive number of seconds")
+    return step
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     parser.add_argument("plan", type=Path)
     parser.add_argument("pointer", type=Path)
-    parser.add_argument("--step", type=float, default=0.25)
+    parser.add_argument("--step", type=positive_seconds, default=0.25)
     args = parser.parse_args(argv)
     try:
         plan = model.load_plan(args.plan)

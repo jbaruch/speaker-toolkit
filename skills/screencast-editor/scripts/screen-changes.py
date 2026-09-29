@@ -40,7 +40,12 @@ def changes(recording: Path, stream: str, threshold: float, fps: float) -> list[
         "null",
         "-",
     ]
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+    except OSError as e:
+        raise ValueError(
+            f"cannot run ffmpeg ({e}); install it, e.g. `brew install ffmpeg`"
+        ) from e
     if result.returncode != 0:
         raise ValueError(f"ffmpeg failed: {result.stderr.strip()[-400:]}")
     return [float(m) for m in PTS.findall(result.stderr)]

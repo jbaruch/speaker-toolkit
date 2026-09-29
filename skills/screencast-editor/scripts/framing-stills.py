@@ -52,16 +52,33 @@ def cue_frames(plan: dict) -> list[tuple[int, list[float]]]:
     return sorted(frames, key=lambda f: f[0])
 
 
+def launch(command: list[str]) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(command, capture_output=True, text=True, check=False)
+    except OSError as e:
+        raise ValueError(
+            f"cannot run {command[0]} ({e}); install ffmpeg, e.g. `brew install ffmpeg`"
+        ) from e
+
+
 def run(command: list[str]) -> None:
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    result = launch(command)
     if result.returncode != 0:
         raise ValueError(f"{command[0]} failed: {result.stderr.strip()[-400:]}")
 
 
+def clear_outputs(out: Path) -> None:
+    """Remove this script's earlier outputs, so a shorter plan leaves no stale stills."""
+    for pattern in ("still-*.png", "raw-*.png", "sheet.png"):
+        for old in out.glob(pattern):
+            old.unlink()
+
+
 def render(recording: Path, plan: dict, out: Path, stream: str) -> list[Path]:
     out.mkdir(parents=True, exist_ok=True)
+    clear_outputs(out)
     frames = cue_frames(plan)
-    probe = subprocess.run(
+    probe = launch(
         [
             "ffprobe",
             "-v",
@@ -74,13 +91,13 @@ def render(recording: Path, plan: dict, out: Path, stream: str) -> list[Path]:
             "json",
             str(recording),
         ],
-        capture_output=True,
-        text=True,
-        check=False,
     )
     if probe.returncode != 0:
         raise ValueError(f"ffprobe failed: {probe.stderr.strip()[-400:]}")
-    info = json.loads(probe.stdout)["streams"][0]
+    streams = json.loads(probe.stdout or "{}").get("streams") or []
+    if not streams or "width" not in streams[0]:
+        raise ValueError(f"no video stream {stream} in {recording}")
+    info = streams[0]
     width, height = int(info["width"]), int(info["height"])
     canvas = model.plan_canvas(plan)
     select = "+".join(f"eq(n,{n})" for n, _ in frames)

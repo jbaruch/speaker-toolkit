@@ -25,11 +25,7 @@ import camtasia_model as model  # noqa: E402
 
 
 def extract(recording: Path) -> dict:
-    try:
-        data = recording.read_bytes()
-    except OSError as e:
-        raise ValueError(f"cannot read {recording}: {e}") from e
-    records = model.tscm_records(data)
+    records = model.tscm_records(model.read_top_level_atom(recording, b"TSCM"))
     x, y, width, height = model.capture_rect(records)
     samples = [
         [round(t, 4), round((px - x) / width, 5), round((py - y) / height, 5)]

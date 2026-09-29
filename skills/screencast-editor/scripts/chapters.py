@@ -10,8 +10,10 @@ Usage:
 
 chapters.json: [{"title": "...", "phrase": "words it starts on" | null}, ...]
 A null phrase means 0:00. The head trim defaults to the first shot of the
-bundle's shot-plan.json. Stdout: the chapter lines. Exit 0 when valid, 1 when a
-phrase is missing or a chapter is too short, 2 on usage error.
+bundle's shot-plan.json. Stdout: {"chapters": [{"seconds", "clock", "title"}],
+"lines": "<the description block>"}. YouTube needs at least three chapters.
+Exit 0 when valid, 1 when a phrase is missing, a chapter is too short, or there
+are fewer than three, 2 on usage error.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import camtasia_model as model  # noqa: E402
 
 MIN_CHAPTER = 10.0
+MIN_CHAPTERS = 3
 
 
 def clock(seconds: float) -> str:
@@ -58,6 +61,10 @@ def place(
             )
     if not out or out[0][0] != 0.0:
         raise ValueError("the first chapter must start at 0:00 (give it a null phrase)")
+    if len(out) < MIN_CHAPTERS:
+        raise ValueError(
+            f"YouTube needs at least {MIN_CHAPTERS} chapters, got {len(out)}"
+        )
     starts = [t for t, _ in out] + [end]
     short = [title for (t, title), nxt in zip(out, starts[1:]) if nxt - t < MIN_CHAPTER]
     if short:
@@ -91,8 +98,12 @@ def main(argv: list[str] | None = None) -> int:
     except (ValueError, OSError, KeyError, json.JSONDecodeError) as e:
         print(f"chapters: {e}", file=sys.stderr)
         return 1
-    for t, title in placed:
-        print(f"{clock(t)} {title}")
+    rows = [
+        {"seconds": round(t, 2), "clock": clock(t), "title": title}
+        for t, title in placed
+    ]
+    lines = "\n".join(f"{r['clock']} {r['title']}" for r in rows)
+    print(json.dumps({"chapters": rows, "lines": lines}, indent=1))
     return 0
 
 

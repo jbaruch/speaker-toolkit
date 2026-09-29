@@ -281,17 +281,21 @@ def test_plan_validation(tmp_path, mutate, message):
 
 
 @pytest.mark.parametrize("wide", [True, False])
-def test_pointer_and_capture_rect_come_out_of_the_tscm_atom(wide):
-    records = model.tscm_records(
-        trec_bytes([(0.5, -960, 540), (1.0, -1900, 30)], wide=wide)
+def test_pointer_and_capture_rect_come_out_of_the_tscm_atom(tmp_path, wide):
+    data = trec_bytes([(0.5, -960, 540), (1.0, -1900, 30)], wide=wide)
+    take = tmp_path / "take.trec"
+    take.write_bytes(data)
+    assert model.read_top_level_atom(take, b"TSCM") == model.top_level_atom(
+        data, b"TSCM"
     )
+    records = model.tscm_records(model.read_top_level_atom(take, b"TSCM"))
     assert model.capture_rect(records) == (-1920, 0, 1920, 1080)
     assert model.pointer_path(records) == [(0.5, -960, 540), (1.0, -1900, 30)]
 
 
 def test_a_file_without_tscm_is_not_a_camtasia_recording():
     with pytest.raises(ValueError, match="not a Camtasia recording"):
-        model.tscm_records(struct.pack(">I4s", 16, b"ftyp") + b"\x00" * 8)
+        model.top_level_atom(struct.pack(">I4s", 16, b"ftyp") + b"\x00" * 8, b"TSCM")
 
 
 def test_trec_pointer_normalizes_to_the_captured_display(tmp_path):
@@ -394,7 +398,6 @@ def test_build_cli_clones_the_take_and_refuses_to_overwrite(tmp_path):
     assert (out / "media" / "take.trec").read_bytes() == b"not really a movie"
     for companion in ("bookmarks.plist", "docPrefs", "shot-plan.json"):
         assert (out / companion).is_file()
-    assert build_project.main(args) == 2
 
 
 # ------------------------------------------------------------------ captions
@@ -610,6 +613,7 @@ def test_a_chapter_under_ten_seconds_is_refused():
             [
                 {"title": "Intro", "phrase": None},
                 {"title": "Judge", "phrase": "Now, the judge"},
+                {"title": "Stop", "phrase": "So we need"},
             ],
             0.0,
             100.0,
@@ -696,3 +700,197 @@ def test_framing_stills_renders_one_still_per_cue_and_a_sheet(tmp_path, two_page
     assert [s.name for s in stills] == ["still-01.png", "still-02.png"]
     assert (tmp_path / "stills" / "sheet.png").is_file()
     assert not list((tmp_path / "stills").glob("raw-*.png"))
+
+
+# ------------------------------------------------------------------ review hardening
+
+
+def test_zoom_below_the_menu_bar_floor_is_refused():
+    canvas = model.Canvas()
+    with pytest.raises(ValueError, match="cannot hide the menu bar"):
+        model.frame(1.0, 0.5, 0.5, canvas)
+    floor = model.min_zoom(canvas)
+    x0, y0, x1, y1 = model.visible_rect(floor, 0.5, 0.9, canvas)
+    assert y1 <= 1 + 1e-9 and y0 >= canvas.menubar / canvas.height - 1e-9
+
+
+@pytest.mark.parametrize(
+    "mutate,message",
+    [
+        (lambda p: p["shots"].__setitem__(0, 1), "must be an object"),
+        (lambda p: p["shots"][1]["cues"].__setitem__(1, 1), "every cue must be"),
+        (
+            lambda p: p["shots"][1]["cues"][1].__setitem__(1, 1.0),
+            "exposes the canvas edge",
+        ),
+    ],
+)
+def test_malformed_plans_are_reported_not_crashed(tmp_path, mutate, message):
+    bad = plan()
+    mutate(bad)
+    with pytest.raises(ValueError, match=message):
+        model.load_plan(write(tmp_path / "plan.json", bad))
+
+
+def test_audit_refuses_a_step_that_would_never_advance(tmp_path):
+    with pytest.raises(SystemExit):
+        audit_framing.main(
+            [str(tmp_path / "p.json"), str(tmp_path / "q.json"), "--step", "0"]
+        )
+
+
+def test_build_keeps_user_effects_and_drops_only_its_own():
+    t = template()
+    unified = model.tracks(t)[1]["medias"][0]
+    unified["video"]["effects"] = [
+        {"effectName": "ColorAdjustment"},
+        {"effectName": "Border"},
+    ]
+    unified["audio"]["effects"] = [
+        {"effectName": "Compressor"},
+        {"effectName": "VSTEffect-DFN3NoiseRemoval"},
+    ]
+    project = build_project.build(t, plan(noise_removal=0))
+    built = model.tracks(project)[1]["medias"][0]
+    assert [e["effectName"] for e in built["video"]["effects"]] == [
+        "ColorAdjustment",
+        "RoundCorners",
+        "Border",
+    ]
+    assert [e["effectName"] for e in built["audio"]["effects"]] == ["Compressor"]
+    speaker = model.tracks(project)[2]["medias"][0]
+    assert [e["effectName"] for e in speaker["effects"]] == ["ColorAdjustment"]
+
+
+def raw_bundle(tmp_path: Path) -> Path:
+    raw = tmp_path / "raw.cmproj"
+    raw.mkdir()
+    (raw / "take.trec").write_bytes(b"movie")
+    write(raw / "project.tscproj", template())
+    return raw
+
+
+def test_build_rerun_is_a_noop_and_a_different_edit_is_refused(tmp_path, capsys):
+    raw = raw_bundle(tmp_path)
+    out = tmp_path / "edit.cmproj"
+    args = [str(raw), str(write(tmp_path / "plan.json", plan())), "--out", str(out)]
+    assert build_project.main(args) == 0
+    assert build_project.main(args) == 0
+    assert '"unchanged": true' in capsys.readouterr().out
+    other = [
+        str(raw),
+        str(write(tmp_path / "other.json", plan(title="Other"))),
+        "--out",
+        str(out),
+    ]
+    assert build_project.main(other) == 2
+
+
+def test_a_failed_build_leaves_nothing_behind(tmp_path, monkeypatch):
+    raw = raw_bundle(tmp_path)
+    out = tmp_path / "edit.cmproj"
+
+    def broken_clone(source, target):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(build_project, "clone", broken_clone)
+    args = [str(raw), str(write(tmp_path / "plan.json", plan())), "--out", str(out)]
+    assert build_project.main(args) == 1
+    assert not out.exists()
+    assert not list(tmp_path.glob(".edit.cmproj*"))
+
+
+def test_an_open_project_is_refused(tmp_path):
+    bundle = tmp_path / "edit.cmproj"
+    bundle.mkdir()
+    (bundle / model.OPEN_PROJECT_FILE).write_text("")
+    model.ensure_closed(bundle, open_files=[])  # an empty marker is a closed project
+    held = [str(bundle.resolve() / "media" / "take.trec")]
+    with pytest.raises(ValueError, match="open in Camtasia"):
+        model.ensure_closed(bundle, open_files=held)
+    (bundle / model.OPEN_PROJECT_FILE).write_text("{}")
+    with pytest.raises(ValueError, match="open in Camtasia"):
+        model.ensure_closed(bundle, open_files=[])
+
+
+def test_two_caption_passes_keep_two_backups(tmp_path, monkeypatch):
+    monkeypatch.setattr(model, "camtasia_open_files", lambda: [])
+    bundle = tmp_path / "edit.cmproj"
+    bundle.mkdir()
+    write(bundle / "project.tscproj", caption_project())
+    text = tmp_path / "captions.txt"
+    text.write_text(
+        "Hey, I'm Baruch from Port. I downgraded the lead. I showed you something cool.\n"
+    )
+    assert apply_captions.main([str(bundle), str(text)]) == 0
+    assert apply_captions.main([str(bundle), str(text)]) == 0
+    assert len(list(bundle.glob("before-captions-*.tscproj"))) == 2
+    assert not list(bundle.glob(".project.tscproj.writing"))
+
+
+def test_fewer_than_three_chapters_is_refused():
+    words = [(t * 10, w) for t, w in WORDS]
+    with pytest.raises(ValueError, match="at least 3"):
+        chapters.place(
+            words,
+            [
+                {"title": "Intro", "phrase": None},
+                {"title": "Judge", "phrase": "Now, the judge"},
+            ],
+            5.0,
+            200.0,
+        )
+
+
+def test_chapters_cli_emits_json(tmp_path, capsys):
+    bundle = tmp_path / "edit.cmproj"
+    bundle.mkdir()
+    write(bundle / "project.tscproj", template(words=[(t * 10, w) for t, w in WORDS]))
+    spec = write(
+        tmp_path / "chapters.json",
+        [
+            {"title": "Intro", "phrase": None},
+            {"title": "The judge", "phrase": "Now, the judge"},
+            {"title": "Stopping", "phrase": "So we need"},
+        ],
+    )
+    assert chapters.main([str(bundle), str(spec), "--trim-start", "5"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert [c["clock"] for c in result["chapters"]] == ["0:00", "0:35", "1:15"]
+    assert result["lines"].splitlines()[1] == "0:35 The judge"
+
+
+def test_missing_ffmpeg_is_an_actionable_error(monkeypatch, tmp_path):
+    def absent(*args, **kwargs):
+        raise FileNotFoundError("ffmpeg")
+
+    monkeypatch.setattr(screen_changes.subprocess, "run", absent)
+    with pytest.raises(ValueError, match="install it"):
+        screen_changes.changes(tmp_path / "x.trec", "0:0", 0.01, 4)
+    monkeypatch.setattr(framing_stills.subprocess, "run", absent)
+    with pytest.raises(ValueError, match="install ffmpeg"):
+        framing_stills.render(tmp_path / "x.trec", plan(), tmp_path / "stills", "0:0")
+
+
+def test_rerendering_clears_stale_stills(tmp_path, two_page_video):
+    out = tmp_path / "stills"
+    out.mkdir()
+    (out / "still-09.png").write_bytes(b"stale")
+    short = {
+        "shots": [
+            {
+                "start": 0.0,
+                "end": 1.6,
+                "kind": "screen",
+                "cues": [[0.0, 1.06, 0.5, 0.5]],
+            }
+        ],
+        "canvas": {"width": 384, "height": 216, "menubar": 6},
+    }
+    framing_stills.render(two_page_video, short, out, "0:0")
+    assert sorted(p.name for p in out.glob("still-*.png")) == ["still-01.png"]
+
+
+def test_a_missing_stream_is_reported(tmp_path, two_page_video):
+    with pytest.raises(ValueError, match="no video stream"):
+        framing_stills.render(two_page_video, plan(), tmp_path / "stills", "0:5")
