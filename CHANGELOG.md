@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.167 — 2026-09-29
+
 ### Add screencast-editor: produce a Camtasia screencast, captions and chapters
 
 A new skill turns a Camtasia recording of screen, camera and mic into a
