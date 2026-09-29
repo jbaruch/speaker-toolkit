@@ -76,7 +76,12 @@ def clear_outputs(out: Path) -> None:
 
 
 def render(recording: Path, plan: dict, out: Path, stream: str) -> list[Path]:
-    """Render into a staging directory; replace the previous set only on success."""
+    """Render into a staging directory; replace the previous set only on success.
+
+    A plan with no screen shots has nothing to frame and renders nothing.
+    """
+    if not cue_frames(plan):
+        return []
     staging = out.with_name(f".{out.name}.staging")
     if staging.exists():
         shutil.rmtree(staging)
@@ -202,11 +207,14 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as e:
         print(f"framing-stills: {e}", file=sys.stderr)
         return 1
-    print(
-        json.dumps(
-            {"stills": [str(s) for s in stills], "sheet": str(args.out / "sheet.png")}
+    except OSError as e:
+        print(
+            f"framing-stills: cannot write stills under {args.out}: {e}; choose a writable --out",
+            file=sys.stderr,
         )
-    )
+        return 1
+    sheet = str(args.out / "sheet.png") if stills else None
+    print(json.dumps({"stills": [str(s) for s in stills], "sheet": sheet}))
     return 0
 
 

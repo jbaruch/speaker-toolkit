@@ -151,6 +151,10 @@ def load_plan(path: Path) -> dict[str, Any]:
             raise ValueError(f"{where}: the first cue must sit at the shot start")
         if any(not (s["start"] <= c[0] <= s["end"]) for c in cues):
             raise ValueError(f"{where}: a cue falls outside the shot")
+        if any(b[0] <= a[0] for a, b in zip(cues, cues[1:])):
+            raise ValueError(
+                f"{where}: cue times must strictly increase; sort the cues and drop duplicates"
+            )
         if any(c[1] < floor - 1e-9 for c in cues):
             raise ValueError(
                 f"{where}: zoom below {floor:.3f} exposes the canvas edge or the menu bar"

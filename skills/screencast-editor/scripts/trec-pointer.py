@@ -52,7 +52,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     text = json.dumps(result)
     if args.out:
-        args.out.write_text(text + "\n", encoding="utf-8")
+        try:
+            args.out.write_text(text + "\n", encoding="utf-8")
+        except OSError as e:
+            print(
+                f"trec-pointer: cannot write {args.out}: {e}; choose a writable --out",
+                file=sys.stderr,
+            )
+            return 1
         print(
             f"{len(result['samples'])} pointer samples -> {args.out}", file=sys.stderr
         )

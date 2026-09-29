@@ -63,6 +63,9 @@ immediately to Step 4.
 
 ## Step 4 — Map what the screen shows
 
+A take with no screen footage (all presenter) skips Steps 4, 6, and 7: its plan
+has only speaker shots. Proceed immediately to Step 5 for such a take.
+
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/screencast-editor/scripts/screen-changes.py" <recording.trec> > changes.json
 "{python_path}" "{speaker_toolkit_root}/skills/screencast-editor/scripts/trec-pointer.py" <recording.trec> --out pointer.json
@@ -77,7 +80,7 @@ Write `shot-plan.json` per
 [skills/screencast-editor/references/shot-plan.md](references/shot-plan.md):
 the presenter full-frame for the opening, commentary, and close; the screen
 only while the words point at it; every cut between sentences. Proceed
-immediately to Step 6.
+immediately to Step 6, or to Step 8 when the plan has no screen shots.
 
 ## Step 6 — Audit the framing
 

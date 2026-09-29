@@ -190,7 +190,7 @@ tracks so each clip stays individually retimable. Copy `bookmarks.plist` and
 A project that depended on the temporary recordings folder broke when that folder
 was cleaned. Keep originals in the bundle so the project can be re-edited later.
 
-**Time is in ticks: `editRate` is 705600000 per second. Quantize to frames: `tick(s) = round(s * fps) * editRate // fps`.**
+**Time is in ticks at the project's `editRate`; quantize to frames with `tick` in `skills/screencast-editor/scripts/camtasia_model.py`.**
 Unquantized ticks put cut points between frames. Clip `start`, `duration`,
 `mediaStart` and `mediaDuration` are ticks; keyframe times are ticks relative to
 the clip start.
@@ -342,7 +342,7 @@ manifest existed.
 Checked rows refer to the footage they were checked against, not to a later
 re-narration.
 
-**YouTube chapters: first at 0:00, each at least 10 seconds, times taken from caption words minus the head trim.**
+**YouTube chapters start at 0:00 and obey the length and count limits in `chapters.py`; take their times from caption words minus the head trim.**
 Recheck chapters, title and thumbnail whenever the editorial timeline changes.
 
 **When no speaker photo is configured, use a frame from the camera track for the thumbnail.**

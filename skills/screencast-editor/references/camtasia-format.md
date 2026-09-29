@@ -8,8 +8,8 @@ A `.cmproj` directory holding `project.tscproj` (JSON), `bookmarks.plist`,
 `docPrefs` (property lists), and `media/`, `originals/`, `recordings/`. While a
 project is open, Camtasia keeps a `~project.tscproj` beside it.
 
-- Time is in ticks: `editRate` is 705600000 per second. Snap to frames:
-  `round(seconds * 30) * editRate // 30`.
+- Time is in ticks at the project's `editRate`. Frame snapping is `tick` in
+  `skills/screencast-editor/scripts/camtasia_model.py`.
 - Tracks live at `timeline.sceneTrack.scenes[0].csml.tracks`, with display
   names in `timeline.trackAttributes`. Each clip has `start`, `duration`
   (timeline ticks), `mediaStart`, `mediaDuration` (source ticks), and `scalar`

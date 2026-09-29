@@ -1043,3 +1043,58 @@ def test_a_failed_rerender_keeps_the_previous_stills(tmp_path, two_page_video):
     assert (out / "still-01.png").read_bytes() == before
     assert (out / "sheet.png").is_file()
     assert not (tmp_path / ".stills.staging").exists()
+
+
+def test_cues_out_of_order_are_refused(tmp_path):
+    bad = plan()
+    bad["shots"][1]["cues"] = [
+        [10.0, 1.06, 0.5, 0.5],
+        [15.0, 1.7, 0.1, 0.2],
+        [12.0, 1.5, 0.5, 0.5],
+    ]
+    with pytest.raises(ValueError, match="strictly increase"):
+        model.load_plan(write(tmp_path / "plan.json", bad))
+
+
+def test_an_all_speaker_plan_renders_no_stills(tmp_path, two_page_video, capsys):
+    speaker_only = {"shots": [{"start": 0.0, "end": 1.6, "kind": "speaker"}]}
+    plan_path = write(tmp_path / "plan.json", speaker_only)
+    assert (
+        framing_stills.main(
+            [str(two_page_video), str(plan_path), "--out", str(tmp_path / "stills")]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out) == {"stills": [], "sheet": None}
+
+
+def test_an_unwritable_stills_directory_is_reported(tmp_path, two_page_video, capsys):
+    blocker = tmp_path / "stills"
+    blocker.write_text("a file where the directory should be")
+    good = {
+        "shots": [
+            {
+                "start": 0.0,
+                "end": 1.6,
+                "kind": "screen",
+                "cues": [[0.0, 1.06, 0.5, 0.5]],
+            }
+        ],
+        "canvas": {"width": 384, "height": 216, "menubar": 6},
+    }
+    plan_path = write(tmp_path / "plan.json", good)
+    assert (
+        framing_stills.main(
+            [str(two_page_video), str(plan_path), "--out", str(blocker)]
+        )
+        == 1
+    )
+    assert "choose a writable --out" in capsys.readouterr().err
+
+
+def test_an_unwritable_pointer_output_is_reported(tmp_path, capsys):
+    take = tmp_path / "take.trec"
+    take.write_bytes(trec_bytes([(0.5, -960, 540)]))
+    target = tmp_path / "missing-dir" / "pointer.json"
+    assert trec_pointer.main([str(take), "--out", str(target)]) == 1
+    assert "choose a writable --out" in capsys.readouterr().err
