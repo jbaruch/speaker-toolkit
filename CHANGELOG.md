@@ -40,7 +40,10 @@ discipline reduced the drift but cannot guarantee typographic identity.
   3:1 contrast against the ground around the glyphs, so an image of the footer
   colour, or a footer stamped onto a matching strip, never passes; a strip that
   would hide the footer, or geometry that pushes glyphs off the frame, refuses
-  before anything is written. Without `font_path` it uses Pillow's
+  before anything is written. Glyphs are fitted to the frame, so every image a
+  deck stamps (slides in apply, frames and their parent slides in the build
+  manifest) must share one size; a mixed set refuses before any stamp, naming
+  the outliers. Without `font_path` it uses Pillow's
   bundled sans-serif; a missing font, an over-long footer or a malformed colour
   refuses with the fix.
 - Without `footer_style`, the model still renders the footer, now from one

@@ -76,6 +76,8 @@ sys.path.insert(
 )
 import outline_schema  # noqa: E402  (path appended above)
 from footer_stamp import (  # noqa: E402  (sibling module)
+    FooterStampError,
+    require_one_geometry,
     stamp_footer_file,
     stamp_spec,
     stamped_slide,
@@ -492,6 +494,14 @@ def apply(
     # Poster-theatrical FULL slides — background only. Title + footer are baked
     # into the image, so no scrim and no overlaid title; QR (added later) is the
     # only inserted shape.
+    if footer_stamp is not None:
+        # Refuse a mixed set before stamping any of it.
+        require_one_geometry(
+            illust
+            for n in sorted(poster_full_slides)
+            if n <= len(prs.slides)
+            and (illust := illust_dir / f"slide-{n:02d}.{ext}").exists()
+        )
     for n in sorted(poster_full_slides):
         illust = illust_dir / f"slide-{n:02d}.{ext}"
         if not illust.exists():
@@ -620,18 +630,21 @@ def main():
     if not (0 <= args.scrim_alpha <= 100000):
         raise SystemExit(f"--scrim-alpha must be 0..100000, got {args.scrim_alpha}")
 
-    results, backgrounds = apply(
-        args.deck,
-        args.illustrations,
-        zones,
-        img_txt_slides,
-        out_deck,
-        args.image_ext,
-        scrim_hex,
-        args.scrim_alpha,
-        poster_full_slides,
-        parse_footer_stamp(args.outline) if poster else None,
-    )
+    try:
+        results, backgrounds = apply(
+            args.deck,
+            args.illustrations,
+            zones,
+            img_txt_slides,
+            out_deck,
+            args.image_ext,
+            scrim_hex,
+            args.scrim_alpha,
+            poster_full_slides,
+            parse_footer_stamp(args.outline) if poster else None,
+        )
+    except FooterStampError as exc:
+        raise SystemExit(f"ERROR: {exc}") from exc
     _progress(f"\nSaved {out_deck}")
     _progress(f"Updated {len(results)}/{total_slides} slides")
 

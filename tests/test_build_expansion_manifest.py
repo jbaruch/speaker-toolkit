@@ -295,4 +295,24 @@ def test_a_frame_that_cannot_be_stamped_stops_the_manifest(
     with pytest.raises(SystemExit) as exc:
         build_expansion_manifest.build_manifest(outline, builds)
 
-    assert "cannot stamp the footer on slide 7" in str(exc.value)
+    assert "cannot stamp the build frames" in str(exc.value)
+
+
+def test_frames_of_mixed_size_are_refused_before_any_stamp(
+    build_expansion_manifest, tmp_path
+):
+    """Glyphs fitted to different frames would differ; nothing is stamped."""
+    from PIL import Image
+
+    slides = [s for s in DEFAULT_SLIDES if s["n"] == 7]
+    outline = _stamping_outline(tmp_path, slides)
+    builds = tmp_path / "builds"
+    frames = _image_frames(builds, 7, 4)
+    Image.new("RGB", (1024, 1024), (10, 20, 30)).save(frames[2], quality=95)
+
+    with pytest.raises(SystemExit) as exc:
+        build_expansion_manifest.build_manifest(outline, builds)
+
+    assert "must share one size" in str(exc.value)
+    assert frames[2].name in str(exc.value)
+    assert not (builds / "footer-stamped").exists()

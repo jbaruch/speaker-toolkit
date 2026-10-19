@@ -9,7 +9,9 @@ centred, its baseline `baseline_from_bottom_pct` above the bottom edge, in
 the footer colour and none blends with the scene: the same text and style on a
 frame of the same size produce identical footer pixels over any scene, and a
 regenerated slide cannot change them. Geometry whose glyphs would leave the
-frame is refused.
+frame is refused. Glyph size and baseline follow the frame, so a deck's stamped
+images must share one size (`require_one_geometry`); a mixed set is refused
+before anything is stamped.
 
 `stamp_footer` returns a new flattened RGB image. `verify_footer` checks that
 every glyph pixel carries exactly the footer colour and that the footer stands
@@ -27,7 +29,7 @@ stamps those slides' build frames.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -68,6 +70,30 @@ def stamp_spec(anchor: Any) -> tuple[str, dict[str, Any]] | None:
     if anchor is None or anchor.footer_style is None or not anchor.embedded_footer:
         return None
     return anchor.embedded_footer, anchor.footer_style.model_dump()
+
+
+def require_one_geometry(images: Iterable[Path]) -> tuple[int, int] | None:
+    """The one pixel size every image to be stamped shares, or a refusal.
+
+    Glyph size and baseline are fitted to the frame, so images of different
+    sizes would carry different footer pixels.
+    """
+    sizes: dict[tuple[int, int], list[str]] = {}
+    for path in images:
+        with Image.open(path) as image:
+            sizes.setdefault(image.size, []).append(path.name)
+    if len(sizes) > 1:
+        common = max(sizes, key=lambda size: len(sizes[size]))
+        outliers = sorted(
+            name for size, names in sizes.items() if size != common for name in names
+        )
+        raise FooterStampError(
+            "stamped images must share one size so the footer is identical on "
+            f"every one; most are {common[0]}x{common[1]} but "
+            f"{', '.join(outliers)} differ — regenerate or resize those to "
+            f"{common[0]}x{common[1]}, then re-run"
+        )
+    return next(iter(sizes), None)
 
 
 def stamped_slide(slide: Any) -> bool:

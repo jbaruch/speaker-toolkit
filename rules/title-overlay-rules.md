@@ -33,6 +33,8 @@ are not generated and keep their own treatment:
   footer onto that slide's build frames.
 - Stamped glyphs carry no antialiasing; the footer's pixels are identical on
   every slide and frame.
+- Every image a deck stamps shares one pixel size; a mixed set is refused
+  before anything is stamped.
 - `style_anchor.text_treatment` is authored once and applied to every illustrated
   slide's baked title, so titles render identically across the deck.
 - No `safe_zone` on poster slides; no zone assignment, no zone picker.

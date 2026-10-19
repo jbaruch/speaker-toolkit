@@ -68,6 +68,7 @@ sys.path.insert(
 import outline_schema  # noqa: E402  (path appended above)
 from footer_stamp import (  # noqa: E402  (sibling module)
     FooterStampError,
+    require_one_geometry,
     stamp_footer_file,
     stamp_spec,
     stamped_slide,
@@ -121,6 +122,24 @@ def frames_for(builds_dir: Path, parent: int) -> dict[int, Path]:
     return found
 
 
+def _require_one_stamped_geometry(specs: list[dict], builds_dir: Path) -> None:
+    """Every frame to be stamped, and its parent slide image, share one size."""
+    images: list[Path] = []
+    for spec in specs:
+        if spec["footer"] is None:
+            continue
+        images.extend(frames_for(builds_dir, spec["parent"]).values())
+        images.extend(
+            path
+            for path in builds_dir.parent.glob(f"slide-{spec['parent']:02d}.*")
+            if path.is_file()
+        )
+    try:
+        require_one_geometry(sorted(images))
+    except (FooterStampError, OSError) as exc:
+        raise SystemExit(f"ERROR: cannot stamp the build frames: {exc}") from exc
+
+
 def build_manifest(
     outline_path: Path, builds_dir: Path, notes_map: dict | None = None
 ) -> dict:
@@ -133,12 +152,14 @@ def build_manifest(
     notes pass must carry them instead.
     """
     notes_map = notes_map or {}
+    specs = sorted(parse_build_specs(outline_path), key=lambda s: s["parent"])
+    _require_one_stamped_geometry(specs, builds_dir)
     builds = []
     # parse_build_specs reads outline.yaml through the schema, which already
     # guarantees each slide's build steps are contiguous from 0 — so step
     # count, ordering, and contiguity need no re-checking here. The only
     # remaining failure mode is a declared step whose frame isn't on disk yet.
-    for spec in sorted(parse_build_specs(outline_path), key=lambda s: s["parent"]):
+    for spec in specs:
         parent, steps = spec["parent"], spec["steps"]
         found = frames_for(builds_dir, parent)
         missing = [s for s in steps if s not in found]

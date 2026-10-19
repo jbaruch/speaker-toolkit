@@ -652,3 +652,38 @@ def test_main_reports_one_json_object_on_stdout(
     assert summary["results"][0]["footer_stamped"] is True
     assert summary["backgrounds_manifest"] is not None
     assert "poster FULL" in captured.err
+
+
+def test_poster_slides_of_mixed_size_are_refused_before_any_stamp(
+    apply_illustrations, tmp_path, monkeypatch
+):
+    from PIL import Image
+
+    deck = tmp_path / "deck.pptx"
+    make_deck(4).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    Image.new("RGB", (1536, 864), (30, 40, 50)).save(illust_dir / "slide-02.jpg")
+    Image.new("RGB", (1024, 1024), (30, 40, 50)).save(illust_dir / "slide-03.jpg")
+    outline = _write_outline(
+        tmp_path,
+        [
+            {"n": 2, "format": "FULL", "text_overlay": "T", "image_prompt": "P"},
+            {"n": 3, "format": "FULL", "text_overlay": "U", "image_prompt": "Q"},
+        ],
+        composition="poster-theatrical",
+        embedded_footer="@jbaruch",
+    )
+    data = yaml.safe_load(outline.read_text(encoding="utf-8"))
+    data["style_anchor"]["footer_style"] = {}
+    outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    monkeypatch.setattr(
+        "sys.argv",
+        ["apply-illustrations-to-deck.py", str(deck), str(illust_dir), str(outline)],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        apply_illustrations.main()
+
+    assert "must share one size" in str(exc.value)
+    assert not (illust_dir / "footer-stamped").exists()
