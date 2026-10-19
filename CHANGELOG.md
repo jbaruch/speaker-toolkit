@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.174 — 2026-10-19
+
 ### Add the spy-thriller-photographic style to the public catalog
 
 The first public catalog entry admitted through the `style-contribution` issue
