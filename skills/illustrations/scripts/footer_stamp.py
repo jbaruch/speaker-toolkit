@@ -9,11 +9,15 @@ centred, its baseline `baseline_from_bottom_pct` above the bottom edge, in
 footer pixels, so the footer is pixel-consistent across the deck and a
 regenerated slide cannot change it.
 
-`stamp_footer` returns a new flattened RGB image; `verify_footer` checks a
-stamped image against the footer the style prescribes. `style` is a mapping
+`stamp_footer` returns a new flattened RGB image; `verify_footer` checks that
+every fully-inked glyph pixel carries exactly the footer colour.
+`stamp_footer_file` writes PNG whatever the source format, so re-encoding never
+makes the footer's pixels depend on the scene behind them. `style` is a mapping
 with exactly the `FooterStyle` fields in
 `skills/presentation-creator/scripts/outline_schema.py`, which owns their
-defaults.
+defaults. `stamp_spec` and `stamped_slide` are the one answer to which deck
+images get a footer: apply stamps those slides and the build-expansion manifest
+stamps those slides' build frames.
 """
 
 from __future__ import annotations
@@ -38,21 +42,35 @@ MIN_FONT_SIZE = 4
 # a little clear of the footer's tallest glyph.
 REFERENCE_FRAME = (1600, 900)
 STRIP_MARGIN_PCT = 2.0
-# A stamped pixel inside a glyph counts as the footer colour within this many
-# levels per channel, which absorbs JPEG re-encoding. VERIFY_MIN_MATCH is the
-# share of fully-inked glyph pixels that must match.
-VERIFY_CHANNEL_TOLERANCE = 48
-VERIFY_MIN_MATCH = 0.9
+STAMPED_SUFFIX = ".png"
 # Lookup tables for `Image.point`: glyph pixels at full coverage, and channel
-# differences within the tolerance.
+# differences of zero.
 _FULLY_INKED = [255 if level == 255 else 0 for level in range(256)]
-_WITHIN_TOLERANCE = [
-    255 if level <= VERIFY_CHANNEL_TOLERANCE else 0 for level in range(256)
-]
+_EXACT = [255 if level == 0 else 0 for level in range(256)]
 
 
 class FooterStampError(ValueError):
     """The footer style or text cannot produce a stamp."""
+
+
+def stamp_spec(anchor: Any) -> tuple[str, dict[str, Any]] | None:
+    """The footer text and style a deck stamps, or None when the model renders it.
+
+    ``anchor`` is an outline ``StyleAnchor`` (or None); its validator already
+    limits ``footer_style`` to poster decks with an embedded footer.
+    """
+    if anchor is None or anchor.footer_style is None or not anchor.embedded_footer:
+        return None
+    return anchor.embedded_footer, anchor.footer_style.model_dump()
+
+
+def stamped_slide(slide: Any) -> bool:
+    """Whether a stamping deck's slide is a full-bleed poster background.
+
+    A FULL slide without a safe zone carries its footer in the image; a
+    safe-zone slide takes the scrim-and-title path instead.
+    """
+    return slide.format.value == "FULL" and not slide.safe_zone
 
 
 def _require_style(style: Mapping[str, Any]) -> None:
@@ -161,35 +179,36 @@ def footer_mask(
 def verify_footer(
     image: Image.Image, text: str, style: Mapping[str, Any]
 ) -> tuple[bool, float]:
-    """Whether ``image`` carries this exact footer, and the matching share."""
+    """Whether every fully-inked glyph pixel is the footer colour, and the share."""
     rgb = image.convert("RGB")
     inked = footer_mask(rgb.size, text, style).point(_FULLY_INKED)
     red, green, blue = ImageChops.difference(
         rgb, Image.new("RGB", rgb.size, _rgb(style["color"]))
     ).split()
     worst = ImageChops.lighter(ImageChops.lighter(red, green), blue)
-    close = worst.point(_WITHIN_TOLERANCE)
+    exact = worst.point(_EXACT)
     inked_count = inked.histogram()[255]
     if inked_count == 0:
         return False, 0.0
-    matched = ImageChops.multiply(close, inked).histogram()[255]
-    share = matched / inked_count
-    return share >= VERIFY_MIN_MATCH, share
+    matched = ImageChops.multiply(exact, inked).histogram()[255]
+    return matched == inked_count, matched / inked_count
 
 
 def stamp_footer_file(
-    source: Path, destination: Path, text: str, style: Mapping[str, Any]
+    source: Path, directory: Path, text: str, style: Mapping[str, Any]
 ) -> Path:
-    """Stamp ``source`` into ``destination`` and verify the written file."""
+    """Stamp ``source`` into ``directory/<stem>.png`` and verify the written file."""
+    destination = directory / f"{source.stem}{STAMPED_SUFFIX}"
     with Image.open(source) as image:
         stamped = stamp_footer(image, text, style)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    stamped.save(destination, quality=95)
+    directory.mkdir(parents=True, exist_ok=True)
+    stamped.save(destination, format="PNG")
     with Image.open(destination) as written:
         ok, share = verify_footer(written, text, style)
     if not ok:
         raise FooterStampError(
             f"stamped footer on {destination.name} matched only {share:.0%} of "
-            "its glyph pixels; check footer_style.color against the image"
+            "its glyph pixels after writing; re-run apply, and check the disk "
+            "if it recurs"
         )
     return destination

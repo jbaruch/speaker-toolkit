@@ -136,6 +136,11 @@ bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/expand-builds.s
     <deck-copy.pptx> <deck-expanded.pptx> builds-manifest.json
 ```
 
+With `style_anchor.footer_style` set, the manifest lists footer-stamped PNG
+copies of each poster parent's frames from `illustrations/builds/footer-stamped/`
+(see `skills/illustrations/scripts/build-expansion-manifest.py` docstring); the
+raw frames stay footer-free for editing.
+
 `ExpandBuilds` processes parents descending so inserting one parent's frames
 doesn't shift lower-numbered parents. **Ordering**: run it BEFORE the by-index
 passes (`inject-notes.sh`, `apply-backgrounds.sh`, `insert-qr.sh`) — expansion

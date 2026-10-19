@@ -65,17 +65,53 @@ def test_verification_accepts_the_stamp_and_refuses_anything_else(stamp, tmp_pat
     assert stamp.verify_footer(stamped, FOOTER + " extra", STYLE)[0] is False
     written = stamp.stamp_footer_file(
         _save(_scene((20, 30, 40)), tmp_path / "slide-03.jpg"),
-        tmp_path / "footer-stamped" / "slide-03.jpg",
+        tmp_path / "footer-stamped",
         FOOTER,
         STYLE,
     )
+    assert written == tmp_path / "footer-stamped" / "slide-03.png"
     with Image.open(written) as reread:
-        assert stamp.verify_footer(reread, FOOTER, STYLE)[0] is True
+        assert reread.format == "PNG"
+        assert stamp.verify_footer(reread, FOOTER, STYLE) == (True, 1.0)
 
 
 def _save(image, path):
     image.save(path, quality=95)
     return path
+
+
+def _busy_scene(seed_color, size=(1536, 864)):
+    """A scene with detail under the footer, the case JPEG re-encoding smears."""
+    image = _scene(seed_color, size)
+    pixels = image.load()
+    assert pixels is not None
+    for x in range(size[0]):
+        for y in range(size[1] - 120, size[1]):
+            pixels[x, y] = ((x * 7) % 256, (y * 11) % 256, ((x + y) * 5) % 256)
+    return image
+
+
+def test_written_footers_are_pixel_identical_across_scenes(stamp, tmp_path):
+    """Write, reopen, compare: the footer never depends on the scene behind it."""
+    out = tmp_path / "footer-stamped"
+    first = stamp.stamp_footer_file(
+        _save(_busy_scene((20, 30, 40)), tmp_path / "slide-03.jpg"), out, FOOTER, STYLE
+    )
+    second = stamp.stamp_footer_file(
+        _save(_busy_scene((200, 90, 10)), tmp_path / "slide-04.jpg"),
+        out,
+        FOOTER,
+        STYLE,
+    )
+    inked = stamp.footer_mask((1536, 864), FOOTER, STYLE).point(
+        lambda value: 255 if value == 255 else 0
+    )
+    black = Image.new("RGB", (1536, 864), (0, 0, 0))
+    with Image.open(first) as a, Image.open(second) as b:
+        glyphs_a = Image.composite(a.convert("RGB"), black, inked)
+        glyphs_b = Image.composite(b.convert("RGB"), black, inked)
+    assert ImageChops.difference(glyphs_a, glyphs_b).getbbox() is None
+    assert glyphs_a.getbbox() is not None
 
 
 @pytest.mark.parametrize(

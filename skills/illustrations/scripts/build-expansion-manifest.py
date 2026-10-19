@@ -30,6 +30,13 @@ Manifest shape (schema_version 1):
 - `notes` — speaker notes for the FINAL frame only (empty when none); earlier
   frames get no notes (see skills/illustrations/references/builds.md).
 
+When the outline stamps its footer (`style_anchor.footer_style`), each poster
+parent's frames are stamped by `footer_stamp.stamp_footer_file` into
+`BUILDS_DIR/footer-stamped/slide-NN-build-MM.png` and `frames` lists those
+copies; the raw frames stay footer-free for editing. Which parents qualify is
+`footer_stamp.stamped_slide`, the same answer apply-illustrations-to-deck.py
+uses for parent slides.
+
 ExpandBuilds processes parents in descending slide order so inserting a parent's
 frames never shifts the indices of lower-numbered parents still to be expanded.
 
@@ -58,6 +65,12 @@ sys.path.insert(
     ),
 )
 import outline_schema  # noqa: E402  (path appended above)
+from footer_stamp import (  # noqa: E402  (sibling module)
+    FooterStampError,
+    stamp_footer_file,
+    stamp_spec,
+    stamped_slide,
+)
 
 SCHEMA_VERSION = 1
 
@@ -65,18 +78,27 @@ _FRAME_RE = re.compile(r"slide-\d+-build-(\d+)\.[A-Za-z0-9]+$")
 
 
 def parse_build_specs(outline_path: Path) -> list[dict]:
-    """Return build specs for each parent slide: {parent, count, steps}.
+    """Return build specs for each parent slide: {parent, count, steps, footer}.
 
     Read from outline.yaml's per-slide `builds`. The schema guarantees steps are
     contiguous from 0, so `steps` is [0, 1, ..., N-1] and `count` == len(steps).
+    `footer` is the (text, style) to stamp on the parent's frames, or None.
     """
     outline = outline_schema.load_outline_partial(outline_path)
+    footer = stamp_spec(outline.style_anchor)
     specs = []
     for slide in outline.slides:
         if not slide.builds:
             continue
         steps = sorted(b.step for b in slide.builds)
-        specs.append({"parent": slide.n, "count": len(steps), "steps": steps})
+        specs.append(
+            {
+                "parent": slide.n,
+                "count": len(steps),
+                "steps": steps,
+                "footer": footer if footer and stamped_slide(slide) else None,
+            }
+        )
     return specs
 
 
@@ -129,10 +151,23 @@ def build_manifest(
                 f"ERROR: note for slide {parent} (notes key {parent - 1}) must be a "
                 f"string, got {type(raw_note).__name__} — fix the --notes JSON."
             )
+        frames = [found[s] for s in steps]
+        if spec["footer"] is not None:
+            text, style = spec["footer"]
+            try:
+                frames = [
+                    stamp_footer_file(frame, builds_dir / "footer-stamped", text, style)
+                    for frame in frames
+                ]
+            except (FooterStampError, OSError) as exc:
+                raise SystemExit(
+                    f"ERROR: cannot stamp the footer on slide {parent}'s build "
+                    f"frames: {exc}"
+                ) from exc
         builds.append(
             {
                 "parent": parent,
-                "frames": [str(found[s].resolve()) for s in steps],
+                "frames": [str(frame.resolve()) for frame in frames],
                 "notes": raw_note,
             }
         )

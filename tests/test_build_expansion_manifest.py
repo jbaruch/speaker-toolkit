@@ -191,3 +191,98 @@ def test_unwritable_out_returns_error(build_expansion_manifest, tmp_path, capsys
     )
     assert rc == 1
     assert "cannot write manifest" in capsys.readouterr().err
+
+
+# ── #474: a stamping poster deck stamps its build frames too ─────────
+
+
+FOOTER = "@jbaruch    speaking.jbaru.ch"
+
+
+def _stamping_outline(tmp_path, slides):
+    data = {
+        "talk": copy.deepcopy(_TALK),
+        "style_anchor": {
+            "model": "imagen-4",
+            "full": "F",
+            "imgtxt": "I",
+            "conventions": "C",
+            "composition": "poster-theatrical",
+            "embedded_footer": FOOTER,
+            "footer_style": {},
+        },
+        "slides": slides,
+    }
+    p = tmp_path / "outline.yaml"
+    p.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return p
+
+
+def _image_frames(builds_dir, parent, count):
+    from PIL import Image
+
+    builds_dir.mkdir(parents=True, exist_ok=True)
+    frames = []
+    for m in range(count):
+        frame = builds_dir / f"slide-{parent:02d}-build-{m:02d}.jpg"
+        Image.new("RGB", (1536, 864), (20 * m, 40, 60)).save(frame, quality=95)
+        frames.append(frame)
+    return frames
+
+
+def test_a_poster_parents_frames_are_stamped_copies(build_expansion_manifest, tmp_path):
+    from PIL import Image
+
+    import footer_stamp
+
+    slides = [s for s in DEFAULT_SLIDES if s["n"] == 7]
+    outline = _stamping_outline(tmp_path, slides)
+    builds = tmp_path / "builds"
+    raw = _image_frames(builds, 7, 4)
+    raw_bytes = [frame.read_bytes() for frame in raw]
+
+    manifest = build_expansion_manifest.build_manifest(outline, builds)
+
+    frames = manifest["builds"][0]["frames"]
+    assert frames == [
+        str((builds / "footer-stamped" / f"slide-07-build-{m:02d}.png").resolve())
+        for m in range(4)
+    ]
+    spec = footer_stamp.stamp_spec(
+        build_expansion_manifest.outline_schema.load_outline_partial(
+            outline
+        ).style_anchor
+    )
+    assert spec is not None
+    style = spec[1]
+    for frame in frames:
+        with Image.open(frame) as image:
+            assert footer_stamp.verify_footer(image, FOOTER, style) == (True, 1.0)
+    assert [frame.read_bytes() for frame in raw] == raw_bytes
+
+
+def test_a_safe_zone_parent_keeps_its_raw_frames(build_expansion_manifest, tmp_path):
+    slide = next(s for s in DEFAULT_SLIDES if s["n"] == 7)
+    zoned = {**slide, "safe_zone": {"zone": "upper_third", "surface": "sky"}}
+    outline = _stamping_outline(tmp_path, [zoned])
+    builds = tmp_path / "builds"
+    _image_frames(builds, 7, 4)
+
+    manifest = build_expansion_manifest.build_manifest(outline, builds)
+
+    assert manifest["builds"][0]["frames"][0].endswith("builds/slide-07-build-00.jpg")
+    assert not (builds / "footer-stamped").exists()
+
+
+def test_a_frame_that_cannot_be_stamped_stops_the_manifest(
+    build_expansion_manifest, tmp_path
+):
+    slides = [s for s in DEFAULT_SLIDES if s["n"] == 7]
+    outline = _stamping_outline(tmp_path, slides)
+    builds = tmp_path / "builds"
+    _make_frames(builds, 7, 4)  # placeholder bytes, not images
+
+    with pytest.raises(SystemExit) as exc:
+        build_expansion_manifest.build_manifest(outline, builds)
+
+    assert "cannot stamp the footer on slide 7" in str(exc.value)

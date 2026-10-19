@@ -13,14 +13,19 @@ discipline reduced the drift but cannot guarantee typographic identity.
   `baseline_from_bottom_pct` 3.8, `color` `#F2EFE6`; `{}` takes the defaults)
   takes the footer out of the model's hands. Generation reserves a quiet strip,
   sized by the same glyph rendering the stamp uses, and renders no footer.
-  `apply-illustrations-to-deck.py` stamps `embedded_footer` onto a copy of every
-  poster slide in `illustrations/footer-stamped/` and points the background
-  manifest there. The raw generated image stays footer-free for edits and
-  builds.
+  `apply-illustrations-to-deck.py` stamps `embedded_footer` onto a PNG copy of
+  every poster slide in `illustrations/footer-stamped/` and points the
+  background manifest there. `build-expansion-manifest.py` stamps the same
+  slides' build frames into `illustrations/builds/footer-stamped/` and lists
+  those copies, so a progressive reveal carries the footer on every frame.
+  `footer_stamp.stamp_spec` and `stamped_slide` are the one answer both use.
+  The raw generated images stay footer-free for edits and builds.
 - `footer_stamp.py` draws the footer with one real font, sized to span the
-  target width, centred, its baseline at the configured height, and verifies
-  every stamp it writes. The same text and style produce identical glyph pixels
-  over any scene, so the footer is pixel-consistent across the deck and a
+  target width, centred, its baseline at the configured height, and writes PNG
+  whatever the source format: a JPEG re-encode made glyph pixels depend on the
+  scene behind them. Verification after writing is exact, every fully-inked
+  glyph pixel the footer colour. The same text and style produce identical glyph
+  pixels over any scene, so the footer is pixel-identical across the deck and a
   regenerated slide cannot change it. Without `font_path` it uses Pillow's
   bundled sans-serif; a missing font, an over-long footer or a malformed colour
   refuses with the fix.

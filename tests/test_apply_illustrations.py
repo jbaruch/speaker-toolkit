@@ -582,7 +582,7 @@ def test_a_poster_footer_is_stamped_into_a_copy_the_deck_uses(
         stamp_spec,
     )
 
-    stamped = illust_dir / "footer-stamped" / "slide-02.jpg"
+    stamped = illust_dir / "footer-stamped" / "slide-02.png"
     assert backgrounds == {2: str(stamped.resolve())}
     assert raw.read_bytes() == raw_bytes
     with Image.open(stamped) as image:
@@ -603,7 +603,8 @@ def test_without_a_footer_style_the_model_baked_image_is_used_as_is(
 
 def test_a_footer_style_needs_a_poster_footer(apply_illustrations, tmp_path):
     import outline_schema
+    from pydantic import ValidationError
 
-    with pytest.raises(Exception, match="footer_style stamps embedded_footer"):
+    with pytest.raises(ValidationError, match="footer_style stamps embedded_footer"):
         _poster_outline_with_footer_style(tmp_path, "", {})
         outline_schema.load_outline_partial(tmp_path / "outline.yaml")

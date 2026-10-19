@@ -29,8 +29,9 @@ FULL-POSTER — style_anchor sets `composition: poster-theatrical`; every FULL
   the background manifest entry. QR (inserted later) is the only added shape.
   With `style_anchor.footer_style` set, the footer is stamped here instead of
   rendered by the model: each slide image is stamped by `footer_stamp.py` into
-  `ILLUSTRATIONS_DIR/footer-stamped/`, and that copy becomes the background, so
-  the generated image stays footer-free for edits and builds.
+  a PNG under `ILLUSTRATIONS_DIR/footer-stamped/`, and that copy becomes the
+  background, so the generated image stays footer-free for edits and builds.
+  `build-expansion-manifest.py` stamps the same slides' build frames.
 
 The outline is the single source of truth for slide format and zone
 assignments — the same fields that `generate-illustrations.py` reads.
@@ -68,7 +69,11 @@ sys.path.insert(
     ),
 )
 import outline_schema  # noqa: E402  (path appended above)
-from footer_stamp import stamp_footer_file  # noqa: E402  (sibling module)
+from footer_stamp import (  # noqa: E402  (sibling module)
+    stamp_footer_file,
+    stamp_spec,
+    stamped_slide,
+)
 
 # 16:9 slide geometry (inches)
 SLIDE_W_IN = 13.333
@@ -160,10 +165,7 @@ def parse_composition(outline_path: Path) -> str | None:
 
 def parse_footer_stamp(outline_path: Path) -> tuple[str, dict] | None:
     """The footer text and style to stamp, or None when the model renders it."""
-    anchor = outline_schema.load_outline_partial(outline_path).style_anchor
-    if anchor is None or anchor.footer_style is None or not anchor.embedded_footer:
-        return None
-    return anchor.embedded_footer, anchor.footer_style.model_dump()
+    return stamp_spec(outline_schema.load_outline_partial(outline_path).style_anchor)
 
 
 def parse_zones(outline_path: Path) -> dict:
@@ -202,7 +204,7 @@ def parse_full_slides(outline_path: Path) -> set:
     return {
         s.n
         for s in outline_schema.load_outline_partial(outline_path).slides
-        if s.format.value == "FULL" and not s.safe_zone
+        if stamped_slide(s)
     }
 
 
@@ -493,7 +495,7 @@ def apply(
         else:
             text, style = footer_stamp
             stamped = stamp_footer_file(
-                illust, illust_dir / "footer-stamped" / illust.name, text, style
+                illust, illust_dir / "footer-stamped", text, style
             )
             backgrounds[n] = str(stamped.resolve())
             print(f"  [{n:02d}] poster FULL  bg->VBA  (title baked, footer stamped)")

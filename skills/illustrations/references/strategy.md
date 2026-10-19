@@ -254,9 +254,11 @@ also set `style_anchor.footer_style` (fields and defaults:
 `skills/presentation-creator/scripts/outline_schema.py` `FooterStyle`; `{}`
 takes them all). Generation then reserves a quiet strip at the bottom and
 renders no footer, and `apply-illustrations-to-deck.py` stamps `embedded_footer`
-onto a copy of every poster slide in `illustrations/footer-stamped/` with that
-font and geometry, verifying each stamp. The footer is pixel-identical across
-the deck, and regenerating a slide cannot change it; the generated image stays
+onto a PNG copy of every poster slide in `illustrations/footer-stamped/` with
+that font and geometry, verifying each stamp; `build-expansion-manifest.py`
+does the same for those slides' build frames in
+`illustrations/builds/footer-stamped/`. The footer is pixel-identical across the
+deck, and regenerating a slide cannot change it; the generated images stay
 footer-free for edits and builds. Point `font_path` at a TrueType/OpenType file
 that matches the deck; without one the renderer's bundled sans-serif is used.
 Without `footer_style`, the model renders the footer from one canonical
