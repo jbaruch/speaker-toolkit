@@ -247,3 +247,25 @@ def test_an_unreadable_database_is_refused(tmp_path):
     code, payload, _stderr = _find(tmp_path / "nowhere.json", "--filename", "a.md")
     assert code == 2
     assert payload["reason_code"] == "database_unreadable"
+
+
+def test_an_analysis_that_cannot_be_read_is_a_stable_answer(tmp_path):
+    database = _vault(tmp_path, [ROBOCODERS])
+    analysis = _analysis(database, ROBOCODERS)
+    analysis.chmod(0)
+    try:
+        code, payload, stderr = _find(database, "--filename", ROBOCODERS["filename"])
+    finally:
+        analysis.chmod(0o644)
+    assert code == 0, stderr
+    assert payload["binding"] == "analysis_unreadable"
+    assert "PermissionError" in payload["error"]
+    assert payload["handoff"]["filename"] == ROBOCODERS["filename"]
+
+
+def test_a_directory_at_the_analysis_path_is_missing_not_a_crash(tmp_path):
+    database = _vault(tmp_path, [ROBOCODERS])
+    (database.parent / "analyses" / ROBOCODERS["filename"]).mkdir()
+    code, payload, stderr = _find(database, "--filename", ROBOCODERS["filename"])
+    assert code == 0, stderr
+    assert payload["binding"] == "analysis_missing"

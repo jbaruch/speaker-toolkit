@@ -19,8 +19,9 @@ tracking database owner, not through whatever the rendered file's header says:
 
 Stdout: one JSON object, exit 0 for every answered lookup. ``binding`` is
 ``bound`` with ``talk``, ``analysis_path`` and ``analysis_sha256``; or one of
-``not_found``, ``ambiguous``, ``not_processed``, ``analysis_missing``,
-``analysis_stale``, each with ``talk`` (null unless one record matched),
+``not_found``, ``ambiguous``, ``not_processed``, ``analysis_missing`` (also a
+link or non-regular file at the path), ``analysis_unreadable`` (with the
+read ``error``), ``analysis_stale``, each with ``talk`` (null unless one record matched),
 ``candidates`` (the records that share the event and date, or the title, for a
 miss; every match for ``ambiguous``) and ``handoff``: the vault-ingress context
 for this one delivery (``scope: one_talk`` plus the exact filename when a record
@@ -35,10 +36,13 @@ cannot be read (``database_unreadable``), is an older generation
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
+import stat
 import sys
 from typing import Any
 
@@ -172,6 +176,32 @@ def _header_binds(text: str, talk: dict[str, Any]) -> bool:
     return expected.issubset(head)
 
 
+def _read_regular_file(path: Path) -> bytes | OSError | None:
+    """The file's bytes; None when no regular file is there; the read error.
+
+    One descriptor opened without following a final symlink is checked and
+    read, so a file swapped for a link after a check can never be followed.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            return None
+        return exc
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            return None
+        with os.fdopen(descriptor, "rb", closefd=False) as handle:
+            return handle.read()
+    except OSError as exc:
+        return exc
+    finally:
+        os.close(descriptor)
+
+
 def bind_analysis(talk: dict[str, Any], vault_root: Path) -> dict[str, Any]:
     filename = talk.get("filename")
     # A plain markdown name only: the analysis path is built from it.
@@ -180,9 +210,15 @@ def bind_analysis(talk: dict[str, Any], vault_root: Path) -> dict[str, Any]:
     if talk.get("status") not in ANALYZED_STATUSES:
         return {"binding": "not_processed", "analysis_path": None}
     path = vault_root / ANALYSES_DIRECTORY / filename
-    if path.is_symlink() or not path.is_file():
+    raw = _read_regular_file(path)
+    if raw is None:
         return {"binding": "analysis_missing", "analysis_path": str(path)}
-    raw = path.read_bytes()
+    if isinstance(raw, OSError):
+        return {
+            "binding": "analysis_unreadable",
+            "analysis_path": str(path),
+            "error": f"{type(raw).__name__}: {raw.strerror or 'no detail'}",
+        }
     if not _header_binds(raw.decode("utf-8", errors="replace"), talk):
         return {"binding": "analysis_stale", "analysis_path": str(path)}
     return {

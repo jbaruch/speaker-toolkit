@@ -14,7 +14,10 @@ rhetoric-analysis input explicit. The runtime and vault-root bootstrap is
   `analyses/{filename}.md` only when its header names that record's title,
   filename and `processed_date`. A similar title at another event is a miss
   that names the near record, two records for one delivery are `ambiguous`,
-  and a stale render is `analysis_stale`. It is a current reader, listed as
+  and a stale render is `analysis_stale`. The file is read through one
+  descriptor opened without following a link, so a link or a non-regular file
+  is `analysis_missing` and a read error is `analysis_unreadable`, never a
+  traceback. It is a current reader, listed as
   such in the owner's reader contract in `schemas-db.md`: an older database
   refuses as `database_not_current` for the owner migration, and a future one
   as `database_unsupported`.
