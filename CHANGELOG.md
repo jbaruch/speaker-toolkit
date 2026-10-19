@@ -1,5 +1,23 @@
 # Changelog
 
+### Bump filelock to 4.1.0 in every version authority
+
+Dependabot's #469 moved `pyproject.toml` from 3.32.6 to 4.1.0. The major
+version's breaking changes are confined to `SoftReadWriteLock`'s on-disk
+protocol; the toolkit uses only `FileLock(path, timeout=10)` and `Timeout`, and
+filelock 4.1.0 keeps `requires-python >=3.10`. The full suite passed on 4.1.0 in
+CI apart from the version-synchronization test.
+
+- `check-runtime.py`'s `FILELOCK_REQUIRED_VERSION`, the
+  `video-slide-extraction.md` install command, the `video-slide-extraction.py`
+  install hint and `bootstrap-and-preflight.md` now all name 4.1.0. The last
+  two had still said 3.32.2: the 3.32.6 sync (`11323c77`) moved the three
+  authorities the synchronization test knew about and missed them.
+- `test_video_dependency_version_authorities_are_synchronized` now also sweeps
+  every `.py`, `.md`, `.sh` and YAML file under `skills/` for a `filelock`,
+  `ImageHash`, `numpy` or `Pillow` pin in any quoting and requires the
+  checker's version, so an authority it was not told about can no longer drift.
+
 ## 0.20.179 — 2026-10-19
 
 ### Tighten two source-identity checks left loose by #449

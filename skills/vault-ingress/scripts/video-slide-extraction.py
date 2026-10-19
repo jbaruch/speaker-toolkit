@@ -73,7 +73,7 @@ PIPELINE_VERSION = "0.14.0"
 SCHEMA_VERSION = VIDEO_EXTRACTION_SCHEMA_VERSION
 
 VIDEO_DEPENDENCY_INSTALL = (
-    'pip install "ImageHash==4.3.2" "numpy==2.2.6" "Pillow==12.3.0" "filelock==3.32.2"'
+    'pip install "ImageHash==4.3.2" "numpy==2.2.6" "Pillow==12.3.0" "filelock==4.1.0"'
 )
 
 # Heavy deps are only needed for the extraction pipeline itself. Import them

@@ -161,7 +161,7 @@ Require a lane before using it, for example `--require-lanes core,pdf`. Remote
 Drive acquisition additionally needs the `gdown` module; captions need
 `youtube-transcript-api`; audio download fallback needs `yt-dlp`; rendered PDF
 inspection needs `pdftoppm`; video extraction needs exactly `Pillow==12.3.0`,
-`ImageHash==4.3.2`, `numpy==2.2.6`, and `filelock==3.32.2`, plus `ffmpeg` and
+`ImageHash==4.3.2`, `numpy==2.2.6`, and `filelock==4.1.0`, plus `ffmpeg` and
 `ffprobe`; local Whisper needs `mlx-whisper`, psutil, `ffmpeg`, and `ffprobe`; rendering a
 markdown-authored deck needs that deck's own tool, one lane per flavor (see
 [markdown-decks.md](markdown-decks.md)).
