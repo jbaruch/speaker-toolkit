@@ -298,8 +298,9 @@ def model_attributes(name):
 def shortlist_models(priorities, registry=None, extra_models=None):
     """Filter + rank the registry by optimization priorities, best first.
 
-    - "build-editability" is a HARD filter: drops models whose edit == "none"
-      (Imagen has no edit endpoint, so build chains cannot run on it). It is
+    - "build-editability" is a HARD filter: drops models whose edit is "none"
+      (Imagen has no edit endpoint, so build chains cannot run on it) and
+      injected models whose edit field is missing or blank. It is
       also the PRIMARY sort key over the survivors (EDIT_RANKING, best first):
       an edit-stable model outranks a drifting one whatever the soft signals
       say, so a talk with builds lands on GPT Image 2.5 before cost, speed, or
@@ -337,7 +338,8 @@ def shortlist_models(priorities, registry=None, extra_models=None):
     if builds:
         # Keep only models EXPLICITLY marked edit-capable. A missing/blank edit
         # field (e.g. an injected model that forgot it) must not slip into a
-        # build-required shortlist, so treat unknown edit support as not-capable.
+        # build-required shortlist, so treat missing/blank edit support as
+        # not-capable. An unknown tier string survives and ranks last (edit_rank).
         reg = [m for m in reg if m.get("edit") and m.get("edit") != "none"]
     soft = [p for p in priorities if p in PRIORITY_RANKINGS]
 

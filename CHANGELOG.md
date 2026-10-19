@@ -1,5 +1,25 @@
 # Changelog
 
+### Point the illustrations skill at one copy of the edit ranking
+
+Advisory follow-ups from the PR #450 reviews (#451). Presentation only; no
+ranking or filter behavior changes.
+
+- `references/builds.md` restated the registry's per-model edit ranking
+  (Sunburst first, then Flare) and why, and `SKILL.md` Step 4 and
+  `references/strategy.md` Step 4 named GPT Image 2.5 and the `strong` tier.
+  The ranking and its rationale stay in `model_registry.py` (`EDIT_RANKING` and
+  the `edit` attribute comment). `strategy.md` Step 6 carries the one full-path
+  reference to them, and the other three passages point there.
+- `rules/illustration-rules.md` Build Process "Don't" bullet keeps the
+  prohibition and the registry reference and drops the chained-edit-drift
+  explanation, already archived in the PR #450 entry.
+- `shortlist_models` now documents that build-editability drops a missing or
+  blank `edit` field as well as `"none"`, and the filter comment says
+  "missing/blank" where it said "unknown": an unknown tier string survives the
+  filter and ranks last, as `test_shortlist_injected_unknown_edit_tier_ranks_last`
+  covers.
+
 ## 0.20.174 — 2026-10-19
 
 ### Add the spy-thriller-photographic style to the public catalog
