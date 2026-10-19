@@ -773,9 +773,10 @@ def _declared_audio_locator(
     if not isinstance(source_roots, Mapping):
         return None
     declared = source_roots.get(LOCAL_AUDIO_SOURCE_ROOTS_KEY)
-    if not isinstance(declared, Mapping):
+    filename = talk.get("filename")
+    if not isinstance(declared, Mapping) or not isinstance(filename, str):
         return None
-    return declared.get(talk.get("filename"))
+    return declared.get(filename)
 
 
 def _declared_audio_probe(
