@@ -201,7 +201,8 @@ Always store the full script result in `structured_data.video_extraction` and ke
 `slides_local_path: "slides/{youtube_id}.pdf"` only after promoting a trusted
 `slide_region` artifact. Keep the source MP4 and context artifact in
 `slides-rebuild/{youtube_id}/`; they are provenance, not disposable scratch.
-The per-talk return validator recomputes trust from the complete schema-v4 manifest
+The per-talk return validator recomputes trust from the complete schema-v4 or
+schema-v5 manifest
 and binds `source_video_id` to the claimed talk. Promotion is an exact-content
 operation: the bounded SHA-256 digest of `slides/{youtube_id}.pdf` must match the
 trusted manifest `slide_region` artifact. `status: "processed"` requires both that

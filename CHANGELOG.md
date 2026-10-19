@@ -1,5 +1,26 @@
 # Changelog
 
+### Tighten two source-identity checks left loose by #449
+
+Two advisory findings from the #449 review (#452).
+
+- `source_alias_contract.py` accepted a promoted record's
+  `prior_state.youtube_id` whenever it equalled the alias block's `video_id`,
+  whatever the alias's provider. Since #449 an alias may be Vimeo or InfoQ, so a
+  Vimeo numeric ID or an InfoQ slug sitting in a field that means "YouTube ID"
+  passed as agreement. The equality now counts only for a YouTube alias. No
+  stored record changes meaning: the promotion writer copies `prior_state` from
+  a talk whose active source is the YouTube alias, and promotion refuses a
+  non-YouTube canonical.
+- The manifest refusals still named only schema v4 after #449 made readers
+  accept v4 and v5: `return_validation.py` said a `video_extracted` talk
+  "requires a complete … schema-v4 manifest" and refused an unreadable version
+  with "must be 5", and two `preflight-vault.py` findings expected a "schema-v4
+  manifest". They now render `READABLE_VIDEO_EXTRACTION_LABEL`, derived in
+  `ingress_contract.py` from `READABLE_VIDEO_EXTRACTION_SCHEMA_VERSIONS`, so the
+  next readable version updates them with no edit. Three reference passages say
+  "schema-v4 or schema-v5" to match.
+
 ## 0.20.176 — 2026-10-19
 
 ### Stop scoring audience-navigation footers as floodmarks

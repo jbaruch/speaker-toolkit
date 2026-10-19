@@ -2933,6 +2933,25 @@ def test_a_v4_manifest_with_a_youtube_id_still_reads(return_validation):
     assert state.source_video_id == manifest["source_video_id"]
 
 
+@pytest.mark.parametrize("missing_manifest", [True, False])
+def test_manifest_refusals_name_every_readable_version(
+    return_validation, missing_manifest
+):
+    """An operator diagnosing a refused manifest sees the whole admissible set,
+    not the version the message was first written for (#452)."""
+    value = _video_return()
+    if missing_manifest:
+        value["structured_data"].pop("video_extraction")
+    else:
+        value["structured_data"]["video_extraction"]["schema_version"] = 99
+
+    with pytest.raises(return_validation.ReturnValidationError) as excinfo:
+        return_validation.validate_video_extraction_manifest(value["structured_data"])
+
+    for version in return_validation.READABLE_VIDEO_EXTRACTION_SCHEMA_VERSIONS:
+        assert str(version) in str(excinfo.value)
+
+
 @pytest.mark.parametrize("version", [[], {}, "four", None, True, 4.0])
 def test_a_malformed_schema_version_is_typed_not_a_typeerror(
     return_validation, version

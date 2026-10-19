@@ -225,7 +225,8 @@ text.
      copied to `slides/{youtube_id}.pdf`, recorded as `slides_local_path`, and analyzed
      like an authored PDF deck.
 
-  The return validator recomputes that trust from the complete schema-v4 manifest; it
+  The return validator recomputes that trust from the complete schema-v4 or schema-v5
+  manifest; it
   does not trust `slide_source: "video_extracted"` or an isolated artifact boolean.
   `status: "processed"` requires both the trusted manifest and the promoted top-level
   `slides_local_path: "slides/{youtube_id}.pdf"`. A trusted artifact may still finish

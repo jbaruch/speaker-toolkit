@@ -509,6 +509,33 @@ def test_promotion_contract_documents_history_and_evidence_boundary():
     assert "Never clear or relabel those receipts to bypass a gate" in reference
 
 
+@pytest.mark.parametrize(
+    "stored_id,valid", [(None, True), ("", True), ("1223667266", False)]
+)
+def test_prior_youtube_id_agrees_only_with_a_youtube_alias(
+    mutate_tracking_database, stored_id, valid
+):
+    """#452: a Vimeo alias's own ID stored in `prior_state.youtube_id` is a
+    mislabelled field, not agreement with the prior canonical identity."""
+    from test_source_alias_contract import _vimeo_provider
+
+    contract = importlib.import_module("source_alias_contract")
+    database = _database()
+    database, _ = mutate_tracking_database.build_candidate(
+        database, [_promotion(database)]
+    )
+    record = database["source_aliases"][0]
+    record["alias"] = _vimeo_provider()
+    record["prior_state"]["video_url"] = record["alias"]["url"]
+    record["prior_state"]["youtube_id"] = stored_id
+
+    if valid:
+        contract.validate_alias_record(record, label="record")
+    else:
+        with pytest.raises(contract.SourceAliasError, match="superseded state"):
+            contract.validate_alias_record(record, label="record")
+
+
 def test_promotion_refuses_a_non_youtube_canonical(mutate_tracking_database):
     """#427 opened the alias ledger to other providers; promotion writes
     `youtube_id`, so it stays a YouTube-only operation rather than silently

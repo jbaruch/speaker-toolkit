@@ -473,7 +473,7 @@ when a current persisted claim depends on source-video evidence that can no
 longer be verified.
 
 Source-to-derivative lineage is a separate question from source availability. A
-schema-v4 manifest carries the engine-owned `source_receipt` the extraction run
+schema-v4 or schema-v5 manifest carries the engine-owned `source_receipt` the extraction run
 captured, and preflight compares it against a fresh bounded probe of the same
 path. A source that reads but disagrees is
 `video_extraction_source_lineage_mismatch`, blocking: the saved PDFs describe
