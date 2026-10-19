@@ -18,9 +18,10 @@ Two advisory findings from the #449 review (#452).
   trusted schema-v4 slide_region manifest", a `static_slides` claim found "no
   trusted schema-v4 slide_region artifact", and an unreadable version was told
   "must be 5"; two `preflight-vault.py` findings expected a "schema-v4
-  manifest". All six now render `READABLE_VIDEO_EXTRACTION_LABEL`, derived in
-  `ingress_contract.py` from `READABLE_VIDEO_EXTRACTION_SCHEMA_VERSIONS`, so the
-  next readable version updates them with no edit. Two docstrings and six
+  manifest". All six now derive from the shared readable-version constants in
+  `ingress_contract.py`: five render `READABLE_VIDEO_EXTRACTION_LABEL` and the
+  invalid-version refusal lists `READABLE_VIDEO_EXTRACTION_SCHEMA_VERSIONS`, so
+  the next readable version updates them with no edit. Two docstrings and six
   reference passages say "schema-v4 or schema-v5" (or "readable manifest") to
   match, and `video-slide-extraction.md` no longer says the producer emits a
   schema-4 record: it emits `VIDEO_EXTRACTION_SCHEMA_VERSION`. The PPTX
