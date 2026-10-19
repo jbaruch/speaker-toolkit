@@ -377,9 +377,16 @@ def _settled_probe(
 ) -> MediaArtifactProbe:
     """Re-probe after a change-time-only drift; the same bytes rebind it."""
     settled = probe_local_media(artifact, trusted_root=root)
+    # The settled probe must still be the same object: a byte-identical file
+    # swapped in between the two probes carries a new inode (or mtime, or root).
     if (
         settled.source_sha256 != probe.source_sha256
         or settled.source_size_bytes != probe.source_size_bytes
+        or settled.root_generation != probe.root_generation
+        or (
+            settled.generation != probe.generation
+            and not settled.generation.differs_only_in_change_time(probe.generation)
+        )
     ):
         refuse("media_generation_changed")
     return settled

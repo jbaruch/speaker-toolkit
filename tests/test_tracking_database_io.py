@@ -1534,3 +1534,25 @@ def test_a_rewrite_with_its_modification_time_restored_still_refuses(
             tracking_database_io.render_json_object({"talks": [], "config": {}}),
         )
     assert path.read_bytes() == rewritten
+
+
+def test_a_permission_change_after_validation_still_refuses(
+    tracking_database_io, tmp_path: Path
+) -> None:
+    """A chmod moves only the change time; the mode check is what refuses it,
+    so the staged candidate never restores the looser permissions."""
+    path = tmp_path / "tracking-database.json"
+    _write(path, {"talks": []})
+    os.chmod(path, 0o644)
+    expected = tracking_database_io.snapshot_tracking_database(path)
+    os.chmod(path, 0o600)
+
+    with pytest.raises(
+        tracking_database_io.TrackingDatabaseConflictError,
+        match="content or generation changed after validation",
+    ):
+        tracking_database_io.commit_tracking_database(
+            expected,
+            tracking_database_io.render_json_object({"talks": [], "config": {}}),
+        )
+    assert path.stat().st_mode & 0o777 == 0o600

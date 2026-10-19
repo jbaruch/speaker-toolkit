@@ -567,10 +567,15 @@ def _require_expected_generation(
 ) -> TrackingDatabaseSnapshot:
     current = snapshot_tracking_database(expected.path)
     # Identical bytes whose change time alone moved are sync-provider metadata
-    # churn, not another writer (#487); the byte comparison keeps it exact.
+    # churn, not another writer (#487); the byte comparison keeps it exact. The
+    # mode is compared too: a chmod also moves only the change time, and the
+    # staged candidate would otherwise replace the tightened permissions.
     if current.raw != expected.raw or (
         current.generation != expected.generation
-        and not current.generation.differs_only_in_change_time(expected.generation)
+        and (
+            current.mode != expected.mode
+            or not current.generation.differs_only_in_change_time(expected.generation)
+        )
     ):
         raise TrackingDatabaseConflictError(
             "tracking database content or generation changed after validation; "

@@ -692,3 +692,20 @@ def test_a_rewrite_with_its_modification_time_restored_still_refuses(media, tmp_
 
     with pytest.raises(media.LocalMediaError, match="media_generation_changed"):
         media.check_media_generation(path, probe, trusted_root=tmp_path)
+
+
+@pytest.mark.parametrize("field", ["inode", "mtime_ns"])
+def test_a_byte_identical_replacement_during_the_re_probe_still_refuses(
+    media, tmp_path, monkeypatch, field
+):
+    """Copilot on #496: the settled probe must be the same object, not just the
+    same bytes."""
+    path = tmp_path / "speech.wav"
+    _audio(path, "pcm_s16le")
+    live = media.probe_local_media(path, trusted_root=tmp_path)
+    stale = _stale(live, ctime_ns=live.generation.ctime_ns - 1)
+    swapped = _stale(live, **{field: getattr(live.generation, field) + 1})
+    monkeypatch.setattr(media, "probe_local_media", lambda *_a, **_k: swapped)
+
+    with pytest.raises(media.LocalMediaError, match="media_generation_changed"):
+        media.check_media_generation(path, stale, trusted_root=tmp_path)

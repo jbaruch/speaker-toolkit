@@ -17,15 +17,22 @@ same churn for staged database candidates only.
   write followed by `utime` restores the modification time and only the change
   time betrays it, so every caller pairs it with a byte comparison.
 - Owner database writes: `_require_expected_generation` accepts identical bytes
-  whose change time alone moved. The bytes are re-read and compared at every
-  check, so any content change still refuses.
+  whose change time alone moved and whose mode is unchanged. The bytes are
+  re-read and compared at every check, so any content change still refuses, and
+  a concurrent `chmod`, which also moves only the change time, refuses instead
+  of letting the staged candidate restore looser permissions.
 - Local media: the Whisper and word-sample workers keep completed work after a
   change-time-only drift when the open descriptor still hashes to the
   established `source_sha256`, which the Whisper payload now carries.
   `check_media_generation` asks the metadata worker for the current generation
   after a CHECK refusal, re-probes on a change-time-only drift, and returns the
-  re-probed facts only when the digest and size match. Callers keep using the
-  returned probe. The supervisor's start-of-work binding stays exact.
+  re-probed facts only when digest, size and trusted-root identity match and
+  the settled generation is the original or differs only in change time, so a
+  byte-identical file swapped in between the two probes still refuses. Callers
+  keep using the returned probe. The supervisor's start-of-work binding stays
+  exact.
+- `rules/transcript-fetch-authority.md` authorizes and bounds the one tolerated
+  drift; every other source drift still leaves prior artifacts untouched.
 - Tests use synthetic stale generations (CI cannot run Drive). They cover a
   change-time-only drift accepted over identical bytes, mtime, size, inode and
   device drift refused, and a same-size rewrite with its mtime restored refused
