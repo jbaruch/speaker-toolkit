@@ -720,9 +720,7 @@ def _require_derived_offer_mode(run: dict[str, Any], label: str) -> None:
             f"offer_mode {clarification['offer_mode']!r} is not the "
             f"{derived!r} its recorded talks give",
         )
-    if (clarification["state"] == STATE_NOT_APPLICABLE) != (
-        derived == OFFER_MODE_NONE
-    ):
+    if (clarification["state"] == STATE_NOT_APPLICABLE) != (derived == OFFER_MODE_NONE):
         raise _invalid(
             label,
             f"state {clarification['state']!r} disagrees with offer_mode "
