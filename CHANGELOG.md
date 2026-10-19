@@ -1,5 +1,44 @@
 # Changelog
 
+### Record the end-report copy vault-relative in the obligations ledger
+
+`run-obligations.py` refused a valid ledger when the tracking database was
+passed through the documented `~/.claude/rhetoric-knowledge-vault/` locator, a
+symlink to the vault on Google Drive (#486). Run-record schema 1 stored
+`end_report.report_path` as an absolute path under whichever spelling of the
+vault root the delivering command had been given, and validation compared it as
+a string against the copy path recomputed from the current spelling. On the
+live vault, `pending` exited 2 at vault-ingress Step 1 with `ledger_invalid`:
+the recorded Drive path and the recomputed `~/.claude` path name the same file
+with the same digest. Whether a ledger validated depended on how the previous
+run addressed the vault, not on the data.
+
+- Run-record schema 2 stores `report_path` vault-relative
+  (`ingress-reports/{stem}.{sha256}.md`), like the other artifact references in
+  the vault, and validation compares it with `bound_report_path`.
+- Every command reads a schema-1 record as schema 2: the absolute path is
+  stripped of the vault root as spelled and, with both sides resolved, of the
+  real root, and the candidate naming the bound copy wins, so an alias nested
+  inside the vault binds too. A path outside the vault, a relative one, or one
+  naming any copy other than the bound one is still `ledger_invalid`, and every
+  legacy refusal names a recovery without echoing the persisted path, which is
+  untrusted ledger content. A path `resolve` refuses (an embedded NUL) is a
+  structured `ledger_invalid`, not a traceback. The read that upgrades a record rewrites the
+  whole ledger at schema 2 under the owner's lock and generation check, read-only
+  commands included, so schema 1 never outlives the first command to read it.
+- `Context` now reads the vault root together with the database generation, so
+  `vault_root` is a plain `Path` from construction on.
+- Checked against the live ledger: 0.20.168 refuses `pending` through the
+  symlink with the reported message; this change answers `ok`, and `status` for
+  the affected run is identical through the symlink and through the Drive path.
+- The ledger is a gate store: a run-record version this script does not
+  accept is refused, never read as "no prior state", since that would drop
+  owed reports, unanswered offers and pending sessions. `schemas-obligations.md`
+  claims the `stateful-artifacts` gate-store exception. The refusal leaves the
+  ledger untouched and names the recovery that fits: update speaker-toolkit for
+  a newer version, or inspect or restore an owner-written ledger for a value no
+  speaker-toolkit writes (`0`, `-1`, `"1"`).
+
 ## 0.20.181 — 2026-10-19
 
 ### Tolerate Google Drive's post-sync metadata churn without trusting it

@@ -42,7 +42,7 @@ explicit disposition and the end report has been delivered.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schema_version` | integer | `1` — the run record's own version, checked on every read |
+| `schema_version` | integer | `2` — the run record's own version, checked on every read; a `1` record is read and upgraded (see Migration) |
 | `run_id` | string | the queue claim's run id (`queue-state.py claim --run-id`); the same identifier contract as the claim (non-empty, no whitespace), never used raw as a path |
 | `opened_at` | timestamp | first `open` |
 | `updated_at` | timestamp | last command that changed the record |
@@ -153,7 +153,7 @@ on an offer. Once `offered`, the buckets and `offer_mode` are frozen; later
 |---|---|
 | `state` | `owed` or `delivered` |
 | `delivered_at` | when `record-report` accepted the delivered text |
-| `report_path` | `{vault_root}/ingress-reports/{stem}.{sha256}.md`, the byte-exact copy; `stem` is the run id with every character outside `A-Za-z0-9._-` replaced by `_`, bounded for long ids by the script's `REPORT_STEM_*` constants, so a ledger-edited id never names a path outside the directory, a long id never exceeds a filename limit, and the full digest keeps two texts from ever sharing a path. Validation recomputes this path from the run id and digest and refuses any other value |
+| `report_path` | `ingress-reports/{stem}.{sha256}.md`, relative to the vault root, the byte-exact copy; `stem` is the run id with every character outside `A-Za-z0-9._-` replaced by `_`, bounded for long ids by the script's `REPORT_STEM_*` constants, so a ledger-edited id never names a path outside the directory, a long id never exceeds a filename limit, and the full digest keeps two texts from ever sharing a path. Validation recomputes this path from the run id and digest and refuses any other value. Relative, the binding is the same whether a command reached the vault through the `~/.claude` symlink or its target |
 | `report_sha256` | digest of the delivered text |
 | `reopened_at` | when a clarification session accepted after delivery reported changed profile inputs, sending the run back to `owed` for a fresh report; null otherwise |
 
@@ -308,10 +308,31 @@ stands.
 
 ## Migration
 
-This release reads ledger schema 1 and run-record schema 1 only; there is no
-older generation to upgrade from, and no on-read migration exists yet. Any
-shape change bumps the affected `schema_version` and ships its on-read upgrade
-in `run-obligations.py` in the same change. A script older than the ledger it
-reads refuses it (`ledger_schema_unsupported` for the envelope,
-`ledger_invalid` naming the run-record version) and never rewrites it; the
-operator updates speaker-toolkit.
+This release reads ledger schema 1 and run-record schemas 1 and 2, and writes
+run-record schema 2. Any shape change bumps the affected `schema_version` and
+ships its on-read upgrade in `skills/vault-ingress/scripts/run-obligations.py`
+in the same change.
+
+Run-record schema 1 recorded `end_report.report_path` as an absolute path under
+whichever spelling of the vault root the delivering command was given. Every
+command reads a schema-1 record as schema 2, its path made vault-relative, so a
+copy recorded under the `~/.claude` symlink or its target binds the same; how
+the relative path is derived is the script's (`_upgrade_legacy_report_path`).
+A recorded path outside the vault, a relative or unresolvable one, or one
+naming any copy but the bound one is refused (`ledger_invalid`) with a
+path-neutral diagnostic naming the recovery. The read that upgrades a record
+rewrites the whole ledger at schema 2 through the same lock and generation
+check as every owner write, read-only commands included, before the command
+continues; a schema-1 record never outlives the first command to read it.
+
+The ledger is a gate store, and it claims the `rules/stateful-artifacts.md`
+Migration Policy exception for gate stores: an open record refuses actions
+(an owed report, an unanswered offer, a pending session), so reading a version
+this script does not accept as "no usable prior state" would silently drop
+those obligations. A script older than the ledger it reads therefore refuses it
+(`ledger_schema_unsupported` for the envelope, `ledger_invalid` naming the
+run-record version) and never rewrites it. A version above the one it writes
+tells the operator to update speaker-toolkit; any other unreadable value, which
+no speaker-toolkit writes, tells them to inspect the ledger or restore an
+owner-written copy; every older version it does accept is migrated and rewritten on
+read, as above.
