@@ -1,5 +1,34 @@
 # Changelog
 
+### Stop scoring audience-navigation footers as floodmarks
+
+`floodmarks` scored any element that persisted on every content slide, so a thin
+footer carrying the shownotes URL, the speaker's handle and the talk hashtag
+landed in its moderate tier ("thin footer bar"). Corpus-wide that promoted the
+antipattern to `high_frequency` (6 of 7 evaluable talks), among the speaker's
+top recurring antipatterns, for a deliberate navigation device: the footer is
+there for the latecomer and for the photo of any slide, and moving it to the
+bookends defeats it (#484).
+
+- The definition now separates audience navigation (shownotes or resources URL,
+  speaker handle, talk or event hashtag) from brand noise (logo, sponsor bar,
+  track, date, tagline, decoration). A minimal footer whose every element is
+  navigation is `absent`; in a mixed footer only the brand noise counts, so a
+  handle plus a company logo stays moderate on the logo's account.
+- Evidence requirements and detection heuristics make workers name and classify
+  each persistent element before assigning a tier, so the exemption is decided
+  from slide evidence rather than taste. A new detection signal names the
+  brand-noise elements.
+- `second-look` joins the related patterns (frontmatter and `_index.md`): the
+  persistent shownotes footer is the recoverable destination that pattern
+  credits.
+- The evidence gates are unchanged, so an `absent` verdict still needs a
+  complete rendered PDF. `audit-pattern-catalog.py` stays at zero errors and
+  zero semantic debts. Editing the entry changes the catalog fingerprint, which
+  vault-profile already treats as a pattern-generation reset: no score, usage
+  or frequency change across it is reported as speaker movement, and talks
+  scored under the new generation stop counting navigation-only footers.
+
 ## 0.20.175 — 2026-10-19
 
 ### Point the illustrations skill at one copy of the edit ranking

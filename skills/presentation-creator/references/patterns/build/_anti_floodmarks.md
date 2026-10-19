@@ -12,6 +12,7 @@ detection_signals:
   - "pervasive branding on every slide"
   - "excessive corporate template elements"
   - "reduced canvas space"
+  - "persistent logos, sponsor bars, tracks, dates, taglines, or decoration on content slides"
 evaluable_from:
   - static_slides
   - native_deck
@@ -24,11 +25,12 @@ absence_evaluable_from:
   - static_slides
 evidence_requirements:
   - "Evidence must expose the visible construction across enough of the talk to apply a positive criterion; an absent outcome requires a complete, separately declared rendered PDF."
-  - "Evidence must expose the existing scoring cues: strong: heavy branding on every slide; moderate: minimal persistent branding; absent: branding limited to bookends."
+  - "Evidence must expose the existing scoring cues: strong: heavy branding on every slide; moderate: minimal persistent brand noise; absent: branding limited to bookends, or a minimal persistent footer whose every element is audience navigation."
+  - "Evidence must name each element that persists across content slides and classify it as audience navigation (shownotes or resources URL, speaker handle, talk or event hashtag) or brand noise (logo, sponsor bar, track, date, tagline, decorative element) before a tier is assigned; only brand noise counts toward the tier."
 not_evaluable_when:
   - "No rendered slides, native deck, or delivery video covers the relevant visual sequence."
   - "Only a transcript or spoken account is available, the visual source is too partial for the asserted positive tier, or the separately declared rendered PDF is incomplete for absence."
-related_patterns: [bookends, defy-defaults, unifying-visual-theme]
+related_patterns: [bookends, defy-defaults, unifying-visual-theme, second-look]
 inverse_of: [defy-defaults, bookends]
 difficulty: foundational
 ---
@@ -47,6 +49,8 @@ The mathematics of Floodmarks are stark. A standard presentation slide has a fix
 
 The audience impact of Floodmarks extends beyond lost space. Persistent visual elements that appear on every slide undergo a phenomenon called habituation — the brain stops processing them after the first few exposures. By slide five, no one in the audience is looking at the logo. By slide ten, no one is reading the conference name. The branding elements have become invisible wallpaper, consuming space without delivering value. Worse, on the rare slide where the branding element happens to overlap with content (a logo obscuring a corner of a diagram, a footer bar cutting off the bottom of a code listing), the collision is jarring and amateurish.
 
+Not every persistent element is branding. A minimal footer whose elements are navigation for the audience — the shownotes or resources URL, the speaker's handle, the talk or event hashtag used for sharing — is not Floodmarks. It costs a thin line rather than a fifth of the canvas, and it is not meant to be read on every slide: it is there for the latecomer and for the photograph of any slide, which then carries the route to the slides, the recording, and the attribution. Moving it to the bookends defeats it, because the photo is taken mid-talk. That footer is the destination the Second Look pattern sends people to. Logos, sponsor bars, track names, dates, taglines, and decorative elements remain brand noise wherever they appear, including in the same footer.
+
 The solution is to use Floodmarks only on Bookend slides — the title slide and the closing slide — where branding is expected and appropriate. Content slides should be clean, using the full canvas for content. If conference organizers require branded templates, push back professionally. Explain that you are happy to include branding on your opening and closing slides but that content slides need full canvas to be effective. Most organizers will accept this compromise. If they insist, accept the template but maximize the content area within it — and mentally note the Defy Defaults pattern for future reference.
 
 ## When to Use / When to Avoid
@@ -55,12 +59,12 @@ This is an antipattern and should always be avoided on content slides. Branding 
 The only exception is when branding is mandated by a conference or organization with no flexibility. In that case, minimize the visual weight of the branding elements (make logos smaller, use lighter colors) and maximize the content area within the template's constraints.
 
 ## Detection Heuristics
-When scoring talks, note whether corporate or conference branding appears on every slide or only on bookend slides. Measure the approximate percentage of slide area consumed by non-content elements (logos, bars, footers, headers, decorative elements). Look for slides where branding elements overlap with or crowd the actual content. A presenter who has clean content slides with branding only on bookends has explicitly addressed this antipattern.
+When scoring talks, first list every element that persists across content slides and classify each as audience navigation (shownotes or resources URL, speaker handle, talk or event hashtag) or brand noise (logo, sponsor bar, track, date, tagline, decorative element). Navigation elements never count toward this antipattern; score only the brand noise. Then note whether corporate or conference branding appears on every slide or only on bookend slides. Measure the approximate percentage of slide area consumed by non-content elements (logos, bars, footers, headers, decorative elements). Look for slides where branding elements overlap with or crowd the actual content. A presenter who has clean content slides with branding only on bookends has explicitly addressed this antipattern.
 
 ## Scoring Criteria
 - Strong signal (antipattern present): Heavy branding on every slide consuming significant screen real estate, decorative elements competing with content, visible template bloat reducing effective canvas
-- Moderate signal: Branding present on all slides but minimal (small logo in corner, thin footer bar) that does not significantly reduce content area
-- Absent (antipattern not present): Clean content slides with maximum canvas devoted to content, branding limited to bookend slides (title and closing), no persistent visual noise
+- Moderate signal: Brand noise present on all content slides but minimal (small logo in corner, thin bar carrying a logo, sponsor strip, track or date line) that does not significantly reduce content area. In a mixed footer only the brand-noise elements count: a thin footer with the speaker's handle and a company logo is moderate on the logo's account
+- Absent (antipattern not present): Clean content slides with maximum canvas devoted to content, branding limited to bookend slides (title and closing), no persistent brand noise. A minimal persistent footer whose every element is audience navigation (shownotes or resources URL, speaker handle, talk or event hashtag) is absent, not moderate
 
 ## Evidence Gate
 Use `strong_evaluable_from`, `evidence_requirements`, and `not_evaluable_when` above to evaluate positive evidence.
@@ -70,7 +74,7 @@ An absence finding is authorized only from a complete, separately declared rende
 Dimension 13 (Slide Aesthetics): Floodmarks directly degrade slide aesthetics. Dimension 14 (Overall Quality Indicators): Heavy template branding signals defaults used without customization.
 
 ## Combinatorics
-Floodmarks is the inverse of the Defy Defaults pattern, which encourages presenters to break free from default templates and create custom designs. It often co-occurs with Fontaholic, as corporate templates frequently introduce additional font families for branding elements. The Bookends pattern provides the architectural solution: branding on the first and last slides, clean canvas everywhere else. The Unifying Visual Theme pattern offers a positive alternative to Floodmarks — instead of branding noise, use a coherent visual metaphor that serves both the content and the aesthetic.
+Floodmarks is the inverse of the Defy Defaults pattern, which encourages presenters to break free from default templates and create custom designs. It often co-occurs with Fontaholic, as corporate templates frequently introduce additional font families for branding elements. The Bookends pattern provides the architectural solution: branding on the first and last slides, clean canvas everywhere else. The Unifying Visual Theme pattern offers a positive alternative to Floodmarks — instead of branding noise, use a coherent visual metaphor that serves both the content and the aesthetic. Second Look relies on a recoverable destination; a persistent navigation footer naming the shownotes is one, and it is credited there, never penalized here.
 
 ## Related Reading
 - Reynolds, G. (2012). *Presentation Zen: Simple Ideas on Presentation Design and Delivery* (2nd ed.). Ch. 6 — "Who Says Your Logo Should Be on Every Slide?" advocates logo on first and last slide only. New Riders.

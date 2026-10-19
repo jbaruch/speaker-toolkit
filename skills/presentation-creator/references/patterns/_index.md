@@ -243,7 +243,7 @@ entries are skipped and surfaced as go-live actions, not emitted as per-talk
 | bullet-riddled-corpse | Bullet-Riddled Corpse | antipattern | 13, 14 | guardrails, slides | charred-trail, infodeck |
 | ant-fonts | Ant Fonts | antipattern | 13, 14 | guardrails, slides | bullet-riddled-corpse, infodeck |
 | fontaholic | Fontaholic | antipattern | 13, 14 | guardrails, slides | floodmarks |
-| floodmarks | Floodmarks | antipattern | 13, 14 | guardrails, slides | bookends, defy-defaults, unifying-visual-theme |
+| floodmarks | Floodmarks | antipattern | 13, 14 | guardrails, slides | bookends, defy-defaults, unifying-visual-theme, second-look |
 | photomaniac | Photomaniac | antipattern | 13, 14 | guardrails, slides | unifying-visual-theme, vacation-photos |
 | borrowed-shoes | Borrowed Shoes | antipattern | 7, 13, 14 | guardrails | crucible, narrative-arc, carnegie-hall |
 | slideuments | Slideuments | antipattern | 13, 14 | guardrails | infodeck, charred-trail, gradual-consistency |
