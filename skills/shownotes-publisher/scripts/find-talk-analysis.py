@@ -18,13 +18,14 @@ tracking database owner, not through whatever the rendered file's header says:
    ``processed_date``. The vault root is the database locator's directory.
 
 Stdout: one JSON object, exit 0 for every answered lookup. ``binding`` is
-``bound`` with ``talk``, ``analysis_path`` and ``analysis_sha256``; or one of
+``bound`` with ``talk``, ``analysis_path``, ``analysis_sha256`` and
+``analysis_text``, the checked bytes decoded as UTF-8 for synthesis; or one of
 ``not_found``, ``ambiguous``, ``not_processed``, ``analysis_missing`` (also a
 link or non-regular file at the path), ``analysis_unreadable`` (with the
 read ``error``), ``analysis_stale``, each with ``talk`` (null unless one record matched),
 ``candidates`` (the records that share the event and date, or the title, for a
-miss; every match for ``ambiguous``) and ``handoff``: the vault-ingress context
-for this one delivery (``scope: one_talk`` plus the exact filename when a record
+miss; every match for ``ambiguous``) and ``handoff``: what to report to the
+speaker as the one delivery to run vault-ingress for (``scope: one_talk`` plus the exact filename when a record
 matched, else the requested title, event and date). Exit 2 writes ``{"ok":
 false, "reason_code", "error"}`` and the message to stderr when the database
 cannot be read (``database_unreadable``), is an older generation
@@ -225,10 +226,18 @@ def bind_analysis(talk: dict[str, Any], vault_root: Path) -> dict[str, Any]:
         "binding": "bound",
         "analysis_path": str(path),
         "analysis_sha256": hashlib.sha256(raw).hexdigest(),
+        "analysis_text": raw.decode("utf-8", errors="replace"),
     }
 
 
 def lookup(args: argparse.Namespace) -> dict[str, Any]:
+    selectors = (args.filename, args.title, args.event, args.date)
+    if any(value is not None and not value.strip() for value in selectors):
+        raise AnalysisLookupError(
+            "invalid_arguments",
+            "a delivery selector is blank; pass the exact filename, or the "
+            "title, event and date",
+        )
     by_filename = args.filename is not None
     by_identity = None not in (args.title, args.event, args.date)
     if by_filename == by_identity or (

@@ -21,9 +21,13 @@ rhetoric-analysis input explicit. The runtime and vault-root bootstrap is
   such in the owner's reader contract in `schemas-db.md`: an older database
   refuses as `database_not_current` for the owner migration, and a future one
   as `database_unsupported`.
-- Every unbound answer carries a `handoff` for vault-ingress naming this one
-  delivery and `scope: one_talk`, so the missing-analysis handoff can no longer
-  turn into batch work.
+- A bound answer carries `analysis_text`, the exact bytes the binding checked,
+  so the publisher never reopens a path that could have changed since.
+- Every unbound answer carries a `handoff` naming this one delivery and
+  `scope: one_talk`. The publisher stops and reports it to the speaker, asking
+  which delivery is meant when the lookup is ambiguous, instead of starting a
+  vault-ingress run, which would process a batch rather than one talk. Blank
+  selectors refuse as `invalid_arguments`.
 - `talk-skill.md` runs the lookup, describes an example by what it establishes
   and its role in the argument instead of "why these examples were chosen",
   which would infer private intent, and says what to do when plan, transcript,

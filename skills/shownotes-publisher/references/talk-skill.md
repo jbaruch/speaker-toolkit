@@ -49,11 +49,12 @@ that separate artifact.
      --title "{talk title}" --event "{event}" --date "{YYYY-MM-DD}"
    ```
 
-   Pass `--filename` instead when the talk record's filename is known. Read the
-   analysis at `analysis_path` only when `binding` is `bound`; the binding fields
-   and every other `binding` value are the script's contract (module
-   docstring). Treat the analysis as a primary synthesis input, not an optional
-   final check.
+   Pass `--filename` instead when the talk record's filename is known. When
+   `binding` is `bound`, synthesize from the verdict's `analysis_text`, the exact
+   bytes the binding checked; never reopen `analysis_path`, which could have
+   changed since. The binding fields and every other `binding` value are the
+   script's contract (module docstring). Treat the analysis as a primary
+   synthesis input, not an optional final check.
    Read its argument structure, persuasion, example/analogy roles, questions,
    transitions, callbacks, conclusion, and delivery-versus-plan findings. Consult
    detection evidence when a relevant interpretation needs grounding; do not
@@ -72,11 +73,13 @@ that separate artifact.
    either publish the point as unresolved, saying what each source shows, or
    ask the speaker one question and use the answer. Never settle it by
    writing a qualification as if it were established fact.
-4. For a delivered talk whose lookup is not `bound`, invoke
-   `Skill(skill: "vault-ingress")` with the lookup's `handoff` object as context:
-   it names this one delivery (the exact filename when a record matched, else
-   the title, event and date) and `scope: one_talk`, so ingress processes that
-   talk alone, never a batch. Resume once the lookup returns `bound`. Do not silently substitute a generic transcript summary. For a
+4. For a delivered talk whose lookup is not `bound`, stop publishing and report
+   the `binding` to the speaker with the lookup's `handoff`: the one delivery
+   to run vault-ingress for (its exact filename when a record matched, else the
+   title, event and date). For `ambiguous`, list the `candidates` and ask which
+   delivery this brief is for, then look it up again by `--filename`. Never
+   start a vault-ingress run from here; it would process a batch, not one talk.
+   Resume once the lookup returns `bound`. Do not silently substitute a generic transcript summary. For a
    pre-talk skill, use the approved rhetorical architecture and any
    `rhetorical-review.md` as planned analysis, clearly label that status, and
    refresh against delivered analysis after the event. If the user explicitly

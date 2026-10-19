@@ -122,6 +122,8 @@ def test_the_exact_delivery_binds_its_analysis(tmp_path):
     assert payload["talk"]["filename"] == ROBOCODERS["filename"]
     assert payload["analysis_path"] == str(analysis)
     assert len(payload["analysis_sha256"]) == 64
+    # The verdict carries the checked bytes, so nothing reopens the path.
+    assert payload["analysis_text"] == analysis.read_text(encoding="utf-8")
 
 
 def test_a_filename_names_the_record_directly(tmp_path):
@@ -213,8 +215,18 @@ def test_a_symlinked_analysis_is_not_bound(tmp_path):
         (),
         ("--title", "T", "--event", "E"),
         ("--filename", "a.md", "--title", "T", "--event", "E", "--date", "D"),
+        ("--filename", ""),
+        ("--filename", "   "),
+        ("--title", " ", "--event", " ", "--date", " "),
     ],
-    ids=["nothing", "partial-identity", "both"],
+    ids=[
+        "nothing",
+        "partial-identity",
+        "both",
+        "empty-filename",
+        "blank-filename",
+        "blank-identity",
+    ],
 )
 def test_the_delivery_must_be_named_one_way(tmp_path, arguments):
     database = _vault(tmp_path, [ROBOCODERS])
