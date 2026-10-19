@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.182 — 2026-10-19
+
 ### Record the end-report copy vault-relative in the obligations ledger
 
 `run-obligations.py` refused a valid ledger when the tracking database was
