@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -87,6 +88,56 @@ def test_real_protocol_metadata_is_identity_bound_and_cleaned(
     assert not workspaces[0].exists()
 
 
+def _auto_dubbed_provider(download, tmp_path):
+    # Auto-dubbing gives every dubbed audio track its own translatable captions,
+    # so the full info dict outgrows the metadata stdout cap (#480). The synthetic
+    # provider renders `--print` field-subset templates the way yt-dlp does.
+    captions = tmp_path / "automatic_captions.json"
+    captions.write_text(
+        json.dumps({f"lang{i}": [{"url": "u" * 400}] * 7 for i in range(600)}),
+        encoding="utf-8",
+    )
+    assert captions.stat().st_size > download.YTDLP_METADATA_BYTES
+    return (
+        f"info = {_metadata()!r}\n"
+        f"info['automatic_captions'] = json.loads(Path({str(captions)!r}).read_text())\n"
+        "if '--print' in sys.argv:\n"
+        "    template = sys.argv[sys.argv.index('--print') + 1]\n"
+        "    assert template.startswith('%(.{') and template.endswith('})j')\n"
+        "    fields = template[len('%(.{'):-len('})j')].split(',')\n"
+        "    print(json.dumps({k: info[k] for k in fields if k in info}))\n"
+        "elif '--dump-single-json' in sys.argv:\n"
+        "    print(json.dumps(info))\n"
+        "else:\n"
+        "    sys.stdout.buffer.write(b'dubbed talk audio')"
+    )
+
+
+def test_metadata_probe_survives_oversized_auto_dub_captions(
+    download, tmp_path, monkeypatch
+):
+    _synthetic_worker(
+        download, tmp_path, monkeypatch, _auto_dubbed_provider(download, tmp_path)
+    )
+    assert (
+        download.probe_youtube_media_duration(VIDEO_ID, ytdlp=tmp_path / "yt-dlp")
+        == 60.25
+    )
+
+
+def test_download_survives_oversized_auto_dub_captions(download, tmp_path, monkeypatch):
+    workspaces = _synthetic_worker(
+        download, tmp_path, monkeypatch, _auto_dubbed_provider(download, tmp_path)
+    )
+    with download.download_youtube_audio(VIDEO_ID, ytdlp=tmp_path / "yt-dlp") as (
+        path,
+        duration,
+    ):
+        assert path.read_bytes() == b"dubbed talk audio"
+        assert duration == 60.25
+    assert not workspaces[0].exists()
+
+
 def test_download_is_literal_private_and_removed_after_consumer_failure(
     download, tmp_path, monkeypatch
 ):
@@ -94,7 +145,7 @@ def test_download_is_literal_private_and_removed_after_consumer_failure(
         download,
         tmp_path,
         monkeypatch,
-        "if '--dump-single-json' in sys.argv:\n"
+        "if '--print' in sys.argv:\n"
         f"    print(json.dumps({_metadata()!r}))\n"
         "else:\n    sys.stdout.buffer.write(b'synthetic media bytes')",
     )
@@ -118,7 +169,7 @@ def test_download_retries_only_provider_refusals_with_no_partial_reuse(
         download,
         tmp_path,
         monkeypatch,
-        "if '--dump-single-json' in sys.argv:\n"
+        "if '--print' in sys.argv:\n"
         f"    print(json.dumps({_metadata()!r}))\n"
         "elif 'youtube:player_client=mweb' in sys.argv:\n"
         "    assert list(Path.cwd().iterdir()) == [Path.cwd() / 'audio.mp3']\n"
@@ -144,8 +195,8 @@ def test_first_usable_download_stops_retries(
         tmp_path,
         monkeypatch,
         f"with Path({str(calls)!r}).open('a') as log:\n"
-        "    log.write(('metadata' if '--dump-single-json' in sys.argv else 'download') + '\\n')\n"
-        "if '--dump-single-json' in sys.argv:\n"
+        "    log.write(('metadata' if '--print' in sys.argv else 'download') + '\\n')\n"
+        "if '--print' in sys.argv:\n"
         f"    print(json.dumps({_metadata()!r}))\n"
         f"elif {empty_first!r} and '--extractor-args' not in sys.argv:\n"
         "    pass\n"
@@ -169,7 +220,7 @@ def test_all_zero_byte_downloads_fail_and_cleanup(download, tmp_path, monkeypatc
         download,
         tmp_path,
         monkeypatch,
-        f"if '--dump-single-json' in sys.argv:\n    print(json.dumps({_metadata()!r}))",
+        f"if '--print' in sys.argv:\n    print(json.dumps({_metadata()!r}))",
     )
     with pytest.raises(download.LocalMediaError, match="ytdlp_provider_rejected"):
         with download.download_youtube_audio(VIDEO_ID, ytdlp=tmp_path / "yt-dlp"):
@@ -236,7 +287,7 @@ def test_download_resource_and_output_failures_leave_no_workspace(
     download, tmp_path, monkeypatch, body, reason
 ):
     program = (
-        "if '--dump-single-json' in sys.argv:\n"
+        "if '--print' in sys.argv:\n"
         + f"    print(json.dumps({_metadata()!r}))\nelse:\n"
         + "\n".join("    " + line for line in body.splitlines())
     )

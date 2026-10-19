@@ -87,6 +87,18 @@ CANDIDATE_CONFLICT_CODES = {
     "existing_slides_url_conflict": "slides_url",
 }
 YT_DLP_TIMEOUT_SECONDS = 60
+# yt-dlp renders only the fields `provider_evidence` reads, not the full info
+# dict, which grows past 11 MB on auto-dubbed videos (#480).
+METADATA_FIELDS = (
+    "id",
+    "webpage_url",
+    "title",
+    "uploader",
+    "uploader_id",
+    "upload_date",
+    "duration",
+)
+METADATA_TEMPLATE = "%(.{" + ",".join(METADATA_FIELDS) + "})j"
 
 # yt-dlp verdicts that the recording itself is gone from the provider. These are
 # durable: the same fetch returns the same verdict on every later run, so the
@@ -281,7 +293,8 @@ def fetch_youtube_metadata(
         "--ignore-config",
         "--no-playlist",
         "--skip-download",
-        "--dump-single-json",
+        "--print",
+        METADATA_TEMPLATE,
         "--no-warnings",
         f"https://www.youtube.com/watch?v={video_id}",
     ]

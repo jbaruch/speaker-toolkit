@@ -48,6 +48,20 @@ METADATA_OPERATION = "youtube_media_metadata"
 DOWNLOAD_OPERATION = "youtube_media_download"
 YOUTUBE_PLAYER_CLIENTS = (None, "mweb", "web_safari", "ios", "tv")
 YTDLP_METADATA_BYTES = 1024 * 1024
+# yt-dlp renders only the fields `_metadata` reads. The full info dict carries
+# every auto-dubbed track's translated captions and passed 11 MB on one talk (#480).
+METADATA_FIELDS = (
+    "id",
+    "duration",
+    "is_live",
+    "live_status",
+    "ext",
+    "format_id",
+    "vcodec",
+    "acodec",
+    "filesize",
+)
+METADATA_TEMPLATE = "%(.{" + ",".join(METADATA_FIELDS) + "})j"
 YTDLP_DIAGNOSTIC_BYTES = 64 * 1024
 DOWNLOAD_EXTENSIONS = frozenset({"m4a", "webm", "mp3"})
 DOWNLOAD_FORMAT = "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio[ext=mp3]"
@@ -238,7 +252,7 @@ def _reject_constant(_value: str) -> Any:
 def _metadata(
     command: list[str], workspace: Path, video_id: str, *, download: bool
 ) -> dict[str, Any]:
-    extra = ["--dump-single-json", "--skip-download"]
+    extra = ["--skip-download", "--print", METADATA_TEMPLATE]
     if download:
         extra += ["-f", DOWNLOAD_FORMAT]
     response = _run(command[:-1] + extra + command[-1:], workspace)
