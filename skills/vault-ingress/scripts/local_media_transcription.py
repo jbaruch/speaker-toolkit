@@ -12,15 +12,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 import importlib
 import importlib.metadata
-import os
 from pathlib import Path
 import sys
 from typing import Any, cast
 
-from artifact_metadata import (
-    ArtifactMetadataReceipt,
-    canonicalize_trusted_artifact_locator,
-)
+from artifact_metadata import canonicalize_trusted_artifact_locator
 from artifact_supervisor import (
     FileGeneration,
     JsonValue,
@@ -40,18 +36,16 @@ from local_media_contract import (
     bounded_whisper_result,
     refuse,
     reuse_video_probe,
-    validate_available_generation,
 )
 from local_media_evidence import (
     _admit_workspace,
     _bindings,
     _inspect,
     _path_payload,
+    _private_snapshot,
     _request_paths,
     _require_descriptor,
     check_media_generation,
-    descriptor_sha256,
-    metadata_only_drift,
     probe_local_media,
     private_media_workspace,
 )
@@ -141,22 +135,23 @@ def transcribe_local_media(
     if established.root_generation is not None:
         expected["media_root"] = established.root_generation
     payload = _path_payload(artifact, root)
-    payload.pop("workspace")
     payload["model"] = model
     payload["source_sha256"] = established.source_sha256
     command = [sys.executable, str(Path(__file__).resolve()), WORKER_FLAG]
     try:
-        result = run_authenticated_worker(
-            command,
-            WHISPER_OPERATION,
-            expected,
-            cast(JsonValue, payload),
-            MEDIA_WHISPER_LIMITS,
-            immutable_process_identity=command[:2],
-            sensitive_values=(str(artifact), model),
-            schema_generation=MEDIA_SCHEMA_VERSION,
-            pipeline_generation=MEDIA_PIPELINE_VERSION,
-        )
+        with private_media_workspace() as workspace:
+            payload["workspace"] = workspace
+            result = run_authenticated_worker(
+                command,
+                WHISPER_OPERATION,
+                expected,
+                cast(JsonValue, payload),
+                MEDIA_WHISPER_LIMITS,
+                immutable_process_identity=command[:2],
+                sensitive_values=(str(artifact), model),
+                schema_generation=MEDIA_SCHEMA_VERSION,
+                pipeline_generation=MEDIA_PIPELINE_VERSION,
+            )
     except SupervisorError as exc:
         reason = exc.reason_code
         if reason not in WHISPER_FAILURES:
@@ -336,13 +331,12 @@ def _transcribe_with_mlx(
     return bounded_whisper_result(value)
 
 
-def _sampled_words(path: Path, payload: Mapping) -> dict[str, Any]:
+def _sampled_words(path: Path, payload: Mapping, workspace: Path) -> dict[str, Any]:
     validate_sample_window(
         payload["sample_start_seconds"],
         payload["sample_duration_seconds"],
         payload["source_duration_seconds"],
     )
-    workspace = _admit_workspace(payload["workspace"])
     clip = extract_speech_clip(
         path,
         workspace,
@@ -371,30 +365,6 @@ def _sampled_words(path: Path, payload: Mapping) -> dict[str, Any]:
     )
 
 
-def _require_unchanged_after_work(
-    descriptor: int,
-    after: ArtifactMetadataReceipt,
-    before: ArtifactMetadataReceipt,
-    source_sha256: Any,
-) -> None:
-    """Keep completed work only if the source is still the bytes it was bound to.
-
-    A drift that moved the change time alone is sync-provider metadata, not a
-    new source (#487): a long transcription is kept when the open descriptor
-    still hashes to the established digest. Any other drift refuses.
-    """
-    current = FileGeneration.from_stat(os.fstat(descriptor))
-    if current == before.generation and after == before:
-        return
-    validate_available_generation(current)
-    if (
-        current != after.generation
-        or not metadata_only_drift(before, after)
-        or descriptor_sha256(descriptor, before.generation.size) != source_sha256
-    ):
-        refuse("media_generation_changed")
-
-
 def _dispatch(
     request: WorkerRequest,
 ) -> tuple[dict[str, Any], dict[str, FileGeneration]]:
@@ -407,14 +377,13 @@ def _dispatch(
         or not isinstance(payload, Mapping)
     ):
         raise SupervisorError("invalid_worker_request")
-    fields = {"media_path", "trusted_root", "source_sha256"} | (
+    fields = {"media_path", "trusted_root", "source_sha256", "workspace"} | (
         {"model"}
         if request.operation == WHISPER_OPERATION
         else {
             "source_duration_seconds",
             "sample_start_seconds",
             "sample_duration_seconds",
-            "workspace",
         }
     )
     if set(payload) != fields:
@@ -426,31 +395,24 @@ def _dispatch(
     observed = _bindings(before)
     if observed != request.expected_generations:
         refuse("media_generation_changed")
-    try:
-        descriptor = os.open(
-            path,
-            os.O_RDONLY
-            | getattr(os, "O_NOFOLLOW", 0)
-            | getattr(os, "O_NONBLOCK", 0)
-            | getattr(os, "O_BINARY", 0),
-        )
-    except OSError as exc:
-        raise LocalMediaError("media_artifact_unavailable") from exc
-    try:
-        _require_descriptor(descriptor, before.generation)
+    workspace = _admit_workspace(payload["workspace"])
+    # Decode a private snapshot copied from one held descriptor, never the
+    # pathname: a source swapped aside and restored during a long decode cannot
+    # reach the speech, and the snapshot must hash to the established digest.
+    # Later drift of the original is the owner's precommit check to judge (#487).
+    with _private_snapshot(path, before.generation, workspace) as (
+        snapshot,
+        digest,
+        _descriptor,
+    ):
+        if digest != payload["source_sha256"]:
+            refuse("media_generation_changed")
         speech = (
-            _transcribe_with_mlx(path, _model(payload["model"]))
+            _transcribe_with_mlx(snapshot, _model(payload["model"]))
             if request.operation == WHISPER_OPERATION
-            else _sampled_words(path, payload)
+            else _sampled_words(snapshot, payload, workspace)
         )
-        _require_unchanged_after_work(
-            descriptor, _inspect(path, root), before, payload["source_sha256"]
-        )
-        return speech, observed
-    except OSError as exc:
-        raise LocalMediaError("media_artifact_unavailable") from exc
-    finally:
-        os.close(descriptor)
+    return speech, observed
 
 
 def _worker_main() -> int:

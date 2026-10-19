@@ -21,9 +21,12 @@ same churn for staged database candidates only.
   re-read and compared at every check, so any content change still refuses, and
   a concurrent `chmod`, which also moves only the change time, refuses instead
   of letting the staged candidate restore looser permissions.
-- Local media: the Whisper and word-sample workers keep completed work after a
-  change-time-only drift when the open descriptor still hashes to the
-  established `source_sha256`, which the Whisper payload now carries.
+- Local media: the Whisper and word-sample workers decode a private snapshot
+  copied from one held descriptor and verified against the established
+  `source_sha256`, which the Whisper payload now carries, never the source
+  pathname. A recording swapped aside and restored during a long decode
+  therefore cannot reach the speech, and drift of the original after the copy
+  is the owner's precommit check to judge.
   `check_media_generation` asks the metadata worker for the current generation
   after a CHECK refusal, re-probes on a change-time-only drift, and returns the
   re-probed facts only when digest, size and trusted-root identity match and
@@ -36,7 +39,10 @@ same churn for staged database candidates only.
 - Tests use synthetic stale generations (CI cannot run Drive). They cover a
   change-time-only drift accepted over identical bytes, mtime, size, inode and
   device drift refused, and a same-size rewrite with its mtime restored refused
-  on bytes, for both the database CAS and the media owner and worker.
+  on bytes, for both the database CAS and the media owner, plus a mode change
+  that refuses even when the generation looks unchanged. A swap-and-restore of
+  the source in the middle of a decode yields speech from the established
+  bytes, and word samples are cut from the snapshot.
 - `schemas-db.md` and `local-media-acquisition.md` document the settle
   behavior.
 

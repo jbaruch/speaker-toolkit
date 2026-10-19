@@ -1556,3 +1556,27 @@ def test_a_permission_change_after_validation_still_refuses(
             tracking_database_io.render_json_object({"talks": [], "config": {}}),
         )
     assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_a_mode_change_refuses_even_when_the_generation_looks_unchanged(
+    tracking_database_io, tmp_path: Path
+) -> None:
+    """A filesystem whose timestamp resolution hides the chmod leaves the
+    generation equal; the mode is compared on its own."""
+    from dataclasses import replace
+
+    path = tmp_path / "tracking-database.json"
+    original = _write(path, {"talks": []})
+    os.chmod(path, 0o600)
+    live = tracking_database_io.snapshot_tracking_database(path)
+    expected = replace(live, mode=0o644)
+
+    with pytest.raises(
+        tracking_database_io.TrackingDatabaseConflictError,
+        match="content or generation changed after validation",
+    ):
+        tracking_database_io.commit_tracking_database(
+            expected,
+            tracking_database_io.render_json_object({"talks": [], "config": {}}),
+        )
+    assert path.read_bytes() == original

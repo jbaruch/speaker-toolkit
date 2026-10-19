@@ -327,21 +327,6 @@ def metadata_only_drift(
     )
 
 
-def descriptor_sha256(descriptor: int, size: int) -> str:
-    """Hash an open artifact from its start; a byte count off ``size`` refuses."""
-    digest = hashlib.sha256()
-    read = 0
-    os.lseek(descriptor, 0, os.SEEK_SET)
-    while chunk := os.read(descriptor, MEDIA_DIGEST_CHUNK_BYTES):
-        read += len(chunk)
-        if read > size:
-            refuse("media_generation_changed")
-        digest.update(chunk)
-    if read != size:
-        refuse("media_generation_changed")
-    return digest.hexdigest()
-
-
 def check_media_generation(
     path: Any, probe: MediaArtifactProbe, *, trusted_root: Any = None
 ) -> MediaArtifactProbe:

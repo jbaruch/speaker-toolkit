@@ -570,11 +570,12 @@ def _require_expected_generation(
     # churn, not another writer (#487); the byte comparison keeps it exact. The
     # mode is compared too: a chmod also moves only the change time, and the
     # staged candidate would otherwise replace the tightened permissions.
-    if current.raw != expected.raw or (
-        current.generation != expected.generation
-        and (
-            current.mode != expected.mode
-            or not current.generation.differs_only_in_change_time(expected.generation)
+    if (
+        current.raw != expected.raw
+        or current.mode != expected.mode
+        or (
+            current.generation != expected.generation
+            and not current.generation.differs_only_in_change_time(expected.generation)
         )
     ):
         raise TrackingDatabaseConflictError(

@@ -111,10 +111,6 @@ def test_real_protocol_keeps_provider_stdout_out_of_result(
             "import sys\nsys.stderr.write('x' * 65537)\nreturn {'text': 'speech'}",
             "whisper_worker_resource_limit",
         ),
-        (
-            "from pathlib import Path\nPath(path).write_bytes(b'changed')\nreturn {'text': 'speech'}",
-            "media_generation_changed",
-        ),
     ],
 )
 def test_real_worker_failure_is_closed_and_does_not_write_bundle(
@@ -337,65 +333,96 @@ def test_native_full_transcription_uses_greedy_independent_windows(
     }
 
 
-# ── #487: completed work survives sync-provider metadata churn ──────────
+# ── #487: decode a verified snapshot, never the pathname ───────────────
 
 
-@pytest.fixture
-def evidence():
-    return _import_script(
-        Path(SCRIPTS_VI) / "local_media_evidence.py", "local_media_evidence"
+def test_a_source_swapped_and_restored_mid_decode_never_reaches_the_speech(
+    whisper, speech_file, tmp_path, monkeypatch
+):
+    """Copilot on #496: rename the original aside, substitute another recording
+    during the decode, restore it. Only the original's change time moves, so the
+    decode must have read a snapshot of the established bytes."""
+    import hashlib
+    import json
+
+    original = hashlib.sha256(speech_file.read_bytes()).hexdigest()
+    record = tmp_path / "decoded.json"
+    _fake_provider_worker(
+        whisper,
+        tmp_path,
+        monkeypatch,
+        "import hashlib, json, os\n"
+        f"source = {str(speech_file)!r}\n"
+        "os.rename(source, source + '.aside')\n"
+        "with open(source, 'wb') as other:\n"
+        "    other.write(b'a different recording')\n"
+        "decoded = hashlib.sha256(open(path, 'rb').read()).hexdigest()\n"
+        "os.replace(source + '.aside', source)\n"
+        f"open({str(record)!r}, 'w').write(json.dumps({{'path': path, 'sha': decoded}}))\n"
+        "return {'text': 'Synthetic speech', 'language': 'en', 'segments': []}",
     )
 
+    _probe, result = whisper.transcribe_local_media(
+        speech_file, "synthetic-model", trusted_root=tmp_path
+    )
 
-def _bound_receipt(evidence, path, **changes):
-    receipt = evidence._inspect(path, path.parent)
-    return replace(receipt, generation=replace(receipt.generation, **changes))
+    decoded = json.loads(record.read_text(encoding="utf-8"))
+    assert decoded["sha"] == original
+    assert decoded["path"] != str(speech_file)
+    assert result["text"] == "Synthetic speech"
 
 
-def _after_work(whisper, evidence, path, before, digest):
-    import os
-
-    descriptor = os.open(path, os.O_RDONLY)
-    try:
-        whisper._require_unchanged_after_work(
-            descriptor, evidence._inspect(path, path.parent), before, digest
+def test_a_source_changed_mid_decode_is_refused_before_commit(
+    whisper, speech_file, tmp_path, monkeypatch
+):
+    """The decode read the snapshot; the owner's precommit check still refuses
+    a source whose bytes changed underneath it."""
+    _fake_provider_worker(
+        whisper,
+        tmp_path,
+        monkeypatch,
+        f"open({str(speech_file)!r}, 'r+b').write(b'X')\n"
+        "return {'text': 'speech', 'language': 'en', 'segments': []}",
+    )
+    with pytest.raises(whisper.LocalMediaError, match="media_generation_changed"):
+        whisper.transcribe_local_media(
+            speech_file, "synthetic-model", trusted_root=tmp_path
         )
-    finally:
-        os.close(descriptor)
 
 
-def test_work_is_kept_when_only_the_change_time_moved(whisper, evidence, speech_file):
-    import hashlib
-
-    live = evidence._inspect(speech_file, speech_file.parent)
-    before = _bound_receipt(
-        evidence, speech_file, ctime_ns=live.generation.ctime_ns - 1
-    )
-    digest = hashlib.sha256(speech_file.read_bytes()).hexdigest()
-    _after_work(whisper, evidence, speech_file, before, digest)
-
-
-def test_work_is_refused_when_the_bytes_no_longer_match_the_bound_digest(
-    whisper, evidence, speech_file
+def test_word_samples_are_extracted_from_the_snapshot(
+    whisper, speech_file, tmp_path, monkeypatch
 ):
-    live = evidence._inspect(speech_file, speech_file.parent)
-    before = _bound_receipt(
-        evidence, speech_file, ctime_ns=live.generation.ctime_ns - 1
+    import json
+
+    record = tmp_path / "extracted.json"
+    script = tmp_path / "synthetic_words_worker.py"
+    script.write_text(
+        "import json, sys\n"
+        f"sys.path.insert(0, {str(Path(SCRIPTS_VI).resolve())!r})\n"
+        "import local_media_transcription as owner\n"
+        "def extract(path, workspace, **kwargs):\n"
+        f"    open({str(record)!r}, 'w').write(json.dumps(str(path)))\n"
+        "    raise owner.LocalMediaError('whisper_sample_decode_failed')\n"
+        "owner.extract_speech_clip = extract\n"
+        "raise SystemExit(owner._main())\n",
+        encoding="utf-8",
     )
-    with pytest.raises(whisper.LocalMediaError, match="media_generation_changed"):
-        _after_work(whisper, evidence, speech_file, before, "0" * 64)
+    real = whisper.run_authenticated_worker
 
+    def invoke(command, operation, expected, payload, limits, **kwargs):
+        command = [sys.executable, str(script), whisper.WORKER_FLAG]
+        kwargs["immutable_process_identity"] = command[:2]
+        return real(command, operation, expected, payload, limits, **kwargs)
 
-@pytest.mark.parametrize("field", ["mtime_ns", "size"])
-def test_work_is_refused_for_any_drift_beyond_the_change_time(
-    whisper, evidence, speech_file, field
-):
-    import hashlib
-
-    live = evidence._inspect(speech_file, speech_file.parent)
-    before = _bound_receipt(
-        evidence, speech_file, **{field: getattr(live.generation, field) + 1}
-    )
-    digest = hashlib.sha256(speech_file.read_bytes()).hexdigest()
-    with pytest.raises(whisper.LocalMediaError, match="media_generation_changed"):
-        _after_work(whisper, evidence, speech_file, before, digest)
+    monkeypatch.setattr(whisper, "run_authenticated_worker", invoke)
+    with pytest.raises(whisper.LocalMediaError, match="whisper_sample_decode_failed"):
+        whisper.transcribe_local_words(
+            speech_file,
+            sample_start_seconds=0.0,
+            sample_duration_seconds=0.5,
+            trusted_root=tmp_path,
+        )
+    extracted = json.loads(record.read_text(encoding="utf-8"))
+    assert extracted != str(speech_file)
+    assert Path(extracted).name.startswith("source")
