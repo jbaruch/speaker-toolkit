@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.180 — 2026-10-19
+
 ### Bump filelock to 4.1.0 in every version authority
 
 Dependabot's #469 moved `pyproject.toml` from 3.32.6 to 4.1.0. The major
