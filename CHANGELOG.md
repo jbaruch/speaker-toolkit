@@ -1,5 +1,32 @@
 # Changelog
 
+### Harden the run-obligations ledger's edges
+
+Defects in the run-obligations ledger's edges, scheduled by the operator as
+#463 after the review of PR #462: speaker text interpolated into a shell
+string, an offer mode a hand-edited ledger could forge, a staging name a
+crashed process could leave blocking every later delivery, a replay that
+answered before its copy's name was durable, and three commands answering
+differently from their siblings:
+
+- `record-disposition --return-condition-from <file>` takes the speaker's
+  return condition from a file, like `--talks-from`, `--topics-from` and
+  `--reason-from`; `clarification-handoff.md` now writes the answer to a file
+  instead of interpolating it into a shell string.
+- Every read recomputes `offer_mode` from the recorded talks and refuses a
+  record whose mode differs, or whose state is `not_applicable` while an
+  analyzed talk is recorded (or the reverse), as `ledger_invalid`. A hand-edited
+  ledger can no longer mark a run resolved without a real offer.
+- The report copy stages under a random name, so a staged file orphaned by a
+  crashed process can never block a later process that reuses its pid.
+- Re-recording identical report bytes fsyncs the reports directory before it
+  answers, mapping a failure to `report_copy_failed`, so the copy's name is as
+  durable on a replay as on the first delivery.
+- `status` on an unadopted vault answers `ledger_not_adopted`, like every other
+  command, instead of `run_not_found`.
+- A replayed `record-downstream`, and a replayed `record-report` of the recorded
+  digest, answer `replayed: true`, as every other recording command already did.
+
 ## 0.20.182 — 2026-10-19
 
 ### Record the end-report copy vault-relative in the obligations ledger

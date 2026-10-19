@@ -120,7 +120,9 @@ before; `resolved_at` is set for `accepted`, `declined`, and `deferred` and
 null otherwise; `return_condition` is a non-blank string for `deferred` and
 null otherwise; `session` is an object only for `accepted`, with
 `completed_at`, `profile_inputs`, and a boolean `profile_refreshed` set once
-`completed` and null while `pending`.
+`completed` and null while `pending`. `offer_mode` is the one the recorded
+talks give (`run-obligations.py` `offer_mode_for`), and the state is
+`not_applicable` exactly when that mode is `none`.
 
 Transitions: `owed → offered → accepted | declined | deferred`; an accepted
 session goes `pending → completed` through `record-session`; a `deferred`
@@ -178,7 +180,7 @@ is retained: identical bytes always name the same file, so it is shared by
 every delivery of that text and the retry reuses it; removing it could take a
 copy out from under a delivery that did bind it. Re-recording identical bytes
 changes nothing in the ledger but still verifies the copy, recreating one that
-went missing; different bytes add a second copy (the earlier one stays on
+went missing and syncing its directory; different bytes add a second copy (the earlier one stays on
 disk) and re-stamp `delivered_at`. The copy is staged and installed relative
 to a descriptor opened on the real `ingress-reports` directory without
 following links, so a symlink at that path, or anything at the copy path that
@@ -195,19 +197,20 @@ special file is `report_unreadable`.
 | `open --run-id --now (--talk ... \| --talks-from) [--from-run]` | the ledger is adopted; every talk (from `--talk` or one per line in the `--talks-from` file) is a filename in the current tracking database with a closed `return_persisted` claim (under `--from-run` when given); a completed run accepts only an exact replay of its recorded facts; a run whose offer was answered accepts no new fact | creates or extends the run record; recomputes recency and `offer_mode` while unoffered; a new fact joining while the offer stands withdraws the offer; owes the downstream steps when a new fact joins |
 | `record-downstream --run-id --now` | the run exists | downstream `completed`; replay-safe |
 | `record-offer --run-id --now [--topic ...] [--topics-from]` | downstream `completed`; state `owed` | refreshes recency, then `offered` with `topics` and `offered: true`; or, with no analyzed talk left, `not_applicable` and `offered: false` |
-| `record-disposition --run-id --now --disposition ... [--return-condition]` | state `offered` or `deferred`; `deferred` needs `--return-condition` | the disposition; `accepted` opens a pending session |
+| `record-disposition --run-id --now --disposition ... [--return-condition \| --return-condition-from]` | state `offered` or `deferred`; `deferred` needs a non-blank return condition | the disposition; `accepted` opens a pending session |
 | `record-session --run-id --now --profile-inputs changed\|unchanged [--profile-refreshed]` | state `accepted`, session pending; `changed` with `{vault_root}/speaker-profile.json` present needs `--profile-refreshed` (`profile_refresh_required` otherwise) | session `completed` with both flags recorded |
 | `record-report --run-id --now --report-file` | downstream `completed`; clarification resolved; non-empty file | copies the report, binds its digest, sets `completed_at` |
 | `dismiss --run-id --now (--reason \| --reason-from)` | the ledger is adopted; the run has no record and is listed as `unrecorded_run` | records the exact facts listed now as deliberately not opened; a run listed again after an earlier dismissal renews that entry, adding the new facts (`renewed: true`); with nothing new listed, the same reason is a replay and another reason is refused |
 
-Free text — talk filenames, candidate topics, the speaker's reason — reaches
-the script through a file (`--talks-from`, `--topics-from`, `--reason-from`),
+Free text — talk filenames, candidate topics, the speaker's reason or return
+condition — reaches the script through a file (`--talks-from`, `--topics-from`,
+`--reason-from`, `--return-condition-from`),
 one entry per line, never through a shell string. Run ids are chosen by the
 skill at Step 2 from letters, digits, `.`, `_`, and `-`, so the `{run_id}` and
 `{iso_timestamp}` placeholders in the references need no quoting beyond the
 double quotes shown.
 | `pending` | — | runs owing a step, deferred offers, and uncovered persisted facts |
-| `status --run-id` | the run exists | the record and its summary |
+| `status --run-id` | the ledger is adopted; the run exists | the record and its summary |
 | `session-agenda [--run-id]` | with `--run-id`: the ledger is adopted, the run exists, and its session is pending | the accepted session to run with its seed agenda, or null; read-only |
 
 Every command reads the tracking database through the owner's strict reader

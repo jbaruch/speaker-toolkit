@@ -430,6 +430,17 @@ def test_open_refuses_a_talk_no_closed_claim_persisted(fresh_db):
 # ── downstream steps ──────────────────────────────────────────────────
 
 
+def test_a_replayed_downstream_record_is_marked_replayed(fresh_db):
+    _open(fresh_db, "run-x", "fresh.md")
+    first = _downstream(fresh_db, "run-x")
+    assert first["written"] is True
+    assert "replayed" not in first
+    replay = _downstream(fresh_db, "run-x", now=LATER)
+    assert replay["replayed"] is True
+    assert replay["written"] is False
+    assert replay["run"]["downstream"] == {"state": "completed", "completed_at": NOW}
+
+
 def test_the_offer_waits_for_the_downstream_steps(fresh_db):
     _open(fresh_db, "run-j", "fresh.md")
     refused = _refused(fresh_db, "record-offer", "--run-id", "run-j", "--now", NOW)
@@ -646,6 +657,43 @@ def test_a_deferral_names_when_it_returns(fresh_db, extra):
     assert state == "offered"
 
 
+def test_a_deferral_takes_the_speakers_words_from_a_file(tmp_path, fresh_db):
+    run_id = _opened(fresh_db)
+    _ok(fresh_db, "record-offer", "--run-id", run_id, "--now", NOW)
+    words = tmp_path / "return-condition.txt"
+
+    def defer(now):
+        return _run(
+            fresh_db,
+            "record-disposition",
+            "--run-id",
+            run_id,
+            "--now",
+            now,
+            "--disposition",
+            "deferred",
+            "--return-condition-from",
+            str(words),
+        )
+
+    words.write_text("  \n\n", encoding="utf-8")
+    code, blank, _stderr = defer(LATER)
+    assert code == 2
+    assert blank is not None and blank["reason_code"] == "invalid_arguments"
+    spoken = 'after "JavaZone" — $(ask me) then'
+    words.write_text(spoken + "\n", encoding="utf-8")
+    code, deferred, stderr = defer(LATER)
+    assert code == 0, stderr
+    assert deferred is not None
+    assert deferred["run"]["clarification"]["return_condition"] == spoken
+    code, replay, stderr = defer(MUCH_LATER)
+    assert code == 0, stderr
+    assert replay is not None
+    assert replay["replayed"] is True
+    assert replay["written"] is False
+    assert replay["run"]["clarification"]["resolved_at"] == LATER
+
+
 # ── session ───────────────────────────────────────────────────────────
 
 
@@ -803,6 +851,7 @@ def test_a_delivered_report_is_copied_bound_and_completes_the_run(tmp_path, fres
     run_id = _declined(fresh_db)
     report = _report(tmp_path)
     payload = _record_report(fresh_db, run_id, report)
+    assert "replayed" not in payload
     run = payload["run"]
     copied = _copy_path(tmp_path, run_id, report.read_bytes())
     assert copied.read_bytes() == report.read_bytes()
@@ -829,6 +878,7 @@ def test_a_delivered_report_is_copied_bound_and_completes_the_run(tmp_path, fres
     assert status["summary"]["next_action"] == "none"
     replay = _record_report(fresh_db, run_id, report, now=MUCH_LATER)
     assert replay["written"] is False
+    assert replay["replayed"] is True
     assert replay["run"]["completed_at"] == LATER
     reopened = _refused(
         fresh_db, "open", "--run-id", run_id, "--now", MUCH_LATER, "--talk", "older.md"
@@ -844,6 +894,7 @@ def test_a_replay_recreates_a_copy_that_went_missing(tmp_path, fresh_db):
     copied.unlink()
     replay = _record_report(fresh_db, run_id, report, now=MUCH_LATER)
     assert replay["written"] is False
+    assert replay["replayed"] is True
     assert copied.read_bytes() == report.read_bytes()
     assert replay["run"]["end_report"]["delivered_at"] == LATER
 
@@ -1730,6 +1781,12 @@ def test_session_agenda_before_adoption(unadopted_db):
     assert refused["reason_code"] == "ledger_not_adopted"
 
 
+def test_status_before_adoption_names_the_missing_ledger(unadopted_db):
+    refused = _refused(unadopted_db, "status", "--run-id", "run-x")
+    assert refused["reason_code"] == "ledger_not_adopted"
+    assert "adopt --now" in refused["error"]
+
+
 def test_status_names_an_unknown_run(fresh_db):
     payload = _refused(fresh_db, "status", "--run-id", "never-opened")
     assert payload["reason_code"] == "run_not_found"
@@ -2054,6 +2111,22 @@ _ACCEPTED = {
             "opened_at '2026-09-14T13:00:00+01:00' must be the canonical UTC form",
         ),
         ({"end_report.reopened_at": "later"}, "reopened_at 'later' is malformed"),
+        (
+            {"clarification.offer_mode": "recommend_compressed"},
+            "offer_mode 'recommend_compressed' is not the 'inline' its recorded "
+            "talks give",
+        ),
+        (
+            {"clarification.state": "not_applicable"},
+            "state 'not_applicable' disagrees with offer_mode 'inline'",
+        ),
+        (
+            {
+                "talks.0.status": "skipped_no_sources",
+                "clarification.offer_mode": "none",
+            },
+            "state 'owed' disagrees with offer_mode 'none'",
+        ),
     ],
     ids=[
         "clarification-null",
@@ -2112,6 +2185,9 @@ _ACCEPTED = {
         "talk-claim-released-noncanonical",
         "opened-noncanonical",
         "reopened-malformed",
+        "offer-mode-not-derived",
+        "not-applicable-with-analyzed-talk",
+        "owed-without-analyzed-talk",
     ],
 )
 def test_every_malformed_ledger_field_fails_structured(
@@ -2649,6 +2725,67 @@ def test_a_read_failure_on_an_existing_copy_is_the_structured_failure(
     assert "could not be read" in str(caught.value)
     assert (directory / f"run-x.{digest}.md").read_bytes() == content
     assert sorted(path.name for path in directory.iterdir()) == [f"run-x.{digest}.md"]
+
+
+class _Crash(BaseException):
+    """A process dying mid-delivery: nothing in the script handles it."""
+
+
+def test_a_copy_staged_by_a_crashed_delivery_never_blocks_the_next(
+    tmp_path, run_obligations, monkeypatch
+):
+    """The next delivery runs under the crashed process's reused pid."""
+    directory = tmp_path / "ingress-reports"
+    directory.mkdir()
+    content = b"# report\n"
+    digest = hashlib.sha256(content).hexdigest()
+    monkeypatch.setattr(run_obligations.os, "getpid", lambda: 4242)
+    # A fixed pair of staging names stands in for the random ones.
+    names = iter(["crashed0000000000", "next000000000000"])
+    monkeypatch.setattr(run_obligations.secrets, "token_hex", lambda _n: next(names))
+    real_replace = os.replace
+
+    def crash(*_args, **_kwargs):
+        raise _Crash
+
+    monkeypatch.setattr(run_obligations.os, "replace", crash)
+    with pytest.raises(_Crash):
+        run_obligations.write_report_copy(directory, "run-x", digest, content)
+    monkeypatch.setattr(run_obligations.os, "replace", real_replace)
+    orphan = f".run-x.{digest}.md.crashed0000000000.tmp"
+    assert [path.name for path in directory.iterdir()] == [orphan]
+
+    target, created = run_obligations.write_report_copy(
+        directory, "run-x", digest, content
+    )
+
+    assert created is True
+    assert target.read_bytes() == content
+    # The next delivery staged under its own name and left the orphan alone.
+    assert sorted(path.name for path in directory.iterdir()) == sorted(
+        [orphan, target.name]
+    )
+
+
+def test_an_existing_copy_whose_directory_cannot_sync_is_the_structured_failure(
+    tmp_path, run_obligations, monkeypatch
+):
+    directory = tmp_path / "ingress-reports"
+    directory.mkdir()
+    content = b"# report\n"
+    digest = hashlib.sha256(content).hexdigest()
+    (directory / f"run-x.{digest}.md").write_bytes(content)
+    real_fsync = os.fsync
+
+    def failing_fsync(_descriptor):
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(run_obligations.os, "fsync", failing_fsync)
+    with pytest.raises(run_obligations.RunObligationsError) as caught:
+        run_obligations.write_report_copy(directory, "run-x", digest, content)
+    monkeypatch.setattr(run_obligations.os, "fsync", real_fsync)
+    assert caught.value.reason_code == "report_copy_failed"
+    assert (directory / f"run-x.{digest}.md").read_bytes() == content
 
 
 def test_two_batches_released_in_the_same_second_are_distinct_facts(tmp_path):
