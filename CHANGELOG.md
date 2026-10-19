@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.168 — 2026-10-19
+
 ### Renew the libreoffice-impress CI pin
 
 Ubuntu superseded `libreoffice-impress` `4:24.2.7-0ubuntu0.24.04.6` with
