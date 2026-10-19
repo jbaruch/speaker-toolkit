@@ -1,0 +1,263 @@
+#!/usr/bin/env python3
+"""Find the rhetoric analysis that belongs to one exact delivery (#460).
+
+The shownotes brief synthesizes from the analysis of the delivery it describes,
+so a similar title is never enough. This script binds the analysis through the
+tracking database owner, not through whatever the rendered file's header says:
+
+1. Read ``tracking-database.json`` through the owner snapshot and require the
+   current generation (``tracking_database.assess_tracking_database``); an older
+   one is the owner's to migrate.
+2. Select the talk record by ``--filename``, or by ``--title``, ``--event`` and
+   ``--date`` together. Title and event match after whitespace collapsing and
+   case folding (``_identity_text``); the date matches the record's ``date``
+   exactly. Event is the record's ``conference``.
+3. The record must be processed (``ANALYZED_STATUSES``), and
+   ``{vault_root}/analyses/{filename}.md`` must be a regular file whose header,
+   as ``write-analysis.py`` renders it, names the record's title, filename and
+   ``processed_date``. The vault root is the database locator's directory.
+
+Stdout: one JSON object, exit 0 for every answered lookup. ``binding`` is
+``bound`` with ``talk``, ``analysis_path`` and ``analysis_sha256``; or one of
+``not_found``, ``ambiguous``, ``not_processed``, ``analysis_missing``,
+``analysis_stale``, each with ``talk`` (null unless one record matched),
+``candidates`` (the records that share the event and date, or the title, for a
+miss; every match for ``ambiguous``) and ``handoff``: the vault-ingress context
+for this one delivery (``scope: one_talk`` plus the exact filename when a record
+matched, else the requested title, event and date). Exit 2 writes ``{"ok":
+false, "reason_code", "error"}`` and the message to stderr when the database
+cannot be read (``database_unreadable``), is an older generation
+(``database_not_current``) or one this toolkit does not read
+(``database_unsupported``), or the arguments name no delivery
+(``invalid_arguments``).
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import re
+import sys
+from typing import Any
+
+TOOLKIT_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(TOOLKIT_ROOT / "skills/vault-ingress/scripts"))
+# E402: these resolve only after the insert above puts the co-shipped
+# vault-ingress scripts directory on sys.path.
+from tracking_database import (  # noqa: E402
+    TrackingDatabaseError,
+    assess_tracking_database,
+)
+from tracking_database_io import (  # noqa: E402
+    TrackingDatabaseIOError,
+    decode_json_object,
+    snapshot_tracking_database,
+)
+
+DEFAULT_DATABASE = "~/.claude/rhetoric-knowledge-vault/tracking-database.json"
+ANALYSES_DIRECTORY = "analyses"
+ANALYZED_STATUSES = frozenset({"processed", "processed_partial"})
+# How many header lines write-analysis.py's provenance block can occupy.
+HEADER_LINES = 12
+IDENTITY_FIELDS = (
+    "filename",
+    "title",
+    "conference",
+    "date",
+    "status",
+    "processed_date",
+)
+_WHITESPACE = re.compile(r"\s+")
+_PLAIN_MARKDOWN_NAME = re.compile(r"[^./\\][^/\\]*\.md")
+
+
+class AnalysisLookupError(RuntimeError):
+    """A refusal with a stable reason code and an actionable message."""
+
+    def __init__(self, reason_code: str, message: str) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+
+
+def _identity_text(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    return _WHITESPACE.sub(" ", value).strip().casefold()
+
+
+def _identity(talk: dict[str, Any]) -> dict[str, Any]:
+    return {field: talk.get(field) for field in IDENTITY_FIELDS}
+
+
+def read_current_database(path: Path) -> tuple[dict[str, Any], Path]:
+    """The owner-current database and the vault root its locator names."""
+    try:
+        snapshot = snapshot_tracking_database(path)
+        database = decode_json_object(snapshot)
+    except TrackingDatabaseIOError as exc:
+        raise AnalysisLookupError(
+            "database_unreadable",
+            f"the tracking database at {path} could not be read "
+            f"({exc.reason_code}); repair it through vault-ingress Step 1",
+        ) from exc
+    try:
+        assessment = assess_tracking_database(database)
+    except TrackingDatabaseError as exc:
+        raise AnalysisLookupError(
+            "database_unsupported",
+            f"the tracking database at {path} is not a generation this "
+            "speaker-toolkit reads; update speaker-toolkit, or repair the "
+            "database through vault-ingress Step 1",
+        ) from exc
+    if not assessment.usable or not isinstance(database, dict):
+        raise AnalysisLookupError(
+            "database_unsupported",
+            f"the tracking database at {path} is not a generation this "
+            "speaker-toolkit reads; update speaker-toolkit, or repair the "
+            "database through vault-ingress Step 1",
+        )
+    if assessment.state != "current":
+        raise AnalysisLookupError(
+            "database_not_current",
+            f"the tracking database at {path} is an older owner generation; run "
+            "the owner migration through vault-ingress Step 1",
+        )
+    return database, path.parent
+
+
+def select_talks(
+    talks: list[Any],
+    *,
+    filename: str | None,
+    title: str | None,
+    event: str | None,
+    date: str | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Exact matches, and near records to name when nothing matched."""
+    records = [talk for talk in talks if isinstance(talk, dict)]
+    if filename is not None:
+        return [talk for talk in records if talk.get("filename") == filename], []
+    wanted = (_identity_text(title), _identity_text(event), date)
+    matches = [
+        talk
+        for talk in records
+        if (
+            _identity_text(talk.get("title")),
+            _identity_text(talk.get("conference")),
+            talk.get("date"),
+        )
+        == wanted
+    ]
+    near = [
+        talk
+        for talk in records
+        if talk not in matches
+        and (
+            (_identity_text(talk.get("conference")), talk.get("date")) == wanted[1:]
+            or _identity_text(talk.get("title")) == wanted[0]
+        )
+    ]
+    return matches, near
+
+
+def _header_binds(text: str, talk: dict[str, Any]) -> bool:
+    head = text.splitlines()[:HEADER_LINES]
+    expected = {
+        f"# Rhetoric Analysis: {talk.get('title')}",
+        f"**Filename:** {talk.get('filename')}",
+        f"**Processed:** {talk.get('processed_date')}",
+    }
+    return expected.issubset(head)
+
+
+def bind_analysis(talk: dict[str, Any], vault_root: Path) -> dict[str, Any]:
+    filename = talk.get("filename")
+    # A plain markdown name only: the analysis path is built from it.
+    if not isinstance(filename, str) or not _PLAIN_MARKDOWN_NAME.fullmatch(filename):
+        return {"binding": "analysis_missing", "analysis_path": None}
+    if talk.get("status") not in ANALYZED_STATUSES:
+        return {"binding": "not_processed", "analysis_path": None}
+    path = vault_root / ANALYSES_DIRECTORY / filename
+    if path.is_symlink() or not path.is_file():
+        return {"binding": "analysis_missing", "analysis_path": str(path)}
+    raw = path.read_bytes()
+    if not _header_binds(raw.decode("utf-8", errors="replace"), talk):
+        return {"binding": "analysis_stale", "analysis_path": str(path)}
+    return {
+        "binding": "bound",
+        "analysis_path": str(path),
+        "analysis_sha256": hashlib.sha256(raw).hexdigest(),
+    }
+
+
+def lookup(args: argparse.Namespace) -> dict[str, Any]:
+    by_filename = args.filename is not None
+    by_identity = None not in (args.title, args.event, args.date)
+    if by_filename == by_identity or (
+        by_filename and any(v is not None for v in (args.title, args.event, args.date))
+    ):
+        raise AnalysisLookupError(
+            "invalid_arguments",
+            "name the delivery by --filename, or by --title, --event and --date "
+            "together",
+        )
+    database, vault_root = read_current_database(Path(args.database).expanduser())
+    matches, near = select_talks(
+        database.get("talks", []),
+        filename=args.filename,
+        title=args.title,
+        event=args.event,
+        date=args.date,
+    )
+    requested = (
+        {"filename": args.filename}
+        if by_filename
+        else {"title": args.title, "event": args.event, "date": args.date}
+    )
+    if len(matches) != 1:
+        return {
+            "ok": True,
+            "binding": "ambiguous" if matches else "not_found",
+            "talk": None,
+            "candidates": [_identity(talk) for talk in (matches or near)],
+            "handoff": {"skill": "vault-ingress", "scope": "one_talk", **requested},
+        }
+    talk = matches[0]
+    bound = bind_analysis(talk, vault_root)
+    result: dict[str, Any] = {"ok": True, "talk": _identity(talk), **bound}
+    if bound["binding"] != "bound":
+        result["candidates"] = []
+        result["handoff"] = {
+            "skill": "vault-ingress",
+            "scope": "one_talk",
+            "filename": talk.get("filename"),
+            "title": talk.get("title"),
+            "event": talk.get("conference"),
+            "date": talk.get("date"),
+        }
+    return result
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
+    parser.add_argument("--database", default=DEFAULT_DATABASE)
+    parser.add_argument("--filename", help="the talk record's exact filename")
+    parser.add_argument("--title")
+    parser.add_argument("--event", help="the record's conference")
+    parser.add_argument("--date", help="YYYY-MM-DD delivery date")
+    args = parser.parse_args(argv)
+    try:
+        print(json.dumps(lookup(args)))
+        return 0
+    except AnalysisLookupError as exc:
+        print(
+            json.dumps({"ok": False, "reason_code": exc.reason_code, "error": str(exc)})
+        )
+        print(f"FAIL: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

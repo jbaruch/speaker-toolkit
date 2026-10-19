@@ -1,5 +1,33 @@
 # Changelog
 
+### Bind the shownotes analysis to its exact delivery
+
+Copilot's advisories on #459 (#460) asked the standalone publisher to make its
+rhetoric-analysis input explicit. The runtime and vault-root bootstrap is
+`resolve-runtime.py` from #458; the rest lands here.
+
+- New `skills/shownotes-publisher/scripts/find-talk-analysis.py` binds the
+  analysis through the tracking database owner, not the rendered file's header
+  alone. It selects the talk record by exact filename, or by title, event and
+  date together (title and event match after whitespace collapsing and case
+  folding), requires a processed record, and accepts
+  `analyses/{filename}.md` only when its header names that record's title,
+  filename and `processed_date`. A similar title at another event is a miss
+  that names the near record, two records for one delivery are `ambiguous`,
+  and a stale render is `analysis_stale`. It is a current reader, listed as
+  such in the owner's reader contract in `schemas-db.md`: an older database
+  refuses as `database_not_current` for the owner migration, and a future one
+  as `database_unsupported`.
+- Every unbound answer carries a `handoff` for vault-ingress naming this one
+  delivery and `scope: one_talk`, so the missing-analysis handoff can no longer
+  turn into batch work.
+- `talk-skill.md` runs the lookup, describes an example by what it establishes
+  and its role in the argument instead of "why these examples were chosen",
+  which would infer private intent, and says what to do when plan, transcript,
+  demo evidence and analysis still disagree: publish the point as unresolved
+  with what each source shows, or ask the speaker one question, never a
+  qualification written as fact.
+
 ## 0.20.185 — 2026-10-20
 
 ### Harden shownotes verification inputs and runtime selection
