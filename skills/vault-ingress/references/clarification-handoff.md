@@ -107,21 +107,24 @@ The return condition is free text and never goes through a shell string.
 
 - **accepted** — invoke `Skill(skill: "vault-clarification")` immediately,
   carrying `run_id`. The skill resolves the recorded `topics` from the run as
-  its seed agenda (its Step 2), opens the session with them (its Step 3), and
-  returns `profile_inputs` with the covered topics (its Step 9). That typed
-  call is the only way the session runs. A host that cannot make it leaves the
+  its seed agenda and claims the session (its Step 2), opens the session with
+  them (its Step 3), counts it, and returns `claim_token` and
+  `profile_inputs` with the covered topics (its Step 9). That typed call is the
+  only way the session runs. A host that cannot make it leaves the
   session `pending` in the ledger — never skipped, never simulated — and the
   next run on a capable host resumes it through
   `complete_clarification_session`, or a standalone vault-clarification
-  session picks it up through `session-agenda` and records it itself. When the session
-  returns, record it with the `profile_inputs` it reported (`changed` for new
-  confirmed intents, config fields, improvement goals, or rhetoric-summary
-  changes):
+  session picks it up through `session-agenda` and records it itself. A
+  session another host already claimed is that host's to finish; the skill
+  stops with `session_claimed`. When the session returns, record it under the
+  `claim_token` it returned, with the `profile_inputs` it reported (`changed`
+  for new confirmed intents, config fields, improvement goals, or
+  rhetoric-summary changes):
 
   ```bash
   "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
     "{vault_root}/tracking-database.json" record-session \
-    --run-id "{run_id}" --now "{iso_timestamp}" \
+    --run-id "{run_id}" --now "{iso_timestamp}" --claim-token "{claim_token}" \
     --profile-inputs changed|unchanged [--profile-refreshed]
   ```
 

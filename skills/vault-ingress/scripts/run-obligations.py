@@ -25,9 +25,15 @@ Usage:
         --run-id <id> --now <ISO-8601> \
         --disposition accepted|declined|deferred \
         [--return-condition <text> | --return-condition-from <file>]
+    run-obligations.py <tracking-database.json> claim-session \
+        --run-id <id> --now <ISO-8601> [--claim-token <token>]
+    run-obligations.py <tracking-database.json> count-session \
+        --run-id <id> --now <ISO-8601> --claim-token <token>
+    run-obligations.py <tracking-database.json> release-session \
+        --run-id <id> --now <ISO-8601> (--reason <text> | --reason-from <file>)
     run-obligations.py <tracking-database.json> record-session \
-        --run-id <id> --now <ISO-8601> --profile-inputs changed|unchanged \
-        [--profile-refreshed]
+        --run-id <id> --now <ISO-8601> --claim-token <token> \
+        --profile-inputs changed|unchanged [--profile-refreshed]
     run-obligations.py <tracking-database.json> record-report \
         --run-id <id> --now <ISO-8601> --report-file <delivered-report.md>
     run-obligations.py <tracking-database.json> dismiss \
@@ -45,7 +51,7 @@ recorded is an unchanged success, so a caller that lost the first response can
 retry; only a conflicting answer is refused.
 
 Ledger: ``{vault_root}/ingress-obligations.json`` (schema 1, run records
-schema 2), owned by vault-ingress and created by ``adopt``, which records
+schema 3), owned by vault-ingress and created by ``adopt``, which records
 every claim already closed at adoption as history by its exact identity —
 never by time, which ``persist-results.py --run-date`` can stamp at midnight —
 so everything closed afterwards is reconciled. Delivered reports are copied to
@@ -63,7 +69,11 @@ offer with the speaker's return condition, so it can be raised again.
 ``session-agenda`` is vault-clarification's read: the accepted session that
 has not completed, with the topics recorded at the offer as its seed agenda,
 selected here (see ``pending_sessions``) so the session never picks one by
-hand. Field
+hand. ``claim-session`` reserves that session for one host and returns the
+claim token every later session command carries; ``count-session`` pins the
+``config.clarification_sessions_completed`` value the session counts to, so a
+session re-entered after a crash never counts twice; ``release-session`` is the
+operator's explicit decision to free a claim whose host died. Field
 meanings, transitions, and the reader/writer contract live in
 ``skills/vault-ingress/references/schemas-obligations.md``.
 
@@ -121,10 +131,19 @@ PROFILE_FILENAME = "speaker-profile.json"
 LEDGER_SCHEMA_VERSION = 1
 # v2 records ``end_report.report_path`` vault-relative. v1 recorded it absolute
 # under whatever spelling of the vault root the delivering command was given, so
-# a vault reached through a symlink refused its own copies (#486). v1 is read
-# and upgraded in memory; the next owner write persists the upgrade.
-RUN_RECORD_SCHEMA_VERSION = 2
+# a vault reached through a symlink refused its own copies (#486). v3 adds the
+# session claim and counter target (#466). Older records are upgraded on read
+# and the read that upgrades them rewrites the ledger.
+RUN_RECORD_SCHEMA_VERSION = 3
+PRE_SESSION_CLAIM_RUN_RECORD_SCHEMA_VERSION = 2
 LEGACY_RUN_RECORD_SCHEMA_VERSION = 1
+READABLE_RUN_RECORD_SCHEMA_VERSIONS = frozenset(
+    {
+        LEGACY_RUN_RECORD_SCHEMA_VERSION,
+        PRE_SESSION_CLAIM_RUN_RECORD_SCHEMA_VERSION,
+        RUN_RECORD_SCHEMA_VERSION,
+    }
+)
 # The report copy is content-addressed: ``{stem}.{sha256}.md`` with the run id
 # reduced to a safe filename stem, so two deliveries never overwrite each
 # other and a ledger-edited run id can never name a path outside the directory.
@@ -188,7 +207,16 @@ CLARIFICATION_STATES = frozenset(
 )
 DISPOSITIONS = (STATE_ACCEPTED, STATE_DECLINED, STATE_DEFERRED)
 SESSION_PENDING = "pending"
+SESSION_RUNNING = "running"
 SESSION_COMPLETED = "completed"
+SESSION_STATES = frozenset({SESSION_PENDING, SESSION_RUNNING, SESSION_COMPLETED})
+# A claim token is this many random bytes, hex-encoded; it names one claim.
+CLAIM_TOKEN_BYTES = 16
+_CLAIM_TOKEN = re.compile(rf"[0-9a-f]{{{CLAIM_TOKEN_BYTES * 2}}}")
+# The tracking-database config counter a completed session advances; absent
+# means no session has completed. The owner mutation's missing marker.
+SESSION_COUNTER_FIELD = "clarification_sessions_completed"
+MISSING_MARKER = {"$missing": True}
 DOWNSTREAM_OWED = "owed"
 DOWNSTREAM_COMPLETED = "completed"
 REPORT_OWED = "owed"
@@ -529,6 +557,32 @@ def _validate_talk(entry: Any, label: str) -> None:
     _require_timestamp(talk["claim_released_at"], f"{label}.claim_released_at")
 
 
+def _validate_session_claim(session: dict[str, Any], state: str, label: str) -> None:
+    """A running session holds a claim; a pending one holds none.
+
+    A completed session keeps the claim it completed under, or none when it
+    completed before claims existed. ``counted_sessions`` survives a release, so
+    a re-entered session finds the count it already made.
+    """
+    token = session["claim_token"]
+    claimed = state == SESSION_RUNNING or (
+        state == SESSION_COMPLETED and token is not None
+    )
+    if claimed:
+        if not isinstance(token, str) or not _CLAIM_TOKEN.fullmatch(token):
+            raise _invalid(
+                label,
+                f"claim_token must be {CLAIM_TOKEN_BYTES * 2} lowercase hex digits",
+            )
+        _require_timestamp(session["claimed_at"], f"{label}.claimed_at")
+    else:
+        _require_null(token, f"{label}.claim_token")
+        _require_null(session["claimed_at"], f"{label}.claimed_at")
+    counted = session["counted_sessions"]
+    if counted is not None and (type(counted) is not int or counted < 1):
+        raise _invalid(label, "counted_sessions must be a positive integer or null")
+
+
 def _validate_clarification(record: Any, label: str) -> None:
     clarification = _require_keys(
         record,
@@ -576,12 +630,21 @@ def _validate_clarification(record: Any, label: str) -> None:
         return
     session = _require_keys(
         session,
-        ("state", "completed_at", "profile_inputs", "profile_refreshed"),
+        (
+            "state",
+            "completed_at",
+            "profile_inputs",
+            "profile_refreshed",
+            "claim_token",
+            "claimed_at",
+            "counted_sessions",
+        ),
         f"{label}.session",
     )
     session_state = _require_choice(
-        session["state"], {SESSION_PENDING, SESSION_COMPLETED}, f"{label}.session.state"
+        session["state"], SESSION_STATES, f"{label}.session.state"
     )
+    _validate_session_claim(session, session_state, f"{label}.session")
     completed = session_state == SESSION_COMPLETED
     _require_timestamp_or_null(
         session["completed_at"], f"{label}.session.completed_at", present=completed
@@ -658,7 +721,7 @@ def _upgrade_legacy_report_path(
     inside the vault reads the same. A path outside the vault stays refused, and
     the bound-copy check that follows refuses any other name.
     """
-    run["schema_version"] = RUN_RECORD_SCHEMA_VERSION
+    run["schema_version"] = PRE_SESSION_CLAIM_RUN_RECORD_SCHEMA_VERSION
     report = run.get("end_report")
     if not isinstance(report, dict) or not isinstance(report.get("report_path"), str):
         return
@@ -729,6 +792,16 @@ def _require_derived_offer_mode(run: dict[str, Any], label: str) -> None:
         )
 
 
+def _upgrade_session_claim(run: dict[str, Any]) -> None:
+    """Read a v2 run record as v3: a session recorded before claims has none."""
+    run["schema_version"] = RUN_RECORD_SCHEMA_VERSION
+    clarification = run.get("clarification")
+    session = clarification.get("session") if isinstance(clarification, dict) else None
+    if isinstance(session, dict):
+        for key in ("claim_token", "claimed_at", "counted_sessions"):
+            session.setdefault(key, None)
+
+
 def _validate_run(run: dict[str, Any], label: str, vault_root: Path) -> None:
     """Refuse a run record whose shape a command would otherwise trip over."""
     _require_keys(
@@ -746,10 +819,7 @@ def _validate_run(run: dict[str, Any], label: str, vault_root: Path) -> None:
         label,
     )
     version = run["schema_version"]
-    if type(version) is not int or version not in {
-        LEGACY_RUN_RECORD_SCHEMA_VERSION,
-        RUN_RECORD_SCHEMA_VERSION,
-    }:
+    if type(version) is not int or version not in READABLE_RUN_RECORD_SCHEMA_VERSIONS:
         newer = type(version) is int and version > RUN_RECORD_SCHEMA_VERSION
         recovery = (
             "A newer speaker-toolkit wrote it: update speaker-toolkit and re-run"
@@ -760,11 +830,13 @@ def _validate_run(run: dict[str, Any], label: str, vault_root: Path) -> None:
         raise _invalid(
             label,
             f"has run-record schema_version {version!r}; this script reads "
-            f"{LEGACY_RUN_RECORD_SCHEMA_VERSION} and {RUN_RECORD_SCHEMA_VERSION} "
+            f"{', '.join(map(str, sorted(READABLE_RUN_RECORD_SCHEMA_VERSIONS)))} "
             f"only. {recovery}; the ledger is left as it is",
         )
     if version == LEGACY_RUN_RECORD_SCHEMA_VERSION:
         _upgrade_legacy_report_path(run, label, vault_root)
+    if run["schema_version"] == PRE_SESSION_CLAIM_RUN_RECORD_SCHEMA_VERSION:
+        _upgrade_session_claim(run)
     for key in ("opened_at", "updated_at"):
         _require_timestamp(run[key], f"{label} {key}")
     if not isinstance(run["talks"], list):
@@ -892,15 +964,14 @@ def load_ledger(
         raise _io_failure(exc, f"obligations ledger {path}", code) from exc
     runs = payload.get("runs") if isinstance(payload, dict) else None
     legacy = isinstance(runs, list) and any(
-        isinstance(run, dict)
-        and run.get("schema_version") == LEGACY_RUN_RECORD_SCHEMA_VERSION
+        isinstance(run, dict) and run.get("schema_version") != RUN_RECORD_SCHEMA_VERSION
         for run in runs
     )
     ledger = validate_ledger(payload, path, vault_root)
     if not legacy:
         return snapshot, ledger
-    # The owner rewrites what it upgrades on the read that upgrades it, so a
-    # schema-1 record never outlives the first command to read it. The caller
+    # The owner rewrites what it upgrades on the read that upgrades it, so an
+    # older record never outlives the first command to read it. The caller
     # gets the rewritten generation, so a transition's later write still binds.
     store_ledger(path, snapshot, ledger)
     return load_ledger(path, vault_root)
@@ -1646,11 +1717,177 @@ def command_record_disposition(
                 "completed_at": None,
                 "profile_inputs": None,
                 "profile_refreshed": None,
+                "claim_token": None,
+                "claimed_at": None,
+                "counted_sessions": None,
             }
             if disposition == STATE_ACCEPTED
             else None
         )
         return {}
+
+    return _transition(context, args, mutate)
+
+
+def _accepted_session(run: dict[str, Any]) -> dict[str, Any]:
+    clarification = run["clarification"]
+    session = clarification["session"]
+    if clarification["state"] != STATE_ACCEPTED or session is None:
+        raise RunObligationsError(
+            f"run {run['run_id']!r} has no accepted clarification session",
+            reason_code="invalid_transition",
+        )
+    return session
+
+
+def _require_claim(run: dict[str, Any], session: dict[str, Any], token: str) -> None:
+    """The session is running under exactly this claim."""
+    if session["state"] != SESSION_RUNNING:
+        raise RunObligationsError(
+            f"run {run['run_id']!r} session is {session['state']!r}; claim it "
+            "with claim-session first",
+            reason_code="invalid_transition",
+        )
+    if token != session["claim_token"]:
+        raise RunObligationsError(
+            f"run {run['run_id']!r} session is running under another claim "
+            f"since {session['claimed_at']}; only that claim's holder records "
+            "it. If that host died, release the claim with release-session "
+            "(an operator decision) and claim it again",
+            reason_code="session_claimed",
+        )
+
+
+def _session_counter(context: Context) -> tuple[int, Any]:
+    """The counter's value and the ``expect`` a write over it carries."""
+    config = context.database["config"]
+    if SESSION_COUNTER_FIELD not in config:
+        return 0, MISSING_MARKER
+    value = config[SESSION_COUNTER_FIELD]
+    if type(value) is not int or value < 0:
+        raise RunObligationsError(
+            f"config.{SESSION_COUNTER_FIELD} in {context.database_path} is not a "
+            "non-negative integer; repair it through vault-ingress Step 1",
+            reason_code="database_unusable",
+        )
+    return value, value
+
+
+def _counter_write(expect: Any, target: int) -> dict[str, Any]:
+    """The owner ``set_config`` mutation that moves the counter to ``target``."""
+    return {
+        "kind": "set_config",
+        "path": [SESSION_COUNTER_FIELD],
+        "expect": expect,
+        "value": target,
+    }
+
+
+def command_claim_session(context: Context, args: argparse.Namespace) -> dict[str, Any]:
+    """Reserve the accepted session for one host; the token names the claim."""
+
+    def mutate(run: dict[str, Any], stamp: str, _now: datetime) -> dict[str, Any]:
+        session = _accepted_session(run)
+        state = session["state"]
+        if state == SESSION_RUNNING:
+            if (
+                args.claim_token is not None
+                and args.claim_token == (session["claim_token"])
+            ):
+                return {"claim_token": session["claim_token"], "replayed": True}
+            raise RunObligationsError(
+                f"run {run['run_id']!r} session is already claimed since "
+                f"{session['claimed_at']}. If its host died, release the claim "
+                "with release-session (an operator decision), then claim again",
+                reason_code="session_claimed",
+            )
+        if state != SESSION_PENDING:
+            raise RunObligationsError(
+                f"run {run['run_id']!r} session is {state!r}; only a pending "
+                "session can be claimed",
+                reason_code="invalid_transition",
+            )
+        session["state"] = SESSION_RUNNING
+        session["claim_token"] = secrets.token_hex(CLAIM_TOKEN_BYTES)
+        session["claimed_at"] = stamp
+        return {"claim_token": session["claim_token"]}
+
+    return _transition(context, args, mutate)
+
+
+def command_count_session(context: Context, args: argparse.Namespace) -> dict[str, Any]:
+    """Pin the counter value this session counts to; say whether to apply it.
+
+    The first call records ``config.clarification_sessions_completed + 1`` as
+    the session's ``counted_sessions``. Every call answers ``mutation``: the
+    owner ``set_config`` write that moves the counter to that target while the
+    database still holds the value before it, or null once it holds the target.
+    A session re-entered after a crash therefore counts once.
+    """
+
+    def mutate(run: dict[str, Any], _stamp: str, _now: datetime) -> dict[str, Any]:
+        session = _accepted_session(run)
+        _require_claim(run, session, args.claim_token)
+        current, expect = _session_counter(context)
+        target = session["counted_sessions"]
+        if target is None:
+            session["counted_sessions"] = current + 1
+            return {
+                "counted_sessions": current + 1,
+                "mutation": _counter_write(expect, current + 1),
+            }
+        if current == target - 1:
+            return {
+                "counted_sessions": target,
+                "mutation": _counter_write(expect, target),
+                "replayed": True,
+            }
+        if current == target:
+            return {"counted_sessions": target, "mutation": None, "replayed": True}
+        raise RunObligationsError(
+            f"run {run['run_id']!r} session counts to {target}, but "
+            f"config.{SESSION_COUNTER_FIELD} is {current}; another writer moved "
+            "the counter, so set it by hand to the number of completed sessions "
+            "and re-run",
+            reason_code="counter_conflict",
+        )
+
+    return _transition(context, args, mutate)
+
+
+def command_release_session(
+    context: Context, args: argparse.Namespace
+) -> dict[str, Any]:
+    """Free a running session's claim: the operator's decision its host died."""
+    reason = " ".join(
+        [(args.reason or "").strip()] + _lines_from(args.reason_from, "--reason-from")
+    ).strip()
+    if not reason:
+        raise RunObligationsError(
+            "release-session needs --reason or a --reason-from file saying why "
+            "the claim's host will not finish the session",
+            reason_code="invalid_arguments",
+        )
+
+    def mutate(run: dict[str, Any], _stamp: str, _now: datetime) -> dict[str, Any]:
+        session = _accepted_session(run)
+        if session["state"] == SESSION_PENDING:
+            return {"released": None, "replayed": True}
+        if session["state"] != SESSION_RUNNING:
+            raise RunObligationsError(
+                f"run {run['run_id']!r} session is {session['state']!r}; only a "
+                "running session has a claim to release",
+                reason_code="invalid_transition",
+            )
+        released = {
+            "claim_token": session["claim_token"],
+            "claimed_at": session["claimed_at"],
+            "reason": reason,
+        }
+        session["state"] = SESSION_PENDING
+        session["claim_token"] = None
+        session["claimed_at"] = None
+        return {"released": released}
 
     return _transition(context, args, mutate)
 
@@ -1662,25 +1899,30 @@ def command_record_session(
     inputs = args.profile_inputs
 
     def mutate(run: dict[str, Any], stamp: str, _now: datetime) -> dict[str, Any]:
-        clarification = run["clarification"]
-        session = clarification["session"]
-        if clarification["state"] != STATE_ACCEPTED or session is None:
-            raise RunObligationsError(
-                f"run {run['run_id']!r} has no accepted clarification session",
-                reason_code="invalid_transition",
-            )
+        session = _accepted_session(run)
         if session["state"] == SESSION_COMPLETED:
             if (
                 session["profile_inputs"] == inputs
                 and session["profile_refreshed"] == refreshed
+                and session["claim_token"] == args.claim_token
             ):
                 return {"replayed": True}
-            raise _conflict(
-                run,
-                "session completion",
+            detail = (
                 f"profile_inputs={session['profile_inputs']!r}, "
                 f"profile_refreshed={session['profile_refreshed']!r} at "
-                f"{session['completed_at']}",
+                f"{session['completed_at']}"
+            )
+            if session["claim_token"] != args.claim_token:
+                detail += " under another claim"
+            raise _conflict(run, "session completion", detail)
+        _require_claim(run, session, args.claim_token)
+        target = session["counted_sessions"]
+        if target is None or _session_counter(context)[0] < target:
+            raise RunObligationsError(
+                f"run {run['run_id']!r} session has not been counted: run "
+                "count-session and apply the counter it names before recording "
+                "the session",
+                reason_code="session_not_counted",
             )
         if (
             inputs == PROFILE_INPUTS_CHANGED
@@ -2029,16 +2271,21 @@ def command_status(context: Context, args: argparse.Namespace) -> dict[str, Any]
 # ── CLI ───────────────────────────────────────────────────────────────
 
 
-def pending_sessions(ledger: dict[str, Any]) -> list[dict[str, Any]]:
-    """Accepted sessions that have not completed, earliest ``opened_at`` first.
+def pending_sessions(
+    ledger: dict[str, Any], state: str = SESSION_PENDING
+) -> list[dict[str, Any]]:
+    """Unfinished accepted sessions in ``state``, earliest ``opened_at`` first.
 
-    Stored timestamps are canonical, so text order is time order; two runs
-    opened in the same second keep the ledger's opening order.
+    A running session is claimed by a host and is never selected for another;
+    ``state=SESSION_RUNNING`` lists those. Stored timestamps are canonical, so
+    text order is time order; two runs opened in the same second keep the
+    ledger's opening order.
     """
     candidates = [
         (run["opened_at"], index, run)
         for index, run in enumerate(ledger["runs"])
         if next_action(run) == NEXT_SESSION
+        and run["clarification"]["session"]["state"] == state
     ]
     return [run for _stamp, _index, run in sorted(candidates, key=lambda c: c[:2])]
 
@@ -2077,18 +2324,28 @@ def command_session_agenda(
 
     Without ``--run-id`` the first of ``pending_sessions`` is selected, or
     ``session`` is null when none is pending. With ``--run-id`` the named run
-    must exist and its session must be pending; any other state is refused as
-    ``invalid_transition`` naming what stands.
+    must exist and its session must be pending; a running one is refused as
+    ``session_claimed`` and any other state as ``invalid_transition`` naming
+    what stands. Running sessions are listed, never selected.
     """
     _snapshot, ledger = load_ledger(context.ledger_path, context.vault_root)
     adopted = isinstance(ledger.get("adopted_at"), str)
     sessions = pending_sessions(ledger)
+    running = pending_sessions(ledger, SESSION_RUNNING)
     if args.run_id is None:
         selected = sessions[0] if sessions else None
     else:
         require_adopted(ledger, context.ledger_path)
         selected = find_run(ledger, require_run_id(args.run_id))
         action = next_action(selected)
+        if selected in running:
+            raise RunObligationsError(
+                f"run {selected['run_id']!r} session is running under a claim "
+                f"since {selected['clarification']['session']['claimed_at']}; "
+                "another host is conducting it. If that host died, release the "
+                "claim with release-session (an operator decision)",
+                reason_code="session_claimed",
+            )
         if action != NEXT_SESSION:
             raise RunObligationsError(
                 f"run {selected['run_id']!r} has no pending clarification "
@@ -2105,6 +2362,13 @@ def command_session_agenda(
         "adopted_at": ledger.get("adopted_at"),
         "session": _session_view(selected) if selected is not None else None,
         "pending_sessions": [run["run_id"] for run in sessions],
+        "running_sessions": [
+            {
+                "run_id": run["run_id"],
+                "claimed_at": run["clarification"]["session"]["claimed_at"],
+            }
+            for run in running
+        ],
     }
 
 
@@ -2174,10 +2438,34 @@ def build_parser() -> JsonArgumentParser:
         help="a file holding the speaker's return condition in their words",
     )
 
+    claim = actions.add_parser(
+        "claim-session", help="reserve the accepted session for this host"
+    )
+    with_run(claim)
+    claim.add_argument(
+        "--claim-token", help="this host's token, to replay a claim it holds"
+    )
+
+    count = actions.add_parser(
+        "count-session", help="pin the session counter value this session reaches"
+    )
+    with_run(count)
+    count.add_argument("--claim-token", required=True)
+
+    release = actions.add_parser(
+        "release-session", help="free a claim whose host will not finish the session"
+    )
+    with_run(release)
+    release.add_argument("--reason", help="why, in plain words")
+    release.add_argument(
+        "--reason-from", help="a file holding the reason in the operator's words"
+    )
+
     session = actions.add_parser(
         "record-session", help="the accepted clarification session completed"
     )
     with_run(session)
+    session.add_argument("--claim-token", required=True)
     session.add_argument(
         "--profile-inputs",
         choices=PROFILE_INPUTS,
@@ -2229,6 +2517,9 @@ COMMANDS = {
     "record-downstream": command_record_downstream,
     "record-offer": command_record_offer,
     "record-disposition": command_record_disposition,
+    "claim-session": command_claim_session,
+    "count-session": command_count_session,
+    "release-session": command_release_session,
     "record-session": command_record_session,
     "record-report": command_record_report,
     "dismiss": command_dismiss,

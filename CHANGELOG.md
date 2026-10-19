@@ -1,5 +1,36 @@
 # Changelog
 
+### Reserve each clarification session and count it once
+
+Two session-lifecycle gaps Copilot raised on PR #465, deferred to #466:
+
+- `session-agenda` was a read, not a reservation: two standalone hosts, or the
+  typed ingress call plus a standalone trigger, could both conduct the same
+  session and both write the tracking database before either reached
+  `record-session`. The new `claim-session` reserves the session (`running`,
+  with a random `claim_token` and `claimed_at`); vault-clarification Step 2
+  claims what `session-agenda` selected, `session-agenda` lists claimed
+  sessions under `running_sessions` and never selects them, and a named
+  claimed run refuses as `session_claimed`. `record-session` now requires
+  `--claim-token` and closes only the claim it names. `release-session`, with a
+  reason, is the operator's explicit decision to free the claim of a host that
+  died.
+- `config.clarification_sessions_completed` advanced before the ledger session
+  closed, so a session re-entered after a crash, or after a
+  `profile_refresh_required` that never returned, counted twice. The new
+  `count-session` pins the value the session counts to as `counted_sessions` in
+  the ledger and returns the exact owner `set_config` mutation that moves the
+  counter there, or null once the database holds it. A release keeps
+  `counted_sessions`, so the next claim's count finds the work already done;
+  `record-session` refuses (`session_not_counted`) until the database holds the
+  count, and a counter some other writer moved refuses (`counter_conflict`).
+  The counter lives in the ledger, so the config record keeps schema 2.
+- Run records move to schema 3. A schema-2 record reads as schema 3 with null
+  claim fields and is rewritten on that read, the same owner path schema 1 took.
+  `schemas-obligations.md`, `clarification-handoff.md` and vault-clarification
+  Steps 2 and 9 carry the new commands; the ingress handoff records the session
+  with the `claim_token` the clarification session returns.
+
 ## 0.20.186 — 2026-10-20
 
 ### Bind the shownotes analysis to its exact delivery

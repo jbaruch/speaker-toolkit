@@ -237,6 +237,43 @@ def _record_report(database: Path, run_id: str, report: Path, now: str = LATER):
     )
 
 
+def _set_counter(database: Path, value: int) -> None:
+    """Apply a counter write the way vault-clarification's set_config would."""
+    data = json.loads(database.read_text(encoding="utf-8"))
+    data["config"]["clarification_sessions_completed"] = value
+    database.write_text(json.dumps(data), encoding="utf-8")
+
+
+def _session_token(database: Path, run_id: str, now: str = NOW) -> str:
+    """The claim a host holds on the run's session, claimed and counted once.
+
+    A run without an accepted session gets a placeholder; the command under
+    test refuses it before the token matters.
+    """
+    run = _ok(database, "status", "--run-id", run_id)["run"]
+    session = run["clarification"]["session"]
+    if session is None:
+        return "0" * 32
+    if session["claim_token"] is not None:
+        return session["claim_token"]
+    token = _ok(database, "claim-session", "--run-id", run_id, "--now", now)[
+        "claim_token"
+    ]
+    counted = _ok(
+        database,
+        "count-session",
+        "--run-id",
+        run_id,
+        "--now",
+        now,
+        "--claim-token",
+        token,
+    )
+    if counted["mutation"] is not None:
+        _set_counter(database, counted["mutation"]["value"])
+    return token
+
+
 # ── open ──────────────────────────────────────────────────────────────
 
 
@@ -249,7 +286,7 @@ def test_open_records_recency_and_the_persisting_claim_and_owes_downstream(
     assert payload["durability_state"] == "durable"
     assert payload["warnings"] == []
     assert payload["ledger_path"] == str(tmp_path / "ingress-obligations.json")
-    assert run["schema_version"] == 2
+    assert run["schema_version"] == 3
     assert [
         (t["filename"], t["status"], t["recency_bucket"], t["claim_run_id"])
         for t in run["talks"]
@@ -585,6 +622,9 @@ def test_a_disposition_needs_a_recorded_offer(fresh_db):
                 "completed_at": None,
                 "profile_inputs": None,
                 "profile_refreshed": None,
+                "claim_token": None,
+                "claimed_at": None,
+                "counted_sessions": None,
             },
         ),
     ],
@@ -704,6 +744,8 @@ def test_the_session_completes_once_and_only_after_acceptance(fresh_db):
         "record-session",
         "--run-id",
         run_id,
+        "--claim-token",
+        _session_token(fresh_db, run_id),
         "--now",
         NOW,
         "--profile-inputs",
@@ -726,6 +768,8 @@ def test_the_session_completes_once_and_only_after_acceptance(fresh_db):
         "record-session",
         "--run-id",
         run_id,
+        "--claim-token",
+        _session_token(fresh_db, run_id),
         "--now",
         LATER,
         "--profile-inputs",
@@ -737,6 +781,9 @@ def test_the_session_completes_once_and_only_after_acceptance(fresh_db):
         "completed_at": LATER,
         "profile_inputs": "changed",
         "profile_refreshed": True,
+        "claim_token": _session_token(fresh_db, run_id),
+        "claimed_at": NOW,
+        "counted_sessions": 1,
     }
     assert _ok(fresh_db, "pending")["pending"][0]["next_action"] == "deliver_end_report"
     twice = _refused(
@@ -744,6 +791,8 @@ def test_the_session_completes_once_and_only_after_acceptance(fresh_db):
         "record-session",
         "--run-id",
         run_id,
+        "--claim-token",
+        _session_token(fresh_db, run_id),
         "--now",
         MUCH_LATER,
         "--profile-inputs",
@@ -762,6 +811,8 @@ def test_changed_profile_inputs_need_a_refreshed_profile_when_one_exists(
         "record-session",
         "--run-id",
         run_id,
+        "--claim-token",
+        _session_token(fresh_db, run_id),
         "--now",
         LATER,
         "--profile-inputs",
@@ -769,13 +820,16 @@ def test_changed_profile_inputs_need_a_refreshed_profile_when_one_exists(
     )
     assert refused["reason_code"] == "profile_refresh_required"
     assert "Step 7" in refused["error"]
-    still_pending = _ok(fresh_db, "status", "--run-id", run_id)
-    assert still_pending["run"]["clarification"]["session"]["state"] == "pending"
+    # The refusal leaves the session open under the claim that ran it.
+    still_open = _ok(fresh_db, "status", "--run-id", run_id)
+    assert still_open["run"]["clarification"]["session"]["state"] == "running"
     done = _ok(
         fresh_db,
         "record-session",
         "--run-id",
         run_id,
+        "--claim-token",
+        _session_token(fresh_db, run_id),
         "--now",
         LATER,
         "--profile-inputs",
@@ -801,6 +855,8 @@ def test_a_session_completes_without_a_refresh_when_none_is_owed(
         "record-session",
         "--run-id",
         run_id,
+        "--claim-token",
+        _session_token(fresh_db, run_id),
         "--now",
         LATER,
         "--profile-inputs",
@@ -811,6 +867,9 @@ def test_a_session_completes_without_a_refresh_when_none_is_owed(
         "completed_at": LATER,
         "profile_inputs": inputs,
         "profile_refreshed": False,
+        "claim_token": _session_token(fresh_db, run_id),
+        "claimed_at": NOW,
+        "counted_sessions": 1,
     }
 
 
@@ -1101,11 +1160,11 @@ def test_a_schema_1_absolute_report_path_reads_under_either_spelling_and_upgrade
     reading = link_db if recorded_under == "real" else real_db
 
     status = _ok(reading, "status", "--run-id", "r")
-    assert status["run"]["schema_version"] == 2
+    assert status["run"]["schema_version"] == 3
     assert status["run"]["end_report"]["report_path"] == _bound(real, "r", content)
     # The read that upgrades the record rewrites it; schema 1 never outlives it.
     persisted = _ledger(real)["runs"][0]
-    assert persisted["schema_version"] == 2
+    assert persisted["schema_version"] == 3
     assert persisted["end_report"]["report_path"] == _bound(real, "r", content)
     assert persisted["end_report"]["delivered_at"] == LATER
     assert _ok(reading, "pending")["pending"] == []
@@ -1124,7 +1183,7 @@ def test_every_read_command_rewrites_a_schema_1_ledger(tmp_path, command):
     )
     arguments = [command] + (["--run-id", "r"] if command == "status" else [])
     _ok(real_db, *arguments)
-    assert _ledger(real)["runs"][0]["schema_version"] == 2
+    assert _ledger(real)["runs"][0]["schema_version"] == 3
 
 
 def test_a_schema_1_path_through_an_alias_inside_the_vault_still_binds(tmp_path):
@@ -1242,6 +1301,8 @@ def test_a_deferred_offer_is_listed_until_it_is_answered_again(tmp_path, fresh_d
         "record-session",
         "--run-id",
         run_id,
+        "--claim-token",
+        _session_token(fresh_db, run_id),
         "--now",
         MUCH_LATER,
         "--profile-inputs",
@@ -1689,6 +1750,9 @@ def test_session_agenda_returns_the_accepted_session_with_its_topics(fresh_db):
         "completed_at": None,
         "profile_inputs": None,
         "profile_refreshed": None,
+        "claim_token": None,
+        "claimed_at": None,
+        "counted_sessions": None,
     }
 
 
@@ -1722,6 +1786,8 @@ def test_session_agenda_refuses_a_run_without_a_pending_session(fresh_db):
         "record-session",
         "--run-id",
         accepted,
+        "--claim-token",
+        _session_token(fresh_db, accepted),
         "--now",
         LATER,
         "--profile-inputs",
@@ -1759,6 +1825,8 @@ def test_session_agenda_hands_over_the_recorded_order_until_recorded(fresh_db):
         "record-session",
         "--run-id",
         run_id,
+        "--claim-token",
+        _session_token(fresh_db, run_id),
         "--now",
         LATER,
         "--profile-inputs",
@@ -1875,7 +1943,7 @@ def test_a_malformed_ledger_is_named_not_repaired(tmp_path, fresh_db):
 
 def _valid_run(run_id: str = "r", **overrides):
     run = {
-        "schema_version": 2,
+        "schema_version": 3,
         "run_id": run_id,
         "opened_at": NOW,
         "updated_at": NOW,
@@ -1937,6 +2005,24 @@ _SESSION_DONE = {
     "completed_at": LATER,
     "profile_inputs": "changed",
     "profile_refreshed": True,
+    "claim_token": "c" * 32,
+    "claimed_at": NOW,
+    "counted_sessions": 1,
+}
+_PENDING_SESSION = {
+    "state": "pending",
+    "completed_at": None,
+    "profile_inputs": None,
+    "profile_refreshed": None,
+    "claim_token": None,
+    "claimed_at": None,
+    "counted_sessions": None,
+}
+_RUNNING_SESSION = {
+    **_PENDING_SESSION,
+    "state": "running",
+    "claim_token": "c" * 32,
+    "claimed_at": NOW,
 }
 _ACCEPTED = {
     "clarification.state": "accepted",
@@ -2041,8 +2127,8 @@ _ACCEPTED = {
         ({"talks.0.claim_generation": "1"}, "claim_generation must be a non-negative"),
         ({"completed_at": LATER}, "completed_at must be null in this state"),
         (
-            {"schema_version": 3},
-            "run-record schema_version 3; this script reads 1 and 2 only. A newer "
+            {"schema_version": 4},
+            "run-record schema_version 4; this script reads 1, 2, 3 only. A newer "
             "speaker-toolkit wrote it: update speaker-toolkit",
         ),
         ({"schema_version": "1"}, "run-record schema_version '1'"),
@@ -2127,6 +2213,52 @@ _ACCEPTED = {
             },
             "state 'owed' disagrees with offer_mode 'none'",
         ),
+        (
+            {
+                **_ACCEPTED,
+                "clarification.session": {**_PENDING_SESSION, "state": "running"},
+            },
+            "claim_token must be 32 lowercase hex digits",
+        ),
+        (
+            {
+                **_ACCEPTED,
+                "clarification.session": {**_RUNNING_SESSION, "claim_token": "C" * 32},
+            },
+            "claim_token must be 32 lowercase hex digits",
+        ),
+        (
+            {
+                **_ACCEPTED,
+                "clarification.session": {**_RUNNING_SESSION, "claimed_at": None},
+            },
+            "claimed_at",
+        ),
+        (
+            {
+                **_ACCEPTED,
+                "clarification.session": {**_PENDING_SESSION, "claim_token": "c" * 32},
+            },
+            "claim_token must be null",
+        ),
+        (
+            {
+                **_ACCEPTED,
+                "clarification.session": {**_PENDING_SESSION, "counted_sessions": 0},
+            },
+            "counted_sessions must be a positive integer or null",
+        ),
+        (
+            {
+                **_ACCEPTED,
+                "clarification.session": {
+                    key: value
+                    for key, value in _PENDING_SESSION.items()
+                    if key != "claim_token"
+                },
+            },
+            "session lacks claim_token",
+        ),
     ],
     ids=[
         "clarification-null",
@@ -2188,6 +2320,12 @@ _ACCEPTED = {
         "offer-mode-not-derived",
         "not-applicable-with-analyzed-talk",
         "owed-without-analyzed-talk",
+        "running-without-claim",
+        "claim-token-case",
+        "running-without-stamp",
+        "claim-on-pending",
+        "counted-zero",
+        "session-claim-keys",
     ],
 )
 def test_every_malformed_ledger_field_fails_structured(
@@ -2278,7 +2416,7 @@ def test_the_strongest_bucket_decides_the_offer(run_obligations):
 def test_the_entry_point_is_guarded(run_obligations):
     assert callable(run_obligations.main)
     assert run_obligations.LEDGER_SCHEMA_VERSION == 1
-    assert run_obligations.RUN_RECORD_SCHEMA_VERSION == 2
+    assert run_obligations.RUN_RECORD_SCHEMA_VERSION == 3
 
 
 # ── replays are unchanged successes ───────────────────────────────────
@@ -2365,6 +2503,8 @@ def test_a_replayed_acceptance_never_resets_a_completed_session(fresh_db):
         "record-session",
         "--run-id",
         run_id,
+        "--claim-token",
+        _session_token(fresh_db, run_id),
         "--now",
         LATER,
         "--profile-inputs",
@@ -2403,6 +2543,8 @@ def test_a_replayed_session_completion_keeps_its_first_timestamp(fresh_db):
         "record-session",
         "--run-id",
         run_id,
+        "--claim-token",
+        _session_token(fresh_db, run_id),
         "--now",
         LATER,
         "--profile-inputs",
@@ -2413,6 +2555,8 @@ def test_a_replayed_session_completion_keeps_its_first_timestamp(fresh_db):
         "record-session",
         "--run-id",
         run_id,
+        "--claim-token",
+        _session_token(fresh_db, run_id),
         "--now",
         MUCH_LATER,
         "--profile-inputs",
@@ -2427,6 +2571,8 @@ def test_a_replayed_session_completion_keeps_its_first_timestamp(fresh_db):
         "record-session",
         "--run-id",
         run_id,
+        "--claim-token",
+        _session_token(fresh_db, run_id),
         "--now",
         MUCH_LATER,
         "--profile-inputs",
@@ -2482,6 +2628,8 @@ def test_a_session_accepted_after_delivery_that_changed_inputs_reopens_the_repor
         "record-session",
         "--run-id",
         run_id,
+        "--claim-token",
+        _session_token(fresh_db, run_id),
         "--now",
         MUCH_LATER,
         "--profile-inputs",
@@ -2538,6 +2686,8 @@ def test_a_late_session_with_unchanged_inputs_leaves_the_report_delivered(
         "record-session",
         "--run-id",
         run_id,
+        "--claim-token",
+        _session_token(fresh_db, run_id),
         "--now",
         MUCH_LATER,
         "--profile-inputs",
@@ -3092,7 +3242,7 @@ def test_topics_and_reasons_arrive_through_files(tmp_path, fresh_db):
 @pytest.mark.parametrize(
     "version,recovery,not_recovery",
     [
-        (3, "update speaker-toolkit", "restore it"),
+        (4, "update speaker-toolkit", "restore it"),
         (0, "restore it from a copy the owner wrote", "update speaker-toolkit"),
         (-1, "restore it from a copy the owner wrote", "update speaker-toolkit"),
         ("1", "restore it from a copy the owner wrote", "update speaker-toolkit"),
@@ -3116,3 +3266,240 @@ def test_an_unreadable_run_record_is_refused_and_left_as_it_is(
         assert not_recovery not in refused["error"]
 
     assert ledger.read_bytes() == before
+
+
+# ── #466: one host per session, one count per session ─────────────────
+
+
+def _claim(database: Path, run_id: str = "run-x", *extra: str, now: str = NOW):
+    return _run(database, "claim-session", "--run-id", run_id, "--now", now, *extra)
+
+
+def _claim_token(database: Path, run_id: str = "run-x", now: str = NOW) -> str:
+    code, payload, stderr = _claim(database, run_id, now=now)
+    assert code == 0, stderr
+    assert payload is not None
+    return payload["claim_token"]
+
+
+def _count(database: Path, token: str, run_id: str = "run-x", now: str = NOW):
+    return _ok(
+        database,
+        "count-session",
+        "--run-id",
+        run_id,
+        "--now",
+        now,
+        "--claim-token",
+        token,
+    )
+
+
+def _record(database: Path, token: str, run_id: str = "run-x", now: str = LATER):
+    return _run(
+        database,
+        "record-session",
+        "--run-id",
+        run_id,
+        "--now",
+        now,
+        "--claim-token",
+        token,
+        "--profile-inputs",
+        "unchanged",
+    )
+
+
+def _counter(database: Path):
+    return json.loads(database.read_text(encoding="utf-8"))["config"].get(
+        "clarification_sessions_completed"
+    )
+
+
+def test_one_host_claims_a_session_and_a_second_is_refused(fresh_db):
+    _accepted(fresh_db)
+    code, first, stderr = _claim(fresh_db)
+    assert code == 0, stderr
+    assert first is not None
+    token = first["claim_token"]
+    assert len(token) == 32
+    session = first["run"]["clarification"]["session"]
+    assert (session["state"], session["claim_token"], session["claimed_at"]) == (
+        "running",
+        token,
+        NOW,
+    )
+
+    code, second, _stderr = _claim(fresh_db, now=LATER)
+    assert code == 2
+    assert second is not None and second["reason_code"] == "session_claimed"
+    assert "release-session" in second["error"]
+
+    code, replay, stderr = _claim(fresh_db, "run-x", "--claim-token", token, now=LATER)
+    assert code == 0, stderr
+    assert replay is not None
+    assert replay["replayed"] is True and replay["claim_token"] == token
+    assert replay["run"]["clarification"]["session"]["claimed_at"] == NOW
+
+
+def test_session_agenda_never_hands_out_a_claimed_session(fresh_db):
+    _accepted_with_topics(fresh_db, "run-early", "Earlier topic", now=NOW)
+    _accepted_with_topics(fresh_db, "run-late", "Later topic", now=LATER)
+    code, _claimed, stderr = _claim(fresh_db, "run-early")
+    assert code == 0, stderr
+
+    payload = _ok(fresh_db, "session-agenda")
+
+    assert payload["session"]["run_id"] == "run-late"
+    assert payload["pending_sessions"] == ["run-late"]
+    assert payload["running_sessions"] == [{"run_id": "run-early", "claimed_at": NOW}]
+    named = _refused(fresh_db, "session-agenda", "--run-id", "run-early")
+    assert named["reason_code"] == "session_claimed"
+
+
+def test_a_session_is_recorded_only_by_its_claim_after_its_count(fresh_db):
+    _accepted(fresh_db)
+    token = _claim_token(fresh_db)
+
+    code, uncounted, _stderr = _record(fresh_db, token)
+    assert code == 2 and uncounted is not None
+    assert uncounted["reason_code"] == "session_not_counted"
+
+    counted = _count(fresh_db, token)
+    assert counted["mutation"] == {
+        "kind": "set_config",
+        "path": ["clarification_sessions_completed"],
+        "expect": {"$missing": True},
+        "value": 1,
+    }
+    code, unapplied, _stderr = _record(fresh_db, token)
+    assert code == 2 and unapplied is not None
+    assert unapplied["reason_code"] == "session_not_counted"
+
+    _set_counter(fresh_db, 1)
+    code, other, _stderr = _record(fresh_db, "d" * 32)
+    assert code == 2 and other is not None
+    assert other["reason_code"] == "session_claimed"
+    code, recorded, stderr = _record(fresh_db, token)
+    assert code == 0, stderr
+    assert recorded is not None
+    assert recorded["run"]["clarification"]["session"]["state"] == "completed"
+    code, replay, stderr = _record(fresh_db, token, now=MUCH_LATER)
+    assert code == 0, stderr
+    assert replay is not None and replay["replayed"] is True
+
+
+@pytest.mark.parametrize("applied_before_crash", [True, False])
+def test_a_session_re_entered_after_a_crash_counts_once(
+    tmp_path, fresh_db, applied_before_crash
+):
+    """The host dies between counting and recording; the operator releases it."""
+    _accepted(fresh_db)
+    _set_counter(fresh_db, 4)
+    first = _claim_token(fresh_db)
+    counted = _count(fresh_db, first)
+    assert counted["mutation"]["expect"] == 4 and counted["mutation"]["value"] == 5
+    if applied_before_crash:
+        _set_counter(fresh_db, 5)
+
+    reason = tmp_path / "reason.txt"
+    reason.write_text("the laptop died mid-session\n", encoding="utf-8")
+    released = _ok(
+        fresh_db,
+        "release-session",
+        "--run-id",
+        "run-x",
+        "--now",
+        LATER,
+        "--reason-from",
+        str(reason),
+    )
+    assert released["released"]["claim_token"] == first
+    session = released["run"]["clarification"]["session"]
+    assert (session["state"], session["claim_token"], session["counted_sessions"]) == (
+        "pending",
+        None,
+        5,
+    )
+
+    second = _claim_token(fresh_db, now=LATER)
+    assert second != first
+    recount = _count(fresh_db, second, now=LATER)
+    assert recount["counted_sessions"] == 5
+    if applied_before_crash:
+        assert recount["mutation"] is None
+    else:
+        assert recount["mutation"]["expect"] == 4
+        _set_counter(fresh_db, recount["mutation"]["value"])
+    assert _counter(fresh_db) == 5
+    code, stale, _stderr = _record(fresh_db, first)
+    assert code == 2 and stale is not None
+    assert stale["reason_code"] == "session_claimed"
+    code, _recorded, stderr = _record(fresh_db, second)
+    assert code == 0, stderr
+    assert _counter(fresh_db) == 5
+
+
+def test_a_counter_another_writer_moved_is_a_conflict(fresh_db):
+    _accepted(fresh_db)
+    token = _claim_token(fresh_db)
+    _count(fresh_db, token)
+    _set_counter(fresh_db, 3)
+    refused = _refused(
+        fresh_db,
+        "count-session",
+        "--run-id",
+        "run-x",
+        "--now",
+        LATER,
+        "--claim-token",
+        token,
+    )
+    assert refused["reason_code"] == "counter_conflict"
+
+
+def test_a_release_needs_a_reason_and_only_frees_a_running_claim(fresh_db):
+    _accepted(fresh_db)
+    pending = _ok(
+        fresh_db,
+        "release-session",
+        "--run-id",
+        "run-x",
+        "--now",
+        NOW,
+        "--reason",
+        "nothing to free",
+    )
+    assert pending["replayed"] is True and pending["released"] is None
+    _claim(fresh_db)
+    unexplained = _refused(
+        fresh_db, "release-session", "--run-id", "run-x", "--now", NOW
+    )
+    assert unexplained["reason_code"] == "invalid_arguments"
+    assert (
+        _ok(fresh_db, "status", "--run-id", "run-x")["run"]["clarification"]["session"][
+            "state"
+        ]
+        == "running"
+    )
+
+
+def test_a_schema_2_session_is_upgraded_and_rewritten_on_read(tmp_path, fresh_db):
+    run = _valid_run(**_ACCEPTED)
+    run["schema_version"] = 2
+    run["clarification"]["session"] = {
+        "state": "pending",
+        "completed_at": None,
+        "profile_inputs": None,
+        "profile_refreshed": None,
+    }
+    (tmp_path / "ingress-obligations.json").write_text(
+        json.dumps({**ENVELOPE, "runs": [run]}), encoding="utf-8"
+    )
+
+    payload = _ok(fresh_db, "session-agenda")
+
+    assert payload["session"]["run_id"] == "r"
+    persisted = _ledger(tmp_path)["runs"][0]
+    assert persisted["schema_version"] == 3
+    assert persisted["clarification"]["session"] == _PENDING_SESSION

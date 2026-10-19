@@ -13,9 +13,11 @@ explicit disposition and the end report has been delivered.
 - Readers: vault-ingress Step 1 (`pending`) and Steps 9 and 11 (`status`);
   vault-clarification Step 2 (`session-agenda`) to resolve the seed agenda of
   a pending session. vault-profile never reads it.
-- A standalone vault-clarification session records the session
-  `session-agenda` selected through `record-session`, the same owner command
-  vault-ingress Step 9 uses; the script stays the only writer.
+- vault-clarification claims the session it runs (`claim-session`, Step 2)
+  and counts it (`count-session`, Step 9) through the owner script. A
+  standalone session then records it through `record-session`, the same owner
+  command vault-ingress Step 9 uses with the claim token the session returned;
+  the script stays the only writer.
 - Every write goes through the tracking-database io helpers: sibling lock file,
   exact-generation check, staged candidate, atomic replace. Never edit the
   ledger by hand.
@@ -42,7 +44,7 @@ explicit disposition and the end report has been delivered.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schema_version` | integer | `2` — the run record's own version, checked on every read; a `1` record is read and upgraded (see Migration) |
+| `schema_version` | integer | `3` — the run record's own version, checked on every read; a `1` or `2` record is read and upgraded (see Migration) |
 | `run_id` | string | the queue claim's run id (`queue-state.py claim --run-id`); the same identifier contract as the claim (non-empty, no whitespace), never used raw as a path |
 | `opened_at` | timestamp | first `open` |
 | `updated_at` | timestamp | last command that changed the record |
@@ -104,7 +106,7 @@ reported.
 | `offered_at` | when the offer was put to the speaker |
 | `resolved_at` | when the disposition was recorded |
 | `return_condition` | the speaker's words for when a deferred offer is raised again; null otherwise |
-| `session` | null, or `{state: pending \| completed, completed_at, profile_inputs, profile_refreshed}` once accepted; `profile_inputs` is `changed` or `unchanged` as the session reported it |
+| `session` | null, or `{state: pending \| running \| completed, completed_at, profile_inputs, profile_refreshed, claim_token, claimed_at, counted_sessions}` once accepted; `profile_inputs` is `changed` or `unchanged` as the session reported it; `claim_token` and `claimed_at` name the claim a host holds (`claim-session`); `counted_sessions` is the `config.clarification_sessions_completed` value this session counts to (`count-session`), or null before it is counted |
 
 | State | Meaning | Set by |
 |---|---|---|
@@ -120,12 +122,19 @@ before; `resolved_at` is set for `accepted`, `declined`, and `deferred` and
 null otherwise; `return_condition` is a non-blank string for `deferred` and
 null otherwise; `session` is an object only for `accepted`, with
 `completed_at`, `profile_inputs`, and a boolean `profile_refreshed` set once
-`completed` and null while `pending`. `offer_mode` is the one the recorded
+`completed` and null otherwise. A `running` session carries a 32-hex-digit
+`claim_token` and its `claimed_at`; a `pending` one carries neither; a
+`completed` one keeps the claim it completed under, or neither when it
+completed before claims existed. `counted_sessions` is a positive integer or
+null in every state, and a release keeps it. `offer_mode` is the one the recorded
 talks give (`run-obligations.py` `offer_mode_for`), and the state is
 `not_applicable` exactly when that mode is `none`.
 
 Transitions: `owed → offered → accepted | declined | deferred`; an accepted
-session goes `pending → completed` through `record-session`; a `deferred`
+session goes `pending → running` through `claim-session`, back to `pending`
+through `release-session` (the operator's decision that the claim's host will
+not finish), and `running → completed` through `record-session` under the
+same claim once `count-session` has counted it; a `deferred`
 offer is the one answer that can be given again, `deferred → accepted |
 declined | deferred`, when the speaker's return condition is met — the report
 may already be delivered by then, and a session accepted afterwards is still
@@ -198,7 +207,10 @@ special file is `report_unreadable`.
 | `record-downstream --run-id --now` | the run exists | downstream `completed`; replay-safe |
 | `record-offer --run-id --now [--topic ...] [--topics-from]` | downstream `completed`; state `owed` | refreshes recency, then `offered` with `topics` and `offered: true`; or, with no analyzed talk left, `not_applicable` and `offered: false` |
 | `record-disposition --run-id --now --disposition ... [--return-condition \| --return-condition-from]` | state `offered` or `deferred`; `deferred` needs a non-blank return condition | the disposition; `accepted` opens a pending session |
-| `record-session --run-id --now --profile-inputs changed\|unchanged [--profile-refreshed]` | state `accepted`, session pending; `changed` with `{vault_root}/speaker-profile.json` present needs `--profile-refreshed` (`profile_refresh_required` otherwise) | session `completed` with both flags recorded |
+| `claim-session --run-id --now [--claim-token]` | state `accepted`, session `pending`; a `running` session refuses (`session_claimed`) unless `--claim-token` names its claim, which is a replay | session `running` with a new `claim_token`, returned as `claim_token` |
+| `count-session --run-id --now --claim-token` | session `running` under that claim (`session_claimed` otherwise) | records `counted_sessions` on the first call; returns `counted_sessions` and `mutation`, the owner `set_config` write that moves `config.clarification_sessions_completed` to it, or null once the database holds it; a counter moved by another writer refuses (`counter_conflict`) |
+| `release-session --run-id --now (--reason \| --reason-from)` | session `running`; `pending` is a replay | session `pending` without a claim, `counted_sessions` kept; returns the released claim |
+| `record-session --run-id --now --claim-token --profile-inputs changed\|unchanged [--profile-refreshed]` | session `running` under that claim (`session_claimed` otherwise), counted, and the database at the counted value (`session_not_counted` otherwise); `changed` with `{vault_root}/speaker-profile.json` present needs `--profile-refreshed` (`profile_refresh_required` otherwise) | session `completed` with both flags recorded |
 | `record-report --run-id --now --report-file` | downstream `completed`; clarification resolved; non-empty file | copies the report, binds its digest, sets `completed_at` |
 | `dismiss --run-id --now (--reason \| --reason-from)` | the ledger is adopted; the run has no record and is listed as `unrecorded_run` | records the exact facts listed now as deliberately not opened; a run listed again after an earlier dismissal renews that entry, adding the new facts (`renewed: true`); with nothing new listed, the same reason is a replay and another reason is refused |
 
@@ -234,6 +246,7 @@ which can echo the rejected key or value. Reason codes: `invalid_arguments`,
 `invalid_timestamp`,
 `database_unusable`, `vault_root_changed`, `ledger_not_adopted`, `talk_not_found`,
 `talk_not_persisted`, `run_not_found`, `invalid_transition`,
+`session_claimed`, `session_not_counted`, `counter_conflict`,
 `profile_refresh_required`, `report_unreadable`,
 `report_empty`,
 `report_copy_failed`, `ledger_unreadable`, `ledger_invalid`,
@@ -287,15 +300,17 @@ The exact coverage predicate is the script's rule — see `run-obligations.py`,
 the `open_required` docstring.
 
 `session-agenda [--run-id]` emits `{ok, ledger_path, ledger_present,
-adopt_required, adopted_at, session, pending_sessions}`. `session` is null or
-one accepted session that has not completed: `run_id`, `opened_at`,
+adopt_required, adopted_at, session, pending_sessions, running_sessions}`.
+`session` is null or one accepted session that is `pending`: `run_id`, `opened_at`,
 `offered_at`, `resolved_at`, `offer_mode`, `topics` in recorded order, and the
 run's `summary`. `pending_sessions` lists every such run id in selection
 order; the selection rule is the script's (`run-obligations.py`, the
-`pending_sessions` docstring). With `--run-id` the named run's session is
-returned, or the command refuses: `ledger_not_adopted`, `run_not_found`, or
-`invalid_transition` when that run has no pending session, naming what
-stands.
+`pending_sessions` docstring). `running_sessions` lists each claimed session's
+`run_id` and `claimed_at`; a claimed session is never selected. With
+`--run-id` the named run's session is returned, or the command refuses:
+`ledger_not_adopted`, `run_not_found`, `session_claimed` when another host
+holds it, or `invalid_transition` when that run has no pending session,
+naming what stands.
 
 `next_action` is one of:
 
@@ -311,8 +326,8 @@ stands.
 
 ## Migration
 
-This release reads ledger schema 1 and run-record schemas 1 and 2, and writes
-run-record schema 2. Any shape change bumps the affected `schema_version` and
+This release reads ledger schema 1 and run-record schemas 1, 2 and 3, and
+writes run-record schema 3. Any shape change bumps the affected `schema_version` and
 ships its on-read upgrade in `skills/vault-ingress/scripts/run-obligations.py`
 in the same change.
 
@@ -324,9 +339,14 @@ the relative path is derived is the script's (`_upgrade_legacy_report_path`).
 A recorded path outside the vault, a relative or unresolvable one, or one
 naming any copy but the bound one is refused (`ledger_invalid`) with a
 path-neutral diagnostic naming the recovery. The read that upgrades a record
-rewrites the whole ledger at schema 2 through the same lock and generation
-check as every owner write, read-only commands included, before the command
-continues; a schema-1 record never outlives the first command to read it.
+rewrites the whole ledger at the current schema through the same lock and
+generation check as every owner write, read-only commands included, before the
+command continues; an older record never outlives the first command to read it.
+
+Run-record schema 2 predates session claims. Every command reads a schema-2
+record as schema 3, a session it carries gaining a null `claim_token`,
+`claimed_at`, and `counted_sessions` (`_upgrade_session_claim`): a pending
+session stays claimable, and one completed before claims stays completed.
 
 The ledger is a gate store, and it claims the `rules/stateful-artifacts.md`
 Migration Policy exception for gate stores: an open record refuses actions
