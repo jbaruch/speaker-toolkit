@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.175 — 2026-10-19
+
 ### Point the illustrations skill at one copy of the edit ranking
 
 Advisory follow-ups from the PR #450 reviews (#451). Presentation only; no
