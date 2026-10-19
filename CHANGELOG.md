@@ -2,8 +2,12 @@
 
 ### Harden the run-obligations ledger's edges
 
-Eight advisories Copilot left on PR #462, deferred to #463 so they would not
-cost another review round:
+Defects in the run-obligations ledger's edges, scheduled by the operator as
+#463 after the review of PR #462: speaker text interpolated into a shell
+string, an offer mode a hand-edited ledger could forge, a staging name a
+crashed process could leave blocking every later delivery, a replay that
+answered before its copy's name was durable, and three commands answering
+differently from their siblings:
 
 - `record-disposition --return-condition-from <file>` takes the speaker's
   return condition from a file, like `--talks-from`, `--topics-from` and
