@@ -1118,6 +1118,30 @@ def test_a_schema_1_report_path_still_fails_closed(tmp_path, recorded, detail):
     assert detail in payload["error"]
 
 
+def test_a_schema_1_refusal_never_echoes_the_persisted_path(tmp_path):
+    """no-secrets: the ledger field is untrusted, so its value stays out of
+    both output streams."""
+    real, real_db, _link_db = _symlinked_vault(tmp_path)
+    secret = "SECRET-VALUE-9f2c"
+    _legacy_delivered_ledger(real, f"/elsewhere/{secret}/r.{'a' * 64}.md", "a" * 64)
+    code, payload, stderr = _run(real_db, "status", "--run-id", "r")
+    assert code == 2
+    assert payload is not None
+    assert payload["reason_code"] == "ledger_invalid"
+    assert secret not in json.dumps(payload)
+    assert secret not in stderr
+
+
+def test_a_schema_1_path_with_an_embedded_nul_is_a_structured_refusal(tmp_path):
+    """Copilot on #492: JSON carries a NUL that ``resolve`` refuses with
+    ValueError; that is ledger_invalid, not a traceback."""
+    real, real_db, _link_db = _symlinked_vault(tmp_path)
+    _legacy_delivered_ledger(real, f"/elsewhere/x\u0000y/r.{'a' * 64}.md", "a" * 64)
+    payload = _refused(real_db, "status", "--run-id", "r")
+    assert payload["reason_code"] == "ledger_invalid"
+    assert "cannot be resolved against this vault" in payload["error"]
+
+
 # ── deferred offers come back ─────────────────────────────────────────
 
 

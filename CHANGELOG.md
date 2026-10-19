@@ -20,8 +20,10 @@ run addressed the vault, not on the data.
   stripped of the vault root as spelled and, with both sides resolved, of the
   real root, and the candidate naming the bound copy wins, so an alias nested
   inside the vault binds too. A path outside the vault, a relative one, or one
-  naming any copy other than the bound one is still `ledger_invalid`, and both
-  legacy refusals name a recovery. The read that upgrades a record rewrites the
+  naming any copy other than the bound one is still `ledger_invalid`, and every
+  legacy refusal names a recovery without echoing the persisted path, which is
+  untrusted ledger content. A path `resolve` refuses (an embedded NUL) is a
+  structured `ledger_invalid`, not a traceback. The read that upgrades a record rewrites the
   whole ledger at schema 2 under the owner's lock and generation check, read-only
   commands included, so schema 1 never outlives the first command to read it.
 - `Context` now reads the vault root together with the database generation, so

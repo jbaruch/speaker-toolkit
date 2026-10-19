@@ -310,20 +310,20 @@ stands.
 
 This release reads ledger schema 1 and run-record schemas 1 and 2, and writes
 run-record schema 2. Any shape change bumps the affected `schema_version` and
-ships its on-read upgrade in `run-obligations.py` in the same change.
+ships its on-read upgrade in `skills/vault-ingress/scripts/run-obligations.py`
+in the same change.
 
 Run-record schema 1 recorded `end_report.report_path` as an absolute path under
 whichever spelling of the vault root the delivering command was given. Every
-command reads a schema-1 record as schema 2: the recorded path is stripped of
-the vault root as this command spells it and, with both sides resolved, of the
-real vault root; the candidate naming the bound copy wins, so a copy recorded
-under the symlink, its target, or an alias nested inside the vault reads the
-same. A recorded path outside the vault, a relative one, or one naming any
-copy but the bound one is still refused (`ledger_invalid`), with the recovery
-named in the message. The read that upgrades a record rewrites the whole
-ledger at schema 2 through the same lock and generation check as every owner
-write, read-only commands included, before the command continues; a schema-1
-record never outlives the first command to read it. A script older than the ledger it
+command reads a schema-1 record as schema 2, its path made vault-relative, so a
+copy recorded under the `~/.claude` symlink or its target binds the same; how
+the relative path is derived is the script's (`_upgrade_legacy_report_path`).
+A recorded path outside the vault, a relative or unresolvable one, or one
+naming any copy but the bound one is refused (`ledger_invalid`) with a
+path-neutral diagnostic naming the recovery. The read that upgrades a record
+rewrites the whole ledger at schema 2 through the same lock and generation
+check as every owner write, read-only commands included, before the command
+continues; a schema-1 record never outlives the first command to read it. A script older than the ledger it
 reads refuses it (`ledger_schema_unsupported` for the envelope,
 `ledger_invalid` naming the run-record version) and never rewrites it; the
 operator updates speaker-toolkit.

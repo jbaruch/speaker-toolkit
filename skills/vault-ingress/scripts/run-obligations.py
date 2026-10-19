@@ -678,21 +678,24 @@ def _upgrade_legacy_report_path(
     if recorded.is_relative_to(vault_root):
         candidates.append(recorded.relative_to(vault_root).as_posix())
     if bound not in candidates:
+        # The persisted path is untrusted ledger content, so neither it nor the
+        # resolver's exception text reaches the diagnostic. ValueError is an
+        # embedded NUL, which JSON can carry and `resolve` refuses.
         try:
             resolved, real_root = recorded.resolve(), vault_root.resolve()
-        except (OSError, RuntimeError) as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
             raise _invalid(
                 label,
-                f"end_report report_path {str(recorded)!r} cannot be resolved "
-                f"against this vault ({exc}); make the vault path readable and "
-                "re-run the command",
+                "end_report report_path cannot be resolved against this vault; "
+                "make the vault path readable, or restore the ledger from a copy "
+                "the owner wrote, and re-run the command",
             ) from exc
         if resolved.is_relative_to(real_root):
             candidates.append(resolved.relative_to(real_root).as_posix())
     if not candidates:
         raise _invalid(
             label,
-            f"end_report report_path {str(recorded)!r} is not inside this vault; "
+            "end_report report_path is not inside this vault; "
             "pass the tracking database at the vault location this report was "
             "delivered under (or a link to it) so the owner can rewrite the path "
             "vault-relative, or restore the ledger from a copy the owner wrote",
