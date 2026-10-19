@@ -57,13 +57,23 @@ PRE_PROVIDER_AUTO_TALK_RECORD_SCHEMA_VERSION = 7
 # provenance value. Older record generations retain their closed enum.
 TALK_RECORD_SCHEMA_VERSION = 8
 LEGACY_CONFIG_RECORD_SCHEMA_VERSION = 1
-CONFIG_RECORD_SCHEMA_VERSION = 2
+# v2 added the required PPTX exclusions; v3 adds the optional counted-runs list
+# (#466). v1 and v2 stay readable and the owner migration restamps them.
+PRE_SESSION_COUNT_CONFIG_RECORD_SCHEMA_VERSION = 2
+CONFIG_RECORD_SCHEMA_VERSION = 3
+READABLE_CONFIG_RECORD_SCHEMA_VERSIONS = frozenset(
+    {
+        LEGACY_CONFIG_RECORD_SCHEMA_VERSION,
+        PRE_SESSION_COUNT_CONFIG_RECORD_SCHEMA_VERSION,
+        CONFIG_RECORD_SCHEMA_VERSION,
+    }
+)
 # The completed-session counter, and the run ids of the ledger sessions it
 # already includes (#466). The owner's count_clarification_session mutation
 # advances one and appends to the other in the same write, so a session counts
 # once however often it is re-entered. Both optional: absent means zero and
-# none. The config record is open; only these and the PPTX exclusions are
-# validated.
+# none. The counted-runs list belongs to config v3; only these and the PPTX
+# exclusions are validated.
 CLARIFICATION_SESSIONS_FIELD = "clarification_sessions_completed"
 CLARIFICATION_COUNTED_RUNS_FIELD = "clarification_counted_runs"
 LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION = 1
@@ -889,12 +899,21 @@ def _validate_config_record(
     version: int,
 ) -> None:
     """Validate the owner-versioned config fields an owner script relies on."""
+    if (
+        version < CONFIG_RECORD_SCHEMA_VERSION
+        and CLARIFICATION_COUNTED_RUNS_FIELD in config
+    ):
+        raise TrackingDatabaseError(
+            f"config.{CLARIFICATION_COUNTED_RUNS_FIELD} belongs to config schema "
+            f"v{CONFIG_RECORD_SCHEMA_VERSION}, not v{version}; run the owner "
+            "migration through vault-ingress Step 1"
+        )
     _validate_clarification_counter(config)
-    if version == CONFIG_RECORD_SCHEMA_VERSION and (
+    if version >= PRE_SESSION_COUNT_CONFIG_RECORD_SCHEMA_VERSION and (
         "pptx_directory_exclusions" not in config
     ):
         raise TrackingDatabaseConfigExclusionsError(
-            "config schema v2 requires pptx_directory_exclusions"
+            f"config schema v{version} requires pptx_directory_exclusions"
         )
     exclusions = config.get("pptx_directory_exclusions")
     if exclusions is None and "pptx_directory_exclusions" not in config:
@@ -1644,10 +1663,7 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
         "config",
         missing_version=LEGACY_CONFIG_RECORD_SCHEMA_VERSION,
     )
-    if config_version not in {
-        LEGACY_CONFIG_RECORD_SCHEMA_VERSION,
-        CONFIG_RECORD_SCHEMA_VERSION,
-    }:
+    if config_version not in READABLE_CONFIG_RECORD_SCHEMA_VERSIONS:
         reasons.append("config_schema_version_unsupported")
 
     accepted_versions_by_collection = {
@@ -2410,6 +2426,10 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
         else:
             exclusions = list(DEFAULT_PPTX_DIRECTORY_EXCLUSIONS)
         config["pptx_directory_exclusions"] = exclusions
+        config["schema_version"] = CONFIG_RECORD_SCHEMA_VERSION
+        counts["config"] = 1
+    elif config_version == PRE_SESSION_COUNT_CONFIG_RECORD_SCHEMA_VERSION:
+        # v3 only adds the optional counted-runs list; absent means none.
         config["schema_version"] = CONFIG_RECORD_SCHEMA_VERSION
         counts["config"] = 1
 

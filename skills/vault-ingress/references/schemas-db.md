@@ -230,7 +230,7 @@ or root state; the standalone root-only mode below preserves their contracts.
 | Independent record | Current schema |
 |---|---:|
 | database root | 4 (schemas 0-3 remain readable migration inputs) |
-| config | 2 (schema 1 remains readable owner-migration input) |
+| config | 3 (schemas 1 and 2 remain readable owner-migration input; v3 adds the optional `clarification_counted_runs`) |
 | talk | 8 (schemas 1-7 remain readable historical state; v5-v7 restamp) |
 | PPTX catalog | 3 (schemas 1 and 2 remain readable legacy state) |
 | QR code | 2 (schema 1 remains readable legacy state) |
@@ -244,11 +244,11 @@ or root state; the standalone root-only mode below preserves their contracts.
 
 | Component | Access | Contract |
 |---|---|---|
-| vault-ingress migration | owner read/write | Accept root schema 0/1/2/3/4 and config schema 1/2; migrate to root v4/config v2; never downgrade future state |
+| vault-ingress migration | owner read/write | Accept root schema 0/1/2/3/4 and config schema 1/2/3; migrate to root v4/config v3; never downgrade future state |
 | vault-ingress queue inspection/recovery | owner compatibility transition | Inspect schema 0/1/2/3; recover active leases in readable roots; never stamp artifact or talk schema versions |
-| vault-ingress queue normalization/claim, persistence, shownotes apply, source repair | current read/write | Require database schema 4, config schema 2, and supported explicit owner-record versions; targeted writers emit their current record generation and never migrate the root implicitly |
+| vault-ingress queue normalization/claim, persistence, shownotes apply, source repair | current read/write | Require database schema 4, config schema 3, and supported explicit owner-record versions; targeted writers emit their current record generation and never migrate the root implicitly |
 | vault-ingress preflight, source audit, analysis rendering, shownotes dry-run | dual reader | Parse schemas 0-4; gate through existing finding/error channels; never rewrite |
-| vault-clarification | current read/write | Route schema migration to vault-ingress; preserve config v2 and stamp confirmed intent v1/improvement goal v2 |
+| vault-clarification | current read/write | Route schema migration to vault-ingress; preserve config v3 and stamp confirmed intent v1/improvement goal v2 |
 | presentation-creator QR writer | dual reader/current writer | Read schemas 0-4; require schema 4 before URL creation or QR metadata persistence; stamp QR v2 |
 | presentation-creator publishing/post-event | authorized current writer | Require schema 4 before tracking writes; stamp resource v1 and preserve talk v8 |
 | illustrations thumbnail workflow | authorized current writer | Require schema 4 before tracking writes; stamp thumbnail v1 and preserve talk v8 |
@@ -256,7 +256,7 @@ or root state; the standalone root-only mode below preserves their contracts.
 | shownotes-publisher runtime resolution (`resolve-runtime.py`) | current reader | Require the generation `assess_tracking_database` reports `current` before reading `config.python_path`; a readable older generation refuses as `database_not_current` and hands off to vault-ingress Step 1 for the owner migration; an unsupported future generation fails the owner read as `owner_read_failed`; never rewrite |
 | shownotes-publisher analysis lookup (`find-talk-analysis.py`) | current reader | Require the generation `assess_tracking_database` reports `current` before selecting a talk record; a readable older generation refuses as `database_not_current` and hands off to vault-ingress Step 1 for the owner migration; an unsupported or future generation refuses as `database_unsupported`; reads `analyses/{filename}.md` beside the database and never rewrites either |
 
-Current database schema 4 with config schema 2 requires all eight top-level
+Current database schema 4 with config schema 3 requires all eight top-level
 state fields shown below. `source_title_equivalences`, `source_aliases`,
 `markdown_decks`, and `date_provenance` are optional owner collections. For
 `markdown_decks`, absent means no talk has a registered markdown deck, which is
@@ -288,7 +288,7 @@ customization, not the owner default. See the
 {
   "schema_version": 4,
   "config": {
-    "schema_version": 2,
+    "schema_version": 3,
     "vault_root": "~/.claude/rhetoric-knowledge-vault",
     "vault_storage_path": "/native/absolute/vault/root (optional; must match the tracking-database parent; null/absent uses that parent)",
     "pptx_source_dir": "/native/absolute/path/to/Presentations (optional; null/absent falls back to the vault root)",

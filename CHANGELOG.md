@@ -26,8 +26,11 @@ Two session-lifecycle gaps Copilot raised on PR #465, deferred to #466:
   appends the run id to the new optional `config.clarification_counted_runs` in
   one tracking-database write. A run already counted changes nothing, two runs
   always count twice, and `record-session` refuses (`session_not_counted`) until
-  the run is listed. The owner validates both fields on every read; the config
-  record is open, so it keeps schema 2.
+  the run is listed. The new field moves the config record to **schema 3**:
+  v1 and v2 stay readable, the owner migration restamps a v2 config to v3
+  unchanged, a v2 config carrying the field is refused, and the owner validates
+  both fields on every read. Writers and docs that named config v2 as current
+  now name v3.
 - Run records move to schema 3 (the claim fields). A schema-2 record reads as
   schema 3 with null claim fields and is rewritten on that read, the same owner
   path schema 1 took. `schemas-obligations.md`, `schemas-db.md`,

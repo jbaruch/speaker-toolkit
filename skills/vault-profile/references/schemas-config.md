@@ -33,7 +33,7 @@ canonical owner default.
 ```json
 {
   "config": {
-    "schema_version": 2,
+    "schema_version": 3,
     "vault_root": "~/.claude/rhetoric-knowledge-vault",
     "vault_storage_path": "/native/absolute/database-parent (optional; null/absent uses that parent)",
     "pptx_source_dir": "/path/to/Presentations",
@@ -82,6 +82,8 @@ run id in one write, so a ledger session counts once however often it is
 re-entered. A standalone session with no ledger record advances the counter
 with `set_config` alone. The owner validates both fields on every read: a
 non-negative integer, and unique run ids no more numerous than the count.
+`clarification_counted_runs` is a config schema v3 field; a v2 config carrying
+it is refused, and the owner migration restamps a v2 config to v3 unchanged.
 
 ### PPTX directory exclusions
 

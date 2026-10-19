@@ -73,8 +73,8 @@ changed report authorizes this exact apply command:
 Exit 0 from apply writes one JSON report with `database_written: true`, preserves
 the complete original bytes under `{vault_root}/.backups/`, and atomically
 installs the current root from the [owner compatibility contract](schemas-db.md#schema-versioning)
-with config schema v2. A current root with config
-schema v1 is also a migration: root `from_schema_version` and
+with config schema v3. A current root with config
+schema v1 or v2 is also a migration: root `from_schema_version` and
 `to_schema_version` both remain at that current root, while `record_counts.config` records the
 config upgrade.
 

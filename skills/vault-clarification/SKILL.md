@@ -87,14 +87,14 @@ Exit 0 writes one JSON object with `from_schema_version`,
 `to_schema_version`, `changed`, `database_written: false`, `input_sha256`, and
 `record_counts`. Continue only for `changed: false` at the current database
 generation in the [owner compatibility contract](../vault-ingress/references/schemas-db.md#schema-versioning)
-with config schema v2. A legacy root or config report requires the owner workflow;
+with config schema v3. A legacy root or config report requires the owner workflow;
 invoke `Skill(skill: "vault-ingress")`
 with the migration report as handoff context, then finish this clarification run.
 Exit 2 writes one error object to stdout plus an `ERROR:` diagnostic to stderr;
 stop without changing session state.
 
 Every tracking write in Steps 3–9 is current-only. Preserve the owner-current root,
-config schema 2, talk schema 8, and every unrelated record. Stamp confirmed
+config schema 3, talk schema 8, and every unrelated record. Stamp confirmed
 intents with schema 1 and new improvement goals with schema 2. Capture the exact
 input bytes immediately before each write, reject a changed generation, validate
 the complete current shape, and use a same-directory atomic replacement. Never
@@ -295,7 +295,7 @@ after a crash counts nothing more. Without a ledger session, persist
 `config.clarification_sessions_completed + 1` with `set_config`, expecting the
 exact prior value. This counter gates profile generation (vault-profile skill
 requires >= 1).
-The owner mutation preserves `config.schema_version: 2` and every unrelated
+The owner mutation preserves `config.schema_version: 3` and every unrelated
 field.
 
 Then close the ledger session Step 2 resolved; a standalone session with no

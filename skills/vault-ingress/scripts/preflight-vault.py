@@ -102,8 +102,8 @@ from pptx_evidence import (
     PPTX_EXTRACTION_SCHEMA_VERSION,
 )
 from tracking_database import (
-    CONFIG_RECORD_SCHEMA_VERSION,
     LEGACY_CONFIG_RECORD_SCHEMA_VERSION,
+    READABLE_CONFIG_RECORD_SCHEMA_VERSIONS,
     PPTX_EVIDENCE_CURRENT,
     TALK_RECORD_SCHEMA_VERSION,
     TrackingDatabaseConfigExclusionsError,
@@ -604,10 +604,7 @@ class VaultPreflight:
                         else None
                     )
                     field = "config.schema_version"
-                    expected = [
-                        LEGACY_CONFIG_RECORD_SCHEMA_VERSION,
-                        CONFIG_RECORD_SCHEMA_VERSION,
-                    ]
+                    expected = sorted(READABLE_CONFIG_RECORD_SCHEMA_VERSIONS)
                     actual = {
                         "schema_version": config_version,
                         "reason_codes": reason_codes,
@@ -737,7 +734,8 @@ class VaultPreflight:
         message: str | None = None
         actual: Any = config.get("pptx_directory_exclusions")
         if (
-            config.get("schema_version") == CONFIG_RECORD_SCHEMA_VERSION
+            config.get("schema_version") in READABLE_CONFIG_RECORD_SCHEMA_VERSIONS
+            and config.get("schema_version") != LEGACY_CONFIG_RECORD_SCHEMA_VERSION
             and "pptx_directory_exclusions" not in config
         ):
             message = (
