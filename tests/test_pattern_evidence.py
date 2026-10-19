@@ -4310,3 +4310,34 @@ def test_preflight_validator_binds_declared_audio_only_when_passed(
 
     assert declared[0] is True
     assert undeclared[0] is False
+
+
+def test_declared_audio_binds_when_the_declared_video_fails_its_probe(
+    tmp_path: Path,
+) -> None:
+    """The motivating InfoQ case: a declared MP4 that does not decode."""
+    vault = tmp_path / "vault"
+    audio = _declared_audio(vault)
+    transcript, _probe = _audio_bound_transcript(vault, audio)
+    broken = vault / "recordings" / "room-camera.mp4"
+    broken.write_bytes(b"not an mp4 at all")
+    talk = {
+        **_audio_talk(vault, transcript),
+        "video_local_path": broken.relative_to(vault).as_posix(),
+    }
+    text = transcript.read_text(encoding="utf-8")
+
+    preflight = pattern_evidence.validate_transcript_quality_for_owner(
+        transcript,
+        text,
+        talk,
+        vault_root=vault,
+        local_audio_path="recordings/talk.mp3",
+    )
+    context = pattern_evidence.build_evidence_context(
+        vault, talk, source_roots=_audio_roots("recordings/talk.mp3")
+    )
+
+    assert preflight[0] is True, preflight
+    assert "transcript" in context["verified_evidence_sources"]
+    assert "delivery_video" not in context["verified_evidence_sources"]

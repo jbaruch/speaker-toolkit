@@ -802,6 +802,23 @@ def _declared_audio_probe(
     return probe, f"owner-declared local audio {path}"
 
 
+def _transcript_media_probe(
+    vault_root: str | Path,
+    video_probe: VideoArtifactProbe | None,
+    audio_locator: object,
+) -> VideoArtifactProbe | MediaArtifactProbe | None:
+    """The local media a transcript or timing receipt binds to (#485).
+
+    The predeclared video when it probed, otherwise the owner-declared audio.
+    Every receipt reader resolves through here, so a video that fails its
+    probe falls back to the declared audio on every path alike.
+    """
+    if video_probe is not None:
+        return video_probe
+    audio_probe, _ = _declared_audio_probe(vault_root, audio_locator)
+    return audio_probe
+
+
 def resolve_video_extraction_source(
     vault_root: str | Path,
     manifest: Mapping[str, object],
@@ -1429,26 +1446,22 @@ def validate_transcript_quality_for_owner(
     local_media_path, _ = _local_video_binding(
         vault_root, talk, talk_source_identity(talk)
     )
-    local_media_duration: float | None = None
-    local_media_sha256: str | None = None
-    if local_media_path is None:
-        audio_probe, _ = _declared_audio_probe(vault_root, local_audio_path)
-        if audio_probe is not None:
-            local_media_duration = audio_probe.duration_seconds
-            local_media_sha256 = audio_probe.source_sha256
-    else:
+    video_probe: VideoArtifactProbe | None = None
+    if local_media_path is not None:
         try:
-            local_media_probe = _selected_video_assessment(
-                video_evidence_assessment
-            ).probe(
+            video_probe = _selected_video_assessment(video_evidence_assessment).probe(
                 local_media_path,
                 trusted_root=_canonical_video_root(vault_root),
             )
         except VideoEvidenceError:
-            pass
-        else:
-            local_media_duration = local_media_probe.duration_seconds
-            local_media_sha256 = local_media_probe.source_sha256
+            # A declared video that fails its probe binds nothing; the
+            # declared audio is the next owner-bound medium to try.
+            video_probe = None
+    media_probe = _transcript_media_probe(vault_root, video_probe, local_audio_path)
+    local_media_duration = (
+        media_probe.duration_seconds if media_probe is not None else None
+    )
+    local_media_sha256 = media_probe.source_sha256 if media_probe is not None else None
     unstable_reason = (
         "transcript bundle changed during quality validation; retry after "
         "acquisition or cloud sync completes"
@@ -1698,13 +1711,11 @@ def build_evidence_context(
     # Transcript and timing receipts bind to local media: the predeclared video,
     # or failing that the owner-declared audio (#485). The audio never reaches
     # `predeclared_video_probe`, which alone carries `delivery_video` evidence.
-    transcript_media_probe: VideoArtifactProbe | MediaArtifactProbe | None = (
-        predeclared_video_probe
+    transcript_media_probe = _transcript_media_probe(
+        vault_root,
+        predeclared_video_probe,
+        _declared_audio_locator(source_roots, talk),
     )
-    if transcript_media_probe is None:
-        transcript_media_probe, _ = _declared_audio_probe(
-            vault_root, _declared_audio_locator(source_roots, talk)
-        )
     timing_owner_duration = _identity_duration(talk)
     if timing_owner_duration is None:
         timing_owner_duration = (
