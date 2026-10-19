@@ -468,8 +468,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", required=True, help="the audio file to write")
     try:
         args = parser.parse_args(argv)
+        # Absolute before anything runs: the media owner's probe takes the
+        # output's directory as its trusted root, which must be absolute.
         result = extract(
-            Path(args.recording).expanduser(), Path(args.output).expanduser()
+            Path(args.recording).expanduser().absolute(),
+            Path(args.output).expanduser().absolute(),
         )
     except ExtractionError as exc:
         print(

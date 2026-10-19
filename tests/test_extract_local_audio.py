@@ -385,3 +385,26 @@ def test_help_still_prints_and_exits_cleanly():
     )
     assert completed.returncode == 0
     assert "--recording" in completed.stdout
+
+
+def test_a_relative_output_is_resolved_against_the_working_directory(tmp_path):
+    recording = _recording(tmp_path / "videos")
+    (tmp_path / "recordings").mkdir()
+    completed = subprocess.run(
+        [
+            sys.executable,
+            SCRIPT,
+            "--recording",
+            str(recording),
+            "--output",
+            "recordings/talk.m4a",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=tmp_path,
+    )
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    assert payload["output"] == str(tmp_path / "recordings" / "talk.m4a")
+    assert (tmp_path / "recordings" / "talk.m4a").is_file()
