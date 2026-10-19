@@ -23,11 +23,16 @@ rhetoric-analysis input explicit. The runtime and vault-root bootstrap is
   as `database_unsupported`.
 - A bound answer carries `analysis_text`, the exact bytes the binding checked,
   so the publisher never reopens a path that could have changed since.
-- Every unbound answer carries a `handoff` naming this one delivery and
-  `scope: one_talk`. The publisher first asks the speaker which delivery is
-  meant when the lookup is ambiguous, then invokes vault-ingress with that
-  handoff as its explicit one-talk Step 2 selection, and looks the analysis up
-  again before resuming. Blank selectors refuse as `invalid_arguments`.
+- An unbound answer carries a `handoff` naming this one delivery and
+  `scope: one_talk` only when the record is in a status vault-ingress's queue
+  can claim. The publisher resolves ambiguity with the speaker, invokes
+  vault-ingress with that handoff as its explicit one-talk Step 2 selection, and
+  looks the analysis up again before resuming. With no handoff (no matching
+  record, or a processed record whose render is missing, stale or unreadable,
+  which vault-ingress cannot re-render on its own) it stops and reports. The
+  analysis is decoded as strict UTF-8, so bad bytes are `analysis_unreadable`
+  rather than text the digest never covered. Blank selectors refuse as
+  `invalid_arguments`.
 - `talk-skill.md` runs the lookup, describes an example by what it establishes
   and its role in the argument instead of "why these examples were chosen",
   which would infer private intent, and says what to do when plan, transcript,

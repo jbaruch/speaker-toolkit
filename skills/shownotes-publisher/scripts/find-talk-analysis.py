@@ -25,7 +25,8 @@ link or non-regular file at the path), ``analysis_unreadable`` (with the
 read ``error``), ``analysis_stale``, each with ``talk`` (null unless one record matched),
 ``candidates`` (the records that share the event and date, or the title, for a
 miss; every match for ``ambiguous``) and ``handoff``: the one delivery to hand
-vault-ingress as its explicit one-talk selection (``scope: one_talk`` plus the exact filename when a record
+vault-ingress as its explicit one-talk selection, present only when the record
+is in a status its queue can claim (``CLAIMABLE_STATUSES``), else null (``scope: one_talk`` plus the exact filename when a record
 matched, else the requested title, event and date). Exit 2 writes ``{"ok":
 false, "reason_code", "error"}`` and the message to stderr when the database
 cannot be read (``database_unreadable``), is an older generation
@@ -55,6 +56,7 @@ from tracking_database import (  # noqa: E402
     TrackingDatabaseError,
     assess_tracking_database,
 )
+from queue_claim_contract import CLAIMABLE_STATUSES  # noqa: E402
 from tracking_database_io import (  # noqa: E402
     TrackingDatabaseIOError,
     decode_json_object,
@@ -220,13 +222,21 @@ def bind_analysis(talk: dict[str, Any], vault_root: Path) -> dict[str, Any]:
             "analysis_path": str(path),
             "error": f"{type(raw).__name__}: {raw.strerror or 'no detail'}",
         }
-    if not _header_binds(raw.decode("utf-8", errors="replace"), talk):
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        return {
+            "binding": "analysis_unreadable",
+            "analysis_path": str(path),
+            "error": f"not UTF-8 at byte {exc.start}",
+        }
+    if not _header_binds(text, talk):
         return {"binding": "analysis_stale", "analysis_path": str(path)}
     return {
         "binding": "bound",
         "analysis_path": str(path),
         "analysis_sha256": hashlib.sha256(raw).hexdigest(),
-        "analysis_text": raw.decode("utf-8", errors="replace"),
+        "analysis_text": text,
     }
 
 
@@ -262,26 +272,33 @@ def lookup(args: argparse.Namespace) -> dict[str, Any]:
         else {"title": args.title, "event": args.event, "date": args.date}
     )
     if len(matches) != 1:
+        # No single record: vault-ingress has nothing it could select.
         return {
             "ok": True,
             "binding": "ambiguous" if matches else "not_found",
             "talk": None,
             "candidates": [_identity(talk) for talk in (matches or near)],
-            "handoff": {"skill": "vault-ingress", "scope": "one_talk", **requested},
+            "handoff": None,
         }
     talk = matches[0]
     bound = bind_analysis(talk, vault_root)
     result: dict[str, Any] = {"ok": True, "talk": _identity(talk), **bound}
     if bound["binding"] != "bound":
         result["candidates"] = []
-        result["handoff"] = {
-            "skill": "vault-ingress",
-            "scope": "one_talk",
-            "filename": talk.get("filename"),
-            "title": talk.get("title"),
-            "event": talk.get("conference"),
-            "date": talk.get("date"),
-        }
+        # vault-ingress can process only a record its queue can claim; a
+        # processed record with a missing or stale render is not one.
+        result["handoff"] = (
+            {
+                "skill": "vault-ingress",
+                "scope": "one_talk",
+                "filename": talk.get("filename"),
+                "title": talk.get("title"),
+                "event": talk.get("conference"),
+                "date": talk.get("date"),
+            }
+            if talk.get("status") in CLAIMABLE_STATUSES
+            else None
+        )
     return result
 
 

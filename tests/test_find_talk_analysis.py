@@ -147,13 +147,8 @@ def test_a_similar_title_at_another_event_is_not_the_delivery(tmp_path):
     assert [c["filename"] for c in payload["candidates"]] == [
         ROBOCODERS_REPEAT["filename"]
     ]
-    assert payload["handoff"] == {
-        "skill": "vault-ingress",
-        "scope": "one_talk",
-        "title": ROBOCODERS["title"],
-        "event": ROBOCODERS["conference"],
-        "date": ROBOCODERS["date"],
-    }
+    # No record matched, so there is nothing vault-ingress could select.
+    assert payload["handoff"] is None
 
 
 def test_two_records_for_one_delivery_are_ambiguous(tmp_path):
@@ -166,18 +161,20 @@ def test_two_records_for_one_delivery_are_ambiguous(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "talk,write,binding",
+    "talk,write,binding,claimable",
     [
-        ({**ROBOCODERS, "status": "pending"}, False, "not_processed"),
-        (ROBOCODERS, False, "analysis_missing"),
-        (ROBOCODERS, "older", "analysis_stale"),
-        (ROBOCODERS, "other-title", "analysis_stale"),
+        ({**ROBOCODERS, "status": "pending"}, False, "not_processed", True),
+        ({**ROBOCODERS, "status": "skipped_no_sources"}, False, "not_processed", False),
+        (ROBOCODERS, False, "analysis_missing", False),
+        (ROBOCODERS, "older", "analysis_stale", False),
+        (ROBOCODERS, "other-title", "analysis_stale", False),
     ],
-    ids=["unprocessed", "no-file", "older-render", "other-talk-file"],
+    ids=["pending", "sourceless", "no-file", "older-render", "other-talk-file"],
 )
-def test_an_unbound_analysis_hands_one_talk_to_vault_ingress(
-    tmp_path, talk, write, binding
+def test_an_unbound_analysis_hands_off_only_what_ingress_can_claim(
+    tmp_path, talk, write, binding, claimable
 ):
+    """A processed record with a bad render is not one the queue can claim."""
     database = _vault(tmp_path, [talk])
     if write == "older":
         _analysis(database, talk, processed="2026-01-01")
@@ -189,14 +186,17 @@ def test_an_unbound_analysis_hands_one_talk_to_vault_ingress(
     assert code == 0, stderr
     assert payload["binding"] == binding
     assert payload["talk"]["filename"] == talk["filename"]
-    assert payload["handoff"] == {
-        "skill": "vault-ingress",
-        "scope": "one_talk",
-        "filename": talk["filename"],
-        "title": talk["title"],
-        "event": talk["conference"],
-        "date": talk["date"],
-    }
+    if claimable:
+        assert payload["handoff"] == {
+            "skill": "vault-ingress",
+            "scope": "one_talk",
+            "filename": talk["filename"],
+            "title": talk["title"],
+            "event": talk["conference"],
+            "date": talk["date"],
+        }
+    else:
+        assert payload["handoff"] is None
 
 
 def test_a_symlinked_analysis_is_not_bound(tmp_path):
@@ -272,7 +272,7 @@ def test_an_analysis_that_cannot_be_read_is_a_stable_answer(tmp_path):
     assert code == 0, stderr
     assert payload["binding"] == "analysis_unreadable"
     assert "PermissionError" in payload["error"]
-    assert payload["handoff"]["filename"] == ROBOCODERS["filename"]
+    assert payload["handoff"] is None
 
 
 def test_a_directory_at_the_analysis_path_is_missing_not_a_crash(tmp_path):
@@ -281,3 +281,15 @@ def test_a_directory_at_the_analysis_path_is_missing_not_a_crash(tmp_path):
     code, payload, stderr = _find(database, "--filename", ROBOCODERS["filename"])
     assert code == 0, stderr
     assert payload["binding"] == "analysis_missing"
+
+
+def test_an_analysis_that_is_not_utf8_is_unreadable_not_bound(tmp_path):
+    """Replacing bad bytes would bind text the digest never covered."""
+    database = _vault(tmp_path, [ROBOCODERS])
+    analysis = _analysis(database, ROBOCODERS)
+    analysis.write_bytes(analysis.read_bytes() + b"\nbroken \xff\xfe bytes\n")
+    code, payload, stderr = _find(database, "--filename", ROBOCODERS["filename"])
+    assert code == 0, stderr
+    assert payload["binding"] == "analysis_unreadable"
+    assert "not UTF-8" in payload["error"]
+    assert "analysis_text" not in payload
