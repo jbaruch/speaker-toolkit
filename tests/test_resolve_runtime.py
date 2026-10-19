@@ -131,26 +131,145 @@ def test_an_interpreter_that_does_not_exist_is_refused_not_replaced(tmp_path):
     _refused(database, "interpreter_unusable")
 
 
-def test_an_interpreter_without_the_outline_lane_is_refused(tmp_path):
-    """The interpreter passes the core lane and fails only the outline lane, so
-    a resolver that regressed to requiring core alone would accept it."""
-    interpreter = tmp_path / "python-without-pydantic"
+def _fake_interpreter(tmp_path: Path, name: str, branch: str) -> Path:
+    """A strict bash wrapper: ``branch`` handles one script, the rest run for real."""
+    interpreter = tmp_path / name
     interpreter.write_text(
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
-        'case "$1" in *check-runtime.py)\n'
-        '  case " $* " in *" --require-lanes outline "*)\n'
-        '    echo "missing pydantic" >&2; exit 1;;\n'
-        "  esac\n"
-        "  exit 0;;\n"
-        "esac\n"
+        f"{branch}\n"
         f'exec "{sys.executable}" "$@"\n',
         encoding="utf-8",
     )
     interpreter.chmod(interpreter.stat().st_mode | stat.S_IXUSR)
+    return interpreter
+
+
+MISSING_PYDANTIC = json.dumps(
+    {
+        "ok": False,
+        "python_version": "3.12.4",
+        "minimum_python": "3.10",
+        "blocking_lanes": ["outline"],
+        "lanes": {
+            "outline": {
+                "missing_modules": ["pydantic"],
+                "unresolved_modules": [],
+                "missing_commands": [],
+            }
+        },
+    }
+)
+
+
+def test_an_interpreter_without_the_outline_lane_is_refused(tmp_path):
+    """Only the outline lane fails, so a core-only resolver would accept it."""
+    interpreter = _fake_interpreter(
+        tmp_path,
+        "python-without-pydantic",
+        'case "$1" in *check-runtime.py)\n'
+        '  case " $* " in *" --require-lanes outline "*)\n'
+        f"    echo '{MISSING_PYDANTIC}'; exit 1;;\n"
+        "  esac\n"
+        "  exit 0;;\n"
+        "esac",
+    )
     vault = tmp_path / "vault"
     database = _database(vault, python_path=str(interpreter), vault_root=str(vault))
-    assert "Pydantic v2" in _refused(database, "runtime_lane_unavailable")
+    assert "install the toolkit requirements" in _refused(
+        database, "runtime_lane_unavailable"
+    )
+
+
+def test_an_interpreter_that_cannot_run_the_owner_read_is_unusable(tmp_path):
+    """It launches but fails the second read: an interpreter repair, not a DB one."""
+    interpreter = _fake_interpreter(
+        tmp_path,
+        "python-broken",
+        'case "$1" in *read-tracking-database.py) exit 1;; esac',
+    )
+    database = _database(tmp_path / "vault", python_path=str(interpreter))
+    _refused(database, "interpreter_unusable")
+
+
+def _runtime_module():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("resolve_runtime_under_test", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _verdict(**fields):
+    report = {
+        "ok": False,
+        "python_version": "3.12.4",
+        "minimum_python": "3.10",
+        "blocking_lanes": ["outline"],
+        "lanes": {
+            "outline": {
+                "missing_modules": [],
+                "unresolved_modules": [],
+                "missing_commands": [],
+            }
+        },
+    }
+    report.update(fields)
+    return json.dumps(report)
+
+
+@pytest.mark.parametrize(
+    "returncode,stdout,expected",
+    [
+        (0, json.dumps({"ok": True}), None),
+        (1, _verdict(python_version="3.9.18"), "interpreter_unsupported"),
+        (
+            1,
+            _verdict(
+                lanes={
+                    "outline": {
+                        "missing_modules": ["pydantic"],
+                        "unresolved_modules": ["pydantic"],
+                        "missing_commands": [],
+                    }
+                }
+            ),
+            "runtime_lane_unresolved",
+        ),
+        (
+            1,
+            _verdict(
+                lanes={
+                    "outline": {
+                        "missing_modules": ["yaml"],
+                        "unresolved_modules": [],
+                        "missing_commands": [],
+                    }
+                }
+            ),
+            "runtime_lane_unavailable",
+        ),
+        (
+            2,
+            _verdict(blocking_lanes=["runtime-probe"], lanes={}),
+            "runtime_probe_failed",
+        ),
+        (1, "not json", "runtime_probe_failed"),
+    ],
+    ids=[
+        "ok",
+        "old-python",
+        "cold-imports",
+        "missing-module",
+        "probe-fault",
+        "garbage",
+    ],
+)
+def test_each_runtime_verdict_routes_to_its_own_repair(returncode, stdout, expected):
+    module = _runtime_module()
+    assert module.classify_runtime_check(returncode, stdout, "outline") == expected
 
 
 def test_an_unreadable_database_is_refused(tmp_path):

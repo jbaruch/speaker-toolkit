@@ -13,7 +13,15 @@ Composes two owner scripts and adds no parsing of its own beyond their JSON:
    optional and possibly stale ``config.vault_root``.
 3. ``check-runtime.py`` under ``config.python_path`` with the ``outline`` lane
    required: PyYAML and Pydantic v2, which ``outline_schema.py`` and
-   ``verify-talk-skill.py`` import.
+   ``verify-talk-skill.py`` import. Its JSON verdict is classified, never just
+   its exit code (``classify_runtime_check``): an unsupported Python is
+   ``interpreter_unsupported``, missing modules or commands are
+   ``runtime_lane_unavailable``, probes that never finished (a cold interpreter
+   on a network filesystem) are ``runtime_lane_unresolved``, and a probe fault
+   or unreadable verdict is ``runtime_probe_failed``.
+
+The first owner read failing is ``owner_read_failed``; the same read failing
+only under ``config.python_path`` is ``interpreter_unusable``.
 
 Stdout: one JSON object. Success is ``{"ok": true, "python_path", "vault_root",
 "database_sha256"}``. Failure is ``{"ok": false, "reason_code", "error",
@@ -72,14 +80,20 @@ def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
         ) from exc
 
 
-def owner_read(interpreter: str, database: Path) -> dict:
-    """Run the strict owner reader and return its success report."""
+def owner_read(
+    interpreter: str, database: Path, failure_code: str = "owner_read_failed"
+) -> dict:
+    """Run the strict owner reader and return its success report.
+
+    ``failure_code`` names what a failure means: the database for the host's
+    read, the interpreter for the configured one's.
+    """
     completed = _run([interpreter, str(OWNER_READER), str(database)])
     try:
         report = json.loads(completed.stdout)
     except json.JSONDecodeError as exc:
         raise RuntimeResolutionError(
-            "owner_read_failed",
+            failure_code,
             f"the tracking-database owner reader under {interpreter} returned no "
             f"JSON (exit {completed.returncode}); run it directly to see why",
         ) from exc
@@ -89,11 +103,59 @@ def owner_read(interpreter: str, database: Path) -> dict:
         or not report.get("ok")
     ):
         raise RuntimeResolutionError(
-            "owner_read_failed",
+            failure_code,
             f"the tracking database at {database} did not read under {interpreter} "
             f"(exit {completed.returncode}); repair it through {HANDOFF}",
         )
     return report
+
+
+def _version_tuple(text: object) -> tuple[int, ...] | None:
+    if not isinstance(text, str):
+        return None
+    parts = text.split(".")
+    if not all(part.isdigit() for part in parts):
+        return None
+    return tuple(int(part) for part in parts)
+
+
+def classify_runtime_check(returncode: int, stdout: str, lane: str) -> str | None:
+    """The reason code a ``check-runtime.py`` verdict calls for; None when usable."""
+    try:
+        report = json.loads(stdout)
+    except json.JSONDecodeError:
+        return "runtime_probe_failed"
+    if not isinstance(report, dict):
+        return "runtime_probe_failed"
+    if returncode == 0 and report.get("ok") is True:
+        return None
+    if "runtime-probe" in (report.get("blocking_lanes") or []):
+        return "runtime_probe_failed"
+    version = _version_tuple(report.get("python_version"))
+    minimum = _version_tuple(report.get("minimum_python"))
+    if version is not None and minimum is not None and version[:2] < minimum[:2]:
+        return "interpreter_unsupported"
+    lanes = report.get("lanes")
+    lane_report = lanes.get(lane) if isinstance(lanes, dict) else None
+    if not isinstance(lane_report, dict):
+        return "runtime_probe_failed"
+    unresolved = set(lane_report.get("unresolved_modules") or [])
+    missing = set(lane_report.get("missing_modules") or []) - unresolved
+    if missing or lane_report.get("missing_commands"):
+        return "runtime_lane_unavailable"
+    if unresolved:
+        return "runtime_lane_unresolved"
+    return "runtime_probe_failed"
+
+
+RUNTIME_CHECK_ACTIONS = {
+    "interpreter_unsupported": "replace config.python_path with a supported Python",
+    "runtime_lane_unavailable": "install the toolkit requirements into it",
+    "runtime_lane_unresolved": (
+        "its imports did not finish probing; warm the interpreter and re-run"
+    ),
+    "runtime_probe_failed": "the runtime probe itself failed; run it directly",
+}
 
 
 def _config_text(config: dict, field: str, database: Path) -> str:
@@ -136,7 +198,7 @@ def resolve(database: Path) -> dict:
             f"path, so it would resolve through PATH or the working directory; "
             f"record the absolute path through {HANDOFF}",
         )
-    second = owner_read(python_path, database)
+    second = owner_read(python_path, database, "interpreter_unusable")
     if second.get("sha256") != first.get("sha256") or second.get(
         "database"
     ) != first.get("database"):
@@ -156,12 +218,13 @@ def resolve(database: Path) -> dict:
             REQUIRED_LANE,
         ]
     )
-    if check.returncode != 0:
+    reason = classify_runtime_check(check.returncode, check.stdout, REQUIRED_LANE)
+    if reason is not None:
         raise RuntimeResolutionError(
-            "runtime_lane_unavailable",
-            f"config.python_path lacks the {REQUIRED_LANE} lane (PyYAML and "
-            f"Pydantic v2; check-runtime exit {check.returncode}); install the "
-            f"toolkit requirements into it through {HANDOFF}",
+            reason,
+            f"config.python_path cannot serve the {REQUIRED_LANE} lane (PyYAML "
+            f"and Pydantic v2; check-runtime exit {check.returncode}): "
+            f"{RUNTIME_CHECK_ACTIONS[reason]}, through {HANDOFF}",
         )
     return {
         "ok": True,

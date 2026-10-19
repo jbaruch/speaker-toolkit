@@ -37,7 +37,11 @@ Follow-ups from the advisory Copilot review on #457 (#458).
   publisher then re-runs the resolver once and resumes Step 1, or finishes when
   nothing repairs it. A readable older
   database refuses as `database_not_current`; a future one fails the owner
-  read as `owner_read_failed`. `references/runtime.md` documents the contract,
+  read as `owner_read_failed`. The same read failing only under
+  `config.python_path` is `interpreter_unusable`, and the lane check's JSON
+  verdict is classified rather than its exit code: an unsupported Python, a
+  missing module, a cold interpreter whose imports never finished probing, and
+  a probe fault each get their own reason code and repair. `references/runtime.md` documents the contract,
   keeping `SKILL.md` under the entrypoint token budget.
 - `check-runtime.py` gains an `outline` lane (PyYAML and Pydantic, with an
   exact `PYDANTIC_REQUIRED_VERSION` matching `pyproject.toml`):
