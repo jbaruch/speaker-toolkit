@@ -28,11 +28,14 @@ Follow-ups from the advisory Copilot review on #457 (#458).
   the owner's reader contract, beside the dual readers. Every Python toolkit
   command in the skill and `references/talk-skill.md` runs on
   `"{python_path}"`, never a bare `python3` from `PATH`; shell scripts keep
-  their `bash` invocation. After a refusal the publisher runs only the repair
-  its `reason_code` names (one section of vault-ingress's bootstrap reference,
-  never the ingest workflow), confirms an interpreter repair with
-  `check-runtime.py --require-lanes outline`, re-runs the resolver once, and
-  resumes Step 1, or finishes when nothing repairs it. A readable older
+  their `bash` invocation. After a refusal the publisher invokes
+  `Skill(skill: "vault-ingress")` with a `runtime_repair` handoff (the
+  `reason_code` and the `outline` lane). vault-ingress Step 1 gains that
+  repair-only entry, `references/runtime-repair.md`, which runs only the repair
+  the code names, confirms an interpreter repair with `check-runtime.py
+  --require-lanes {lane}`, and finishes without starting an ingest. The
+  publisher then re-runs the resolver once and resumes Step 1, or finishes when
+  nothing repairs it. A readable older
   database refuses as `database_not_current`; a future one fails the owner
   read as `owner_read_failed`. `references/runtime.md` documents the contract,
   keeping `SKILL.md` under the entrypoint token budget.

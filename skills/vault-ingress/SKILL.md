@@ -107,7 +107,9 @@ For an explicitly requested standalone catalog metadata repair, use the
 [root-only owner migration](references/schemas-db.md#root-only-owner-migration)
 before the reviewed metadata transaction. Re-read through the owner, verify the
 changes, report, and finish here. Do not select a batch, reparse, or regenerate
-derived artifacts. Processing runs continue through bootstrap below.
+derived artifacts. A `runtime_repair` handoff from another skill's resolver
+runs only [Runtime Repair](references/runtime-repair.md) for its `reason_code`,
+then finishes here. Processing runs continue through bootstrap below.
 
 Execute [Bootstrap and Preflight](references/bootstrap-and-preflight.md) in full.
 Do not select work until migration succeeds, the catalog is structurally valid,
