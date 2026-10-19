@@ -516,6 +516,39 @@ def test_yt_dlp_fetch_is_dependency_injected_and_download_free(audit_source_iden
     }
 
 
+def test_yt_dlp_fetch_requests_every_evidence_field_without_the_full_dump(
+    audit_source_identities,
+):
+    # An auto-dubbed video's full info dict passes 11 MB (#480). The runner
+    # renders `--print` field-subset templates the way yt-dlp does.
+    info = metadata(
+        automatic_captions={f"lang{i}": [{"url": "u" * 400}] * 7 for i in range(600)}
+    )
+
+    def runner(command, **kwargs):
+        assert "--dump-single-json" not in command
+        template = command[command.index("--print") + 1]
+        assert template.startswith("%(.{") and template.endswith("})j")
+        fields = template[len("%(.{") : -len("})j")].split(",")
+        rendered = {key: info[key] for key in fields if key in info}
+        return SimpleNamespace(returncode=0, stdout=json.dumps(rendered), stderr="")
+
+    fetched = audit_source_identities.fetch_youtube_metadata(
+        VIDEO_ID, runner=runner, ytdlp=Path("/runtime/bin/yt-dlp")
+    )
+    evidence, faults = audit_source_identities.provider_evidence(
+        VIDEO_ID, fetched, CAPTURED_AT
+    )
+
+    assert "automatic_captions" not in fetched
+    assert faults == []
+    assert evidence["title"] == info["title"]
+    assert evidence["uploader_id"] == info["uploader_id"]
+    assert evidence["upload_date"] == "2026-07-31"
+    assert evidence["duration_seconds"] == info["duration"]
+    assert evidence["webpage_video_id"] == VIDEO_ID
+
+
 def test_capture_timestamp_requires_explicit_timezone(audit_source_identities):
     with pytest.raises(ValueError, match="timezone"):
         audit_source_identities.normalize_captured_at("2026-07-31T12:00:00")

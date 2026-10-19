@@ -1,5 +1,29 @@
 # Changelog
 
+### Fix the yt-dlp metadata probe on auto-dubbed YouTube videos
+
+The duration and download probes in `local_media_download.py` asked yt-dlp for
+its full `--dump-single-json` document and capped it at 1 MiB. YouTube's AI
+auto-dubbing gives every dubbed audio track its own ASR captions, each
+translatable into ~157 languages, so a 43-minute Devoxx Belgium 2026 talk
+dumped 11,580,981 bytes, 10.9 MB of it `automatic_captions`. The probe failed
+with `ytdlp_stdout_limit`, no timing receipt was written, and
+`persist-results.py` then refused the talk (#480).
+
+- Both probes now pass `--print` with a field-subset template naming only the
+  nine fields `_metadata()` reads. On the reported video that is 172 bytes
+  against the pinned yt-dlp 2026.08.19, and the download path still selects the
+  original-language track. The 1 MiB cap and the duplicate-key and identity
+  checks are unchanged; they now run on a document that cannot grow with
+  captions.
+- `audit-source-identities.py` had the same full dump with no cap, so it never
+  failed but loaded the whole 11 MB per video. It now asks for the seven fields
+  `provider_evidence` reads.
+- Regression tests feed a synthetic yt-dlp whose full info dict carries an
+  over-cap `automatic_captions` payload and which renders `--print` templates
+  the way yt-dlp does. They fail on the old probe with the reported
+  `ytdlp_stdout_limit`.
+
 ## 0.20.168 — 2026-10-19
 
 ### Renew the libreoffice-impress CI pin
