@@ -261,16 +261,26 @@ def test_a_poster_parents_frames_are_stamped_copies(build_expansion_manifest, tm
     assert [frame.read_bytes() for frame in raw] == raw_bytes
 
 
-def test_a_safe_zone_parent_keeps_its_raw_frames(build_expansion_manifest, tmp_path):
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"safe_zone": {"zone": "upper_third", "surface": "sky"}},
+        {"format": "IMG+TXT"},
+    ],
+    ids=["safe-zone", "img-txt"],
+)
+def test_a_poster_build_parent_off_the_poster_contract_is_refused(
+    build_expansion_manifest, tmp_path, change
+):
     slide = next(s for s in DEFAULT_SLIDES if s["n"] == 7)
-    zoned = {**slide, "safe_zone": {"zone": "upper_third", "surface": "sky"}}
-    outline = _stamping_outline(tmp_path, [zoned])
+    outline = _stamping_outline(tmp_path, [{**slide, **change}])
     builds = tmp_path / "builds"
     _image_frames(builds, 7, 4)
 
-    manifest = build_expansion_manifest.build_manifest(outline, builds)
+    with pytest.raises(SystemExit) as exc:
+        build_expansion_manifest.build_manifest(outline, builds)
 
-    assert manifest["builds"][0]["frames"][0].endswith("builds/slide-07-build-00.jpg")
+    assert "slide 7 is a build parent in a poster deck" in str(exc.value)
     assert not (builds / "footer-stamped").exists()
 
 

@@ -168,6 +168,9 @@ Ask the speaker — `AskUserQuestion`, never infer — how titles and footers ar
   **illustrated** slide to **FULL** (no IMG+TXT, no safe zones — EXCEPTION/screenshot
   slides without an `image_prompt` are exempt); the text treatment + footer are
   recorded in the anchor at Step 9.
+- **Bleed, stamped footer** — Bleed, but the footer is stamped onto every
+  illustrated slide after generation in one exact font, so it is identical on
+  every slide instead of model-drawn. Step 9 also sets `style_anchor.footer_style`.
 - **Overlay** — titles + footers added by PowerPoint over a per-slide safe zone.
   Editable, uniform font, less integrated. Standard composition; the format
   vocabulary is FULL / IMG+TXT / EXCEPTION + any talk-specific additions.
@@ -235,7 +238,7 @@ continuity devices (`conventions`) — into `outline.yaml`. For poster-theatrica
 composition, also set `style_anchor.composition: poster-theatrical`,
 `style_anchor.embedded_footer: <text>`, and `style_anchor.text_treatment: <how
 baked title + footer are rendered>` (e.g. "glowing hand-script neon on an
-in-scene surface"). For a pixel-identical footer, also set
+in-scene surface"). For the Step 5 stamped-footer choice, also set
 `style_anchor.footer_style` (`{}` takes the defaults), then read the footer
 passage of this step's strategy reference:
 

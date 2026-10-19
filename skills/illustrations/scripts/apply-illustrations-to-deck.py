@@ -42,6 +42,12 @@ Usage:
     apply-illustrations-to-deck.py DECK ILLUSTRATIONS_DIR OUTLINE_YAML \\
         [--out OUT_DECK] [--image-ext jpg|jpeg|png] \\
         [--scrim-color RRGGBB] [--scrim-alpha 0-100000]
+
+Stdout is one JSON object: ``ok``, the written ``deck`` (null when the outline
+has nothing to apply), ``updated`` and ``eligible`` slide counts, the per-slide
+``results``, and the ``backgrounds_manifest`` path (null when no FULL slide
+needs a background). Progress lines go to stderr. A refusal exits non-zero
+with its message on stderr.
 """
 
 import argparse
@@ -161,6 +167,11 @@ def parse_composition(outline_path: Path) -> str | None:
     if anchor and anchor.composition is not None:
         return anchor.composition.value
     return None
+
+
+def _progress(message: str) -> None:
+    """Human progress goes to stderr; stdout carries only the JSON summary."""
+    print(message, file=sys.stderr)
 
 
 def parse_footer_stamp(outline_path: Path) -> tuple[str, dict] | None:
@@ -430,10 +441,10 @@ def apply(
     for n, zone in sorted(zones.items()):
         illust = illust_dir / f"slide-{n:02d}.{ext}"
         if not illust.exists():
-            print(f"  [{n:02d}] SKIP: missing {illust.name}")
+            _progress(f"  [{n:02d}] SKIP: missing {illust.name}")
             continue
         if n > len(prs.slides):
-            print(f"  [{n:02d}] SKIP: out of deck range")
+            _progress(f"  [{n:02d}] SKIP: out of deck range")
             continue
 
         slide = prs.slides[n - 1]
@@ -441,7 +452,7 @@ def apply(
 
         scrim_added = ensure_scrim(slide, zone, scrim_hex, scrim_alpha)
         moved = reposition_title(slide, zone)
-        print(
+        _progress(
             f"  [{n:02d}] zone={zone}  moved={moved} text  scrim+{scrim_added}  bg->VBA"
         )
         results.append(
@@ -458,17 +469,17 @@ def apply(
     for n in sorted(img_txt_slides):
         illust = illust_dir / f"slide-{n:02d}.{ext}"
         if not illust.exists():
-            print(f"  [{n:02d}] SKIP: missing {illust.name}")
+            _progress(f"  [{n:02d}] SKIP: missing {illust.name}")
             continue
         if n > len(prs.slides):
-            print(f"  [{n:02d}] SKIP: out of deck range")
+            _progress(f"  [{n:02d}] SKIP: out of deck range")
             continue
 
         slide = prs.slides[n - 1]
         swap_or_insert_picture(slide, illust)
 
         pic_moved, text_moved = apply_img_txt_layout(slide)
-        print(f"  [{n:02d}] format=IMG+TXT  pic+{pic_moved}  text+{text_moved}")
+        _progress(f"  [{n:02d}] format=IMG+TXT  pic+{pic_moved}  text+{text_moved}")
         results.append(
             {
                 "slide": n,
@@ -484,21 +495,25 @@ def apply(
     for n in sorted(poster_full_slides):
         illust = illust_dir / f"slide-{n:02d}.{ext}"
         if not illust.exists():
-            print(f"  [{n:02d}] SKIP: missing {illust.name}")
+            _progress(f"  [{n:02d}] SKIP: missing {illust.name}")
             continue
         if n > len(prs.slides):
-            print(f"  [{n:02d}] SKIP: out of deck range")
+            _progress(f"  [{n:02d}] SKIP: out of deck range")
             continue
         if footer_stamp is None:
             backgrounds[n] = str(illust.resolve())
-            print(f"  [{n:02d}] poster FULL  bg->VBA  (title+footer baked into image)")
+            _progress(
+                f"  [{n:02d}] poster FULL  bg->VBA  (title+footer baked into image)"
+            )
         else:
             text, style = footer_stamp
             stamped = stamp_footer_file(
                 illust, illust_dir / "footer-stamped", text, style
             )
             backgrounds[n] = str(stamped.resolve())
-            print(f"  [{n:02d}] poster FULL  bg->VBA  (title baked, footer stamped)")
+            _progress(
+                f"  [{n:02d}] poster FULL  bg->VBA  (title baked, footer stamped)"
+            )
         results.append(
             {
                 "slide": n,
@@ -510,6 +525,25 @@ def apply(
 
     prs.save(str(out_deck))
     return results, backgrounds
+
+
+def _summary(
+    deck: Path | None,
+    results: list[dict],
+    eligible: int,
+    backgrounds_manifest: Path | None,
+) -> dict:
+    """The one JSON object main prints on stdout."""
+    return {
+        "ok": True,
+        "deck": str(deck) if deck is not None else None,
+        "updated": len(results),
+        "eligible": eligible,
+        "results": results,
+        "backgrounds_manifest": (
+            str(backgrounds_manifest) if backgrounds_manifest is not None else None
+        ),
+    }
 
 
 def main():
@@ -571,10 +605,11 @@ def main():
     poster_full_slides = parse_full_slides(args.outline) if poster else set()
     total_slides = len(zones) + len(img_txt_slides) + len(poster_full_slides)
     if total_slides == 0:
-        print(
+        _progress(
             f"No `safe_zone`, `format: IMG+TXT`, or poster-theatrical FULL "
             f"slides found in {args.outline.name}. Nothing to do."
         )
+        print(json.dumps(_summary(None, [], 0, None)))
         return
 
     scrim_hex = args.scrim_color.lstrip("#").upper()
@@ -597,23 +632,35 @@ def main():
         poster_full_slides,
         parse_footer_stamp(args.outline) if poster else None,
     )
-    print(f"\nSaved {out_deck}")
-    print(f"Updated {len(results)}/{total_slides} slides")
+    _progress(f"\nSaved {out_deck}")
+    _progress(f"Updated {len(results)}/{total_slides} slides")
 
     if backgrounds:
         manifest = {
             "backgrounds": {str(n): path for n, path in sorted(backgrounds.items())}
         }
         backgrounds_out.write_text(json.dumps(manifest, indent=2) + "\n")
-        print(f"Wrote {len(backgrounds)} FULL-slide background(s) -> {backgrounds_out}")
-        print(
+        _progress(
+            f"Wrote {len(backgrounds)} FULL-slide background(s) -> {backgrounds_out}"
+        )
+        _progress(
             f"Apply them via: apply-backgrounds.sh <uniquely-named copy of {out_deck.name}> "
             f"<final.pptx> {backgrounds_out.name}"
         )
     else:
-        print(
+        _progress(
             "No FULL background slides (Safe zone or poster) — no background manifest written."
         )
+    print(
+        json.dumps(
+            _summary(
+                out_deck,
+                results,
+                total_slides,
+                backgrounds_out if backgrounds else None,
+            )
+        )
+    )
 
 
 if __name__ == "__main__":

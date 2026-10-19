@@ -18,8 +18,18 @@ discipline reduced the drift but cannot guarantee typographic identity.
   background manifest there. `build-expansion-manifest.py` stamps the same
   slides' build frames into `illustrations/builds/footer-stamped/` and lists
   those copies, so a progressive reveal carries the footer on every frame.
-  `footer_stamp.stamp_spec` and `stamped_slide` are the one answer both use.
-  The raw generated images stay footer-free for edits and builds.
+  `footer_stamp.stamp_spec` and `stamped_slide` are the one answer both use:
+  an illustrated FULL slide without a safe zone, so a screenshot slide keeps
+  its own treatment. A build parent in such a deck that is anything else stops
+  the manifest with the fix. The raw generated images stay footer-free for
+  edits and builds.
+- Step 5's composition question gains "Bleed, stamped footer" beside Bleed and
+  Overlay, so the speaker picks the stamped footer before Step 9 writes
+  `footer_style`; `title-overlay-rules.md` §0 says the footer is model-drawn
+  unless `footer_style` stamps it.
+- `apply-illustrations-to-deck.py` now prints one JSON summary on stdout (the
+  written deck, slide counts, per-slide results, the backgrounds manifest) and
+  sends its progress lines to stderr.
 - `footer_stamp.py` draws the footer with one real font, sized to span the
   target width, centred, its baseline at the configured height, and writes PNG
   whatever the source format: a JPEG re-encode made glyph pixels depend on the

@@ -71,12 +71,17 @@ def stamp_spec(anchor: Any) -> tuple[str, dict[str, Any]] | None:
 
 
 def stamped_slide(slide: Any) -> bool:
-    """Whether a stamping deck's slide is a full-bleed poster background.
+    """Whether a poster deck's slide is an illustrated full-bleed background.
 
-    A FULL slide without a safe zone carries its footer in the image; a
-    safe-zone slide takes the scrim-and-title path instead.
+    Only an illustrated slide (one with an ``image_prompt``) that is FULL with
+    no safe zone carries its footer in the image. A screenshot or other
+    non-illustrated slide keeps its own treatment and is never stamped.
     """
-    return slide.format.value == "FULL" and not slide.safe_zone
+    return (
+        slide.format.value == "FULL"
+        and not slide.safe_zone
+        and bool(slide.image_prompt)
+    )
 
 
 def _require_style(style: Mapping[str, Any]) -> None:

@@ -249,8 +249,8 @@ string — never the text styling. Putting the treatment in the anchor is what
 keeps every baked title and footer rendering identically across the deck.
 
 An image model rendering the same literal footer still varies its font, size,
-spacing and baseline from slide to slide. To take the footer out of its hands,
-also set `style_anchor.footer_style` (fields and defaults:
+spacing and baseline from slide to slide. To take the footer out of its hands
+(Step 5's "Bleed, stamped footer" choice), also set `style_anchor.footer_style` (fields and defaults:
 `skills/presentation-creator/scripts/outline_schema.py` `FooterStyle`; `{}`
 takes them all). Generation then reserves a quiet strip at the bottom and
 renders no footer, and `skills/illustrations/scripts/apply-illustrations-to-deck.py`

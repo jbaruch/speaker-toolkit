@@ -5,6 +5,7 @@ partial outlines via _write_outline.
 """
 
 import copy
+import json
 from pathlib import Path
 
 import pytest
@@ -608,3 +609,46 @@ def test_a_footer_style_needs_a_poster_footer(apply_illustrations, tmp_path):
     with pytest.raises(ValidationError, match="footer_style stamps embedded_footer"):
         _poster_outline_with_footer_style(tmp_path, "", {})
         outline_schema.load_outline_partial(tmp_path / "outline.yaml")
+
+
+def test_an_unillustrated_poster_slide_is_never_stamped(apply_illustrations, tmp_path):
+    """A screenshot slide keeps its own treatment, even with a matching asset."""
+    outline = _write_outline(
+        tmp_path,
+        [
+            {"n": 2, "format": "FULL", "text_overlay": "T", "image_prompt": "P"},
+            {"n": 3, "format": "FULL", "text_overlay": "Screenshot"},
+        ],
+        composition="poster-theatrical",
+        embedded_footer="@jbaruch",
+    )
+    assert apply_illustrations.parse_full_slides(outline) == {2}
+
+
+def test_main_reports_one_json_object_on_stdout(
+    apply_illustrations, tmp_path, monkeypatch, capsys
+):
+    from PIL import Image
+
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    Image.new("RGB", (1536, 864), (30, 40, 50)).save(illust_dir / "slide-02.jpg")
+    outline = _poster_outline_with_footer_style(
+        tmp_path, "@jbaruch    speaking.jbaru.ch", {}
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        ["apply-illustrations-to-deck.py", str(deck), str(illust_dir), str(outline)],
+    )
+
+    apply_illustrations.main()
+
+    captured = capsys.readouterr()
+    summary = json.loads(captured.out)
+    assert summary["ok"] is True
+    assert summary["updated"] == 1 and summary["eligible"] == 1
+    assert summary["results"][0]["footer_stamped"] is True
+    assert summary["backgrounds_manifest"] is not None
+    assert "poster FULL" in captured.err

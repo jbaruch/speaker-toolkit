@@ -12,9 +12,10 @@ safety net that applies regardless of placement.
 
 Narrow exception for the poster-theatrical composition. When the deck's
 `style_anchor.composition` is `poster-theatrical`, every illustrated slide (one
-with an `image_prompt`) is FULL and the title and footer are rendered INTO the
-image as a stylized part of the scene — nothing in sections 1–7 applies to that
-deck. EXCEPTION / non-illustrated slides (real screenshots, no `image_prompt`)
+with an `image_prompt`) is FULL and its title is rendered INTO the image as a
+stylized part of the scene — nothing in sections 1–7 applies to that deck. The
+footer is rendered into the image too, unless `style_anchor.footer_style` sets
+it to be stamped after generation (below). EXCEPTION / non-illustrated slides (real screenshots, no `image_prompt`)
 are not generated and keep their own treatment:
 
 - No `TITLE SAFE ZONE` directive — generation appends the `EMBEDDED TEXT`
@@ -38,8 +39,9 @@ are not generated and keep their own treatment:
 - No scrim and no overlaid title text box at apply time — poster FULL slides get
   a background fill only (`apply-illustrations-to-deck.py` `parse_full_slides`),
   from a footer-stamped copy when `footer_style` is set.
-- The QR code is the only shape inserted after generation; everything else is
-  embedded and stylized.
+- The QR code is the only shape inserted after generation. Everything else is
+  embedded and stylized, a stamped footer included: it is drawn into the
+  background image, never inserted as a shape.
 
 Every non-poster deck still follows sections 1–7 below.
 

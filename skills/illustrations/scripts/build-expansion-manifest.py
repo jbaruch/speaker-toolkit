@@ -33,9 +33,10 @@ Manifest shape (schema_version 1):
 When the outline stamps its footer (`style_anchor.footer_style`), each poster
 parent's frames are stamped by `footer_stamp.stamp_footer_file` into
 `BUILDS_DIR/footer-stamped/slide-NN-build-MM.png` and `frames` lists those
-copies; the raw frames stay footer-free for editing. Which parents qualify is
-`footer_stamp.stamped_slide`, the same answer apply-illustrations-to-deck.py
-uses for parent slides.
+copies; the raw frames stay footer-free for editing. Every build parent of
+such a deck must satisfy `footer_stamp.stamped_slide`, the same answer
+apply-illustrations-to-deck.py uses for parent slides; any other parent exits
+non-zero naming the slide.
 
 ExpandBuilds processes parents in descending slide order so inserting a parent's
 frames never shifts the indices of lower-numbered parents still to be expanded.
@@ -90,13 +91,21 @@ def parse_build_specs(outline_path: Path) -> list[dict]:
     for slide in outline.slides:
         if not slide.builds:
             continue
+        if footer is not None and not stamped_slide(slide):
+            raise SystemExit(
+                f"ERROR: slide {slide.n} is a build parent in a poster deck that "
+                "stamps its footer, but it is not an illustrated FULL slide "
+                "without safe_zone; poster-theatrical decks allow only those. "
+                "Set it to format FULL with an image_prompt and remove safe_zone, "
+                "or drop its builds."
+            )
         steps = sorted(b.step for b in slide.builds)
         specs.append(
             {
                 "parent": slide.n,
                 "count": len(steps),
                 "steps": steps,
-                "footer": footer if footer and stamped_slide(slide) else None,
+                "footer": footer,
             }
         )
     return specs
