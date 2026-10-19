@@ -41,6 +41,8 @@ recording exceeds the 8 GiB input ceiling.
   installing it (hard link, or an exclusive-create copy on a volume without
   links), and never replaces existing audio. A probe refusal names the action
   its reason code calls for; only a container or codec mismatch suggests `.wav`.
+  A filesystem error refuses as `io_failed`, and anything unexpected leaves
+  stdout empty and writes the shared closed failure document to stderr (exit 3).
   `local-media-acquisition.md` runs it, then `--audio`, then a declaration —
   never a transcode renamed to `{youtube_id}.mp4`.
   `subagent-instructions.md` names the declaration for non-YouTube talks, and

@@ -40,7 +40,9 @@ Stdout: one JSON object. Success is ``{"ok": true, "output", "written",
 2. Reason codes: ``invalid_arguments``, ``recording_unreadable``,
 ``ffmpeg_unavailable``, ``extraction_failed``, ``extraction_timeout``,
 ``output_over_ceiling``, ``recording_changed``, ``output_unusable``,
-``output_exists``, ``output_write_failed``.
+``output_exists``, ``output_write_failed``, ``io_failed``. Any other failure
+leaves stdout empty, writes one closed failure document to stderr
+(``failure_diagnostics``), and exits 3.
 """
 
 from __future__ import annotations
@@ -57,6 +59,7 @@ import stat
 import subprocess
 import sys
 
+from failure_diagnostics import emit_unexpected_failure
 from local_media_contract import MEDIA_MAX_INPUT_BYTES, LocalMediaError
 from local_media_evidence import probe_local_media
 from tracking_database import AUDIO_DECLARATION_SUFFIXES
@@ -386,6 +389,15 @@ def extract(
         if leftover is not None:
             raise ExtractionError(exc.reason_code, f"{exc}{leftover}") from exc
         raise
+    except OSError as exc:
+        leftover = _remove_staged(staged) or ""
+        raise ExtractionError(
+            "io_failed",
+            f"a filesystem operation failed during extraction "
+            f"({type(exc).__name__}: {exc.strerror or 'no detail'}) — check that "
+            f"the recording and the output directory are readable and writable, "
+            f"then re-run{leftover}",
+        ) from exc
     finally:
         if staged.exists():
             _remove_staged(staged)
@@ -410,5 +422,23 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def run_cli(argv: list[str] | None = None) -> int:
+    """Run the CLI behind its failure boundary; returns the exit code."""
+    try:
+        return main(argv)
+    # The caller reads stdout for one JSON verdict; an unexpected exception
+    # would reach it as a traceback with no verdict and possibly a host path.
+    # Emit the closed failure document on stderr and exit 3 instead.
+    except Exception as exc:  # noqa: BLE001 - outer-boundary-process-contract
+        emit_unexpected_failure(
+            exc,
+            "audio_extraction_unexpected_failure",
+            "Audio extraction failed unexpectedly. No output was installed; a "
+            "staged .partial file may remain beside the output — remove it and "
+            "re-run, and report the failure if it recurs.",
+        )
+        return 3
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run_cli())

@@ -287,3 +287,43 @@ def test_a_probe_refusal_names_the_action_its_reason_calls_for(
     if not_advice is not None:
         assert not_advice not in str(caught.value)
     assert _staged(tmp_path) == []
+
+
+def test_a_filesystem_failure_is_a_structured_refusal(
+    tmp_path, extract_local_audio, monkeypatch
+):
+    recording = _recording(tmp_path / "videos")
+    output = tmp_path / "talk.m4a"
+    output.write_bytes(b"existing audio")
+
+    def unreadable(_path):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(extract_local_audio, "_sha256", unreadable)
+    with pytest.raises(extract_local_audio.ExtractionError) as caught:
+        extract_local_audio.extract(recording, output)
+
+    assert caught.value.reason_code == "io_failed"
+    assert "Permission denied" in str(caught.value)
+    assert output.read_bytes() == b"existing audio"
+    assert _staged(tmp_path) == []
+
+
+def test_an_unexpected_failure_leaves_stdout_empty_and_exits_3(
+    tmp_path, extract_local_audio, monkeypatch, capsys
+):
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("/private/host/path should never be printed")
+
+    monkeypatch.setattr(extract_local_audio, "extract", broken)
+    code = extract_local_audio.run_cli(
+        ["--recording", str(tmp_path / "r.mp4"), "--output", str(tmp_path / "a.m4a")]
+    )
+
+    captured = capsys.readouterr()
+    assert code == 3
+    assert captured.out == ""
+    document = json.loads(captured.err.splitlines()[0])
+    assert document["error"] == "audio_extraction_unexpected_failure"
+    assert document["error_type"] == "RuntimeError"
+    assert "/private/host/path" not in captured.err
