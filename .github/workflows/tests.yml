@@ -207,7 +207,7 @@ jobs:
         os: [macos-26-intel, windows-latest]
     # Immutable FFmpeg 8.1.2 Intel archives for the macOS lane. Renew the URLs
     # and checksums quarterly, or when the approved media-tool version advances;
-    # the archive cache key reads these checksums, so a renewal never restores
+    # the archive cache keys read these checksums, so a renewal never restores
     # old archives.
     env:
       FFMPEG_URL: https://evermeet.cx/ffmpeg/ffmpeg-8.1.2.zip
@@ -220,15 +220,25 @@ jobs:
         with:
           python-version: "3.12"
       # evermeet.cx rate-limits shared runner addresses (HTTP 429 with a
-      # six-hour Retry-After), so the archives are cached after one download
-      # and every later run restores them instead of asking again.
-      - name: Restore macOS media archives
+      # six-hour Retry-After), so each verified archive is cached on its own
+      # checksum and saved even when the job fails: a rerun asks only for what
+      # is still missing, and once both are cached no run asks at all.
+      - name: Restore the macOS ffmpeg archive
+        id: ffmpeg-archive
         if: runner.os == 'macOS'
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
-          path: ${{ runner.temp }}/speaker-toolkit-ffmpeg-archives
-          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ env.FFMPEG_SHA256 }}-${{ env.FFPROBE_SHA256 }}
+          path: ${{ runner.temp }}/speaker-toolkit-ffmpeg-archives/ffmpeg.zip
+          key: ffmpeg-archive-${{ runner.arch }}-${{ env.FFMPEG_SHA256 }}
+      - name: Restore the macOS ffprobe archive
+        id: ffprobe-archive
+        if: runner.os == 'macOS'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/speaker-toolkit-ffmpeg-archives/ffprobe.zip
+          key: ffprobe-archive-${{ runner.arch }}-${{ env.FFPROBE_SHA256 }}
       - name: Install macOS media evidence dependencies
+        id: media-install
         if: runner.os == 'macOS'
         shell: bash
         run: |
@@ -237,35 +247,51 @@ jobs:
           media_dir="$RUNNER_TEMP/speaker-toolkit-ffmpeg-8.1.2"
           mkdir -p "$archives" "$media_dir/bin"
           # Bounded attempts with short pauses: curl's own --retry honours a
-          # Retry-After of hours and sleeps past the job timeout.
+          # Retry-After of hours and sleeps past the job timeout. Each verified
+          # archive is announced as a step output so its cache save runs even
+          # if the other archive fails.
           fetch() {
-            local url=$1 out=$2 sha=$3 attempt
+            local name=$1 url=$2 sha=$3 attempt
+            local out="$archives/$name.zip"
             if [[ -f "$out" ]]; then
               if printf '%s  %s\n' "$sha" "$out" | shasum -a 256 -c - >/dev/null; then
-                echo "restored $(basename "$out") from the cache"
+                echo "restored $name.zip from the cache"
                 return 0
               fi
-              echo "::warning::cached $(basename "$out") fails its checksum; downloading it again"
+              echo "::warning::cached $name.zip fails its checksum; downloading it again"
               rm -f "$out"
             fi
             for attempt in 1 2 3; do
               if curl -fsSL --connect-timeout 20 --max-time 300 --output "$out" "$url"; then
                 printf '%s  %s\n' "$sha" "$out" | shasum -a 256 -c -
+                echo "${name}_fetched=true" >> "$GITHUB_OUTPUT"
                 return 0
               fi
               echo "::warning::download of $url failed (attempt $attempt of 3)"
               rm -f "$out"
               sleep $((attempt * 15))
             done
-            echo "::error::cannot download $url after 3 attempts; evermeet.cx may be rate-limiting this runner (HTTP 429). Re-run the job: once any run caches the archives, later runs restore them without downloading."
+            echo "::error::cannot download $url after 3 attempts; evermeet.cx may be rate-limiting this runner (HTTP 429). Re-run the job: every archive a run verifies is cached, so reruns fetch only what is still missing."
             return 1
           }
-          fetch "$FFMPEG_URL" "$archives/ffmpeg-8.1.2.zip" "$FFMPEG_SHA256"
-          fetch "$FFPROBE_URL" "$archives/ffprobe-8.1.2.zip" "$FFPROBE_SHA256"
-          unzip -q "$archives/ffmpeg-8.1.2.zip" -d "$media_dir/bin"
-          unzip -q "$archives/ffprobe-8.1.2.zip" -d "$media_dir/bin"
+          fetch ffmpeg "$FFMPEG_URL" "$FFMPEG_SHA256"
+          fetch ffprobe "$FFPROBE_URL" "$FFPROBE_SHA256"
+          unzip -q "$archives/ffmpeg.zip" -d "$media_dir/bin"
+          unzip -q "$archives/ffprobe.zip" -d "$media_dir/bin"
           chmod +x "$media_dir/bin/ffmpeg" "$media_dir/bin/ffprobe"
           printf '%s\n' "$media_dir/bin" >> "$GITHUB_PATH"
+      - name: Cache the verified ffmpeg archive
+        if: always() && steps.media-install.outputs.ffmpeg_fetched == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/speaker-toolkit-ffmpeg-archives/ffmpeg.zip
+          key: ffmpeg-archive-${{ runner.arch }}-${{ env.FFMPEG_SHA256 }}
+      - name: Cache the verified ffprobe archive
+        if: always() && steps.media-install.outputs.ffprobe_fetched == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/speaker-toolkit-ffmpeg-archives/ffprobe.zip
+          key: ffprobe-archive-${{ runner.arch }}-${{ env.FFPROBE_SHA256 }}
       - name: Install Windows media evidence dependencies
         if: runner.os == 'Windows'
         shell: pwsh
