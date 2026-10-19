@@ -38,7 +38,9 @@ recording exceeds the 8 GiB input ceiling.
   stream (stream copy to `.m4a`/`.mp3`, or 16-bit PCM `.wav`) under a wall-clock
   limit and the owner's byte ceiling, refuses a recording that changed
   mid-extraction, verifies the result through `probe_local_media` before
-  installing it, and never replaces existing audio with different bytes.
+  installing it (hard link, or an exclusive-create copy on a volume without
+  links), and never replaces existing audio. A probe refusal names the action
+  its reason code calls for; only a container or codec mismatch suggests `.wav`.
   `local-media-acquisition.md` runs it, then `--audio`, then a declaration —
   never a transcode renamed to `{youtube_id}.mp4`.
   `subagent-instructions.md` names the declaration for non-YouTube talks, and

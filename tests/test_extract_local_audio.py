@@ -83,9 +83,7 @@ def _audio_streams(path: Path) -> list[str]:
 
 
 @pytest.mark.parametrize("suffix,mode", [(".m4a", "copy"), (".wav", "pcm_s16le")])
-def test_the_audio_stream_is_extracted_verified_and_reported(
-    tmp_path, suffix, mode
-):
+def test_the_audio_stream_is_extracted_verified_and_reported(tmp_path, suffix, mode):
     recording = _recording(tmp_path / "videos")
     output = tmp_path / "recordings" / f"talk{suffix}"
     output.parent.mkdir()
@@ -221,4 +219,71 @@ def test_an_ffmpeg_that_overruns_its_budget_is_stopped(
             recording, tmp_path / "talk.m4a", timeout_seconds=0.5
         )
     assert caught.value.reason_code == "extraction_timeout"
+    assert _staged(tmp_path) == []
+
+
+def test_a_volume_without_hard_links_installs_by_exclusive_copy(
+    tmp_path, extract_local_audio, monkeypatch
+):
+    recording = _recording(tmp_path / "videos")
+    output = tmp_path / "talk.m4a"
+
+    def no_links(_source, _target):
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(extract_local_audio.os, "link", no_links)
+    result = extract_local_audio.extract(recording, output)
+
+    assert result["written"] is True
+    assert extract_local_audio._sha256(output) == result["media_sha256"]
+    assert _staged(tmp_path) == []
+
+
+def test_a_file_that_appears_before_the_fallback_copy_is_never_replaced(
+    tmp_path, extract_local_audio, monkeypatch
+):
+    recording = _recording(tmp_path / "videos")
+    output = tmp_path / "talk.m4a"
+
+    def racer_then_no_links(_source, _target):
+        output.write_bytes(b"a racing writer's audio")
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(extract_local_audio.os, "link", racer_then_no_links)
+    with pytest.raises(extract_local_audio.ExtractionError) as caught:
+        extract_local_audio.extract(recording, output)
+
+    assert caught.value.reason_code == "output_exists"
+    assert output.read_bytes() == b"a racing writer's audio"
+    assert _staged(tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    "reason_code,advice,not_advice",
+    [
+        ("media_parser_rejected", ".wav output", None),
+        ("media_no_usable_audio_stream", ".wav output", None),
+        ("media_dependency_unavailable", "install ffmpeg", ".wav"),
+        ("media_worker_timeout", "less loaded", ".wav"),
+        ("media_size_limit", "smallest output", ".wav"),
+        ("media_something_new", "local_media_contract.py", ".wav"),
+    ],
+)
+def test_a_probe_refusal_names_the_action_its_reason_calls_for(
+    tmp_path, extract_local_audio, monkeypatch, reason_code, advice, not_advice
+):
+    recording = _recording(tmp_path / "videos")
+
+    def refusing_probe(_path, *, trusted_root=None):
+        raise extract_local_audio.LocalMediaError(reason_code)
+
+    monkeypatch.setattr(extract_local_audio, "probe_local_media", refusing_probe)
+    with pytest.raises(extract_local_audio.ExtractionError) as caught:
+        extract_local_audio.extract(recording, tmp_path / "talk.m4a")
+
+    assert caught.value.reason_code == "output_unusable"
+    assert reason_code in str(caught.value)
+    assert advice in str(caught.value)
+    if not_advice is not None:
+        assert not_advice not in str(caught.value)
     assert _staged(tmp_path) == []

@@ -23,10 +23,14 @@ Bounds and contract, all named constants below:
 - The recording's size, mtime, inode and device are compared before and after
   the run; a recording that changed mid-extraction is refused.
 - ffmpeg writes a private staged file beside the output, the bounded media
-  owner probes it (``probe_local_media``), and only a probed file is installed,
-  never over an existing one. An existing output with the same bytes is an
-  unchanged success; different bytes are refused, so a file a receipt may
-  already bind is never replaced.
+  owner probes it (``probe_local_media``), and only a probed file is installed:
+  by hard link, or on a volume without links by an exclusive-create copy whose
+  digest is checked. Neither can replace an existing file. An existing output
+  with the same bytes is an unchanged success; different bytes are refused, so a
+  file a receipt may already bind is never replaced.
+- A probe refusal names the action its reason code calls for
+  (``PROBE_REFUSAL_ACTIONS``); only a container or codec mismatch suggests a
+  ``.wav`` output.
 - Every refusal removes the staged file; a staged file that cannot be removed
   is named on stderr and in the error.
 
@@ -61,6 +65,58 @@ EXTRACT_TIMEOUT_SECONDS = 2 * 60 * 60
 # How much of ffmpeg's stderr a refusal quotes; it runs at `-loglevel error`.
 DIAGNOSTIC_TAIL_BYTES = 2000
 DIGEST_CHUNK_BYTES = 1024 * 1024
+# What to do about each `probe_local_media` refusal of the extracted audio.
+_RETRY_LATER = (
+    "re-run when the machine is less loaded; report it if it recurs on an idle machine"
+)
+_WAV = "the container or codec does not fit; re-run with a .wav output"
+_LOCATION = "write the output to a local, writable directory inside the vault"
+PROBE_REFUSAL_ACTIONS = {
+    "media_invalid_container": _WAV,
+    "media_parser_rejected": _WAV,
+    "media_parser_repair_required": _WAV,
+    "media_no_audio_stream": _WAV,
+    "media_no_usable_audio_stream": _WAV,
+    "media_duration_unavailable": _WAV,
+    "media_probe_malformed_result": _WAV,
+    "media_dependency_unavailable": "install ffmpeg (with ffprobe) and re-run",
+    "media_duration_limit": (
+        "the audio is longer than the bounded media owner admits; it cannot be "
+        "declared whole"
+    ),
+    "media_size_limit": (
+        "the audio is larger than the bounded media owner admits; a .m4a or .mp3 "
+        "copy of a compressed stream is the smallest output"
+    ),
+    "media_stream_limit": "the recording carries more streams than the owner admits",
+    "media_generation_changed": "the staged audio changed while it was probed; re-run",
+    "media_worker_timeout": _RETRY_LATER,
+    "media_worker_resource_limit": _RETRY_LATER,
+    "media_worker_failed": _RETRY_LATER,
+    "media_pipe_failed": _RETRY_LATER,
+    "media_tool_stdout_limit": _RETRY_LATER,
+    "media_tool_stderr_limit": _RETRY_LATER,
+    "media_ffprobe_stdout_limit": _RETRY_LATER,
+    "media_ffprobe_stderr_limit": _RETRY_LATER,
+    "media_private_workspace_unavailable": (
+        "free space and permissions in the system temporary directory, then re-run"
+    ),
+    "media_cleanup_failed": (
+        "remove leftover probe processes or scratch files named in the error, "
+        "then re-run"
+    ),
+    "media_workspace_cleanup_failed": (
+        "remove the leftover scratch directory in the system temporary directory, "
+        "then re-run"
+    ),
+    "media_artifact_unavailable": _LOCATION,
+    "media_cloud_placeholder_unavailable": _LOCATION,
+    "media_locator_invalid": _LOCATION,
+    "media_unsupported_suffix": _LOCATION,
+}
+_UNMAPPED_PROBE_ACTION = (
+    "see the reason codes in local_media_contract.py; nothing here retries it"
+)
 # Output suffix -> (ffmpeg muxer, audio codec arguments, reported mode).
 MODES = {
     ".m4a": ("ipod", ["-c:a", "copy"], "copy"),
@@ -142,11 +198,55 @@ def _remove_staged(staged: Path) -> str | None:
     try:
         staged.unlink(missing_ok=True)
     except OSError as exc:
-        print(
-            f"WARNING: staged audio {staged} was not removed: {exc}", file=sys.stderr
-        )
+        print(f"WARNING: staged audio {staged} was not removed: {exc}", file=sys.stderr)
         return f"; the staged file {staged} was not removed ({exc})"
     return None
+
+
+def _appeared(output: Path) -> ExtractionError:
+    return ExtractionError(
+        "output_exists",
+        f"{output} appeared during extraction — re-run to compare it",
+    )
+
+
+def _copy_exclusive(staged: Path, output: Path, digest: str) -> None:
+    """Copy ``staged`` to a newly created ``output``, or remove what was created."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(output, flags, 0o644)
+    except FileExistsError as exc:
+        raise _appeared(output) from exc
+    except OSError as exc:
+        raise ExtractionError(
+            "output_write_failed",
+            f"cannot create {output}: {exc} — make its directory writable and re-run",
+        ) from exc
+    try:
+        with os.fdopen(descriptor, "wb") as target, staged.open("rb") as source:
+            shutil.copyfileobj(source, target, DIGEST_CHUNK_BYTES)
+            target.flush()
+            os.fsync(target.fileno())
+        if _sha256(output) != digest:
+            raise ExtractionError(
+                "output_write_failed",
+                f"the copy at {output} does not match the probed audio — free "
+                "space on the volume and re-run",
+            )
+    except (OSError, ExtractionError) as exc:
+        try:
+            output.unlink()
+        except OSError as cleanup:
+            print(
+                f"WARNING: partial output {output} was not removed: {cleanup}",
+                file=sys.stderr,
+            )
+        if isinstance(exc, ExtractionError):
+            raise
+        raise ExtractionError(
+            "output_write_failed",
+            f"cannot write {output}: {exc} — free space on the volume and re-run",
+        ) from exc
 
 
 def _install(staged: Path, output: Path, digest: str) -> bool:
@@ -166,27 +266,14 @@ def _install(staged: Path, output: Path, digest: str) -> bool:
         )
     try:
         # A hard link installs without replacing anything a racing writer put
-        # there; volumes without links take the checked rename instead.
+        # there.
         os.link(staged, output)
     except FileExistsError as exc:
-        raise ExtractionError(
-            "output_exists",
-            f"{output} appeared during extraction — re-run to compare it",
-        ) from exc
+        raise _appeared(output) from exc
     except OSError:
-        if output.exists():
-            raise ExtractionError(
-                "output_exists",
-                f"{output} appeared during extraction — re-run to compare it",
-            ) from None
-        try:
-            os.rename(staged, output)
-        except OSError as exc:
-            raise ExtractionError(
-                "output_write_failed",
-                f"cannot install {output}: {exc} — make its directory writable "
-                "and re-run",
-            ) from exc
+        # The volume has no hard links; an exclusive create is just as unable
+        # to replace a file.
+        _copy_exclusive(staged, output, digest)
     try:
         directory = os.open(output.parent, os.O_RDONLY)
         try:
@@ -278,10 +365,11 @@ def extract(
         try:
             probe = probe_local_media(staged, trusted_root=output.parent)
         except LocalMediaError as exc:
+            action = PROBE_REFUSAL_ACTIONS.get(exc.reason_code, _UNMAPPED_PROBE_ACTION)
             raise ExtractionError(
                 "output_unusable",
                 f"the bounded media owner refused the extracted audio "
-                f"({exc.reason_code}); try a .wav output",
+                f"({exc.reason_code}): {action}",
             ) from exc
         written = _install(staged, output, probe.source_sha256)
         return {
@@ -314,9 +402,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     except ExtractionError as exc:
         print(
-            json.dumps(
-                {"ok": False, "reason_code": exc.reason_code, "error": str(exc)}
-            )
+            json.dumps({"ok": False, "reason_code": exc.reason_code, "error": str(exc)})
         )
         print(f"FAIL: {exc}", file=sys.stderr)
         return 2
