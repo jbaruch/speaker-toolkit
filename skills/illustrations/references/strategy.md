@@ -253,13 +253,17 @@ spacing and baseline from slide to slide. To take the footer out of its hands,
 also set `style_anchor.footer_style` (fields and defaults:
 `skills/presentation-creator/scripts/outline_schema.py` `FooterStyle`; `{}`
 takes them all). Generation then reserves a quiet strip at the bottom and
-renders no footer, and `apply-illustrations-to-deck.py` stamps `embedded_footer`
-onto a PNG copy of every poster slide in `illustrations/footer-stamped/` with
-that font and geometry, verifying each stamp; `build-expansion-manifest.py`
-does the same for those slides' build frames in
-`illustrations/builds/footer-stamped/`. The footer is pixel-identical across the
-deck, and regenerating a slide cannot change it; the generated images stay
-footer-free for edits and builds. Point `font_path` at a TrueType/OpenType file
+renders no footer, and `skills/illustrations/scripts/apply-illustrations-to-deck.py`
+stamps `embedded_footer` onto a PNG copy of every poster slide in
+`illustrations/footer-stamped/` with that font and geometry, verifying each
+stamp; `skills/illustrations/scripts/build-expansion-manifest.py` does the same
+for those slides' build frames in `illustrations/builds/footer-stamped/`.
+Glyphs are drawn without antialiasing, so every footer pixel is identical across
+the deck whatever the scene, and regenerating a slide cannot change it; the
+generated images stay footer-free for edits and builds. A strip too close to
+the footer colour to read it, or a geometry that would push glyphs off the
+frame, is refused with the fix (`skills/illustrations/scripts/footer_stamp.py`,
+module docstring). Point `font_path` at a TrueType/OpenType file
 that matches the deck; without one the renderer's bundled sans-serif is used.
 Without `footer_style`, the model renders the footer from one canonical
 deck-wide block appended verbatim to every slide.

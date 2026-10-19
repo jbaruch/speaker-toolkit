@@ -236,8 +236,12 @@ composition, also set `style_anchor.composition: poster-theatrical`,
 `style_anchor.embedded_footer: <text>`, and `style_anchor.text_treatment: <how
 baked title + footer are rendered>` (e.g. "glowing hand-script neon on an
 in-scene surface"). For a pixel-identical footer, also set
-`style_anchor.footer_style` (`{}` takes the defaults); see
-[references/strategy.md](references/strategy.md) Step 9.
+`style_anchor.footer_style` (`{}` takes the defaults), then read the footer
+passage of this step's strategy reference:
+
+```text
+skills/illustrations/references/strategy.md
+```
 
 Anchor vs per-slide split — everything that must look identical across slides
 lives in the anchor; only the scene and the literal title vary per slide:

@@ -23,10 +23,14 @@ discipline reduced the drift but cannot guarantee typographic identity.
 - `footer_stamp.py` draws the footer with one real font, sized to span the
   target width, centred, its baseline at the configured height, and writes PNG
   whatever the source format: a JPEG re-encode made glyph pixels depend on the
-  scene behind them. Verification after writing is exact, every fully-inked
-  glyph pixel the footer colour. The same text and style produce identical glyph
-  pixels over any scene, so the footer is pixel-identical across the deck and a
-  regenerated slide cannot change it. Without `font_path` it uses Pillow's
+  scene behind them. Glyphs are rasterized without antialiasing, so no edge
+  pixel blends with the scene: the same text and style produce identical footer
+  pixels over any scene, and a regenerated slide cannot change them.
+  Verification after writing is exact for every glyph pixel and also requires a
+  3:1 contrast against the ground around the glyphs, so an image of the footer
+  colour, or a footer stamped onto a matching strip, never passes; a strip that
+  would hide the footer, or geometry that pushes glyphs off the frame, refuses
+  before anything is written. Without `font_path` it uses Pillow's
   bundled sans-serif; a missing font, an over-long footer or a malformed colour
   refuses with the fix.
 - Without `footer_style`, the model still renders the footer, now from one

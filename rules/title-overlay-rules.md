@@ -25,11 +25,13 @@ are not generated and keep their own treatment:
   one canonical deck-wide footer block, appended verbatim to every slide.
 - With `style_anchor.footer_style`, generation reserves a quiet footer strip.
 - With `style_anchor.footer_style`, generation renders no footer.
-- With `style_anchor.footer_style`, `embedded_footer` is stamped with that exact
-  font and geometry (`skills/illustrations/scripts/footer_stamp.py`) into
-  lossless PNG copies: the apply step stamps each poster slide, and
-  `build-expansion-manifest.py` stamps that slide's build frames. The footer's
-  glyph pixels are identical on every slide and frame.
+- With `style_anchor.footer_style`, the apply step stamps `embedded_footer` onto
+  a lossless PNG copy of each poster slide with that exact font and geometry
+  (`skills/illustrations/scripts/footer_stamp.py`).
+- With `style_anchor.footer_style`, `build-expansion-manifest.py` stamps the same
+  footer onto that slide's build frames.
+- Stamped glyphs carry no antialiasing; the footer's pixels are identical on
+  every slide and frame.
 - `style_anchor.text_treatment` is authored once and applied to every illustrated
   slide's baked title, so titles render identically across the deck.
 - No `safe_zone` on poster slides; no zone assignment, no zone picker.

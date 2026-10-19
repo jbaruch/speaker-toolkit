@@ -81,13 +81,13 @@ def _save(image, path):
 
 
 def _busy_scene(seed_color, size=(1536, 864)):
-    """A scene with detail under the footer, the case JPEG re-encoding smears."""
+    """A dark but detailed strip under the footer, the case JPEG re-encoding smears."""
     image = _scene(seed_color, size)
     pixels = image.load()
     assert pixels is not None
     for x in range(size[0]):
         for y in range(size[1] - 120, size[1]):
-            pixels[x, y] = ((x * 7) % 256, (y * 11) % 256, ((x + y) * 5) % 256)
+            pixels[x, y] = ((x * 7) % 128, (y * 11) % 128, ((x + y) * 5) % 128)
     return image
 
 
@@ -103,9 +103,10 @@ def test_written_footers_are_pixel_identical_across_scenes(stamp, tmp_path):
         FOOTER,
         STYLE,
     )
-    inked = stamp.footer_mask((1536, 864), FOOTER, STYLE).point(
-        lambda value: 255 if value == 255 else 0
-    )
+    inked = stamp.footer_mask((1536, 864), FOOTER, STYLE)
+    # Every glyph pixel is compared: the mask has no partial coverage to skip.
+    levels = inked.histogram()
+    assert sum(levels[1:255]) == 0 and levels[255] > 0
     black = Image.new("RGB", (1536, 864), (0, 0, 0))
     with Image.open(first) as a, Image.open(second) as b:
         glyphs_a = Image.composite(a.convert("RGB"), black, inked)
@@ -140,3 +141,26 @@ def test_the_reserved_strip_covers_the_footer(stamp):
     height = stamp.REFERENCE_FRAME[1]
     assert strip > (height - box[1]) / height * 100
     assert strip < 25
+
+
+def test_an_image_of_the_footer_colour_is_not_a_footer(stamp):
+    """Every expected glyph pixel matches, but nothing is legible."""
+    blank = _scene((0xF2, 0xEF, 0xE6))
+    assert stamp.verify_footer(blank, FOOTER, STYLE)[0] is False
+
+
+def test_a_strip_that_would_hide_the_footer_is_refused(stamp, tmp_path):
+    light = _save(_scene((235, 232, 225)), tmp_path / "slide-05.jpg")
+    with pytest.raises(stamp.FooterStampError, match="would be invisible"):
+        stamp.stamp_footer_file(light, tmp_path / "footer-stamped", FOOTER, STYLE)
+    assert not (tmp_path / "footer-stamped" / "slide-05.png").exists()
+
+
+def test_geometry_that_pushes_glyphs_off_the_frame_is_refused(stamp):
+    """Descenders below a baseline at the very bottom edge would be clipped."""
+    with pytest.raises(stamp.FooterStampError, match="outside the"):
+        stamp.stamp_footer(
+            _scene((0, 0, 0)),
+            "gjpqy descenders",
+            {**STYLE, "baseline_from_bottom_pct": 0.01},
+        )
