@@ -253,7 +253,7 @@ or root state; the standalone root-only mode below preserves their contracts.
 | presentation-creator publishing/post-event | authorized current writer | Require schema 4 before tracking writes; stamp resource v1 and preserve talk v8 |
 | illustrations thumbnail workflow | authorized current writer | Require schema 4 before tracking writes; stamp thumbnail v1 and preserve talk v8 |
 | vault-profile | dual reader | Parse schemas 0-4; treat unsupported generations as unavailable; never migrate |
-| shownotes-publisher runtime resolution (`resolve-runtime.py`) | current reader | Require the generation `assess_tracking_database` reports `current` before reading `config.python_path`; any other generation refuses as `database_not_current` and hands off to vault-ingress Step 1 for the owner migration; never rewrite |
+| shownotes-publisher runtime resolution (`resolve-runtime.py`) | current reader | Require the generation `assess_tracking_database` reports `current` before reading `config.python_path`; a readable older generation refuses as `database_not_current` and hands off to vault-ingress Step 1 for the owner migration; an unsupported future generation fails the owner read as `owner_read_failed`; never rewrite |
 
 Current database schema 4 with config schema 2 requires all eight top-level
 state fields shown below. `source_title_equivalences`, `source_aliases`,

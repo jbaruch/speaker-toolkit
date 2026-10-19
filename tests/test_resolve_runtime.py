@@ -114,6 +114,15 @@ def test_a_legacy_database_is_handed_to_the_owner_migration(tmp_path):
     assert "owner migration" in _refused(database, "database_not_current")
 
 
+def test_a_future_database_fails_the_owner_read(tmp_path):
+    """Only a readable older generation is the owner migration's to repair."""
+    database = _database(tmp_path / "vault", python_path=sys.executable)
+    data = json.loads(database.read_text(encoding="utf-8"))
+    data["schema_version"] = CURRENT_ROOT_SCHEMA_VERSION + 1
+    database.write_text(json.dumps(data), encoding="utf-8")
+    _refused(database, "owner_read_failed")
+
+
 def test_an_interpreter_that_does_not_exist_is_refused_not_replaced(tmp_path):
     vault = tmp_path / "vault"
     database = _database(
@@ -127,7 +136,8 @@ def test_an_interpreter_without_the_outline_lane_is_refused(tmp_path):
     a resolver that regressed to requiring core alone would accept it."""
     interpreter = tmp_path / "python-without-pydantic"
     interpreter.write_text(
-        "#!/bin/sh\n"
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
         'case "$1" in *check-runtime.py)\n'
         '  case " $* " in *" --require-lanes outline "*)\n'
         '    echo "missing pydantic" >&2; exit 1;;\n'
