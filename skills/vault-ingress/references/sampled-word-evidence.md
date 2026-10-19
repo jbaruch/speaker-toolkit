@@ -10,16 +10,24 @@ lane is separate from the existing transcript acquisition contract.
 The caller supplies a local locator, `sample_start_seconds`,
 `sample_duration_seconds`, optional trusted root and optional current in-memory
 media/video probe. Missing probe facts are acquired by `probe_local_media`.
-Never supply a serialized or manufactured probe. The original source's open
-descriptor and pathname generation must remain unchanged throughout sampling
-and transcription. The caller receives no usable result after a failed final
+Never supply a serialized or manufactured probe. The original source's
+generation must stay the admitted one throughout sampling and transcription,
+or differ from it only in change time, the one tolerated drift (same device,
+inode, size, modification time, mode and flags). On that drift the owner
+re-probes and keeps the settled facts only when digest, size and trusted-root
+identity match; see `local_media_evidence.check_media_generation`. The caller
+receives no usable result after any other generation change, a failed final
 generation check or failed workspace cleanup.
 
-The parent creates an owner-private workspace; the authenticated Whisper worker
-decodes only the requested interval with FFmpeg. Streamed PCM has a strict byte
+The parent creates an owner-private workspace. The authenticated Whisper worker
+copies one held descriptor of the admitted generation into a private read-only
+snapshot there, refuses a snapshot whose digest is not the established
+`source_sha256`, and decodes only the requested interval from that snapshot
+with FFmpeg, never from the source pathname. Streamed PCM has a strict byte
 ceiling, a measured duration from frame count and a private WAV wrapper. The
-sample has its own digest and generation. The original source is not copied or
-hashed again when a current owner probe is reused. Parent-owned cleanup removes
+sample has its own digest and generation. The snapshot is copied and hashed
+even when a current owner probe is reused, so the sample is always cut from the
+bytes that probe established. Parent-owned cleanup removes the snapshot and
 sample files even when the worker times out or is killed.
 
 `MEDIA_WHISPER_LIMITS` owns wall, memory, process and protocol/diagnostic limits.

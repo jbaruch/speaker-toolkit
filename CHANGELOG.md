@@ -46,6 +46,10 @@ same churn for staged database candidates only.
 - `schemas-db.md` and `local-media-acquisition.md` document the settle
   behavior.
 
+- `references/sampled-word-evidence.md`, the authority's binding read, now
+  states the same contract: the word sample is cut from the verified private
+  snapshot, which is copied and hashed even when a current probe is reused, and
+  a change-time-only drift is accepted only after the owner re-probe settles.
 ## 0.20.180 — 2026-10-19
 
 ### Bump filelock to 4.1.0 in every version authority
