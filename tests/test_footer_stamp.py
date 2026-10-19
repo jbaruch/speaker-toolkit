@@ -164,3 +164,13 @@ def test_geometry_that_pushes_glyphs_off_the_frame_is_refused(stamp):
             "gjpqy descenders",
             {**STYLE, "baseline_from_bottom_pct": 0.01},
         )
+
+
+def test_a_short_footer_stops_at_the_height_cap(stamp):
+    """Fitted to the width alone, "@jbaruch" would tower over the strip."""
+    size = (1536, 864)
+    box = stamp.footer_mask(size, "@jbaruch", STYLE).getbbox()
+    assert box is not None
+    assert box[3] - box[1] <= size[1] * stamp.MAX_HEIGHT_PCT / 100
+    stamped = stamp.stamp_footer(_scene((20, 30, 40)), "@jbaruch", STYLE)
+    assert stamp.verify_footer(stamped, "@jbaruch", STYLE) == (True, 1.0)

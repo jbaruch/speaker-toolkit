@@ -237,8 +237,8 @@ Write the `style_anchor` block — chosen model + per-format anchors + visual
 continuity devices (`conventions`) — into `outline.yaml`. For poster-theatrical
 composition, also set `style_anchor.composition: poster-theatrical`,
 `style_anchor.embedded_footer: <text>`, and `style_anchor.text_treatment: <how
-the baked title, and a model-rendered footer, are rendered>` (e.g. "glowing
-hand-script neon on an in-scene surface"). For the Step 5 stamped-footer choice, also set
+the baked title is rendered>` (e.g. "glowing hand-script neon on an in-scene
+surface"). For the Step 5 stamped-footer choice, also set
 `style_anchor.footer_style` (`{}` takes the defaults), then read the footer
 passage of this step's strategy reference:
 
@@ -250,9 +250,9 @@ Anchor vs per-slide split — everything that must look identical across slides
 lives in the anchor; only the scene and the literal title vary per slide:
 
 - **Anchor**: visual style (per-format anchors), `text_treatment` (the title's
-  rendering style, and a model-rendered footer's), `embedded_footer` (the full
-  footer text), and `footer_style` for a stamped footer. These keep every baked
-  title/footer consistent.
+  rendering style), `embedded_footer` (the full footer text, model-rendered in
+  one fixed editorial style), and `footer_style` for a stamped footer. These
+  keep every baked title/footer consistent.
 - **Per slide**: `image_prompt` carries only the scene; `text_overlay` carries
   only the literal title string for that slide — never the text styling.
 

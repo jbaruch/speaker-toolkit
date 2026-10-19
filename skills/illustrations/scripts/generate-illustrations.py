@@ -184,8 +184,9 @@ POSTER_EMBED_DIRECTIVE_TEMPLATE = (
 )
 
 # Fallback when the style anchor declares no text_treatment. The anchor's
-# text_treatment (when set) makes every baked title/footer render identically;
-# without it the model picks a treatment per call, so titles drift between slides.
+# text_treatment (when set) makes every baked title render identically; without
+# it the model picks a treatment per call, so titles drift between slides. The
+# footer never takes it: POSTER_FOOTER_BLOCK_TEMPLATE fixes its style.
 DEFAULT_POSTER_TEXT_TREATMENT = (
     "painted, carved, printed, lit, woven, or sculpted into the composition in "
     "the artwork's own lettering and materials"

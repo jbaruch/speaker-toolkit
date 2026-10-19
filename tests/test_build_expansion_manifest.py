@@ -316,3 +316,22 @@ def test_frames_of_mixed_size_are_refused_before_any_stamp(
     assert "must share one size" in str(exc.value)
     assert frames[2].name in str(exc.value)
     assert not (builds / "footer-stamped").exists()
+
+
+def test_a_stale_frame_outside_the_declared_steps_is_ignored(
+    build_expansion_manifest, tmp_path
+):
+    """An earlier build's extra frame is never stamped, so it cannot block."""
+    from PIL import Image
+
+    slides = [s for s in DEFAULT_SLIDES if s["n"] == 7]
+    outline = _stamping_outline(tmp_path, slides)
+    builds = tmp_path / "builds"
+    _image_frames(builds, 7, 4)
+    stale = builds / "slide-07-build-04.jpg"
+    Image.new("RGB", (1024, 1024), (10, 20, 30)).save(stale, quality=95)
+
+    manifest = build_expansion_manifest.build_manifest(outline, builds)
+
+    assert len(manifest["builds"][0]["frames"]) == 4
+    assert not (builds / "footer-stamped" / "slide-07-build-04.png").exists()

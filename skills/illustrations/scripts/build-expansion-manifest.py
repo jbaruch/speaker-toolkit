@@ -128,7 +128,10 @@ def _require_one_stamped_geometry(specs: list[dict], builds_dir: Path) -> None:
     for spec in specs:
         if spec["footer"] is None:
             continue
-        images.extend(frames_for(builds_dir, spec["parent"]).values())
+        # Only the steps the outline declares; a stale frame left by an
+        # earlier build is never stamped, so it never constrains geometry.
+        found = frames_for(builds_dir, spec["parent"])
+        images.extend(found[step] for step in spec["steps"] if step in found)
         images.extend(
             path
             for path in builds_dir.parent.glob(f"slide-{spec['parent']:02d}.*")

@@ -173,7 +173,8 @@ class Composition(str, Enum):
     """Deck-wide illustration composition (see rules/title-overlay-rules.md).
 
     `standard` overlays titles/footers at apply time over a reserved safe zone;
-    `poster-theatrical` bakes title + footer into the image as part of the scene.
+    `poster-theatrical` bakes the title, and the footer unless `footer_style`
+    stamps it, into the image as part of the scene.
     Absence of the field means `standard`.
     """
 
@@ -426,9 +427,10 @@ class StyleAnchor(_StrictModel):
     # the title (+ embedded_footer) into every image. See rules/title-overlay-rules.md.
     composition: Composition | None = None
     embedded_footer: str | None = None
-    # How baked title + footer text is rendered in poster-theatrical mode (e.g.
-    # "glowing hand-script neon on an in-scene surface"). Lives on the anchor so
-    # every slide's text is styled identically; the per-slide image_prompt carries
+    # How the baked title is rendered in poster-theatrical mode (e.g. "glowing
+    # hand-script neon on an in-scene surface"). Lives on the anchor so every
+    # slide's title is styled identically; a model-rendered footer has its own
+    # fixed style and a stamped one takes footer_style; the per-slide image_prompt carries
     # only the scene and text_overlay carries only the literal title string. Only
     # consumed in poster-theatrical mode; null falls back to a generic treatment.
     text_treatment: str | None = None

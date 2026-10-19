@@ -34,8 +34,16 @@ discipline reduced the drift but cannot guarantee typographic identity.
   output, and in `generate-illustrations.py` an unusable `footer_style`, exit
   with the fix on stderr instead of a traceback.
 - `strategy.md` Steps 5 and 9 and `SKILL.md` Step 9 describe the model-rendered
-  and stamped footer modes separately; `text_treatment` styles the title, and
-  the footer only when the model renders it.
+  and stamped footer modes separately. `text_treatment` styles the title only,
+  as generation already did: the schema comment, the style-catalog field
+  description and three catalog treatments that said "title and footer
+  lettering" now say so. A model-rendered footer keeps its fixed editorial
+  style.
+- A short footer fitted to the target width alone grew taller than the strip
+  and was refused as clipped; the fit now also stops at `MAX_HEIGHT_PCT` of the
+  frame height. The geometry check counts only the build steps the outline
+  declares, so a stale frame from an earlier build cannot block the manifest,
+  and an unwritable backgrounds manifest exits with its fix.
 - `footer_stamp.py` draws the footer with one real font, sized to span the
   target width, centred, its baseline at the configured height, and writes PNG
   whatever the source format: a JPEG re-encode made glyph pixels depend on the

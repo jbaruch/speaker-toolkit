@@ -3,7 +3,8 @@
 An image model rendering the same literal footer on every slide still changes
 its font, size, weight, spacing and baseline from slide to slide. With
 `style_anchor.footer_style` set, generation leaves the footer out and this
-module draws it: one real font, sized to span `target_width_pct` of the slide,
+module draws it: one real font, sized to span `target_width_pct` of the slide
+(a short footer stops at `MAX_HEIGHT_PCT` of its height instead),
 centred, its baseline `baseline_from_bottom_pct` above the bottom edge, in
 `color`. Glyphs are rasterized without antialiasing, so every glyph pixel is
 the footer colour and none blends with the scene: the same text and style on a
@@ -45,6 +46,10 @@ STYLE_FIELDS = frozenset(
     }
 )
 MIN_FONT_SIZE = 4
+# A short footer fitted to the target width alone would grow taller than any
+# quiet strip; the fitted size also keeps the glyphs within this share of the
+# frame height.
+MAX_HEIGHT_PCT = 6.0
 # Strip reservation is measured on a 16:9 frame; the margin keeps scene detail
 # a little clear of the footer's tallest glyph.
 REFERENCE_FRAME = (1600, 900)
@@ -147,11 +152,18 @@ def _font(style: Mapping[str, Any], size: int) -> ImageFont.FreeTypeFont:
     return font
 
 
+def _fits(font: ImageFont.FreeTypeFont, text: str, width: float, height: float) -> bool:
+    left, top, right, bottom = font.getbbox(text)
+    return font.getlength(text) <= width and bottom - top <= height
+
+
 def fitted_font(
-    text: str, style: Mapping[str, Any], frame_width: int
+    text: str, style: Mapping[str, Any], frame: tuple[int, int]
 ) -> ImageFont.FreeTypeFont:
-    """The largest size whose rendered text fits the style's target width."""
+    """The largest size within the target width and `MAX_HEIGHT_PCT` of height."""
+    frame_width, frame_height = frame
     target = frame_width * float(style["target_width_pct"]) / 100.0
+    max_height = frame_height * MAX_HEIGHT_PCT / 100.0
     low, high = MIN_FONT_SIZE, max(MIN_FONT_SIZE, frame_width)
     if _font(style, low).getlength(text) > target:
         raise FooterStampError(
@@ -161,7 +173,7 @@ def fitted_font(
         )
     while low < high:
         middle = (low + high + 1) // 2
-        if _font(style, middle).getlength(text) <= target:
+        if _fits(_font(style, middle), text, target, max_height):
             low = middle
         else:
             high = middle - 1
@@ -172,7 +184,7 @@ def _glyph_mask(
     size: tuple[int, int], text: str, style: Mapping[str, Any]
 ) -> Image.Image:
     width, height = size
-    font = fitted_font(text, style, width)
+    font = fitted_font(text, style, size)
     baseline = height * (1.0 - float(style["baseline_from_bottom_pct"]) / 100.0)
     origin = (width / 2.0, baseline)
     mask = Image.new("L", size, 0)

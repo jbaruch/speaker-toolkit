@@ -240,18 +240,19 @@ prompts, aspect-ratio tokens, reserved keywords) into the anchor at the same tim
 When the composition is poster-theatrical, also set
 `style_anchor.composition: poster-theatrical`,
 `style_anchor.embedded_footer: <footer text>`, and
-`style_anchor.text_treatment: <how the baked title renders, and the footer too
-in model-rendered mode>` (e.g. "glowing hand-script neon on an in-scene
-surface"). Generation reads these to embed the title (and a model-rendered
-footer) into each image and skip safe zones; apply and deck-build read them to
+`style_anchor.text_treatment: <how the baked title renders>` (e.g. "glowing
+hand-script neon on an in-scene surface"). Generation reads these to embed the
+title (and a model-rendered footer, in one fixed editorial style) into each
+image and skip safe zones; apply and deck-build read them to
 leave titles/footers off the slide (QR only). Standard-overlay decks omit all three.
 
 The anchor owns everything that must stay consistent: the per-format style, the
 `text_treatment`, and the full `embedded_footer`. The per-slide `image_prompt`
 carries only the scene; `text_overlay` carries only that slide's literal title
 string — never the text styling. Putting the treatment in the anchor is what
-keeps every baked title, and a model-rendered footer, consistent across the
-deck; a stamped footer takes its styling from `footer_style` instead.
+keeps every baked title consistent across the deck. A model-rendered footer
+uses one fixed editorial style instead, and a stamped footer takes its styling
+from `footer_style`.
 
 An image model rendering the same literal footer still varies its font, size,
 spacing and baseline from slide to slide. To take the footer out of its hands

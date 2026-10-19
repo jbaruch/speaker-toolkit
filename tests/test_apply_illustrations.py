@@ -707,3 +707,33 @@ def test_an_unreadable_poster_image_exits_with_its_fix(
         apply_illustrations.main()
 
     assert "cannot read a slide image" in str(exc.value)
+
+
+def test_an_unwritable_backgrounds_manifest_exits_with_its_fix(
+    apply_illustrations, tmp_path, monkeypatch
+):
+    from PIL import Image
+
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    Image.new("RGB", (1536, 864), (30, 40, 50)).save(illust_dir / "slide-02.jpg")
+    outline = _poster_outline_with_footer_style(tmp_path, "@jbaruch", {})
+    missing_dir = tmp_path / "no-such-dir" / "backgrounds.json"
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "apply-illustrations-to-deck.py",
+            str(deck),
+            str(illust_dir),
+            str(outline),
+            "--backgrounds-out",
+            str(missing_dir),
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        apply_illustrations.main()
+
+    assert "cannot write the backgrounds manifest" in str(exc.value)

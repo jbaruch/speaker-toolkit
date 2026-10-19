@@ -659,7 +659,15 @@ def main():
         manifest = {
             "backgrounds": {str(n): path for n, path in sorted(backgrounds.items())}
         }
-        backgrounds_out.write_text(json.dumps(manifest, indent=2) + "\n")
+        try:
+            backgrounds_out.write_text(json.dumps(manifest, indent=2) + "\n")
+        except OSError as exc:
+            raise SystemExit(
+                f"ERROR: wrote {out_deck.name} but cannot write the backgrounds "
+                f"manifest {backgrounds_out} ({type(exc).__name__}: "
+                f"{exc.strerror or exc}); make its directory writable or pass "
+                "--backgrounds-out elsewhere, then re-run"
+            ) from exc
         _progress(
             f"Wrote {len(backgrounds)} FULL-slide background(s) -> {backgrounds_out}"
         )
