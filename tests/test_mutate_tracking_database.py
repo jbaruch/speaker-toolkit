@@ -2600,11 +2600,18 @@ def _declare_audio(**updates: Any) -> dict[str, Any]:
 
 
 @pytest.mark.parametrize(
-    "status,requeued",
-    [("pending", False), ("processed", True), ("processed_partial", True)],
+    "status,after,reason",
+    [
+        ("pending", "pending", None),
+        ("skipped_download_failed", "skipped_download_failed", None),
+        ("processed", "needs-reprocessing", "source_added"),
+        ("processed_partial", "needs-reprocessing", "source_added"),
+        # A sourceless talk now has a source, so it becomes claimable.
+        ("skipped_no_sources", "pending", None),
+    ],
 )
 def test_declared_audio_lands_in_its_collection_and_requeues_analyzed_talks(
-    mutate_tracking_database, status: str, requeued: bool
+    mutate_tracking_database, status: str, after: str, reason: str | None
 ) -> None:
     database = _base_database()
     database["talks"][0]["status"] = status
@@ -2622,12 +2629,10 @@ def test_declared_audio_lands_in_its_collection_and_requeues_analyzed_talks(
         }
     ]
     talk = candidate["talks"][0]
-    if requeued:
-        assert talk["status"] == "needs-reprocessing"
-        assert talk["reprocess_reason"] == "source_added"
-    else:
-        assert talk["status"] == status
+    assert talk["status"] == after
+    assert talk.get("reprocess_reason") == reason
     assert changes[0]["kind"] == "declare_local_audio"
+    assert changes[0]["after"]["status"] == after
 
 
 def test_a_replayed_declaration_changes_nothing(mutate_tracking_database) -> None:

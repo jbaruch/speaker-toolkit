@@ -2011,7 +2011,9 @@ def _apply_declare_local_audio(
     `media_sha256` is checked against a probe of the declared file. It never
     becomes `delivery_video` evidence. Declaring audio on an analyzed talk
     requeues it as `source_added`, the rule every source registration follows:
-    the stored analysis ran without that source. An active claim refuses.
+    the stored analysis ran without that source. A `skipped_no_sources` talk
+    becomes `pending`, the claimable state of a talk that now has a source to
+    process. An active claim refuses.
     `declared_at` comes from the plan, so the same plan is byte-reproducible.
     """
     label = f"mutations[{index}]"
@@ -2084,6 +2086,8 @@ def _apply_declare_local_audio(
     if prior_status in {"processed", "processed_partial"}:
         talk["status"] = "needs-reprocessing"
         talk["reprocess_reason"] = "source_added"
+    elif prior_status == "skipped_no_sources":
+        talk["status"] = "pending"
     _record_change(
         changes,
         kind="declare_local_audio",
