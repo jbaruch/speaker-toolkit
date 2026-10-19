@@ -54,10 +54,10 @@ from pptx_evidence import (
     validate_native_deck_audit,
 )
 from local_media_contract import (
-    AUDIO_DECLARATION_SUFFIXES,
     LocalMediaError,
     MediaArtifactProbe,
 )
+from tracking_database import AUDIO_DECLARATION_SUFFIXES
 from local_media_evidence import probe_local_media
 from video_evidence import (
     VideoArtifactProbe,

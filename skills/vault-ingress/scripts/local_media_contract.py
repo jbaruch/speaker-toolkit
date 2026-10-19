@@ -111,10 +111,6 @@ CONTAINER_BY_SUFFIX = {
     ".mkv": "matroska_webm",
     ".webm": "matroska_webm",
 }
-# Containers an owner may declare as a talk's local audio recording (#485). They
-# bind transcript and timing receipts only; video containers keep the
-# `video_local_path` lane, which alone can carry `delivery_video` evidence.
-AUDIO_DECLARATION_SUFFIXES = frozenset({".mp3", ".m4a", ".wav"})
 FORMAT_NAMES_BY_CONTAINER = {
     "mp3": frozenset({"mp3"}),
     "wav": frozenset({"wav"}),

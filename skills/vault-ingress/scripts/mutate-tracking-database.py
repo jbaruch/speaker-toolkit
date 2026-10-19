@@ -48,7 +48,6 @@ from tracking_database import (
     validate_markdown_deck,
     validate_source_title_equivalence,
 )
-from local_media_contract import AUDIO_DECLARATION_SUFFIXES
 from tracking_database_io import (
     TrackingDatabaseIOError,
     commit_tracking_database,
@@ -2051,13 +2050,6 @@ def _apply_declare_local_audio(
         )
     except TrackingDatabaseError as exc:
         raise TrackingDatabaseMutationError(str(exc)) from exc
-    suffix = Path(str(record["audio_local_path"])).suffix.lower()
-    if suffix not in AUDIO_DECLARATION_SUFFIXES:
-        raise TrackingDatabaseMutationError(
-            f"{label}.audio_local_path must name an audio file "
-            f"({', '.join(sorted(AUDIO_DECLARATION_SUFFIXES))}); declare video "
-            "through video_local_path"
-        )
     existing = database.get("local_audio", [])
     if not isinstance(existing, list):
         raise TrackingDatabaseMutationError("local_audio must be an array")

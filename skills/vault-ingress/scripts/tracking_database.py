@@ -105,6 +105,11 @@ DATE_PROVENANCE_RECORD_SCHEMA_VERSION = 2
 # absent means no audio was declared. It binds transcript and timing receipts
 # only, never `delivery_video` evidence.
 LOCAL_AUDIO_RECORD_SCHEMA_VERSION = 1
+# Containers an owner may declare as a talk's local audio recording. Video
+# containers keep the `video_local_path` lane, which alone can carry
+# `delivery_video` evidence. The writer, this validator, and the evidence
+# reader all read this one definition.
+AUDIO_DECLARATION_SUFFIXES = frozenset({".mp3", ".m4a", ".wav"})
 
 READABLE_TRACKING_DATABASE_SCHEMA_VERSIONS = frozenset(
     {
@@ -1336,9 +1341,7 @@ def validate_local_audio_declaration(
 
     The locator goes through `classify_artifact_locator`, the lexical contract
     every persisted artifact path uses; a relative value is vault-root
-    relative. The audio container suffix is the evidence owner's to check
-    (`local_media_contract.AUDIO_DECLARATION_SUFFIXES`), at declaration and at
-    binding, which keeps this reader importable by the stdlib-only bootstrap.
+    relative, and its suffix must be one of `AUDIO_DECLARATION_SUFFIXES`.
     Existence is not checked here; an absent file fails at binding time.
     """
     _require_closed_shape(record, required=LOCAL_AUDIO_REQUIRED_FIELDS, label=label)
@@ -1365,6 +1368,12 @@ def validate_local_audio_declaration(
     if value.endswith("/"):
         raise TrackingDatabaseError(
             f"{label}.audio_local_path ends in '/', which names a directory: {value!r}"
+        )
+    if PurePosixPath(value).suffix.lower() not in AUDIO_DECLARATION_SUFFIXES:
+        raise TrackingDatabaseError(
+            f"{label}.audio_local_path must name an audio file "
+            f"({', '.join(sorted(AUDIO_DECLARATION_SUFFIXES))}); declare video "
+            f"through video_local_path: {value!r}"
         )
     declared_at = _require_nonempty_string(
         record["declared_at"], f"{label}.declared_at"

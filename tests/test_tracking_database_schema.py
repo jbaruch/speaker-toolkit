@@ -2908,8 +2908,22 @@ def test_a_local_audio_declaration_leaves_the_database_current(tracking_database
         (_audio(audio_local_path="recordings/"), "not a usable artifact locator"),
         (_audio(declared_at="2026-10-19T00:00:00"), "timezone-aware"),
         (_audio(talk_filename="nobody.md"), "names no talk"),
+        (_audio(audio_local_path="videos/one.mp4"), "must name an audio file"),
+        (
+            _audio(audio_local_path="recordings/one/infoq"),
+            "must name an audio file",
+        ),
     ],
-    ids=["version", "closed-shape", "locator", "directory", "naive-time", "no-talk"],
+    ids=[
+        "version",
+        "closed-shape",
+        "locator",
+        "directory",
+        "naive-time",
+        "no-talk",
+        "video-suffix",
+        "no-suffix",
+    ],
 )
 def test_a_malformed_local_audio_declaration_is_refused(
     tracking_database, record, detail
