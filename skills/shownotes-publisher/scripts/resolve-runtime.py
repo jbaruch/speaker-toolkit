@@ -39,6 +39,8 @@ TIMEOUT_SECONDS = 120
 
 # The owner's generation check is stdlib-only, so the host interpreter can run it.
 sys.path.insert(0, str(TOOLKIT_ROOT / "skills/vault-ingress/scripts"))
+# E402: tracking_database resolves only after the insert above puts the
+# co-shipped vault-ingress scripts directory on sys.path.
 from tracking_database import (  # noqa: E402
     TrackingDatabaseError,
     assess_tracking_database,
