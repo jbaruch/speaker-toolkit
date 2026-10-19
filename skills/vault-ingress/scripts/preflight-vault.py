@@ -68,6 +68,7 @@ from return_validation import (
     validate_video_extraction_manifest,
 )
 from pattern_evidence import (
+    LOCAL_AUDIO_SOURCE_ROOTS_KEY,
     PATTERN_EVIDENCE_SCHEMA_VERSION,
     PatternEvidenceError,
     assess_talk_artifact_capabilities,
@@ -102,6 +103,7 @@ from pptx_evidence import (
     PPTX_EXTRACTION_SCHEMA_VERSION,
 )
 from tracking_database import (
+    local_audio_declarations,
     CONFIG_RECORD_SCHEMA_VERSION,
     LEGACY_CONFIG_RECORD_SCHEMA_VERSION,
     PPTX_EVIDENCE_CURRENT,
@@ -1109,11 +1111,11 @@ class VaultPreflight:
         if cached is not None:
             return cached
         configured_source = self.config.get("pptx_source_dir")
-        source_roots = (
-            {"pptx_source_dir": configured_source}
-            if "pptx_source_dir" in self.config and configured_source is not None
-            else None
-        )
+        source_roots: dict[str, object] = {
+            LOCAL_AUDIO_SOURCE_ROOTS_KEY: local_audio_declarations(self.database)
+        }
+        if "pptx_source_dir" in self.config and configured_source is not None:
+            source_roots["pptx_source_dir"] = configured_source
         assessed = assess_talk_artifact_capabilities(
             self.talks[index],
             vault_root=self.artifact_root(),
@@ -1559,6 +1561,9 @@ class VaultPreflight:
                 talk,
                 vault_root=self.artifact_root(),
                 video_evidence_assessment=self.video_evidence_assessment,
+                local_audio_path=local_audio_declarations(self.database).get(
+                    str(talk.get("filename"))
+                ),
             )
         )
         if valid:

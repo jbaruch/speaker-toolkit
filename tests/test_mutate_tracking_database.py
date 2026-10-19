@@ -2582,3 +2582,101 @@ def test_a_legacy_talk_record_can_still_carry_provenance(
 
     assert candidate["date_provenance"][0]["talk_filename"] == "talk.md"
     assert candidate["talks"][0]["schema_version"] == 1
+
+
+# An owner's declaration of a talk's local audio recording (#485).
+
+
+def _declare_audio(**updates: Any) -> dict[str, Any]:
+    mutation = {
+        "kind": "declare_local_audio",
+        "filename": "talk.md",
+        "expect": {"audio_local_path": {"$missing": True}},
+        "audio_local_path": "recordings/talk/infoq.mp3",
+        "declared_at": "2026-10-19T00:00:00Z",
+    }
+    mutation.update(updates)
+    return mutation
+
+
+@pytest.mark.parametrize(
+    "status,requeued",
+    [("pending", False), ("processed", True), ("processed_partial", True)],
+)
+def test_declared_audio_lands_in_its_collection_and_requeues_analyzed_talks(
+    mutate_tracking_database, status: str, requeued: bool
+) -> None:
+    database = _base_database()
+    database["talks"][0]["status"] = status
+
+    candidate, changes = mutate_tracking_database.build_candidate(
+        database, [_declare_audio()]
+    )
+
+    assert candidate["local_audio"] == [
+        {
+            "schema_version": 1,
+            "talk_filename": "talk.md",
+            "audio_local_path": "recordings/talk/infoq.mp3",
+            "declared_at": "2026-10-19T00:00:00Z",
+        }
+    ]
+    talk = candidate["talks"][0]
+    if requeued:
+        assert talk["status"] == "needs-reprocessing"
+        assert talk["reprocess_reason"] == "source_added"
+    else:
+        assert talk["status"] == status
+    assert changes[0]["kind"] == "declare_local_audio"
+
+
+def test_a_replayed_declaration_changes_nothing(mutate_tracking_database) -> None:
+    database = _base_database()
+    first, _ = mutate_tracking_database.build_candidate(database, [_declare_audio()])
+    again, changes = mutate_tracking_database.build_candidate(
+        first,
+        [_declare_audio(expect={"audio_local_path": "recordings/talk/infoq.mp3"})],
+    )
+    assert again == first
+    assert changes == []
+
+
+@pytest.mark.parametrize(
+    "updates,detail",
+    [
+        ({"audio_local_path": "videos/talk.mp4"}, "must name an audio file"),
+        ({"expect": {"audio_local_path": "recordings/other.mp3"}}, "expect"),
+        ({"declared_at": "yesterday"}, "timezone-aware"),
+    ],
+    ids=["video-suffix", "stale-expect", "bad-time"],
+)
+def test_an_unusable_declaration_is_refused(
+    mutate_tracking_database, updates: dict[str, Any], detail: str
+) -> None:
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError, match=detail
+    ):
+        mutate_tracking_database.build_candidate(
+            _base_database(), [_declare_audio(**updates)]
+        )
+
+
+def test_declaring_audio_refuses_an_active_claim(mutate_tracking_database) -> None:
+    database = _base_database()
+    talk = database["talks"][0]
+    talk["status"] = "reprocessing-inflight"
+    talk["reprocess_generation"] = 1
+    talk["_queue_claim"] = {
+        "schema_version": 2,
+        "run_id": "audio-test",
+        "batch_id": "active",
+        "claimed_at": "2026-10-19T12:00:00+00:00",
+        "previous_status": "needs-reprocessing",
+        "reprocess_generation": 1,
+        "state": "claimed",
+    }
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="active queue claim",
+    ):
+        mutate_tracking_database.build_candidate(database, [_declare_audio()])

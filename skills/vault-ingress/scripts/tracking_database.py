@@ -44,7 +44,10 @@ PRE_SOURCE_ALIASES_TRACKING_DATABASE_SCHEMA_VERSION = 2
 # shape, and a version on each nested provenance record does not version its
 # parent database (`stateful-artifacts` Migration Policy).
 PRE_DATE_PROVENANCE_TRACKING_DATABASE_SCHEMA_VERSION = 3
-TRACKING_DATABASE_SCHEMA_VERSION = 4
+# The root shape before the `local_audio` collection (#485), for the same reason
+# as the three above: a top-level key is part of the ROOT record's shape.
+PRE_LOCAL_AUDIO_TRACKING_DATABASE_SCHEMA_VERSION = 4
+TRACKING_DATABASE_SCHEMA_VERSION = 5
 LEGACY_TALK_RECORD_SCHEMA_VERSION = 1
 FLAT_SCORE_TALK_RECORD_SCHEMA_VERSION = 5
 # The generation before the owner-reviewed title-equivalence ledger (#333).
@@ -96,6 +99,12 @@ MARKDOWN_DECK_RECORD_SCHEMA_VERSION = 1
 # `_migrate_date_provenance_records` upgrades one.
 LEGACY_DATE_PROVENANCE_RECORD_SCHEMA_VERSION = 1
 DATE_PROVENANCE_RECORD_SCHEMA_VERSION = 2
+# An owner's declaration that a local audio file is this talk's recording (#485).
+# Top-level for the reason `date_provenance` is: the talks it is for are the
+# legacy records, and a talk field is unreachable at their generation. Optional;
+# absent means no audio was declared. It binds transcript and timing receipts
+# only, never `delivery_video` evidence.
+LOCAL_AUDIO_RECORD_SCHEMA_VERSION = 1
 
 READABLE_TRACKING_DATABASE_SCHEMA_VERSIONS = frozenset(
     {
@@ -103,6 +112,7 @@ READABLE_TRACKING_DATABASE_SCHEMA_VERSIONS = frozenset(
         PRE_MARKDOWN_DECKS_TRACKING_DATABASE_SCHEMA_VERSION,
         PRE_SOURCE_ALIASES_TRACKING_DATABASE_SCHEMA_VERSION,
         PRE_DATE_PROVENANCE_TRACKING_DATABASE_SCHEMA_VERSION,
+        PRE_LOCAL_AUDIO_TRACKING_DATABASE_SCHEMA_VERSION,
         TRACKING_DATABASE_SCHEMA_VERSION,
     }
 )
@@ -263,6 +273,9 @@ DATE_PROVENANCE_REQUIRED_FIELDS = frozenset(
     {"talk_filename", "method", "evidence", "established_at"}
 )
 DATE_PROVENANCE_OPTIONAL_FIELDS = frozenset({"not_later_than"})
+LOCAL_AUDIO_REQUIRED_FIELDS = frozenset(
+    {"talk_filename", "audio_local_path", "declared_at"}
+)
 # What a provenance record establishes, and how strongly. The mapping IS the
 # honesty of this collection: `basis` is never stored, so a record cannot claim
 # a strength its method does not support.
@@ -1308,6 +1321,90 @@ def validate_markdown_deck(
         )
 
 
+def validate_local_audio_declaration(
+    record: Mapping[str, object],
+    *,
+    label: str,
+    talks_by_filename: Mapping[object, Mapping[str, object]] | None = None,
+) -> None:
+    """Validate one owner declaration of a talk's local audio recording.
+
+    The declaration is what lets a transcript Whisper'd from that audio bind
+    its `local_media_duration` receipt (#485): the receipt's `media_sha256` is
+    compared with a bounded probe of the declared file. Without one, audio is
+    unbindable, since `video_local_path` admits video containers only.
+
+    The locator goes through `classify_artifact_locator`, the lexical contract
+    every persisted artifact path uses; a relative value is vault-root
+    relative. The audio container suffix is the evidence owner's to check
+    (`local_media_contract.AUDIO_DECLARATION_SUFFIXES`), at declaration and at
+    binding, which keeps this reader importable by the stdlib-only bootstrap.
+    Existence is not checked here; an absent file fails at binding time.
+    """
+    _require_closed_shape(record, required=LOCAL_AUDIO_REQUIRED_FIELDS, label=label)
+    recorded = record.get("schema_version")
+    if (
+        isinstance(recorded, bool)
+        or not isinstance(recorded, int)
+        or recorded != LOCAL_AUDIO_RECORD_SCHEMA_VERSION
+    ):
+        raise TrackingDatabaseError(
+            f"{label}.schema_version must be {LOCAL_AUDIO_RECORD_SCHEMA_VERSION}"
+        )
+    _require_nonempty_string(record["talk_filename"], f"{label}.talk_filename")
+    value = _require_nonempty_string(
+        record["audio_local_path"], f"{label}.audio_local_path"
+    )
+    try:
+        classify_artifact_locator(value)
+    except ArtifactLocatorError as exc:
+        raise TrackingDatabaseError(
+            f"{label}.audio_local_path is not a usable artifact locator "
+            f"({exc.reason_code}): {value!r}"
+        ) from exc
+    if value.endswith("/"):
+        raise TrackingDatabaseError(
+            f"{label}.audio_local_path ends in '/', which names a directory: {value!r}"
+        )
+    declared_at = _require_nonempty_string(
+        record["declared_at"], f"{label}.declared_at"
+    )
+    try:
+        parsed = dt.datetime.fromisoformat(declared_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise TrackingDatabaseError(
+            f"{label}.declared_at must be a timezone-aware ISO-8601 timestamp"
+        ) from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise TrackingDatabaseError(
+            f"{label}.declared_at must be a timezone-aware ISO-8601 timestamp"
+        )
+    if talks_by_filename is not None and (
+        record["talk_filename"] not in talks_by_filename
+    ):
+        raise TrackingDatabaseError(
+            f"{label}.talk_filename names no talk: {record['talk_filename']!r}"
+        )
+
+
+def local_audio_declarations(database: Mapping[str, object]) -> dict[str, str]:
+    """Every owner-declared local audio locator, keyed by talk filename.
+
+    Evidence readers receive this under
+    `pattern_evidence.LOCAL_AUDIO_SOURCE_ROOTS_KEY` in their `source_roots`.
+    """
+    records = database.get("local_audio")
+    if not isinstance(records, list):
+        return {}
+    return {
+        record["talk_filename"]: record["audio_local_path"]
+        for record in records
+        if isinstance(record, Mapping)
+        and isinstance(record.get("talk_filename"), str)
+        and isinstance(record.get("audio_local_path"), str)
+    }
+
+
 def date_provenance_basis(method: object) -> str | None:
     """Name how strongly a provenance method establishes a delivery date.
 
@@ -1873,6 +1970,27 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
             )
         dated_talks.add(talk_filename)
 
+    audio = database.get("local_audio", [])
+    if not isinstance(audio, list):
+        raise TrackingDatabaseError("local_audio must be an array")
+    audio_talks: set[object] = set()
+    for index, record in enumerate(audio):
+        if not isinstance(record, Mapping):
+            raise TrackingDatabaseError(f"local_audio[{index}] must be a JSON object")
+        label = f"local_audio[{index}]"
+        validate_local_audio_declaration(
+            record, label=label, talks_by_filename=talks_by_filename
+        )
+        talk_filename = record["talk_filename"]
+        # One declaration per talk: a second would leave the binding choosing
+        # between two recordings with nothing saying which is current.
+        if talk_filename in audio_talks:
+            raise TrackingDatabaseError(
+                f"{label} is a second local audio declaration for "
+                f"{talk_filename!r}; a talk declares one audio recording"
+            )
+        audio_talks.add(talk_filename)
+
     try:
         validate_alias_database(database)
     except SourceAliasError as exc:
@@ -2193,6 +2311,7 @@ def repair_missing_qr_schema_versions(database: object) -> TrackingDatabaseMigra
         not in {
             PRE_SOURCE_ALIASES_TRACKING_DATABASE_SCHEMA_VERSION,
             PRE_DATE_PROVENANCE_TRACKING_DATABASE_SCHEMA_VERSION,
+            PRE_LOCAL_AUDIO_TRACKING_DATABASE_SCHEMA_VERSION,
             TRACKING_DATABASE_SCHEMA_VERSION,
         }
         or (
@@ -2270,6 +2389,7 @@ def migrate_tracking_database_root(database: object) -> TrackingDatabaseMigratio
         not in {
             PRE_SOURCE_ALIASES_TRACKING_DATABASE_SCHEMA_VERSION,
             PRE_DATE_PROVENANCE_TRACKING_DATABASE_SCHEMA_VERSION,
+            PRE_LOCAL_AUDIO_TRACKING_DATABASE_SCHEMA_VERSION,
             TRACKING_DATABASE_SCHEMA_VERSION,
         }
         or database["config"]["schema_version"] != CONFIG_RECORD_SCHEMA_VERSION

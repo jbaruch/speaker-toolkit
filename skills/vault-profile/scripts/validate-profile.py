@@ -65,6 +65,7 @@ from pattern_classification_runtime import (  # noqa: E402
 from tracking_database import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     TrackingDatabaseError,
     assess_tracking_database,
+    local_audio_declarations,
 )
 
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
@@ -246,6 +247,7 @@ def _load_live_pattern_snapshot(
         evidence_freshness_assessor=configured_evidence_freshness_assessor(
             vault_root,
             database.get("config"),
+            local_audio=local_audio_declarations(database),
         ),
     )
     try:

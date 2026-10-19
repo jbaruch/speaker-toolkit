@@ -1,5 +1,42 @@
 # Changelog
 
+### Let a declared local audio file bind its transcript receipt
+
+`fetch-transcript.py --audio` accepts `.mp3` and `.m4a` and writes a
+`local_media_duration` receipt bound to the audio's SHA-256, but owner binding
+resolved local media only through `video_local_path` and `video_path`, with
+video suffixes. An audio receipt could never bind (#485). On the live vault that
+left `2016-qcon-sf-java-puzzlers-ng-s02.md` with an unrepairable
+`transcript_quality_provenance_mismatch` (its InfoQ MP4 fails strict decode),
+and `baselone-2026-context.md` had to wait for YouTube because its 11.8 GB room
+recording exceeds the 8 GiB input ceiling.
+
+- A new optional top-level `local_audio` collection holds owner declarations,
+  `{schema_version: 1, talk_filename, audio_local_path, declared_at}`, one per
+  talk. It is top-level for the reason `date_provenance` is: the talks it is
+  for are legacy records, and a talk field is unreachable at their generation.
+  A new top-level key is part of the root shape, so the root moves to
+  **schema 5**; v4 databases stay readable and the owner migration advances
+  them.
+- The `declare_local_audio` mutation writes a declaration with an optimistic
+  `expect`. The path must be `.mp3`, `.m4a` or `.wav`
+  (`local_media_contract.AUDIO_DECLARATION_SUFFIXES`). It requeues an analyzed
+  talk as `source_added` and refuses an active queue claim.
+- Evidence readers probe the declared file with the bounded media owner and bind
+  a `local_media_duration` receipt when its digest matches, only when no local
+  video binds. Audio never reaches `delivery_video` evidence. The declarations
+  travel in `source_roots` under `pattern_evidence.LOCAL_AUDIO_SOURCE_ROOTS_KEY`
+  from every caller (persistence, analysis rendering, queue normalization,
+  preflight and the vault-profile cohort), so freshness never reads a declared
+  transcript as stale and requeues it.
+- `local-media-acquisition.md` documents declaring audio and the sanctioned path
+  for a recording over the input ceiling: lossless audio extraction, `--audio`,
+  then a declaration, never a transcode renamed to `{youtube_id}.mp4`.
+  `subagent-instructions.md` names the declaration for non-YouTube talks, and
+  the `schemas-db.md` compatibility table moves to root 5.
+- The declaration is a mutation of the tracking database's own collection, not
+  an `apply-source-repairs.py` talk field, for the reason above.
+
 ## 0.20.186 — 2026-10-20
 
 ### Bind the shownotes analysis to its exact delivery

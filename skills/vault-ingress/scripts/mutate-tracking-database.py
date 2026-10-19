@@ -36,6 +36,7 @@ from tracking_database import (
     THUMBNAIL_REQUIRED_FIELDS as OWNER_THUMBNAIL_REQUIRED_FIELDS,
     LEGACY_TALK_RECORD_SCHEMA_VERSION,
     DATE_PROVENANCE_RECORD_SCHEMA_VERSION,
+    LOCAL_AUDIO_RECORD_SCHEMA_VERSION,
     MARKDOWN_DECK_RECORD_SCHEMA_VERSION,
     SOURCE_TITLE_EQUIVALENCE_RECORD_SCHEMA_VERSION,
     TALK_RECORD_SCHEMA_VERSION,
@@ -43,9 +44,11 @@ from tracking_database import (
     TrackingDatabaseError,
     require_current_tracking_database,
     validate_date_provenance,
+    validate_local_audio_declaration,
     validate_markdown_deck,
     validate_source_title_equivalence,
 )
+from local_media_contract import AUDIO_DECLARATION_SUFFIXES
 from tracking_database_io import (
     TrackingDatabaseIOError,
     commit_tracking_database,
@@ -1995,6 +1998,104 @@ def initial_database(mutation: dict[str, Any], *, index: int) -> dict[str, Any]:
     }
 
 
+def _apply_declare_local_audio(
+    database: dict[str, Any],
+    mutation: dict[str, Any],
+    changes: list[dict[str, Any]],
+    *,
+    index: int,
+) -> None:
+    """Declare a local audio file as one talk's recording (#485).
+
+    The declaration binds a transcript Whisper'd from that audio: the receipt's
+    `media_sha256` is checked against a probe of the declared file. It never
+    becomes `delivery_video` evidence. Declaring audio on an analyzed talk
+    requeues it as `source_added`, the rule every source registration follows:
+    the stored analysis ran without that source. An active claim refuses.
+    `declared_at` comes from the plan, so the same plan is byte-reproducible.
+    """
+    label = f"mutations[{index}]"
+    _require_keys(
+        mutation,
+        required={"kind", "filename", "expect", "audio_local_path", "declared_at"},
+        optional=set(),
+        label=label,
+    )
+    filename = _nonempty(mutation["filename"], f"{label}.filename")
+    talk = _talk_by_filename(database, filename)
+    _require_readable_talk_record(talk, filename=filename)
+    claim = talk.get("_queue_claim")
+    if talk.get("status") == "reprocessing-inflight" or (
+        isinstance(claim, dict) and claim.get("state") == "claimed"
+    ):
+        raise TrackingDatabaseMutationError(
+            f"{label}: cannot declare audio on a talk with an active queue claim; "
+            "let the claim finish or recover it first"
+        )
+    expect = mutation["expect"]
+    if not isinstance(expect, dict) or set(expect) != {"audio_local_path"}:
+        raise TrackingDatabaseMutationError(
+            f"{label}.expect must be an object naming exactly audio_local_path"
+        )
+    record = {
+        "schema_version": LOCAL_AUDIO_RECORD_SCHEMA_VERSION,
+        "talk_filename": filename,
+        "audio_local_path": mutation["audio_local_path"],
+        "declared_at": mutation["declared_at"],
+    }
+    try:
+        validate_local_audio_declaration(
+            record, label=label, talks_by_filename={filename: talk}
+        )
+    except TrackingDatabaseError as exc:
+        raise TrackingDatabaseMutationError(str(exc)) from exc
+    suffix = Path(str(record["audio_local_path"])).suffix.lower()
+    if suffix not in AUDIO_DECLARATION_SUFFIXES:
+        raise TrackingDatabaseMutationError(
+            f"{label}.audio_local_path must name an audio file "
+            f"({', '.join(sorted(AUDIO_DECLARATION_SUFFIXES))}); declare video "
+            "through video_local_path"
+        )
+    existing = database.get("local_audio", [])
+    if not isinstance(existing, list):
+        raise TrackingDatabaseMutationError("local_audio must be an array")
+    replaced: object = MISSING_MARKER
+    recorded_already = False
+    remaining: list[Any] = []
+    for recorded in existing:
+        if isinstance(recorded, dict) and recorded.get("talk_filename") == filename:
+            replaced = recorded.get("audio_local_path", MISSING_MARKER)
+            recorded_already = True
+            continue
+        remaining.append(recorded)
+    _expect_value(
+        exists=recorded_already,
+        actual=replaced,
+        expected=expect["audio_local_path"],
+        label=f"{label}.expect.audio_local_path",
+    )
+    if recorded_already and replaced == record["audio_local_path"]:
+        return
+    database["local_audio"] = sorted(
+        [*remaining, record],
+        key=lambda entry: entry.get("talk_filename", ""),
+    )
+    prior_status = talk.get("status")
+    if prior_status in {"processed", "processed_partial"}:
+        talk["status"] = "needs-reprocessing"
+        talk["reprocess_reason"] = "source_added"
+    _record_change(
+        changes,
+        kind="declare_local_audio",
+        identity=filename,
+        before={"audio_local_path": replaced, "status": prior_status},
+        after={
+            "audio_local_path": record["audio_local_path"],
+            "status": talk.get("status"),
+        },
+    )
+
+
 def build_candidate(
     database: dict[str, Any],
     mutations: list[dict[str, Any]],
@@ -2039,6 +2140,8 @@ def build_candidate(
             _apply_record_markdown_deck(candidate, mutation, changes, index=index)
         elif kind == "record_date_provenance":
             _apply_record_date_provenance(candidate, mutation, changes, index=index)
+        elif kind == "declare_local_audio":
+            _apply_declare_local_audio(candidate, mutation, changes, index=index)
         elif kind == "update_talk_publishing":
             _apply_update_talk(candidate, mutation, changes, index=index)
         elif kind == "update_talk_clarification":

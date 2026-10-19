@@ -83,6 +83,7 @@ from summary_lock import (  # noqa: E402  # pyright: ignore[reportMissingImports
 from tracking_database import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     TrackingDatabaseError,
     assess_tracking_database,
+    local_audio_declarations,
 )
 
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
@@ -945,6 +946,7 @@ def main(argv: list[str] | None = None) -> int:
             evidence_freshness_assessor=configured_evidence_freshness_assessor(
                 vault_root,
                 tracking_database.get("config"),
+                local_audio=local_audio_declarations(tracking_database),
             ),
             classification_policy_stamp=resolve_classification_policy(vault_root),
         )

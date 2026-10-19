@@ -47,6 +47,21 @@ pins. A failed optional lane does not invalidate independent captions or slides.
   returns no truncated transcript and preserves the prior bundle. It does not
   migrate an existing quality receipt or authenticate a recording's catalog identity.
 
+## Declaring an Audio Recording
+
+A transcript Whisper'd from a local audio file binds its `local_media_duration`
+receipt only after the owner declares that file as the talk's recording with
+the `declare_local_audio` mutation; see
+[schemas-db.md](schemas-db.md#declared-local-audio). The declaration binds
+transcript and timing receipts, never `delivery_video` evidence.
+
+A recording over the `MEDIA_MAX_INPUT_BYTES` ceiling in
+`skills/vault-ingress/scripts/local_media_contract.py` cannot be acquired
+whole. Extract its audio losslessly (`ffmpeg -i <recording> -map 0:a:0 -c:a
+copy <name>.m4a`), transcribe that file with `--audio`, and declare it. Never
+rename a local transcode to `{youtube_id}.mp4` to satisfy the YouTube filename
+rule: that fakes provider identity.
+
 ## Refusal and Recovery
 
 The fetcher reports worker refusal through its existing failure JSON and stderr.
