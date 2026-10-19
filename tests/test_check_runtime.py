@@ -1089,6 +1089,7 @@ def test_lane_requirements_match_the_configured_interpreter_contract() -> None:
     assert check_runtime.IMAGEHASH_REQUIRED_VERSION == "4.3.2"
     assert check_runtime.NUMPY_REQUIRED_VERSION == "2.2.6"
     assert check_runtime.PILLOW_REQUIRED_VERSION == "12.3.0"
+    assert check_runtime.PYDANTIC_REQUIRED_VERSION == "2.13.5"
     assert check_runtime.YTDLP_REQUIRED_VERSION == "2026.8.19"
     assert check_runtime.REQUIRED_MODULE_VERSIONS == {
         "PIL": "12.3.0",
@@ -1096,6 +1097,11 @@ def test_lane_requirements_match_the_configured_interpreter_contract() -> None:
         "imagehash": "4.3.2",
         "numpy": "2.2.6",
         "psutil": "7.2.2",
+        "pydantic": "2.13.5",
+    }
+    assert requirements["outline"] == {
+        "modules": {"PyYAML": "yaml", "pydantic": "pydantic"},
+        "commands": {},
     }
     assert requirements["pdf"]["modules"] == {
         "pypdf": "pypdf",
@@ -1279,6 +1285,14 @@ def test_stale_ytdlp_version_degrades_the_download_lane(monkeypatch) -> None:
         }
     }
     assert report["degraded_lanes"] == ["youtube-download"]
+
+
+def test_outline_pydantic_version_matches_the_manifest() -> None:
+    """The outline lane's exact Pydantic check pins what pyproject installs."""
+    manifest = PYPROJECT.read_text(encoding="utf-8")
+    assert re.findall(r'^\s*"pydantic==([^"\s]+)",\s*$', manifest, re.MULTILINE) == [
+        check_runtime.PYDANTIC_REQUIRED_VERSION
+    ]
 
 
 def test_video_dependency_version_authorities_are_synchronized() -> None:

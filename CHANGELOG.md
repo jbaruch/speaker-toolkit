@@ -15,14 +15,20 @@ Follow-ups from the advisory Copilot review on #457 (#458).
 - `resolve-deploy-run.py` refuses a row without string `headSha`, `event` and
   `headBranch` as malformed `gh` output. Such a row could never match, so a
   `{}` row sat out the whole bounded wait before failing as "no matching run".
-- The standalone publisher resolves its interpreter the way vault-profile does:
-  one owner read of the tracking database through the host interpreter, then
-  `config.python_path`, a confirming re-read and the `core` runtime lane, which
-  carries the PyYAML that `outline_schema.py` and `verify-talk-skill.py`
-  import. The procedure lives in `references/runtime.md`, keeping `SKILL.md`
-  under the entrypoint token budget. Every toolkit command in the skill and
-  `references/talk-skill.md` runs on `"{python_path}"`, never a bare `python3`
-  from `PATH`.
+- The standalone publisher resolves its interpreter through the new
+  `scripts/resolve-runtime.py`: one owner read of the tracking database under
+  the host interpreter, then `config.python_path`, a confirming owner re-read
+  of `{vault_root}/tracking-database.json` that must match byte for byte, and
+  `check-runtime.py --require-lanes outline`. It emits one JSON verdict and
+  names `vault-ingress Step 1` as the repair handoff on refusal. Every toolkit
+  command in the skill and `references/talk-skill.md` runs on
+  `"{python_path}"`, never a bare `python3` from `PATH`;
+  `references/runtime.md` documents the contract, keeping `SKILL.md` under the
+  entrypoint token budget.
+- `check-runtime.py` gains an `outline` lane (PyYAML and Pydantic, with an
+  exact `PYDANTIC_REQUIRED_VERSION` matching `pyproject.toml`):
+  `outline_schema.py` imports Pydantic v2 at module load, so an interpreter
+  with PyYAML alone used to pass and then fail mid-publish.
 
 ## 0.20.184 — 2026-10-20
 

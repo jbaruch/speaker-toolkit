@@ -48,12 +48,14 @@ FILELOCK_REQUIRED_VERSION = "4.1.0"
 IMAGEHASH_REQUIRED_VERSION = "4.3.2"
 NUMPY_REQUIRED_VERSION = "2.2.6"
 PILLOW_REQUIRED_VERSION = "12.3.0"
+PYDANTIC_REQUIRED_VERSION = "2.13.5"
 REQUIRED_MODULE_VERSIONS = {
     "PIL": PILLOW_REQUIRED_VERSION,
     "filelock": FILELOCK_REQUIRED_VERSION,
     "imagehash": IMAGEHASH_REQUIRED_VERSION,
     "numpy": NUMPY_REQUIRED_VERSION,
     "psutil": PSUTIL_REQUIRED_VERSION,
+    "pydantic": PYDANTIC_REQUIRED_VERSION,
 }
 LANE_REQUIREMENTS: dict[str, dict[str, dict[str, str]]] = {
     "core": {
@@ -62,6 +64,11 @@ LANE_REQUIREMENTS: dict[str, dict[str, dict[str, str]]] = {
     },
     "pdf": {
         "modules": {"pypdf": "pypdf", "psutil": "psutil"},
+        "commands": {},
+    },
+    # outline_schema.py and the shownotes verifier import these at module load.
+    "outline": {
+        "modules": {"PyYAML": "yaml", "pydantic": "pydantic"},
         "commands": {},
     },
     "pptx": {

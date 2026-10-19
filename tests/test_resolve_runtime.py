@@ -1,0 +1,125 @@
+"""The standalone publisher's interpreter comes from the vault, never PATH (#458)."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import stat
+import subprocess
+import sys
+
+import pytest
+
+from conftest import CURRENT_ROOT_SCHEMA_VERSION, current_tracking_config
+
+SCRIPT = (
+    Path(__file__).resolve().parents[1]
+    / "skills/shownotes-publisher/scripts/resolve-runtime.py"
+)
+
+
+def _database(vault: Path, **config: object) -> Path:
+    vault.mkdir(parents=True, exist_ok=True)
+    path = vault / "tracking-database.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": CURRENT_ROOT_SCHEMA_VERSION,
+                "config": current_tracking_config(**config),
+                "talks": [],
+                "pptx_catalog": [],
+                "qr_codes": [],
+                "resources": [],
+                "thumbnails": [],
+                "confirmed_intents": [],
+                "improvement_goals": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _resolve(database: Path):
+    completed = subprocess.run(
+        [sys.executable, str(SCRIPT), "--database", str(database)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return completed.returncode, json.loads(completed.stdout), completed.stderr
+
+
+def _refused(database: Path, reason_code: str) -> str:
+    code, payload, stderr = _resolve(database)
+    assert code == 1
+    assert payload["ok"] is False
+    assert payload["reason_code"] == reason_code
+    assert payload["handoff"] == "vault-ingress Step 1"
+    assert payload["error"] in stderr
+    return payload["error"]
+
+
+def test_the_documented_symlinked_locator_resolves_the_configured_interpreter(
+    tmp_path,
+):
+    vault = tmp_path / "drive" / "vault"
+    _database(vault, python_path=sys.executable, vault_root=str(vault))
+    link = tmp_path / "claude-vault"
+    link.symlink_to(vault, target_is_directory=True)
+
+    code, payload, stderr = _resolve(link / "tracking-database.json")
+
+    assert code == 0, stderr
+    assert payload["ok"] is True
+    assert payload["python_path"] == sys.executable
+    assert payload["vault_root"] == str(vault)
+    assert len(payload["database_sha256"]) == 64
+
+
+@pytest.mark.parametrize("field", ["python_path", "vault_root"])
+@pytest.mark.parametrize("value", [None, "", "   "])
+def test_an_absent_or_blank_config_field_is_refused(tmp_path, field, value):
+    vault = tmp_path / "vault"
+    config = {"python_path": sys.executable, "vault_root": str(vault)}
+    if value is None:
+        del config[field]
+    else:
+        config[field] = value
+    database = _database(vault, **config)
+    assert f"config.{field}" in _refused(database, "config_incomplete")
+
+
+def test_an_interpreter_that_does_not_exist_is_refused_not_replaced(tmp_path):
+    vault = tmp_path / "vault"
+    database = _database(
+        vault, python_path=str(tmp_path / "missing-python"), vault_root=str(vault)
+    )
+    _refused(database, "interpreter_unusable")
+
+
+def test_a_vault_root_naming_another_database_is_refused(tmp_path):
+    vault, other = tmp_path / "vault", tmp_path / "other"
+    _database(other, python_path=sys.executable, vault_root=str(other), speaker="x")
+    database = _database(vault, python_path=sys.executable, vault_root=str(other))
+    _refused(database, "database_mismatch")
+
+
+def test_an_interpreter_without_the_outline_lane_is_refused(tmp_path):
+    """The owner reader runs; check-runtime under the same interpreter does not."""
+    interpreter = tmp_path / "python-without-pydantic"
+    interpreter.write_text(
+        "#!/bin/sh\n"
+        'case "$1" in *check-runtime.py) echo "missing pydantic" >&2; exit 1;; esac\n'
+        f'exec "{sys.executable}" "$@"\n',
+        encoding="utf-8",
+    )
+    interpreter.chmod(interpreter.stat().st_mode | stat.S_IXUSR)
+    vault = tmp_path / "vault"
+    database = _database(vault, python_path=str(interpreter), vault_root=str(vault))
+    assert "Pydantic v2" in _refused(database, "runtime_lane_unavailable")
+
+
+def test_an_unreadable_database_is_refused(tmp_path):
+    missing = tmp_path / "nowhere" / "tracking-database.json"
+    _refused(missing, "owner_read_failed")
