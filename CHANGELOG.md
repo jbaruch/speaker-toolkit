@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.179 — 2026-10-19
+
 ### Tighten two source-identity checks left loose by #449
 
 Two advisory findings from the #449 review (#452).
