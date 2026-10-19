@@ -75,14 +75,16 @@ that separate artifact.
    writing a qualification as if it were established fact.
 4. For a delivered talk whose lookup is not `bound`, first resolve
    `ambiguous`: list the `candidates`, ask the speaker which delivery this brief
-   is for, and look it up again by `--filename`. When `handoff` is present,
-   invoke `Skill(skill: "vault-ingress")` with it as context: its exact filename
-   is the explicit one-talk selection vault-ingress Step 2 takes, never a batch.
-   When it returns, run the lookup again and resume only once it answers
-   `bound`. When `handoff` is null (no matching record, or a processed record
-   whose rendered analysis is missing, stale or unreadable, which vault-ingress
-   has no one-talk action to re-render), stop and report the `binding` and
-   `talk` to the speaker. Do not silently substitute a generic transcript summary. For a
+   is for, and look it up again by `--filename`; resume synthesis if that
+   answers `bound`. Otherwise, when `handoff` is present, invoke
+   `Skill(skill: "vault-ingress")` with it as context: its exact filename is the
+   explicit one-talk selection vault-ingress Step 2 takes, never a batch. When
+   it returns, run the lookup again and resume only once it answers `bound`.
+   When an unbound lookup's `handoff` is null (no matching record, or a
+   processed record whose rendered analysis is missing, stale or unreadable,
+   which vault-ingress has no one-talk action to re-render), stop and report
+   the `binding` and `talk` to the speaker. Do not silently substitute a
+   generic transcript summary. For a
    pre-talk skill, use the approved rhetorical architecture and any
    `rhetorical-review.md` as planned analysis, clearly label that status, and
    refresh against delivered analysis after the event. If the user explicitly
