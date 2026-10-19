@@ -1,5 +1,14 @@
 # Changelog
 
+### Renew the libreoffice-impress CI pin
+
+Ubuntu superseded `libreoffice-impress` `4:24.2.7-0ubuntu0.24.04.6` with
+`.7` in `noble-updates` and `noble-security`, and the archive serves only the
+current version, so every `test` job failed at the system-dependency install on
+every mirror. `scripts/install_system_deps.py` now pins `.7`, read from madison
+per the renewal procedure in its header. `ffmpeg` and `tesseract-ocr` are
+unchanged.
+
 ## 0.20.167 — 2026-09-29
 
 ### Add screencast-editor: produce a Camtasia screencast, captions and chapters
