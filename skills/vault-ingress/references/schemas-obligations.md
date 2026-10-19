@@ -331,6 +331,8 @@ Migration Policy exception for gate stores: an open record refuses actions
 this script does not accept as "no usable prior state" would silently drop
 those obligations. A script older than the ledger it reads therefore refuses it
 (`ledger_schema_unsupported` for the envelope, `ledger_invalid` naming the
-run-record version), tells the operator to update speaker-toolkit, and never
-rewrites it; every older version it does accept is migrated and rewritten on
+run-record version) and never rewrites it. A version above the one it writes
+tells the operator to update speaker-toolkit; any other unreadable value, which
+no speaker-toolkit writes, tells them to inspect the ledger or restore an
+owner-written copy; every older version it does accept is migrated and rewritten on
 read, as above.

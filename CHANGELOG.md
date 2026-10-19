@@ -34,8 +34,10 @@ run addressed the vault, not on the data.
 - The ledger is a gate store: a run-record version this script does not
   accept is refused, never read as "no prior state", since that would drop
   owed reports, unanswered offers and pending sessions. `schemas-obligations.md`
-  claims the `stateful-artifacts` gate-store exception, and the refusal tells
-  the operator to update speaker-toolkit and leaves the ledger untouched.
+  claims the `stateful-artifacts` gate-store exception. The refusal leaves the
+  ledger untouched and names the recovery that fits: update speaker-toolkit for
+  a newer version, or inspect or restore an owner-written ledger for a value no
+  speaker-toolkit writes (`0`, `-1`, `"1"`).
 
 ## 0.20.181 — 2026-10-19
 

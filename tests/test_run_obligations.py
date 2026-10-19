@@ -2952,10 +2952,22 @@ def test_topics_and_reasons_arrive_through_files(tmp_path, fresh_db):
     assert nothing["reason_code"] == "invalid_arguments"
 
 
-def test_a_newer_run_record_is_refused_and_left_as_it_is(tmp_path, fresh_db):
+@pytest.mark.parametrize(
+    "version,recovery,not_recovery",
+    [
+        (3, "update speaker-toolkit", "restore it"),
+        (0, "restore it from a copy the owner wrote", "update speaker-toolkit"),
+        (-1, "restore it from a copy the owner wrote", "update speaker-toolkit"),
+        ("1", "restore it from a copy the owner wrote", "update speaker-toolkit"),
+    ],
+    ids=["newer", "zero", "negative", "string"],
+)
+def test_an_unreadable_run_record_is_refused_and_left_as_it_is(
+    tmp_path, fresh_db, version, recovery, not_recovery
+):
     """The ledger is a gate store: an unreadable record is never no-state."""
     run = _valid_run()
-    run["schema_version"] = 3
+    run["schema_version"] = version
     ledger = tmp_path / "ingress-obligations.json"
     ledger.write_text(json.dumps({**ENVELOPE, "runs": [run]}), encoding="utf-8")
     before = ledger.read_bytes()
@@ -2963,6 +2975,7 @@ def test_a_newer_run_record_is_refused_and_left_as_it_is(tmp_path, fresh_db):
     for command in (["pending"], ["session-agenda"], ["status", "--run-id", "r"]):
         refused = _refused(fresh_db, *command)
         assert refused["reason_code"] == "ledger_invalid"
-        assert "update speaker-toolkit" in refused["error"]
+        assert recovery in refused["error"]
+        assert not_recovery not in refused["error"]
 
     assert ledger.read_bytes() == before
