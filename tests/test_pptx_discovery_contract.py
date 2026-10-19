@@ -371,11 +371,12 @@ def test_ingress_and_config_docs_bind_directory_completeness_and_migration() -> 
         assert "legacy unversioned" in docs[name].lower()
     for name in ("bootstrap", "schemas", "profile_config"):
         assert "pptx_directory_exclusions" in docs[name]
-        assert (
-            '"schema_version": 2' in docs[name] or "`schema_version: 2`" in docs[name]
-        )
-    assert "config schema 2" in docs["clarification"]
-    assert "config schema v2" in docs["clarification_config"]
+    # The config examples themselves carry the current config generation.
+    for name in ("schemas", "profile_config"):
+        assert '"config": {\n    "schema_version": 3,' in docs[name]
+    assert "config schema v3" in docs["bootstrap"]
+    assert "config schema 3" in docs["clarification"]
+    assert "config schema v3" in docs["clarification_config"]
     assert "per-deck extractor schema v4" in docs["schemas"]
     assert "separate finite policy\nenumeration ceiling" in docs["schemas"]
     assert "response echoes that exact ordered list" in docs["schemas"]

@@ -784,14 +784,28 @@ def _require_derived_offer_mode(run: dict[str, Any], label: str) -> None:
         )
 
 
-def _upgrade_session_claim(run: dict[str, Any]) -> None:
-    """Read a v2 run record as v3: a session recorded before claims has none."""
+def _upgrade_session_claim(run: dict[str, Any], label: str) -> None:
+    """Read a v2 run record as v3: a session recorded before claims has none.
+
+    A v2 session is pending or completed and carries no claim fields; one that
+    claims otherwise was not written by the owner, so it is refused rather than
+    upgraded into a claim nobody holds.
+    """
     run["schema_version"] = RUN_RECORD_SCHEMA_VERSION
     clarification = run.get("clarification")
     session = clarification.get("session") if isinstance(clarification, dict) else None
-    if isinstance(session, dict):
-        for key in ("claim_token", "claimed_at"):
-            session.setdefault(key, None)
+    if not isinstance(session, dict):
+        return
+    if session.get("state") not in {SESSION_PENDING, SESSION_COMPLETED} or any(
+        key in session for key in ("claim_token", "claimed_at")
+    ):
+        raise _invalid(
+            label,
+            "is a schema-2 record whose session carries a claim, which schema 2 "
+            "never recorded; restore the ledger from a copy the owner wrote",
+        )
+    session["claim_token"] = None
+    session["claimed_at"] = None
 
 
 def _validate_run(run: dict[str, Any], label: str, vault_root: Path) -> None:
@@ -828,7 +842,7 @@ def _validate_run(run: dict[str, Any], label: str, vault_root: Path) -> None:
     if version == LEGACY_RUN_RECORD_SCHEMA_VERSION:
         _upgrade_legacy_report_path(run, label, vault_root)
     if run["schema_version"] == PRE_SESSION_CLAIM_RUN_RECORD_SCHEMA_VERSION:
-        _upgrade_session_claim(run)
+        _upgrade_session_claim(run, label)
     for key in ("opened_at", "updated_at"):
         _require_timestamp(run[key], f"{label} {key}")
     if not isinstance(run["talks"], list):

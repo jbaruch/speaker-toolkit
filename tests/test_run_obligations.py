@@ -3500,3 +3500,36 @@ def test_a_schema_2_session_is_upgraded_and_rewritten_on_read(tmp_path, fresh_db
     persisted = _ledger(tmp_path)["runs"][0]
     assert persisted["schema_version"] == 3
     assert persisted["clarification"]["session"] == _PENDING_SESSION
+
+
+@pytest.mark.parametrize(
+    "session_change",
+    [
+        {"state": "running", "claim_token": "c" * 32, "claimed_at": NOW},
+        {"claim_token": "c" * 32},
+        {"state": "running"},
+    ],
+    ids=["running-with-claim", "claim-on-pending", "running-without-claim"],
+)
+def test_a_schema_2_session_claiming_a_claim_is_refused(
+    tmp_path, fresh_db, session_change
+):
+    """Schema 2 never recorded a claim; one that claims was not owner-written."""
+    run = _valid_run(**_ACCEPTED)
+    run["schema_version"] = 2
+    run["clarification"]["session"] = {
+        "state": "pending",
+        "completed_at": None,
+        "profile_inputs": None,
+        "profile_refreshed": None,
+        **session_change,
+    }
+    ledger = tmp_path / "ingress-obligations.json"
+    ledger.write_text(json.dumps({**ENVELOPE, "runs": [run]}), encoding="utf-8")
+    before = ledger.read_bytes()
+
+    refused = _refused(fresh_db, "status", "--run-id", "r")
+
+    assert refused["reason_code"] == "ledger_invalid"
+    assert "schema-2 record whose session carries a claim" in refused["error"]
+    assert ledger.read_bytes() == before
