@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.169 — 2026-10-19
+
 ### Fix the yt-dlp metadata probe on auto-dubbed YouTube videos
 
 The duration and download probes in `local_media_download.py` asked yt-dlp for
