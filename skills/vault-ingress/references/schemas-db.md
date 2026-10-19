@@ -205,19 +205,20 @@ v1 and v2 for the rollout window.
 
 ### Schema versioning
 
-A schema-v4 database with current child records is an idempotent no-op.
-Earlier roots advance to v4; config v1 advances to v2 in the same pass.
-The root-only transition to v4 preserves every child value and does not
-create or infer any source alias. Before migration, queue `inspect` may read
+A schema-v5 database with current child records is an idempotent no-op.
+Earlier roots advance to v5; config v1 advances to v2 in the same pass.
+The root-only transition to v5 preserves every child value and does not
+create or infer any source alias, date provenance, or local audio declaration. Before migration, queue `inspect` may read
 schema 0 and queue `recover` may close an active schema-0 lease in place.
 Recovery changes only queue lease/status state and never stamps database or talk
 schema fields; the established queue transition may advance a recovered claim
 receipt from v1 to v2 while adding its release fields.
 
 The owner migration is a preservation migration. Its only allowed semantic
-changes are advancing the root to schema v4, adding the validated historical
+changes are advancing the root to schema v5, adding the validated historical
 version to an unversioned owner record, creating absent owned arrays as empty
-arrays, and upgrading config v1 to v2. A missing exclusion list receives the canonical
+arrays, upgrading config v1 to v2, restamping talk v5-v7 records to v8, and
+restamping date provenance v1 records to v2. A missing exclusion list receives the canonical
 defaults; a valid owner-supplied list is preserved exactly. It
 preserves every other JSON value and missing-vs-present distinction, including
 legacy-v1 `pattern_observations` objects, arrays, or nulls and every historical
@@ -229,7 +230,7 @@ or root state; the standalone root-only mode below preserves their contracts.
 
 | Independent record | Current schema |
 |---|---:|
-| database root | 4 (schemas 0-3 remain readable migration inputs) |
+| database root | 5 (schemas 0-4 remain readable migration inputs) |
 | config | 2 (schema 1 remains readable owner-migration input) |
 | talk | 8 (schemas 1-7 remain readable historical state; v5-v7 restamp) |
 | PPTX catalog | 3 (schemas 1 and 2 remain readable legacy state) |
@@ -241,6 +242,8 @@ or root state; the standalone root-only mode below preserves their contracts.
 | source title equivalence | 2 (own top-level collection; v1 nested entries are migrated) |
 | accepted source alias | 1 (inactive decision), 2 (owner-built promotion history); never inferred by migration |
 | improvement goal | 2 (schema 1 remains readable historical state) |
+| date provenance | 2 (schema 1 remains readable and is restamped by migration) |
+| local audio declaration | 1 (own top-level collection; never inferred by migration) |
 
 | Component | Access | Contract |
 |---|---|---|
@@ -288,7 +291,7 @@ customization, not the owner default. See the
 
 ```json
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "config": {
     "schema_version": 2,
     "vault_root": "~/.claude/rhetoric-knowledge-vault",
@@ -667,7 +670,7 @@ exact-type rule. The supported mutation kinds are:
 | `promote_source_alias` | Sole mutation for an owner-reviewed official-upload switch; expect the complete talk and alias ledger, require both hashes, preserve superseded identity/history, and requeue without relabeling existing evidence; see [source-aliases.md](source-aliases.md#atomic-official-upload-promotion) |
 | `record_markdown_deck` | Register (or re-point) the markdown file one exact talk's deck was authored in, with `expect` naming the currently registered `deck_source_path` or the missing marker; upsert, one deck per talk |
 | `record_date_provenance` | Record (or replace) how one exact talk's delivery date was established, with `expect` naming the currently recorded `method` or the missing marker; `established_at` comes from the plan, never the clock; upsert, one account per talk |
-| `declare_local_audio` | Declare (or re-point) the local audio file one exact talk's transcript was Whisper'd from, with `expect` naming the currently declared `audio_local_path` or the missing marker; the path must be `.mp3`, `.m4a` or `.wav`; `declared_at` comes from the plan; requeues an analyzed talk as `source_added`; refuses an active queue claim; upsert, one declaration per talk |
+| `declare_local_audio` | Declare (or re-point) the local audio file one exact talk's transcript was Whisper'd from, with `expect` naming the currently declared `audio_local_path` or the missing marker; the path must be `.mp3`, `.m4a` or `.wav`; `declared_at` comes from the plan; requeues an analyzed talk as `source_added` and makes a `skipped_no_sources` talk `pending`; refuses an active queue claim; upsert, one declaration per talk |
 | `update_talk_publishing` | Set supported publishing fields on one exact talk filename, with `expect` covering exactly the same fields |
 | `update_talk_clarification` | Set complete object/array `blind_spot_observations` or `humor_postmortem` values on one exact talk, with matching field expectations |
 
@@ -834,8 +837,11 @@ bind. Evidence readers probe the declared file with the bounded media owner,
 and the receipt binds when its `media_sha256` matches; an undeclared or
 digest-mismatched file still fails closed. The declaration binds transcript and
 timing receipts only, never `delivery_video` evidence, and is consulted only
-when no local video binds. The locator follows the shared artifact-locator
-contract; a relative value is vault-root-relative. Callers pass the
+when no local video binds or the declared video fails its probe. The locator
+follows the shared artifact-locator contract; a relative value is
+vault-root-relative, and its suffix is one of
+`tracking_database.AUDIO_DECLARATION_SUFFIXES`, which the owner validator, the
+mutation, and the evidence reader all enforce. Callers pass the
 declarations to evidence readers through `source_roots`
 (`pattern_evidence.LOCAL_AUDIO_SOURCE_ROOTS_KEY`, built by
 `tracking_database.local_audio_declarations`), so freshness, cohort and
