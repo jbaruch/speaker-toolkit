@@ -1085,14 +1085,14 @@ def test_lane_requirements_match_the_configured_interpreter_contract() -> None:
     assert check_runtime.REPORT_SCHEMA_VERSION == 3
     assert check_runtime.MODULE_PROBE_SCHEMA_VERSION == 1
     assert check_runtime.PSUTIL_REQUIRED_VERSION == "7.2.2"
-    assert check_runtime.FILELOCK_REQUIRED_VERSION == "3.32.6"
+    assert check_runtime.FILELOCK_REQUIRED_VERSION == "4.1.0"
     assert check_runtime.IMAGEHASH_REQUIRED_VERSION == "4.3.2"
     assert check_runtime.NUMPY_REQUIRED_VERSION == "2.2.6"
     assert check_runtime.PILLOW_REQUIRED_VERSION == "12.3.0"
     assert check_runtime.YTDLP_REQUIRED_VERSION == "2026.8.19"
     assert check_runtime.REQUIRED_MODULE_VERSIONS == {
         "PIL": "12.3.0",
-        "filelock": "3.32.6",
+        "filelock": "4.1.0",
         "imagehash": "4.3.2",
         "numpy": "2.2.6",
         "psutil": "7.2.2",
@@ -1305,6 +1305,22 @@ def test_video_dependency_version_authorities_are_synchronized() -> None:
         )
         assert manifest_versions == [required_version]
         assert f'"{package}=={required_version}"' in reference
+
+    # Every other place that names one of these pins, in any quoting, must
+    # agree too: two syncs moved three authorities and left an install hint
+    # and a bootstrap reference a version behind.
+    skills = PYPROJECT.parent / "skills"
+    stale = sorted(
+        f"{path.relative_to(PYPROJECT.parent)}: {package}=={version}"
+        for path in skills.rglob("*")
+        if path.suffix in {".py", ".md", ".sh", ".yaml", ".yml"}
+        for package, version in re.findall(
+            r"\b(filelock|ImageHash|numpy|Pillow)==([0-9][^\"'`\s,)]*)",
+            path.read_text(encoding="utf-8"),
+        )
+        if version != expected_versions[package]
+    )
+    assert stale == []
 
 
 # A probe that never answered is not a missing module (#444).
