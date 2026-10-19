@@ -1985,7 +1985,8 @@ _ACCEPTED = {
         ({"completed_at": LATER}, "completed_at must be null in this state"),
         (
             {"schema_version": 3},
-            "run-record schema_version 3; this script reads 1 and 2 only",
+            "run-record schema_version 3; this script reads 1 and 2 only. A newer "
+            "speaker-toolkit wrote it: update speaker-toolkit",
         ),
         ({"schema_version": "1"}, "run-record schema_version '1'"),
         ({"run_id": "r 1"}, "contains whitespace"),
@@ -2949,3 +2950,19 @@ def test_topics_and_reasons_arrive_through_files(tmp_path, fresh_db):
     )
     nothing = _refused(database, "dismiss", "--run-id", "gone-run", "--now", NOW)
     assert nothing["reason_code"] == "invalid_arguments"
+
+
+def test_a_newer_run_record_is_refused_and_left_as_it_is(tmp_path, fresh_db):
+    """The ledger is a gate store: an unreadable record is never no-state."""
+    run = _valid_run()
+    run["schema_version"] = 3
+    ledger = tmp_path / "ingress-obligations.json"
+    ledger.write_text(json.dumps({**ENVELOPE, "runs": [run]}), encoding="utf-8")
+    before = ledger.read_bytes()
+
+    for command in (["pending"], ["session-agenda"], ["status", "--run-id", "r"]):
+        refused = _refused(fresh_db, *command)
+        assert refused["reason_code"] == "ledger_invalid"
+        assert "update speaker-toolkit" in refused["error"]
+
+    assert ledger.read_bytes() == before

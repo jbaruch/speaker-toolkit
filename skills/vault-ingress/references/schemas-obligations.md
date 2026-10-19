@@ -323,7 +323,14 @@ naming any copy but the bound one is refused (`ledger_invalid`) with a
 path-neutral diagnostic naming the recovery. The read that upgrades a record
 rewrites the whole ledger at schema 2 through the same lock and generation
 check as every owner write, read-only commands included, before the command
-continues; a schema-1 record never outlives the first command to read it. A script older than the ledger it
-reads refuses it (`ledger_schema_unsupported` for the envelope,
-`ledger_invalid` naming the run-record version) and never rewrites it; the
-operator updates speaker-toolkit.
+continues; a schema-1 record never outlives the first command to read it.
+
+The ledger is a gate store, and it claims the `rules/stateful-artifacts.md`
+Migration Policy exception for gate stores: an open record refuses actions
+(an owed report, an unanswered offer, a pending session), so reading a version
+this script does not accept as "no usable prior state" would silently drop
+those obligations. A script older than the ledger it reads therefore refuses it
+(`ledger_schema_unsupported` for the envelope, `ledger_invalid` naming the
+run-record version), tells the operator to update speaker-toolkit, and never
+rewrites it; every older version it does accept is migrated and rewritten on
+read, as above.

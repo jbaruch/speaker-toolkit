@@ -31,6 +31,11 @@ run addressed the vault, not on the data.
 - Checked against the live ledger: 0.20.168 refuses `pending` through the
   symlink with the reported message; this change answers `ok`, and `status` for
   the affected run is identical through the symlink and through the Drive path.
+- The ledger is a gate store: a run-record version this script does not
+  accept is refused, never read as "no prior state", since that would drop
+  owed reports, unanswered offers and pending sessions. `schemas-obligations.md`
+  claims the `stateful-artifacts` gate-store exception, and the refusal tells
+  the operator to update speaker-toolkit and leaves the ledger untouched.
 
 ## 0.20.181 — 2026-10-19
 

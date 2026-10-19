@@ -728,7 +728,8 @@ def _validate_run(run: dict[str, Any], label: str, vault_root: Path) -> None:
             label,
             f"has run-record schema_version {version!r}; this script reads "
             f"{LEGACY_RUN_RECORD_SCHEMA_VERSION} and {RUN_RECORD_SCHEMA_VERSION} "
-            "only",
+            "only. A newer speaker-toolkit wrote it: update speaker-toolkit and "
+            "re-run; the ledger is left as it is",
         )
     if version == LEGACY_RUN_RECORD_SCHEMA_VERSION:
         _upgrade_legacy_report_path(run, label, vault_root)
