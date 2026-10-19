@@ -251,7 +251,8 @@ outcomes:
   ID repairs it. That repair is the first thing a run does; a killed run still
   wrote no manifest, so nothing describes the half-applied state in between.
 - **Success**: stdout carries a record at the producer's current
-  `VIDEO_EXTRACTION_SCHEMA_VERSION` (`ingress_contract.py`), and the source receipt
+  `VIDEO_EXTRACTION_SCHEMA_VERSION`
+  (`skills/vault-ingress/scripts/ingress_contract.py`), and the source receipt
   appears on the manifest head and byte-identically on every `artifacts[]`
   entry.
 
