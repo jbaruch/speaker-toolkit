@@ -106,11 +106,17 @@ def test_a_vault_root_naming_another_database_is_refused(tmp_path):
 
 
 def test_an_interpreter_without_the_outline_lane_is_refused(tmp_path):
-    """The owner reader runs; check-runtime under the same interpreter does not."""
+    """The interpreter passes the core lane and fails only the outline lane, so
+    a resolver that regressed to requiring core alone would accept it."""
     interpreter = tmp_path / "python-without-pydantic"
     interpreter.write_text(
         "#!/bin/sh\n"
-        'case "$1" in *check-runtime.py) echo "missing pydantic" >&2; exit 1;; esac\n'
+        'case "$1" in *check-runtime.py)\n'
+        '  case " $* " in *" --require-lanes outline "*)\n'
+        '    echo "missing pydantic" >&2; exit 1;;\n'
+        "  esac\n"
+        "  exit 0;;\n"
+        "esac\n"
         f'exec "{sys.executable}" "$@"\n',
         encoding="utf-8",
     )
