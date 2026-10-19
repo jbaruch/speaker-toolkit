@@ -23,7 +23,8 @@ Usage:
         --run-id <id> --now <ISO-8601> [--topic <text> ...] [--topics-from <file>]
     run-obligations.py <tracking-database.json> record-disposition \
         --run-id <id> --now <ISO-8601> \
-        --disposition accepted|declined|deferred [--return-condition <text>]
+        --disposition accepted|declined|deferred \
+        [--return-condition <text> | --return-condition-from <file>]
     run-obligations.py <tracking-database.json> record-session \
         --run-id <id> --now <ISO-8601> --profile-inputs changed|unchanged \
         [--profile-refreshed]
@@ -84,6 +85,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import stat
 import sys
 from typing import Any
@@ -703,6 +705,32 @@ def _upgrade_legacy_report_path(
     report["report_path"] = bound if bound in candidates else candidates[0]
 
 
+def _require_derived_offer_mode(run: dict[str, Any], label: str) -> None:
+    """Refuse an offer mode its recorded talks do not produce.
+
+    ``open`` and ``record-offer`` derive the mode from the talks they record
+    in the same write, so a mismatch is a hand edit, and ``not_applicable`` is
+    the state exactly when no analyzed talk is recorded.
+    """
+    clarification = run["clarification"]
+    derived = offer_mode_for(run["talks"])
+    if clarification["offer_mode"] != derived:
+        raise _invalid(
+            label,
+            f"offer_mode {clarification['offer_mode']!r} is not the "
+            f"{derived!r} its recorded talks give",
+        )
+    if (clarification["state"] == STATE_NOT_APPLICABLE) != (
+        derived == OFFER_MODE_NONE
+    ):
+        raise _invalid(
+            label,
+            f"state {clarification['state']!r} disagrees with offer_mode "
+            f"{derived!r}; not_applicable is the state exactly when no analyzed "
+            "talk is recorded",
+        )
+
+
 def _validate_run(run: dict[str, Any], label: str, vault_root: Path) -> None:
     """Refuse a run record whose shape a command would otherwise trip over."""
     _require_keys(
@@ -747,6 +775,7 @@ def _validate_run(run: dict[str, Any], label: str, vault_root: Path) -> None:
         _validate_talk(talk, f"{label} talks[{position}]")
     _validate_downstream(run["downstream"], f"{label} downstream")
     _validate_clarification(run["clarification"], f"{label} clarification")
+    _require_derived_offer_mode(run, f"{label} clarification")
     delivered = _validate_report(
         run["end_report"],
         f"{label} end_report",
@@ -1008,8 +1037,19 @@ def write_report_copy(
         no_follow = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | os.O_NONBLOCK
         existing = _read_regular_file(no_follow, name, dir_fd=dir_fd)
         if existing == content:
+            # The bytes may be on disk while their directory entry is not; a
+            # replay that finds the copy still makes its name durable.
+            try:
+                os.fsync(dir_fd)
+            except OSError as exc:
+                raise _copy_failed(
+                    f"cannot sync {directory} for the existing report copy "
+                    f"{target}: {exc} — fix the volume and re-run record-report"
+                ) from exc
             return target, False
-        staged = f".{name}.{os.getpid()}.tmp"
+        # Random, so an orphan a crashed process left can never collide with
+        # a later process that reused its pid.
+        staged = f".{name}.{secrets.token_hex(8)}.tmp"
         try:
             descriptor = os.open(
                 staged,
@@ -1477,10 +1517,12 @@ def _transition(
 def command_record_downstream(
     context: Context, args: argparse.Namespace
 ) -> dict[str, Any]:
-    def mutate(run: dict[str, Any], stamp: str, _now: datetime) -> None:
+    def mutate(run: dict[str, Any], stamp: str, _now: datetime) -> dict[str, Any]:
         # Replay-safe: recording twice after a crash is the same fact twice.
-        if run["downstream"]["state"] != DOWNSTREAM_COMPLETED:
-            run["downstream"] = {"state": DOWNSTREAM_COMPLETED, "completed_at": stamp}
+        if run["downstream"]["state"] == DOWNSTREAM_COMPLETED:
+            return {"replayed": True}
+        run["downstream"] = {"state": DOWNSTREAM_COMPLETED, "completed_at": stamp}
+        return {}
 
     return _transition(context, args, mutate)
 
@@ -1562,11 +1604,18 @@ def command_record_disposition(
     context: Context, args: argparse.Namespace
 ) -> dict[str, Any]:
     disposition = args.disposition
-    return_condition = (args.return_condition or "").strip() or None
+    return_condition = (
+        " ".join(
+            [(args.return_condition or "").strip()]
+            + _lines_from(args.return_condition_from, "--return-condition-from")
+        ).strip()
+        or None
+    )
     if disposition == STATE_DEFERRED and return_condition is None:
         raise RunObligationsError(
-            "a deferred offer needs --return-condition naming, in the "
-            "speaker's words, when it is raised again",
+            "a deferred offer needs --return-condition or a "
+            "--return-condition-from file naming, in the speaker's words, when "
+            "it is raised again",
             reason_code="invalid_arguments",
         )
 
@@ -1697,7 +1746,7 @@ def command_record_report(context: Context, args: argparse.Namespace) -> dict[st
         )
     digest = hashlib.sha256(content).hexdigest()
 
-    def mutate(run: dict[str, Any], stamp: str, _now: datetime) -> None:
+    def mutate(run: dict[str, Any], stamp: str, _now: datetime) -> dict[str, Any]:
         _require_downstream(run, "record-report")
         if not clarification_resolved(run):
             raise RunObligationsError(
@@ -1718,12 +1767,13 @@ def command_record_report(context: Context, args: argparse.Namespace) -> dict[st
         bound = bound_report_path(run["run_id"], digest)
         if report["state"] == REPORT_DELIVERED and report["report_sha256"] == digest:
             report["report_path"] = bound
-            return
+            return {"replayed": True}
         report["state"] = REPORT_DELIVERED
         report["delivered_at"] = stamp
         report["report_path"] = bound
         report["report_sha256"] = digest
         run["completed_at"] = stamp
+        return {}
 
     return _transition(context, args, mutate)
 
@@ -1968,6 +2018,7 @@ def command_pending(context: Context, _args: argparse.Namespace) -> dict[str, An
 
 def command_status(context: Context, args: argparse.Namespace) -> dict[str, Any]:
     _snapshot, ledger = load_ledger(context.ledger_path, context.vault_root)
+    require_adopted(ledger, context.ledger_path)
     run = find_run(ledger, require_run_id(args.run_id))
     return {
         "ok": True,
@@ -2119,6 +2170,10 @@ def build_parser() -> JsonArgumentParser:
     disposition.add_argument("--disposition", choices=DISPOSITIONS, required=True)
     disposition.add_argument(
         "--return-condition", help="when a deferred offer is raised again"
+    )
+    disposition.add_argument(
+        "--return-condition-from",
+        help="a file holding the speaker's return condition in their words",
     )
 
     session = actions.add_parser(

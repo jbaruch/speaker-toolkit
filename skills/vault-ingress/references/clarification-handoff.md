@@ -87,8 +87,8 @@ single-question mechanism: `AskUserQuestion` with three options — accept
 otherwise one plain-text question naming the same three answers, then wait
 for the reply. A host without the named tool never turns the offer into a
 skip. When the speaker chooses defer, ask one follow-up in plain text — "When
-should I raise this again?" — and pass the answer, in the speaker's words, as
-`--return-condition`. An unanswered question leaves the run `offered`; the next
+should I raise this again?" — and write the answer, in the speaker's words, to
+`{return_condition_file}` for `--return-condition-from`. An unanswered question leaves the run `offered`; the next
 run resumes it from Step 1 and asks again.
 
 ## Record the Answer
@@ -99,8 +99,11 @@ Record the speaker's explicit answer, once:
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
   "{vault_root}/tracking-database.json" record-disposition \
   --run-id "{run_id}" --now "{iso_timestamp}" \
-  --disposition accepted|declined|deferred [--return-condition "{speaker's words}"]
+  --disposition accepted|declined|deferred \
+  [--return-condition-from "{return_condition_file}"]
 ```
+
+The return condition is free text and never goes through a shell string.
 
 - **accepted** — invoke `Skill(skill: "vault-clarification")` immediately,
   carrying `run_id`. The skill resolves the recorded `topics` from the run as
@@ -131,7 +134,7 @@ Record the speaker's explicit answer, once:
   (`report_reopened: true`): proceed through Step 10 to Step 11 again.
 
 - **declined** — note it and move on; the talks are not reprocessed.
-- **deferred** — `--return-condition` carries the speaker's own words for when
+- **deferred** — `--return-condition-from` carries the speaker's own words for when
   to raise it again; the talks are not reprocessed.
 
 Proceed immediately to Step 10.
