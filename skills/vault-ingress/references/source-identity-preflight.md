@@ -430,8 +430,8 @@ completeness and must be rerun before an absence conclusion.
   `processed_partial` may intentionally retain only manifest-declared source and
   derivative artifacts.
 - A present video-extracted PDF is not sufficient deck evidence by itself. A
-  completed record also requires a complete schema-v4 or schema-v5
-  `structured_data.video_extraction` manifest, preserved source video and
+  completed record also requires a complete readable
+  `structured_data.video_extraction` manifest ([readable versions](schemas-db.md#video-extraction-output-schema)), preserved source video and
   artifact paths, and internally consistent frame/page, scope, crop, and trust
   provenance. That manifest is valid only when `slide_source` is
   `video_extracted`; persisted preflight blocks it in every other slide lane
@@ -473,7 +473,7 @@ when a current persisted claim depends on source-video evidence that can no
 longer be verified.
 
 Source-to-derivative lineage is a separate question from source availability. A
-schema-v4 or schema-v5 manifest carries the engine-owned `source_receipt` the extraction run
+readable manifest carries the engine-owned `source_receipt` the extraction run
 captured, and preflight compares it against a fresh bounded probe of the same
 path. A source that reads but disagrees is
 `video_extraction_source_lineage_mismatch`, blocking: the saved PDFs describe

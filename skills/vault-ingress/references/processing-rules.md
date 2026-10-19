@@ -149,8 +149,8 @@ what counts as a source. In particular, an untrusted video
 `full_frame_context` may support concrete `delivery_video` observations but never
 creates `static_slides` or `native_deck` evidence.
 
-A trusted schema-v4 or schema-v5 video-extracted `slide_region` PDF is a
-positive-only static
+A trusted video-extracted `slide_region` PDF from a readable manifest
+([readable versions](schemas-db.md#video-extraction-output-schema)) is a positive-only static
 source. Its identity-bound pages may support citations and detections, but the
 sampling, transition filtering, and deduplication receipt does not prove that
 every delivered visual state survived. Therefore even full inspection of that

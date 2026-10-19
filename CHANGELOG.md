@@ -21,10 +21,12 @@ Two advisory findings from the #449 review (#452).
   manifest". All six now derive from the shared readable-version constants in
   `ingress_contract.py`: five render `READABLE_VIDEO_EXTRACTION_LABEL` and the
   invalid-version refusal lists `READABLE_VIDEO_EXTRACTION_SCHEMA_VERSIONS`, so
-  the next readable version updates them with no edit. Two docstrings and six
-  reference passages say "schema-v4 or schema-v5" (or "readable manifest") to
-  match, and `video-slide-extraction.md` no longer says the producer emits a
-  schema-4 record: it emits `VIDEO_EXTRACTION_SCHEMA_VERSION`. The PPTX
+  the next readable version updates them with no edit. Two docstrings follow
+  suit. The references say "readable manifest" and link the schema doc's video
+  extraction section, the one place that names
+  `READABLE_VIDEO_EXTRACTION_SCHEMA_VERSIONS`, rather than copying its members,
+  and `video-slide-extraction.md` no longer says the producer emits a schema-4
+  record: it emits `VIDEO_EXTRACTION_SCHEMA_VERSION`. The PPTX
   extractor's own schema v4 is a different artifact and keeps its wording.
 
 ## 0.20.176 — 2026-10-19

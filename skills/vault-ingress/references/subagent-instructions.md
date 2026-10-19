@@ -225,15 +225,14 @@ text.
      copied to `slides/{youtube_id}.pdf`, recorded as `slides_local_path`, and analyzed
      like an authored PDF deck.
 
-  The return validator recomputes that trust from the complete schema-v4 or schema-v5
-  manifest; it
+  The return validator recomputes that trust from the complete readable
+  manifest ([readable versions](schemas-db.md#video-extraction-output-schema)); it
   does not trust `slide_source: "video_extracted"` or an isolated artifact boolean.
   `status: "processed"` requires both the trusted manifest and the promoted top-level
   `slides_local_path: "slides/{youtube_id}.pdf"`. A trusted artifact may still finish
   `processed_partial` when another channel fails, and its verified `slide_region` may
   supply positive `static_slides` evidence even before promotion. It does not
-  authorize an undetected or applicability outcome: a readable extraction manifest
-  (schema v4 or v5) proves
+  authorize an undetected or applicability outcome: a readable extraction manifest proves
   crop/artifact identity, not that sampling, transition filtering, and deduplication
   preserved every delivered visual state. Any return without a promoted
   artifact must omit `slides_local_path` and put `slides_local_path` in `clear_fields`.
@@ -664,7 +663,7 @@ them.
 The example claims one inspected source. Add a source only with the audit
 behind it: `native_deck` requires the current
 `structured_data.native_deck_audit`, `static_slides` from a video-extracted deck
-requires the schema-v4 or schema-v5 `structured_data.video_extraction` manifest,
+requires a readable `structured_data.video_extraction` manifest,
 and
 `delivery_video` requires its own declared local artifact. A claimed source
 without its audit is rejected.
