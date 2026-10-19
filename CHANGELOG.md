@@ -17,11 +17,13 @@ run addressed the vault, not on the data.
   (`ingress-reports/{stem}.{sha256}.md`), like the other artifact references in
   the vault, and validation compares it with `bound_report_path`.
 - Every command reads a schema-1 record as schema 2: the absolute path is
-  stripped of the vault root as spelled, or failing that compared with both
-  sides resolved. A path outside the vault, a relative one, or one naming any
-  copy other than the bound one is still `ledger_invalid`. Read-only commands
-  upgrade in memory only; the next mutating command writes the whole ledger at
-  schema 2, the same write-time upgrade `queue-state.py` uses for v1 claims.
+  stripped of the vault root as spelled and, with both sides resolved, of the
+  real root, and the candidate naming the bound copy wins, so an alias nested
+  inside the vault binds too. A path outside the vault, a relative one, or one
+  naming any copy other than the bound one is still `ledger_invalid`, and both
+  legacy refusals name a recovery. The read that upgrades a record rewrites the
+  whole ledger at schema 2 under the owner's lock and generation check, read-only
+  commands included, so schema 1 never outlives the first command to read it.
 - `Context` now reads the vault root together with the database generation, so
   `vault_root` is a plain `Path` from construction on.
 - Checked against the live ledger: 0.20.168 refuses `pending` through the

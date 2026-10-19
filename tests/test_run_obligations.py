@@ -1052,23 +1052,56 @@ def test_a_schema_1_absolute_report_path_reads_under_either_spelling_and_upgrade
     status = _ok(reading, "status", "--run-id", "r")
     assert status["run"]["schema_version"] == 2
     assert status["run"]["end_report"]["report_path"] == _bound(real, "r", content)
-    assert _ok(reading, "pending")["pending"] == []
-    # Readers upgrade in memory; the next owner write persists the upgrade.
-    assert _ledger(real)["runs"][0]["schema_version"] == 1
-    _record_report(reading, "r", report, now=MUCH_LATER)
+    # The read that upgrades the record rewrites it; schema 1 never outlives it.
     persisted = _ledger(real)["runs"][0]
     assert persisted["schema_version"] == 2
     assert persisted["end_report"]["report_path"] == _bound(real, "r", content)
     assert persisted["end_report"]["delivered_at"] == LATER
+    assert _ok(reading, "pending")["pending"] == []
+    assert _record_report(reading, "r", report, now=MUCH_LATER)["written"] is False
+
+
+@pytest.mark.parametrize("command", ["pending", "status", "session-agenda"])
+def test_every_read_command_rewrites_a_schema_1_ledger(tmp_path, command):
+    real, real_db, _link_db = _symlinked_vault(tmp_path)
+    report = _report(tmp_path)
+    content = report.read_bytes()
+    _legacy_delivered_ledger(
+        real,
+        str(real / _bound(real, "r", content)),
+        hashlib.sha256(content).hexdigest(),
+    )
+    arguments = [command] + (["--run-id", "r"] if command == "status" else [])
+    _ok(real_db, *arguments)
+    assert _ledger(real)["runs"][0]["schema_version"] == 2
+
+
+def test_a_schema_1_path_through_an_alias_inside_the_vault_still_binds(tmp_path):
+    """Copilot on #492: with ``vault/alias -> vault``, the lexical strip yields
+    ``alias/ingress-reports/...``; the resolved candidate names the bound copy."""
+    real, real_db, _link_db = _symlinked_vault(tmp_path)
+    (real / "alias").symlink_to(real, target_is_directory=True)
+    report = _report(tmp_path)
+    content = report.read_bytes()
+    _legacy_delivered_ledger(
+        real,
+        str(real / "alias" / _bound(real, "r", content)),
+        hashlib.sha256(content).hexdigest(),
+    )
+    status = _ok(real_db, "status", "--run-id", "r")
+    assert status["run"]["end_report"]["report_path"] == _bound(real, "r", content)
 
 
 @pytest.mark.parametrize(
     ("recorded", "detail"),
     [
-        ("/elsewhere/ingress-reports/r.{digest}.md", "is not inside this vault"),
+        ("/elsewhere/ingress-reports/r.{digest}.md", "is not inside this vault; pass"),
         ("{vault}/ingress-reports/r.{other}.md", "report_path must be the bound copy"),
         ("{vault}/elsewhere/r.{digest}.md", "report_path must be the bound copy"),
-        ("ingress-reports/r.{digest}.md", "must be absolute in a schema-1 run record"),
+        (
+            "ingress-reports/r.{digest}.md",
+            "must be absolute in a schema-1 run record; run-obligations.py never",
+        ),
     ],
     ids=["outside-vault", "digest-mismatch", "wrong-directory", "relative-in-v1"],
 )

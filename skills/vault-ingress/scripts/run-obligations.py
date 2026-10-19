@@ -650,10 +650,11 @@ def _upgrade_legacy_report_path(
 ) -> None:
     """Read a v1 run record as v2 by making its absolute report path relative.
 
-    The recorded path is stripped of the vault root as spelled, or failing that
-    compared with both sides resolved, so a copy recorded under the symlink or
-    under its target reads the same. A path that lands outside the vault stays
-    refused; the bound-copy check that follows refuses any other name.
+    The recorded path is stripped of the vault root as spelled and, with both
+    sides resolved, of the real vault root; the candidate naming the bound copy
+    wins, so a copy recorded under the symlink, its target, or an alias nested
+    inside the vault reads the same. A path outside the vault stays refused, and
+    the bound-copy check that follows refuses any other name.
     """
     run["schema_version"] = RUN_RECORD_SCHEMA_VERSION
     report = run.get("end_report")
@@ -662,19 +663,41 @@ def _upgrade_legacy_report_path(
     recorded = Path(report["report_path"])
     if not recorded.is_absolute():
         raise _invalid(
-            label, "end_report report_path must be absolute in a schema-1 run record"
+            label,
+            "end_report report_path must be absolute in a schema-1 run record; "
+            "run-obligations.py never wrote this value, so restore the ledger "
+            "from a copy the owner wrote and re-run the command",
         )
-    try:
-        relative = recorded.relative_to(vault_root)
-    except ValueError:
+    digest = report.get("report_sha256")
+    bound = (
+        bound_report_path(str(run.get("run_id")), digest)
+        if isinstance(digest, str)
+        else None
+    )
+    candidates: list[str] = []
+    if recorded.is_relative_to(vault_root):
+        candidates.append(recorded.relative_to(vault_root).as_posix())
+    if bound not in candidates:
         try:
-            relative = recorded.resolve().relative_to(vault_root.resolve())
-        except (ValueError, OSError, RuntimeError) as exc:
+            resolved, real_root = recorded.resolve(), vault_root.resolve()
+        except (OSError, RuntimeError) as exc:
             raise _invalid(
                 label,
-                f"end_report report_path {str(recorded)!r} is not inside this vault",
+                f"end_report report_path {str(recorded)!r} cannot be resolved "
+                f"against this vault ({exc}); make the vault path readable and "
+                "re-run the command",
             ) from exc
-    report["report_path"] = relative.as_posix()
+        if resolved.is_relative_to(real_root):
+            candidates.append(resolved.relative_to(real_root).as_posix())
+    if not candidates:
+        raise _invalid(
+            label,
+            f"end_report report_path {str(recorded)!r} is not inside this vault; "
+            "pass the tracking database at the vault location this report was "
+            "delivered under (or a link to it) so the owner can rewrite the path "
+            "vault-relative, or restore the ledger from a copy the owner wrote",
+        )
+    report["report_path"] = bound if bound in candidates else candidates[0]
 
 
 def _validate_run(run: dict[str, Any], label: str, vault_root: Path) -> None:
@@ -830,7 +853,20 @@ def load_ledger(
             else "ledger_unreadable"
         )
         raise _io_failure(exc, f"obligations ledger {path}", code) from exc
-    return snapshot, validate_ledger(payload, path, vault_root)
+    runs = payload.get("runs") if isinstance(payload, dict) else None
+    legacy = isinstance(runs, list) and any(
+        isinstance(run, dict)
+        and run.get("schema_version") == LEGACY_RUN_RECORD_SCHEMA_VERSION
+        for run in runs
+    )
+    ledger = validate_ledger(payload, path, vault_root)
+    if not legacy:
+        return snapshot, ledger
+    # The owner rewrites what it upgrades on the read that upgrades it, so a
+    # schema-1 record never outlives the first command to read it. The caller
+    # gets the rewritten generation, so a transition's later write still binds.
+    store_ledger(path, snapshot, ledger)
+    return load_ledger(path, vault_root)
 
 
 def store_ledger(
