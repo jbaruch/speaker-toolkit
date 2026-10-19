@@ -266,11 +266,6 @@ def lookup(args: argparse.Namespace) -> dict[str, Any]:
         event=args.event,
         date=args.date,
     )
-    requested = (
-        {"filename": args.filename}
-        if by_filename
-        else {"title": args.title, "event": args.event, "date": args.date}
-    )
     if len(matches) != 1:
         # No single record: vault-ingress has nothing it could select.
         return {
