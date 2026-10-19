@@ -2121,7 +2121,10 @@ _ACCEPTED = {
             "state 'not_applicable' disagrees with offer_mode 'inline'",
         ),
         (
-            {"talks.0.status": "skipped_no_sources", "clarification.offer_mode": "none"},
+            {
+                "talks.0.status": "skipped_no_sources",
+                "clarification.offer_mode": "none",
+            },
             "state 'owed' disagrees with offer_mode 'none'",
         ),
     ],
@@ -2737,6 +2740,9 @@ def test_a_copy_staged_by_a_crashed_delivery_never_blocks_the_next(
     content = b"# report\n"
     digest = hashlib.sha256(content).hexdigest()
     monkeypatch.setattr(run_obligations.os, "getpid", lambda: 4242)
+    # A fixed pair of staging names stands in for the random ones.
+    names = iter(["crashed0000000000", "next000000000000"])
+    monkeypatch.setattr(run_obligations.secrets, "token_hex", lambda _n: next(names))
     real_replace = os.replace
 
     def crash(*_args, **_kwargs):
@@ -2746,8 +2752,8 @@ def test_a_copy_staged_by_a_crashed_delivery_never_blocks_the_next(
     with pytest.raises(_Crash):
         run_obligations.write_report_copy(directory, "run-x", digest, content)
     monkeypatch.setattr(run_obligations.os, "replace", real_replace)
-    orphans = [path.name for path in directory.iterdir()]
-    assert len(orphans) == 1 and orphans[0].endswith(".tmp")
+    orphan = f".run-x.{digest}.md.crashed0000000000.tmp"
+    assert [path.name for path in directory.iterdir()] == [orphan]
 
     target, created = run_obligations.write_report_copy(
         directory, "run-x", digest, content
@@ -2755,6 +2761,10 @@ def test_a_copy_staged_by_a_crashed_delivery_never_blocks_the_next(
 
     assert created is True
     assert target.read_bytes() == content
+    # The next delivery staged under its own name and left the orphan alone.
+    assert sorted(path.name for path in directory.iterdir()) == sorted(
+        [orphan, target.name]
+    )
 
 
 def test_an_existing_copy_whose_directory_cannot_sync_is_the_structured_failure(
