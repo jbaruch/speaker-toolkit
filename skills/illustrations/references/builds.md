@@ -25,10 +25,10 @@ because the model preserves the existing composition and style at each step.
 
 ## Model
 
-Run the chain on the model the Step 6 shortlist ranks first when
-`build-editability` is flagged. The edit tiers and their order belong to the
-registry; see `skills/illustrations/references/strategy.md` Step 6. Pick any
-other editor for a build talk only on the speaker's explicit request.
+Run the chain on an edit-stable model from the Step 6 shortlist. The edit
+tiers and their order belong to the registry; see
+`skills/illustrations/references/strategy.md` Step 6. Pick any other editor for
+a build talk only on the speaker's explicit request.
 
 ## Run
 

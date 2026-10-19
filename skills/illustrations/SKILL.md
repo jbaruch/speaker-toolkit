@@ -151,8 +151,8 @@ Proceed immediately to Step 4.
 Elicit what the speaker optimizes for with an `AskUserQuestion` multi-select
 (checkboxes, not radio): cost, speed, quality, build-editability. Auto-add
 build-editability when any slide has a `Builds:` block. With builds, carry only
-the models the Step 6 shortlist leads with into the exploration render unless
-the speaker explicitly asks for another editor. Edit ranking:
+the edit-stable models from the Step 6 shortlist into the exploration render
+unless the speaker explicitly asks for another editor. Edit tiers:
 [skills/illustrations/references/strategy.md](references/strategy.md) Step 6.
 Never skip this step silently — the priorities drive the shortlist in Step 6.
 

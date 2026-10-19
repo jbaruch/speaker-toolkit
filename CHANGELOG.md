@@ -10,7 +10,10 @@ ranking or filter behavior changes.
   `references/strategy.md` Step 4 named GPT Image 2.5 and the `strong` tier.
   The ranking and its rationale stay in `model_registry.py` (`EDIT_RANKING` and
   the `edit` attribute comment). `strategy.md` Step 6 carries the one full-path
-  reference to them, and the other three passages point there.
+  reference to them, and the other three passages point there. They keep the
+  behavioral restriction: a build talk explores and runs only edit-stable
+  models unless the speaker asks for another editor, since a shortlist such as
+  `cost,speed,build-editability` can rank a `strong`-tier editor third.
 - `rules/illustration-rules.md` Build Process "Don't" bullet keeps the
   prohibition and the registry reference and drops the chained-edit-drift
   explanation, already archived in the PR #450 entry.

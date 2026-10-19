@@ -64,8 +64,7 @@ shortlist (Step 6):
 - **speed** — faster turnaround per image
 - **quality** — top-tier fidelity
 - **build-editability** — the model must support image editing; required for
-  progressive-reveal builds and edit/fix iteration. It is also the primary
-  ranking key (Step 6)
+  progressive-reveal builds and edit/fix iteration
 
 Present with `AskUserQuestion` as a **multi-select** (checkboxes, not radio) — the
 speaker can pick several (e.g. `quality,build-editability`). Pass every chosen
@@ -74,8 +73,8 @@ priority to `--shortlist` (Step 6).
 Auto-flag `build-editability` when any slide carries a `Builds:` block — build
 frames are produced by editing the previous frame, so the model must support
 editing. A deck with no builds can drop the constraint. With builds, carry only
-the models the shortlist leads with into the exploration render; any other
-editor enters only on the speaker's explicit request.
+the edit-stable models from the Step 6 shortlist into the exploration render;
+any other editor enters only on the speaker's explicit request.
 
 Per-model attributes and how priorities rank them live in
 `skills/illustrations/scripts/model_registry.py` (the `MODEL_REGISTRY` entries and
