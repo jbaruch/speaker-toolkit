@@ -1865,3 +1865,50 @@ def test_composite_region_resizes_mismatched_new_image(
     out = Image.open(io.BytesIO(out_bytes)).convert("RGB")
     assert out.size == (100, 100)
     assert out.getpixel((50, 50)) == (255, 255, 255)
+
+
+# ── #474: one canonical footer, or a reserved strip for the stamp ──────
+
+FOOTER_STYLE = {
+    "font_path": None,
+    "font_index": 0,
+    "target_width_pct": 82.0,
+    "baseline_from_bottom_pct": 3.8,
+    "color": "#F2EFE6",
+}
+
+
+def test_every_slide_carries_the_same_canonical_footer_block(generate_illustrations):
+    gi = generate_illustrations
+    footer = "@jbaruch    #RoboCoders    speaking.jbaru.ch"
+    first = gi.apply_poster_embed_directive("a factory", "Title one", footer)
+    second = gi.apply_poster_embed_directive("a vault", "Title two", footer)
+    block = gi.POSTER_FOOTER_BLOCK_TEMPLATE.format(footer=footer)
+    assert block in first and block in second
+    assert first.index("Title one") < first.index(block)
+    assert first.endswith(gi.POSTER_NO_INVENTED_TEXT)
+
+
+def test_a_stamped_footer_reserves_a_strip_and_renders_no_footer_text(
+    generate_illustrations,
+):
+    gi = generate_illustrations
+    footer = "@jbaruch    #RoboCoders    speaking.jbaru.ch"
+    prompt = gi.apply_poster_embed_directive(
+        "a factory", "Title", footer, None, FOOTER_STYLE
+    )
+    assert footer not in prompt
+    assert "FOOTER STRIP" in prompt
+    assert "EXACT DECK-WIDE SPECIFICATION" not in prompt
+    assert prompt.endswith(gi.POSTER_NO_INVENTED_TEXT)
+
+
+def test_parse_outline_carries_the_footer_style(generate_illustrations, tmp_path):
+    import yaml
+
+    outline = _write_poster_outline(tmp_path)
+    data = yaml.safe_load(outline.read_text(encoding="utf-8"))
+    data["style_anchor"]["footer_style"] = {"target_width_pct": 70}
+    outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    parsed = generate_illustrations.parse_outline(str(outline))
+    assert parsed["footer_style"] == {**FOOTER_STYLE, "target_width_pct": 70.0}

@@ -55,6 +55,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from footer_stamp import reserved_strip_pct
 from image_lane_contract import ImageLaneError
 from image_provider import (
     ImageProviderOptions,
@@ -190,9 +191,31 @@ DEFAULT_POSTER_TEXT_TREATMENT = (
     "the artwork's own lettering and materials"
 )
 
-POSTER_FOOTER_CLAUSE_TEMPLATE = (
-    'Also integrate the footer "{footer}" small along the lower edge of the '
-    "frame, in the same stylized treatment. "
+# One canonical deck-wide footer block (#474), appended verbatim to every slide
+# after the scene and title so its wording never varies per slide. Its geometry
+# matches the `FooterStyle` defaults in outline_schema.py. Used only when the
+# model renders the footer; with `footer_style` set the footer is stamped after
+# generation (footer_stamp.py) and the prompt reserves a quiet strip instead.
+POSTER_FOOTER_BLOCK_TEMPLATE = (
+    " FOOTER -- EXACT DECK-WIDE SPECIFICATION: Along the extreme bottom edge, "
+    'render one centered single-line footer with the exact literal text "{footer}". '
+    "Use the same sober sans-serif type treatment on every slide: medium weight, "
+    "small but clearly legible, off-white ink, no outline, no drop shadow, no "
+    "box, no icon, no logo, no decorative breaks, no perspective distortion, and "
+    "no wrapping. Keep one consistent baseline 3.8% above the lower edge. The "
+    "footer must occupy approximately 82% of the slide width and must look like "
+    "stable editorial page furniture, not part of the scene. Preserve "
+    "capitalization and spelling exactly. Do not render any other footer text."
+)
+POSTER_FOOTER_STRIP_TEMPLATE = (
+    " FOOTER STRIP -- CRITICAL COMPOSITION RULE: Keep the bottom {strip:.0f}% of "
+    "the frame free of any text, lettering, logos, signage and fine detail; "
+    "continue the scene's ground there quietly in an even tone. A footer is "
+    "added to that strip afterwards."
+)
+POSTER_NO_INVENTED_TEXT = (
+    " Render no other legible words anywhere in the scene except text explicitly "
+    "requested by the slide; leave incidental signs blank."
 )
 
 # Canonical MIME <-> extension mapping
@@ -309,6 +332,9 @@ def parse_outline(path):
             anchor.composition.value if anchor and anchor.composition else None
         ),
         "embedded_footer": anchor.embedded_footer if anchor else None,
+        "footer_style": (
+            anchor.footer_style.model_dump() if anchor and anchor.footer_style else None
+        ),
         "text_treatment": anchor.text_treatment if anchor else None,
     }
 
@@ -397,7 +423,9 @@ def apply_safe_zone_directive(prompt, safe_zone):
     return prompt + directive
 
 
-def apply_poster_embed_directive(prompt, title_text, footer_text, text_treatment=None):
+def apply_poster_embed_directive(
+    prompt, title_text, footer_text, text_treatment=None, footer_style=None
+):
     """Append the poster-theatrical EMBEDDED TEXT directive to a prompt.
 
     Used when the deck's composition is poster-theatrical: the title (and, when
@@ -408,7 +436,12 @@ def apply_poster_embed_directive(prompt, title_text, footer_text, text_treatment
     `text_treatment` is the style anchor's per-deck rendering directive (how
     baked text looks); passing the same value on every slide keeps titles and
     footers visually consistent. When None, a generic treatment is used.
-    Idempotent: an existing EMBEDDED TEXT block is replaced.
+
+    The footer follows the title: the canonical deck-wide block when the model
+    renders it, or, with `footer_style` (the anchor's stamped-footer contract),
+    a reserved quiet strip and no footer text at all. Both close with the
+    no-invented-text instruction. Idempotent: an existing EMBEDDED TEXT block,
+    and everything appended after it, is replaced.
     """
     if not title_text:
         return prompt
@@ -418,18 +451,21 @@ def apply_poster_embed_directive(prompt, title_text, footer_text, text_treatment
     # embedded double quotes to single so a title like He said "Hi" doesn't
     # produce ambiguous nested quotes that degrade model compliance.
     title = title_text.replace('"', "'")
-    footer_clause = ""
-    if footer_text:
-        footer_clause = POSTER_FOOTER_CLAUSE_TEMPLATE.format(
-            footer=footer_text.replace('"', "'")
-        )
     treatment = (text_treatment or "").strip() or DEFAULT_POSTER_TEXT_TREATMENT
     directive = POSTER_EMBED_DIRECTIVE_TEMPLATE.format(
         title=title,
         treatment=treatment,
-        footer_clause=footer_clause,
+        footer_clause="",
     )
-    return prompt + directive
+    if footer_text and footer_style is not None:
+        directive += POSTER_FOOTER_STRIP_TEMPLATE.format(
+            strip=reserved_strip_pct(footer_text, footer_style)
+        )
+    elif footer_text:
+        directive += POSTER_FOOTER_BLOCK_TEMPLATE.format(
+            footer=footer_text.replace('"', "'")
+        )
+    return prompt + directive + POSTER_NO_INVENTED_TEXT
 
 
 # Style anchors are injected into EVERY slide's prompt, so anything in them
@@ -1575,6 +1611,7 @@ def run_generate(outline_path, slide_args, versioned=False, *, lane_options=None
                 slide.get("text") or slide["title"],
                 outline.get("embedded_footer"),
                 outline.get("text_treatment"),
+                outline.get("footer_style"),
             )
         else:
             # Safe zone presence forces FULL throughout — anchor selection,
@@ -1950,6 +1987,7 @@ def run_style_explore(outline_path, candidates_path, *, lane_options=None):
                     title_text,
                     outline.get("embedded_footer"),
                     style["text_treatment"],
+                    outline.get("footer_style"),
                 )
             prompt = apply_compose_only_directive(
                 apply_safe_zone_directive(

@@ -1,5 +1,40 @@
 # Changelog
 
+### Stamp a poster deck's footer deterministically
+
+Poster-theatrical decks baked the footer into every generated image, and the
+image model changed its font, size, weight, spacing and baseline from slide to
+slide even when every prompt carried the identical literal (#474). The
+WeAreDevelopers NA 2026 RoboCoders deck showed it across 14 slides; prompt
+discipline reduced the drift but cannot guarantee typographic identity.
+
+- A new optional `style_anchor.footer_style` (`FooterStyle` in
+  `outline_schema.py`: `font_path`, `font_index`, `target_width_pct` 82,
+  `baseline_from_bottom_pct` 3.8, `color` `#F2EFE6`; `{}` takes the defaults)
+  takes the footer out of the model's hands. Generation reserves a quiet strip,
+  sized by the same glyph rendering the stamp uses, and renders no footer.
+  `apply-illustrations-to-deck.py` stamps `embedded_footer` onto a copy of every
+  poster slide in `illustrations/footer-stamped/` and points the background
+  manifest there. The raw generated image stays footer-free for edits and
+  builds.
+- `footer_stamp.py` draws the footer with one real font, sized to span the
+  target width, centred, its baseline at the configured height, and verifies
+  every stamp it writes. The same text and style produce identical glyph pixels
+  over any scene, so the footer is pixel-consistent across the deck and a
+  regenerated slide cannot change it. Without `font_path` it uses Pillow's
+  bundled sans-serif; a missing font, an over-long footer or a malformed colour
+  refuses with the fix.
+- Without `footer_style`, the model still renders the footer, now from one
+  canonical deck-wide block appended verbatim to every slide after the scene and
+  title: the wording validated on the RoboCoders regeneration (exact literal,
+  sober sans-serif, 3.8% baseline, 82% width, stable editorial page furniture).
+  It replaces the one-line "also integrate the footer" clause.
+- Every poster prompt now ends with an instruction to render no other legible
+  words beyond the slide's requested text.
+- `footer_style` requires `composition: poster-theatrical` and a non-empty
+  `embedded_footer`. `rules/title-overlay-rules.md`, `SKILL.md` Step 9 and
+  `references/strategy.md` describe both footer modes.
+
 ## 0.20.188 — 2026-10-20
 
 ### Let a declared local audio file bind its transcript receipt

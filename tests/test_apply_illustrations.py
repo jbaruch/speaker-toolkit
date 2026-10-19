@@ -7,6 +7,7 @@ partial outlines via _write_outline.
 import copy
 from pathlib import Path
 
+import pytest
 import yaml
 from pptx import Presentation
 from pptx.util import Inches
@@ -532,3 +533,77 @@ def test_apply_main_rejects_poster_with_safe_zone(
     with pytest.raises(SystemExit) as exc:
         apply_illustrations.main()
     assert "poster-theatrical" in str(exc.value)
+
+
+# ── #474: a poster footer is stamped at apply time ─────────────────────
+
+
+def _poster_outline_with_footer_style(tmp_path, footer, footer_style):
+    outline = _write_outline(
+        tmp_path,
+        [{"n": 2, "format": "FULL", "text_overlay": "T", "image_prompt": "P"}],
+        composition="poster-theatrical",
+        embedded_footer=footer,
+    )
+    data = yaml.safe_load(outline.read_text(encoding="utf-8"))
+    data["style_anchor"]["footer_style"] = footer_style
+    outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return outline
+
+
+def test_a_poster_footer_is_stamped_into_a_copy_the_deck_uses(
+    apply_illustrations, tmp_path
+):
+    from PIL import Image
+
+    import footer_stamp
+
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    raw = illust_dir / "slide-02.jpg"
+    Image.new("RGB", (1536, 864), (30, 40, 50)).save(raw, quality=95)
+    raw_bytes = raw.read_bytes()
+    footer = "@jbaruch    speaking.jbaru.ch"
+    outline = _poster_outline_with_footer_style(tmp_path, footer, {})
+
+    stamp_spec = apply_illustrations.parse_footer_stamp(outline)
+    _, backgrounds = apply_illustrations.apply(
+        deck,
+        illust_dir,
+        {},
+        set(),
+        tmp_path / "out.pptx",
+        "jpg",
+        "000000",
+        45000,
+        {2},
+        stamp_spec,
+    )
+
+    stamped = illust_dir / "footer-stamped" / "slide-02.jpg"
+    assert backgrounds == {2: str(stamped.resolve())}
+    assert raw.read_bytes() == raw_bytes
+    with Image.open(stamped) as image:
+        assert footer_stamp.verify_footer(image, footer, stamp_spec[1])[0] is True
+
+
+def test_without_a_footer_style_the_model_baked_image_is_used_as_is(
+    apply_illustrations, tmp_path
+):
+    outline = _write_outline(
+        tmp_path,
+        [{"n": 2, "format": "FULL", "text_overlay": "T", "image_prompt": "P"}],
+        composition="poster-theatrical",
+        embedded_footer="@jbaruch",
+    )
+    assert apply_illustrations.parse_footer_stamp(outline) is None
+
+
+def test_a_footer_style_needs_a_poster_footer(apply_illustrations, tmp_path):
+    import outline_schema
+
+    with pytest.raises(Exception, match="footer_style stamps embedded_footer"):
+        _poster_outline_with_footer_style(tmp_path, "", {})
+        outline_schema.load_outline_partial(tmp_path / "outline.yaml")

@@ -395,6 +395,28 @@ class Chapter(_StrictModel):
 # ── Illustration style anchor (optional, per talk) ───────────────────
 
 
+class FooterStyle(_StrictModel):
+    """Geometry and type for a footer stamped onto poster slides (#474).
+
+    Present, it takes the footer out of the image model's hands: generation
+    reserves a quiet strip and renders no footer, and the apply step stamps
+    `embedded_footer` onto every poster slide with this exact type and geometry,
+    so the footer is pixel-identical across the deck and a regenerated slide
+    cannot change it. The stamping and its defaults are
+    `skills/illustrations/scripts/footer_stamp.py`'s.
+    """
+
+    # A TrueType/OpenType file (or collection, with `font_index`); null uses the
+    # renderer's bundled sans-serif.
+    font_path: str | None = None
+    font_index: int = Field(default=0, ge=0)
+    # The rendered text spans this share of the slide width.
+    target_width_pct: float = Field(default=82.0, gt=0, le=100)
+    # The text baseline sits this share of the slide height above the bottom edge.
+    baseline_from_bottom_pct: float = Field(default=3.8, gt=0, lt=50)
+    color: str = Field(default="#F2EFE6", pattern=r"^#[0-9A-Fa-f]{6}$")
+
+
 class StyleAnchor(_StrictModel):
     model: str
     full: str
@@ -410,6 +432,21 @@ class StyleAnchor(_StrictModel):
     # only the scene and text_overlay carries only the literal title string. Only
     # consumed in poster-theatrical mode; null falls back to a generic treatment.
     text_treatment: str | None = None
+    # Stamp the footer deterministically instead of letting the model render it.
+    footer_style: FooterStyle | None = None
+
+    @model_validator(mode="after")
+    def _footer_style_needs_a_poster_footer(self) -> "StyleAnchor":
+        if self.footer_style is not None and (
+            self.composition != Composition.poster_theatrical
+            or not (self.embedded_footer or "").strip()
+        ):
+            raise ValueError(
+                "footer_style stamps embedded_footer onto poster slides; set "
+                "composition: poster-theatrical and a non-empty embedded_footer, "
+                "or remove footer_style"
+            )
+        return self
 
 
 # ── Talk metadata ────────────────────────────────────────────────────

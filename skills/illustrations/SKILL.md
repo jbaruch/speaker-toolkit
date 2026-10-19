@@ -235,7 +235,9 @@ continuity devices (`conventions`) — into `outline.yaml`. For poster-theatrica
 composition, also set `style_anchor.composition: poster-theatrical`,
 `style_anchor.embedded_footer: <text>`, and `style_anchor.text_treatment: <how
 baked title + footer are rendered>` (e.g. "glowing hand-script neon on an
-in-scene surface").
+in-scene surface"). For a pixel-identical footer, also set
+`style_anchor.footer_style` (`{}` takes the defaults); see
+[references/strategy.md](references/strategy.md) Step 9.
 
 Anchor vs per-slide split — everything that must look identical across slides
 lives in the anchor; only the scene and the literal title vary per slide:

@@ -19,13 +19,20 @@ are not generated and keep their own treatment:
 
 - No `TITLE SAFE ZONE` directive — generation appends the `EMBEDDED TEXT`
   directive instead (`generate-illustrations.py` `apply_poster_embed_directive`),
-  folding the slide's `text_overlay` and the deck's `style_anchor.embedded_footer`
-  into the prompt, styled per `style_anchor.text_treatment`.
+  folding the slide's `text_overlay` into the prompt, styled per
+  `style_anchor.text_treatment`.
+- Without `style_anchor.footer_style`, the model renders `embedded_footer` from
+  one canonical deck-wide footer block, appended verbatim to every slide.
+- With `style_anchor.footer_style`, generation reserves a quiet footer strip and
+  renders no footer; the apply step stamps `embedded_footer` with that exact font
+  and geometry (`skills/illustrations/scripts/footer_stamp.py`), so the footer is
+  pixel-identical on every slide.
 - `style_anchor.text_treatment` is authored once and applied to every illustrated
-  slide's baked text, so titles and footers render identically across the deck.
+  slide's baked title, so titles render identically across the deck.
 - No `safe_zone` on poster slides; no zone assignment, no zone picker.
 - No scrim and no overlaid title text box at apply time — poster FULL slides get
-  a background fill only (`apply-illustrations-to-deck.py` `parse_full_slides`).
+  a background fill only (`apply-illustrations-to-deck.py` `parse_full_slides`),
+  from a footer-stamped copy when `footer_style` is set.
 - The QR code is the only shape inserted after generation; everything else is
   embedded and stylized.
 

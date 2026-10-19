@@ -248,6 +248,20 @@ carries only the scene; `text_overlay` carries only that slide's literal title
 string — never the text styling. Putting the treatment in the anchor is what
 keeps every baked title and footer rendering identically across the deck.
 
+An image model rendering the same literal footer still varies its font, size,
+spacing and baseline from slide to slide. To take the footer out of its hands,
+also set `style_anchor.footer_style` (fields and defaults:
+`skills/presentation-creator/scripts/outline_schema.py` `FooterStyle`; `{}`
+takes them all). Generation then reserves a quiet strip at the bottom and
+renders no footer, and `apply-illustrations-to-deck.py` stamps `embedded_footer`
+onto a copy of every poster slide in `illustrations/footer-stamped/` with that
+font and geometry, verifying each stamp. The footer is pixel-identical across
+the deck, and regenerating a slide cannot change it; the generated image stays
+footer-free for edits and builds. Point `font_path` at a TrueType/OpenType file
+that matches the deck; without one the renderer's bundled sans-serif is used.
+Without `footer_style`, the model renders the footer from one canonical
+deck-wide block appended verbatim to every slide.
+
 The anchor, including `conventions`, is injected into **every** slide, so it must be
 **STYLE ONLY** — medium, palette, rendering, lettering, recurring-character
 conventions. Keep per-slide scene content and page-furniture (parts

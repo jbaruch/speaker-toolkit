@@ -24,9 +24,13 @@ IMG+TXT — slide has `format: IMG+TXT` and no `safe_zone`:
   3. Reposition title and body placeholders into the right column.
 
 FULL-POSTER — style_anchor sets `composition: poster-theatrical`; every FULL
-  slide is background-only. The title + footer are baked into the image by
+  slide is background-only. The title is baked into the image by
   `generate-illustrations.py`, so there is no scrim and no overlaid title — just
   the background manifest entry. QR (inserted later) is the only added shape.
+  With `style_anchor.footer_style` set, the footer is stamped here instead of
+  rendered by the model: each slide image is stamped by `footer_stamp.py` into
+  `ILLUSTRATIONS_DIR/footer-stamped/`, and that copy becomes the background, so
+  the generated image stays footer-free for edits and builds.
 
 The outline is the single source of truth for slide format and zone
 assignments — the same fields that `generate-illustrations.py` reads.
@@ -64,6 +68,7 @@ sys.path.insert(
     ),
 )
 import outline_schema  # noqa: E402  (path appended above)
+from footer_stamp import stamp_footer_file  # noqa: E402  (sibling module)
 
 # 16:9 slide geometry (inches)
 SLIDE_W_IN = 13.333
@@ -151,6 +156,14 @@ def parse_composition(outline_path: Path) -> str | None:
     if anchor and anchor.composition is not None:
         return anchor.composition.value
     return None
+
+
+def parse_footer_stamp(outline_path: Path) -> tuple[str, dict] | None:
+    """The footer text and style to stamp, or None when the model renders it."""
+    anchor = outline_schema.load_outline_partial(outline_path).style_anchor
+    if anchor is None or anchor.footer_style is None or not anchor.embedded_footer:
+        return None
+    return anchor.embedded_footer, anchor.footer_style.model_dump()
 
 
 def parse_zones(outline_path: Path) -> dict:
@@ -393,6 +406,7 @@ def apply(
     scrim_hex: str,
     scrim_alpha: int,
     poster_full_slides: set | None = None,
+    footer_stamp: tuple[str, dict] | None = None,
 ) -> tuple[list[dict], dict]:
     """Apply scrim + title for FULL slides and the IMG+TXT layout.
 
@@ -473,9 +487,24 @@ def apply(
         if n > len(prs.slides):
             print(f"  [{n:02d}] SKIP: out of deck range")
             continue
-        backgrounds[n] = str(illust.resolve())
-        print(f"  [{n:02d}] poster FULL  bg->VBA  (title+footer baked into image)")
-        results.append({"slide": n, "format": "FULL-POSTER", "zone": None})
+        if footer_stamp is None:
+            backgrounds[n] = str(illust.resolve())
+            print(f"  [{n:02d}] poster FULL  bg->VBA  (title+footer baked into image)")
+        else:
+            text, style = footer_stamp
+            stamped = stamp_footer_file(
+                illust, illust_dir / "footer-stamped" / illust.name, text, style
+            )
+            backgrounds[n] = str(stamped.resolve())
+            print(f"  [{n:02d}] poster FULL  bg->VBA  (title baked, footer stamped)")
+        results.append(
+            {
+                "slide": n,
+                "format": "FULL-POSTER",
+                "zone": None,
+                "footer_stamped": footer_stamp is not None,
+            }
+        )
 
     prs.save(str(out_deck))
     return results, backgrounds
@@ -564,6 +593,7 @@ def main():
         scrim_hex,
         args.scrim_alpha,
         poster_full_slides,
+        parse_footer_stamp(args.outline) if poster else None,
     )
     print(f"\nSaved {out_deck}")
     print(f"Updated {len(results)}/{total_slides} slides")
