@@ -1914,11 +1914,13 @@ Stored in `structured_data.video_extraction` on the talk entry. `source_video_id
 is the talk's source binding token, which is the bare ID for a YouTube talk and
 carries a provider prefix for every other supported provider.
 
-Readers accept **v4 and v5**. v4 read `source_video_id` as a YouTube ID; v5
-reads it as that binding token. A YouTube ID is exactly its own token, so a v4
+Readers accept every version in `READABLE_VIDEO_EXTRACTION_SCHEMA_VERSIONS`
+(`skills/vault-ingress/scripts/ingress_contract.py`); this is the readable
+manifest every other reference names. v4 read `source_video_id` as a YouTube
+ID; v5 reads it as that binding token. A YouTube ID is exactly its own token, so a v4
 record needs no migration and no re-extraction — but it may not carry a
 provider-prefixed token, which is what keeps the two contracts distinguishable.
-The extractor writes v5.
+The extractor writes `VIDEO_EXTRACTION_SCHEMA_VERSION` from the same file.
 
 ```json
 {

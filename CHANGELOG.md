@@ -1,5 +1,34 @@
 # Changelog
 
+### Tighten two source-identity checks left loose by #449
+
+Two advisory findings from the #449 review (#452).
+
+- `source_alias_contract.py` accepted a promoted record's
+  `prior_state.youtube_id` whenever it equalled the alias block's `video_id`,
+  whatever the alias's provider. Since #449 an alias may be Vimeo or InfoQ, so a
+  Vimeo numeric ID or an InfoQ slug sitting in a field that means "YouTube ID"
+  passed as agreement. The equality now counts only for a YouTube alias. No
+  stored record changes meaning: the promotion writer copies `prior_state` from
+  a talk whose active source is the YouTube alias, and promotion refuses a
+  non-YouTube canonical.
+- The video-extraction manifest refusals still named only schema v4 after #449
+  made readers accept v4 and v5. In `return_validation.py` a `video_extracted`
+  talk "requires a complete … schema-v4 manifest", `processed` "requires a
+  trusted schema-v4 slide_region manifest", a `static_slides` claim found "no
+  trusted schema-v4 slide_region artifact", and an unreadable version was told
+  "must be 5"; two `preflight-vault.py` findings expected a "schema-v4
+  manifest". All six now derive from the shared readable-version constants in
+  `ingress_contract.py`: five render `READABLE_VIDEO_EXTRACTION_LABEL` and the
+  invalid-version refusal lists `READABLE_VIDEO_EXTRACTION_SCHEMA_VERSIONS`, so
+  the next readable version updates them with no edit. Two docstrings follow
+  suit. The references say "readable manifest" and link the schema doc's video
+  extraction section, the one place that names
+  `READABLE_VIDEO_EXTRACTION_SCHEMA_VERSIONS`, rather than copying its members,
+  and `video-slide-extraction.md` no longer says the producer emits a schema-4
+  record: it emits `VIDEO_EXTRACTION_SCHEMA_VERSION`. The PPTX
+  extractor's own schema v4 is a different artifact and keeps its wording.
+
 ## 0.20.176 — 2026-10-19
 
 ### Stop scoring audience-navigation footers as floodmarks

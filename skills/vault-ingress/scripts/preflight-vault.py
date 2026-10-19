@@ -39,6 +39,7 @@ from cloud_artifacts import (
     summarize_cloud_artifacts,
 )
 from ingress_contract import (
+    READABLE_VIDEO_EXTRACTION_LABEL,
     SUPPORTED_SOURCE_PROVIDERS,
     YOUTUBE_ID_RE,
     SourceIdentity,
@@ -1648,7 +1649,7 @@ class VaultPreflight:
         *,
         require_trusted: bool,
     ) -> None:
-        """Validate schema-v4 lineage and any claimed authored-deck trust."""
+        """Validate readable-manifest lineage and any claimed authored-deck trust."""
         talk = self.talks[index]
         structured = talk.get("structured_data")
         extraction = (
@@ -1700,9 +1701,13 @@ class VaultPreflight:
                 index,
                 severity,
                 "video_extraction_provenance_invalid",
-                "video extraction manifest violates the schema-v4 artifact contract",
+                f"video extraction manifest violates the {READABLE_VIDEO_EXTRACTION_LABEL} "
+                "artifact contract",
                 field="structured_data.video_extraction",
-                expected="complete, internally consistent schema-v4 manifest",
+                expected=(
+                    f"complete, internally consistent {READABLE_VIDEO_EXTRACTION_LABEL} "
+                    "manifest"
+                ),
                 # ReturnValidationError text can echo the malformed input value
                 # it rejected, so only its typed reason crosses the boundary.
                 actual=getattr(exc, "reason_code", None) or type(exc).__name__,
@@ -1865,7 +1870,10 @@ class VaultPreflight:
                 "video_extraction_provenance_invalid",
                 "video extraction manifest is structurally or referentially invalid",
                 field="structured_data.video_extraction",
-                expected="complete schema-v4 manifest with existing source/artifacts",
+                expected=(
+                    f"complete {READABLE_VIDEO_EXTRACTION_LABEL} manifest with existing "
+                    "source/artifacts"
+                ),
                 actual=errors,
                 artifact_path=promoted_pdf,
             )

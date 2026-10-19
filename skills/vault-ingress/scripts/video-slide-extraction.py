@@ -109,7 +109,7 @@ def validate_source_token(value: object) -> str:
 class VideoSourceLineageError(RuntimeError):
     """No derivative could be bound to one exact source-video generation.
 
-    Raised instead of returning a manifest. A schema-4 record exists only when
+    Raised instead of returning a manifest. A manifest exists only when
     the engine-owned receipt was captured around the same extraction run, so a
     run that cannot prove that produces no record at all.
     """

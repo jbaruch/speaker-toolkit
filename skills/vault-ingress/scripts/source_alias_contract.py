@@ -309,8 +309,11 @@ def _validate_alias_record(value: Any, *, label: str) -> Mapping[str, Any]:
             _refuse(label, "unsupported prior-source-state schema version")
         old_url = _url(prior["video_url"], f"{label}.prior_state.video_url")
         old_id = prior["youtube_id"]
+        # `youtube_id` agrees with the alias only when the alias is a YouTube
+        # upload; a Vimeo or InfoQ ID stored there is a mislabelled field (#452).
+        youtube_alias_id = alias["video_id"] if alias["provider"] == "youtube" else None
         if source_identity_token(old_url) != record_identity_token(alias) or (
-            not _missing(old_id) and old_id not in (None, "", alias["video_id"])
+            not _missing(old_id) and old_id not in (None, "", youtube_alias_id)
         ):
             _refuse(
                 label, "superseded state disagrees with the prior canonical identity"

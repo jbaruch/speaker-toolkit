@@ -201,7 +201,8 @@ Always store the full script result in `structured_data.video_extraction` and ke
 `slides_local_path: "slides/{youtube_id}.pdf"` only after promoting a trusted
 `slide_region` artifact. Keep the source MP4 and context artifact in
 `slides-rebuild/{youtube_id}/`; they are provenance, not disposable scratch.
-The per-talk return validator recomputes trust from the complete schema-v4 manifest
+The per-talk return validator recomputes trust from the complete readable
+manifest ([readable versions](schemas-db.md#video-extraction-output-schema))
 and binds `source_video_id` to the claimed talk. Promotion is an exact-content
 operation: the bounded SHA-256 digest of `slides/{youtube_id}.pdf` must match the
 trusted manifest `slide_region` artifact. `status: "processed"` requires both that
@@ -249,7 +250,9 @@ outcomes:
   its publish can stay half-applied on disk until the next run for that video
   ID repairs it. That repair is the first thing a run does; a killed run still
   wrote no manifest, so nothing describes the half-applied state in between.
-- **Success**: stdout carries the schema-4 record, and the source receipt
+- **Success**: stdout carries a record at the producer's current
+  `VIDEO_EXTRACTION_SCHEMA_VERSION`
+  (`skills/vault-ingress/scripts/ingress_contract.py`), and the source receipt
   appears on the manifest head and byte-identically on every `artifacts[]`
   entry.
 
