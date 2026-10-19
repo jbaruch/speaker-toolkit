@@ -247,9 +247,12 @@ jobs:
           media_dir="$RUNNER_TEMP/speaker-toolkit-ffmpeg-8.1.2"
           mkdir -p "$archives" "$media_dir/bin"
           # Bounded attempts with short pauses: curl's own --retry honours a
-          # Retry-After of hours and sleeps past the job timeout. Each verified
-          # archive is announced as a step output so its cache save runs even
-          # if the other archive fails.
+          # Retry-After of hours and sleeps past the job timeout. Three 45 s
+          # attempts with 10 s and 20 s pauses cap each archive near three
+          # minutes, so both fit well inside the job's ten. A download counts
+          # only once its checksum verifies; each verified archive is then
+          # announced as a step output so its cache save runs even if the other
+          # archive fails.
           fetch() {
             local name=$1 url=$2 sha=$3 attempt
             local out="$archives/$name.zip"
@@ -262,14 +265,19 @@ jobs:
               rm -f "$out"
             fi
             for attempt in 1 2 3; do
-              if curl -fsSL --connect-timeout 20 --max-time 300 --output "$out" "$url"; then
-                printf '%s  %s\n' "$sha" "$out" | shasum -a 256 -c -
-                echo "${name}_fetched=true" >> "$GITHUB_OUTPUT"
-                return 0
+              if curl -fsSL --connect-timeout 15 --max-time 45 --output "$out" "$url"; then
+                if printf '%s  %s\n' "$sha" "$out" | shasum -a 256 -c -; then
+                  echo "${name}_fetched=true" >> "$GITHUB_OUTPUT"
+                  return 0
+                fi
+                echo "::warning::$name.zip from $url fails its checksum (attempt $attempt of 3)"
+              else
+                echo "::warning::download of $url failed (attempt $attempt of 3)"
               fi
-              echo "::warning::download of $url failed (attempt $attempt of 3)"
               rm -f "$out"
-              sleep $((attempt * 15))
+              if (( attempt < 3 )); then
+                sleep $((attempt * 10))
+              fi
             done
             echo "::error::cannot download $url after 3 attempts; evermeet.cx may be rate-limiting this runner (HTTP 429). Re-run the job: every archive a run verifies is cached, so reruns fetch only what is still missing."
             return 1
