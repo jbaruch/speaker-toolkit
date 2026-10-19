@@ -316,21 +316,73 @@ def _admit_workspace(value: Any) -> Path:
     return path
 
 
+def metadata_only_drift(
+    expected: ArtifactMetadataReceipt, observed: ArtifactMetadataReceipt
+) -> bool:
+    """The same artifact under the same root, with only its change time moved."""
+    return (
+        observed.root_generation == expected.root_generation
+        and observed.reparse_tag == expected.reparse_tag
+        and observed.generation.differs_only_in_change_time(expected.generation)
+    )
+
+
+def descriptor_sha256(descriptor: int, size: int) -> str:
+    """Hash an open artifact from its start; a byte count off ``size`` refuses."""
+    digest = hashlib.sha256()
+    read = 0
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    while chunk := os.read(descriptor, MEDIA_DIGEST_CHUNK_BYTES):
+        read += len(chunk)
+        if read > size:
+            refuse("media_generation_changed")
+        digest.update(chunk)
+    if read != size:
+        refuse("media_generation_changed")
+    return digest.hexdigest()
+
+
 def check_media_generation(
     path: Any, probe: MediaArtifactProbe, *, trusted_root: Any = None
-) -> None:
-    """Recheck metadata through a bounded worker immediately before bundle commit."""
+) -> MediaArtifactProbe:
+    """Recheck metadata through a bounded worker immediately before bundle commit.
+
+    Returns the probe to keep using. A drift that moved only the change time is
+    re-probed, and accepted only when the bytes still hash to the established
+    digest (#487); the returned probe then binds the settled generation.
+    """
     artifact, root = _request_paths(path, trusted_root)
     receipt = ArtifactMetadataReceipt(probe.generation, probe.root_generation, None)
-    result = _invoke_worker(
-        CHECK_OPERATION,
-        _bindings(receipt),
-        _path_payload(artifact, root),
-        MEDIA_METADATA_LIMITS,
-    )
-    current = _decode_metadata(result.payload, root)
-    if current != receipt:
+    payload = _path_payload(artifact, root)
+    try:
+        result = _invoke_worker(
+            CHECK_OPERATION, _bindings(receipt), payload, MEDIA_METADATA_LIMITS
+        )
+    except LocalMediaError as exc:
+        if exc.reason_code != "media_generation_changed":
+            raise
+        observed = _invoke_worker(
+            METADATA_OPERATION, {}, payload, MEDIA_METADATA_LIMITS
+        )
+        if not metadata_only_drift(receipt, _decode_metadata(observed.payload, root)):
+            raise
+        return _settled_probe(artifact, root, probe)
+    if _decode_metadata(result.payload, root) != receipt:
         refuse("media_generation_changed")
+    return probe
+
+
+def _settled_probe(
+    artifact: Path, root: Path | None, probe: MediaArtifactProbe
+) -> MediaArtifactProbe:
+    """Re-probe after a change-time-only drift; the same bytes rebind it."""
+    settled = probe_local_media(artifact, trusted_root=root)
+    if (
+        settled.source_sha256 != probe.source_sha256
+        or settled.source_size_bytes != probe.source_size_bytes
+    ):
+        refuse("media_generation_changed")
+    return settled
 
 
 def _inspect(path: Path, root: Path | None) -> ArtifactMetadataReceipt:

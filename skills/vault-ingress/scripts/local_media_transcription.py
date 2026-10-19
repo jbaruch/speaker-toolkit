@@ -17,7 +17,10 @@ from pathlib import Path
 import sys
 from typing import Any, cast
 
-from artifact_metadata import canonicalize_trusted_artifact_locator
+from artifact_metadata import (
+    ArtifactMetadataReceipt,
+    canonicalize_trusted_artifact_locator,
+)
 from artifact_supervisor import (
     FileGeneration,
     JsonValue,
@@ -37,6 +40,7 @@ from local_media_contract import (
     bounded_whisper_result,
     refuse,
     reuse_video_probe,
+    validate_available_generation,
 )
 from local_media_evidence import (
     _admit_workspace,
@@ -46,6 +50,8 @@ from local_media_evidence import (
     _request_paths,
     _require_descriptor,
     check_media_generation,
+    descriptor_sha256,
+    metadata_only_drift,
     probe_local_media,
     private_media_workspace,
 )
@@ -130,13 +136,14 @@ def transcribe_local_media(
         established = probe
     else:
         established = reuse_video_probe(probe)
-    check_media_generation(artifact, established, trusted_root=root)
+    established = check_media_generation(artifact, established, trusted_root=root)
     expected = {"media": established.generation}
     if established.root_generation is not None:
         expected["media_root"] = established.root_generation
     payload = _path_payload(artifact, root)
     payload.pop("workspace")
     payload["model"] = model
+    payload["source_sha256"] = established.source_sha256
     command = [sys.executable, str(Path(__file__).resolve()), WORKER_FLAG]
     try:
         result = run_authenticated_worker(
@@ -175,7 +182,7 @@ def transcribe_local_media(
     }:
         refuse("whisper_result_invalid")
     speech = bounded_whisper_result(result.payload)
-    check_media_generation(artifact, established, trusted_root=root)
+    established = check_media_generation(artifact, established, trusted_root=root)
     return established, speech
 
 
@@ -198,7 +205,7 @@ def transcribe_local_words(
     validate_sample_window(
         sample_start_seconds, sample_duration_seconds, established.duration_seconds
     )
-    check_media_generation(artifact, established, trusted_root=root)
+    established = check_media_generation(artifact, established, trusted_root=root)
     expected = {"media": established.generation}
     if established.root_generation is not None:
         expected["media_root"] = established.root_generation
@@ -234,7 +241,9 @@ def transcribe_local_words(
                 or speech["model"] != DEFAULT_WORD_MODEL
             ):
                 refuse("whisper_word_sample_invalid")
-            check_media_generation(artifact, established, trusted_root=root)
+            established = check_media_generation(
+                artifact, established, trusted_root=root
+            )
     except SupervisorError as exc:
         reason = exc.reason_code
         if reason not in WHISPER_FAILURES:
@@ -362,6 +371,30 @@ def _sampled_words(path: Path, payload: Mapping) -> dict[str, Any]:
     )
 
 
+def _require_unchanged_after_work(
+    descriptor: int,
+    after: ArtifactMetadataReceipt,
+    before: ArtifactMetadataReceipt,
+    source_sha256: Any,
+) -> None:
+    """Keep completed work only if the source is still the bytes it was bound to.
+
+    A drift that moved the change time alone is sync-provider metadata, not a
+    new source (#487): a long transcription is kept when the open descriptor
+    still hashes to the established digest. Any other drift refuses.
+    """
+    current = FileGeneration.from_stat(os.fstat(descriptor))
+    if current == before.generation and after == before:
+        return
+    validate_available_generation(current)
+    if (
+        current != after.generation
+        or not metadata_only_drift(before, after)
+        or descriptor_sha256(descriptor, before.generation.size) != source_sha256
+    ):
+        refuse("media_generation_changed")
+
+
 def _dispatch(
     request: WorkerRequest,
 ) -> tuple[dict[str, Any], dict[str, FileGeneration]]:
@@ -374,11 +407,10 @@ def _dispatch(
         or not isinstance(payload, Mapping)
     ):
         raise SupervisorError("invalid_worker_request")
-    fields = {"media_path", "trusted_root"} | (
+    fields = {"media_path", "trusted_root", "source_sha256"} | (
         {"model"}
         if request.operation == WHISPER_OPERATION
         else {
-            "source_sha256",
             "source_duration_seconds",
             "sample_start_seconds",
             "sample_duration_seconds",
@@ -411,9 +443,9 @@ def _dispatch(
             if request.operation == WHISPER_OPERATION
             else _sampled_words(path, payload)
         )
-        _require_descriptor(descriptor, before.generation)
-        if _inspect(path, root) != before:
-            refuse("media_generation_changed")
+        _require_unchanged_after_work(
+            descriptor, _inspect(path, root), before, payload["source_sha256"]
+        )
         return speech, observed
     except OSError as exc:
         raise LocalMediaError("media_artifact_unavailable") from exc

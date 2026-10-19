@@ -335,3 +335,67 @@ def test_native_full_transcription_uses_greedy_independent_windows(
         "language": "en",
         "segments": None,
     }
+
+
+# ── #487: completed work survives sync-provider metadata churn ──────────
+
+
+@pytest.fixture
+def evidence():
+    return _import_script(
+        Path(SCRIPTS_VI) / "local_media_evidence.py", "local_media_evidence"
+    )
+
+
+def _bound_receipt(evidence, path, **changes):
+    receipt = evidence._inspect(path, path.parent)
+    return replace(receipt, generation=replace(receipt.generation, **changes))
+
+
+def _after_work(whisper, evidence, path, before, digest):
+    import os
+
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        whisper._require_unchanged_after_work(
+            descriptor, evidence._inspect(path, path.parent), before, digest
+        )
+    finally:
+        os.close(descriptor)
+
+
+def test_work_is_kept_when_only_the_change_time_moved(whisper, evidence, speech_file):
+    import hashlib
+
+    live = evidence._inspect(speech_file, speech_file.parent)
+    before = _bound_receipt(
+        evidence, speech_file, ctime_ns=live.generation.ctime_ns - 1
+    )
+    digest = hashlib.sha256(speech_file.read_bytes()).hexdigest()
+    _after_work(whisper, evidence, speech_file, before, digest)
+
+
+def test_work_is_refused_when_the_bytes_no_longer_match_the_bound_digest(
+    whisper, evidence, speech_file
+):
+    live = evidence._inspect(speech_file, speech_file.parent)
+    before = _bound_receipt(
+        evidence, speech_file, ctime_ns=live.generation.ctime_ns - 1
+    )
+    with pytest.raises(whisper.LocalMediaError, match="media_generation_changed"):
+        _after_work(whisper, evidence, speech_file, before, "0" * 64)
+
+
+@pytest.mark.parametrize("field", ["mtime_ns", "size"])
+def test_work_is_refused_for_any_drift_beyond_the_change_time(
+    whisper, evidence, speech_file, field
+):
+    import hashlib
+
+    live = evidence._inspect(speech_file, speech_file.parent)
+    before = _bound_receipt(
+        evidence, speech_file, **{field: getattr(live.generation, field) + 1}
+    )
+    digest = hashlib.sha256(speech_file.read_bytes()).hexdigest()
+    with pytest.raises(whisper.LocalMediaError, match="media_generation_changed"):
+        _after_work(whisper, evidence, speech_file, before, digest)

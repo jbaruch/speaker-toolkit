@@ -182,6 +182,26 @@ class FileGeneration:
             file_attributes=generation.file_attributes,
         )
 
+    def differs_only_in_change_time(self, other: FileGeneration) -> bool:
+        """Same object, size, modification time and mode; only ctime moved.
+
+        A sync provider settling metadata after a write (Google Drive finishing
+        an upload, an xattr update) moves the change time alone. This is never
+        proof of unchanged bytes on its own: a write followed by ``utime``
+        restores the modification time, and the change time is what betrays
+        it. Callers pair it with a digest of the bytes (#487).
+        """
+        return (
+            self.size == other.size
+            and self.mtime_ns == other.mtime_ns
+            and self.device == other.device
+            and self.inode == other.inode
+            and self.mode == other.mode
+            and self.flags == other.flags
+            and self.file_attributes == other.file_attributes
+            and self.ctime_ns != other.ctime_ns
+        )
+
     @classmethod
     def from_dict(cls, value: Mapping[str, object]) -> FileGeneration:
         expected = {

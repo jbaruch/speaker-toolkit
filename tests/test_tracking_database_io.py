@@ -1461,3 +1461,76 @@ def test_initialization_is_exclusive_and_reports_missing_input(
         match="already exists",
     ):
         tracking_database_io.initialize_tracking_database(path, payload)
+
+
+# ── #487: sync-provider metadata churn between validation and install ──
+
+
+def _with_generation(tracking_database_io, snapshot, **changes):
+    """A snapshot whose recorded generation differs from the live file."""
+    from dataclasses import replace
+
+    return replace(snapshot, generation=replace(snapshot.generation, **changes))
+
+
+def test_a_change_time_only_drift_over_identical_bytes_still_installs(
+    tracking_database_io, tmp_path: Path
+) -> None:
+    path = tmp_path / "tracking-database.json"
+    _write(path, {"talks": []})
+    live = tracking_database_io.snapshot_tracking_database(path)
+    expected = _with_generation(
+        tracking_database_io, live, changed_ns=live.generation.changed_ns - 1
+    )
+    candidate = tracking_database_io.render_json_object({"talks": [], "config": {}})
+
+    result = tracking_database_io.commit_tracking_database(expected, candidate)
+
+    assert result.installed is True
+    assert path.read_bytes() == candidate
+
+
+@pytest.mark.parametrize("field", ["modified_ns", "inode", "device"])
+def test_any_other_generation_drift_over_identical_bytes_still_refuses(
+    tracking_database_io, tmp_path: Path, field: str
+) -> None:
+    path = tmp_path / "tracking-database.json"
+    original = _write(path, {"talks": []})
+    live = tracking_database_io.snapshot_tracking_database(path)
+    expected = _with_generation(
+        tracking_database_io, live, **{field: getattr(live.generation, field) + 1}
+    )
+
+    with pytest.raises(
+        tracking_database_io.TrackingDatabaseConflictError,
+        match="content or generation changed after validation",
+    ):
+        tracking_database_io.commit_tracking_database(
+            expected,
+            tracking_database_io.render_json_object({"talks": [], "config": {}}),
+        )
+    assert path.read_bytes() == original
+
+
+def test_a_rewrite_with_its_modification_time_restored_still_refuses(
+    tracking_database_io, tmp_path: Path
+) -> None:
+    """Restoring mtime with utime leaves only the change time moved; the bytes
+    comparison is what refuses it."""
+    path = tmp_path / "tracking-database.json"
+    _write(path, {"talks": ["a"]})
+    expected = tracking_database_io.snapshot_tracking_database(path)
+    before = path.stat()
+    path.write_bytes(expected.raw.replace(b'"a"', b'"b"'))
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns), follow_symlinks=False)
+    rewritten = path.read_bytes()
+
+    with pytest.raises(
+        tracking_database_io.TrackingDatabaseConflictError,
+        match="content or generation changed after validation",
+    ):
+        tracking_database_io.commit_tracking_database(
+            expected,
+            tracking_database_io.render_json_object({"talks": [], "config": {}}),
+        )
+    assert path.read_bytes() == rewritten
