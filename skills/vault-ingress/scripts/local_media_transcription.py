@@ -12,7 +12,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 import importlib
 import importlib.metadata
-import os
 from pathlib import Path
 import sys
 from typing import Any, cast
@@ -43,6 +42,7 @@ from local_media_evidence import (
     _bindings,
     _inspect,
     _path_payload,
+    _private_snapshot,
     _request_paths,
     _require_descriptor,
     check_media_generation,
@@ -130,26 +130,28 @@ def transcribe_local_media(
         established = probe
     else:
         established = reuse_video_probe(probe)
-    check_media_generation(artifact, established, trusted_root=root)
+    established = check_media_generation(artifact, established, trusted_root=root)
     expected = {"media": established.generation}
     if established.root_generation is not None:
         expected["media_root"] = established.root_generation
     payload = _path_payload(artifact, root)
-    payload.pop("workspace")
     payload["model"] = model
+    payload["source_sha256"] = established.source_sha256
     command = [sys.executable, str(Path(__file__).resolve()), WORKER_FLAG]
     try:
-        result = run_authenticated_worker(
-            command,
-            WHISPER_OPERATION,
-            expected,
-            cast(JsonValue, payload),
-            MEDIA_WHISPER_LIMITS,
-            immutable_process_identity=command[:2],
-            sensitive_values=(str(artifact), model),
-            schema_generation=MEDIA_SCHEMA_VERSION,
-            pipeline_generation=MEDIA_PIPELINE_VERSION,
-        )
+        with private_media_workspace() as workspace:
+            payload["workspace"] = workspace
+            result = run_authenticated_worker(
+                command,
+                WHISPER_OPERATION,
+                expected,
+                cast(JsonValue, payload),
+                MEDIA_WHISPER_LIMITS,
+                immutable_process_identity=command[:2],
+                sensitive_values=(str(artifact), model),
+                schema_generation=MEDIA_SCHEMA_VERSION,
+                pipeline_generation=MEDIA_PIPELINE_VERSION,
+            )
     except SupervisorError as exc:
         reason = exc.reason_code
         if reason not in WHISPER_FAILURES:
@@ -175,7 +177,7 @@ def transcribe_local_media(
     }:
         refuse("whisper_result_invalid")
     speech = bounded_whisper_result(result.payload)
-    check_media_generation(artifact, established, trusted_root=root)
+    established = check_media_generation(artifact, established, trusted_root=root)
     return established, speech
 
 
@@ -198,7 +200,7 @@ def transcribe_local_words(
     validate_sample_window(
         sample_start_seconds, sample_duration_seconds, established.duration_seconds
     )
-    check_media_generation(artifact, established, trusted_root=root)
+    established = check_media_generation(artifact, established, trusted_root=root)
     expected = {"media": established.generation}
     if established.root_generation is not None:
         expected["media_root"] = established.root_generation
@@ -234,7 +236,9 @@ def transcribe_local_words(
                 or speech["model"] != DEFAULT_WORD_MODEL
             ):
                 refuse("whisper_word_sample_invalid")
-            check_media_generation(artifact, established, trusted_root=root)
+            established = check_media_generation(
+                artifact, established, trusted_root=root
+            )
     except SupervisorError as exc:
         reason = exc.reason_code
         if reason not in WHISPER_FAILURES:
@@ -327,13 +331,12 @@ def _transcribe_with_mlx(
     return bounded_whisper_result(value)
 
 
-def _sampled_words(path: Path, payload: Mapping) -> dict[str, Any]:
+def _sampled_words(path: Path, payload: Mapping, workspace: Path) -> dict[str, Any]:
     validate_sample_window(
         payload["sample_start_seconds"],
         payload["sample_duration_seconds"],
         payload["source_duration_seconds"],
     )
-    workspace = _admit_workspace(payload["workspace"])
     clip = extract_speech_clip(
         path,
         workspace,
@@ -374,15 +377,13 @@ def _dispatch(
         or not isinstance(payload, Mapping)
     ):
         raise SupervisorError("invalid_worker_request")
-    fields = {"media_path", "trusted_root"} | (
+    fields = {"media_path", "trusted_root", "source_sha256", "workspace"} | (
         {"model"}
         if request.operation == WHISPER_OPERATION
         else {
-            "source_sha256",
             "source_duration_seconds",
             "sample_start_seconds",
             "sample_duration_seconds",
-            "workspace",
         }
     )
     if set(payload) != fields:
@@ -394,31 +395,24 @@ def _dispatch(
     observed = _bindings(before)
     if observed != request.expected_generations:
         refuse("media_generation_changed")
-    try:
-        descriptor = os.open(
-            path,
-            os.O_RDONLY
-            | getattr(os, "O_NOFOLLOW", 0)
-            | getattr(os, "O_NONBLOCK", 0)
-            | getattr(os, "O_BINARY", 0),
-        )
-    except OSError as exc:
-        raise LocalMediaError("media_artifact_unavailable") from exc
-    try:
-        _require_descriptor(descriptor, before.generation)
-        speech = (
-            _transcribe_with_mlx(path, _model(payload["model"]))
-            if request.operation == WHISPER_OPERATION
-            else _sampled_words(path, payload)
-        )
-        _require_descriptor(descriptor, before.generation)
-        if _inspect(path, root) != before:
+    workspace = _admit_workspace(payload["workspace"])
+    # Decode a private snapshot copied from one held descriptor, never the
+    # pathname: a source swapped aside and restored during a long decode cannot
+    # reach the speech, and the snapshot must hash to the established digest.
+    # Later drift of the original is the owner's precommit check to judge (#487).
+    with _private_snapshot(path, before.generation, workspace) as (
+        snapshot,
+        digest,
+        _descriptor,
+    ):
+        if digest != payload["source_sha256"]:
             refuse("media_generation_changed")
-        return speech, observed
-    except OSError as exc:
-        raise LocalMediaError("media_artifact_unavailable") from exc
-    finally:
-        os.close(descriptor)
+        speech = (
+            _transcribe_with_mlx(snapshot, _model(payload["model"]))
+            if request.operation == WHISPER_OPERATION
+            else _sampled_words(snapshot, payload, workspace)
+        )
+    return speech, observed
 
 
 def _worker_main() -> int:

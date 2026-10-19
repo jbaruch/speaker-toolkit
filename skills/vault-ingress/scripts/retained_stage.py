@@ -111,6 +111,23 @@ class FileGeneration:
             changed_ns=metadata.st_ctime_ns,
         )
 
+    def differs_only_in_change_time(self, other: "FileGeneration") -> bool:
+        """Same object, size and modification time; only the change time moved.
+
+        A sync provider settling metadata after a write (Google Drive finishing
+        an upload, an xattr update) moves the change time alone. This is never
+        proof of unchanged bytes on its own: a write followed by ``utime``
+        restores the modification time, and the change time is what betrays
+        it. Callers pair it with an exact byte comparison (#487).
+        """
+        return (
+            self.device == other.device
+            and self.inode == other.inode
+            and self.size == other.size
+            and self.modified_ns == other.modified_ns
+            and self.changed_ns != other.changed_ns
+        )
+
 
 @dataclass
 class RetainedStage:

@@ -54,6 +54,15 @@ Use `LocalMediaError.reason_code` for library callers. Repair unavailable runtim
 lanes, restore a locally available supported source, or retry after source edits
 finish. Never bypass worker admission or increase a threshold from skill prose.
 
+A source just written into a Google Drive vault can have its change time
+touched while Drive finishes the upload, often mid-transcription. A drift that
+moves only the change time is re-verified by digest rather than discarded: the
+worker decodes a private snapshot verified against the established
+`source_sha256`, so the source's later metadata changes never touch the speech,
+and the owner re-probes before committing and keeps the work only when the bytes
+still match. Any other drift, and any byte difference, still refuses with
+`media_generation_changed`.
+
 A failed local probe, transcription, resource check, cleanup, or precommit
 generation check leaves prior transcript, quality, and timing artifacts intact.
 This includes a stale quality receipt: failure does not authorize weakening its

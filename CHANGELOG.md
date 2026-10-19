@@ -1,5 +1,55 @@
 # Changelog
 
+### Tolerate Google Drive's post-sync metadata churn without trusting it
+
+Two generation checks failed on a Drive-backed vault when Drive touched a file's
+metadata after the bytes were final (#487). The file's change time moved about
+29 seconds after an audio file was written, mid-transcription, so a finished
+~50-minute Whisper pass ended in `media_generation_changed`; and a queue claim
+right after a run of owner writes refused with "content or generation changed
+after validation", although an identical retry succeeded. #239 had fixed the
+same churn for staged database candidates only.
+
+- Both `FileGeneration` classes (`artifact_supervisor.py` for media,
+  `retained_stage.py` for owner writes) gain `differs_only_in_change_time`:
+  same device, inode, size and modification time (and mode and flags for
+  media), with the change time alone moved. It is never proof on its own. A
+  write followed by `utime` restores the modification time and only the change
+  time betrays it, so every caller pairs it with a byte comparison.
+- Owner database writes: `_require_expected_generation` accepts identical bytes
+  whose change time alone moved and whose mode is unchanged. The bytes are
+  re-read and compared at every check, so any content change still refuses, and
+  a concurrent `chmod`, which also moves only the change time, refuses instead
+  of letting the staged candidate restore looser permissions.
+- Local media: the Whisper and word-sample workers decode a private snapshot
+  copied from one held descriptor and verified against the established
+  `source_sha256`, which the Whisper payload now carries, never the source
+  pathname. A recording swapped aside and restored during a long decode
+  therefore cannot reach the speech, and drift of the original after the copy
+  is the owner's precommit check to judge.
+  `check_media_generation` asks the metadata worker for the current generation
+  after a CHECK refusal, re-probes on a change-time-only drift, and returns the
+  re-probed facts only when digest, size and trusted-root identity match and
+  the settled generation is the original or differs only in change time, so a
+  byte-identical file swapped in between the two probes still refuses. Callers
+  keep using the returned probe. The supervisor's start-of-work binding stays
+  exact.
+- `rules/transcript-fetch-authority.md` authorizes and bounds the one tolerated
+  drift; every other source drift still leaves prior artifacts untouched.
+- Tests use synthetic stale generations (CI cannot run Drive). They cover a
+  change-time-only drift accepted over identical bytes, mtime, size, inode and
+  device drift refused, and a same-size rewrite with its mtime restored refused
+  on bytes, for both the database CAS and the media owner, plus a mode change
+  that refuses even when the generation looks unchanged. A swap-and-restore of
+  the source in the middle of a decode yields speech from the established
+  bytes, and word samples are cut from the snapshot.
+- `schemas-db.md` and `local-media-acquisition.md` document the settle
+  behavior.
+
+- `references/sampled-word-evidence.md`, the authority's binding read, now
+  states the same contract: the word sample is cut from the verified private
+  snapshot, which is copied and hashed even when a current probe is reused, and
+  a change-time-only drift is accepted only after the owner re-probe settles.
 ## 0.20.180 — 2026-10-19
 
 ### Bump filelock to 4.1.0 in every version authority

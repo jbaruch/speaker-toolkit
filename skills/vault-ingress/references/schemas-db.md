@@ -35,8 +35,11 @@ Dry-run emits the exact input SHA-256. Apply requires that digest, stores the
 complete original bytes under `.backups/`, and replaces
 the verified generation atomically. Backup directory and file opens do not
 follow symbolic links. The target input comparison remains exact across bytes
-and every `FileGeneration` field, including `mtime_ns` and `ctime_ns`, after
-staging and immediately before replacement. The unique staged candidate keeps
+and every `FileGeneration` field after staging and immediately before
+replacement, with one case: identical bytes whose `ctime_ns` alone moved are a
+sync provider settling metadata (Google Drive finishing an upload) and still
+match. Any `mtime_ns`, size, device or inode drift refuses, and so does any byte
+difference, including a rewrite whose `mtime_ns` was restored. The unique staged candidate keeps
 its original descriptor/name device and inode, regular-file type, single link,
 size, exact bytes, and SHA-256 throughout verification. Staged `mtime_ns` and
 `ctime_ns` may rebaseline after fsync only when the descriptor view and name view

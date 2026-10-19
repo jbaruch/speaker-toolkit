@@ -101,12 +101,20 @@ description: Authority of record for the Whisper transcription layer's Platform-
 - Local `--audio` admission rejects unavailable or unsupported source metadata
   before byte I/O. A bounded worker copies and hashes one admitted generation
   into an owner-cleaned private read-only snapshot for `ffprobe`.
-- Whisper reuses established media or video probe facts without another copy,
-  hash, or probe. Its bounded worker checks the original source's pathname and
-  open-descriptor generation before and after transcription.
+- Whisper reuses established media or video probe facts without another owner
+  probe, except after a change-time-only drift (below).
+- Its bounded worker decodes a private snapshot copied from one held descriptor
+  of the admitted generation, never the source pathname, and refuses a snapshot
+  whose digest is not the established `source_sha256`. Word samples are cut
+  from the same snapshot.
+- A change-time-only drift is the one tolerated generation change: same
+  device, inode, size, modification time, mode and flags.
+- On that drift the owner re-probes and keeps the settled facts only when
+  digest, size and trusted-root identity match and the settled generation is
+  the original or differs from it only in change time.
 - The fetcher checks source generation after staging and before replacing a
-  transcript bundle or refreshing existing quality. Source drift or worker
-  failure leaves prior artifacts untouched. Failed local probing never replaces
+  transcript bundle or refreshing existing quality. Any other source drift, and
+  any worker failure, leaves prior artifacts untouched. Failed local probing never replaces
   an existing quality receipt with fixed-default provenance.
 - Transcript, timing, and quality final-component symlinks are forbidden,
   including dangling links. VTT imports require lexical and resolved
