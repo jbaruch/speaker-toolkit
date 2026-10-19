@@ -60,7 +60,7 @@ from pathlib import Path
 #     &table=ubuntu&s=noble,noble-updates,noble-security&a=amd64&text=on
 PACKAGES = (
     "ffmpeg=7:6.1.1-3ubuntu5",
-    "libreoffice-impress=4:24.2.7-0ubuntu0.24.04.6",
+    "libreoffice-impress=4:24.2.7-0ubuntu0.24.04.7",
     "tesseract-ocr=5.3.4-1build5",
 )
 
