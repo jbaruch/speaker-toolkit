@@ -430,7 +430,7 @@ completeness and must be rerun before an absence conclusion.
   `processed_partial` may intentionally retain only manifest-declared source and
   derivative artifacts.
 - A present video-extracted PDF is not sufficient deck evidence by itself. A
-  completed record also requires a complete schema-v4
+  completed record also requires a complete schema-v4 or schema-v5
   `structured_data.video_extraction` manifest, preserved source video and
   artifact paths, and internally consistent frame/page, scope, crop, and trust
   provenance. That manifest is valid only when `slide_source` is
@@ -438,7 +438,7 @@ completeness and must be rerun before an absence conclusion.
   before inspecting any of its paths. Every manifest PDF is independently
   probed and its bounded page count must match the manifest before either
   preflight or current-return persistence accepts the referential unit. Manifest
-  paths reject NUL/dot ambiguity. The schema-v4 source is exactly
+  paths reject NUL/dot ambiguity. A readable manifest's source is exactly
   `<binding_token>.mp4`, and the manifest's `source_video_id` is that same
   token; it takes precedence over legacy top-level video path
   fields and must pass the bounded `source-video` evidence probe as a

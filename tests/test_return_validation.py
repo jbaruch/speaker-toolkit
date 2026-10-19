@@ -698,6 +698,12 @@ def test_unused_optional_degraded_pptx_does_not_block_pdf_analysis(
     )
 
 
+def _assert_names_every_readable_version(return_validation, message):
+    """A refusal prescribes the whole admissible manifest set (#452)."""
+    for version in return_validation.READABLE_VIDEO_EXTRACTION_SCHEMA_VERSIONS:
+        assert f"schema-v{version}" in message
+
+
 def test_trusted_video_return_requires_complete_manifest_and_promoted_path(
     return_validation,
 ):
@@ -707,7 +713,9 @@ def test_trusted_video_return_requires_complete_manifest_and_promoted_path(
 
     missing_path = _video_return()
     del missing_path["slides_local_path"]
-    assert "requires a trusted schema-v4" in _error(return_validation, missing_path)
+    message = _error(return_validation, missing_path)
+    assert "requires a trusted" in message
+    _assert_names_every_readable_version(return_validation, message)
 
 
 @pytest.mark.parametrize("version", [None, 1, 2, 3, 4, 5])
@@ -744,7 +752,9 @@ def test_context_video_cannot_promote_or_cite_static_slides(return_validation):
 
     cited = _video_return(trusted=False, promoted=False)
     cited["pattern_observations"]["evidence_sources"].append("static_slides")
-    assert "no trusted schema-v4 slide_region" in _error(return_validation, cited)
+    message = _error(return_validation, cited)
+    assert "no trusted" in message
+    _assert_names_every_readable_version(return_validation, message)
 
 
 def test_trusted_unpromoted_video_can_support_partial_static_analysis(

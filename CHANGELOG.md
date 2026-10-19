@@ -12,14 +12,19 @@ Two advisory findings from the #449 review (#452).
   stored record changes meaning: the promotion writer copies `prior_state` from
   a talk whose active source is the YouTube alias, and promotion refuses a
   non-YouTube canonical.
-- The manifest refusals still named only schema v4 after #449 made readers
-  accept v4 and v5: `return_validation.py` said a `video_extracted` talk
-  "requires a complete … schema-v4 manifest" and refused an unreadable version
-  with "must be 5", and two `preflight-vault.py` findings expected a "schema-v4
-  manifest". They now render `READABLE_VIDEO_EXTRACTION_LABEL`, derived in
+- The video-extraction manifest refusals still named only schema v4 after #449
+  made readers accept v4 and v5. In `return_validation.py` a `video_extracted`
+  talk "requires a complete … schema-v4 manifest", `processed` "requires a
+  trusted schema-v4 slide_region manifest", a `static_slides` claim found "no
+  trusted schema-v4 slide_region artifact", and an unreadable version was told
+  "must be 5"; two `preflight-vault.py` findings expected a "schema-v4
+  manifest". All six now render `READABLE_VIDEO_EXTRACTION_LABEL`, derived in
   `ingress_contract.py` from `READABLE_VIDEO_EXTRACTION_SCHEMA_VERSIONS`, so the
-  next readable version updates them with no edit. Three reference passages say
-  "schema-v4 or schema-v5" to match.
+  next readable version updates them with no edit. Two docstrings and six
+  reference passages say "schema-v4 or schema-v5" (or "readable manifest") to
+  match, and `video-slide-extraction.md` no longer says the producer emits a
+  schema-4 record: it emits `VIDEO_EXTRACTION_SCHEMA_VERSION`. The PPTX
+  extractor's own schema v4 is a different artifact and keeps its wording.
 
 ## 0.20.176 — 2026-10-19
 

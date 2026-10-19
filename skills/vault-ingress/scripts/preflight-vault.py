@@ -1649,7 +1649,7 @@ class VaultPreflight:
         *,
         require_trusted: bool,
     ) -> None:
-        """Validate schema-v4 lineage and any claimed authored-deck trust."""
+        """Validate readable-manifest lineage and any claimed authored-deck trust."""
         talk = self.talks[index]
         structured = talk.get("structured_data")
         extraction = (

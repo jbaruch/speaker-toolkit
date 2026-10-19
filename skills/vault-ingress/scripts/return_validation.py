@@ -1447,7 +1447,8 @@ def _validate_video_return(
     if ret["status"] == "processed" and not trusted_and_promoted:
         raise ReturnValidationError(
             "status processed with slide_source video_extracted requires a trusted "
-            "schema-v4 slide_region manifest and promoted slides_local_path"
+            f"{READABLE_VIDEO_EXTRACTION_LABEL} slide_region manifest and promoted "
+            "slides_local_path"
         )
     if slides_local_path is None:
         clear_fields = set(ret.get("clear_fields") or [])
@@ -2523,7 +2524,7 @@ def _validate_available_sources(
     ):
         raise ReturnValidationError(
             "evidence_sources includes static_slides, but the video extraction has "
-            "no trusted schema-v4 slide_region artifact"
+            f"no trusted {READABLE_VIDEO_EXTRACTION_LABEL} slide_region artifact"
         )
     if slide_source not in {"pptx", "both"} and "native_deck" in available:
         raise ReturnValidationError(
