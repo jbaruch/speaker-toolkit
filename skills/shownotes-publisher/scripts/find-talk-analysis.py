@@ -24,8 +24,8 @@ Stdout: one JSON object, exit 0 for every answered lookup. ``binding`` is
 link or non-regular file at the path), ``analysis_unreadable`` (with the
 read ``error``), ``analysis_stale``, each with ``talk`` (null unless one record matched),
 ``candidates`` (the records that share the event and date, or the title, for a
-miss; every match for ``ambiguous``) and ``handoff``: what to report to the
-speaker as the one delivery to run vault-ingress for (``scope: one_talk`` plus the exact filename when a record
+miss; every match for ``ambiguous``) and ``handoff``: the one delivery to hand
+vault-ingress as its explicit one-talk selection (``scope: one_talk`` plus the exact filename when a record
 matched, else the requested title, event and date). Exit 2 writes ``{"ok":
 false, "reason_code", "error"}`` and the message to stderr when the database
 cannot be read (``database_unreadable``), is an older generation

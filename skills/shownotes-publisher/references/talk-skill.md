@@ -73,13 +73,13 @@ that separate artifact.
    either publish the point as unresolved, saying what each source shows, or
    ask the speaker one question and use the answer. Never settle it by
    writing a qualification as if it were established fact.
-4. For a delivered talk whose lookup is not `bound`, stop publishing and report
-   the `binding` to the speaker with the lookup's `handoff`: the one delivery
-   to run vault-ingress for (its exact filename when a record matched, else the
-   title, event and date). For `ambiguous`, list the `candidates` and ask which
-   delivery this brief is for, then look it up again by `--filename`. Never
-   start a vault-ingress run from here; it would process a batch, not one talk.
-   Resume once the lookup returns `bound`. Do not silently substitute a generic transcript summary. For a
+4. For a delivered talk whose lookup is not `bound`, first resolve
+   `ambiguous`: list the `candidates`, ask the speaker which delivery this brief
+   is for, and look it up again by `--filename`. Then invoke
+   `Skill(skill: "vault-ingress")` with the lookup's `handoff` as context: its
+   exact filename (or title, event and date) is the explicit one-talk selection
+   vault-ingress Step 2 takes, never a batch. When it returns, run the lookup
+   again and resume only once it answers `bound`. Do not silently substitute a generic transcript summary. For a
    pre-talk skill, use the approved rhetorical architecture and any
    `rhetorical-review.md` as planned analysis, clearly label that status, and
    refresh against delivered analysis after the event. If the user explicitly
