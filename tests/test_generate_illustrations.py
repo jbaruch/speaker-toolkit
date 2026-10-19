@@ -1912,3 +1912,34 @@ def test_parse_outline_carries_the_footer_style(generate_illustrations, tmp_path
     outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     parsed = generate_illustrations.parse_outline(str(outline))
     assert parsed["footer_style"] == {**FOOTER_STYLE, "target_width_pct": 70.0}
+
+
+@pytest.mark.parametrize(
+    "argv_tail,runner",
+    [(["1"], "run_generate"), (["--style-explore", "c.json"], "run_style_explore")],
+    ids=["generation", "style-exploration"],
+)
+def test_an_unstampable_footer_exits_with_its_fix_not_a_traceback(
+    generate_illustrations, tmp_path, monkeypatch, capsys, argv_tail, runner
+):
+    """reserved_strip_pct refuses an unusable footer_style during prompting."""
+    outline = _write_outline(tmp_path, slides=[])
+
+    def refuse(*_args, **_kwargs):
+        raise generate_illustrations.FooterStampError(
+            "footer text is too long to fit 82% of a 1600px frame"
+        )
+
+    monkeypatch.setattr(generate_illustrations, runner, refuse)
+    monkeypatch.setattr(
+        "sys.argv", ["generate-illustrations.py", str(outline), *argv_tail]
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        generate_illustrations.main()
+
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "the poster footer cannot be stamped" in err
+    assert "too long to fit" in err
+    assert "Traceback" not in err

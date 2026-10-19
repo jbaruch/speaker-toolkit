@@ -645,6 +645,13 @@ def main():
         )
     except FooterStampError as exc:
         raise SystemExit(f"ERROR: {exc}") from exc
+    except OSError as exc:
+        raise SystemExit(
+            f"ERROR: cannot read a slide image or write its stamped copy "
+            f"({type(exc).__name__}: {exc.strerror or exc}); check that every "
+            "slide image is a readable image and the illustrations directory "
+            "is writable, then re-run"
+        ) from exc
     _progress(f"\nSaved {out_deck}")
     _progress(f"Updated {len(results)}/{total_slides} slides")
 

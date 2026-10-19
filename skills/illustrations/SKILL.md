@@ -237,8 +237,8 @@ Write the `style_anchor` block — chosen model + per-format anchors + visual
 continuity devices (`conventions`) — into `outline.yaml`. For poster-theatrical
 composition, also set `style_anchor.composition: poster-theatrical`,
 `style_anchor.embedded_footer: <text>`, and `style_anchor.text_treatment: <how
-baked title + footer are rendered>` (e.g. "glowing hand-script neon on an
-in-scene surface"). For the Step 5 stamped-footer choice, also set
+the baked title, and a model-rendered footer, are rendered>` (e.g. "glowing
+hand-script neon on an in-scene surface"). For the Step 5 stamped-footer choice, also set
 `style_anchor.footer_style` (`{}` takes the defaults), then read the footer
 passage of this step's strategy reference:
 
@@ -249,9 +249,10 @@ skills/illustrations/references/strategy.md
 Anchor vs per-slide split — everything that must look identical across slides
 lives in the anchor; only the scene and the literal title vary per slide:
 
-- **Anchor**: visual style (per-format anchors), `text_treatment` (the title +
-  footer rendering style), and `embedded_footer` (the full footer text). These
-  keep every baked title/footer consistent.
+- **Anchor**: visual style (per-format anchors), `text_treatment` (the title's
+  rendering style, and a model-rendered footer's), `embedded_footer` (the full
+  footer text), and `footer_style` for a stamped footer. These keep every baked
+  title/footer consistent.
 - **Per slide**: `image_prompt` carries only the scene; `text_overlay` carries
   only the literal title string for that slide — never the text styling.
 
@@ -333,6 +334,12 @@ input deck unless `--out` is given.
 python3 "{speaker_toolkit_root}/skills/illustrations/scripts/apply-illustrations-to-deck.py" \
   deck.pptx illustrations/ outline.yaml
 ```
+
+Stdout is one JSON summary: `deck`, `updated`, `eligible`, per-slide
+`results`, and `backgrounds_manifest`; progress goes to stderr. `updated` below
+`eligible` means slides were skipped (a missing image, or past the deck's end;
+stderr names each): report them and regenerate before Phase 5 continues. A
+non-zero exit is a refusal whose fix is on stderr.
 
 If no .pptx exists yet (Phase 5 hasn't run), finish here — presentation-creator
 Phase 5 will call back into this skill at Step 12 once the deck is built.

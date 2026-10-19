@@ -55,7 +55,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from footer_stamp import reserved_strip_pct
+from footer_stamp import FooterStampError, reserved_strip_pct
 from image_lane_contract import ImageLaneError
 from image_provider import (
     ImageProviderOptions,
@@ -2424,6 +2424,19 @@ def main():
     global _cli_vault_path
     _cli_vault_path = args.vault
 
+    try:
+        _dispatch(args, lane_options)
+    except FooterStampError as exc:
+        print(
+            f"ERROR: the poster footer cannot be stamped: {exc}. Fix "
+            "style_anchor.footer_style or embedded_footer, then re-run.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
+def _dispatch(args, lane_options):
+    """Run the one action the command line named."""
     if args.edit:
         run_edit(
             args.outline, int(args.edit[0]), args.edit[1], lane_options=lane_options

@@ -687,3 +687,23 @@ def test_poster_slides_of_mixed_size_are_refused_before_any_stamp(
 
     assert "must share one size" in str(exc.value)
     assert not (illust_dir / "footer-stamped").exists()
+
+
+def test_an_unreadable_poster_image_exits_with_its_fix(
+    apply_illustrations, tmp_path, monkeypatch
+):
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    (illust_dir / "slide-02.jpg").write_bytes(b"not an image")
+    outline = _poster_outline_with_footer_style(tmp_path, "@jbaruch", {})
+    monkeypatch.setattr(
+        "sys.argv",
+        ["apply-illustrations-to-deck.py", str(deck), str(illust_dir), str(outline)],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        apply_illustrations.main()
+
+    assert "cannot read a slide image" in str(exc.value)
