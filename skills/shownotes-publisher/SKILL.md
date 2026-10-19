@@ -43,7 +43,8 @@ Set `{shownotes_repo}` to the configured site checkout; default
 `site.url` and `site.baseurl` for public URLs.
 
 Before any toolkit command, resolve `{python_path}` per
-[references/runtime.md](references/runtime.md); every toolkit command runs on it.
+[references/runtime.md](references/runtime.md); every Python toolkit command
+runs on it.
 
 ## Step 1 — Gather Context
 

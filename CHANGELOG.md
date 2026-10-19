@@ -24,11 +24,14 @@ Follow-ups from the advisory Copilot review on #457 (#458).
   owner-current database generation (a legacy one is the owner's to migrate)
   and an absolute `python_path`, re-reads the same database path, and takes the
   vault root from the locator's directory rather than the optional, possibly
-  stale `config.vault_root`. Every toolkit
+  stale `config.vault_root`. `schemas-db.md` lists it as a current reader in
+  the owner's reader contract, beside the dual readers. Every Python toolkit
   command in the skill and `references/talk-skill.md` runs on
-  `"{python_path}"`, never a bare `python3` from `PATH`;
-  `references/runtime.md` documents the contract, keeping `SKILL.md` under the
-  entrypoint token budget.
+  `"{python_path}"`, never a bare `python3` from `PATH`; shell scripts keep
+  their `bash` invocation. After a refusal the publisher hands off to
+  vault-ingress, re-runs the resolver, and resumes Step 1, or finishes when the
+  repair does not complete. `references/runtime.md` documents the contract,
+  keeping `SKILL.md` under the entrypoint token budget.
 - `check-runtime.py` gains an `outline` lane (PyYAML and Pydantic, with an
   exact `PYDANTIC_REQUIRED_VERSION` matching `pyproject.toml`):
   `outline_schema.py` imports Pydantic v2 at module load, so an interpreter

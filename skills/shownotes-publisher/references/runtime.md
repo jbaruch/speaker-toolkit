@@ -14,11 +14,16 @@ Input: optional `--database <path>`, defaulting to the documented vault locator
 
 Output: one JSON object on stdout. On `ok: true` (exit 0), set `python_path` and
 `vault_root` from it (the root is the database locator's directory, never
-`config.vault_root`); every later toolkit command in this skill and its
-references runs on `"{python_path}"`. On `ok: false` (exit 1), stop and invoke
-`Skill(skill: "vault-ingress")` with the reported `handoff` as context;
-`reason_code` and `error` name what failed. Never fall back to whichever
-`python3` is on `PATH`.
+`config.vault_root`); every later Python toolkit command in this skill and its
+references runs on `"{python_path}"`. Shell scripts keep the `bash` invocation
+their step shows.
+
+On `ok: false` (exit 1), stop and invoke `Skill(skill: "vault-ingress")` with
+the reported `handoff` as context; `reason_code` and `error` name what failed.
+When that repair returns, run the resolver again and continue with Step 1 on
+its `ok: true` result. When the repair does not complete, or the resolver
+refuses again, finish here and report the `reason_code`. Never fall back to
+whichever `python3` is on `PATH`.
 
 The checks the resolver composes, and its reason codes, are its own contract:
 see `skills/shownotes-publisher/scripts/resolve-runtime.py` (module docstring).
