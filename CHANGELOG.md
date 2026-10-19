@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.181 — 2026-10-19
+
 ### Tolerate Google Drive's post-sync metadata churn without trusting it
 
 Two generation checks failed on a Drive-backed vault when Drive touched a file's
