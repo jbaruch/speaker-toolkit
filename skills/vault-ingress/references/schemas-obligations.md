@@ -14,8 +14,9 @@ explicit disposition and the end report has been delivered.
   vault-clarification Step 2 (`session-agenda`) to resolve the seed agenda of
   a pending session. vault-profile never reads it.
 - vault-clarification claims the session it runs (`claim-session`, Step 2)
-  and counts it (`count-session`, Step 9) through the owner script. A
-  standalone session then records it through `record-session`, the same owner
+  through the owner script, and counts it with the tracking database's owner
+  `count_clarification_session` mutation (Step 9). A standalone session then
+  records it through `record-session`, the same owner
   command vault-ingress Step 9 uses with the claim token the session returned;
   the script stays the only writer.
 - Every write goes through the tracking-database io helpers: sibling lock file,
@@ -106,7 +107,7 @@ reported.
 | `offered_at` | when the offer was put to the speaker |
 | `resolved_at` | when the disposition was recorded |
 | `return_condition` | the speaker's words for when a deferred offer is raised again; null otherwise |
-| `session` | null, or `{state: pending \| running \| completed, completed_at, profile_inputs, profile_refreshed, claim_token, claimed_at, counted_sessions}` once accepted; `profile_inputs` is `changed` or `unchanged` as the session reported it; `claim_token` and `claimed_at` name the claim a host holds (`claim-session`); `counted_sessions` is the `config.clarification_sessions_completed` value this session counts to (`count-session`), or null before it is counted |
+| `session` | null, or `{state: pending \| running \| completed, completed_at, profile_inputs, profile_refreshed, claim_token, claimed_at}` once accepted; `profile_inputs` is `changed` or `unchanged` as the session reported it; `claim_token` and `claimed_at` name the claim a host holds (`claim-session`) |
 
 | State | Meaning | Set by |
 |---|---|---|
@@ -125,8 +126,9 @@ null otherwise; `session` is an object only for `accepted`, with
 `completed` and null otherwise. A `running` session carries a 32-hex-digit
 `claim_token` and its `claimed_at`; a `pending` one carries neither; a
 `completed` one keeps the claim it completed under, or neither when it
-completed before claims existed. `counted_sessions` is a positive integer or
-null in every state, and a release keeps it. `offer_mode` is the one the recorded
+completed before claims existed. Whether a session was counted is the tracking
+database's fact, not the ledger's: its run id in
+`config.clarification_counted_runs`. `offer_mode` is the one the recorded
 talks give (`run-obligations.py` `offer_mode_for`), and the state is
 `not_applicable` exactly when that mode is `none`.
 
@@ -134,7 +136,8 @@ Transitions: `owed → offered → accepted | declined | deferred`; an accepted
 session goes `pending → running` through `claim-session`, back to `pending`
 through `release-session` (the operator's decision that the claim's host will
 not finish), and `running → completed` through `record-session` under the
-same claim once `count-session` has counted it; a `deferred`
+same claim once the owner `count_clarification_session` mutation has counted
+its run; a `deferred`
 offer is the one answer that can be given again, `deferred → accepted |
 declined | deferred`, when the speaker's return condition is met — the report
 may already be delivered by then, and a session accepted afterwards is still
@@ -208,9 +211,8 @@ special file is `report_unreadable`.
 | `record-offer --run-id --now [--topic ...] [--topics-from]` | downstream `completed`; state `owed` | refreshes recency, then `offered` with `topics` and `offered: true`; or, with no analyzed talk left, `not_applicable` and `offered: false` |
 | `record-disposition --run-id --now --disposition ... [--return-condition \| --return-condition-from]` | state `offered` or `deferred`; `deferred` needs a non-blank return condition | the disposition; `accepted` opens a pending session |
 | `claim-session --run-id --now [--claim-token]` | state `accepted`, session `pending`; a `running` session refuses (`session_claimed`) unless `--claim-token` names its claim, which is a replay | session `running` with a new `claim_token`, returned as `claim_token` |
-| `count-session --run-id --now --claim-token` | session `running` under that claim (`session_claimed` otherwise) | records `counted_sessions` on the first call; returns `counted_sessions` and `mutation`, the owner `set_config` write that moves `config.clarification_sessions_completed` to it, or null once the database holds it; a counter moved by another writer refuses (`counter_conflict`) |
-| `release-session --run-id --now (--reason \| --reason-from)` | session `running`; `pending` is a replay | session `pending` without a claim, `counted_sessions` kept; returns the released claim |
-| `record-session --run-id --now --claim-token --profile-inputs changed\|unchanged [--profile-refreshed]` | session `running` under that claim (`session_claimed` otherwise), counted, and the database at the counted value (`session_not_counted` otherwise); `changed` with `{vault_root}/speaker-profile.json` present needs `--profile-refreshed` (`profile_refresh_required` otherwise) | session `completed` with both flags recorded |
+| `release-session --run-id --now --claim-token (--reason \| --reason-from)` | session `running` under the named claim; another claim refuses (`session_claimed`), so a retry never frees a claim taken since; `pending` is a replay | session `pending` without a claim; returns the released claim |
+| `record-session --run-id --now --claim-token --profile-inputs changed\|unchanged [--profile-refreshed]` | session `running` under that claim (`session_claimed` otherwise), and its run in `config.clarification_counted_runs` (`session_not_counted` otherwise); `changed` with `{vault_root}/speaker-profile.json` present needs `--profile-refreshed` (`profile_refresh_required` otherwise) | session `completed` with both flags recorded |
 | `record-report --run-id --now --report-file` | downstream `completed`; clarification resolved; non-empty file | copies the report, binds its digest, sets `completed_at` |
 | `dismiss --run-id --now (--reason \| --reason-from)` | the ledger is adopted; the run has no record and is listed as `unrecorded_run` | records the exact facts listed now as deliberately not opened; a run listed again after an earlier dismissal renews that entry, adding the new facts (`renewed: true`); with nothing new listed, the same reason is a replay and another reason is refused |
 
@@ -246,7 +248,7 @@ which can echo the rejected key or value. Reason codes: `invalid_arguments`,
 `invalid_timestamp`,
 `database_unusable`, `vault_root_changed`, `ledger_not_adopted`, `talk_not_found`,
 `talk_not_persisted`, `run_not_found`, `invalid_transition`,
-`session_claimed`, `session_not_counted`, `counter_conflict`,
+`session_claimed`, `session_not_counted`,
 `profile_refresh_required`, `report_unreadable`,
 `report_empty`,
 `report_copy_failed`, `ledger_unreadable`, `ledger_invalid`,
@@ -344,8 +346,8 @@ generation check as every owner write, read-only commands included, before the
 command continues; an older record never outlives the first command to read it.
 
 Run-record schema 2 predates session claims. Every command reads a schema-2
-record as schema 3, a session it carries gaining a null `claim_token`,
-`claimed_at`, and `counted_sessions` (`_upgrade_session_claim`): a pending
+record as schema 3, a session it carries gaining a null `claim_token` and
+`claimed_at` (`_upgrade_session_claim`): a pending
 session stays claimable, and one completed before claims stays completed.
 
 The ledger is a gate store, and it claims the `rules/stateful-artifacts.md`

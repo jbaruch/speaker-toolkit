@@ -16,7 +16,12 @@ import sys
 
 import pytest
 
-from conftest import CURRENT_ROOT_SCHEMA_VERSION, SCRIPTS_VI, current_tracking_config
+from conftest import (
+    CURRENT_ROOT_SCHEMA_VERSION,
+    SCRIPTS_VI,
+    _import_script,
+    current_tracking_config,
+)
 
 SCRIPT = os.path.join(SCRIPTS_VI, "run-obligations.py")
 TALK_SCHEMA_VERSION = 8
@@ -237,11 +242,24 @@ def _record_report(database: Path, run_id: str, report: Path, now: str = LATER):
     )
 
 
-def _set_counter(database: Path, value: int) -> None:
-    """Apply a counter write the way vault-clarification's set_config would."""
+def _count_session(database: Path, run_id: str) -> None:
+    """Apply the owner count_clarification_session mutation for one run."""
+    mutate = _import_script(
+        os.path.join(SCRIPTS_VI, "mutate-tracking-database.py"),
+        "mutate_tracking_database",
+    )
     data = json.loads(database.read_text(encoding="utf-8"))
-    data["config"]["clarification_sessions_completed"] = value
-    database.write_text(json.dumps(data), encoding="utf-8")
+    config = data["config"]
+    expect = (
+        config["clarification_sessions_completed"]
+        if "clarification_sessions_completed" in config
+        else {"$missing": True}
+    )
+    candidate, _changes = mutate.build_candidate(
+        data,
+        [{"kind": "count_clarification_session", "run_id": run_id, "expect": expect}],
+    )
+    database.write_text(json.dumps(candidate), encoding="utf-8")
 
 
 def _session_token(database: Path, run_id: str, now: str = NOW) -> str:
@@ -259,18 +277,7 @@ def _session_token(database: Path, run_id: str, now: str = NOW) -> str:
     token = _ok(database, "claim-session", "--run-id", run_id, "--now", now)[
         "claim_token"
     ]
-    counted = _ok(
-        database,
-        "count-session",
-        "--run-id",
-        run_id,
-        "--now",
-        now,
-        "--claim-token",
-        token,
-    )
-    if counted["mutation"] is not None:
-        _set_counter(database, counted["mutation"]["value"])
+    _count_session(database, run_id)
     return token
 
 
@@ -624,7 +631,6 @@ def test_a_disposition_needs_a_recorded_offer(fresh_db):
                 "profile_refreshed": None,
                 "claim_token": None,
                 "claimed_at": None,
-                "counted_sessions": None,
             },
         ),
     ],
@@ -783,7 +789,6 @@ def test_the_session_completes_once_and_only_after_acceptance(fresh_db):
         "profile_refreshed": True,
         "claim_token": _session_token(fresh_db, run_id),
         "claimed_at": NOW,
-        "counted_sessions": 1,
     }
     assert _ok(fresh_db, "pending")["pending"][0]["next_action"] == "deliver_end_report"
     twice = _refused(
@@ -869,7 +874,6 @@ def test_a_session_completes_without_a_refresh_when_none_is_owed(
         "profile_refreshed": False,
         "claim_token": _session_token(fresh_db, run_id),
         "claimed_at": NOW,
-        "counted_sessions": 1,
     }
 
 
@@ -1752,7 +1756,6 @@ def test_session_agenda_returns_the_accepted_session_with_its_topics(fresh_db):
         "profile_refreshed": None,
         "claim_token": None,
         "claimed_at": None,
-        "counted_sessions": None,
     }
 
 
@@ -2007,7 +2010,6 @@ _SESSION_DONE = {
     "profile_refreshed": True,
     "claim_token": "c" * 32,
     "claimed_at": NOW,
-    "counted_sessions": 1,
 }
 _PENDING_SESSION = {
     "state": "pending",
@@ -2016,7 +2018,6 @@ _PENDING_SESSION = {
     "profile_refreshed": None,
     "claim_token": None,
     "claimed_at": None,
-    "counted_sessions": None,
 }
 _RUNNING_SESSION = {
     **_PENDING_SESSION,
@@ -2244,13 +2245,6 @@ _ACCEPTED = {
         (
             {
                 **_ACCEPTED,
-                "clarification.session": {**_PENDING_SESSION, "counted_sessions": 0},
-            },
-            "counted_sessions must be a positive integer or null",
-        ),
-        (
-            {
-                **_ACCEPTED,
                 "clarification.session": {
                     key: value
                     for key, value in _PENDING_SESSION.items()
@@ -2324,7 +2318,6 @@ _ACCEPTED = {
         "claim-token-case",
         "running-without-stamp",
         "claim-on-pending",
-        "counted-zero",
         "session-claim-keys",
     ],
 )
@@ -3282,19 +3275,6 @@ def _claim_token(database: Path, run_id: str = "run-x", now: str = NOW) -> str:
     return payload["claim_token"]
 
 
-def _count(database: Path, token: str, run_id: str = "run-x", now: str = NOW):
-    return _ok(
-        database,
-        "count-session",
-        "--run-id",
-        run_id,
-        "--now",
-        now,
-        "--claim-token",
-        token,
-    )
-
-
 def _record(database: Path, token: str, run_id: str = "run-x", now: str = LATER):
     return _run(
         database,
@@ -3364,19 +3344,9 @@ def test_a_session_is_recorded_only_by_its_claim_after_its_count(fresh_db):
     code, uncounted, _stderr = _record(fresh_db, token)
     assert code == 2 and uncounted is not None
     assert uncounted["reason_code"] == "session_not_counted"
+    assert "count_clarification_session" in uncounted["error"]
 
-    counted = _count(fresh_db, token)
-    assert counted["mutation"] == {
-        "kind": "set_config",
-        "path": ["clarification_sessions_completed"],
-        "expect": {"$missing": True},
-        "value": 1,
-    }
-    code, unapplied, _stderr = _record(fresh_db, token)
-    assert code == 2 and unapplied is not None
-    assert unapplied["reason_code"] == "session_not_counted"
-
-    _set_counter(fresh_db, 1)
+    _count_session(fresh_db, "run-x")
     code, other, _stderr = _record(fresh_db, "d" * 32)
     assert code == 2 and other is not None
     assert other["reason_code"] == "session_claimed"
@@ -3389,18 +3359,15 @@ def test_a_session_is_recorded_only_by_its_claim_after_its_count(fresh_db):
     assert replay is not None and replay["replayed"] is True
 
 
-@pytest.mark.parametrize("applied_before_crash", [True, False])
+@pytest.mark.parametrize("counted_before_crash", [True, False])
 def test_a_session_re_entered_after_a_crash_counts_once(
-    tmp_path, fresh_db, applied_before_crash
+    tmp_path, fresh_db, counted_before_crash
 ):
-    """The host dies between counting and recording; the operator releases it."""
+    """The host dies before recording; the operator frees its named claim."""
     _accepted(fresh_db)
-    _set_counter(fresh_db, 4)
     first = _claim_token(fresh_db)
-    counted = _count(fresh_db, first)
-    assert counted["mutation"]["expect"] == 4 and counted["mutation"]["value"] == 5
-    if applied_before_crash:
-        _set_counter(fresh_db, 5)
+    if counted_before_crash:
+        _count_session(fresh_db, "run-x")
 
     reason = tmp_path / "reason.txt"
     reason.write_text("the laptop died mid-session\n", encoding="utf-8")
@@ -3411,54 +3378,42 @@ def test_a_session_re_entered_after_a_crash_counts_once(
         "run-x",
         "--now",
         LATER,
+        "--claim-token",
+        first,
         "--reason-from",
         str(reason),
     )
     assert released["released"]["claim_token"] == first
     session = released["run"]["clarification"]["session"]
-    assert (session["state"], session["claim_token"], session["counted_sessions"]) == (
-        "pending",
-        None,
-        5,
-    )
+    assert (session["state"], session["claim_token"]) == ("pending", None)
 
     second = _claim_token(fresh_db, now=LATER)
     assert second != first
-    recount = _count(fresh_db, second, now=LATER)
-    assert recount["counted_sessions"] == 5
-    if applied_before_crash:
-        assert recount["mutation"] is None
-    else:
-        assert recount["mutation"]["expect"] == 4
-        _set_counter(fresh_db, recount["mutation"]["value"])
-    assert _counter(fresh_db) == 5
+    # The re-entered session counts again; the owner keys the count on the run.
+    _count_session(fresh_db, "run-x")
+    assert _counter(fresh_db) == 1
     code, stale, _stderr = _record(fresh_db, first)
     assert code == 2 and stale is not None
     assert stale["reason_code"] == "session_claimed"
     code, _recorded, stderr = _record(fresh_db, second)
     assert code == 0, stderr
-    assert _counter(fresh_db) == 5
+    assert _counter(fresh_db) == 1
 
 
-def test_a_counter_another_writer_moved_is_a_conflict(fresh_db):
-    _accepted(fresh_db)
-    token = _claim_token(fresh_db)
-    _count(fresh_db, token)
-    _set_counter(fresh_db, 3)
-    refused = _refused(
-        fresh_db,
-        "count-session",
-        "--run-id",
-        "run-x",
-        "--now",
-        LATER,
-        "--claim-token",
-        token,
-    )
-    assert refused["reason_code"] == "counter_conflict"
+def test_two_sessions_counted_together_count_twice(fresh_db):
+    """Two hosts each read the same counter; neither count is lost."""
+    _accepted(fresh_db, "run-a")
+    _accepted(fresh_db, "run-b")
+    _count_session(fresh_db, "run-a")
+    _count_session(fresh_db, "run-b")
+    assert _counter(fresh_db) == 2
+    for run_id in ("run-a", "run-b"):
+        token = _claim_token(fresh_db, run_id)
+        code, _recorded, stderr = _record(fresh_db, token, run_id)
+        assert code == 0, stderr
 
 
-def test_a_release_needs_a_reason_and_only_frees_a_running_claim(fresh_db):
+def test_a_release_names_the_claim_it_frees(fresh_db):
     _accepted(fresh_db)
     pending = _ok(
         fresh_db,
@@ -3467,21 +3422,42 @@ def test_a_release_needs_a_reason_and_only_frees_a_running_claim(fresh_db):
         "run-x",
         "--now",
         NOW,
+        "--claim-token",
+        "0" * 32,
         "--reason",
         "nothing to free",
     )
     assert pending["replayed"] is True and pending["released"] is None
-    _claim(fresh_db)
+    token = _claim_token(fresh_db)
     unexplained = _refused(
-        fresh_db, "release-session", "--run-id", "run-x", "--now", NOW
+        fresh_db,
+        "release-session",
+        "--run-id",
+        "run-x",
+        "--now",
+        NOW,
+        "--claim-token",
+        token,
     )
     assert unexplained["reason_code"] == "invalid_arguments"
-    assert (
-        _ok(fresh_db, "status", "--run-id", "run-x")["run"]["clarification"]["session"][
-            "state"
-        ]
-        == "running"
+    # A retry after a lost response must not free a claim another host took.
+    stale = _refused(
+        fresh_db,
+        "release-session",
+        "--run-id",
+        "run-x",
+        "--now",
+        NOW,
+        "--claim-token",
+        "e" * 32,
+        "--reason",
+        "the host died",
     )
+    assert stale["reason_code"] == "session_claimed"
+    session = _ok(fresh_db, "status", "--run-id", "run-x")["run"]["clarification"][
+        "session"
+    ]
+    assert (session["state"], session["claim_token"]) == ("running", token)
 
 
 def test_a_schema_2_session_is_upgraded_and_rewritten_on_read(tmp_path, fresh_db):

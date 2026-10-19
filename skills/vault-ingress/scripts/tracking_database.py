@@ -20,6 +20,7 @@ from artifact_locator import ArtifactLocatorError, classify_artifact_locator
 from queue_claim_contract import (
     QueueClaimContractError,
     classify_queue_claim_versions,
+    require_queue_identifier,
     validate_queue_claim_database,
 )
 from pptx_discovery_contract import (
@@ -57,6 +58,14 @@ PRE_PROVIDER_AUTO_TALK_RECORD_SCHEMA_VERSION = 7
 TALK_RECORD_SCHEMA_VERSION = 8
 LEGACY_CONFIG_RECORD_SCHEMA_VERSION = 1
 CONFIG_RECORD_SCHEMA_VERSION = 2
+# The completed-session counter, and the run ids of the ledger sessions it
+# already includes (#466). The owner's count_clarification_session mutation
+# advances one and appends to the other in the same write, so a session counts
+# once however often it is re-entered. Both optional: absent means zero and
+# none. The config record is open; only these and the PPTX exclusions are
+# validated.
+CLARIFICATION_SESSIONS_FIELD = "clarification_sessions_completed"
+CLARIFICATION_COUNTED_RUNS_FIELD = "clarification_counted_runs"
 LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION = 1
 PPTX_CATALOG_EVIDENCE_BOUND_RECORD_SCHEMA_VERSION = 2
 PPTX_CATALOG_RECORD_SCHEMA_VERSION = 3
@@ -838,12 +847,49 @@ def _require_string_array(
         seen.add(item)
 
 
+def _validate_clarification_counter(config: Mapping[str, object]) -> None:
+    if CLARIFICATION_SESSIONS_FIELD in config:
+        value = config[CLARIFICATION_SESSIONS_FIELD]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise TrackingDatabaseError(
+                f"config.{CLARIFICATION_SESSIONS_FIELD} must be a non-negative integer"
+            )
+    if CLARIFICATION_COUNTED_RUNS_FIELD not in config:
+        return
+    runs = config[CLARIFICATION_COUNTED_RUNS_FIELD]
+    label = f"config.{CLARIFICATION_COUNTED_RUNS_FIELD}"
+    if not isinstance(runs, list):
+        raise TrackingDatabaseError(f"{label} must be an array of run ids")
+    seen: set[str] = set()
+    for position, run_id in enumerate(runs):
+        try:
+            require_queue_identifier(run_id, f"{label}[{position}]")
+        except QueueClaimContractError as exc:
+            raise TrackingDatabaseError(str(exc)) from exc
+        if run_id in seen:
+            raise TrackingDatabaseError(f"{label} counts run {run_id!r} twice")
+        seen.add(run_id)
+    counter = config.get(CLARIFICATION_SESSIONS_FIELD, 0)
+    if isinstance(counter, int) and len(seen) > counter:
+        raise TrackingDatabaseError(
+            f"{label} names {len(seen)} counted sessions but "
+            f"config.{CLARIFICATION_SESSIONS_FIELD} is {counter}"
+        )
+
+
+def counted_clarification_runs(config: Mapping[str, object]) -> frozenset[str]:
+    """Run ids whose ledger session the session counter already includes."""
+    runs = config.get(CLARIFICATION_COUNTED_RUNS_FIELD, [])
+    return frozenset(runs) if isinstance(runs, list) else frozenset()
+
+
 def _validate_config_record(
     config: Mapping[str, object],
     *,
     version: int,
 ) -> None:
-    """Validate the owner-versioned PPTX discovery configuration."""
+    """Validate the owner-versioned config fields an owner script relies on."""
+    _validate_clarification_counter(config)
     if version == CONFIG_RECORD_SCHEMA_VERSION and (
         "pptx_directory_exclusions" not in config
     ):

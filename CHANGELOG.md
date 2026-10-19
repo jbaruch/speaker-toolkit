@@ -9,27 +9,30 @@ Two session-lifecycle gaps Copilot raised on PR #465, deferred to #466:
   session and both write the tracking database before either reached
   `record-session`. The new `claim-session` reserves the session (`running`,
   with a random `claim_token` and `claimed_at`); vault-clarification Step 2
-  claims what `session-agenda` selected, `session-agenda` lists claimed
-  sessions under `running_sessions` and never selects them, and a named
-  claimed run refuses as `session_claimed`. `record-session` now requires
-  `--claim-token` and closes only the claim it names. `release-session`, with a
-  reason, is the operator's explicit decision to free the claim of a host that
-  died.
+  claims what `session-agenda` selected and stops when another host holds a
+  session, `session-agenda` lists claimed sessions under `running_sessions` and
+  never selects them, and a named claimed run refuses as `session_claimed`.
+  `record-session` now requires `--claim-token` and closes only the claim it
+  names. `release-session --claim-token`, with a reason, is the operator's
+  explicit decision to free that one claim; a retry after a lost response can
+  never free a claim another host took since.
 - `config.clarification_sessions_completed` advanced before the ledger session
   closed, so a session re-entered after a crash, or after a
-  `profile_refresh_required` that never returned, counted twice. The new
-  `count-session` pins the value the session counts to as `counted_sessions` in
-  the ledger and returns the exact owner `set_config` mutation that moves the
-  counter there, or null once the database holds it. A release keeps
-  `counted_sessions`, so the next claim's count finds the work already done;
-  `record-session` refuses (`session_not_counted`) until the database holds the
-  count, and a counter some other writer moved refuses (`counter_conflict`).
-  The counter lives in the ledger, so the config record keeps schema 2.
-- Run records move to schema 3. A schema-2 record reads as schema 3 with null
-  claim fields and is rewritten on that read, the same owner path schema 1 took.
-  `schemas-obligations.md`, `clarification-handoff.md` and vault-clarification
-  Steps 2 and 9 carry the new commands; the ingress handoff records the session
-  with the `claim_token` the clarification session returns.
+  `profile_refresh_required` that never returned, counted twice. A first
+  attempt pinned the counter target in the ledger, but a counter value cannot
+  say whose increment landed: two sessions pinning the same target let the
+  loser's retry read the winner's increment as its own. The count is now an
+  owner mutation, `count_clarification_session`, that advances the counter and
+  appends the run id to the new optional `config.clarification_counted_runs` in
+  one tracking-database write. A run already counted changes nothing, two runs
+  always count twice, and `record-session` refuses (`session_not_counted`) until
+  the run is listed. The owner validates both fields on every read; the config
+  record is open, so it keeps schema 2.
+- Run records move to schema 3 (the claim fields). A schema-2 record reads as
+  schema 3 with null claim fields and is rewritten on that read, the same owner
+  path schema 1 took. `schemas-obligations.md`, `schemas-db.md`,
+  `schemas-config.md`, `clarification-handoff.md` and vault-clarification
+  Steps 2 and 9 carry the new contract.
 
 ## 0.20.186 — 2026-10-20
 

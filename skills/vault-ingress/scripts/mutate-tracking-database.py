@@ -21,6 +21,8 @@ import sys
 from typing import Any, Mapping, NoReturn
 
 from tracking_database import (
+    CLARIFICATION_COUNTED_RUNS_FIELD,
+    CLARIFICATION_SESSIONS_FIELD,
     CONFIG_RECORD_SCHEMA_VERSION,
     CONFIRMED_INTENT_OPTIONAL_FIELDS,
     CONFIRMED_INTENT_RECORD_SCHEMA_VERSION,
@@ -764,6 +766,68 @@ def _apply_set_config(
         identity=".".join(path),
         before=before,
         after=after,
+    )
+
+
+def _apply_count_clarification_session(
+    database: dict[str, Any],
+    mutation: dict[str, Any],
+    changes: list[dict[str, Any]],
+    *,
+    index: int,
+) -> None:
+    """Count one ledger clarification session toward the session counter (#466).
+
+    The counter advances and the session's `run_id` joins
+    `config.clarification_counted_runs` in this one owner write. A run already
+    counted changes nothing, whatever `expect` says, so a session re-entered
+    after a crash never counts twice; two sessions always count twice, the
+    second's stale `expect` refusing until it re-reads. `expect` is the counter
+    value the plan saw, or the missing marker when it was absent.
+    """
+    label = f"mutations[{index}]"
+    _require_keys(
+        mutation,
+        required={"kind", "run_id", "expect"},
+        optional=set(),
+        label=label,
+    )
+    run_id = _nonempty(mutation["run_id"], f"{label}.run_id")
+    if any(character.isspace() for character in run_id):
+        raise TrackingDatabaseMutationError(
+            f"{label}.run_id {run_id!r} contains whitespace — use the ledger run id"
+        )
+    config = database.setdefault("config", {})
+    if not isinstance(config, dict):
+        raise TrackingDatabaseMutationError("database config must be an object")
+    counted = config.get(CLARIFICATION_COUNTED_RUNS_FIELD, [])
+    if not isinstance(counted, list):
+        raise TrackingDatabaseMutationError(
+            f"config.{CLARIFICATION_COUNTED_RUNS_FIELD} must be an array of run ids"
+        )
+    if run_id in counted:
+        return
+    exists = CLARIFICATION_SESSIONS_FIELD in config
+    before = config.get(CLARIFICATION_SESSIONS_FIELD, MISSING_MARKER)
+    _expect_value(
+        exists=exists,
+        actual=before,
+        expected=mutation["expect"],
+        label=f"{label}.expect",
+    )
+    current = before if exists else 0
+    if isinstance(current, bool) or not isinstance(current, int) or current < 0:
+        raise TrackingDatabaseMutationError(
+            f"config.{CLARIFICATION_SESSIONS_FIELD} must be a non-negative integer"
+        )
+    config[CLARIFICATION_SESSIONS_FIELD] = current + 1
+    config[CLARIFICATION_COUNTED_RUNS_FIELD] = [*counted, run_id]
+    _record_change(
+        changes,
+        kind="count_clarification_session",
+        identity=run_id,
+        before={CLARIFICATION_SESSIONS_FIELD: before},
+        after={CLARIFICATION_SESSIONS_FIELD: current + 1},
     )
 
 
@@ -2021,6 +2085,10 @@ def build_candidate(
             )
         if kind == "set_config":
             _apply_set_config(candidate, mutation, changes, index=index)
+        elif kind == "count_clarification_session":
+            _apply_count_clarification_session(
+                candidate, mutation, changes, index=index
+            )
         elif kind in COLLECTION_IDENTITIES:
             _apply_collection_upsert(candidate, mutation, changes, index=index)
         elif kind == "record_pptx":

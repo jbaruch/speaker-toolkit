@@ -2582,3 +2582,62 @@ def test_a_legacy_talk_record_can_still_carry_provenance(
 
     assert candidate["date_provenance"][0]["talk_filename"] == "talk.md"
     assert candidate["talks"][0]["schema_version"] == 1
+
+
+# A ledger clarification session counted once per run (#466).
+
+
+def _count(run_id: str, expect: Any) -> dict[str, Any]:
+    return {"kind": "count_clarification_session", "run_id": run_id, "expect": expect}
+
+
+def test_a_counted_session_advances_the_counter_and_records_its_run(
+    mutate_tracking_database,
+) -> None:
+    candidate, changes = mutate_tracking_database.build_candidate(
+        _base_database(), [_count("run-a", {"$missing": True})]
+    )
+    assert candidate["config"]["clarification_sessions_completed"] == 1
+    assert candidate["config"]["clarification_counted_runs"] == ["run-a"]
+    assert changes[0]["kind"] == "count_clarification_session"
+    assert changes[0]["identity"] == "run-a"
+
+
+def test_a_run_counted_already_counts_nothing_whatever_it_expects(
+    mutate_tracking_database,
+) -> None:
+    """A session re-entered after a crash replays its count."""
+    counted, _ = mutate_tracking_database.build_candidate(
+        _base_database(), [_count("run-a", {"$missing": True})]
+    )
+    replay, changes = mutate_tracking_database.build_candidate(
+        counted, [_count("run-a", {"$missing": True})]
+    )
+    assert replay == counted
+    assert changes == []
+
+
+def test_two_runs_count_twice_and_a_stale_expect_refuses(
+    mutate_tracking_database,
+) -> None:
+    """Two hosts read the same counter; the second must re-read, never merge."""
+    first, _ = mutate_tracking_database.build_candidate(
+        _base_database(), [_count("run-a", {"$missing": True})]
+    )
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError, match="expect"
+    ):
+        mutate_tracking_database.build_candidate(
+            first, [_count("run-b", {"$missing": True})]
+        )
+    second, _ = mutate_tracking_database.build_candidate(first, [_count("run-b", 1)])
+    assert second["config"]["clarification_sessions_completed"] == 2
+    assert second["config"]["clarification_counted_runs"] == ["run-a", "run-b"]
+
+
+@pytest.mark.parametrize("run_id", ["", "run a", None])
+def test_a_count_needs_a_ledger_run_id(mutate_tracking_database, run_id) -> None:
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(
+            _base_database(), [_count(run_id, {"$missing": True})]
+        )

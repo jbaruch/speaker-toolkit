@@ -27,10 +27,9 @@ Usage:
         [--return-condition <text> | --return-condition-from <file>]
     run-obligations.py <tracking-database.json> claim-session \
         --run-id <id> --now <ISO-8601> [--claim-token <token>]
-    run-obligations.py <tracking-database.json> count-session \
-        --run-id <id> --now <ISO-8601> --claim-token <token>
     run-obligations.py <tracking-database.json> release-session \
-        --run-id <id> --now <ISO-8601> (--reason <text> | --reason-from <file>)
+        --run-id <id> --now <ISO-8601> --claim-token <token> \
+        (--reason <text> | --reason-from <file>)
     run-obligations.py <tracking-database.json> record-session \
         --run-id <id> --now <ISO-8601> --claim-token <token> \
         --profile-inputs changed|unchanged [--profile-refreshed]
@@ -70,10 +69,10 @@ offer with the speaker's return condition, so it can be raised again.
 has not completed, with the topics recorded at the offer as its seed agenda,
 selected here (see ``pending_sessions``) so the session never picks one by
 hand. ``claim-session`` reserves that session for one host and returns the
-claim token every later session command carries; ``count-session`` pins the
-``config.clarification_sessions_completed`` value the session counts to, so a
-session re-entered after a crash never counts twice; ``release-session`` is the
-operator's explicit decision to free a claim whose host died. Field
+claim token every later session command carries; ``record-session`` closes it
+only once the tracking database's owner ``count_clarification_session``
+mutation has counted its run; ``release-session`` is the operator's explicit
+decision to free one named claim whose host died. Field
 meanings, transitions, and the reader/writer contract live in
 ``skills/vault-ingress/references/schemas-obligations.md``.
 
@@ -107,6 +106,7 @@ from queue_claim_contract import (
 )
 from tracking_database import (
     TrackingDatabaseError,
+    counted_clarification_runs,
     require_current_tracking_database,
 )
 from tracking_database_io import (
@@ -213,10 +213,7 @@ SESSION_STATES = frozenset({SESSION_PENDING, SESSION_RUNNING, SESSION_COMPLETED}
 # A claim token is this many random bytes, hex-encoded; it names one claim.
 CLAIM_TOKEN_BYTES = 16
 _CLAIM_TOKEN = re.compile(rf"[0-9a-f]{{{CLAIM_TOKEN_BYTES * 2}}}")
-# The tracking-database config counter a completed session advances; absent
-# means no session has completed. The owner mutation's missing marker.
-SESSION_COUNTER_FIELD = "clarification_sessions_completed"
-MISSING_MARKER = {"$missing": True}
+
 DOWNSTREAM_OWED = "owed"
 DOWNSTREAM_COMPLETED = "completed"
 REPORT_OWED = "owed"
@@ -561,8 +558,7 @@ def _validate_session_claim(session: dict[str, Any], state: str, label: str) -> 
     """A running session holds a claim; a pending one holds none.
 
     A completed session keeps the claim it completed under, or none when it
-    completed before claims existed. ``counted_sessions`` survives a release, so
-    a re-entered session finds the count it already made.
+    completed before claims existed.
     """
     token = session["claim_token"]
     claimed = state == SESSION_RUNNING or (
@@ -578,9 +574,6 @@ def _validate_session_claim(session: dict[str, Any], state: str, label: str) -> 
     else:
         _require_null(token, f"{label}.claim_token")
         _require_null(session["claimed_at"], f"{label}.claimed_at")
-    counted = session["counted_sessions"]
-    if counted is not None and (type(counted) is not int or counted < 1):
-        raise _invalid(label, "counted_sessions must be a positive integer or null")
 
 
 def _validate_clarification(record: Any, label: str) -> None:
@@ -637,7 +630,6 @@ def _validate_clarification(record: Any, label: str) -> None:
             "profile_refreshed",
             "claim_token",
             "claimed_at",
-            "counted_sessions",
         ),
         f"{label}.session",
     )
@@ -798,7 +790,7 @@ def _upgrade_session_claim(run: dict[str, Any]) -> None:
     clarification = run.get("clarification")
     session = clarification.get("session") if isinstance(clarification, dict) else None
     if isinstance(session, dict):
-        for key in ("claim_token", "claimed_at", "counted_sessions"):
+        for key in ("claim_token", "claimed_at"):
             session.setdefault(key, None)
 
 
@@ -1719,7 +1711,6 @@ def command_record_disposition(
                 "profile_refreshed": None,
                 "claim_token": None,
                 "claimed_at": None,
-                "counted_sessions": None,
             }
             if disposition == STATE_ACCEPTED
             else None
@@ -1758,31 +1749,6 @@ def _require_claim(run: dict[str, Any], session: dict[str, Any], token: str) -> 
         )
 
 
-def _session_counter(context: Context) -> tuple[int, Any]:
-    """The counter's value and the ``expect`` a write over it carries."""
-    config = context.database["config"]
-    if SESSION_COUNTER_FIELD not in config:
-        return 0, MISSING_MARKER
-    value = config[SESSION_COUNTER_FIELD]
-    if type(value) is not int or value < 0:
-        raise RunObligationsError(
-            f"config.{SESSION_COUNTER_FIELD} in {context.database_path} is not a "
-            "non-negative integer; repair it through vault-ingress Step 1",
-            reason_code="database_unusable",
-        )
-    return value, value
-
-
-def _counter_write(expect: Any, target: int) -> dict[str, Any]:
-    """The owner ``set_config`` mutation that moves the counter to ``target``."""
-    return {
-        "kind": "set_config",
-        "path": [SESSION_COUNTER_FIELD],
-        "expect": expect,
-        "value": target,
-    }
-
-
 def command_claim_session(context: Context, args: argparse.Namespace) -> dict[str, Any]:
     """Reserve the accepted session for one host; the token names the claim."""
 
@@ -1815,50 +1781,14 @@ def command_claim_session(context: Context, args: argparse.Namespace) -> dict[st
     return _transition(context, args, mutate)
 
 
-def command_count_session(context: Context, args: argparse.Namespace) -> dict[str, Any]:
-    """Pin the counter value this session counts to; say whether to apply it.
-
-    The first call records ``config.clarification_sessions_completed + 1`` as
-    the session's ``counted_sessions``. Every call answers ``mutation``: the
-    owner ``set_config`` write that moves the counter to that target while the
-    database still holds the value before it, or null once it holds the target.
-    A session re-entered after a crash therefore counts once.
-    """
-
-    def mutate(run: dict[str, Any], _stamp: str, _now: datetime) -> dict[str, Any]:
-        session = _accepted_session(run)
-        _require_claim(run, session, args.claim_token)
-        current, expect = _session_counter(context)
-        target = session["counted_sessions"]
-        if target is None:
-            session["counted_sessions"] = current + 1
-            return {
-                "counted_sessions": current + 1,
-                "mutation": _counter_write(expect, current + 1),
-            }
-        if current == target - 1:
-            return {
-                "counted_sessions": target,
-                "mutation": _counter_write(expect, target),
-                "replayed": True,
-            }
-        if current == target:
-            return {"counted_sessions": target, "mutation": None, "replayed": True}
-        raise RunObligationsError(
-            f"run {run['run_id']!r} session counts to {target}, but "
-            f"config.{SESSION_COUNTER_FIELD} is {current}; another writer moved "
-            "the counter, so set it by hand to the number of completed sessions "
-            "and re-run",
-            reason_code="counter_conflict",
-        )
-
-    return _transition(context, args, mutate)
-
-
 def command_release_session(
     context: Context, args: argparse.Namespace
 ) -> dict[str, Any]:
-    """Free a running session's claim: the operator's decision its host died."""
+    """Free one named claim: the operator's decision that its host died.
+
+    The claim to free is named by its token, so a retry after a lost response
+    can never free a claim another host took in between.
+    """
     reason = " ".join(
         [(args.reason or "").strip()] + _lines_from(args.reason_from, "--reason-from")
     ).strip()
@@ -1878,6 +1808,13 @@ def command_release_session(
                 f"run {run['run_id']!r} session is {session['state']!r}; only a "
                 "running session has a claim to release",
                 reason_code="invalid_transition",
+            )
+        if args.claim_token != session["claim_token"]:
+            raise RunObligationsError(
+                f"run {run['run_id']!r} session is running under a different claim "
+                f"since {session['claimed_at']}, not the one named; read its "
+                "claim_token from status --run-id before releasing it",
+                reason_code="session_claimed",
             )
         released = {
             "claim_token": session["claim_token"],
@@ -1916,12 +1853,11 @@ def command_record_session(
                 detail += " under another claim"
             raise _conflict(run, "session completion", detail)
         _require_claim(run, session, args.claim_token)
-        target = session["counted_sessions"]
-        if target is None or _session_counter(context)[0] < target:
+        if run["run_id"] not in counted_clarification_runs(context.database["config"]):
             raise RunObligationsError(
-                f"run {run['run_id']!r} session has not been counted: run "
-                "count-session and apply the counter it names before recording "
-                "the session",
+                f"run {run['run_id']!r} session has not been counted: apply the "
+                "owner count_clarification_session mutation for this run before "
+                "recording the session",
                 reason_code="session_not_counted",
             )
         if (
@@ -2446,16 +2382,13 @@ def build_parser() -> JsonArgumentParser:
         "--claim-token", help="this host's token, to replay a claim it holds"
     )
 
-    count = actions.add_parser(
-        "count-session", help="pin the session counter value this session reaches"
-    )
-    with_run(count)
-    count.add_argument("--claim-token", required=True)
-
     release = actions.add_parser(
         "release-session", help="free a claim whose host will not finish the session"
     )
     with_run(release)
+    release.add_argument(
+        "--claim-token", required=True, help="the claim to free, from status"
+    )
     release.add_argument("--reason", help="why, in plain words")
     release.add_argument(
         "--reason-from", help="a file holding the reason in the operator's words"
@@ -2518,7 +2451,6 @@ COMMANDS = {
     "record-offer": command_record_offer,
     "record-disposition": command_record_disposition,
     "claim-session": command_claim_session,
-    "count-session": command_count_session,
     "release-session": command_release_session,
     "record-session": command_record_session,
     "record-report": command_record_report,

@@ -135,7 +135,8 @@ Claim the selected session before asking anything, and keep the returned
   "{vault_root}/tracking-database.json" claim-session --run-id "{run_id}" --now "{iso_timestamp}"
 ```
 
-Exit 2 with `session_claimed` means another host is conducting it: stop and
+Exit 2 with `session_claimed`, or `session: null` with a non-empty
+`running_sessions`, means another host is conducting a session: stop and
 report it. Freeing a dead host's claim (`release-session`) is the operator's
 decision, never this session's.
 
@@ -286,20 +287,14 @@ Proceed immediately to Step 9.
 
 ## Step 9 — Mark Session Complete
 
-With a ledger session from Step 2, count it; the owner pins the value, so a
-session re-entered after a crash never counts twice:
-
-```bash
-"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
-  "{vault_root}/tracking-database.json" count-session \
-  --run-id "{run_id}" --now "{iso_timestamp}" --claim-token "{claim_token}"
-```
-
-A non-null `mutation` is the exact `set_config` to apply through the owner
-mutation contract; null means the count already landed. Without a ledger
-session, persist `config.clarification_sessions_completed + 1` with
-`set_config`, expecting the exact prior value. This counter gates profile
-generation (vault-profile skill requires >= 1).
+With a ledger session from Step 2, count it through the owner mutation
+contract with `count_clarification_session`, naming `run_id` and expecting the
+exact prior `config.clarification_sessions_completed` (the missing marker when
+absent). The owner records the run with the count, so a session re-entered
+after a crash counts nothing more. Without a ledger session, persist
+`config.clarification_sessions_completed + 1` with `set_config`, expecting the
+exact prior value. This counter gates profile generation (vault-profile skill
+requires >= 1).
 The owner mutation preserves `config.schema_version: 2` and every unrelated
 field.
 

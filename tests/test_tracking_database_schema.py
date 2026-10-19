@@ -2868,3 +2868,47 @@ def test_a_v1_record_is_readable_so_the_database_can_be_assessed(tracking_databa
     database = _database_with_provenance(tracking_database, [_v1_provenance()])
 
     assert tracking_database.assess_tracking_database(database).usable is True
+
+
+# The session counter and the ledger runs it includes (#466).
+
+
+@pytest.mark.parametrize(
+    "config_fields,detail",
+    [
+        ({"clarification_sessions_completed": -1}, "non-negative integer"),
+        ({"clarification_sessions_completed": True}, "non-negative integer"),
+        ({"clarification_counted_runs": "run-a"}, "array of run ids"),
+        (
+            {
+                "clarification_sessions_completed": 2,
+                "clarification_counted_runs": ["a", "a"],
+            },
+            "twice",
+        ),
+        (
+            {
+                "clarification_sessions_completed": 1,
+                "clarification_counted_runs": ["a", "b"],
+            },
+            "names 2 counted sessions",
+        ),
+        ({"clarification_counted_runs": ["run a"]}, "whitespace"),
+    ],
+    ids=["negative", "bool", "not-a-list", "duplicate", "more-than-counted", "bad-id"],
+)
+def test_a_malformed_session_counter_is_refused(
+    tracking_database, config_fields, detail
+):
+    database = tracking_database.migrate_tracking_database(_legacy_database()).database
+    database["config"].update(config_fields)
+    with pytest.raises(tracking_database.TrackingDatabaseError, match=detail):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_counted_runs_within_the_counter_leave_the_database_current(tracking_database):
+    database = tracking_database.migrate_tracking_database(_legacy_database()).database
+    database["config"]["clarification_sessions_completed"] = 15
+    database["config"]["clarification_counted_runs"] = ["run-a"]
+    assert tracking_database.assess_tracking_database(database).state == "current"
+    assert tracking_database.counted_clarification_runs(database["config"]) == {"run-a"}

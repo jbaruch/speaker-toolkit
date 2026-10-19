@@ -132,19 +132,15 @@ def test_session_completion_runs_the_owner_command_and_typed_calls() -> None:
     assert "`config.clarification_sessions_completed + 1`" in body
     assert "`set_config`" in body
     commands = _commands(body)
-    assert len(commands) == 2
-    assert all(command.startswith(OWNER_SCRIPT) for command in commands)
-    # The ledger session is counted through the owner before it is recorded.
+    assert len(commands) == 1
+    assert commands[0].startswith(OWNER_SCRIPT)
     assert commands[0].endswith(
-        '"{vault_root}/tracking-database.json" count-session '
-        '--run-id "{run_id}" --now "{iso_timestamp}" --claim-token "{claim_token}"'
-    )
-    assert commands[1].endswith(
         '"{vault_root}/tracking-database.json" record-session '
         '--run-id "{run_id}" --now "{iso_timestamp}" --claim-token "{claim_token}" '
         "--profile-inputs changed|unchanged [--profile-refreshed]"
     )
-    assert "`mutation`" in body
+    # A ledger session is counted by the owner mutation keyed on its run.
+    assert "`count_clarification_session`" in body
     assert "clarification-handoff.md#record-the-answer" in body
     assert 'Skill(skill: "vault-profile")' in body
     for read_field in (
