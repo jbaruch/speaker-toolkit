@@ -7,9 +7,12 @@ strict reader accepts, each carrying the closed claim that persisted it.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import io
 import json
 import os
+from unittest import mock
 from pathlib import Path
 import subprocess
 import sys
@@ -262,6 +265,24 @@ def _count_session(database: Path, run_id: str) -> None:
     database.write_text(json.dumps(candidate), encoding="utf-8")
 
 
+def _claim_with_token(
+    database: Path, run_id: str, token: str, now: str = NOW
+) -> tuple[int, dict]:
+    """Run claim-session in-process with the claim token pinned to ``token``."""
+    module = _import_script(
+        os.path.join(SCRIPTS_VI, "run-obligations.py"), "run_obligations"
+    )
+    out = io.StringIO()
+    with (
+        mock.patch.object(module.secrets, "token_hex", return_value=token),
+        contextlib.redirect_stdout(out),
+    ):
+        code = module.main(
+            [str(database), "claim-session", "--run-id", run_id, "--now", now]
+        )
+    return code, json.loads(out.getvalue())
+
+
 def _session_token(database: Path, run_id: str, now: str = NOW) -> str:
     """The claim a host holds on the run's session, claimed and counted once.
 
@@ -274,11 +295,12 @@ def _session_token(database: Path, run_id: str, now: str = NOW) -> str:
         return "0" * 32
     if session["claim_token"] is not None:
         return session["claim_token"]
-    token = _ok(database, "claim-session", "--run-id", run_id, "--now", now)[
-        "claim_token"
-    ]
+    code, payload = _claim_with_token(
+        database, run_id, hashlib.sha256(run_id.encode()).hexdigest()[:32], now
+    )
+    assert code == 0, payload
     _count_session(database, run_id)
-    return token
+    return payload["claim_token"]
 
 
 # ── open ──────────────────────────────────────────────────────────────
@@ -3268,11 +3290,13 @@ def _claim(database: Path, run_id: str = "run-x", *extra: str, now: str = NOW):
     return _run(database, "claim-session", "--run-id", run_id, "--now", now, *extra)
 
 
-def _claim_token(database: Path, run_id: str = "run-x", now: str = NOW) -> str:
-    code, payload, stderr = _claim(database, run_id, now=now)
-    assert code == 0, stderr
-    assert payload is not None
-    return payload["claim_token"]
+def _claim_token(
+    database: Path, run_id: str = "run-x", now: str = NOW, token: str = "a" * 32
+) -> str:
+    code, payload = _claim_with_token(database, run_id, token, now)
+    assert code == 0, payload
+    assert payload["claim_token"] == token
+    return token
 
 
 def _record(database: Path, token: str, run_id: str = "run-x", now: str = LATER):
@@ -3298,11 +3322,10 @@ def _counter(database: Path):
 
 def test_one_host_claims_a_session_and_a_second_is_refused(fresh_db):
     _accepted(fresh_db)
-    code, first, stderr = _claim(fresh_db)
-    assert code == 0, stderr
-    assert first is not None
-    token = first["claim_token"]
-    assert len(token) == 32
+    token = "a" * 32
+    code, first = _claim_with_token(fresh_db, "run-x", token)
+    assert code == 0, first
+    assert first["claim_token"] == token
     session = first["run"]["clarification"]["session"]
     assert (session["state"], session["claim_token"], session["claimed_at"]) == (
         "running",
@@ -3325,8 +3348,7 @@ def test_one_host_claims_a_session_and_a_second_is_refused(fresh_db):
 def test_session_agenda_never_hands_out_a_claimed_session(fresh_db):
     _accepted_with_topics(fresh_db, "run-early", "Earlier topic", now=NOW)
     _accepted_with_topics(fresh_db, "run-late", "Later topic", now=LATER)
-    code, _claimed, stderr = _claim(fresh_db, "run-early")
-    assert code == 0, stderr
+    _claim_token(fresh_db, "run-early")
 
     payload = _ok(fresh_db, "session-agenda")
 
@@ -3365,7 +3387,7 @@ def test_a_session_re_entered_after_a_crash_counts_once(
 ):
     """The host dies before recording; the operator frees its named claim."""
     _accepted(fresh_db)
-    first = _claim_token(fresh_db)
+    first = _claim_token(fresh_db, token="1" * 32)
     if counted_before_crash:
         _count_session(fresh_db, "run-x")
 
@@ -3387,8 +3409,7 @@ def test_a_session_re_entered_after_a_crash_counts_once(
     session = released["run"]["clarification"]["session"]
     assert (session["state"], session["claim_token"]) == ("pending", None)
 
-    second = _claim_token(fresh_db, now=LATER)
-    assert second != first
+    second = _claim_token(fresh_db, now=LATER, token="2" * 32)
     # The re-entered session counts again; the owner keys the count on the run.
     _count_session(fresh_db, "run-x")
     assert _counter(fresh_db) == 1
