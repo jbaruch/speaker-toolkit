@@ -357,6 +357,38 @@
         "reference": "https://speaking.jbaru.ch/talks/jspring-2026-robocoders/",
         "note": "Derived from RoboCoders at J-Spring, 2026-06-04. Source monsters, wave imagery and Japanese labels are excluded from the reusable anchor; this matte woodblock treatment is distinct from the other RoboCoders deliveries' neon arcade art."
       }
+    },
+    {
+      "schema_version": 1,
+      "slug": "spy-thriller-photographic",
+      "name": "Spy-Thriller Photographic",
+      "anchors": {
+        "FULL": "Contemporary spy-thriller cinematography, dark and cold, rendered as photography rather than illustration. Colour system: crushed near-black grounds, cold teal and cyan shadow, and exactly one warm amber practical light source per frame carving the subject out of the dark. Anamorphic lens character: subtle horizontal flare, shallow depth of field, gentle falloff to black at the frame edges. Fine 35mm grain throughout. Wet, hard, industrial materials: poured concrete, steel, standing water, glass. Restrained and adult; tension comes from light and negative space, never from gore, spectacle or action. Never illustration, cel-shading, vector art or 3D render. Never letterbox or pillarbox bars; the image fills the full 16:9 frame edge to edge. No text, lettering, captions, timestamps, HUD overlays, camera-ID burn-ins, logos or watermarks anywhere in the image.",
+        "IMG+TXT": "Same contemporary spy-thriller photographic style as FULL (crushed blacks, cold teal shadow, a single warm amber practical, 35mm grain, industrial materials), composed for a portrait-ish left column rather than a wide frame. The subject sits low and to one side against generous dark negative space so adjacent body text stays legible. Same prohibitions: no illustration, no bars, no text or lettering of any kind in the image."
+      },
+      "text_treatment": "",
+      "conventions": "One warm amber practical per frame is the recurring light motif and the only saturated colour; everything else stays cold. Generated frames contain no human figures, silhouettes or hands: the camera is the viewer's own point of view. Slide titles are overlaid on the deck's dark ground, never rendered into the image.",
+      "composition": "overlay",
+      "tags": [
+        "photographic",
+        "cinematic",
+        "thriller",
+        "dark",
+        "teal-amber",
+        "industrial"
+      ],
+      "sample": {
+        "schema_version": 1,
+        "kind": "reference",
+        "location": "https://www.youtube.com/watch?v=1yndLHw9mbo",
+        "description": "Public conference recording; the full-bleed photographic slides (deck slides 3, 9, 27, 31, 49 and 53) are visible on screen. This reference is not bundled as a raster sample."
+      },
+      "provenance": {
+        "schema_version": 1,
+        "kind": "delivered-talk",
+        "reference": "https://www.youtube.com/watch?v=1yndLHw9mbo",
+        "note": "Derived from 'Mission Possible: The 45-Minute Path to Bullet-Proof Java Container Images', Devoxx Belgium, 2026-10-07. The flooded-room scenes, hatch, ladder and corridor are talk content, not part of the reusable anchor."
+      }
     }
   ]
 }

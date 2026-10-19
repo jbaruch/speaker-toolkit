@@ -26,6 +26,9 @@ DELIVERED_SLUGS = {
     "synthwave-line-art-comic",
     "wartime-technical-manual",
 }
+# Admitted from the style-contribution issue form (#481): another speaker's
+# delivered talk, so provenance is a public recording, not speaking.jbaru.ch.
+CONTRIBUTED_SLUGS = {"spy-thriller-photographic"}
 
 
 @pytest.fixture
@@ -58,11 +61,11 @@ def write_json(path, value):
 
 def test_packaged_seeds_are_closed_versioned_references(catalog):
     merged = catalog.load_merged()
-    assert {style["slug"] for style in merged["styles"]} == DELIVERED_SLUGS | {
-        "comic-book-hero",
-        "isometric-systems-3d",
-        "illuminated-manuscript",
-    }
+    assert {style["slug"] for style in merged["styles"]} == (
+        DELIVERED_SLUGS
+        | CONTRIBUTED_SLUGS
+        | {"comic-book-hero", "isometric-systems-3d", "illuminated-manuscript"}
+    )
     for style in merged["styles"]:
         catalog.validate_candidate_style(style)
         assert style["catalog_source"]["layer"] == "public"
@@ -82,6 +85,25 @@ def test_delivered_seed_survives_real_candidate_reader(
     assert source["provenance"]["reference"].startswith("https://speaking.jbaru.ch/")
     assert source["sample"]["location"].startswith("https://drive.google.com/file/d/")
     assert "PDF page" in source["sample"]["description"]
+    formats = {"FULL": 3}
+    if source["composition"] == "overlay":
+        formats["IMG+TXT"] = 4
+    candidate = catalog.seed_candidates(merged, selection([slug], slides=formats))
+    path = write_json(tmp_path / "candidates.json", candidate)
+    parsed = generate_illustrations.parse_candidates(str(path))
+    assert parsed["styles"] == [source]
+    assert parsed["slides"] == formats
+
+
+@pytest.mark.parametrize("slug", sorted(CONTRIBUTED_SLUGS))
+def test_contributed_seed_survives_real_candidate_reader(
+    catalog, generate_illustrations, tmp_path, slug
+):
+    merged = catalog.load_merged()
+    source = next(style for style in merged["styles"] if style["slug"] == slug)
+    assert source["provenance"]["reference"].startswith("https://")
+    assert source["sample"]["location"].startswith("https://")
+    assert "not bundled" in source["sample"]["description"]
     formats = {"FULL": 3}
     if source["composition"] == "overlay":
         formats["IMG+TXT"] = 4

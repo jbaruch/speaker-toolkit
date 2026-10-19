@@ -1,5 +1,26 @@
 # Changelog
 
+### Add the spy-thriller-photographic style to the public catalog
+
+The first public catalog entry admitted through the `style-contribution` issue
+form (#481), contributed by Pasha Finkelshteyn from "Mission Possible: The
+45-Minute Path to Bullet-Proof Java Container Images" (Devoxx Belgium,
+2026-10-07). An overlay style: contemporary spy-thriller photography with
+crushed near-black grounds, cold teal shadow, exactly one warm amber practical
+per frame, anamorphic falloff, 35mm grain and wet concrete and steel.
+
+- Admitted with the contributor's approved payload unchanged. The owner reader
+  validates the 13-entry public layer.
+- Maintainer review: the recording's identity matches the provenance (Devoxx
+  channel, speaker, upload 2026-10-08, 2575 s). All six photographic slides were
+  located in the recording and inspected; each matches the anchor, with no
+  figures and no text rendered into the image. The anchors carry no talk
+  scenery; the flooded room, hatch, ladder and corridor stay out, as the
+  contribution states.
+- `tests/test_style_catalog.py` gains `CONTRIBUTED_SLUGS`, since a contributed
+  entry's provenance is a public recording rather than `speaking.jbaru.ch`, and
+  runs each contributed entry through the real candidate reader.
+
 ## 0.20.169 — 2026-10-19
 
 ### Fix the yt-dlp metadata probe on auto-dubbed YouTube videos

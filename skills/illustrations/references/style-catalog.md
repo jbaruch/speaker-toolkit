@@ -161,3 +161,9 @@ mappings and source fingerprints. Its samples are existing public deck links,
 not bundled raster images. For later additions, verify delivery/source identity,
 inspect actual slides, extract style-only features, and retain a consented sample
 with exact provenance. The three exploration seeds are not delivered-talk evidence.
+
+A contributed entry is admitted with its contributor's approved payload
+unchanged. `spy-thriller-photographic` (#481) is the first: another speaker's
+public conference recording is both its unbundled sample and its provenance,
+and its six photographic slides were inspected in that recording before
+admission.
