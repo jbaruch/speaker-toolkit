@@ -223,7 +223,27 @@ def _verdict(**fields):
 @pytest.mark.parametrize(
     "returncode,stdout,expected",
     [
-        (0, json.dumps({"ok": True}), None),
+        (
+            0,
+            _verdict(
+                ok=True,
+                schema_version=3,
+                blocking_lanes=[],
+                lanes={"outline": {"available": True}},
+            ),
+            None,
+        ),
+        (0, json.dumps({"ok": True}), "runtime_probe_failed"),
+        (
+            0,
+            _verdict(
+                ok=True,
+                schema_version=3,
+                blocking_lanes=[],
+                lanes={"outline": {"available": False}},
+            ),
+            "runtime_probe_failed",
+        ),
         (1, _verdict(python_version="3.9.18"), "interpreter_unsupported"),
         (
             1,
@@ -260,6 +280,8 @@ def _verdict(**fields):
     ],
     ids=[
         "ok",
+        "bare-ok",
+        "ok-but-lane-unavailable",
         "old-python",
         "cold-imports",
         "missing-module",

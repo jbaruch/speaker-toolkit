@@ -42,6 +42,8 @@ TOOLKIT_ROOT = Path(__file__).resolve().parents[3]
 OWNER_READER = TOOLKIT_ROOT / "skills/vault-ingress/scripts/read-tracking-database.py"
 RUNTIME_CHECK = TOOLKIT_ROOT / "skills/vault-ingress/scripts/check-runtime.py"
 REQUIRED_LANE = "outline"
+# The check-runtime.py report generation this resolver reads.
+RUNTIME_REPORT_SCHEMA_VERSION = 3
 HANDOFF = "vault-ingress Step 1"
 TIMEOUT_SECONDS = 120
 
@@ -119,6 +121,23 @@ def _version_tuple(text: object) -> tuple[int, ...] | None:
     return tuple(int(part) for part in parts)
 
 
+def _lane_usable(report: dict, lane: str) -> bool:
+    """A success verdict that actually covers the lane: nothing contradicts it."""
+    version = _version_tuple(report.get("python_version"))
+    minimum = _version_tuple(report.get("minimum_python"))
+    lanes = report.get("lanes")
+    lane_report = lanes.get(lane) if isinstance(lanes, dict) else None
+    return (
+        report.get("schema_version") == RUNTIME_REPORT_SCHEMA_VERSION
+        and report.get("blocking_lanes") == []
+        and version is not None
+        and minimum is not None
+        and version[:2] >= minimum[:2]
+        and isinstance(lane_report, dict)
+        and lane_report.get("available") is True
+    )
+
+
 def classify_runtime_check(returncode: int, stdout: str, lane: str) -> str | None:
     """The reason code a ``check-runtime.py`` verdict calls for; None when usable."""
     try:
@@ -128,7 +147,7 @@ def classify_runtime_check(returncode: int, stdout: str, lane: str) -> str | Non
     if not isinstance(report, dict):
         return "runtime_probe_failed"
     if returncode == 0 and report.get("ok") is True:
-        return None
+        return None if _lane_usable(report, lane) else "runtime_probe_failed"
     if "runtime-probe" in (report.get("blocking_lanes") or []):
         return "runtime_probe_failed"
     version = _version_tuple(report.get("python_version"))
