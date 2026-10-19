@@ -25,14 +25,10 @@ because the model preserves the existing composition and style at each step.
 
 ## Model
 
-Run the chain on an edit-stable model. GPT Image 2.5 holds subjects and
-composition across successive edits; the pre-2.5 editors compound small
-deviations step by step, which is the drift `erase_region` scopes but does not
-remove. The Step 6 shortlist leads with the 2.5 models whenever
-`build-editability` is flagged (Sunburst first — OpenAI's pick where editing
-precision matters most — then Flare); the tiers are the registry's
-(`model_registry.py`, `edit` attribute). Pick a `strong`-tier editor for a
-build talk only on the speaker's explicit request.
+Run the chain on an edit-stable model from the Step 6 shortlist. The edit
+tiers and their order belong to the registry; see
+`skills/illustrations/references/strategy.md` Step 6. Pick any other editor for
+a build talk only on the speaker's explicit request.
 
 ## Run
 

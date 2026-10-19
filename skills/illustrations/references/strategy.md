@@ -64,10 +64,7 @@ shortlist (Step 6):
 - **speed** — faster turnaround per image
 - **quality** — top-tier fidelity
 - **build-editability** — the model must support image editing; required for
-  progressive-reveal builds and edit/fix iteration. It also leads the ranking
-  with edit-stable models (GPT Image 2.5): a build chain edits the previous
-  frame at every step, and the pre-2.5 editors compound small deviations
-  across the chain — the drift `erase_region` scopes but does not remove
+  progressive-reveal builds and edit/fix iteration
 
 Present with `AskUserQuestion` as a **multi-select** (checkboxes, not radio) — the
 speaker can pick several (e.g. `quality,build-editability`). Pass every chosen
@@ -76,8 +73,8 @@ priority to `--shortlist` (Step 6).
 Auto-flag `build-editability` when any slide carries a `Builds:` block — build
 frames are produced by editing the previous frame, so the model must support
 editing. A deck with no builds can drop the constraint. With builds, carry only
-the edit-stable models the shortlist leads with into the exploration render;
-a `strong`-tier editor enters only on the speaker's explicit request.
+the edit-stable models from the Step 6 shortlist into the exploration render;
+any other editor enters only on the speaker's explicit request.
 
 Per-model attributes and how priorities rank them live in
 `skills/illustrations/scripts/model_registry.py` (the `MODEL_REGISTRY` entries and
@@ -125,8 +122,10 @@ python3 "{speaker_toolkit_root}/skills/illustrations/scripts/model_registry.py" 
 
 Pass the priorities comma-separated (e.g. `quality,build-editability`). The script
 returns the ranked candidate models as JSON, best first. Carry the top 1-3 into
-the exploration render. The ranking and filter logic are in `model_registry.py` —
-read the JSON, don't reimplement them.
+the exploration render. The ranking and filter logic are in
+`skills/illustrations/scripts/model_registry.py`: `EDIT_RANKING`,
+`PRIORITY_RANKINGS`, and the `edit` attribute comment at the top of the file.
+Read the JSON, don't reimplement them.
 
 The roster is a seed cache, not an allowlist. When the speaker wants a model not
 in it — or Step 2 surfaced a new flagship — WebSearch its cost, speed, quality,
