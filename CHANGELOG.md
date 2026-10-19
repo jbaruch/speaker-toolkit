@@ -20,7 +20,11 @@ Follow-ups from the advisory Copilot review on #457 (#458).
   the host interpreter, then `config.python_path`, a confirming owner re-read
   of `{vault_root}/tracking-database.json` that must match byte for byte, and
   `check-runtime.py --require-lanes outline`. It emits one JSON verdict and
-  names `vault-ingress Step 1` as the repair handoff on refusal. Every toolkit
+  names `vault-ingress Step 1` as the repair handoff on refusal. It requires the
+  owner-current database generation (a legacy one is the owner's to migrate)
+  and an absolute `python_path`, re-reads the same database path, and takes the
+  vault root from the locator's directory rather than the optional, possibly
+  stale `config.vault_root`. Every toolkit
   command in the skill and `references/talk-skill.md` runs on
   `"{python_path}"`, never a bare `python3` from `PATH`;
   `references/runtime.md` documents the contract, keeping `SKILL.md` under the

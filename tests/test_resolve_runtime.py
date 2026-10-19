@@ -73,21 +73,45 @@ def test_the_documented_symlinked_locator_resolves_the_configured_interpreter(
     assert code == 0, stderr
     assert payload["ok"] is True
     assert payload["python_path"] == sys.executable
-    assert payload["vault_root"] == str(vault)
+    # The root is the locator's directory, as the caller spelled it.
+    assert payload["vault_root"] == str(link)
     assert len(payload["database_sha256"]) == 64
 
 
-@pytest.mark.parametrize("field", ["python_path", "vault_root"])
 @pytest.mark.parametrize("value", [None, "", "   "])
-def test_an_absent_or_blank_config_field_is_refused(tmp_path, field, value):
+def test_an_absent_or_blank_python_path_is_refused(tmp_path, value):
     vault = tmp_path / "vault"
-    config = {"python_path": sys.executable, "vault_root": str(vault)}
-    if value is None:
-        del config[field]
-    else:
-        config[field] = value
+    config = {} if value is None else {"python_path": value}
     database = _database(vault, **config)
-    assert f"config.{field}" in _refused(database, "config_incomplete")
+    assert "config.python_path" in _refused(database, "config_incomplete")
+
+
+@pytest.mark.parametrize("value", ["python3", ".venv/bin/python"])
+def test_a_bare_or_relative_interpreter_is_refused(tmp_path, value):
+    """Copilot on #494: a bare name resolves through PATH and a relative one
+    through whatever directory a later command runs in."""
+    database = _database(tmp_path / "vault", python_path=value)
+    assert value in _refused(database, "interpreter_not_absolute")
+
+
+@pytest.mark.parametrize("vault_root", [None, "~/somewhere-else", "/stale/vault"])
+def test_config_vault_root_is_never_the_authority(tmp_path, vault_root):
+    vault = tmp_path / "vault"
+    config = {"python_path": sys.executable}
+    if vault_root is not None:
+        config["vault_root"] = vault_root
+    database = _database(vault, **config)
+    code, payload, stderr = _resolve(database)
+    assert code == 0, stderr
+    assert payload["vault_root"] == str(vault)
+
+
+def test_a_legacy_database_is_handed_to_the_owner_migration(tmp_path):
+    database = _database(tmp_path / "vault", python_path=sys.executable)
+    data = json.loads(database.read_text(encoding="utf-8"))
+    data["schema_version"] = CURRENT_ROOT_SCHEMA_VERSION - 1
+    database.write_text(json.dumps(data), encoding="utf-8")
+    assert "owner migration" in _refused(database, "database_not_current")
 
 
 def test_an_interpreter_that_does_not_exist_is_refused_not_replaced(tmp_path):
@@ -96,13 +120,6 @@ def test_an_interpreter_that_does_not_exist_is_refused_not_replaced(tmp_path):
         vault, python_path=str(tmp_path / "missing-python"), vault_root=str(vault)
     )
     _refused(database, "interpreter_unusable")
-
-
-def test_a_vault_root_naming_another_database_is_refused(tmp_path):
-    vault, other = tmp_path / "vault", tmp_path / "other"
-    _database(other, python_path=sys.executable, vault_root=str(other), speaker="x")
-    database = _database(vault, python_path=sys.executable, vault_root=str(other))
-    _refused(database, "database_mismatch")
 
 
 def test_an_interpreter_without_the_outline_lane_is_refused(tmp_path):

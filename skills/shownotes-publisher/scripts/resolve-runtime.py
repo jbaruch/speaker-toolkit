@@ -4,10 +4,13 @@
 Composes two owner scripts and adds no parsing of its own beyond their JSON:
 
 1. ``read-tracking-database.py`` under the host interpreter running this script,
-   on the given database path (default: the documented vault locator).
-2. The same owner read under ``config.python_path``, on
-   ``{config.vault_root}/tracking-database.json``; the database and its SHA-256
-   must match the first read.
+   on the given database path (default: the documented vault locator). The
+   database must be the owner-current generation (``tracking_database``'s own
+   assessment); a legacy one is the owner's to migrate.
+2. The same owner read of the same path under ``config.python_path``, which must
+   be an absolute interpreter path; the database and its SHA-256 must match the
+   first read. The vault root is the database locator's directory, never the
+   optional and possibly stale ``config.vault_root``.
 3. ``check-runtime.py`` under ``config.python_path`` with the ``outline`` lane
    required: PyYAML and Pydantic v2, which ``outline_schema.py`` and
    ``verify-talk-skill.py`` import.
@@ -33,6 +36,13 @@ RUNTIME_CHECK = TOOLKIT_ROOT / "skills/vault-ingress/scripts/check-runtime.py"
 REQUIRED_LANE = "outline"
 HANDOFF = "vault-ingress Step 1"
 TIMEOUT_SECONDS = 120
+
+# The owner's generation check is stdlib-only, so the host interpreter can run it.
+sys.path.insert(0, str(TOOLKIT_ROOT / "skills/vault-ingress/scripts"))
+from tracking_database import (  # noqa: E402
+    TrackingDatabaseError,
+    assess_tracking_database,
+)
 
 
 class RuntimeResolutionError(RuntimeError):
@@ -95,22 +105,45 @@ def _config_text(config: dict, field: str, database: Path) -> str:
     return value
 
 
+def _require_current(database: object, locator: Path) -> dict:
+    try:
+        current = (
+            isinstance(database, dict)
+            and assess_tracking_database(database).state == "current"
+        )
+    except TrackingDatabaseError:
+        current = False
+    if not current or not isinstance(database, dict):
+        raise RuntimeResolutionError(
+            "database_not_current",
+            f"the tracking database at {locator} is not the current owner "
+            f"generation; run the owner migration through {HANDOFF}",
+        )
+    return database
+
+
 def resolve(database: Path) -> dict:
     first = owner_read(sys.executable, database)
-    config = first.get("database", {}).get("config")
+    config = _require_current(first.get("database"), database).get("config")
     config = config if isinstance(config, dict) else {}
     python_path = _config_text(config, "python_path", database)
-    vault_root = _config_text(config, "vault_root", database)
-    second = owner_read(python_path, Path(vault_root) / "tracking-database.json")
+    if not Path(python_path).is_absolute():
+        raise RuntimeResolutionError(
+            "interpreter_not_absolute",
+            f"config.python_path {python_path!r} is not an absolute interpreter "
+            f"path, so it would resolve through PATH or the working directory; "
+            f"record the absolute path through {HANDOFF}",
+        )
+    second = owner_read(python_path, database)
     if second.get("sha256") != first.get("sha256") or second.get(
         "database"
     ) != first.get("database"):
         raise RuntimeResolutionError(
             "database_mismatch",
-            f"{vault_root}/tracking-database.json under config.python_path is not "
-            f"the database read at {database}; re-run once the vault is settled, "
-            f"or repair the locator through {HANDOFF}",
+            f"the tracking database at {database} changed between the host and "
+            "config.python_path reads; re-run once the vault is settled",
         )
+    vault_root = str(Path(str(first.get("database_path", database))).parent)
     check = _run(
         [
             python_path,
