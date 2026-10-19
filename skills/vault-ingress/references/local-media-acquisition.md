@@ -57,10 +57,18 @@ transcript and timing receipts, never `delivery_video` evidence.
 
 A recording over the `MEDIA_MAX_INPUT_BYTES` ceiling in
 `skills/vault-ingress/scripts/local_media_contract.py` cannot be acquired
-whole. Extract its audio losslessly (`ffmpeg -i <recording> -map 0:a:0 -c:a
-copy <name>.m4a`), transcribe that file with `--audio`, and declare it. Never
-rename a local transcode to `{youtube_id}.mp4` to satisfy the YouTube filename
-rule: that fakes provider identity.
+whole. Extract its audio stream first:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/extract-local-audio.py" \
+  --recording "{recording_path}" --output "{vault_root}/recordings/{talk_stem}.m4a"
+```
+
+The script's docstring owns the output modes, bounds, refusal reason codes,
+and JSON report. `.m4a` copies the stream; when the refusal says the codec does
+not fit, re-run with a `.wav` output. Transcribe the reported `output` with
+`--audio`, then declare it. Never rename a local transcode to `{youtube_id}.mp4`
+to satisfy the YouTube filename rule: that fakes provider identity.
 
 ## Refusal and Recovery
 

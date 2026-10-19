@@ -373,6 +373,14 @@ def retained_stage():
 
 
 @pytest.fixture(scope="session")
+def extract_local_audio():
+    return _import_script(
+        os.path.join(SCRIPTS_VI, "extract-local-audio.py"),
+        "extract_local_audio",
+    )
+
+
+@pytest.fixture(scope="session")
 def mutate_tracking_database():
     return _import_script(
         os.path.join(SCRIPTS_VI, "mutate-tracking-database.py"),

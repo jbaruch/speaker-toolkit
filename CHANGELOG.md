@@ -33,9 +33,14 @@ recording exceeds the 8 GiB input ceiling.
   from every caller (persistence, analysis rendering, queue normalization,
   preflight and the vault-profile cohort), so freshness never reads a declared
   transcript as stale and requeues it.
-- `local-media-acquisition.md` documents declaring audio and the sanctioned path
-  for a recording over the input ceiling: lossless audio extraction, `--audio`,
-  then a declaration, never a transcode renamed to `{youtube_id}.mp4`.
+- New `skills/vault-ingress/scripts/extract-local-audio.py` is the sanctioned
+  path for a recording over the input ceiling: it extracts the first audio
+  stream (stream copy to `.m4a`/`.mp3`, or 16-bit PCM `.wav`) under a wall-clock
+  limit and the owner's byte ceiling, refuses a recording that changed
+  mid-extraction, verifies the result through `probe_local_media` before
+  installing it, and never replaces existing audio with different bytes.
+  `local-media-acquisition.md` runs it, then `--audio`, then a declaration —
+  never a transcode renamed to `{youtube_id}.mp4`.
   `subagent-instructions.md` names the declaration for non-YouTube talks, and
   the `schemas-db.md` compatibility table moves to root 5.
 - The declaration is a mutation of the tracking database's own collection, not
