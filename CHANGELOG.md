@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.176 — 2026-10-19
+
 ### Stop scoring audience-navigation footers as floodmarks
 
 `floodmarks` scored any element that persisted on every content slide, so a thin
