@@ -39,8 +39,11 @@ Stdout: one JSON object. Success is ``{"ok": true, "output", "written",
 ``{"ok": false, "reason_code", "error"}`` with the same message on stderr, exit
 2. Reason codes: ``invalid_arguments``, ``recording_unreadable``,
 ``ffmpeg_unavailable``, ``extraction_failed``, ``extraction_timeout``,
-``output_over_ceiling``, ``recording_changed``, ``output_unusable``,
-``output_exists``, ``output_write_failed``, ``io_failed``. Any other failure
+``output_over_ceiling``, ``recording_changed``, ``recording_has_no_audio``,
+``output_unusable``, ``output_exists``, ``output_write_failed``, ``io_failed``.
+An ffmpeg failure is classified from its own message
+(``classify_ffmpeg_failure``): only a codec that does not fit the container
+suggests ``.wav``. Any other failure
 leaves stdout empty, writes one closed failure document to stderr
 (``failure_diagnostics``), and exits 3.
 """
@@ -58,6 +61,7 @@ import shutil
 import stat
 import subprocess
 import sys
+from typing import NoReturn
 
 from failure_diagnostics import emit_unexpected_failure
 from local_media_contract import MEDIA_MAX_INPUT_BYTES, LocalMediaError
@@ -78,10 +82,13 @@ PROBE_REFUSAL_ACTIONS = {
     "media_invalid_container": _WAV,
     "media_parser_rejected": _WAV,
     "media_parser_repair_required": _WAV,
-    "media_no_audio_stream": _WAV,
+    "media_no_audio_stream": (
+        "the extracted file carries no audio stream; check with ffprobe that "
+        "the recording has one"
+    ),
     "media_no_usable_audio_stream": _WAV,
     "media_duration_unavailable": _WAV,
-    "media_probe_malformed_result": _WAV,
+    "media_probe_malformed_result": _RETRY_LATER,
     "media_dependency_unavailable": "install ffmpeg (with ffprobe) and re-run",
     "media_duration_limit": (
         "the audio is longer than the bounded media owner admits; it cannot be "
@@ -120,6 +127,59 @@ PROBE_REFUSAL_ACTIONS = {
 _UNMAPPED_PROBE_ACTION = (
     "see the reason codes in local_media_contract.py; nothing here retries it"
 )
+# ffmpeg's own failure messages, by what fixes them. Matched against the tail
+# of its stderr; anything unmatched gets the neutral advice.
+FFMPEG_IO_MARKERS = (
+    "No space left on device",
+    "Disk quota exceeded",
+    "Permission denied",
+    "Read-only file system",
+    "Input/output error",
+)
+FFMPEG_NO_AUDIO_MARKERS = (
+    "matches no streams",
+    "does not contain any stream",
+)
+FFMPEG_FORMAT_MARKERS = (
+    "Could not find tag for codec",
+    "not currently supported in container",
+    "codec not currently supported",
+    "Could not write header",
+)
+
+
+def classify_ffmpeg_failure(stderr_tail: str, suffix: str) -> tuple[str, str]:
+    """The reason code and recovery an ffmpeg failure calls for."""
+    if any(marker in stderr_tail for marker in FFMPEG_IO_MARKERS):
+        return (
+            "io_failed",
+            "free space or fix permissions on the output directory, then re-run",
+        )
+    if any(marker in stderr_tail for marker in FFMPEG_NO_AUDIO_MARKERS):
+        return (
+            "recording_has_no_audio",
+            "the recording has no audio stream to extract; declare a recording "
+            "that does",
+        )
+    if any(marker in stderr_tail for marker in FFMPEG_FORMAT_MARKERS):
+        return (
+            "extraction_failed",
+            f"the audio codec does not fit a {suffix} container; re-run with a "
+            ".wav output",
+        )
+    return (
+        "extraction_failed",
+        "read ffmpeg's message above; the recording may be damaged or still syncing",
+    )
+
+
+class _JsonArgumentParser(argparse.ArgumentParser):
+    """Argument errors become the documented invalid_arguments verdict."""
+
+    def error(self, message: str) -> NoReturn:
+        raise ExtractionError("invalid_arguments", f"{message} — see --help")
+
+
 # Output suffix -> (ffmpeg muxer, audio codec arguments, reported mode).
 MODES = {
     ".m4a": ("ipod", ["-c:a", "copy"], "copy"),
@@ -345,11 +405,10 @@ def extract(
             tail = completed.stderr[-DIAGNOSTIC_TAIL_BYTES:].decode(
                 "utf-8", errors="replace"
             )
+            reason, action = classify_ffmpeg_failure(tail, suffix)
             raise ExtractionError(
-                "extraction_failed",
-                f"ffmpeg exited {completed.returncode}: {tail.strip()} — the "
-                "recording may have no audio stream, or its codec does not fit "
-                f"{suffix}; try a .wav output",
+                reason,
+                f"ffmpeg exited {completed.returncode}: {tail.strip()} — {action}",
             )
         size = staged.stat().st_size
         if size >= max_output_bytes:
@@ -404,11 +463,11 @@ def extract(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
+    parser = _JsonArgumentParser(description=(__doc__ or "").split("\n")[0])
     parser.add_argument("--recording", required=True, help="the local video file")
     parser.add_argument("--output", required=True, help="the audio file to write")
-    args = parser.parse_args(argv)
     try:
+        args = parser.parse_args(argv)
         result = extract(
             Path(args.recording).expanduser(), Path(args.output).expanduser()
         )

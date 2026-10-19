@@ -136,7 +136,8 @@ def test_a_recording_without_audio_is_refused_and_leaves_nothing(tmp_path):
     code, payload, stderr = _extract(recording, output)
 
     assert code == 2
-    assert payload["reason_code"] == "extraction_failed"
+    assert payload["reason_code"] == "recording_has_no_audio"
+    assert ".wav" not in payload["error"]
     assert payload["error"] in stderr
     assert not output.exists()
     assert _staged(tmp_path) == []
@@ -327,3 +328,60 @@ def test_an_unexpected_failure_leaves_stdout_empty_and_exits_3(
     assert document["error"] == "audio_extraction_unexpected_failure"
     assert document["error_type"] == "RuntimeError"
     assert "/private/host/path" not in captured.err
+
+
+@pytest.mark.parametrize(
+    "stderr_tail,reason,advice",
+    [
+        (
+            "av_interleaved_write_frame(): No space left on device",
+            "io_failed",
+            "free space",
+        ),
+        ("talk.m4a: Permission denied", "io_failed", "permissions"),
+        (
+            "Stream map '0:a:0' matches no streams.",
+            "recording_has_no_audio",
+            "no audio",
+        ),
+        (
+            "Could not find tag for codec opus in stream #0, codec not currently "
+            "supported in container",
+            "extraction_failed",
+            ".wav output",
+        ),
+        ("moov atom not found", "extraction_failed", "read ffmpeg's message"),
+    ],
+    ids=["disk-full", "permission", "no-audio", "codec-container", "unknown"],
+)
+def test_an_ffmpeg_failure_names_the_repair_it_needs(
+    extract_local_audio, stderr_tail, reason, advice
+):
+    got_reason, got_advice = extract_local_audio.classify_ffmpeg_failure(
+        stderr_tail, ".m4a"
+    )
+    assert got_reason == reason
+    assert advice in got_advice
+    if reason != "extraction_failed" or advice != ".wav output":
+        assert ".wav" not in got_advice
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [("--recording", "a.mp4"), ("--output", "a.m4a"), ("--bogus", "x")],
+    ids=["no-output", "no-recording", "unknown-flag"],
+)
+def test_bad_arguments_get_the_json_verdict(arguments):
+    code, payload, stderr = _run(*arguments)
+    assert code == 2
+    assert payload["ok"] is False
+    assert payload["reason_code"] == "invalid_arguments"
+    assert payload["error"] in stderr
+
+
+def test_help_still_prints_and_exits_cleanly():
+    completed = subprocess.run(
+        [sys.executable, SCRIPT, "--help"], capture_output=True, text=True, check=False
+    )
+    assert completed.returncode == 0
+    assert "--recording" in completed.stdout

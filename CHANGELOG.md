@@ -43,6 +43,10 @@ recording exceeds the 8 GiB input ceiling.
   its reason code calls for; only a container or codec mismatch suggests `.wav`.
   A filesystem error refuses as `io_failed`, and anything unexpected leaves
   stdout empty and writes the shared closed failure document to stderr (exit 3).
+  An ffmpeg failure is classified from its own message: disk-full or permission
+  failures are `io_failed`, a recording with no audio is
+  `recording_has_no_audio`, and only a codec that does not fit the container
+  suggests `.wav`. Argument errors return the JSON verdict too.
   `local-media-acquisition.md` runs it, then `--audio`, then a declaration —
   never a transcode renamed to `{youtube_id}.mp4`.
   `subagent-instructions.md` names the declaration for non-YouTube talks, and
