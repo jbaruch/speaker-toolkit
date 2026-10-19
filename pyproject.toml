@@ -66,7 +66,7 @@ lint = [
     # The pip distribution bundles its own Node runtime, so CI needs no
     # separate Node setup step.
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
-    "pyright==1.1.411",
+    "pyright==1.1.414",
     # lxml ships no inline types and Pyright's bundled typeshed has no `etree`
     # symbol for it; without these stubs the import reads as unresolved.
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
