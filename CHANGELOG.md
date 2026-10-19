@@ -1,5 +1,29 @@
 # Changelog
 
+### Harden shownotes verification inputs and runtime selection
+
+Follow-ups from the advisory Copilot review on #457 (#458).
+
+- `verify-talk-skill.py` refuses an explicitly empty `--site-url` as a malformed
+  origin; it had read `""` as "no live check" and reported success without one.
+- `--baseurl` is validated before trailing slashes are stripped. `//` and `///`
+  had stripped down to the site root, and `//host` is protocol-relative, not
+  site-relative. `/` still means the root.
+- The raw download link counts only inside `section.talk-skill`, with nested
+  sections tracked by depth. A `talk-skill__raw` anchor anywhere else on the
+  page had satisfied the section's contract.
+- `resolve-deploy-run.py` refuses a row without string `headSha`, `event` and
+  `headBranch` as malformed `gh` output. Such a row could never match, so a
+  `{}` row sat out the whole bounded wait before failing as "no matching run".
+- The standalone publisher resolves its interpreter the way vault-profile does:
+  one owner read of the tracking database through the host interpreter, then
+  `config.python_path`, a confirming re-read and the `core` runtime lane, which
+  carries the PyYAML that `outline_schema.py` and `verify-talk-skill.py`
+  import. The procedure lives in `references/runtime.md`, keeping `SKILL.md`
+  under the entrypoint token budget. Every toolkit command in the skill and
+  `references/talk-skill.md` runs on `"{python_path}"`, never a bare `python3`
+  from `PATH`.
+
 ## 0.20.184 — 2026-10-20
 
 ### Name the toolkit-root lookup as a rule

@@ -157,3 +157,26 @@ def test_process_boundary_returns_selected_id(resolver, monkeypatch, capsys):
         == 0
     )
     assert json.loads(capsys.readouterr().out) == {"ok": True, "database_id": 42}
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        {},
+        {"databaseId": 42, "event": "push", "headBranch": "main"},
+        {**MATCH, "headSha": None},
+        {**MATCH, "event": ""},
+        {**MATCH, "headBranch": 7},
+    ],
+    ids=["empty", "missing-sha", "null-sha", "blank-event", "numeric-branch"],
+)
+def test_a_malformed_row_fails_now_instead_of_waiting_out_the_budget(
+    resolver, monkeypatch, row
+):
+    """#458: a row that can never match is malformed output, not enqueue latency."""
+    runner = Mock(return_value=response([MATCH, row]))
+    monkeypatch.setattr(resolver.subprocess, "run", runner)
+    with pytest.raises(ValueError, match="without string headSha, event"):
+        invoke(resolver)
+    assert runner.call_count == 1
+    resolver.time.sleep.assert_not_called()

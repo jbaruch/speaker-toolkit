@@ -11,6 +11,7 @@ import time
 
 POLL_INTERVAL_SECONDS = 5
 MAX_ATTEMPTS = 60
+ROW_FIELDS = ("headSha", "event", "headBranch")
 
 
 def resolve_run(repo: str, workflow: str, commit: str, event: str, branch: str) -> int:
@@ -46,6 +47,17 @@ def resolve_run(repo: str, workflow: str, commit: str, event: str, branch: str) 
         if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
             raise ValueError(
                 "Deployment lookup returned invalid JSON rows; check gh output"
+            )
+        # A row missing a filter field would never match and would only reach
+        # the no-match timeout; malformed output fails now instead.
+        if any(
+            not isinstance(row.get(field), str) or not row[field]
+            for row in rows
+            for field in ROW_FIELDS
+        ):
+            raise ValueError(
+                "Deployment lookup returned a row without string headSha, event "
+                "and headBranch; check gh output and the --json fields"
             )
         matches = [
             row

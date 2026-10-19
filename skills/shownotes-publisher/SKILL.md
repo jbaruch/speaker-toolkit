@@ -42,6 +42,9 @@ Set `{shownotes_repo}` to the configured site checkout; default
 `~/Projects/shownotes` (deployed at `https://speaking.jbaru.ch`). Use its
 `site.url` and `site.baseurl` for public URLs.
 
+Before any toolkit command, resolve `{python_path}` per
+[references/runtime.md](references/runtime.md); every toolkit command runs on it.
+
 ## Step 1 — Gather Context
 
 Everything the shownotes page needs is already in the talk's
@@ -52,7 +55,7 @@ re-supply anything that is derivable. Read automatically:
 the schema script's JSON emit mode:
 
 ```bash
-python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py" \
+"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py" \
     --emit-json <path-to-outline.yaml>
 ```
 
@@ -438,7 +441,7 @@ merge rules through merge; an open PR is not a published skill. Resolve the depl
 merged commit SHA (PR) with the co-shipped helper:
 
 ```bash
-python3 "{speaker_toolkit_root}/skills/shownotes-publisher/scripts/resolve-deploy-run.py" \
+"{python_path}" "{speaker_toolkit_root}/skills/shownotes-publisher/scripts/resolve-deploy-run.py" \
   --repo "{owner}/{repo}" --workflow "{pages_workflow}" \
   --commit "{published_commit_sha}" --event push --branch "{default_branch}"
 ```
