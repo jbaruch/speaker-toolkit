@@ -1,5 +1,33 @@
 # Changelog
 
+### Record the end-report copy vault-relative in the obligations ledger
+
+`run-obligations.py` refused a valid ledger when the tracking database was
+passed through the documented `~/.claude/rhetoric-knowledge-vault/` locator, a
+symlink to the vault on Google Drive (#486). Run-record schema 1 stored
+`end_report.report_path` as an absolute path under whichever spelling of the
+vault root the delivering command had been given, and validation compared it as
+a string against the copy path recomputed from the current spelling. On the
+live vault, `pending` exited 2 at vault-ingress Step 1 with `ledger_invalid`:
+the recorded Drive path and the recomputed `~/.claude` path name the same file
+with the same digest. Whether a ledger validated depended on how the previous
+run addressed the vault, not on the data.
+
+- Run-record schema 2 stores `report_path` vault-relative
+  (`ingress-reports/{stem}.{sha256}.md`), like the other artifact references in
+  the vault, and validation compares it with `bound_report_path`.
+- Every command reads a schema-1 record as schema 2: the absolute path is
+  stripped of the vault root as spelled, or failing that compared with both
+  sides resolved. A path outside the vault, a relative one, or one naming any
+  copy other than the bound one is still `ledger_invalid`. Read-only commands
+  upgrade in memory only; the next mutating command writes the whole ledger at
+  schema 2, the same write-time upgrade `queue-state.py` uses for v1 claims.
+- `Context` now reads the vault root together with the database generation, so
+  `vault_root` is a plain `Path` from construction on.
+- Checked against the live ledger: 0.20.168 refuses `pending` through the
+  symlink with the reported message; this change answers `ok`, and `status` for
+  the affected run is identical through the symlink and through the Drive path.
+
 ## 0.20.181 — 2026-10-19
 
 ### Tolerate Google Drive's post-sync metadata churn without trusting it

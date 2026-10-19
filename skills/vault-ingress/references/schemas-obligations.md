@@ -42,7 +42,7 @@ explicit disposition and the end report has been delivered.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schema_version` | integer | `1` — the run record's own version, checked on every read |
+| `schema_version` | integer | `2` — the run record's own version, checked on every read; a `1` record is read and upgraded (see Migration) |
 | `run_id` | string | the queue claim's run id (`queue-state.py claim --run-id`); the same identifier contract as the claim (non-empty, no whitespace), never used raw as a path |
 | `opened_at` | timestamp | first `open` |
 | `updated_at` | timestamp | last command that changed the record |
@@ -153,7 +153,7 @@ on an offer. Once `offered`, the buckets and `offer_mode` are frozen; later
 |---|---|
 | `state` | `owed` or `delivered` |
 | `delivered_at` | when `record-report` accepted the delivered text |
-| `report_path` | `{vault_root}/ingress-reports/{stem}.{sha256}.md`, the byte-exact copy; `stem` is the run id with every character outside `A-Za-z0-9._-` replaced by `_`, bounded for long ids by the script's `REPORT_STEM_*` constants, so a ledger-edited id never names a path outside the directory, a long id never exceeds a filename limit, and the full digest keeps two texts from ever sharing a path. Validation recomputes this path from the run id and digest and refuses any other value |
+| `report_path` | `ingress-reports/{stem}.{sha256}.md`, relative to the vault root, the byte-exact copy; `stem` is the run id with every character outside `A-Za-z0-9._-` replaced by `_`, bounded for long ids by the script's `REPORT_STEM_*` constants, so a ledger-edited id never names a path outside the directory, a long id never exceeds a filename limit, and the full digest keeps two texts from ever sharing a path. Validation recomputes this path from the run id and digest and refuses any other value. Relative, the binding is the same whether a command reached the vault through the `~/.claude` symlink or its target |
 | `report_sha256` | digest of the delivered text |
 | `reopened_at` | when a clarification session accepted after delivery reported changed profile inputs, sending the run back to `owed` for a fresh report; null otherwise |
 
@@ -308,10 +308,19 @@ stands.
 
 ## Migration
 
-This release reads ledger schema 1 and run-record schema 1 only; there is no
-older generation to upgrade from, and no on-read migration exists yet. Any
-shape change bumps the affected `schema_version` and ships its on-read upgrade
-in `run-obligations.py` in the same change. A script older than the ledger it
+This release reads ledger schema 1 and run-record schemas 1 and 2, and writes
+run-record schema 2. Any shape change bumps the affected `schema_version` and
+ships its on-read upgrade in `run-obligations.py` in the same change.
+
+Run-record schema 1 recorded `end_report.report_path` as an absolute path under
+whichever spelling of the vault root the delivering command was given. Every
+command reads a schema-1 record as schema 2: the recorded path is stripped of
+the vault root as this command spells it, or, failing that, compared with both
+sides resolved, so a copy recorded under the symlink or its target reads the
+same. A recorded path outside the vault, a relative one, or one naming any
+copy but the bound one is still refused (`ledger_invalid`). Read-only commands
+upgrade in memory and never rewrite; the next mutating command writes the
+whole ledger, so every schema-1 record it carries lands as schema 2. A script older than the ledger it
 reads refuses it (`ledger_schema_unsupported` for the envelope,
 `ledger_invalid` naming the run-record version) and never rewrites it; the
 operator updates speaker-toolkit.

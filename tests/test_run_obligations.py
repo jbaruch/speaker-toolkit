@@ -137,6 +137,11 @@ def _copy_path(tmp_path: Path, run_id: str, content: bytes) -> Path:
     return tmp_path / "ingress-reports" / f"{stem}.{digest}.md"
 
 
+def _bound(tmp_path: Path, run_id: str, content: bytes) -> str:
+    """The vault-relative ``report_path`` a delivery of ``content`` records."""
+    return _copy_path(tmp_path, run_id, content).relative_to(tmp_path).as_posix()
+
+
 def _report(tmp_path: Path, text: str = "# Ingress report\n\nTwo talks processed.\n"):
     path = tmp_path / "delivered.md"
     path.write_text(text, encoding="utf-8")
@@ -244,7 +249,7 @@ def test_open_records_recency_and_the_persisting_claim_and_owes_downstream(
     assert payload["durability_state"] == "durable"
     assert payload["warnings"] == []
     assert payload["ledger_path"] == str(tmp_path / "ingress-obligations.json")
-    assert run["schema_version"] == 1
+    assert run["schema_version"] == 2
     assert [
         (t["filename"], t["status"], t["recency_bucket"], t["claim_run_id"])
         for t in run["talks"]
@@ -804,7 +809,7 @@ def test_a_delivered_report_is_copied_bound_and_completes_the_run(tmp_path, fres
     assert run["end_report"] == {
         "state": "delivered",
         "delivered_at": LATER,
-        "report_path": str(copied),
+        "report_path": _bound(tmp_path, run_id, report.read_bytes()),
         "report_sha256": hashlib.sha256(report.read_bytes()).hexdigest(),
         "reopened_at": None,
     }
@@ -941,7 +946,7 @@ def test_two_different_deliveries_keep_both_copies(tmp_path, fresh_db):
     second = _report(tmp_path, "# second\n")
     payload = _record_report(fresh_db, run_id, second, now=MUCH_LATER)
     assert _copy_path(tmp_path, run_id, b"# first\n").read_bytes() == b"# first\n"
-    assert Path(payload["run"]["end_report"]["report_path"]).read_bytes() == (
+    assert (tmp_path / payload["run"]["end_report"]["report_path"]).read_bytes() == (
         b"# second\n"
     )
     assert payload["run"]["end_report"]["delivered_at"] == MUCH_LATER
@@ -957,7 +962,7 @@ def test_a_queue_style_run_id_with_a_slash_opens_and_reports_inside_the_vault(
     _declined(fresh_db, run_id)
     report = _report(tmp_path)
     payload = _record_report(fresh_db, run_id, report)
-    copied = Path(payload["run"]["end_report"]["report_path"])
+    copied = tmp_path / payload["run"]["end_report"]["report_path"]
     assert copied == _copy_path(tmp_path, run_id, report.read_bytes())
     assert copied.parent == tmp_path / "ingress-reports"
     assert copied.read_bytes() == report.read_bytes()
@@ -975,9 +980,109 @@ def test_a_ledger_edited_run_id_cannot_name_a_path_outside_the_reports_directory
     )
     report = _report(tmp_path)
     payload = _record_report(fresh_db, "../../escape", report)
-    copied = Path(payload["run"]["end_report"]["report_path"])
+    copied = tmp_path / payload["run"]["end_report"]["report_path"]
     assert copied.parent == tmp_path / "ingress-reports"
     assert copied.name.startswith(".._.._escape.")
+
+
+# ── the vault is reached through a symlink (#486) ─────────────────────
+
+
+def _symlinked_vault(tmp_path):
+    """A vault on its real path plus the documented ``~/.claude`` style link."""
+    real = tmp_path / "drive" / "vault"
+    real.mkdir(parents=True)
+    database = _write_db(real, _fresh_talks())
+    _adopt(database)
+    link = tmp_path / "claude-vault"
+    link.symlink_to(real, target_is_directory=True)
+    return real, database, link / database.name
+
+
+@pytest.mark.parametrize("delivered_via", ["real", "link"])
+def test_both_vault_spellings_read_and_replay_the_same_delivery(
+    tmp_path, delivered_via
+):
+    real, real_db, link_db = _symlinked_vault(tmp_path)
+    delivering, other = (
+        (real_db, link_db) if delivered_via == "real" else (link_db, real_db)
+    )
+    run_id = _declined(delivering)
+    report = _report(tmp_path)
+    _record_report(delivering, run_id, report)
+
+    runs = [_ok(db, "status", "--run-id", run_id)["run"] for db in (real_db, link_db)]
+    assert runs[0] == runs[1]
+    assert runs[0]["end_report"]["report_path"] == _bound(
+        real, run_id, report.read_bytes()
+    )
+    for database in (real_db, link_db):
+        assert _ok(database, "pending")["pending"] == []
+    assert _record_report(other, run_id, report, now=MUCH_LATER)["written"] is False
+
+
+def _legacy_delivered_ledger(vault: Path, recorded: str, digest: str) -> None:
+    run = _valid_run(
+        **{
+            "clarification.state": "declined",
+            "clarification.offered_at": NOW,
+            "clarification.resolved_at": NOW,
+            "completed_at": LATER,
+        }
+    )
+    run["schema_version"] = 1
+    run["end_report"] = {**_DELIVERED, "report_path": recorded, "report_sha256": digest}
+    (vault / "ingress-obligations.json").write_text(
+        json.dumps({**ENVELOPE, "runs": [run]}), encoding="utf-8"
+    )
+
+
+@pytest.mark.parametrize("recorded_under", ["real", "link"])
+def test_a_schema_1_absolute_report_path_reads_under_either_spelling_and_upgrades(
+    tmp_path, recorded_under
+):
+    real, real_db, link_db = _symlinked_vault(tmp_path)
+    report = _report(tmp_path)
+    content = report.read_bytes()
+    root = real if recorded_under == "real" else link_db.parent
+    recorded = root / _bound(real, "r", content)
+    _legacy_delivered_ledger(real, str(recorded), hashlib.sha256(content).hexdigest())
+    reading = link_db if recorded_under == "real" else real_db
+
+    status = _ok(reading, "status", "--run-id", "r")
+    assert status["run"]["schema_version"] == 2
+    assert status["run"]["end_report"]["report_path"] == _bound(real, "r", content)
+    assert _ok(reading, "pending")["pending"] == []
+    # Readers upgrade in memory; the next owner write persists the upgrade.
+    assert _ledger(real)["runs"][0]["schema_version"] == 1
+    _record_report(reading, "r", report, now=MUCH_LATER)
+    persisted = _ledger(real)["runs"][0]
+    assert persisted["schema_version"] == 2
+    assert persisted["end_report"]["report_path"] == _bound(real, "r", content)
+    assert persisted["end_report"]["delivered_at"] == LATER
+
+
+@pytest.mark.parametrize(
+    ("recorded", "detail"),
+    [
+        ("/elsewhere/ingress-reports/r.{digest}.md", "is not inside this vault"),
+        ("{vault}/ingress-reports/r.{other}.md", "report_path must be the bound copy"),
+        ("{vault}/elsewhere/r.{digest}.md", "report_path must be the bound copy"),
+        ("ingress-reports/r.{digest}.md", "must be absolute in a schema-1 run record"),
+    ],
+    ids=["outside-vault", "digest-mismatch", "wrong-directory", "relative-in-v1"],
+)
+def test_a_schema_1_report_path_still_fails_closed(tmp_path, recorded, detail):
+    real, real_db, _link_db = _symlinked_vault(tmp_path)
+    digest = "a" * 64
+    _legacy_delivered_ledger(
+        real,
+        recorded.format(vault=real, digest=digest, other="b" * 64),
+        digest,
+    )
+    payload = _refused(real_db, "status", "--run-id", "r")
+    assert payload["reason_code"] == "ledger_invalid"
+    assert detail in payload["error"]
 
 
 # ── deferred offers come back ─────────────────────────────────────────
@@ -1656,7 +1761,7 @@ def test_a_malformed_ledger_is_named_not_repaired(tmp_path, fresh_db):
 
 def _valid_run(run_id: str = "r", **overrides):
     run = {
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": run_id,
         "opened_at": NOW,
         "updated_at": NOW,
@@ -1709,7 +1814,7 @@ def _apply_overrides(run, overrides):
 _DELIVERED = {
     "state": "delivered",
     "delivered_at": LATER,
-    "report_path": "{reports}/r." + "a" * 64 + ".md",
+    "report_path": "ingress-reports/r." + "a" * 64 + ".md",
     "report_sha256": "a" * 64,
     "reopened_at": None,
 }
@@ -1822,8 +1927,8 @@ _ACCEPTED = {
         ({"talks.0.claim_generation": "1"}, "claim_generation must be a non-negative"),
         ({"completed_at": LATER}, "completed_at must be null in this state"),
         (
-            {"schema_version": 2},
-            "run-record schema_version 2; this script reads 1 only",
+            {"schema_version": 3},
+            "run-record schema_version 3; this script reads 1 and 2 only",
         ),
         ({"schema_version": "1"}, "run-record schema_version '1'"),
         ({"run_id": "r 1"}, "contains whitespace"),
@@ -1957,10 +2062,7 @@ def test_every_malformed_ledger_field_fails_structured(
     run = _valid_run()
     _apply_overrides(run, overrides)
     (tmp_path / "ingress-obligations.json").write_text(
-        json.dumps({**ENVELOPE, "runs": [run]}).replace(
-            "{reports}", str(tmp_path / "ingress-reports")
-        ),
-        encoding="utf-8",
+        json.dumps({**ENVELOPE, "runs": [run]}), encoding="utf-8"
     )
     for command in (
         ["pending"],
@@ -1992,9 +2094,7 @@ def test_every_malformed_ledger_field_fails_structured(
     ids=["owed", "deferred-delivered", "accepted-completed", "downstream-owed"],
 )
 def test_a_well_formed_hand_written_ledger_is_accepted(tmp_path, fresh_db, run):
-    text = json.dumps({**ENVELOPE, "runs": [run]}).replace(
-        "{reports}", str(tmp_path / "ingress-reports")
-    )
+    text = json.dumps({**ENVELOPE, "runs": [run]})
     (tmp_path / "ingress-obligations.json").write_text(text, encoding="utf-8")
     assert _ok(fresh_db, "pending")["ok"] is True
     assert (
@@ -2044,7 +2144,7 @@ def test_the_strongest_bucket_decides_the_offer(run_obligations):
 def test_the_entry_point_is_guarded(run_obligations):
     assert callable(run_obligations.main)
     assert run_obligations.LEDGER_SCHEMA_VERSION == 1
-    assert run_obligations.RUN_RECORD_SCHEMA_VERSION == 1
+    assert run_obligations.RUN_RECORD_SCHEMA_VERSION == 2
 
 
 # ── replays are unchanged successes ───────────────────────────────────
@@ -2644,7 +2744,7 @@ def test_a_long_run_id_still_gets_its_report_copy(tmp_path, fresh_db):
     _declined(fresh_db, run_id)
     report = _report(tmp_path)
     payload = _record_report(fresh_db, run_id, report)
-    copied = Path(payload["run"]["end_report"]["report_path"])
+    copied = tmp_path / payload["run"]["end_report"]["report_path"]
     assert copied == _copy_path(tmp_path, run_id, report.read_bytes())
     assert len(copied.name) < 120
     assert copied.read_bytes() == report.read_bytes()

@@ -44,12 +44,13 @@ recorded is an unchanged success, so a caller that lost the first response can
 retry; only a conflicting answer is refused.
 
 Ledger: ``{vault_root}/ingress-obligations.json`` (schema 1, run records
-schema 1), owned by vault-ingress and created by ``adopt``, which records
+schema 2), owned by vault-ingress and created by ``adopt``, which records
 every claim already closed at adoption as history by its exact identity —
 never by time, which ``persist-results.py --run-date`` can stamp at midnight —
 so everything closed afterwards is reconciled. Delivered reports are copied to
 ``{vault_root}/ingress-reports/{stem}.{sha256}.md`` and bound to the ledger by
-that digest. Each recorded talk carries the run id and release time of the
+that digest, recorded vault-relative so the binding never depends on how a
+command spelled the vault root. Each recorded talk carries the run id and release time of the
 closed claim that persisted it, so ``pending`` can reconcile the ledger against
 closed claims and name every persisted fact after the boundary that the ledger
 does not cover (a whole run, a later batch of a recorded run, or a talk merged
@@ -116,7 +117,12 @@ LEDGER_FILENAME = "ingress-obligations.json"
 REPORTS_DIRECTORY = "ingress-reports"
 PROFILE_FILENAME = "speaker-profile.json"
 LEDGER_SCHEMA_VERSION = 1
-RUN_RECORD_SCHEMA_VERSION = 1
+# v2 records ``end_report.report_path`` vault-relative. v1 recorded it absolute
+# under whatever spelling of the vault root the delivering command was given, so
+# a vault reached through a symlink refused its own copies (#486). v1 is read
+# and upgraded in memory; the next owner write persists the upgrade.
+RUN_RECORD_SCHEMA_VERSION = 2
+LEGACY_RUN_RECORD_SCHEMA_VERSION = 1
 # The report copy is content-addressed: ``{stem}.{sha256}.md`` with the run id
 # reduced to a safe filename stem, so two deliveries never overwrite each
 # other and a ledger-edited run id can never name a path outside the directory.
@@ -338,6 +344,11 @@ def safe_report_stem(run_id: str) -> str:
         return stem
     tag = hashlib.sha256(run_id.encode("utf-8")).hexdigest()[:REPORT_STEM_HASH]
     return f"{stem[:REPORT_STEM_PREFIX]}-{tag}"
+
+
+def bound_report_path(run_id: str, digest: str) -> str:
+    """The vault-relative path a delivery of ``digest`` is bound to."""
+    return f"{REPORTS_DIRECTORY}/{safe_report_stem(run_id)}.{digest}.md"
 
 
 def clarification_resolved(run: dict[str, Any]) -> bool:
@@ -634,7 +645,39 @@ def _validate_report(record: Any, label: str, expected_path: Any) -> bool:
     return delivered
 
 
-def _validate_run(run: dict[str, Any], label: str, reports_directory: Path) -> None:
+def _upgrade_legacy_report_path(
+    run: dict[str, Any], label: str, vault_root: Path
+) -> None:
+    """Read a v1 run record as v2 by making its absolute report path relative.
+
+    The recorded path is stripped of the vault root as spelled, or failing that
+    compared with both sides resolved, so a copy recorded under the symlink or
+    under its target reads the same. A path that lands outside the vault stays
+    refused; the bound-copy check that follows refuses any other name.
+    """
+    run["schema_version"] = RUN_RECORD_SCHEMA_VERSION
+    report = run.get("end_report")
+    if not isinstance(report, dict) or not isinstance(report.get("report_path"), str):
+        return
+    recorded = Path(report["report_path"])
+    if not recorded.is_absolute():
+        raise _invalid(
+            label, "end_report report_path must be absolute in a schema-1 run record"
+        )
+    try:
+        relative = recorded.relative_to(vault_root)
+    except ValueError:
+        try:
+            relative = recorded.resolve().relative_to(vault_root.resolve())
+        except (ValueError, OSError, RuntimeError) as exc:
+            raise _invalid(
+                label,
+                f"end_report report_path {str(recorded)!r} is not inside this vault",
+            ) from exc
+    report["report_path"] = relative.as_posix()
+
+
+def _validate_run(run: dict[str, Any], label: str, vault_root: Path) -> None:
     """Refuse a run record whose shape a command would otherwise trip over."""
     _require_keys(
         run,
@@ -651,12 +694,18 @@ def _validate_run(run: dict[str, Any], label: str, reports_directory: Path) -> N
         label,
     )
     version = run["schema_version"]
-    if type(version) is not int or version != RUN_RECORD_SCHEMA_VERSION:
+    if type(version) is not int or version not in {
+        LEGACY_RUN_RECORD_SCHEMA_VERSION,
+        RUN_RECORD_SCHEMA_VERSION,
+    }:
         raise _invalid(
             label,
             f"has run-record schema_version {version!r}; this script reads "
-            f"{RUN_RECORD_SCHEMA_VERSION} only",
+            f"{LEGACY_RUN_RECORD_SCHEMA_VERSION} and {RUN_RECORD_SCHEMA_VERSION} "
+            "only",
         )
+    if version == LEGACY_RUN_RECORD_SCHEMA_VERSION:
+        _upgrade_legacy_report_path(run, label, vault_root)
     for key in ("opened_at", "updated_at"):
         _require_timestamp(run[key], f"{label} {key}")
     if not isinstance(run["talks"], list):
@@ -668,9 +717,7 @@ def _validate_run(run: dict[str, Any], label: str, reports_directory: Path) -> N
     delivered = _validate_report(
         run["end_report"],
         f"{label} end_report",
-        lambda digest: str(
-            reports_directory / f"{safe_report_stem(str(run['run_id']))}.{digest}.md"
-        ),
+        lambda digest: bound_report_path(str(run["run_id"]), digest),
     )
     _require_timestamp_or_null(
         run["completed_at"], f"{label} completed_at", present=delivered
@@ -688,9 +735,7 @@ def _validate_run(run: dict[str, Any], label: str, reports_directory: Path) -> N
             raise _invalid(label, "completed_at must equal end_report.delivered_at")
 
 
-def validate_ledger(
-    payload: object, path: Path, reports_directory: Path
-) -> dict[str, Any]:
+def validate_ledger(payload: object, path: Path, vault_root: Path) -> dict[str, Any]:
     """Accept only the owner's current ledger shape, bound to this vault."""
     if not isinstance(payload, dict):
         raise RunObligationsError(
@@ -762,9 +807,7 @@ def validate_ledger(
                 reason_code="ledger_invalid",
             )
         seen.add(run_id)
-        _validate_run(
-            run, f"obligations ledger {path} run {run_id!r}", reports_directory
-        )
+        _validate_run(run, f"obligations ledger {path} run {run_id!r}", vault_root)
     return payload
 
 
@@ -772,7 +815,7 @@ def validate_ledger(
 
 
 def load_ledger(
-    path: Path, reports_directory: Path
+    path: Path, vault_root: Path
 ) -> tuple[TrackingDatabaseSnapshot | None, dict[str, Any]]:
     """Read the ledger with its generation, or an empty ledger when absent."""
     if not path.exists():
@@ -787,7 +830,7 @@ def load_ledger(
             else "ledger_unreadable"
         )
         raise _io_failure(exc, f"obligations ledger {path}", code) from exc
-    return snapshot, validate_ledger(payload, path, reports_directory)
+    return snapshot, validate_ledger(payload, path, vault_root)
 
 
 def store_ledger(
@@ -1021,9 +1064,7 @@ class Context:
         self.database_path = materialize_native_authority(
             raw_database, authority="database_path"
         )
-        self.vault_root: Path | None = None
-        self.database = self.refresh()
-        assert self.vault_root is not None
+        self.database, self.vault_root = self._read()
         self.ledger_path = self.vault_root / LEDGER_FILENAME
         self.reports_directory = self.vault_root / REPORTS_DIRECTORY
         self.profile_path = self.vault_root / PROFILE_FILENAME
@@ -1035,6 +1076,18 @@ class Context:
         must agree with the one the command started under; obligations are
         never written under an authority the database no longer asserts.
         """
+        database, vault_root = self._read()
+        if vault_root != self.vault_root:
+            raise RunObligationsError(
+                f"the tracking database now asserts vault root {vault_root} "
+                f"but this command started under {self.vault_root}; re-run it",
+                reason_code="vault_root_changed",
+            )
+        self.database = database
+        return database
+
+    def _read(self) -> tuple[dict[str, Any], Path]:
+        """One current database generation and the vault root it asserts."""
         try:
             snapshot = snapshot_tracking_database(self.database_path)
             database = decode_json_object(snapshot)
@@ -1053,15 +1106,7 @@ class Context:
         vault_root = resolve_vault_root_authority(
             database_path=self.database_path, config=database.get("config")
         )
-        if self.vault_root is not None and vault_root != self.vault_root:
-            raise RunObligationsError(
-                f"the tracking database now asserts vault root {vault_root} "
-                f"but this command started under {self.vault_root}; re-run it",
-                reason_code="vault_root_changed",
-            )
-        self.vault_root = vault_root
-        self.database = database
-        return database
+        return database, vault_root
 
     def persisted_runs(self) -> dict[str, dict[str, Any]]:
         """Runs whose closed claims say persist-results.py merged their talks.
@@ -1281,7 +1326,7 @@ def command_open(context: Context, args: argparse.Namespace) -> dict[str, Any]:
             reason_code="invalid_arguments",
         )
     context.refresh()
-    snapshot, ledger = load_ledger(context.ledger_path, context.reports_directory)
+    snapshot, ledger = load_ledger(context.ledger_path, context.vault_root)
     require_adopted(ledger, context.ledger_path)
     try:
         run = find_run(ledger, run_id)
@@ -1366,7 +1411,7 @@ def _transition(
     stamp = render_timestamp(now)
     run_id = require_run_id(args.run_id)
     context.refresh()
-    snapshot, ledger = load_ledger(context.ledger_path, context.reports_directory)
+    snapshot, ledger = load_ledger(context.ledger_path, context.vault_root)
     require_adopted(ledger, context.ledger_path)
     run = find_run(ledger, run_id)
     before = json.dumps(run, sort_keys=True)
@@ -1623,15 +1668,14 @@ def command_record_report(context: Context, args: argparse.Namespace) -> dict[st
         # reused by the retry rather than removed from under a winner. A replay
         # of the recorded digest still goes through here, so a copy deleted
         # after delivery is recreated rather than reported as present.
-        copied, _fresh = write_report_copy(
-            context.reports_directory, run["run_id"], digest, content
-        )
+        write_report_copy(context.reports_directory, run["run_id"], digest, content)
+        bound = bound_report_path(run["run_id"], digest)
         if report["state"] == REPORT_DELIVERED and report["report_sha256"] == digest:
-            report["report_path"] = str(copied)
+            report["report_path"] = bound
             return
         report["state"] = REPORT_DELIVERED
         report["delivered_at"] = stamp
-        report["report_path"] = str(copied)
+        report["report_path"] = bound
         report["report_sha256"] = digest
         run["completed_at"] = stamp
 
@@ -1733,7 +1777,7 @@ def command_adopt(context: Context, args: argparse.Namespace) -> dict[str, Any]:
     now = parse_timestamp(args.now, "--now")
     stamp = render_timestamp(now)
     context.refresh()
-    snapshot, ledger = load_ledger(context.ledger_path, context.reports_directory)
+    snapshot, ledger = load_ledger(context.ledger_path, context.vault_root)
     if ledger.get("adopted_at") is None:
         history = sorted(
             fact_identity(fact, name)
@@ -1776,7 +1820,7 @@ def command_dismiss(context: Context, args: argparse.Namespace) -> dict[str, Any
             reason_code="invalid_arguments",
         )
     context.refresh()
-    snapshot, ledger = load_ledger(context.ledger_path, context.reports_directory)
+    snapshot, ledger = load_ledger(context.ledger_path, context.vault_root)
     require_adopted(ledger, context.ledger_path)
     if any(run["run_id"] == run_id for run in ledger["runs"]):
         raise RunObligationsError(
@@ -1846,7 +1890,7 @@ def command_dismiss(context: Context, args: argparse.Namespace) -> dict[str, Any
 
 
 def command_pending(context: Context, _args: argparse.Namespace) -> dict[str, Any]:
-    _snapshot, ledger = load_ledger(context.ledger_path, context.reports_directory)
+    _snapshot, ledger = load_ledger(context.ledger_path, context.vault_root)
     adopted = isinstance(ledger.get("adopted_at"), str)
     pending = [
         summarize(run) for run in ledger["runs"] if next_action(run) != NEXT_NONE
@@ -1877,7 +1921,7 @@ def command_pending(context: Context, _args: argparse.Namespace) -> dict[str, An
 
 
 def command_status(context: Context, args: argparse.Namespace) -> dict[str, Any]:
-    _snapshot, ledger = load_ledger(context.ledger_path, context.reports_directory)
+    _snapshot, ledger = load_ledger(context.ledger_path, context.vault_root)
     run = find_run(ledger, require_run_id(args.run_id))
     return {
         "ok": True,
@@ -1941,7 +1985,7 @@ def command_session_agenda(
     must exist and its session must be pending; any other state is refused as
     ``invalid_transition`` naming what stands.
     """
-    _snapshot, ledger = load_ledger(context.ledger_path, context.reports_directory)
+    _snapshot, ledger = load_ledger(context.ledger_path, context.vault_root)
     adopted = isinstance(ledger.get("adopted_at"), str)
     sessions = pending_sessions(ledger)
     if args.run_id is None:
