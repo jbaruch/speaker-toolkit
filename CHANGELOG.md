@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.0 — 2026-10-20
+
 ### Separate talk authoring from building, publishing, and CFP work
 
 The presentation creator's entry point had reached 4,998 estimated tokens.
