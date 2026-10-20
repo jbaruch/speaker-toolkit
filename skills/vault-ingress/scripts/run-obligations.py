@@ -796,7 +796,14 @@ def _upgrade_session_claim(run: dict[str, Any], label: str) -> None:
     session = clarification.get("session") if isinstance(clarification, dict) else None
     if not isinstance(session, dict):
         return
-    if session.get("state") not in {SESSION_PENDING, SESSION_COMPLETED} or any(
+    state = session.get("state")
+    if not isinstance(state, str):
+        raise _invalid(
+            label,
+            f"is a schema-2 record whose session state {state!r} is not a string; "
+            "restore the ledger from a copy the owner wrote",
+        )
+    if state not in (SESSION_PENDING, SESSION_COMPLETED) or any(
         key in session for key in ("claim_token", "claimed_at")
     ):
         raise _invalid(
@@ -1852,10 +1859,13 @@ def command_record_session(
     def mutate(run: dict[str, Any], stamp: str, _now: datetime) -> dict[str, Any]:
         session = _accepted_session(run)
         if session["state"] == SESSION_COMPLETED:
+            # A session completed before claims existed migrated with a null
+            # token; any claim token replays it, since none was ever held.
+            same_claim = session["claim_token"] in (None, args.claim_token)
             if (
                 session["profile_inputs"] == inputs
                 and session["profile_refreshed"] == refreshed
-                and session["claim_token"] == args.claim_token
+                and same_claim
             ):
                 return {"replayed": True}
             detail = (
@@ -1863,7 +1873,7 @@ def command_record_session(
                 f"profile_refreshed={session['profile_refreshed']!r} at "
                 f"{session['completed_at']}"
             )
-            if session["claim_token"] != args.claim_token:
+            if not same_claim:
                 detail += " under another claim"
             raise _conflict(run, "session completion", detail)
         _require_claim(run, session, args.claim_token)

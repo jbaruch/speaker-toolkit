@@ -3502,6 +3502,77 @@ def test_a_schema_2_session_is_upgraded_and_rewritten_on_read(tmp_path, fresh_db
     assert persisted["clarification"]["session"] == _PENDING_SESSION
 
 
+def test_a_migrated_legacy_completed_session_replays_its_record(
+    tmp_path, fresh_db
+):
+    """A session completed before claims carries a null token after upgrade."""
+    run = _valid_run(**_ACCEPTED)
+    run["schema_version"] = 2
+    run["clarification"]["session"] = {
+        "state": "completed",
+        "completed_at": NOW,
+        "profile_inputs": "unchanged",
+        "profile_refreshed": False,
+    }
+    (tmp_path / "ingress-obligations.json").write_text(
+        json.dumps({**ENVELOPE, "runs": [run]}), encoding="utf-8"
+    )
+    _ok(fresh_db, "status", "--run-id", "r")
+    before = _ledger(tmp_path)
+
+    replay = _ok(
+        fresh_db,
+        "record-session",
+        "--run-id",
+        "r",
+        "--claim-token",
+        "d" * 32,
+        "--now",
+        LATER,
+        "--profile-inputs",
+        "unchanged",
+    )
+
+    assert replay["replayed"] is True
+    assert _ledger(tmp_path) == before
+    changed = _refused(
+        fresh_db,
+        "record-session",
+        "--run-id",
+        "r",
+        "--claim-token",
+        "d" * 32,
+        "--now",
+        LATER,
+        "--profile-inputs",
+        "changed",
+    )
+    assert changed["reason_code"] == "invalid_transition"
+
+
+@pytest.mark.parametrize("state", [["pending"], {"state": "pending"}, 3, None])
+def test_a_schema_2_session_with_a_malformed_state_is_refused(
+    tmp_path, fresh_db, state
+):
+    """A container state must refuse as ledger_invalid, never a traceback."""
+    run = _valid_run(**_ACCEPTED)
+    run["schema_version"] = 2
+    run["clarification"]["session"] = {
+        "state": state,
+        "completed_at": None,
+        "profile_inputs": None,
+        "profile_refreshed": None,
+    }
+    ledger = tmp_path / "ingress-obligations.json"
+    ledger.write_text(json.dumps({**ENVELOPE, "runs": [run]}), encoding="utf-8")
+    before = ledger.read_bytes()
+
+    refused = _refused(fresh_db, "status", "--run-id", "r")
+
+    assert refused["reason_code"] == "ledger_invalid"
+    assert ledger.read_bytes() == before
+
+
 @pytest.mark.parametrize(
     "session_change",
     [
