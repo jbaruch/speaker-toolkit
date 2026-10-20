@@ -77,7 +77,7 @@ closed. UTF-8 inputs and outputs are bounded to 2 MiB.
 | `slug` | Stable lowercase hyphenated identifier, at most 100 characters |
 | `name` | Nonempty single-line display name, at most 160 characters |
 | `anchors` | Exactly FULL and IMG+TXT, both nonempty style-only text |
-| `text_treatment` | Text-rendering style; nonempty for poster-theatrical |
+| `text_treatment` | Title-rendering style; nonempty for poster-theatrical |
 | `conventions` | Style-only continuity/color conventions; empty allowed |
 | `composition` | `poster-theatrical` or `overlay` |
 | `tags` | One to twenty distinct slug-shaped concept-fit hints |

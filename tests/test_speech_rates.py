@@ -517,7 +517,8 @@ def test_outline_rejects_ambiguous_or_wrong_pacing(
         data["talk"]["pacing_wpm"] = None
         data["talk"]["pacing_rate"] = _profile(rates, evidence)["rates"][3]
     elif mutation == "version":
-        data["schema_version"] = 2
+        # One past the current outline schema: a future generation.
+        data["schema_version"] = outline_schema.OUTLINE_SCHEMA_VERSION + 1
     elif mutation == "no_pace":
         data["talk"]["pacing_wpm"] = None
     elif mutation == "bool_range":

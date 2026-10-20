@@ -17,8 +17,11 @@ from __future__ import annotations
 
 import json
 import copy
+import os
 import re
+import stat
 import sys
+import tempfile
 from enum import Enum
 from pathlib import Path
 from typing import Literal
@@ -173,7 +176,8 @@ class Composition(str, Enum):
     """Deck-wide illustration composition (see rules/title-overlay-rules.md).
 
     `standard` overlays titles/footers at apply time over a reserved safe zone;
-    `poster-theatrical` bakes title + footer into the image as part of the scene.
+    `poster-theatrical` bakes the title, and the footer unless `footer_style`
+    stamps it, into the image as part of the scene.
     Absence of the field means `standard`.
     """
 
@@ -395,6 +399,28 @@ class Chapter(_StrictModel):
 # ── Illustration style anchor (optional, per talk) ───────────────────
 
 
+class FooterStyle(_StrictModel):
+    """Geometry and type for a footer stamped onto poster slides (#474).
+
+    Present, it takes the footer out of the image model's hands: generation
+    reserves a quiet strip and renders no footer, and the apply step stamps
+    `embedded_footer` onto every poster slide with this exact type and geometry,
+    so the footer is pixel-identical across the deck and a regenerated slide
+    cannot change it. The stamping and its defaults are
+    `skills/illustrations/scripts/footer_stamp.py`'s.
+    """
+
+    # A TrueType/OpenType file (or collection, with `font_index`); null uses the
+    # renderer's bundled sans-serif.
+    font_path: str | None = None
+    font_index: int = Field(default=0, ge=0)
+    # The rendered text spans this share of the slide width.
+    target_width_pct: float = Field(default=82.0, gt=0, le=100)
+    # The text baseline sits this share of the slide height above the bottom edge.
+    baseline_from_bottom_pct: float = Field(default=3.8, gt=0, lt=50)
+    color: str = Field(default="#F2EFE6", pattern=r"^#[0-9A-Fa-f]{6}$")
+
+
 class StyleAnchor(_StrictModel):
     model: str
     full: str
@@ -404,12 +430,36 @@ class StyleAnchor(_StrictModel):
     # the title (+ embedded_footer) into every image. See rules/title-overlay-rules.md.
     composition: Composition | None = None
     embedded_footer: str | None = None
-    # How baked title + footer text is rendered in poster-theatrical mode (e.g.
-    # "glowing hand-script neon on an in-scene surface"). Lives on the anchor so
-    # every slide's text is styled identically; the per-slide image_prompt carries
+    # How the baked title is rendered in poster-theatrical mode (e.g. "glowing
+    # hand-script neon on an in-scene surface"). Lives on the anchor so every
+    # slide's title is styled identically; a model-rendered footer has its own
+    # fixed style and a stamped one takes footer_style; the per-slide image_prompt carries
     # only the scene and text_overlay carries only the literal title string. Only
     # consumed in poster-theatrical mode; null falls back to a generic treatment.
     text_treatment: str | None = None
+    # Stamp the footer deterministically instead of letting the model render it.
+    footer_style: FooterStyle | None = None
+
+    @model_validator(mode="after")
+    def _footer_style_needs_a_poster_footer(self) -> "StyleAnchor":
+        if self.footer_style is not None and (
+            self.composition != Composition.poster_theatrical
+            or not (self.embedded_footer or "").strip()
+        ):
+            raise ValueError(
+                "footer_style stamps embedded_footer onto poster slides; set "
+                "composition: poster-theatrical and a non-empty embedded_footer, "
+                "or remove footer_style"
+            )
+        if self.footer_style is not None and any(
+            mark in (self.embedded_footer or "") for mark in "\r\n"
+        ):
+            raise ValueError(
+                "footer_style stamps embedded_footer as one line; remove its line "
+                "breaks (spaces separate its parts), or remove footer_style to let "
+                "the model render it"
+            )
+        return self
 
 
 # ── Talk metadata ────────────────────────────────────────────────────
@@ -685,15 +735,90 @@ def _check_beat_slide_refs(
 # ── Top-level outline ────────────────────────────────────────────────
 
 
+def deck_positions(slides: list["Slide"]) -> dict[int, int]:
+    """Each outline slide's 1-based position in the structurally built deck.
+
+    The build lays down one deck slide per outline slide, in outline order, so a
+    slide's position is its rank by ``n``, not ``n`` itself: numbering may start
+    at 0 or skip values. Every by-index deck pass keys on this, never on ``n``.
+    """
+    return {
+        slide.n: position
+        for position, slide in enumerate(sorted(slides, key=lambda s: s.n), start=1)
+    }
+
+
+# Outline root schema. v2 adds the optional `style_anchor.footer_style`. Every
+# outline carries its root stamp; a v1 outline loads read-only, and only the
+# owner's migration (`migrate_outline`) rewrites it.
+OUTLINE_SCHEMA_VERSION = 2
+FOOTER_STYLE_OUTLINE_SCHEMA_VERSION = 2
+
+_MISSING_STAMP_FIX = (
+    f"a new outline starts with `schema_version: {OUTLINE_SCHEMA_VERSION}`, and "
+    "one written before versioning has the schema 1 shape, so add "
+    "`schema_version: 1` as its first root key and run presentation-creator's "
+    "`outline_schema.py outline.yaml` to migrate it"
+)
+
+
+def _require_root_stamp(data: object) -> object:
+    """Refuse a root mapping without ``schema_version``; there is no default."""
+    if isinstance(data, dict) and "schema_version" not in data:
+        raise ValueError(
+            f"the outline has no root schema_version; {_MISSING_STAMP_FIX}"
+        )
+    return data
+
+
+def _check_outline_version_and_poster(
+    schema_version: int, style_anchor: "StyleAnchor | None", slides: list["Slide"]
+) -> None:
+    """Root checks shared by the full and partial views."""
+    if (
+        style_anchor is not None
+        and style_anchor.footer_style is not None
+        and schema_version < FOOTER_STYLE_OUTLINE_SCHEMA_VERSION
+    ):
+        raise ValueError(
+            "style_anchor.footer_style belongs to outline schema "
+            f"{FOOTER_STYLE_OUTLINE_SCHEMA_VERSION}; set the root schema_version: "
+            f"{FOOTER_STYLE_OUTLINE_SCHEMA_VERSION}"
+        )
+    if (
+        style_anchor is not None
+        and style_anchor.composition == Composition.poster_theatrical
+    ):
+        offenders = [s.n for s in slides if s.image_prompt and s.format.value != "FULL"]
+        if offenders:
+            raise ValueError(
+                "poster-theatrical decks illustrate FULL slides only; slide(s) "
+                f"{', '.join(map(str, offenders))} carry an image_prompt with "
+                "another format — set them to FULL, or drop the image_prompt"
+            )
+
+
 class Outline(_StrictModel):
-    # Missing root stamp is the legacy read-only view. The owner writes v1 on
-    # its next authoring pass; no loader rewrites an existing outline.
-    schema_version: int = Field(default=1, strict=True, ge=1, le=1)
+    # The owner's validation CLI migrates a v1 outline before reading it; the
+    # loader reads one read-only and never writes.
+    schema_version: int = Field(strict=True, ge=1, le=OUTLINE_SCHEMA_VERSION)
     talk: TalkMetadata
     style_anchor: StyleAnchor | None = None
     chapters: list[Chapter] = Field(min_length=1)
     slides: list[Slide] = Field(min_length=1)
     interludes: list[Interlude] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _root_stamp(cls, data: object) -> object:
+        return _require_root_stamp(data)
+
+    @model_validator(mode="after")
+    def _version_and_poster_slides(self) -> "Outline":
+        _check_outline_version_and_poster(
+            self.schema_version, self.style_anchor, self.slides
+        )
+        return self
 
     @model_validator(mode="after")
     def _chapter_ids_unique(self) -> "Outline":
@@ -854,12 +979,24 @@ class PartialOutline(_StrictModel):
     stays the Phase 3+ source-of-truth contract.
     """
 
-    schema_version: int = Field(default=1, strict=True, ge=1, le=1)
+    schema_version: int = Field(strict=True, ge=1, le=OUTLINE_SCHEMA_VERSION)
     talk: TalkMetadata
     style_anchor: StyleAnchor | None = None
     chapters: list[Chapter] = Field(default_factory=list)
     slides: list[Slide] = Field(default_factory=list)
     interludes: list[Interlude] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _root_stamp(cls, data: object) -> object:
+        return _require_root_stamp(data)
+
+    @model_validator(mode="after")
+    def _version_and_poster_slides(self) -> "PartialOutline":
+        _check_outline_version_and_poster(
+            self.schema_version, self.style_anchor, self.slides
+        )
+        return self
 
     @model_validator(mode="after")
     def _argument_beat_slide_refs_valid(self) -> "PartialOutline":
@@ -882,20 +1019,250 @@ def load_outline_partial(path: Path | str) -> PartialOutline:
     return PartialOutline.model_validate(data)
 
 
+class OutlineVersionError(ValueError):
+    """An outline the gate or the migration cannot take as it stands.
+
+    Raised for an older or newer schema, a missing or non-integer root stamp,
+    text that is not UTF-8, and a stamp layout the migration cannot rewrite;
+    the message names the fix.
+    """
+
+
+# The root `schema_version` key at column 0, bare or quoted; only its value is
+# replaced, so an inline comment and the line ending survive.
+_ROOT_VERSION_LINE = re.compile(
+    r"""^(?P<key>schema_version|"schema_version"|'schema_version')"""
+    r"""(?P<sep>[ \t]*:[ \t]*)(?P<value>[^\s#]+)""",
+    re.MULTILINE,
+)
+
+
+# A non-owner reader never edits outline.yaml, so every refusal of the file
+# itself sends it to the owner instead of naming an edit.
+_HANDOFF = (
+    "this reader never edits outline.yaml. Hand off to presentation-creator, "
+    "which owns it and migrates or repairs it when it validates the outline, "
+    "then re-run this command"
+)
+
+
+def _refuse(problem: str, fix: str, *, handoff: bool) -> OutlineVersionError:
+    return OutlineVersionError(f"{problem}; {_HANDOFF if handoff else fix}")
+
+
+def _decode(path: Path, raw: bytes, *, handoff: bool) -> str:
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise _refuse(
+            f"{path} is not UTF-8 text (undecodable byte at offset {exc.start})",
+            "re-save it as UTF-8 and re-run",
+            handoff=handoff,
+        ) from exc
+
+
+def _read(path: Path, *, handoff: bool) -> str:
+    """The outline's text; a failed read names the path fix, never an errno."""
+    try:
+        raw = path.read_bytes()
+    except FileNotFoundError as exc:
+        raise OutlineVersionError(
+            f"no outline at {path}; pass the path to the talk's existing "
+            "outline.yaml, then re-run"
+        ) from exc
+    except IsADirectoryError as exc:
+        raise OutlineVersionError(
+            f"{path} is a directory; pass the outline.yaml inside it, then re-run"
+        ) from exc
+    except PermissionError as exc:
+        raise OutlineVersionError(
+            f"cannot read {path}: permission denied; make it readable, then re-run"
+        ) from exc
+    except OSError as exc:
+        raise OutlineVersionError(
+            f"cannot read {path} ({exc.strerror or exc}); check the path and the "
+            "disk, then re-run"
+        ) from exc
+    return _decode(path, raw, handoff=handoff)
+
+
+def _replace_in_place(target: Path, text: str) -> None:
+    """Swap ``text`` in for ``target`` atomically, keeping its file mode.
+
+    The staging file is unique to this call, so concurrent migrations never
+    share one, and a failure removes it and leaves the outline unchanged.
+    """
+    try:
+        mode = stat.S_IMODE(target.stat().st_mode)
+        handle, name = tempfile.mkstemp(
+            dir=target.parent, prefix=f".{target.name}.", suffix=".migrating"
+        )
+    except OSError as exc:
+        raise OutlineVersionError(
+            f"cannot stage the migration beside {target} ({exc.strerror or exc}); "
+            f"make {target.parent} writable, then re-run. The outline is unchanged"
+        ) from exc
+    staged = Path(name)
+    try:
+        with os.fdopen(handle, "wb") as out:
+            out.write(text.encode("utf-8"))
+        os.chmod(staged, mode)
+        os.replace(staged, target)
+    except OSError as exc:
+        staged.unlink(missing_ok=True)
+        raise OutlineVersionError(
+            f"cannot replace {target} ({exc.strerror or exc}); make "
+            f"{target.parent} writable and check free space, then re-run. The "
+            "outline is unchanged"
+        ) from exc
+
+
+def _root_version(path: Path, text: str, *, handoff: bool) -> int:
+    """The exact integer root stamp; anything else is refused with its fix."""
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise _refuse(
+            f"{path} is not valid YAML ({exc})",
+            "fix the YAML and re-run",
+            handoff=handoff,
+        ) from exc
+    if not isinstance(data, dict):
+        raise _refuse(
+            f"{path} is not an outline: its root is not a YAML mapping",
+            "restore the outline's root mapping and re-run",
+            handoff=handoff,
+        )
+    if "schema_version" not in data:
+        raise _refuse(
+            f"{path} has no root schema_version", _MISSING_STAMP_FIX, handoff=handoff
+        )
+    version = data["schema_version"]
+    # Exact type: YAML 2.0 equals 2 and true equals 1.
+    if type(version) is not int:
+        raise _refuse(
+            f"{path} has root schema_version {version!r}, not an integer",
+            f"set it to {OUTLINE_SCHEMA_VERSION}",
+            handoff=handoff,
+        )
+    return version
+
+
+def require_current_outline(path: Path | str) -> None:
+    """Refuse an older outline for a non-owner reader; the owner migrates it.
+
+    presentation-creator owns outline.yaml. Every other skill reads only the
+    current schema and treats an older one as no usable prior state: it never
+    runs the migration or edits the file, and every refusal of the file itself
+    hands it to presentation-creator.
+    """
+    target = Path(path)
+    text = _read(target, handoff=True)
+    version = _root_version(target, text, handoff=True)
+    if version == OUTLINE_SCHEMA_VERSION:
+        return
+    if version > OUTLINE_SCHEMA_VERSION:
+        raise OutlineVersionError(
+            f"{path} is outline schema {version}, newer than this speaker-toolkit "
+            f"reads ({OUTLINE_SCHEMA_VERSION}); update speaker-toolkit"
+        )
+    raise OutlineVersionError(
+        f"{path} is outline schema {version} and this reader needs schema "
+        f"{OUTLINE_SCHEMA_VERSION}; {_HANDOFF}"
+    )
+
+
+def migrate_outline(path: Path | str) -> dict[str, object]:
+    """Restamp an older outline at the current schema, as its owner, in place.
+
+    v2 only adds an optional field, so the migration is the root stamp: only an
+    exact integer 1 migrates, its value is rewritten, and nothing else changes,
+    comments, quoting and line endings included. The result must load at the
+    current version before it replaces the file atomically; a missing stamp or
+    a layout this cannot restamp is refused.
+    """
+    target = Path(path)
+    # Bytes in, bytes out: universal-newline reads would rewrite CRLF files.
+    text = _read(target, handoff=False)
+    version = _root_version(target, text, handoff=False)
+    if version == OUTLINE_SCHEMA_VERSION:
+        return {"ok": True, "path": str(target), "migrated": False, "to": version}
+    if version != 1:
+        raise OutlineVersionError(
+            f"{target} has root schema_version {version!r}; only schema 1 "
+            f"migrates to {OUTLINE_SCHEMA_VERSION}"
+        )
+    existing = _ROOT_VERSION_LINE.search(text)
+    migrated = (
+        text[: existing.start("value")]
+        + str(OUTLINE_SCHEMA_VERSION)
+        + text[existing.end("value") :]
+        if existing
+        else text
+    )
+    loaded = yaml.safe_load(migrated)
+    if not existing or loaded.get("schema_version") != OUTLINE_SCHEMA_VERSION:
+        raise OutlineVersionError(
+            f"{target} keeps its root schema_version in a layout the migration "
+            f"cannot restamp; set it to {OUTLINE_SCHEMA_VERSION} by hand"
+        )
+    PartialOutline.model_validate(loaded)
+    _replace_in_place(target, migrated)
+    return {"ok": True, "path": str(target), "migrated": True, "from": 1, "to": 2}
+
+
+def _os_failure(path: str, exc: OSError) -> str:
+    return (
+        f"FAIL: cannot access {path} ({exc.strerror or exc}); check that the path "
+        "names the talk's outline.yaml and that it and its directory are readable "
+        "and writable, then re-run"
+    )
+
+
 def main(argv: list[str]) -> int:
     args = argv[1:]
+    if args[:1] == ["--migrate"]:
+        if len(args) != 2:
+            print("usage: outline_schema.py --migrate <outline.yaml>", file=sys.stderr)
+            return 2
+        try:
+            print(json.dumps(migrate_outline(args[1])))
+        except (yaml.YAMLError, ValidationError, OutlineVersionError) as exc:
+            print(f"FAIL: {exc}", file=sys.stderr)
+            return 1
+        except OSError as exc:
+            print(_os_failure(args[1], exc), file=sys.stderr)
+            return 1
+        return 0
     emit_json = "--emit-json" in args
     args = [a for a in args if a != "--emit-json"]
     if len(args) != 1:
         print(
-            "usage: outline_schema.py [--emit-json] <outline.yaml>",
+            "usage: outline_schema.py [--emit-json] <outline.yaml> | "
+            "--migrate <outline.yaml>",
             file=sys.stderr,
         )
         return 2
     try:
+        # Plain validation is the owner's read, so an older outline is migrated
+        # before it is consumed; --emit-json serves other skills, which refuse
+        # an older outline and never write.
+        if emit_json:
+            require_current_outline(args[0])
+        else:
+            migration = migrate_outline(args[0])
+            if migration["migrated"]:
+                print(
+                    f"migrated {args[0]} from outline schema {migration['from']} "
+                    f"to {migration['to']}",
+                    file=sys.stderr,
+                )
         outline = load_outline(args[0])
-    except (OSError, yaml.YAMLError, ValidationError) as exc:
+    except (yaml.YAMLError, ValidationError, OutlineVersionError) as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
+        return 1
+    except OSError as exc:
+        print(_os_failure(args[0], exc), file=sys.stderr)
         return 1
     if emit_json:
         json.dump(outline.model_dump(mode="json"), sys.stdout, indent=2)

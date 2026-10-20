@@ -148,7 +148,7 @@ def test_narrative_partial_tldr_only_stub(
     base_data,
 ):
     """Phase 1 stub: tldr renders, chapter body is a 'not yet authored' note."""
-    data = {"talk": copy.deepcopy(base_data["talk"])}
+    data = {"schema_version": 2, "talk": copy.deepcopy(base_data["talk"])}
     data["talk"]["tldr"] = "Treat context as a first-class artifact."
     partial = outline_schema.PartialOutline.model_validate(data)
     out = extract_narrative.render(partial)
@@ -168,7 +168,11 @@ def test_narrative_partial_renders_chapters_without_slides(
     for c in chapters:
         for beat in c.get("argument_beats", []):
             beat["slide_refs"] = []  # no slides exist yet in the narrative phase
-    data = {"talk": copy.deepcopy(base_data["talk"]), "chapters": chapters}
+    data = {
+        "schema_version": 2,
+        "talk": copy.deepcopy(base_data["talk"]),
+        "chapters": chapters,
+    }
     partial = outline_schema.PartialOutline.model_validate(data)
     out = extract_narrative.render(partial)
     assert "### The Setup" in out
@@ -184,7 +188,7 @@ def test_narrative_cli_partial_renders_talk_only(
     capsys,
 ):
     """CLI --partial renders a talk-only outline to stdout."""
-    data = {"talk": copy.deepcopy(base_data["talk"])}
+    data = {"schema_version": 2, "talk": copy.deepcopy(base_data["talk"])}
     path = tmp_path / "partial.yaml"
     path.write_text(yaml.safe_dump(data), encoding="utf-8")
     rc = extract_narrative.main(["extract-narrative.py", "--partial", str(path)])
@@ -200,7 +204,7 @@ def test_narrative_cli_full_mode_rejects_slideless_outline(
     capsys,
 ):
     """Without --partial, a slides-less outline fails full validation (exit 1)."""
-    data = {"talk": copy.deepcopy(base_data["talk"])}
+    data = {"schema_version": 2, "talk": copy.deepcopy(base_data["talk"])}
     path = tmp_path / "slideless.yaml"
     path.write_text(yaml.safe_dump(data), encoding="utf-8")
     rc = extract_narrative.main(["extract-narrative.py", str(path)])

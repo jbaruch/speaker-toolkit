@@ -1,6 +1,8 @@
 """Tests for outline_schema.py — pydantic validators on the outline source-of-truth."""
 
 import copy
+import re
+import stat
 from pathlib import Path
 
 import pytest
@@ -767,6 +769,10 @@ def test_rejects_erase_region_inverted_box(outline_schema, base_data):
 
 def test_accepts_style_anchor_composition_and_footer(outline_schema, base_data):
     data = copy.deepcopy(base_data)
+    # A poster deck illustrates FULL slides only.
+    for slide in data["slides"]:
+        if slide.get("format") != "FULL":
+            slide.pop("image_prompt", None)
     data["style_anchor"]["composition"] = "poster-theatrical"
     data["style_anchor"]["embedded_footer"] = "@speaker · example.com/talk"
     outline = outline_schema.Outline.model_validate(data)
@@ -841,7 +847,7 @@ def test_rejects_argument_beat_slide_ref_to_missing_slide(outline_schema, base_d
 
 def test_partial_accepts_talk_only(outline_schema, base_data):
     """Phase 1: only the talk block exists — no chapters, no slides."""
-    data = {"talk": copy.deepcopy(base_data["talk"])}
+    data = {"schema_version": 2, "talk": copy.deepcopy(base_data["talk"])}
     partial = outline_schema.PartialOutline.model_validate(data)
     assert partial.talk.title == "Demo Talk"
     assert partial.chapters == []
@@ -855,7 +861,11 @@ def test_partial_accepts_chapters_without_slides(outline_schema, base_data):
     for c in chapters:
         for beat in c.get("argument_beats", []):
             beat["slide_refs"] = []
-    data = {"talk": copy.deepcopy(base_data["talk"]), "chapters": chapters}
+    data = {
+        "schema_version": 2,
+        "talk": copy.deepcopy(base_data["talk"]),
+        "chapters": chapters,
+    }
     partial = outline_schema.PartialOutline.model_validate(data)
     assert len(partial.chapters) == 3
     assert partial.slides == []
@@ -866,14 +876,18 @@ def test_partial_rejects_slide_refs_without_slides(outline_schema, base_data):
     With no slides authored, every slide_ref is invalid."""
     chapters = copy.deepcopy(base_data["chapters"])
     chapters[0]["argument_beats"][0]["slide_refs"] = [1]
-    data = {"talk": copy.deepcopy(base_data["talk"]), "chapters": chapters}
+    data = {
+        "schema_version": 2,
+        "talk": copy.deepcopy(base_data["talk"]),
+        "chapters": chapters,
+    }
     with pytest.raises(ValidationError, match="slide_ref 1"):
         outline_schema.PartialOutline.model_validate(data)
 
 
 def test_partial_still_validates_talk_fields(outline_schema, base_data):
     """Field-level validators on talk still fire in partial mode."""
-    data = {"talk": copy.deepcopy(base_data["talk"])}
+    data = {"schema_version": 2, "talk": copy.deepcopy(base_data["talk"])}
     data["talk"]["architecture"] = "freeform-vibes"
     with pytest.raises(ValidationError, match="architecture"):
         outline_schema.PartialOutline.model_validate(data)
@@ -881,7 +895,11 @@ def test_partial_still_validates_talk_fields(outline_schema, base_data):
 
 def test_partial_rejects_unknown_field(outline_schema, base_data):
     """extra='forbid' holds — misspelled keys fail loud even in partial mode."""
-    data = {"talk": copy.deepcopy(base_data["talk"]), "chapterz": []}
+    data = {
+        "schema_version": 2,
+        "talk": copy.deepcopy(base_data["talk"]),
+        "chapterz": [],
+    }
     with pytest.raises(ValidationError, match="chapterz"):
         outline_schema.PartialOutline.model_validate(data)
 
@@ -988,3 +1006,394 @@ def test_accepts_free_string_theme_and_source(outline_schema, base_data):
     out = outline_schema.Outline.model_validate(data)
     assert out.talk.deck_theme == "dark minimal"
     assert out.talk.engine_source == "match-mode"
+
+
+def test_footer_style_needs_outline_schema_2(outline_schema, base_data):
+    """footer_style is the v2 shape; a v1 outline carrying it is refused."""
+    data = copy.deepcopy(base_data)
+    for slide in data["slides"]:
+        if slide.get("format") != "FULL":
+            slide.pop("image_prompt", None)
+    data["style_anchor"].update(
+        composition="poster-theatrical",
+        embedded_footer="@speaker",
+        footer_style={},
+    )
+    data["schema_version"] = 1
+    with pytest.raises(ValidationError, match="belongs to outline schema 2"):
+        outline_schema.Outline.model_validate(data)
+    data["schema_version"] = 2
+    assert outline_schema.Outline.model_validate(data).schema_version == 2
+
+
+def test_a_poster_deck_refuses_an_illustrated_non_full_slide(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["style_anchor"]["composition"] = "poster-theatrical"
+    with pytest.raises(ValidationError, match="illustrate FULL slides only"):
+        outline_schema.Outline.model_validate(data)
+
+
+def _v1_text(base_data, *, stamp: bool) -> str:
+    data = copy.deepcopy(base_data)
+    data.pop("schema_version", None)
+    body = yaml.safe_dump(data, sort_keys=False)
+    head = "# authored outline — keep this comment\n"
+    return head + ("schema_version: 1\n" if stamp else "") + body
+
+
+_HANDOFF = "Hand off to presentation-creator"
+
+
+def test_the_owner_migration_restamps_an_older_outline_in_place(
+    outline_schema, base_data, tmp_path
+):
+    """Only the root stamp changes; comments and layout survive."""
+    path = tmp_path / "outline.yaml"
+    before = _v1_text(base_data, stamp=True)
+    path.write_text(before, encoding="utf-8")
+
+    result = outline_schema.migrate_outline(path)
+
+    after = path.read_text(encoding="utf-8")
+    assert result == {
+        "ok": True,
+        "path": str(path),
+        "migrated": True,
+        "from": 1,
+        "to": 2,
+    }
+    assert "# authored outline — keep this comment" in after
+    assert yaml.safe_load(after)["schema_version"] == 2
+    assert outline_schema.load_outline(path).schema_version == 2
+    assert outline_schema.migrate_outline(path)["migrated"] is False
+
+
+def test_a_non_owner_reader_refuses_an_older_outline(
+    outline_schema, base_data, tmp_path
+):
+    path = tmp_path / "outline.yaml"
+    path.write_text(_v1_text(base_data, stamp=True), encoding="utf-8")
+    with pytest.raises(outline_schema.OutlineVersionError, match=_HANDOFF):
+        outline_schema.require_current_outline(path)
+    outline_schema.migrate_outline(path)
+    outline_schema.require_current_outline(path)
+
+
+def _body(base_data) -> str:
+    data = copy.deepcopy(base_data)
+    data.pop("schema_version", None)
+    return yaml.safe_dump(data, sort_keys=False)
+
+
+@pytest.mark.parametrize(
+    "head,expected_head",
+    [
+        (
+            "schema_version: 1  # stamped by the creator\n",
+            "schema_version: 2  # stamped by the creator\n",
+        ),
+        ('"schema_version": 1\n', '"schema_version": 2\n'),
+        (
+            "# preamble\n\n---\nschema_version: 1\n",
+            "# preamble\n\n---\nschema_version: 2\n",
+        ),
+    ],
+    ids=["inline-comment", "quoted-key", "preamble-before-marker"],
+)
+def test_the_migration_restamps_every_root_layout(
+    outline_schema, base_data, tmp_path, head, expected_head
+):
+    path = tmp_path / "outline.yaml"
+    path.write_text(head + _body(base_data), encoding="utf-8")
+    outline_schema.migrate_outline(path)
+    after = path.read_text(encoding="utf-8")
+    assert after.startswith(expected_head)
+    assert yaml.safe_load(after)["schema_version"] == 2
+
+
+def test_the_migration_keeps_crlf_line_endings(outline_schema, base_data, tmp_path):
+    path = tmp_path / "outline.yaml"
+    crlf = ("schema_version: 1\n" + _body(base_data)).replace("\n", "\r\n")
+    path.write_bytes(crlf.encode("utf-8"))
+    outline_schema.migrate_outline(path)
+    after = path.read_bytes().decode("utf-8")
+    assert after == crlf.replace("schema_version: 1", "schema_version: 2", 1)
+
+
+@pytest.mark.parametrize(
+    "version,detail",
+    [(3, "update speaker-toolkit"), ("two", "not an integer")],
+    ids=["newer", "not-an-integer"],
+)
+def test_a_non_owner_reader_refuses_every_other_version(
+    outline_schema, base_data, tmp_path, version, detail
+):
+    path = tmp_path / "outline.yaml"
+    path.write_text(
+        yaml.safe_dump({**base_data, "schema_version": version}, sort_keys=False),
+        encoding="utf-8",
+    )
+    with pytest.raises(outline_schema.OutlineVersionError, match=detail):
+        outline_schema.require_current_outline(path)
+
+
+@pytest.mark.parametrize("version", [2.0, True, 1.0], ids=repr)
+def test_a_version_that_only_compares_equal_is_refused(
+    outline_schema, base_data, tmp_path, version
+):
+    """2.0 equals 2 and true equals 1, but neither is the integer stamp."""
+    path = tmp_path / "outline.yaml"
+    path.write_text(
+        yaml.safe_dump({**base_data, "schema_version": version}, sort_keys=False),
+        encoding="utf-8",
+    )
+    with pytest.raises(outline_schema.OutlineVersionError, match="not an integer"):
+        outline_schema.require_current_outline(path)
+    with pytest.raises(outline_schema.OutlineVersionError, match="not an integer"):
+        outline_schema.migrate_outline(path)
+
+
+def test_the_owner_validation_migrates_before_it_reads(
+    outline_schema, base_data, tmp_path, capsys
+):
+    path = tmp_path / "outline.yaml"
+    path.write_text(_v1_text(base_data, stamp=True), encoding="utf-8")
+    assert outline_schema.main(["outline_schema.py", str(path)]) == 0
+    assert "from outline schema 1 to 2" in capsys.readouterr().err
+    assert yaml.safe_load(path.read_text(encoding="utf-8"))["schema_version"] == 2
+
+
+def test_emit_json_refuses_an_older_outline_without_rewriting_it(
+    outline_schema, base_data, tmp_path, capsys
+):
+    """--emit-json serves non-owner readers, which refuse and never migrate."""
+    path = tmp_path / "outline.yaml"
+    original = _v1_text(base_data, stamp=True)
+    path.write_text(original, encoding="utf-8")
+    assert outline_schema.main(["outline_schema.py", "--emit-json", str(path)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert _HANDOFF in captured.err
+    assert path.read_text(encoding="utf-8") == original
+
+
+def test_a_missing_root_stamp_is_refused_everywhere(
+    outline_schema, base_data, tmp_path, capsys
+):
+    """No reader defaults a missing stamp to 1; the owner is told the fix and a
+    non-owner reader is told to hand off."""
+    path = tmp_path / "outline.yaml"
+    original = _v1_text(base_data, stamp=False)
+    path.write_text(original, encoding="utf-8")
+    fix = "add `schema_version: 1`"
+    for view in (outline_schema.Outline, outline_schema.PartialOutline):
+        with pytest.raises(ValidationError, match=fix):
+            view.model_validate(yaml.safe_load(original))
+    with pytest.raises(outline_schema.OutlineVersionError, match=fix):
+        outline_schema.migrate_outline(path)
+    with pytest.raises(outline_schema.OutlineVersionError, match=_HANDOFF):
+        outline_schema.require_current_outline(path)
+    for mode, expected in (
+        ([], fix),
+        (["--migrate"], fix),
+        (["--emit-json"], _HANDOFF),
+    ):
+        assert outline_schema.main(["outline_schema.py", *mode, str(path)]) == 1
+        assert expected in capsys.readouterr().err
+    assert path.read_text(encoding="utf-8") == original
+
+
+def test_a_stamp_the_migration_cannot_find_is_refused(
+    outline_schema, base_data, tmp_path
+):
+    """A flow-style root hides the stamp from the line rewrite; never guess."""
+    path = tmp_path / "outline.yaml"
+    data = {**copy.deepcopy(base_data), "schema_version": 1}
+    original = yaml.safe_dump(data, sort_keys=False, default_flow_style=True)
+    path.write_text(original, encoding="utf-8")
+    with pytest.raises(outline_schema.OutlineVersionError, match="by hand"):
+        outline_schema.migrate_outline(path)
+    assert path.read_text(encoding="utf-8") == original
+
+
+def test_a_non_utf8_outline_is_refused_with_its_fix(
+    outline_schema, base_data, tmp_path, capsys
+):
+    path = tmp_path / "outline.yaml"
+    raw = _v1_text(base_data, stamp=True).encode("utf-8") + b"# caf\xe9\n"
+    path.write_bytes(raw)
+    with pytest.raises(outline_schema.OutlineVersionError, match="not UTF-8"):
+        outline_schema.require_current_outline(path)
+    fix = "re-save it as UTF-8"
+    for mode, expected in (
+        ([], fix),
+        (["--migrate"], fix),
+        (["--emit-json"], _HANDOFF),
+    ):
+        assert outline_schema.main(["outline_schema.py", *mode, str(path)]) == 1
+        assert expected in capsys.readouterr().err
+    assert path.read_bytes() == raw
+
+
+def test_a_root_that_is_not_a_mapping_is_refused(outline_schema, tmp_path):
+    path = tmp_path / "outline.yaml"
+    path.write_text("- schema_version: 2\n", encoding="utf-8")
+    for check in (
+        outline_schema.require_current_outline,
+        outline_schema.migrate_outline,
+    ):
+        with pytest.raises(
+            outline_schema.OutlineVersionError, match="not a YAML mapping"
+        ):
+            check(path)
+
+
+def test_the_worked_example_is_stamped_at_the_current_schema(outline_schema):
+    """The CLI tests validate this fixture, and the owner's validation migrates
+    an older outline in place, so a stale example would be rewritten by the suite."""
+    data = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
+    assert data["schema_version"] == outline_schema.OUTLINE_SCHEMA_VERSION
+
+
+def _refused_outlines(base_data):
+    """Every way the file itself can be refused, as raw bytes."""
+    body = yaml.safe_dump({**copy.deepcopy(base_data), "schema_version": 1})
+    return {
+        "older": body.encode("utf-8"),
+        "missing-stamp": _v1_text(base_data, stamp=False).encode("utf-8"),
+        "not-an-integer": body.replace(
+            "schema_version: 1", "schema_version: 2.0"
+        ).encode(),
+        "not-utf8": body.encode("utf-8") + b"# caf\xe9\n",
+        "not-a-mapping": b"- schema_version: 2\n",
+        "invalid-yaml": b"schema_version: 2\ntalk: [unclosed\n",
+    }
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "older",
+        "missing-stamp",
+        "not-an-integer",
+        "not-utf8",
+        "not-a-mapping",
+        "invalid-yaml",
+    ],
+)
+def test_every_non_owner_refusal_hands_off_and_names_no_edit(
+    outline_schema, base_data, tmp_path, kind
+):
+    """A non-owner reader never edits outline.yaml, so no refusal it emits may
+    tell it to; each one sends the file to presentation-creator."""
+    raw = _refused_outlines(base_data)[kind]
+    path = tmp_path / "outline.yaml"
+    path.write_bytes(raw)
+    with pytest.raises(outline_schema.OutlineVersionError) as exc:
+        outline_schema.require_current_outline(path)
+    message = str(exc.value)
+    assert _HANDOFF in message
+    for edit in (
+        "set it to",
+        "add `schema_version",
+        "re-save",
+        "fix the YAML",
+        "restore",
+        "--migrate",
+    ):
+        assert edit not in message, (kind, edit)
+    assert path.read_bytes() == raw
+
+
+@pytest.mark.parametrize(
+    "kind,fix",
+    [
+        ("missing-stamp", "add `schema_version: 1`"),
+        ("not-an-integer", "set it to 2"),
+        ("not-utf8", "re-save it as UTF-8"),
+        ("not-a-mapping", "restore the outline's root mapping"),
+        ("invalid-yaml", "fix the YAML"),
+    ],
+)
+def test_the_owner_migration_names_each_fix(
+    outline_schema, base_data, tmp_path, kind, fix
+):
+    raw = _refused_outlines(base_data)[kind]
+    path = tmp_path / "outline.yaml"
+    path.write_bytes(raw)
+    with pytest.raises(outline_schema.OutlineVersionError, match=re.escape(fix)):
+        outline_schema.migrate_outline(path)
+    assert path.read_bytes() == raw
+
+
+def test_migrate_names_a_path_fix_for_a_missing_outline_or_a_directory(
+    outline_schema, tmp_path, capsys
+):
+    missing = tmp_path / "outline.yaml"
+    assert outline_schema.main(["outline_schema.py", "--migrate", str(missing)]) == 1
+    assert (
+        "pass the path to the talk's existing outline.yaml" in capsys.readouterr().err
+    )
+    assert outline_schema.main(["outline_schema.py", "--migrate", str(tmp_path)]) == 1
+    assert "is a directory; pass the outline.yaml inside it" in capsys.readouterr().err
+
+
+def test_migrate_names_the_fix_for_an_unreadable_outline(
+    outline_schema, base_data, tmp_path, monkeypatch, capsys
+):
+    path = tmp_path / "outline.yaml"
+    path.write_text(_v1_text(base_data, stamp=True), encoding="utf-8")
+    real = Path.read_bytes
+
+    def denied(self):
+        if self == path:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real(self)
+
+    monkeypatch.setattr(Path, "read_bytes", denied)
+    assert outline_schema.main(["outline_schema.py", "--migrate", str(path)]) == 1
+    assert "permission denied; make it readable" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("stage", ["stage", "replace"])
+def test_a_failed_write_names_its_fix_and_leaves_the_outline(
+    outline_schema, base_data, tmp_path, monkeypatch, capsys, stage
+):
+    path = tmp_path / "outline.yaml"
+    original = _v1_text(base_data, stamp=True)
+    path.write_text(original, encoding="utf-8")
+    full = OSError(28, "No space left on device")
+
+    def fail(*args, **kwargs):
+        raise full
+
+    if stage == "stage":
+        monkeypatch.setattr(outline_schema.tempfile, "mkstemp", fail)
+    else:
+        monkeypatch.setattr(outline_schema.os, "replace", fail)
+    assert outline_schema.main(["outline_schema.py", "--migrate", str(path)]) == 1
+    err = capsys.readouterr().err
+    assert f"make {tmp_path} writable" in err
+    assert "The outline is unchanged" in err
+    assert path.read_text(encoding="utf-8") == original
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["outline.yaml"]
+
+
+def test_the_migration_stages_privately_and_keeps_the_file_mode(
+    outline_schema, base_data, tmp_path
+):
+    """A leftover staging file from another run is never reused or clobbered."""
+    path = tmp_path / "outline.yaml"
+    path.write_text(_v1_text(base_data, stamp=True), encoding="utf-8")
+    path.chmod(0o640)
+    stale = tmp_path / ".outline.yaml.migrating"
+    stale.write_text("another run's half-written stage", encoding="utf-8")
+
+    assert outline_schema.migrate_outline(path)["migrated"] is True
+
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
+    assert stale.read_text(encoding="utf-8") == "another run's half-written stage"
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        ".outline.yaml.migrating",
+        "outline.yaml",
+    ]

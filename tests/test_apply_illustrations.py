@@ -5,8 +5,10 @@ partial outlines via _write_outline.
 """
 
 import copy
+import json
 from pathlib import Path
 
+import pytest
 import yaml
 from pptx import Presentation
 from pptx.util import Inches
@@ -18,6 +20,17 @@ FIXTURE = Path(__file__).parent / "fixtures" / "outline-example.yaml"
 _TALK = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))["talk"]
 
 
+def _fill_numbering(slides):
+    """Pad 1..max(n) with plain slides: a built deck has one per outline slide."""
+    present = {slide["n"] for slide in slides}
+    filler = [
+        {"n": k, "chapter": "c", "title": f"Filler {k}", "format": "FULL"}
+        for k in range(1, max(present, default=0) + 1)
+        if k not in present
+    ]
+    return sorted([*slides, *filler], key=lambda slide: slide["n"])
+
+
 def _write_outline(
     tmp_path, slides, *, composition=None, embedded_footer=None, name="outline.yaml"
 ):
@@ -26,8 +39,8 @@ def _write_outline(
     `slides` is a list of dicts; each needs at least `n` + `format`. chapter and
     title are filled in so the partial schema validates.
     """
-    norm = [{"chapter": "c", "title": "S", **s} for s in slides]
-    data = {"talk": copy.deepcopy(_TALK), "slides": norm}
+    norm = _fill_numbering([{"chapter": "c", "title": "S", **s} for s in slides])
+    data = {"schema_version": 2, "talk": copy.deepcopy(_TALK), "slides": norm}
     if composition is not None or embedded_footer is not None:
         anchor = {"model": "imagen-4", "full": "F", "imgtxt": "I", "conventions": "C"}
         if composition is not None:
@@ -44,16 +57,19 @@ ZONES_SLIDES = [
     {
         "n": 2,
         "format": "FULL",
+        "image_prompt": "P",
         "safe_zone": {"zone": "upper_third", "surface": "painted sky"},
     },
     {
         "n": 5,
         "format": "FULL",
+        "image_prompt": "P",
         "safe_zone": {"zone": "lower_third", "surface": "flat gradient"},
     },
     {
         "n": 8,
         "format": "FULL",
+        "image_prompt": "P",
         "safe_zone": {"zone": "left_half", "surface": "studio backdrop"},
     },
 ]
@@ -77,11 +93,36 @@ def test_parse_zones_all_types(apply_illustrations, tmp_path):
     outline = _write_outline(
         tmp_path,
         [
-            {"n": 1, "format": "FULL", "safe_zone": {"zone": "upper_third"}},
-            {"n": 2, "format": "FULL", "safe_zone": {"zone": "middle_third"}},
-            {"n": 3, "format": "FULL", "safe_zone": {"zone": "lower_third"}},
-            {"n": 4, "format": "FULL", "safe_zone": {"zone": "left_half"}},
-            {"n": 5, "format": "FULL", "safe_zone": {"zone": "right_half"}},
+            {
+                "n": 1,
+                "format": "FULL",
+                "image_prompt": "P",
+                "safe_zone": {"zone": "upper_third"},
+            },
+            {
+                "n": 2,
+                "format": "FULL",
+                "image_prompt": "P",
+                "safe_zone": {"zone": "middle_third"},
+            },
+            {
+                "n": 3,
+                "format": "FULL",
+                "image_prompt": "P",
+                "safe_zone": {"zone": "lower_third"},
+            },
+            {
+                "n": 4,
+                "format": "FULL",
+                "image_prompt": "P",
+                "safe_zone": {"zone": "left_half"},
+            },
+            {
+                "n": 5,
+                "format": "FULL",
+                "image_prompt": "P",
+                "safe_zone": {"zone": "right_half"},
+            },
         ],
     )
     zones = apply_illustrations.parse_zones(outline)
@@ -367,6 +408,7 @@ def test_apply_full_records_background_not_picture(apply_illustrations, tmp_path
             {
                 "n": 2,
                 "format": "FULL",
+                "image_prompt": "P",
                 "safe_zone": {"zone": "upper_third", "surface": "sky"},
             },
         ],
@@ -405,7 +447,9 @@ def test_apply_imgtxt_keeps_picture_shape(apply_illustrations, tmp_path):
     illust_dir.mkdir()
     (illust_dir / "slide-02.png").write_bytes(_MIN_PNG)
 
-    outline = _write_outline(tmp_path, [{"n": 2, "format": "IMG+TXT"}])
+    outline = _write_outline(
+        tmp_path, [{"n": 2, "format": "IMG+TXT", "image_prompt": "P"}]
+    )
     out_deck = tmp_path / "out.pptx"
 
     img_txt = apply_illustrations.parse_img_txt_slides(outline)
@@ -532,3 +576,635 @@ def test_apply_main_rejects_poster_with_safe_zone(
     with pytest.raises(SystemExit) as exc:
         apply_illustrations.main()
     assert "poster-theatrical" in str(exc.value)
+
+
+# ── #474: a poster footer is stamped at apply time ─────────────────────
+
+
+def _poster_outline_with_footer_style(tmp_path, footer, footer_style):
+    outline = _write_outline(
+        tmp_path,
+        [{"n": 2, "format": "FULL", "text_overlay": "T", "image_prompt": "P"}],
+        composition="poster-theatrical",
+        embedded_footer=footer,
+    )
+    data = yaml.safe_load(outline.read_text(encoding="utf-8"))
+    data["schema_version"] = 2
+    data["style_anchor"]["footer_style"] = footer_style
+    outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return outline
+
+
+def test_a_poster_footer_is_stamped_into_a_copy_the_deck_uses(
+    apply_illustrations, tmp_path
+):
+    from PIL import Image
+
+    import footer_stamp
+
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    raw = illust_dir / "slide-02.jpg"
+    Image.new("RGB", (1536, 864), (30, 40, 50)).save(raw, quality=95)
+    raw_bytes = raw.read_bytes()
+    footer = "@jbaruch    speaking.jbaru.ch"
+    outline = _poster_outline_with_footer_style(tmp_path, footer, {})
+
+    stamp_spec = apply_illustrations.parse_footer_stamp(outline)
+    _, backgrounds = apply_illustrations.apply(
+        deck,
+        illust_dir,
+        {},
+        set(),
+        tmp_path / "out.pptx",
+        "jpg",
+        "000000",
+        45000,
+        {2},
+        stamp_spec,
+    )
+
+    stamped = illust_dir / "footer-stamped" / "slide-02.png"
+    assert backgrounds == {2: str(stamped.resolve())}
+    assert raw.read_bytes() == raw_bytes
+    with Image.open(stamped) as image:
+        assert footer_stamp.verify_footer(image, footer, stamp_spec[1])[0] is True
+
+
+def test_without_a_footer_style_the_model_baked_image_is_used_as_is(
+    apply_illustrations, tmp_path
+):
+    outline = _write_outline(
+        tmp_path,
+        [{"n": 2, "format": "FULL", "text_overlay": "T", "image_prompt": "P"}],
+        composition="poster-theatrical",
+        embedded_footer="@jbaruch",
+    )
+    assert apply_illustrations.parse_footer_stamp(outline) is None
+
+
+def test_a_footer_style_needs_a_poster_footer(apply_illustrations, tmp_path):
+    import outline_schema
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="footer_style stamps embedded_footer"):
+        _poster_outline_with_footer_style(tmp_path, "", {})
+        outline_schema.load_outline_partial(tmp_path / "outline.yaml")
+
+
+def test_an_unillustrated_poster_slide_is_never_stamped(apply_illustrations, tmp_path):
+    """A screenshot slide keeps its own treatment, even with a matching asset."""
+    outline = _write_outline(
+        tmp_path,
+        [
+            {"n": 2, "format": "FULL", "text_overlay": "T", "image_prompt": "P"},
+            {"n": 3, "format": "FULL", "text_overlay": "Screenshot"},
+        ],
+        composition="poster-theatrical",
+        embedded_footer="@jbaruch",
+    )
+    assert apply_illustrations.parse_full_slides(outline) == {2}
+
+
+def test_main_reports_one_json_object_on_stdout(
+    apply_illustrations, tmp_path, monkeypatch, capsys
+):
+    from PIL import Image
+
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    Image.new("RGB", (1536, 864), (30, 40, 50)).save(illust_dir / "slide-02.jpg")
+    outline = _poster_outline_with_footer_style(
+        tmp_path, "@jbaruch    speaking.jbaru.ch", {}
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        ["apply-illustrations-to-deck.py", str(deck), str(illust_dir), str(outline)],
+    )
+
+    apply_illustrations.main()
+
+    captured = capsys.readouterr()
+    summary = json.loads(captured.out)
+    assert summary["ok"] is True
+    assert summary["updated"] == 1 and summary["eligible"] == 1
+    assert summary["results"][0]["footer_stamped"] is True
+    assert summary["backgrounds_manifest"] is not None
+    assert "poster FULL" in captured.err
+
+
+def test_poster_slides_of_mixed_size_are_refused_before_any_stamp(
+    apply_illustrations, tmp_path, monkeypatch
+):
+    from PIL import Image
+
+    deck = tmp_path / "deck.pptx"
+    make_deck(4).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    Image.new("RGB", (1536, 864), (30, 40, 50)).save(illust_dir / "slide-02.jpg")
+    Image.new("RGB", (1024, 1024), (30, 40, 50)).save(illust_dir / "slide-03.jpg")
+    outline = _write_outline(
+        tmp_path,
+        [
+            {"n": 2, "format": "FULL", "text_overlay": "T", "image_prompt": "P"},
+            {"n": 3, "format": "FULL", "text_overlay": "U", "image_prompt": "Q"},
+        ],
+        composition="poster-theatrical",
+        embedded_footer="@jbaruch",
+    )
+    data = yaml.safe_load(outline.read_text(encoding="utf-8"))
+    data["schema_version"] = 2
+    data["style_anchor"]["footer_style"] = {}
+    outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    monkeypatch.setattr(
+        "sys.argv",
+        ["apply-illustrations-to-deck.py", str(deck), str(illust_dir), str(outline)],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        apply_illustrations.main()
+
+    assert "must share one size" in str(exc.value)
+    assert not (illust_dir / "footer-stamped").exists()
+
+
+def test_an_unreadable_poster_image_exits_with_its_fix(
+    apply_illustrations, tmp_path, monkeypatch
+):
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    (illust_dir / "slide-02.jpg").write_bytes(b"not an image")
+    outline = _poster_outline_with_footer_style(tmp_path, "@jbaruch", {})
+    monkeypatch.setattr(
+        "sys.argv",
+        ["apply-illustrations-to-deck.py", str(deck), str(illust_dir), str(outline)],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        apply_illustrations.main()
+
+    assert "cannot read slide-02.jpg" in str(exc.value)
+    assert "regenerate or replace it" in str(exc.value)
+
+
+def test_an_unwritable_backgrounds_manifest_exits_with_its_fix(
+    apply_illustrations, tmp_path, monkeypatch
+):
+    from PIL import Image
+
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    Image.new("RGB", (1536, 864), (30, 40, 50)).save(illust_dir / "slide-02.jpg")
+    outline = _poster_outline_with_footer_style(tmp_path, "@jbaruch", {})
+    missing_dir = tmp_path / "no-such-dir" / "backgrounds.json"
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "apply-illustrations-to-deck.py",
+            str(deck),
+            str(illust_dir),
+            str(outline),
+            "--backgrounds-out",
+            str(missing_dir),
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        apply_illustrations.main()
+
+    assert "cannot write the backgrounds manifest" in str(exc.value)
+
+
+def _cli(monkeypatch, *arguments):
+    monkeypatch.setattr("sys.argv", ["apply-illustrations-to-deck.py", *arguments])
+
+
+@pytest.mark.parametrize(
+    "slides,problem",
+    [
+        (
+            [
+                {"n": 2, "format": "FULL", "text_overlay": "T", "image_prompt": "P"},
+                {"n": 3, "format": "FULL", "text_overlay": "U", "image_prompt": "Q"},
+            ],
+            "slide 3 has no slide-03.jpg",
+        ),
+        (
+            [
+                {"n": 2, "format": "FULL", "text_overlay": "T", "image_prompt": "P"},
+                {"n": 5, "format": "FULL", "text_overlay": "U", "image_prompt": "Q"},
+            ],
+            "slide 5 is past the deck's 3 slides",
+        ),
+    ],
+    ids=["missing-image", "past-the-deck"],
+)
+def test_a_partial_application_is_refused_before_any_deck_is_written(
+    apply_illustrations, tmp_path, monkeypatch, slides, problem
+):
+    """An unillustrated eligible slide is a failure, never ok with a lower count."""
+    from PIL import Image
+
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    Image.new("RGB", (1536, 864), (30, 40, 50)).save(illust_dir / "slide-02.jpg")
+    if slides[1]["n"] == 5:
+        Image.new("RGB", (1536, 864), (30, 40, 50)).save(illust_dir / "slide-05.jpg")
+    outline = _write_outline(
+        tmp_path,
+        slides,
+        composition="poster-theatrical",
+        embedded_footer="@jbaruch",
+    )
+    _cli(monkeypatch, str(deck), str(illust_dir), str(outline))
+
+    with pytest.raises(SystemExit) as exc:
+        apply_illustrations.main()
+
+    assert problem in str(exc.value)
+    assert "no deck was written" in str(exc.value)
+    assert not (tmp_path / "deck-with-titles.pptx").exists()
+
+
+def test_a_missing_source_deck_names_the_deck(
+    apply_illustrations, tmp_path, monkeypatch
+):
+    from PIL import Image
+
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    Image.new("RGB", (1536, 864), (30, 40, 50)).save(illust_dir / "slide-02.jpg")
+    outline = _poster_outline_with_footer_style(tmp_path, "@jbaruch", {})
+    missing = tmp_path / "absent.pptx"
+    _cli(monkeypatch, str(missing), str(illust_dir), str(outline))
+
+    with pytest.raises(SystemExit) as exc:
+        apply_illustrations.main()
+
+    assert f"cannot read the source deck {missing}" in str(exc.value)
+    assert "pass an existing .pptx" in str(exc.value)
+
+
+def test_an_unwritable_output_deck_names_the_output(
+    apply_illustrations, tmp_path, monkeypatch
+):
+    from PIL import Image
+
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    Image.new("RGB", (1536, 864), (30, 40, 50)).save(illust_dir / "slide-02.jpg")
+    outline = _poster_outline_with_footer_style(tmp_path, "@jbaruch", {})
+    out = tmp_path / "no-such-dir" / "out.pptx"
+    _cli(monkeypatch, str(deck), str(illust_dir), str(outline), "--out", str(out))
+
+    with pytest.raises(SystemExit) as exc:
+        apply_illustrations.main()
+
+    assert f"cannot write the output deck {out}" in str(exc.value)
+    assert "pass --out elsewhere" in str(exc.value)
+
+
+def test_an_unreadable_img_txt_image_names_the_image(
+    apply_illustrations, tmp_path, monkeypatch
+):
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    (illust_dir / "slide-02.jpg").write_bytes(b"not an image")
+    outline = _write_outline(
+        tmp_path, [{"n": 2, "format": "IMG+TXT", "image_prompt": "P"}]
+    )
+    _cli(monkeypatch, str(deck), str(illust_dir), str(outline))
+
+    with pytest.raises(SystemExit) as exc:
+        apply_illustrations.main()
+
+    assert "slide 2: slide-02.jpg cannot be decoded as an image" in str(exc.value)
+    assert not (tmp_path / "deck-with-titles.pptx").exists()
+
+
+def test_deck_slide_numbers_follow_build_expansion(apply_illustrations):
+    """ExpandBuilds replaces each parent with its frames before backgrounds run."""
+    counts = {3: 4, 6: 2}
+    number = apply_illustrations.deck_slide_number
+    assert [number(n, counts) for n in (1, 2, 3, 4, 5, 6, 7)] == [
+        1,
+        2,
+        None,
+        7,
+        8,
+        None,
+        11,
+    ]
+    assert number(5, {}) == 5
+
+
+def test_backgrounds_are_keyed_past_an_earlier_build(apply_illustrations, tmp_path):
+    """A slide after a build parent is set on its post-expansion number."""
+    deck = tmp_path / "deck.pptx"
+    make_deck(5).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    for n in (2, 3, 4):
+        (illust_dir / f"slide-{n:02d}.png").write_bytes(_MIN_PNG)
+    zone = {"zone": "upper_third", "surface": "sky"}
+    outline = _write_outline(
+        tmp_path,
+        [
+            {"n": 2, "format": "FULL", "image_prompt": "P", "safe_zone": zone},
+            {
+                "n": 3,
+                "format": "FULL",
+                "image_prompt": "P",
+                "safe_zone": zone,
+                "builds": [
+                    {"step": 0, "desc": "a", "erase": "e"},
+                    {"step": 1, "desc": "b", "erase": "e"},
+                    {"step": 2, "desc": "c"},
+                ],
+            },
+            {"n": 4, "format": "FULL", "image_prompt": "P", "safe_zone": zone},
+        ],
+    )
+
+    results, backgrounds = apply_illustrations.apply(
+        deck,
+        illust_dir,
+        apply_illustrations.parse_zones(outline),
+        set(),
+        tmp_path / "out.pptx",
+        "png",
+        "000000",
+        45000,
+        build_counts=apply_illustrations.parse_build_counts(outline),
+    )
+
+    # Slide 3's three frames occupy deck slides 3-5, so slide 4 is deck slide 6;
+    # the parent itself has no background to set.
+    assert sorted(backgrounds) == [2, 6]
+    assert backgrounds[6] == str((illust_dir / "slide-04.png").resolve())
+    assert {r["slide"]: r["deck_slide"] for r in results} == {2: 2, 3: None, 4: 6}
+
+
+def test_a_build_frame_of_another_size_is_refused_before_apply_stamps(
+    apply_illustrations, tmp_path, monkeypatch
+):
+    """The deck-wide set includes declared frames, not just slide images."""
+    from PIL import Image
+
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    builds = illust_dir / "builds"
+    builds.mkdir(parents=True)
+    Image.new("RGB", (1536, 864), (30, 40, 50)).save(illust_dir / "slide-02.jpg")
+    Image.new("RGB", (1536, 864), (30, 40, 50)).save(builds / "slide-02-build-00.jpg")
+    Image.new("RGB", (1024, 1024), (30, 40, 50)).save(builds / "slide-02-build-01.jpg")
+    outline = _write_outline(
+        tmp_path,
+        [
+            {
+                "n": 2,
+                "format": "FULL",
+                "text_overlay": "T",
+                "image_prompt": "P",
+                "builds": [
+                    {"step": 0, "desc": "a", "erase": "e"},
+                    {"step": 1, "desc": "b"},
+                ],
+            },
+        ],
+        composition="poster-theatrical",
+        embedded_footer="@jbaruch",
+    )
+    data = yaml.safe_load(outline.read_text(encoding="utf-8"))
+    data["schema_version"] = 2
+    data["style_anchor"]["footer_style"] = {}
+    outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    _cli(monkeypatch, str(deck), str(illust_dir), str(outline))
+
+    with pytest.raises(SystemExit) as exc:
+        apply_illustrations.main()
+
+    assert "must share one size" in str(exc.value)
+    assert "slide-02-build-01.jpg" in str(exc.value)
+    assert not (illust_dir / "footer-stamped").exists()
+    assert not (tmp_path / "deck-with-titles.pptx").exists()
+
+
+def test_a_multiline_stamped_footer_is_refused_by_the_schema(
+    apply_illustrations, tmp_path
+):
+    import outline_schema
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="as one line"):
+        _poster_outline_with_footer_style(tmp_path, "@jbaruch\nspeaking.jbaru.ch", {})
+        outline_schema.load_outline_partial(tmp_path / "outline.yaml")
+
+
+def test_a_prompt_free_img_txt_slide_is_left_to_the_slide_walk(
+    apply_illustrations, tmp_path, monkeypatch, capsys
+):
+    """A screenshot IMG+TXT slide has no generated image and never blocks apply."""
+    deck = tmp_path / "deck.pptx"
+    make_deck(5).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    (illust_dir / "slide-02.png").write_bytes(_MIN_PNG)
+    (illust_dir / "slide-04.png").write_bytes(_MIN_PNG)
+    outline = _write_outline(
+        tmp_path,
+        [
+            {
+                "n": 2,
+                "format": "IMG+TXT",
+                "image_prompt": "P",
+                "builds": [
+                    {"step": 0, "desc": "a", "erase": "e"},
+                    {"step": 1, "desc": "b", "erase": "e"},
+                    {"step": 2, "desc": "c"},
+                ],
+            },
+            {"n": 3, "format": "IMG+TXT"},
+            {"n": 4, "format": "IMG+TXT", "image_prompt": "Q"},
+        ],
+    )
+    _cli(
+        monkeypatch,
+        str(deck),
+        str(illust_dir),
+        str(outline),
+        "--image-ext",
+        "png",
+    )
+
+    apply_illustrations.main()
+
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["eligible"] == 2
+    # Every result carries its post-expansion number: slide 4 follows 3 frames.
+    assert {r["slide"]: r["deck_slide"] for r in summary["results"]} == {
+        2: None,
+        4: 6,
+    }
+
+
+def test_a_zero_based_outline_keys_backgrounds_by_deck_position(
+    apply_illustrations, tmp_path
+):
+    """Outline slide 0 is deck slide 1, and later keys follow from there."""
+    import outline_schema
+
+    deck = tmp_path / "deck.pptx"
+    make_deck(4).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    for n in (0, 1, 2):
+        (illust_dir / f"slide-{n:02d}.png").write_bytes(_MIN_PNG)
+    zone = {"zone": "upper_third", "surface": "sky"}
+    outline = _write_outline(
+        tmp_path,
+        [
+            {"n": 0, "format": "FULL", "image_prompt": "P", "safe_zone": zone},
+            {
+                "n": 1,
+                "format": "FULL",
+                "image_prompt": "P",
+                "safe_zone": zone,
+                "builds": [
+                    {"step": 0, "desc": "a", "erase": "e"},
+                    {"step": 1, "desc": "b"},
+                ],
+            },
+            {"n": 2, "format": "FULL", "image_prompt": "P", "safe_zone": zone},
+        ],
+    )
+    positions = outline_schema.deck_positions(
+        outline_schema.load_outline_partial(outline).slides
+    )
+
+    results, backgrounds = apply_illustrations.apply(
+        deck,
+        illust_dir,
+        apply_illustrations.parse_zones(outline),
+        set(),
+        tmp_path / "out.pptx",
+        "png",
+        "000000",
+        45000,
+        build_counts=apply_illustrations.parse_build_counts(outline),
+        positions=positions,
+    )
+
+    assert positions == {0: 1, 1: 2, 2: 3}
+    # Slide 1's two frames take deck slides 2-3, so slide 2 is deck slide 4.
+    assert sorted(backgrounds) == [1, 4]
+    assert {r["slide"]: r["deck_slide"] for r in results} == {0: 1, 1: None, 2: 4}
+
+
+def test_a_missing_outline_is_named_by_apply(
+    apply_illustrations, tmp_path, monkeypatch
+):
+    deck = tmp_path / "deck.pptx"
+    make_deck(2).save(str(deck))
+    _cli(monkeypatch, str(deck), str(tmp_path), str(tmp_path / "absent.yaml"))
+    with pytest.raises(SystemExit) as exc:
+        apply_illustrations.main()
+    assert "outline not found" in str(exc.value)
+
+
+def test_a_prompt_free_safe_zone_slide_is_left_to_the_slide_walk(
+    apply_illustrations, tmp_path, monkeypatch, capsys
+):
+    """A screenshot FULL slide with a safe zone has no generated image and
+    never blocks apply, like a prompt-free IMG+TXT slide."""
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    (illust_dir / "slide-01.png").write_bytes(_MIN_PNG)
+    zone = {"zone": "upper_third", "surface": "sky"}
+    outline = _write_outline(
+        tmp_path,
+        [
+            {"n": 1, "format": "FULL", "image_prompt": "P", "safe_zone": zone},
+            {"n": 2, "format": "FULL", "safe_zone": zone},
+        ],
+    )
+    assert apply_illustrations.parse_zones(outline) == {1: "upper_third"}
+    _cli(
+        monkeypatch,
+        str(deck),
+        str(illust_dir),
+        str(outline),
+        "--image-ext",
+        "png",
+    )
+
+    apply_illustrations.main()
+
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["eligible"] == 1
+    assert [r["slide"] for r in summary["results"]] == [1]
+
+
+@pytest.mark.parametrize(
+    "slide,composition",
+    [
+        ({"format": "FULL", "safe_zone": {"zone": "upper_third"}}, None),
+        ({"format": "FULL"}, "poster-theatrical"),
+    ],
+    ids=["standard-full", "unstamped-poster"],
+)
+@pytest.mark.parametrize("bad", ["corrupt", "directory"])
+def test_a_background_that_does_not_decode_writes_nothing(
+    apply_illustrations, tmp_path, monkeypatch, slide, composition, bad
+):
+    """A background only PowerPoint would open is decoded here first: a corrupt
+    file or a directory never reaches the manifest as ``ok: true``."""
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    (illust_dir / "slide-01.png").write_bytes(_MIN_PNG)
+    target = illust_dir / "slide-02.png"
+    if bad == "corrupt":
+        # A valid PNG header over truncated pixel data: only a full decode fails.
+        target.write_bytes(_MIN_PNG[:45])
+    else:
+        target.mkdir()
+    outline = _write_outline(
+        tmp_path,
+        [
+            {"n": 1, "image_prompt": "P", **slide},
+            {"n": 2, "image_prompt": "Q", **slide},
+        ],
+        composition=composition,
+        embedded_footer="@jbaruch" if composition else None,
+    )
+    out = tmp_path / "deck-with-titles.pptx"
+    _cli(monkeypatch, str(deck), str(illust_dir), str(outline), "--image-ext", "png")
+
+    with pytest.raises(SystemExit) as exc:
+        apply_illustrations.main()
+
+    reason = "cannot be decoded as an image" if bad == "corrupt" else "is not a file"
+    assert f"slide 2: slide-02.png {reason}" in str(exc.value)
+    assert "no deck was written" in str(exc.value)
+    assert not out.exists()
+    assert not (tmp_path / "deck-with-titles.backgrounds.json").exists()

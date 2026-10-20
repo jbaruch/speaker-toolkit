@@ -93,9 +93,11 @@ so the layout's halftone-dot overlay covers them); IMG+TXT slides get a
 left-column picture shape via `apply-illustrations-to-deck.py`.
 
 When `outline.yaml`'s `style_anchor.composition` is `poster-theatrical`, also
-**omit the `TITLE` and `FOOTER` ops** for the FULL slides — the title and footer
-are rendered into the illustration itself, so the only post-build inserts on
-those slides are the background fill and the QR code.
+**omit the `TITLE` and `FOOTER` ops** for the illustrated FULL slides (those
+with an `image_prompt`) — the title and footer are rendered into the
+illustration itself, so the only post-build inserts on those slides are the
+background fill and the QR code. A FULL slide without an `image_prompt` gets no
+illustration, so it keeps its `TITLE` and `FOOTER` ops.
 
 The illustrations skill reads `outline.yaml` directly (`style_anchor` plus
 per-slide `image_prompt` / `builds`) — no surfacing or format translation needed.

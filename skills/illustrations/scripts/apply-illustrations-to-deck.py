@@ -5,9 +5,11 @@ Reads outline.yaml (the single source of truth — schema + loader in
 skills/presentation-creator/scripts/outline_schema.py). Two slide formats are
 supported, distinguished by the per-slide fields:
 
-FULL — slide has a `safe_zone:` field (zone of upper_third / middle_third /
+FULL — an illustrated slide (one with an `image_prompt`, which generation
+  draws) has a `safe_zone:` field (zone of upper_third / middle_third /
   lower_third / left_half / right_half):
-  1. Record the slide + illustration in the backgrounds manifest (--backgrounds-out).
+  1. Record the slide + illustration in the backgrounds manifest (--backgrounds-out),
+     keyed by its deck slide number after ExpandBuilds (a build parent has none).
      The illustration becomes the slide BACKGROUND FILL via a later ApplyBackgrounds
      VBA pass (apply-backgrounds.sh) — NOT a python-pptx picture shape, which would
      sit above the layout's halftone-dot overlay and which a python-pptx round-trip
@@ -18,15 +20,20 @@ FULL — slide has a `safe_zone:` field (zone of upper_third / middle_third /
      upper_third/middle_third/lower_third -> full-width band at the matching Y;
      left_half/right_half -> narrower column on that side.
 
-IMG+TXT — slide has `format: IMG+TXT` and no `safe_zone`:
+IMG+TXT — an illustrated slide has `format: IMG+TXT` and no `safe_zone`:
   1. Replace the background picture with the matching illustration.
   2. Resize and position the picture as a left-column image (~60% of slide).
   3. Reposition title and body placeholders into the right column.
 
 FULL-POSTER — style_anchor sets `composition: poster-theatrical`; every FULL
-  slide is background-only. The title + footer are baked into the image by
+  slide is background-only. The title is baked into the image by
   `generate-illustrations.py`, so there is no scrim and no overlaid title — just
   the background manifest entry. QR (inserted later) is the only added shape.
+  With `style_anchor.footer_style` set, the footer is stamped here instead of
+  rendered by the model: each slide image is stamped by `footer_stamp.py` into
+  a PNG under `ILLUSTRATIONS_DIR/footer-stamped/`, and that copy becomes the
+  background, so the generated image stays footer-free for edits and builds.
+  `build-expansion-manifest.py` stamps the same slides' build frames.
 
 The outline is the single source of truth for slide format and zone
 assignments — the same fields that `generate-illustrations.py` reads.
@@ -37,19 +44,45 @@ Usage:
     apply-illustrations-to-deck.py DECK ILLUSTRATIONS_DIR OUTLINE_YAML \\
         [--out OUT_DECK] [--image-ext jpg|jpeg|png] \\
         [--scrim-color RRGGBB] [--scrim-alpha 0-100000]
+
+Stdout is one JSON object: ``ok``, the written ``deck`` (null when the outline
+has nothing to apply), ``updated`` and ``eligible`` slide counts, the per-slide
+``results`` (each with its outline ``slide`` and post-ExpandBuilds
+``deck_slide``, null for a build parent), and the ``backgrounds_manifest`` path
+(null when no FULL slide needs a background). The manifest's keys are
+post-ExpandBuilds deck slide numbers, so run the backgrounds pass after
+``expand-builds.sh``. Deck access and keys count outline slides in order
+(``outline_schema.deck_positions``), so outline numbering may start at 0. With ``footer_style``, every stamped slide image and every
+declared build frame must share one size, checked before anything is written. Progress lines go to stderr. A refusal exits non-zero
+with its message on stderr and names the fix: an eligible slide whose image is
+missing, is not a file or does not decode as an image (``footer_stamp.unusable_image``),
+or that lies past the deck's end (nothing is written), an unreadable
+source deck, an unwritable output deck or backgrounds manifest, or a slide image
+that cannot be read or stamped.
 """
 
 import argparse
 import json
-import shutil
 import sys
 from pathlib import Path
 
 from lxml import etree
 from pptx import Presentation
+from pptx.exc import PackageNotFoundError
 from pptx.enum.shapes import MSO_SHAPE, MSO_SHAPE_TYPE
 from pptx.oxml.ns import qn
 from pptx.util import Inches
+
+# A sibling module: this script's own directory is already importable.
+from footer_stamp import (
+    FooterStampError,
+    deck_stamp_set,
+    require_one_geometry,
+    stamp_footer_file,
+    stamp_spec,
+    stamped_slide,
+    unusable_image,
+)
 
 # outline.yaml is the single source of truth; its schema + loader live with the
 # presentation-creator scripts.
@@ -153,29 +186,43 @@ def parse_composition(outline_path: Path) -> str | None:
     return None
 
 
+def _progress(message: str) -> None:
+    """Human progress goes to stderr; stdout carries only the JSON summary."""
+    print(message, file=sys.stderr)
+
+
+def parse_footer_stamp(outline_path: Path) -> tuple[str, dict] | None:
+    """The footer text and style to stamp, or None when the model renders it."""
+    return stamp_spec(outline_schema.load_outline_partial(outline_path).style_anchor)
+
+
 def parse_zones(outline_path: Path) -> dict:
-    """Read `safe_zone` from the outline.
+    """Read `safe_zone` from the outline's illustrated slides.
 
     Returns {slide_num: zone_name} where zone_name is a key of ZONE_LAYOUT.
-    Slides without a safe_zone are absent from the dict.
+    Slides without a safe_zone are absent from the dict, and so is a slide
+    without an ``image_prompt``: generation skips it and the slide walk's
+    inserted asset stays, as for IMG+TXT.
     """
     return {
         s.n: s.safe_zone.zone.value
         for s in outline_schema.load_outline_partial(outline_path).slides
-        if s.safe_zone
+        if s.safe_zone and s.image_prompt
     }
 
 
 def parse_img_txt_slides(outline_path: Path) -> set:
-    """Slide numbers whose format is IMG+TXT and which have no safe_zone.
+    """Illustrated IMG+TXT slide numbers: an ``image_prompt`` and no safe_zone.
 
     Safe zone takes precedence (it implies FULL), so a slide carrying both is
-    handled by the zones path instead.
+    handled by the zones path instead. A slide without an ``image_prompt`` gets
+    no generated image (generation skips it) and keeps the asset the slide walk
+    inserted, so it is never eligible here.
     """
     return {
         s.n
         for s in outline_schema.load_outline_partial(outline_path).slides
-        if s.format.value == "IMG+TXT" and not s.safe_zone
+        if s.format.value == "IMG+TXT" and not s.safe_zone and s.image_prompt
     }
 
 
@@ -189,7 +236,7 @@ def parse_full_slides(outline_path: Path) -> set:
     return {
         s.n
         for s in outline_schema.load_outline_partial(outline_path).slides
-        if s.format.value == "FULL" and not s.safe_zone
+        if stamped_slide(s)
     }
 
 
@@ -383,6 +430,73 @@ def apply_img_txt_layout(slide) -> tuple[int, int]:
     return pic_moved, text_moved
 
 
+def deck_slide_number(
+    n: int,
+    build_counts: dict[int, int],
+    positions: dict[int, int] | None = None,
+) -> int | None:
+    """Outline slide ``n``'s 1-based deck number after ExpandBuilds, or None.
+
+    ``positions`` maps outline numbers to built-deck positions
+    (``outline_schema.deck_positions``); without it ``n`` is taken as the
+    position. ExpandBuilds runs before the backgrounds pass and replaces each
+    build parent with its frames, so every later slide moves by that parent's
+    frame count minus one. A parent itself has no slide left to key: its frames
+    carry their own backgrounds from the build manifest.
+    """
+    if n in build_counts:
+        return None
+    place = positions or {}
+    here = place.get(n, n)
+    return here + sum(
+        count - 1
+        for parent, count in build_counts.items()
+        if place.get(parent, parent) < here
+    )
+
+
+def parse_build_counts(outline_path: Path) -> dict[int, int]:
+    """Frame count per build parent, from the outline's per-slide ``builds``."""
+    return {
+        s.n: len(s.builds)
+        for s in outline_schema.load_outline_partial(outline_path).slides
+        if s.builds
+    }
+
+
+class ApplyError(RuntimeError):
+    """A refusal whose message names the operation that failed and its fix."""
+
+
+def _why(exc: BaseException) -> str:
+    return f"{type(exc).__name__}: {getattr(exc, 'strerror', None) or exc}"
+
+
+def _position(place: dict[int, int], n: int) -> int:
+    """Outline slide ``n``'s 1-based built-deck position; ``n`` itself if unmapped."""
+    return place.get(n, n)
+
+
+def _unapplied(
+    illust_dir: Path,
+    ext: str,
+    slides: set[int],
+    slide_count: int,
+    positions: dict[int, int],
+) -> list[str]:
+    """Each eligible slide that cannot be applied, and why."""
+    problems = []
+    for n in sorted(slides):
+        illust = illust_dir / f"slide-{n:02d}.{ext}"
+        if _position(positions, n) > slide_count:
+            problems.append(f"slide {n} is past the deck's {slide_count} slides")
+        elif not illust.exists():
+            problems.append(f"slide {n} has no {illust.name}")
+        elif (why := unusable_image(illust)) is not None:
+            problems.append(f"slide {n}: {why}")
+    return problems
+
+
 def apply(
     deck: Path,
     illust_dir: Path,
@@ -393,44 +507,66 @@ def apply(
     scrim_hex: str,
     scrim_alpha: int,
     poster_full_slides: set | None = None,
+    footer_stamp: tuple[str, dict] | None = None,
+    build_counts: dict[int, int] | None = None,
+    positions: dict[int, int] | None = None,
 ) -> tuple[list[dict], dict]:
     """Apply scrim + title for FULL slides and the IMG+TXT layout.
 
     FULL-slide illustrations are NOT inserted as picture shapes here; they are
     recorded in the returned ``backgrounds`` map ({slide_num: abs_image_path})
     for the ApplyBackgrounds VBA pass, which sets them as slide background fills
-    as the final write. Returns ``(results, backgrounds)``.
+    as the final write. Its keys are post-ExpandBuilds deck slide numbers
+    (``deck_slide_number``), and a build parent has no entry. Returns
+    ``(results, backgrounds)``.
     """
-    if out_deck.exists():
-        out_deck.unlink()
-    shutil.copy2(deck, out_deck)
-
-    prs = Presentation(str(out_deck))
+    build_counts = build_counts or {}
+    # Outline number -> built-deck position; identity when not given.
+    place: dict[int, int] = positions or {}
+    poster_full_slides = poster_full_slides or set()
+    try:
+        prs = Presentation(str(deck))
+    except (OSError, PackageNotFoundError) as exc:
+        raise ApplyError(
+            f"cannot read the source deck {deck} ({_why(exc)}); pass an existing "
+            ".pptx, then re-run"
+        ) from exc
+    # Every eligible slide, or nothing: a partial deck would ship with the
+    # skipped slides unillustrated.
+    problems = _unapplied(
+        illust_dir,
+        ext,
+        set(zones) | set(img_txt_slides) | poster_full_slides,
+        len(prs.slides),
+        place,
+    )
+    if problems:
+        raise ApplyError(
+            "not every eligible slide can be applied, so no deck was written: "
+            f"{'; '.join(problems)} — generate the missing slide images, or fix "
+            "the outline's slide numbers against the deck, then re-run"
+        )
     results = []
     backgrounds: dict[int, str] = {}
-    poster_full_slides = poster_full_slides or set()
 
     # FULL slides with Safe zone — scrim + title here; background via VBA pass
     for n, zone in sorted(zones.items()):
         illust = illust_dir / f"slide-{n:02d}.{ext}"
-        if not illust.exists():
-            print(f"  [{n:02d}] SKIP: missing {illust.name}")
-            continue
-        if n > len(prs.slides):
-            print(f"  [{n:02d}] SKIP: out of deck range")
-            continue
 
-        slide = prs.slides[n - 1]
-        backgrounds[n] = str(illust.resolve())
+        slide = prs.slides[_position(place, n) - 1]
+        deck_n = deck_slide_number(n, build_counts, place)
+        if deck_n is not None:
+            backgrounds[deck_n] = str(illust.resolve())
 
         scrim_added = ensure_scrim(slide, zone, scrim_hex, scrim_alpha)
         moved = reposition_title(slide, zone)
-        print(
+        _progress(
             f"  [{n:02d}] zone={zone}  moved={moved} text  scrim+{scrim_added}  bg->VBA"
         )
         results.append(
             {
                 "slide": n,
+                "deck_slide": deck_n,
                 "format": "FULL",
                 "zone": zone,
                 "text_moved": moved,
@@ -441,21 +577,22 @@ def apply(
     # IMG+TXT slides — image-left + text-right layout
     for n in sorted(img_txt_slides):
         illust = illust_dir / f"slide-{n:02d}.{ext}"
-        if not illust.exists():
-            print(f"  [{n:02d}] SKIP: missing {illust.name}")
-            continue
-        if n > len(prs.slides):
-            print(f"  [{n:02d}] SKIP: out of deck range")
-            continue
 
-        slide = prs.slides[n - 1]
-        swap_or_insert_picture(slide, illust)
+        slide = prs.slides[_position(place, n) - 1]
+        try:
+            swap_or_insert_picture(slide, illust)
+        except OSError as exc:
+            raise ApplyError(
+                f"cannot read the slide image {illust} ({_why(exc)}); regenerate "
+                "or replace it, then re-run"
+            ) from exc
 
         pic_moved, text_moved = apply_img_txt_layout(slide)
-        print(f"  [{n:02d}] format=IMG+TXT  pic+{pic_moved}  text+{text_moved}")
+        _progress(f"  [{n:02d}] format=IMG+TXT  pic+{pic_moved}  text+{text_moved}")
         results.append(
             {
                 "slide": n,
+                "deck_slide": deck_slide_number(n, build_counts, place),
                 "format": "IMG+TXT",
                 "picture_repositioned": pic_moved,
                 "text_moved": text_moved,
@@ -467,18 +604,68 @@ def apply(
     # only inserted shape.
     for n in sorted(poster_full_slides):
         illust = illust_dir / f"slide-{n:02d}.{ext}"
-        if not illust.exists():
-            print(f"  [{n:02d}] SKIP: missing {illust.name}")
-            continue
-        if n > len(prs.slides):
-            print(f"  [{n:02d}] SKIP: out of deck range")
-            continue
-        backgrounds[n] = str(illust.resolve())
-        print(f"  [{n:02d}] poster FULL  bg->VBA  (title+footer baked into image)")
-        results.append({"slide": n, "format": "FULL-POSTER", "zone": None})
+        deck_n = deck_slide_number(n, build_counts, place)
+        if deck_n is None:
+            # A build parent: its frames, stamped by the build manifest,
+            # replace it and carry their own backgrounds.
+            _progress(f"  [{n:02d}] poster FULL  build parent (frames carry it)")
+        elif footer_stamp is None:
+            backgrounds[deck_n] = str(illust.resolve())
+            _progress(
+                f"  [{n:02d}] poster FULL  bg->VBA  (title+footer baked into image)"
+            )
+        else:
+            text, style = footer_stamp
+            stamped_dir = illust_dir / "footer-stamped"
+            try:
+                stamped = stamp_footer_file(illust, stamped_dir, text, style)
+            except OSError as exc:
+                raise ApplyError(
+                    f"cannot stamp {illust.name} into {stamped_dir} ({_why(exc)}); "
+                    "regenerate or replace the image if it is unreadable, or make "
+                    "the directory writable, then re-run"
+                ) from exc
+            backgrounds[deck_n] = str(stamped.resolve())
+            _progress(
+                f"  [{n:02d}] poster FULL  bg->VBA  (title baked, footer stamped)"
+            )
+        results.append(
+            {
+                "slide": n,
+                "deck_slide": deck_n,
+                "format": "FULL-POSTER",
+                "zone": None,
+                "footer_stamped": footer_stamp is not None and deck_n is not None,
+            }
+        )
 
-    prs.save(str(out_deck))
+    try:
+        prs.save(str(out_deck))
+    except OSError as exc:
+        raise ApplyError(
+            f"cannot write the output deck {out_deck} ({_why(exc)}); make its "
+            "directory writable or pass --out elsewhere, then re-run"
+        ) from exc
     return results, backgrounds
+
+
+def _summary(
+    deck: Path | None,
+    results: list[dict],
+    eligible: int,
+    backgrounds_manifest: Path | None,
+) -> dict:
+    """The one JSON object main prints on stdout."""
+    return {
+        "ok": True,
+        "deck": str(deck) if deck is not None else None,
+        "updated": len(results),
+        "eligible": eligible,
+        "results": results,
+        "backgrounds_manifest": (
+            str(backgrounds_manifest) if backgrounds_manifest is not None else None
+        ),
+    }
 
 
 def main():
@@ -518,6 +705,12 @@ def main():
         "apply-backgrounds.sh to set the backgrounds via PowerPoint.",
     )
     args = ap.parse_args()
+    if not args.outline.is_file():
+        raise SystemExit(f"ERROR: outline not found: {args.outline}")
+    try:
+        outline_schema.require_current_outline(args.outline)
+    except outline_schema.OutlineVersionError as exc:
+        raise SystemExit(f"ERROR: {exc}") from exc
 
     out_deck = args.out or args.deck.with_name(args.deck.stem + "-with-titles.pptx")
     backgrounds_out = args.backgrounds_out or out_deck.with_name(
@@ -540,10 +733,11 @@ def main():
     poster_full_slides = parse_full_slides(args.outline) if poster else set()
     total_slides = len(zones) + len(img_txt_slides) + len(poster_full_slides)
     if total_slides == 0:
-        print(
+        _progress(
             f"No `safe_zone`, `format: IMG+TXT`, or poster-theatrical FULL "
             f"slides found in {args.outline.name}. Nothing to do."
         )
+        print(json.dumps(_summary(None, [], 0, None)))
         return
 
     scrim_hex = args.scrim_color.lstrip("#").upper()
@@ -554,34 +748,75 @@ def main():
     if not (0 <= args.scrim_alpha <= 100000):
         raise SystemExit(f"--scrim-alpha must be 0..100000, got {args.scrim_alpha}")
 
-    results, backgrounds = apply(
-        args.deck,
-        args.illustrations,
-        zones,
-        img_txt_slides,
-        out_deck,
-        args.image_ext,
-        scrim_hex,
-        args.scrim_alpha,
-        poster_full_slides,
-    )
-    print(f"\nSaved {out_deck}")
-    print(f"Updated {len(results)}/{total_slides} slides")
+    footer = parse_footer_stamp(args.outline) if poster else None
+    try:
+        if footer is not None:
+            # One deck-wide set, the same one the build manifest checks, so a
+            # mixed deck is refused before either command stamps anything.
+            require_one_geometry(
+                deck_stamp_set(
+                    outline_schema.load_outline_partial(args.outline).slides,
+                    args.illustrations,
+                    args.illustrations / "builds",
+                    args.image_ext,
+                )
+            )
+        results, backgrounds = apply(
+            args.deck,
+            args.illustrations,
+            zones,
+            img_txt_slides,
+            out_deck,
+            args.image_ext,
+            scrim_hex,
+            args.scrim_alpha,
+            poster_full_slides,
+            footer,
+            parse_build_counts(args.outline),
+            outline_schema.deck_positions(
+                outline_schema.load_outline_partial(args.outline).slides
+            ),
+        )
+    except (ApplyError, FooterStampError) as exc:
+        raise SystemExit(f"ERROR: {exc}") from exc
+    _progress(f"\nSaved {out_deck}")
+    _progress(f"Updated {len(results)}/{total_slides} slides")
 
     if backgrounds:
         manifest = {
             "backgrounds": {str(n): path for n, path in sorted(backgrounds.items())}
         }
-        backgrounds_out.write_text(json.dumps(manifest, indent=2) + "\n")
-        print(f"Wrote {len(backgrounds)} FULL-slide background(s) -> {backgrounds_out}")
-        print(
-            f"Apply them via: apply-backgrounds.sh <uniquely-named copy of {out_deck.name}> "
-            f"<final.pptx> {backgrounds_out.name}"
+        try:
+            backgrounds_out.write_text(json.dumps(manifest, indent=2) + "\n")
+        except OSError as exc:
+            raise SystemExit(
+                f"ERROR: wrote {out_deck.name} but cannot write the backgrounds "
+                f"manifest {backgrounds_out} ({type(exc).__name__}: "
+                f"{exc.strerror or exc}); make its directory writable or pass "
+                "--backgrounds-out elsewhere, then re-run"
+            ) from exc
+        _progress(
+            f"Wrote {len(backgrounds)} FULL-slide background(s) -> {backgrounds_out}"
+        )
+        _progress(
+            "Keys are post-ExpandBuilds slide numbers: run expand-builds.sh first "
+            "when the outline has builds, then apply them via: apply-backgrounds.sh "
+            f"<uniquely-named copy> <final.pptx> {backgrounds_out.name}"
         )
     else:
-        print(
+        _progress(
             "No FULL background slides (Safe zone or poster) — no background manifest written."
         )
+    print(
+        json.dumps(
+            _summary(
+                out_deck,
+                results,
+                total_slides,
+                backgrounds_out if backgrounds else None,
+            )
+        )
+    )
 
 
 if __name__ == "__main__":

@@ -104,12 +104,15 @@ formats (e.g., DIAGRAM for technical slides, QUOTE for attributed quotations).
 - **Standard overlay** (default) — titles and footers are overlaid at apply time;
   generation reserves a `Safe zone:` per slide (sections 1–7 of
   `rules/title-overlay-rules.md`).
-- **Poster-theatrical** — every slide is full-bleed and the title + footer are
-  rendered INTO the image, stylized and blended in the deck's own visual
-  vocabulary; nothing is overlaid except the QR code. No safe zones. Choose this
-  when the speaker wants a unified "all art, no chrome" poster look. Capture the
-  deck footer string now (handles/hashtags/URL) — it gets baked into every image,
-  so exact small text may be approximated and need a re-roll or `--edit` touch-up.
+- **Poster-theatrical** — every slide is full-bleed and the title is rendered
+  INTO the image, stylized and blended in the deck's own visual vocabulary;
+  nothing is overlaid except the QR code. No safe zones. Choose this when the
+  speaker wants a unified "all art, no chrome" poster look. Capture the deck
+  footer string now (handles/hashtags/URL). The footer then takes one of two
+  modes: **model-rendered** (Bleed) bakes it into every image, so exact small
+  text may be approximated and need a re-roll or `--edit` touch-up;
+  **stamped** (Bleed, stamped footer) leaves it out of generation and stamps it
+  identically after, per Step 9.
 
 ## Step 6: Narrow the Model Shortlist
 
@@ -237,16 +240,39 @@ prompts, aspect-ratio tokens, reserved keywords) into the anchor at the same tim
 When the composition is poster-theatrical, also set
 `style_anchor.composition: poster-theatrical`,
 `style_anchor.embedded_footer: <footer text>`, and
-`style_anchor.text_treatment: <how baked title + footer render>` (e.g. "glowing
+`style_anchor.text_treatment: <how the baked title renders>` (e.g. "glowing
 hand-script neon on an in-scene surface"). Generation reads these to embed the
-title + footer into each image and skip safe zones; apply and deck-build read them
-to leave titles/footers off the slide (QR only). Standard-overlay decks omit all three.
+title (and a model-rendered footer, in one fixed editorial style) into each
+image and skip safe zones; apply and deck-build read them to
+leave titles/footers off the slide (QR only). Standard-overlay decks omit all three.
 
 The anchor owns everything that must stay consistent: the per-format style, the
 `text_treatment`, and the full `embedded_footer`. The per-slide `image_prompt`
 carries only the scene; `text_overlay` carries only that slide's literal title
 string — never the text styling. Putting the treatment in the anchor is what
-keeps every baked title and footer rendering identically across the deck.
+keeps every baked title consistent across the deck. A model-rendered footer
+uses one fixed editorial style instead, and a stamped footer takes its styling
+from `footer_style`.
+
+An image model rendering the same literal footer still varies its font, size,
+spacing and baseline from slide to slide. To take the footer out of its hands
+(Step 5's "Bleed, stamped footer" choice), also set `style_anchor.footer_style` (fields and defaults:
+`skills/presentation-creator/scripts/outline_schema.py` `FooterStyle`; `{}`
+takes them all). Generation then reserves a quiet strip at the bottom and
+renders no footer, and `{speaker_toolkit_root}/skills/illustrations/scripts/apply-illustrations-to-deck.py`
+stamps `embedded_footer` onto a PNG copy of every poster slide in
+`illustrations/footer-stamped/` with that font and geometry, verifying each
+stamp; `{speaker_toolkit_root}/skills/illustrations/scripts/build-expansion-manifest.py` does the same
+for those slides' build frames in `illustrations/builds/footer-stamped/`.
+Glyphs are drawn without antialiasing, so every footer pixel is identical across
+the deck whatever the scene, and regenerating a slide cannot change it; the
+generated images stay footer-free for edits and builds. A strip too close to
+the footer colour to read it, or a geometry that would push glyphs off the
+frame, is refused with the fix (`{speaker_toolkit_root}/skills/illustrations/scripts/footer_stamp.py`,
+module docstring). Point `font_path` at a TrueType/OpenType file
+that matches the deck; without one the renderer's bundled sans-serif is used.
+Without `footer_style`, the model renders the footer from one canonical
+deck-wide block appended verbatim to every slide.
 
 The anchor, including `conventions`, is injected into **every** slide, so it must be
 **STYLE ONLY** — medium, palette, rendering, lettering, recurring-character

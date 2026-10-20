@@ -12,22 +12,38 @@ safety net that applies regardless of placement.
 
 Narrow exception for the poster-theatrical composition. When the deck's
 `style_anchor.composition` is `poster-theatrical`, every illustrated slide (one
-with an `image_prompt`) is FULL and the title and footer are rendered INTO the
-image as a stylized part of the scene — nothing in sections 1–7 applies to that
-deck. EXCEPTION / non-illustrated slides (real screenshots, no `image_prompt`)
+with an `image_prompt`) is FULL and its title is rendered INTO the image as a
+stylized part of the scene — nothing in sections 1–7 applies to that deck. The
+footer is rendered into the image too, unless `style_anchor.footer_style` sets
+it to be stamped after generation (below). EXCEPTION / non-illustrated slides (real screenshots, no `image_prompt`)
 are not generated and keep their own treatment:
 
 - No `TITLE SAFE ZONE` directive — generation appends the `EMBEDDED TEXT`
   directive instead (`generate-illustrations.py` `apply_poster_embed_directive`),
-  folding the slide's `text_overlay` and the deck's `style_anchor.embedded_footer`
-  into the prompt, styled per `style_anchor.text_treatment`.
+  folding the slide's `text_overlay` into the prompt, styled per
+  `style_anchor.text_treatment`.
+- Without `style_anchor.footer_style`, the model renders `embedded_footer` from
+  one canonical deck-wide footer block, appended verbatim to every slide.
+- With `style_anchor.footer_style`, generation reserves a quiet footer strip.
+- With `style_anchor.footer_style`, generation renders no footer.
+- With `style_anchor.footer_style`, the apply step stamps `embedded_footer` onto
+  a lossless PNG copy of each poster slide with that exact font and geometry
+  (`skills/illustrations/scripts/footer_stamp.py`).
+- With `style_anchor.footer_style`, `build-expansion-manifest.py` stamps the same
+  footer onto that slide's build frames.
+- Stamped glyphs carry no antialiasing; the footer's pixels are identical on
+  every slide and frame.
+- Every image a deck stamps shares one pixel size; a mixed set is refused
+  before anything is stamped.
 - `style_anchor.text_treatment` is authored once and applied to every illustrated
-  slide's baked text, so titles and footers render identically across the deck.
+  slide's baked title, so titles render identically across the deck.
 - No `safe_zone` on poster slides; no zone assignment, no zone picker.
 - No scrim and no overlaid title text box at apply time — poster FULL slides get
-  a background fill only (`apply-illustrations-to-deck.py` `parse_full_slides`).
-- The QR code is the only shape inserted after generation; everything else is
-  embedded and stylized.
+  a background fill only (`apply-illustrations-to-deck.py` `parse_full_slides`),
+  from a footer-stamped copy when `footer_style` is set.
+- The QR code is the only shape inserted after generation. Everything else is
+  embedded and stylized, a stamped footer included: it is drawn into the
+  background image, never inserted as a shape.
 
 Every non-poster deck still follows sections 1–7 below.
 

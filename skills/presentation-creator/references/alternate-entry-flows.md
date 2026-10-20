@@ -5,7 +5,8 @@ Load this file when the request is not a fresh linear Phase 0–6 build:
 - a **late-entry single task** (QR code, export, shownotes) — read "Late Entry";
 - **adapting an existing talk** — read "Adapting Existing Talks";
 - a **CFP abstract** — read "CFP Abstract Writing";
-- any **sessions-catalog** read or write — read "Sessions Catalog".
+- any **sessions-catalog** read or write — read "Sessions Catalog";
+- another skill's **outline handoff** — read "Outline Handoff".
 
 Vault loading (SKILL.md "Before You Start") is mandatory for every flow here.
 
@@ -20,7 +21,8 @@ Minimum context before ANY Phase 6 action:
   shownotes URL. Read it via
   `"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py"`
   (the pydantic model exposes `talk.slug`, `talk.title`,
-  `talk.shownotes_url_base`, etc.) — never re-parse the YAML by hand.
+  `talk.shownotes_url_base`, etc.; an older outline is migrated to schema 2
+  in place before it validates) — never re-parse the YAML by hand.
 
 If a file is missing or fails to validate, STOP and ask. Do not guess values that
 should come from files. Never hand-write code when a script exists — if the
@@ -92,3 +94,20 @@ starting a new CFP; adapt rather than rewrite.
   partial copy drifts from the catalog blog-writer maintains. Keep the
   "Last updated" date current.
 - Entries are separated by `---` horizontal rules for easy scanning.
+
+## Outline Handoff
+
+Another skill refused `outline.yaml` itself and handed it here: an older
+schema, a missing or non-integer root stamp, or text it cannot parse. Only
+presentation-creator migrates or edits the file.
+
+1. Run the owner migration on the named outline:
+   `"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py" --migrate outline.yaml`.
+   It restamps a schema 1 outline to 2 in place and needs only a partial
+   outline, so an unfinished Phase 1–2 outline completes the handoff too.
+   Exit 0 prints `{ok, path, migrated, ...}`, with `migrated: false` when the
+   outline was already current. Full validation stays with the phase that
+   completes the outline.
+2. On exit 1, follow the fix its `FAIL:` names, then re-run the command.
+3. Return to the skill that handed off once it exits 0, so that skill re-runs
+   the refused command.

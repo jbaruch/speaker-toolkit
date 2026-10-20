@@ -9,7 +9,8 @@ with its frames.
 
 Why a manifest (not direct deck edits): structural deck edits go through real
 PowerPoint / RunDeckOps, never python-pptx — see rules/deck-editing-rules.md.
-This script only produces the plan; it does not touch the deck.
+This script never touches the deck. Its one write besides ``--out`` is the
+stamped frame copies described below, when the outline stamps its footer.
 
 Manifest shape (schema_version 1):
 
@@ -24,11 +25,22 @@ Manifest shape (schema_version 1):
       ]
     }
 
-- `parent` — the 1-based outline slide number that carries the `builds` block.
+- `parent` — the 1-based position, in the built deck, of the slide that
+  carries the `builds` block (`outline_schema.deck_positions`): the slide
+  ExpandBuilds replaces. It equals the outline number only when numbering runs
+  1..N; a zero-based or gapped outline still names the right slide.
 - `frames` — absolute paths to build-00 .. build-N, in ascending step order.
   The parent slide is replaced by these frames (build-00 first, build-N last).
 - `notes` — speaker notes for the FINAL frame only (empty when none); earlier
   frames get no notes (see skills/illustrations/references/builds.md).
+
+When the outline stamps its footer (`style_anchor.footer_style`), each poster
+parent's frames are stamped by `footer_stamp.stamp_footer_file` into
+`BUILDS_DIR/footer-stamped/slide-NN-build-MM.png` and `frames` lists those
+copies; the raw frames stay footer-free for editing. Every build parent of
+such a deck must satisfy `footer_stamp.stamped_slide`, the same answer
+apply-illustrations-to-deck.py uses for parent slides; any other parent exits
+non-zero naming the slide.
 
 ExpandBuilds processes parents in descending slide order so inserting a parent's
 frames never shifts the indices of lower-numbered parents still to be expanded.
@@ -38,14 +50,25 @@ Usage:
 
 stdout: the manifest JSON (also written to --out when given).
 Exit non-zero with a stderr diagnostic when a declared build parent has no
-frames on disk.
+frames on disk, or a declared frame is not a file that decodes as an image.
 """
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
+
+# A sibling module: this script's own directory is already importable.
+from footer_stamp import (
+    FRAME_RE,
+    FooterStampError,
+    deck_stamp_set,
+    require_one_geometry,
+    stamp_footer_file,
+    stamp_spec,
+    stamped_slide,
+    unusable_image,
+)
 
 # outline.yaml is the single source of truth; its schema + loader live with the
 # presentation-creator scripts.
@@ -61,22 +84,37 @@ import outline_schema  # noqa: E402  (path appended above)
 
 SCHEMA_VERSION = 1
 
-_FRAME_RE = re.compile(r"slide-\d+-build-(\d+)\.[A-Za-z0-9]+$")
-
 
 def parse_build_specs(outline_path: Path) -> list[dict]:
-    """Return build specs for each parent slide: {parent, count, steps}.
+    """Return build specs for each parent slide: {parent, count, steps, footer}.
 
     Read from outline.yaml's per-slide `builds`. The schema guarantees steps are
     contiguous from 0, so `steps` is [0, 1, ..., N-1] and `count` == len(steps).
+    `footer` is the (text, style) to stamp on the parent's frames, or None.
     """
     outline = outline_schema.load_outline_partial(outline_path)
+    footer = stamp_spec(outline.style_anchor)
     specs = []
     for slide in outline.slides:
         if not slide.builds:
             continue
+        if footer is not None and not stamped_slide(slide):
+            raise SystemExit(
+                f"ERROR: slide {slide.n} is a build parent in a poster deck that "
+                "stamps its footer, but it is not an illustrated FULL slide "
+                "without safe_zone; poster-theatrical decks allow only those. "
+                "Set it to format FULL with an image_prompt and remove safe_zone, "
+                "or drop its builds."
+            )
         steps = sorted(b.step for b in slide.builds)
-        specs.append({"parent": slide.n, "count": len(steps), "steps": steps})
+        specs.append(
+            {
+                "parent": slide.n,
+                "count": len(steps),
+                "steps": steps,
+                "footer": footer,
+            }
+        )
     return specs
 
 
@@ -84,30 +122,20 @@ def frames_for(builds_dir: Path, parent: int) -> dict[int, Path]:
     """Map step number -> build frame file for a parent (slide-NN-build-MM.<ext>)."""
     found = {}
     for p in builds_dir.glob(f"slide-{parent:02d}-build-*"):
-        fm = _FRAME_RE.search(p.name)
+        fm = FRAME_RE.search(p.name)
         if fm:
             found[int(fm.group(1))] = p
     return found
 
 
-def build_manifest(
-    outline_path: Path, builds_dir: Path, notes_map: dict | None = None
-) -> dict:
-    """Build the expansion manifest.
+def _require_usable_frames(specs: list[dict], builds_dir: Path) -> None:
+    """Every declared frame is on disk and decodes, before any is stamped or listed.
 
-    notes_map: optional {"<0-based deck slide #>": "notes"} (the historical
-    inject-notes format). A build parent at 1-based outline slide N maps to
-    0-based key str(N-1); its notes ride onto the FINAL build frame so expansion
-    doesn't drop them. When omitted, notes are empty and the post-expansion
-    notes pass must carry them instead.
+    parse_build_specs reads outline.yaml through the schema, which already
+    guarantees each slide's build steps are contiguous from 0, so step count,
+    ordering and contiguity need no re-checking here.
     """
-    notes_map = notes_map or {}
-    builds = []
-    # parse_build_specs reads outline.yaml through the schema, which already
-    # guarantees each slide's build steps are contiguous from 0 — so step
-    # count, ordering, and contiguity need no re-checking here. The only
-    # remaining failure mode is a declared step whose frame isn't on disk yet.
-    for spec in sorted(parse_build_specs(outline_path), key=lambda s: s["parent"]):
+    for spec in specs:
         parent, steps = spec["parent"], spec["steps"]
         found = frames_for(builds_dir, parent)
         missing = [s for s in steps if s not in found]
@@ -118,21 +146,99 @@ def build_manifest(
                 "sequence would expand into a broken reveal. Regenerate: "
                 f"generate-illustrations.py <outline> --build {parent}"
             )
+        unusable = [
+            why for step in steps if (why := unusable_image(found[step])) is not None
+        ]
+        if unusable:
+            raise SystemExit(
+                f"ERROR: slide {parent}'s build frames cannot be placed: "
+                f"{'; '.join(unusable)}. ExpandBuilds would fail on them inside "
+                f"PowerPoint. Regenerate: generate-illustrations.py <outline> "
+                f"--build {parent}"
+            )
+
+
+def _require_one_stamped_geometry(
+    outline_path: Path, specs: list[dict], builds_dir: Path
+) -> None:
+    """The whole deck's stamp set shares one size before any frame is stamped.
+
+    The same set the apply step checks: every stamped slide image and every
+    declared build frame, so whichever command runs first refuses a mixed deck.
+    A stale frame outside the declared steps is never stamped, so it never
+    constrains geometry.
+    """
+    if not any(spec["footer"] is not None for spec in specs):
+        return
+    slides = outline_schema.load_outline_partial(outline_path).slides
+    try:
+        require_one_geometry(deck_stamp_set(slides, builds_dir.parent, builds_dir))
+    except FooterStampError as exc:
+        raise SystemExit(f"ERROR: cannot stamp the build frames: {exc}") from exc
+
+
+def build_manifest(
+    outline_path: Path, builds_dir: Path, notes_map: dict | None = None
+) -> dict:
+    """Build the expansion manifest.
+
+    notes_map: optional {"<0-based deck slide #>": "notes"} (the historical
+    inject-notes format). A build parent at 1-based deck position P
+    (``outline_schema.deck_positions``, so outline numbering may start at 0)
+    maps to 0-based key str(P-1), and P is the manifest's ``parent``, the index
+    ExpandBuilds replaces; its notes ride onto the FINAL build frame so expansion
+    doesn't drop them. When omitted, notes are empty and the post-expansion
+    notes pass must carry them instead.
+    """
+    notes_map = notes_map or {}
+    # ExpandBuilds and the notes map index the built deck, not outline numbers.
+    positions = outline_schema.deck_positions(
+        outline_schema.load_outline_partial(outline_path).slides
+    )
+    specs = sorted(parse_build_specs(outline_path), key=lambda s: s["parent"])
+    _require_usable_frames(specs, builds_dir)
+    _require_one_stamped_geometry(outline_path, specs, builds_dir)
+    builds = []
+    for spec in specs:
+        parent, steps = spec["parent"], spec["steps"]
+        found = frames_for(builds_dir, parent)
         # A null/absent note is empty; a non-string note is an error — never
         # coerce it, or a JSON null would become the literal "None" on the final
         # build frame (mirrors notes-to-packed.py's drop-empty contract).
-        raw_note = notes_map.get(str(parent - 1))
+        position = positions[parent]
+        raw_note = notes_map.get(str(position - 1))
         if raw_note is None:
             raw_note = ""
         elif not isinstance(raw_note, str):
             raise SystemExit(
-                f"ERROR: note for slide {parent} (notes key {parent - 1}) must be a "
+                f"ERROR: note for slide {parent} (notes key {position - 1}) must be a "
                 f"string, got {type(raw_note).__name__} — fix the --notes JSON."
             )
+        frames = [found[s] for s in steps]
+        if spec["footer"] is not None:
+            text, style = spec["footer"]
+            stamped_dir = builds_dir / "footer-stamped"
+            stamped: list[Path] = []
+            for frame in frames:
+                try:
+                    stamped.append(stamp_footer_file(frame, stamped_dir, text, style))
+                except FooterStampError as exc:
+                    raise SystemExit(
+                        f"ERROR: cannot stamp the footer on slide {parent}'s build "
+                        f"frames: {exc}"
+                    ) from exc
+                except OSError as exc:
+                    raise SystemExit(
+                        f"ERROR: cannot stamp {frame.name} into {stamped_dir} "
+                        f"({type(exc).__name__}: {exc.strerror or exc}); regenerate "
+                        "or replace that frame if it is unreadable, or make the "
+                        "directory writable, then re-run"
+                    ) from exc
+            frames = stamped
         builds.append(
             {
-                "parent": parent,
-                "frames": [str(found[s].resolve()) for s in steps],
+                "parent": position,
+                "frames": [str(frame.resolve()) for frame in frames],
                 "notes": raw_note,
             }
         )
@@ -160,9 +266,12 @@ def main(argv=None):
         "parent's notes ride onto its final frame so expansion keeps them",
     )
     args = ap.parse_args(argv)
-
     if not args.outline.is_file():
         raise SystemExit(f"ERROR: outline not found: {args.outline}")
+    try:
+        outline_schema.require_current_outline(args.outline)
+    except outline_schema.OutlineVersionError as exc:
+        raise SystemExit(f"ERROR: {exc}") from exc
 
     notes_map = None
     if args.notes is not None:

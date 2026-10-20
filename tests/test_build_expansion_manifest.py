@@ -50,19 +50,38 @@ DEFAULT_SLIDES = [
 ]
 
 
+def _fill_numbering(slides):
+    """Pad 1..max(n) with plain slides: a built deck has one per outline slide."""
+    present = {slide["n"] for slide in slides}
+    filler = [
+        {"n": k, "chapter": "c", "title": f"Filler {k}", "format": "FULL"}
+        for k in range(1, max(present, default=0) + 1)
+        if k not in present
+    ]
+    return sorted([*slides, *filler], key=lambda slide: slide["n"])
+
+
 def _make_outline(tmp_path, slides=None):
-    data = {"talk": copy.deepcopy(_TALK), "slides": slides or DEFAULT_SLIDES}
+    data = {
+        "schema_version": 2,
+        "talk": copy.deepcopy(_TALK),
+        "slides": _fill_numbering(slides or DEFAULT_SLIDES),
+    }
     p = tmp_path / "outline.yaml"
     p.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     return p
 
 
 def _make_frames(builds_dir, parent, steps, ext="jpg"):
-    """Create build-MM frames for the given step numbers (a list) or count (int)."""
+    """Create decodable build-MM frames for the step numbers (a list) or count (int)."""
+    from PIL import Image
+
     builds_dir.mkdir(parents=True, exist_ok=True)
     nums = range(steps) if isinstance(steps, int) else steps
     for m in nums:
-        (builds_dir / f"slide-{parent:02d}-build-{m:02d}.{ext}").write_bytes(b"img")
+        Image.new("RGB", (16, 9), (10, 20, 30)).save(
+            builds_dir / f"slide-{parent:02d}-build-{m:02d}.{ext}"
+        )
 
 
 def test_parses_build_specs(build_expansion_manifest, tmp_path):
@@ -191,3 +210,259 @@ def test_unwritable_out_returns_error(build_expansion_manifest, tmp_path, capsys
     )
     assert rc == 1
     assert "cannot write manifest" in capsys.readouterr().err
+
+
+# ── #474: a stamping poster deck stamps its build frames too ─────────
+
+
+FOOTER = "@jbaruch    speaking.jbaru.ch"
+
+
+def _stamping_outline(tmp_path, slides):
+    data = {
+        "schema_version": 2,
+        "talk": copy.deepcopy(_TALK),
+        "style_anchor": {
+            "model": "imagen-4",
+            "full": "F",
+            "imgtxt": "I",
+            "conventions": "C",
+            "composition": "poster-theatrical",
+            "embedded_footer": FOOTER,
+            "footer_style": {},
+        },
+        "slides": _fill_numbering(slides),
+    }
+    p = tmp_path / "outline.yaml"
+    p.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return p
+
+
+def _image_frames(builds_dir, parent, count):
+    from PIL import Image
+
+    builds_dir.mkdir(parents=True, exist_ok=True)
+    frames = []
+    for m in range(count):
+        frame = builds_dir / f"slide-{parent:02d}-build-{m:02d}.jpg"
+        Image.new("RGB", (1536, 864), (20 * m, 40, 60)).save(frame, quality=95)
+        frames.append(frame)
+    return frames
+
+
+def test_a_poster_parents_frames_are_stamped_copies(build_expansion_manifest, tmp_path):
+    from PIL import Image
+
+    import footer_stamp
+
+    slides = [s for s in DEFAULT_SLIDES if s["n"] == 7]
+    outline = _stamping_outline(tmp_path, slides)
+    builds = tmp_path / "builds"
+    raw = _image_frames(builds, 7, 4)
+    raw_bytes = [frame.read_bytes() for frame in raw]
+
+    manifest = build_expansion_manifest.build_manifest(outline, builds)
+
+    frames = manifest["builds"][0]["frames"]
+    assert frames == [
+        str((builds / "footer-stamped" / f"slide-07-build-{m:02d}.png").resolve())
+        for m in range(4)
+    ]
+    spec = footer_stamp.stamp_spec(
+        build_expansion_manifest.outline_schema.load_outline_partial(
+            outline
+        ).style_anchor
+    )
+    assert spec is not None
+    style = spec[1]
+    for frame in frames:
+        with Image.open(frame) as image:
+            assert footer_stamp.verify_footer(image, FOOTER, style) == (True, 1.0)
+    assert [frame.read_bytes() for frame in raw] == raw_bytes
+
+
+@pytest.mark.parametrize(
+    "change,refusal",
+    [
+        (
+            {"safe_zone": {"zone": "upper_third", "surface": "sky"}},
+            "slide 7 is a build parent in a poster deck",
+        ),
+        # The outline schema refuses an illustrated non-FULL poster slide first.
+        ({"format": "IMG+TXT"}, "poster-theatrical decks illustrate FULL slides"),
+    ],
+    ids=["safe-zone", "img-txt"],
+)
+def test_a_poster_build_parent_off_the_poster_contract_is_refused(
+    build_expansion_manifest, tmp_path, change, refusal
+):
+    from pydantic import ValidationError
+
+    slide = next(s for s in DEFAULT_SLIDES if s["n"] == 7)
+    outline = _stamping_outline(tmp_path, [{**slide, **change}])
+    builds = tmp_path / "builds"
+    _image_frames(builds, 7, 4)
+
+    with pytest.raises((SystemExit, ValidationError)) as exc:
+        build_expansion_manifest.build_manifest(outline, builds)
+
+    assert refusal in str(exc.value)
+    assert not (builds / "footer-stamped").exists()
+
+
+@pytest.mark.parametrize("stamped", [True, False], ids=["stamped", "unstamped"])
+def test_a_frame_that_does_not_decode_stops_the_manifest(
+    build_expansion_manifest, tmp_path, stamped
+):
+    """Unstamped frames are never opened by stamping; the preflight decodes them."""
+    slides = [s for s in DEFAULT_SLIDES if s["n"] == 7]
+    outline = (
+        _stamping_outline(tmp_path, slides)
+        if stamped
+        else _make_outline(tmp_path, slides)
+    )
+    builds = tmp_path / "builds"
+    _make_frames(builds, 7, 4)
+    (builds / "slide-07-build-02.jpg").write_bytes(b"placeholder bytes")
+    out = tmp_path / "manifest.json"
+
+    with pytest.raises(SystemExit) as exc:
+        build_expansion_manifest.main([str(outline), str(builds), "--out", str(out)])
+
+    # The unusable frame is named, with what to do about it; nothing is written.
+    assert "slide 7's build frames cannot be placed" in str(exc.value)
+    assert "slide-07-build-02.jpg cannot be decoded" in str(exc.value)
+    assert "--build 7" in str(exc.value)
+    assert not out.exists()
+    assert not (builds / "footer-stamped").exists()
+
+
+def test_a_directory_named_like_a_frame_stops_the_manifest(
+    build_expansion_manifest, tmp_path
+):
+    slides = [s for s in DEFAULT_SLIDES if s["n"] == 7]
+    outline = _make_outline(tmp_path, slides)
+    builds = tmp_path / "builds"
+    _make_frames(builds, 7, [0, 1, 3])
+    (builds / "slide-07-build-02.jpg").mkdir()
+
+    with pytest.raises(SystemExit) as exc:
+        build_expansion_manifest.build_manifest(outline, builds)
+
+    assert "slide-07-build-02.jpg is not a file" in str(exc.value)
+
+
+def test_frames_of_mixed_size_are_refused_before_any_stamp(
+    build_expansion_manifest, tmp_path
+):
+    """Glyphs fitted to different frames would differ; nothing is stamped."""
+    from PIL import Image
+
+    slides = [s for s in DEFAULT_SLIDES if s["n"] == 7]
+    outline = _stamping_outline(tmp_path, slides)
+    builds = tmp_path / "builds"
+    frames = _image_frames(builds, 7, 4)
+    Image.new("RGB", (1024, 1024), (10, 20, 30)).save(frames[2], quality=95)
+
+    with pytest.raises(SystemExit) as exc:
+        build_expansion_manifest.build_manifest(outline, builds)
+
+    assert "must share one size" in str(exc.value)
+    assert frames[2].name in str(exc.value)
+    assert not (builds / "footer-stamped").exists()
+
+
+def test_a_stale_frame_outside_the_declared_steps_is_ignored(
+    build_expansion_manifest, tmp_path
+):
+    """An earlier build's extra frame is never stamped, so it cannot block."""
+    from PIL import Image
+
+    slides = [s for s in DEFAULT_SLIDES if s["n"] == 7]
+    outline = _stamping_outline(tmp_path, slides)
+    builds = tmp_path / "builds"
+    _image_frames(builds, 7, 4)
+    stale = builds / "slide-07-build-04.jpg"
+    Image.new("RGB", (1024, 1024), (10, 20, 30)).save(stale, quality=95)
+
+    manifest = build_expansion_manifest.build_manifest(outline, builds)
+
+    assert len(manifest["builds"][0]["frames"]) == 4
+    assert not (builds / "footer-stamped" / "slide-07-build-04.png").exists()
+
+
+def test_a_poster_slide_of_another_size_stops_the_manifest_before_any_stamp(
+    build_expansion_manifest, tmp_path
+):
+    """The manifest checks the same deck-wide set the apply step does."""
+    from PIL import Image
+
+    parent = next(s for s in DEFAULT_SLIDES if s["n"] == 7)
+    other = {
+        "n": 9,
+        "chapter": "c",
+        "title": "Other",
+        "format": "FULL",
+        "text_overlay": "Other",
+        "image_prompt": "P",
+    }
+    outline = _stamping_outline(tmp_path, [parent, other])
+    builds = tmp_path / "builds"
+    _image_frames(builds, 7, 4)
+    Image.new("RGB", (1024, 1024), (10, 20, 30)).save(tmp_path / "slide-09.jpg")
+
+    with pytest.raises(SystemExit) as exc:
+        build_expansion_manifest.build_manifest(outline, builds)
+
+    assert "must share one size" in str(exc.value)
+    assert "slide-09.jpg" in str(exc.value)
+    assert not (builds / "footer-stamped").exists()
+
+
+def test_a_zero_based_outline_keys_the_deck_by_position(
+    build_expansion_manifest, tmp_path
+):
+    """Slide 0 is the deck's first slide; ExpandBuilds indexes positions."""
+    slides = [
+        {"n": 0, "chapter": "c", "title": "Cold open", "format": "FULL"},
+        {
+            "n": 1,
+            "chapter": "c",
+            "title": "Reveal",
+            "format": "FULL",
+            "image_prompt": "[STYLE ANCHOR] a reveal",
+            "builds": [{"step": 0, "desc": "Empty"}, {"step": 1, "desc": "Full"}],
+        },
+    ]
+    outline = _make_outline(tmp_path, slides)
+    builds = tmp_path / "builds"
+    _make_frames(builds, 1, [0, 1])
+
+    manifest = build_expansion_manifest.build_manifest(
+        outline, builds, {"1": "notes for the reveal"}
+    )
+
+    assert manifest["builds"][0]["parent"] == 2
+    assert manifest["builds"][0]["notes"] == "notes for the reveal"
+
+
+def test_the_manifest_refuses_an_outline_its_owner_has_not_migrated(
+    build_expansion_manifest, tmp_path
+):
+    outline = _make_outline(tmp_path)
+    data = yaml.safe_load(outline.read_text(encoding="utf-8"))
+    data["schema_version"] = 1
+    outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    builds = tmp_path / "builds"
+    builds.mkdir()
+    with pytest.raises(SystemExit) as exc:
+        build_expansion_manifest.main([str(outline), str(builds)])
+    assert "Hand off to presentation-creator" in str(exc.value)
+
+
+def test_a_missing_outline_is_named_not_a_traceback(build_expansion_manifest, tmp_path):
+    with pytest.raises(SystemExit) as exc:
+        build_expansion_manifest.main(
+            [str(tmp_path / "absent.yaml"), str(tmp_path / "builds")]
+        )
+    assert "outline not found" in str(exc.value)

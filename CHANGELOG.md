@@ -1,5 +1,174 @@
 # Changelog
 
+### Stamp a poster deck's footer deterministically
+
+Poster-theatrical decks baked the footer into every generated image, and the
+image model changed its font, size, weight, spacing and baseline from slide to
+slide even when every prompt carried the identical literal (#474). The
+WeAreDevelopers NA 2026 RoboCoders deck showed it across 14 slides; prompt
+discipline reduced the drift but cannot guarantee typographic identity.
+
+- A new optional `style_anchor.footer_style` (`FooterStyle` in
+  `outline_schema.py`: `font_path`, `font_index`, `target_width_pct` 82,
+  `baseline_from_bottom_pct` 3.8, `color` `#F2EFE6`; `{}` takes the defaults)
+  takes the footer out of the model's hands. Generation reserves a quiet strip,
+  sized by the same glyph rendering the stamp uses, and renders no footer.
+  `apply-illustrations-to-deck.py` stamps `embedded_footer` onto a PNG copy of
+  every poster slide in `illustrations/footer-stamped/` and points the
+  background manifest there. `build-expansion-manifest.py` stamps the same
+  slides' build frames into `illustrations/builds/footer-stamped/` and lists
+  those copies, so a progressive reveal carries the footer on every frame.
+  `footer_stamp.stamp_spec` and `stamped_slide` are the one answer both use:
+  an illustrated FULL slide without a safe zone, so a screenshot slide keeps
+  its own treatment. A build parent in such a deck that is anything else stops
+  the manifest with the fix. The raw generated images stay footer-free for
+  edits and builds.
+- Step 5's composition question gains "Bleed, stamped footer" beside Bleed and
+  Overlay, so the speaker picks the stamped footer before Step 9 writes
+  `footer_style`; `title-overlay-rules.md` §0 says the footer is model-drawn
+  unless `footer_style` stamps it.
+- `apply-illustrations-to-deck.py` now prints one JSON summary on stdout (the
+  written deck, slide counts, per-slide results, the backgrounds manifest) and
+  sends its progress lines to stderr; Step 12 documents it. An eligible slide
+  with no image, or past the deck's end, used to be skipped with `ok: true`; it
+  now refuses before any deck is written, naming each such slide. Each
+  failure names its own operation and fix: an unreadable source deck, an
+  unwritable output deck or backgrounds manifest, an unreadable IMG+TXT image,
+  or a poster image that cannot be stamped. `generate-illustrations.py` exits
+  with the fix for an unusable `footer_style`. `footer_stamp.require_one_geometry`
+  names an unreadable image and says to regenerate or replace it, so the
+  geometry checks in both apply and the build manifest are actionable, and the
+  manifest names a frame that cannot be stamped.
+- The backgrounds manifest is keyed by deck slide number after ExpandBuilds,
+  which runs first and replaces each build parent with its frames. A slide after
+  a build parent had been keyed by its outline number, so its background landed
+  on the wrong slide, and a parent's own entry overwrote its first frame. Every
+  result, IMG+TXT included, now carries its `deck_slide` (null for a build
+  parent). Only illustrated IMG+TXT slides (with an `image_prompt`) are
+  eligible: a prompt-free screenshot slide gets no generated image and keeps the
+  asset the slide walk inserted, so it never blocks the apply.
+- Deck access and every by-index key count outline slides in order
+  (`outline_schema.deck_positions`), not by their `n` label, which may start at
+  0 or skip values: apply indexes the deck and keys backgrounds that way, and
+  the build manifest's `parent` and notes key are deck positions, the index
+  ExpandBuilds replaces.
+- `style_anchor.footer_style` is the outline schema 2 shape: a v1 outline
+  carrying it is refused, v1 outlines without it read unchanged, and new
+  outlines declare `schema_version: 2`. A poster-theatrical outline refuses an
+  `image_prompt` on any slide that is not FULL, and phase 5 omits the TITLE and
+  FOOTER ops only for illustrated FULL poster slides. A title-less poster
+  slide still gets its footer directive: the stamped footer's quiet strip, or
+  the canonical model-rendered block.
+- presentation-creator owns `outline.yaml`. `outline_schema.py --migrate`
+  restamps a v1 outline to schema 2 in place, rewriting only
+  the root stamp so comments survive, and validates it before the atomic
+  replace. The illustration scripts are non-owner readers: they refuse an
+  older outline (`require_current_outline`) and never migrate it. Step 9 sets
+  `schema_version: 2` in the same edit that adds `footer_style`. The build
+  manifest's docstring now defines `parent` as the built-deck position and
+  names the stamped frame copies as its one write. Illustrations Step 1 stops
+  when a refusal says to hand off and invokes
+  `Skill(skill: "presentation-creator")`, whose new "Outline Handoff" entry
+  flow (`alternate-entry-flows.md`) runs the owner's `--migrate` before the
+  refused script re-runs. `--migrate` needs only a partial outline, so an
+  unfinished Phase 1–2 outline completes the handoff too.
+  Both apply and the manifest name a missing outline before checking its
+  version. The migration
+  rewrites only the root version's value, so an inline comment, a quoted key,
+  a preamble before `---` and CRLF line endings survive; it refuses a layout
+  it cannot restamp. Non-owner
+  readers refuse every version but the current one: an older outline names the
+  handoff to presentation-creator, a newer one says to update speaker-toolkit. A model-rendered
+  footer is directed verbatim, delimited and escaped as a JSON string, never
+  rewritten.
+- The owner migrates before it consumes: presentation-creator's validation
+  (`outline_schema.py outline.yaml`, its first read of any outline, including
+  the late-entry and resume flows) restamps a schema 1 outline in place, says
+  so on stderr, then validates. The "next authoring pass" deferral is gone from
+  `phase3-content.md`, `speech-rates.md` and the schema comments.
+  `--emit-json` serves non-owner readers such as shownotes-publisher, so it
+  runs the non-owner gate and never writes.
+- No reader defaults a missing root stamp to 1 any more. `Outline` and
+  `PartialOutline` require `schema_version`, and the gate and the migration
+  refuse its absence, each naming the fix: an outline written before
+  versioning has the schema 1 shape, so its owner adds `schema_version: 1` and
+  validates. Only an exact integer 1 migrates; YAML `2.0`, `1.0` and `true`,
+  which compare equal to 2 or 1, are refused instead of passing as current or
+  older. Phase 1 authors the stamp with the talk block, so a partial outline
+  carries it from birth.
+- The gate and the migration refuse text that is not UTF-8, invalid YAML and
+  a root that is not a mapping with a `FAIL:` instead of a traceback, at every
+  boundary that uses them: `--migrate`, plain validation, `--emit-json` and the
+  illustration scripts. The owner's refusals name the edit that fixes the file.
+  Every refusal through the non-owner gate names the problem and the handoff to
+  presentation-creator instead, never an edit, so no reader skill is told to
+  write the owner's file; a sweep test pins that for every refusal kind.
+- The worked example `tests/fixtures/outline-example.yaml` is stamped at
+  schema 2, and a test pins it there, so the CLI tests no longer rewrite a
+  committed fixture.
+- `--migrate` and plain validation turn a failed read or write into its fix
+  instead of a bare errno: a missing path, a directory, a permission denial,
+  an unwritable directory or a full disk. The migration stages through a file
+  unique to the call (`tempfile.mkstemp` beside the outline), keeps the
+  outline's file mode, and on failure removes its stage and says the outline
+  is unchanged. A shared `.outline.yaml.migrating` path let two concurrent
+  migrations truncate each other's stage.
+- Apply and the build manifest decode every image they list before writing
+  anything (`footer_stamp.unusable_image`). Existence was the only check, so a
+  truncated download or a directory with an image's name produced `ok: true`
+  and a backgrounds or ExpandBuilds manifest that failed later inside
+  PowerPoint. Safe-zone FULL backgrounds, model-rendered poster backgrounds
+  and unstamped build frames were never decoded at all. A refusal names the
+  slide, the file and the regeneration command. `footer_stamp` now imports with
+  the other modules in both scripts instead of after the `sys.path` insert, so
+  its E402 suppression is gone.
+- Apply's safe-zone path takes illustrated slides only, as its IMG+TXT path
+  already did: a prompt-free FULL screenshot with a safe zone has no generated
+  image, so the mandatory preflight no longer aborts the whole apply over its
+  missing `slide-NN` file, and the slide walk's inserted asset stays.
+- Apply and the build manifest check one deck-wide stamp set,
+  `footer_stamp.deck_stamp_set`: every stamped slide image plus every declared
+  build frame. Whichever command runs first refuses a mixed deck before either
+  writes a stamp. A stamped `embedded_footer` must be one line; the schema
+  refuses line breaks before the single-line rasterizer could raise.
+- `strategy.md` Steps 5 and 9 and `SKILL.md` Step 9 describe the model-rendered
+  and stamped footer modes separately. `text_treatment` styles the title only,
+  as generation already did: the schema comment, the style-catalog field
+  description and three catalog treatments that said "title and footer
+  lettering" now say so. A model-rendered footer keeps its fixed editorial
+  style.
+- A short footer fitted to the target width alone grew taller than the strip
+  and was refused as clipped; the fit now also stops at `MAX_HEIGHT_PCT` of the
+  frame height. The geometry check counts only the build steps the outline
+  declares, so a stale frame from an earlier build cannot block the manifest,
+  and an unwritable backgrounds manifest exits with its fix.
+- `footer_stamp.py` draws the footer with one real font, sized to span the
+  target width, centred, its baseline at the configured height, and writes PNG
+  whatever the source format: a JPEG re-encode made glyph pixels depend on the
+  scene behind them. Glyphs are rasterized without antialiasing, so no edge
+  pixel blends with the scene: the same text and style produce identical footer
+  pixels over any scene, and a regenerated slide cannot change them.
+  Verification after writing is exact for every glyph pixel and also requires a
+  3:1 contrast against the ground around the glyphs, so an image of the footer
+  colour, or a footer stamped onto a matching strip, never passes; a strip that
+  would hide the footer, or geometry that pushes glyphs off the frame, refuses
+  before anything is written. Glyphs are fitted to the frame, so every image a
+  deck stamps (slides in apply, frames and their parent slides in the build
+  manifest) must share one size; a mixed set refuses before any stamp, naming
+  the outliers. Without `font_path` it uses Pillow's
+  bundled sans-serif; a missing font, an over-long footer or a malformed colour
+  refuses with the fix.
+- Without `footer_style`, the model still renders the footer, now from one
+  canonical deck-wide block appended verbatim to every slide after the scene and
+  title: the wording validated on the RoboCoders regeneration (exact literal,
+  sober sans-serif, 3.8% baseline, 82% width, stable editorial page furniture).
+  It replaces the one-line "also integrate the footer" clause.
+- Every poster prompt now ends with an instruction to render no other legible
+  words beyond the slide's requested text.
+- `footer_style` requires `composition: poster-theatrical` and a non-empty
+  `embedded_footer`. `rules/title-overlay-rules.md`, `SKILL.md` Step 9 and
+  `references/strategy.md` describe both footer modes.
+
 ## 0.20.188 — 2026-10-20
 
 ### Let a declared local audio file bind its transcript receipt

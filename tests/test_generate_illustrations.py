@@ -33,7 +33,11 @@ def _write_outline(
     the slides the test cares about. parse_outline reads it via
     load_outline_partial, so full-deck invariants are not required.
     """
-    data = {"talk": copy.deepcopy(_FIXTURE_DATA["talk"]), "slides": slides}
+    data = {
+        "schema_version": 2,
+        "talk": copy.deepcopy(_FIXTURE_DATA["talk"]),
+        "slides": slides,
+    }
     if model:
         anchor = {
             "model": model,
@@ -1579,17 +1583,11 @@ def test_run_generate_poster_rejects_non_full_slide(
     data = yaml.safe_load(outline.read_text(encoding="utf-8"))
     data["slides"][0]["format"] = "IMG+TXT"
     outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-    outline_dict = gi.parse_outline(str(outline))
-    _write_manifest(tmp_path, ["gemini-3-pro-image"])
-    gen_calls = []
-    _stub_generate(gi, monkeypatch, outline_dict, str(tmp_path), gen_calls)
+    from pydantic import ValidationError
 
-    with pytest.raises(SystemExit) as exc:
-        gi.run_generate(str(outline), ["all"])
-
-    assert exc.value.code == 1
-    assert gen_calls == []
-    assert "poster-theatrical" in capsys.readouterr().err
+    # The outline schema refuses it before the generator could run.
+    with pytest.raises(ValidationError, match="poster-theatrical decks illustrate"):
+        gi.parse_outline(str(outline))
 
 
 def test_run_generate_poster_validates_whole_outline_not_just_subset(
@@ -1622,17 +1620,11 @@ def test_run_generate_poster_validates_whole_outline_not_just_subset(
             },
         ],
     )
-    outline_dict = gi.parse_outline(str(outline))
-    _write_manifest(tmp_path, ["gemini-3-pro-image"])
-    gen_calls = []
-    _stub_generate(gi, monkeypatch, outline_dict, str(tmp_path), gen_calls)
+    from pydantic import ValidationError
 
-    with pytest.raises(SystemExit) as exc:
-        gi.run_generate(str(outline), ["1"])  # subset: only slide 1
-
-    assert exc.value.code == 1
-    assert gen_calls == []
-    assert "2" in capsys.readouterr().err  # slide 2 named as the offender
+    # Deck-level: the schema names slide 2 even when only slide 1 is wanted.
+    with pytest.raises(ValidationError, match=r"slide\(s\) 2 carry"):
+        gi.run_generate(str(outline), ["1"])
 
 
 def test_gate_rejects_rel_path_traversal(generate_illustrations, tmp_path):
@@ -1698,15 +1690,15 @@ def test_gate_fails_when_outline_dir_missing(generate_illustrations, tmp_path):
     assert "outline_dir" in v["error"]
 
 
-def test_poster_embed_directive_normalizes_embedded_quotes(generate_illustrations):
-    # A title/footer containing double quotes must not create nested double
-    # quotes in the directive (they degrade model compliance).
+def test_poster_embed_directive_normalizes_title_quotes_keeps_footer_exact(
+    generate_illustrations,
+):
+    # A title's double quotes become single so the directive's own quotes do
+    # not nest; the footer must render verbatim, so it is escaped instead.
     gi = generate_illustrations
     d = gi.apply_poster_embed_directive("a scene", 'He said "Hello"', 'tag "x"')
-    # The wrapping quotes around title/footer remain, but embedded ones are now '
-    assert '""' not in d
     assert "He said 'Hello'" in d
-    assert "tag 'x'" in d
+    assert json.dumps('tag "x"') in d
 
 
 def test_gate_fails_closed_on_non_dict_manifest(generate_illustrations, tmp_path):
@@ -1865,3 +1857,119 @@ def test_composite_region_resizes_mismatched_new_image(
     out = Image.open(io.BytesIO(out_bytes)).convert("RGB")
     assert out.size == (100, 100)
     assert out.getpixel((50, 50)) == (255, 255, 255)
+
+
+# ── #474: one canonical footer, or a reserved strip for the stamp ──────
+
+FOOTER_STYLE = {
+    "font_path": None,
+    "font_index": 0,
+    "target_width_pct": 82.0,
+    "baseline_from_bottom_pct": 3.8,
+    "color": "#F2EFE6",
+}
+
+
+def test_every_slide_carries_the_same_canonical_footer_block(generate_illustrations):
+    gi = generate_illustrations
+    footer = "@jbaruch    #RoboCoders    speaking.jbaru.ch"
+    first = gi.apply_poster_embed_directive("a factory", "Title one", footer)
+    second = gi.apply_poster_embed_directive("a vault", "Title two", footer)
+    block = gi.POSTER_FOOTER_BLOCK_TEMPLATE.format(
+        footer=json.dumps(footer, ensure_ascii=False)
+    )
+    assert block in first and block in second
+    assert first.index("Title one") < first.index(block)
+    assert first.endswith(gi.POSTER_NO_INVENTED_TEXT)
+
+
+def test_a_stamped_footer_reserves_a_strip_and_renders_no_footer_text(
+    generate_illustrations,
+):
+    gi = generate_illustrations
+    footer = "@jbaruch    #RoboCoders    speaking.jbaru.ch"
+    prompt = gi.apply_poster_embed_directive(
+        "a factory", "Title", footer, None, FOOTER_STYLE
+    )
+    assert footer not in prompt
+    assert "FOOTER STRIP" in prompt
+    assert "EXACT DECK-WIDE SPECIFICATION" not in prompt
+    assert prompt.endswith(gi.POSTER_NO_INVENTED_TEXT)
+
+
+def test_parse_outline_carries_the_footer_style(generate_illustrations, tmp_path):
+    import yaml
+
+    outline = _write_poster_outline(tmp_path)
+    data = yaml.safe_load(outline.read_text(encoding="utf-8"))
+    data["schema_version"] = 2
+    data["style_anchor"]["footer_style"] = {"target_width_pct": 70}
+    outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    parsed = generate_illustrations.parse_outline(str(outline))
+    assert parsed["footer_style"] == {**FOOTER_STYLE, "target_width_pct": 70.0}
+
+
+@pytest.mark.parametrize(
+    "argv_tail,runner",
+    [(["1"], "run_generate"), (["--style-explore", "c.json"], "run_style_explore")],
+    ids=["generation", "style-exploration"],
+)
+def test_an_unstampable_footer_exits_with_its_fix_not_a_traceback(
+    generate_illustrations, tmp_path, monkeypatch, capsys, argv_tail, runner
+):
+    """reserved_strip_pct refuses an unusable footer_style during prompting."""
+    outline = _write_outline(tmp_path, slides=[])
+
+    def refuse(*_args, **_kwargs):
+        raise generate_illustrations.FooterStampError(
+            "footer text is too long to fit 82% of a 1600px frame"
+        )
+
+    monkeypatch.setattr(generate_illustrations, runner, refuse)
+    monkeypatch.setattr(
+        "sys.argv", ["generate-illustrations.py", str(outline), *argv_tail]
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        generate_illustrations.main()
+
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "the poster footer cannot be stamped" in err
+    assert "too long to fit" in err
+    assert "Traceback" not in err
+
+
+def test_a_title_less_stamped_slide_still_reserves_its_footer_strip(
+    generate_illustrations,
+):
+    """The strip depends on the stamped footer, never on the title text."""
+    gi = generate_illustrations
+    once = gi.apply_poster_embed_directive(
+        "A quiet scene.", "", "@jbaruch", footer_style=FOOTER_STYLE
+    )
+    assert "FOOTER STRIP" in once
+    assert "EMBEDDED TEXT" not in once
+    assert (
+        gi.apply_poster_embed_directive(once, "", "@jbaruch", footer_style=FOOTER_STYLE)
+        == once
+    )
+    # A model-rendered footer is directed on a title-less slide too.
+    rendered = gi.apply_poster_embed_directive("A quiet scene.", "", "@jbaruch")
+    assert '"@jbaruch"' in rendered and "FOOTER -- EXACT" in rendered
+    assert gi.POSTER_NO_INVENTED_TEXT in rendered
+    assert gi.apply_poster_embed_directive(rendered, "", "@jbaruch") == rendered
+    # Nothing to direct without a title or a footer.
+    assert gi.apply_poster_embed_directive("A quiet scene.", "", None) == (
+        "A quiet scene."
+    )
+
+
+def test_a_model_rendered_footer_is_directed_verbatim(generate_illustrations):
+    """Quotes stay quotes: the footer is delimited and escaped, never rewritten."""
+    footer = 'jbaruch • "Shift Left" Devoxx'
+    prompt = generate_illustrations.apply_poster_embed_directive(
+        "A scene.", "Title", footer
+    )
+    assert json.dumps(footer, ensure_ascii=False) in prompt
+    assert "'Shift Left'" not in prompt
