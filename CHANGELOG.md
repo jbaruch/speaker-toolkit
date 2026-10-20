@@ -24,7 +24,15 @@ Follow-ups from the advisory Copilot review on #457 (#458).
   owner-current database generation (a legacy one is the owner's to migrate)
   and an absolute `python_path`, re-reads the same database path, and takes the
   vault root from the locator's directory rather than the optional, possibly
-  stale `config.vault_root`. `schemas-db.md` lists it as a current reader in
+  stale `config.vault_root`, and resolves it through
+  `vault_root_authority.resolve_vault_root_authority`, so a
+  `config.vault_storage_path` naming another root refuses as
+  `vault_root_invalid`. An owner read that fails with the owner's own verdict
+  keeps its classification (`owner_code`) and remedy; a concurrent write is
+  `database_generation_conflict`, which the publisher answers by rerunning the
+  resolver. Every refusal carries the absolute `database` locator it read, the
+  `runtime_repair` handoff passes it on, and the repair reads, migrates and
+  configures only that database, never the default vault. `schemas-db.md` lists it as a current reader in
   the owner's reader contract, beside the dual readers. Every Python toolkit
   command in the skill and `references/talk-skill.md` runs on
   `"{python_path}"`, never a bare `python3` from `PATH`; shell scripts keep

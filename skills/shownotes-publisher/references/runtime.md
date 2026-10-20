@@ -18,14 +18,18 @@ Output: one JSON object on stdout. On `ok: true` (exit 0), set `python_path` and
 references runs on `"{python_path}"`. Shell scripts keep the `bash` invocation
 their step shows.
 
-On `ok: false` (exit 1), stop publishing and invoke
+On `ok: false` (exit 1) with `reason_code: database_generation_conflict`,
+another writer changed the database mid-read: run the resolver once more
+before anything else. On any other `ok: false`, stop publishing and invoke
 `Skill(skill: "vault-ingress")` with this repair-only handoff as context:
-`runtime_repair: {reason_code: "{reason_code}", lane: "outline"}`. That entry
-runs only the repair the code names and returns without starting an ingest.
-When it returns, run the resolver once more and continue with Step 1 on
-`ok: true`. When the repair reports nothing it could fix, or the resolver
-refuses again, finish here and report the `reason_code`. Never fall back to
-whichever `python3` is on `PATH`.
+`runtime_repair: {reason_code: "{reason_code}", lane: "outline", database:
+"{database}"}`, where `database` is the failure's absolute locator. That entry
+runs only the repair the code names, against that database alone, and returns
+without starting an ingest. When it returns, run the resolver once more with
+`--database "{database}"` and continue with Step 1 on `ok: true`. When the
+repair reports nothing it could fix, or the resolver refuses again, finish here
+and report the `reason_code`. Never fall back to whichever `python3` is on
+`PATH`.
 
 The checks the resolver composes, and its reason codes, are its own contract:
 see `skills/shownotes-publisher/scripts/resolve-runtime.py` (module docstring).

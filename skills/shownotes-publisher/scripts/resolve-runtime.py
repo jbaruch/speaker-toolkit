@@ -9,8 +9,11 @@ Composes two owner scripts and adds no parsing of its own beyond their JSON:
    assessment); a legacy one is the owner's to migrate.
 2. The same owner read of the same path under ``config.python_path``, which must
    be an absolute interpreter path; the database and its SHA-256 must match the
-   first read. The vault root is the database locator's directory, never the
-   optional and possibly stale ``config.vault_root``.
+   first read. The vault root is the database locator's directory, resolved
+   through ``vault_root_authority.resolve_vault_root_authority`` so a
+   ``config.vault_storage_path`` naming another root refuses as
+   ``vault_root_invalid``; the optional, possibly stale ``config.vault_root``
+   is never an authority.
 3. ``check-runtime.py`` under ``config.python_path`` with the ``outline`` lane
    required: PyYAML and Pydantic v2, which ``outline_schema.py`` and
    ``verify-talk-skill.py`` import. Its JSON verdict is classified, never just
@@ -21,16 +24,23 @@ Composes two owner scripts and adds no parsing of its own beyond their JSON:
    probe that could not start, a probe fault, an unreadable verdict, or a check
    that did not finish in time is ``runtime_probe_failed``.
 
-The first owner read failing is ``owner_read_failed``; the same read failing
-only under ``config.python_path`` is ``interpreter_unusable``, unless it timed
-out, which is ``owner_read_failed`` under either interpreter, since a read that
-never finished says nothing about the interpreter. ``config.python_path``
-failing to launch the runtime check is ``interpreter_unusable``.
+An owner read that answers with its own failure keeps the owner's
+classification: its ``code`` is reported as ``owner_code`` and its remedy is in
+``error``. A concurrent write (the owner's ``database_generation_conflict``) is
+``database_generation_conflict``, which a rerun fixes; every other owner
+failure is ``owner_read_failed``. A read that returns no owner verdict is
+``owner_read_failed`` under the host interpreter and ``interpreter_unusable``
+under ``config.python_path``, unless it timed out, which is
+``owner_read_failed`` under either, since a read that never finished says
+nothing about the interpreter. ``config.python_path`` failing to launch the
+runtime check is ``interpreter_unusable``.
 
 Stdout: one JSON object. Success is ``{"ok": true, "python_path", "vault_root",
 "database_sha256"}``. Failure is ``{"ok": false, "reason_code", "error",
-"handoff"}`` with a stderr diagnostic; ``handoff`` names the vault-ingress step
-that repairs the configuration. Exit 0 on success, 1 on any refusal.
+"handoff", "database"}``, plus ``owner_code`` when the owner classified it,
+with a stderr diagnostic; ``handoff`` names the vault-ingress step that repairs
+the configuration, and ``database`` is the absolute locator this run read, the
+one target any repair must act on. Exit 0 on success, 1 on any refusal.
 """
 
 from __future__ import annotations
@@ -62,14 +72,24 @@ from tracking_database import (  # noqa: E402
     TrackingDatabaseError,
     assess_tracking_database,
 )
+from vault_root_authority import (  # noqa: E402
+    VaultRootAuthorityError,
+    resolve_vault_root_authority,
+)
+
+# The owner reader's code for a write installed mid-read; a rerun fixes it.
+OWNER_GENERATION_CONFLICT = "database_generation_conflict"
 
 
 class RuntimeResolutionError(RuntimeError):
     """A refusal with a stable reason code and an actionable message."""
 
-    def __init__(self, reason_code: str, message: str) -> None:
+    def __init__(
+        self, reason_code: str, message: str, *, owner_code: str | None = None
+    ) -> None:
         super().__init__(message)
         self.reason_code = reason_code
+        self.owner_code = owner_code
 
 
 def _run(
@@ -129,19 +149,31 @@ def owner_read(
         raise RuntimeResolutionError(
             failure_code,
             f"the tracking-database owner reader under {interpreter} returned no "
-            f"JSON (exit {completed.returncode}); run it directly to see why",
+            f"JSON (exit {completed.returncode}); {direct}",
         ) from exc
-    if (
-        completed.returncode != 0
-        or not isinstance(report, dict)
-        or not report.get("ok")
-    ):
+    if completed.returncode == 0 and isinstance(report, dict) and report.get("ok"):
+        return report
+    owner_code = report.get("code") if isinstance(report, dict) else None
+    owner_error = report.get("error") if isinstance(report, dict) else None
+    if isinstance(owner_code, str) and isinstance(owner_error, str):
+        # The owner classified the failure; its code and remedy are the repair.
+        if owner_code == OWNER_GENERATION_CONFLICT:
+            raise RuntimeResolutionError(
+                "database_generation_conflict",
+                f"{owner_error} (read under {interpreter}); re-run the resolver",
+                owner_code=owner_code,
+            )
         raise RuntimeResolutionError(
-            failure_code,
-            f"the tracking database at {database} did not read under {interpreter} "
-            f"(exit {completed.returncode}); repair it through {HANDOFF}",
+            "owner_read_failed",
+            f"the tracking database at {database} did not read under "
+            f"{interpreter}: {owner_error}",
+            owner_code=owner_code,
         )
-    return report
+    raise RuntimeResolutionError(
+        failure_code,
+        f"the tracking-database owner reader under {interpreter} returned no "
+        f"verdict (exit {completed.returncode}); {direct}",
+    )
 
 
 def _version_tuple(text: object) -> tuple[int, ...] | None:
@@ -267,7 +299,21 @@ def resolve(database: Path) -> dict:
             f"the tracking database at {database} changed between the host and "
             "config.python_path reads; re-run once the vault is settled",
         )
-    vault_root = str(Path(str(first.get("database_path", database))).parent)
+    try:
+        vault_root = str(
+            resolve_vault_root_authority(
+                database_path=str(first.get("database_path", database)),
+                config=config,
+            )
+        )
+    except VaultRootAuthorityError as exc:
+        raise RuntimeResolutionError(
+            "vault_root_invalid",
+            f"the tracking database at {database} does not agree with its "
+            f"config.vault_storage_path ({exc.reason_code}); pass the database at "
+            "the vault root it names, or repair config.vault_storage_path through "
+            f"{HANDOFF}",
+        ) from exc
     check = _run(
         [
             python_path,
@@ -310,8 +356,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Tracking database locator; the documented vault path by default",
     )
     args = parser.parse_args(argv)
+    # The one locator this run reads, and the one any repair must act on.
+    database = Path(args.database).expanduser().absolute()
+    failure: dict[str, object]
     try:
-        print(json.dumps(resolve(Path(args.database).expanduser())))
+        print(json.dumps(resolve(database)))
         return 0
     except RuntimeResolutionError as exc:
         failure = {
@@ -319,7 +368,10 @@ def main(argv: list[str] | None = None) -> int:
             "reason_code": exc.reason_code,
             "error": str(exc),
             "handoff": HANDOFF,
+            "database": str(database),
         }
+        if exc.owner_code is not None:
+            failure["owner_code"] = exc.owner_code
     # The publisher reads stdout JSON to choose its interpreter; a traceback
     # would leave it no verdict and a bare python3 fallback looks like success.
     # Emit a closed ok:false object plus stderr instead.
@@ -329,6 +381,7 @@ def main(argv: list[str] | None = None) -> int:
             "reason_code": "resolver_failed",
             "error": f"{type(exc).__name__}: {exc}",
             "handoff": HANDOFF,
+            "database": str(database),
         }
     print(json.dumps(failure))
     print(f"FAIL: {failure['error']}", file=sys.stderr)

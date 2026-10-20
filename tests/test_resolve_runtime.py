@@ -373,3 +373,100 @@ def test_each_call_site_names_its_own_repair(
 
     assert refused.value.reason_code == expected
     assert len(calls) == call
+
+
+def test_a_stored_root_elsewhere_refuses_the_locator(tmp_path):
+    """config.vault_storage_path is a root assertion every reader enforces."""
+    vault = tmp_path / "vault"
+    database = _database(
+        vault, python_path=sys.executable, vault_storage_path="/somewhere/else"
+    )
+    error = _refused(database, "vault_root_invalid")
+    assert "vault_storage_path" in error
+
+
+def test_a_stored_root_that_matches_resolves(tmp_path):
+    vault = tmp_path / "vault"
+    database = _database(
+        vault, python_path=sys.executable, vault_storage_path=str(vault)
+    )
+    code, payload, stderr = _resolve(database)
+    assert code == 0, stderr
+    assert payload["vault_root"] == str(vault)
+
+
+OWNER_CONFLICT = json.dumps(
+    {
+        "schema_version": 1,
+        "ok": False,
+        "code": "database_generation_conflict",
+        "error": "tracking database changed while it was being read; rerun the "
+        "operation against the current generation",
+    }
+)
+OWNER_DAMAGED = json.dumps(
+    {
+        "schema_version": 1,
+        "ok": False,
+        "code": "database_json_invalid",
+        "error": "tracking database is not valid JSON",
+    }
+)
+
+
+@pytest.mark.parametrize(
+    "owner_report,reason_code",
+    [
+        (OWNER_CONFLICT, "database_generation_conflict"),
+        (OWNER_DAMAGED, "owner_read_failed"),
+    ],
+    ids=["generation-conflict", "damaged"],
+)
+def test_the_owner_s_classification_survives_the_configured_read(
+    tmp_path, owner_report, reason_code
+):
+    """A concurrent write is a rerun, never an interpreter or no-repair verdict."""
+    interpreter = _fake_interpreter(
+        tmp_path,
+        "python-mid-write",
+        f"case \"$1\" in *read-tracking-database.py) echo '{owner_report}'; exit 2;; esac",
+    )
+    database = _database(tmp_path / "vault", python_path=str(interpreter))
+    code, payload, stderr = _resolve(database)
+    assert code == 1
+    assert payload["reason_code"] == reason_code
+    owner = json.loads(owner_report)
+    assert payload["owner_code"] == owner["code"]
+    assert owner["error"] in payload["error"]
+    assert payload["error"] in stderr
+
+
+def test_the_host_read_keeps_the_owner_s_classification(tmp_path, monkeypatch):
+    module = _runtime_module()
+    database = _database(tmp_path / "vault", python_path=sys.executable)
+
+    def conflicted(command, **_kwargs):
+        return subprocess.CompletedProcess(command, 2, OWNER_CONFLICT, "")
+
+    monkeypatch.setattr(module.subprocess, "run", conflicted)
+    with pytest.raises(module.RuntimeResolutionError) as refused:
+        module.resolve(database)
+    assert refused.value.reason_code == "database_generation_conflict"
+    assert refused.value.owner_code == "database_generation_conflict"
+
+
+def test_a_refusal_names_the_absolute_database_it_read(tmp_path, monkeypatch):
+    """The repair handoff must act on this database, never the default vault."""
+    vault = tmp_path / "vault"
+    _database(vault, python_path="relative/python")
+    monkeypatch.chdir(tmp_path)
+    completed = subprocess.run(
+        [sys.executable, str(SCRIPT), "--database", "vault/tracking-database.json"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    payload = json.loads(completed.stdout)
+    assert completed.returncode == 1
+    assert payload["reason_code"] == "interpreter_not_absolute"
+    assert payload["database"] == str(vault / "tracking-database.json")
