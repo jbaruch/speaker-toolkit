@@ -3502,9 +3502,7 @@ def test_a_schema_2_session_is_upgraded_and_rewritten_on_read(tmp_path, fresh_db
     assert persisted["clarification"]["session"] == _PENDING_SESSION
 
 
-def test_a_migrated_legacy_completed_session_replays_its_record(
-    tmp_path, fresh_db
-):
+def test_a_migrated_legacy_completed_session_replays_its_record(tmp_path, fresh_db):
     """A session completed before claims carries a null token after upgrade."""
     run = _valid_run(**_ACCEPTED)
     run["schema_version"] = 2
