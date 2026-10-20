@@ -91,7 +91,9 @@ IDENTITY_FIELDS = (
     "processed_date",
 )
 _WHITESPACE = re.compile(r"\s+")
-_PLAIN_MARKDOWN_NAME = re.compile(r"[^./\\][^/\\]*\.md")
+# No separator, leading dot, or control character (NUL included): the path is
+# built from it and handed to os.open.
+_PLAIN_MARKDOWN_NAME = re.compile(r"[^./\\\x00-\x1f\x7f][^/\\\x00-\x1f\x7f]*\.md")
 
 
 class AnalysisLookupError(RuntimeError):
@@ -198,8 +200,10 @@ def select_talks(
 
 def _header_binds(text: str, talk: dict[str, Any]) -> bool:
     head = text.splitlines()[:HEADER_LINES]
+    # write-analysis.py's own heading fallback for a record with no title.
+    heading = talk.get("title") or str(talk.get("filename", "")).removesuffix(".md")
     expected = {
-        f"# Rhetoric Analysis: {talk.get('title')}",
+        f"# Rhetoric Analysis: {heading}",
         f"**Filename:** {talk.get('filename')}",
         f"**Processed:** {talk.get('processed_date')}",
     }

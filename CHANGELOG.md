@@ -26,6 +26,13 @@ rhetoric-analysis input explicit. The runtime and vault-root bootstrap is
   refuses as `vault_root_invalid`. A read failure keeps the owner's typed code
   and remedy from `DATABASE_READ_DIAGNOSTICS`, so a concurrent write says to
   rerun (`database_generation_conflict`) rather than to repair the database.
+  `talk-skill.md` routes each refusal: a generation conflict reruns the lookup,
+  `database_not_current` goes to vault-ingress's `runtime_repair` owner
+  migration and then a fresh lookup, and every other code stops with its
+  `error`. A stored filename with a control character (NUL included) is
+  `analysis_missing` before any path is opened, never a traceback, and a
+  title-less record binds the filename-stem heading `write-analysis.py` writes
+  for it.
 - A bound answer carries `analysis_text`, the exact bytes the binding checked,
   so the publisher never reopens a path that could have changed since.
 - An unbound answer carries a `handoff` naming this one delivery and

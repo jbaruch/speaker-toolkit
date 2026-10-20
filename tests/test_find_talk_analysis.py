@@ -351,3 +351,24 @@ def test_a_concurrent_write_mid_read_asks_for_a_rerun(tmp_path, monkeypatch, cap
     assert code == 2
     assert payload["reason_code"] == "database_generation_conflict"
     assert "rerun" in payload["error"]
+
+
+@pytest.mark.parametrize("filename", ["bad\x00name.md", "line\nbreak.md"], ids=repr)
+def test_a_stored_filename_with_a_control_character_is_never_opened(tmp_path, filename):
+    """Refused as missing with a JSON verdict, never a traceback from os.open."""
+    talk = {**ROBOCODERS, "filename": filename}
+    database = _vault(tmp_path, [talk])
+    code, payload, stderr = _find(database, *_by_identity(talk))
+    assert code == 0, stderr
+    assert payload["binding"] == "analysis_missing"
+    assert payload["analysis_path"] is None
+
+
+def test_a_title_less_record_binds_the_writer_s_filename_heading(tmp_path):
+    """write-analysis.py heads a title-less render with the filename stem."""
+    talk = {key: value for key, value in ROBOCODERS.items() if key != "title"}
+    database = _vault(tmp_path, [talk])
+    _analysis(database, talk, title=talk["filename"].removesuffix(".md"))
+    code, payload, stderr = _find(database, "--filename", talk["filename"])
+    assert code == 0, stderr
+    assert payload["binding"] == "bound"

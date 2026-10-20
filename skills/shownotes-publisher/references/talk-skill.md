@@ -49,7 +49,13 @@ that separate artifact.
      --title "{talk title}" --event "{event}" --date "{YYYY-MM-DD}"
    ```
 
-   Pass `--filename` instead when the talk record's filename is known. When
+   Pass `--filename` instead when the talk record's filename is known. Exit 2
+   is a refusal with a `reason_code` and an `error` naming its fix: on
+   `database_generation_conflict` (another writer mid-read), run the lookup
+   once more; on `database_not_current`, invoke `Skill(skill: "vault-ingress")`
+   with `runtime_repair: {reason_code: "database_not_current", lane: "outline",
+   database: "{vault_root}/tracking-database.json"}` for the owner migration,
+   then look up again; on any other code, stop and report the `error`. When
    `binding` is `bound`, synthesize from the verdict's `analysis_text`, the exact
    bytes the binding checked; never reopen `analysis_path`, which could have
    changed since. The binding fields and every other `binding` value are the
