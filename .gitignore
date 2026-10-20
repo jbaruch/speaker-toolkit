@@ -18,6 +18,19 @@ __pycache__/
 /deck-renderers/
 
 # Per-developer agent / IDE state
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/skills/
+.codex/*
+!.codex/agents/
+!.codex/rules/
+!.codex/skills/
+.gemini/*
+!.gemini/commands/
+!.gemini/skills/
 
 .tessl/RULES.md
 .tessl/tiles/
