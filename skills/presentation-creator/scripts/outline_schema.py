@@ -448,6 +448,14 @@ class StyleAnchor(_StrictModel):
                 "composition: poster-theatrical and a non-empty embedded_footer, "
                 "or remove footer_style"
             )
+        if self.footer_style is not None and any(
+            mark in (self.embedded_footer or "") for mark in "\r\n"
+        ):
+            raise ValueError(
+                "footer_style stamps embedded_footer as one line; remove its line "
+                "breaks (spaces separate its parts), or remove footer_style to let "
+                "the model render it"
+            )
         return self
 
 

@@ -51,7 +51,6 @@ frames on disk.
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -67,7 +66,9 @@ sys.path.insert(
 )
 import outline_schema  # noqa: E402  (path appended above)
 from footer_stamp import (  # noqa: E402  (sibling module)
+    FRAME_RE,
     FooterStampError,
+    deck_stamp_set,
     require_one_geometry,
     stamp_footer_file,
     stamp_spec,
@@ -75,8 +76,6 @@ from footer_stamp import (  # noqa: E402  (sibling module)
 )
 
 SCHEMA_VERSION = 1
-
-_FRAME_RE = re.compile(r"slide-\d+-build-(\d+)\.[A-Za-z0-9]+$")
 
 
 def parse_build_specs(outline_path: Path) -> list[dict]:
@@ -116,29 +115,27 @@ def frames_for(builds_dir: Path, parent: int) -> dict[int, Path]:
     """Map step number -> build frame file for a parent (slide-NN-build-MM.<ext>)."""
     found = {}
     for p in builds_dir.glob(f"slide-{parent:02d}-build-*"):
-        fm = _FRAME_RE.search(p.name)
+        fm = FRAME_RE.search(p.name)
         if fm:
             found[int(fm.group(1))] = p
     return found
 
 
-def _require_one_stamped_geometry(specs: list[dict], builds_dir: Path) -> None:
-    """Every frame to be stamped, and its parent slide image, share one size."""
-    images: list[Path] = []
-    for spec in specs:
-        if spec["footer"] is None:
-            continue
-        # Only the steps the outline declares; a stale frame left by an
-        # earlier build is never stamped, so it never constrains geometry.
-        found = frames_for(builds_dir, spec["parent"])
-        images.extend(found[step] for step in spec["steps"] if step in found)
-        images.extend(
-            path
-            for path in builds_dir.parent.glob(f"slide-{spec['parent']:02d}.*")
-            if path.is_file()
-        )
+def _require_one_stamped_geometry(
+    outline_path: Path, specs: list[dict], builds_dir: Path
+) -> None:
+    """The whole deck's stamp set shares one size before any frame is stamped.
+
+    The same set the apply step checks: every stamped slide image and every
+    declared build frame, so whichever command runs first refuses a mixed deck.
+    A stale frame outside the declared steps is never stamped, so it never
+    constrains geometry.
+    """
+    if not any(spec["footer"] is not None for spec in specs):
+        return
+    slides = outline_schema.load_outline_partial(outline_path).slides
     try:
-        require_one_geometry(sorted(images))
+        require_one_geometry(deck_stamp_set(slides, builds_dir.parent, builds_dir))
     except FooterStampError as exc:
         raise SystemExit(f"ERROR: cannot stamp the build frames: {exc}") from exc
 
@@ -156,7 +153,7 @@ def build_manifest(
     """
     notes_map = notes_map or {}
     specs = sorted(parse_build_specs(outline_path), key=lambda s: s["parent"])
-    _require_one_stamped_geometry(specs, builds_dir)
+    _require_one_stamped_geometry(outline_path, specs, builds_dir)
     builds = []
     # parse_build_specs reads outline.yaml through the schema, which already
     # guarantees each slide's build steps are contiguous from 0 — so step

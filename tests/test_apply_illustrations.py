@@ -849,3 +849,121 @@ def test_an_unreadable_img_txt_image_names_the_image(
 
     assert "cannot read the slide image" in str(exc.value)
     assert "slide-02.jpg" in str(exc.value)
+
+
+def test_deck_slide_numbers_follow_build_expansion(apply_illustrations):
+    """ExpandBuilds replaces each parent with its frames before backgrounds run."""
+    counts = {3: 4, 6: 2}
+    number = apply_illustrations.deck_slide_number
+    assert [number(n, counts) for n in (1, 2, 3, 4, 5, 6, 7)] == [
+        1,
+        2,
+        None,
+        7,
+        8,
+        None,
+        11,
+    ]
+    assert number(5, {}) == 5
+
+
+def test_backgrounds_are_keyed_past_an_earlier_build(apply_illustrations, tmp_path):
+    """A slide after a build parent is set on its post-expansion number."""
+    deck = tmp_path / "deck.pptx"
+    make_deck(5).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    for n in (2, 3, 4):
+        (illust_dir / f"slide-{n:02d}.png").write_bytes(_MIN_PNG)
+    zone = {"zone": "upper_third", "surface": "sky"}
+    outline = _write_outline(
+        tmp_path,
+        [
+            {"n": 2, "format": "FULL", "safe_zone": zone},
+            {
+                "n": 3,
+                "format": "FULL",
+                "safe_zone": zone,
+                "builds": [
+                    {"step": 0, "desc": "a", "erase": "e"},
+                    {"step": 1, "desc": "b", "erase": "e"},
+                    {"step": 2, "desc": "c"},
+                ],
+            },
+            {"n": 4, "format": "FULL", "safe_zone": zone},
+        ],
+    )
+
+    results, backgrounds = apply_illustrations.apply(
+        deck,
+        illust_dir,
+        apply_illustrations.parse_zones(outline),
+        set(),
+        tmp_path / "out.pptx",
+        "png",
+        "000000",
+        45000,
+        build_counts=apply_illustrations.parse_build_counts(outline),
+    )
+
+    # Slide 3's three frames occupy deck slides 3-5, so slide 4 is deck slide 6;
+    # the parent itself has no background to set.
+    assert sorted(backgrounds) == [2, 6]
+    assert backgrounds[6] == str((illust_dir / "slide-04.png").resolve())
+    assert {r["slide"]: r["deck_slide"] for r in results} == {2: 2, 3: None, 4: 6}
+
+
+def test_a_build_frame_of_another_size_is_refused_before_apply_stamps(
+    apply_illustrations, tmp_path, monkeypatch
+):
+    """The deck-wide set includes declared frames, not just slide images."""
+    from PIL import Image
+
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    builds = illust_dir / "builds"
+    builds.mkdir(parents=True)
+    Image.new("RGB", (1536, 864), (30, 40, 50)).save(illust_dir / "slide-02.jpg")
+    Image.new("RGB", (1536, 864), (30, 40, 50)).save(builds / "slide-02-build-00.jpg")
+    Image.new("RGB", (1024, 1024), (30, 40, 50)).save(builds / "slide-02-build-01.jpg")
+    outline = _write_outline(
+        tmp_path,
+        [
+            {
+                "n": 2,
+                "format": "FULL",
+                "text_overlay": "T",
+                "image_prompt": "P",
+                "builds": [
+                    {"step": 0, "desc": "a", "erase": "e"},
+                    {"step": 1, "desc": "b"},
+                ],
+            },
+        ],
+        composition="poster-theatrical",
+        embedded_footer="@jbaruch",
+    )
+    data = yaml.safe_load(outline.read_text(encoding="utf-8"))
+    data["style_anchor"]["footer_style"] = {}
+    outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    _cli(monkeypatch, str(deck), str(illust_dir), str(outline))
+
+    with pytest.raises(SystemExit) as exc:
+        apply_illustrations.main()
+
+    assert "must share one size" in str(exc.value)
+    assert "slide-02-build-01.jpg" in str(exc.value)
+    assert not (illust_dir / "footer-stamped").exists()
+    assert not (tmp_path / "deck-with-titles.pptx").exists()
+
+
+def test_a_multiline_stamped_footer_is_refused_by_the_schema(
+    apply_illustrations, tmp_path
+):
+    import outline_schema
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="as one line"):
+        _poster_outline_with_footer_style(tmp_path, "@jbaruch\nspeaking.jbaru.ch", {})
+        outline_schema.load_outline_partial(tmp_path / "outline.yaml")

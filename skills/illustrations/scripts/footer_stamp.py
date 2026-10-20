@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from pathlib import Path
+import re
 from typing import Any
 
 from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageStat
@@ -75,6 +76,37 @@ def stamp_spec(anchor: Any) -> tuple[str, dict[str, Any]] | None:
     if anchor is None or anchor.footer_style is None or not anchor.embedded_footer:
         return None
     return anchor.embedded_footer, anchor.footer_style.model_dump()
+
+
+# A build frame's file name: ``slide-NN-build-MM.<ext>``, step ``MM``.
+FRAME_RE = re.compile(r"slide-\d+-build-(\d+)\.[A-Za-z0-9]+$")
+
+
+def deck_stamp_set(
+    slides: Iterable[Any],
+    illustrations_dir: Path,
+    builds_dir: Path,
+    ext: str | None = None,
+) -> list[Path]:
+    """Every existing image a footer-stamped poster deck stamps, across commands.
+
+    Each stamped slide's image in ``illustrations_dir`` (``slide-NN.<ext>``, or
+    every ``slide-NN.*`` when ``ext`` is None) and each build frame the outline
+    declares in ``builds_dir``. The apply step and the build manifest both check
+    this one set, so a mixed deck is refused before either writes a stamp.
+    """
+    images: list[Path] = []
+    for slide in slides:
+        if not stamped_slide(slide):
+            continue
+        pattern = f"slide-{slide.n:02d}.{ext}" if ext else f"slide-{slide.n:02d}.*"
+        images.extend(p for p in illustrations_dir.glob(pattern) if p.is_file())
+        declared = {build.step for build in slide.builds}
+        for frame in builds_dir.glob(f"slide-{slide.n:02d}-build-*"):
+            match = FRAME_RE.search(frame.name)
+            if match and int(match.group(1)) in declared and frame.is_file():
+                images.append(frame)
+    return sorted(images)
 
 
 def require_one_geometry(images: Iterable[Path]) -> tuple[int, int] | None:

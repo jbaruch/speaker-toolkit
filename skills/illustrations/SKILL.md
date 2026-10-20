@@ -336,7 +336,8 @@ python3 "{speaker_toolkit_root}/skills/illustrations/scripts/apply-illustrations
 ```
 
 Stdout is one JSON summary: `deck`, `updated`, `eligible`, per-slide
-`results`, and `backgrounds_manifest`; progress goes to stderr. A non-zero exit
+`results`, and `backgrounds_manifest`, keyed by post-ExpandBuilds slide number;
+progress goes to stderr. A non-zero exit
 is a refusal whose fix is on stderr. An eligible slide with no image, or past
 the deck's end, refuses before any deck is written: generate the missing images
 or fix the outline, then re-run.

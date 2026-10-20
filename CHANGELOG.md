@@ -39,6 +39,16 @@ discipline reduced the drift but cannot guarantee typographic identity.
   names an unreadable image and says to regenerate or replace it, so the
   geometry checks in both apply and the build manifest are actionable, and the
   manifest names a frame that cannot be stamped.
+- The backgrounds manifest is keyed by deck slide number after ExpandBuilds,
+  which runs first and replaces each build parent with its frames. A slide after
+  a build parent had been keyed by its outline number, so its background landed
+  on the wrong slide, and a parent's own entry overwrote its first frame. Each
+  result now carries its `deck_slide` (null for a build parent).
+- Apply and the build manifest check one deck-wide stamp set,
+  `footer_stamp.deck_stamp_set`: every stamped slide image plus every declared
+  build frame. Whichever command runs first refuses a mixed deck before either
+  writes a stamp. A stamped `embedded_footer` must be one line; the schema
+  refuses line breaks before the single-line rasterizer could raise.
 - `strategy.md` Steps 5 and 9 and `SKILL.md` Step 9 describe the model-rendered
   and stamped footer modes separately. `text_treatment` styles the title only,
   as generation already did: the schema comment, the style-catalog field

@@ -338,3 +338,31 @@ def test_a_stale_frame_outside_the_declared_steps_is_ignored(
 
     assert len(manifest["builds"][0]["frames"]) == 4
     assert not (builds / "footer-stamped" / "slide-07-build-04.png").exists()
+
+
+def test_a_poster_slide_of_another_size_stops_the_manifest_before_any_stamp(
+    build_expansion_manifest, tmp_path
+):
+    """The manifest checks the same deck-wide set the apply step does."""
+    from PIL import Image
+
+    parent = next(s for s in DEFAULT_SLIDES if s["n"] == 7)
+    other = {
+        "n": 9,
+        "chapter": "c",
+        "title": "Other",
+        "format": "FULL",
+        "text_overlay": "Other",
+        "image_prompt": "P",
+    }
+    outline = _stamping_outline(tmp_path, [parent, other])
+    builds = tmp_path / "builds"
+    _image_frames(builds, 7, 4)
+    Image.new("RGB", (1024, 1024), (10, 20, 30)).save(tmp_path / "slide-09.jpg")
+
+    with pytest.raises(SystemExit) as exc:
+        build_expansion_manifest.build_manifest(outline, builds)
+
+    assert "must share one size" in str(exc.value)
+    assert "slide-09.jpg" in str(exc.value)
+    assert not (builds / "footer-stamped").exists()

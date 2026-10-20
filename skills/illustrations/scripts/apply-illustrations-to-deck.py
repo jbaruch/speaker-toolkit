@@ -7,7 +7,8 @@ supported, distinguished by the per-slide fields:
 
 FULL — slide has a `safe_zone:` field (zone of upper_third / middle_third /
   lower_third / left_half / right_half):
-  1. Record the slide + illustration in the backgrounds manifest (--backgrounds-out).
+  1. Record the slide + illustration in the backgrounds manifest (--backgrounds-out),
+     keyed by its deck slide number after ExpandBuilds (a build parent has none).
      The illustration becomes the slide BACKGROUND FILL via a later ApplyBackgrounds
      VBA pass (apply-backgrounds.sh) — NOT a python-pptx picture shape, which would
      sit above the layout's halftone-dot overlay and which a python-pptx round-trip
@@ -45,8 +46,12 @@ Usage:
 
 Stdout is one JSON object: ``ok``, the written ``deck`` (null when the outline
 has nothing to apply), ``updated`` and ``eligible`` slide counts, the per-slide
-``results``, and the ``backgrounds_manifest`` path (null when no FULL slide
-needs a background). Progress lines go to stderr. A refusal exits non-zero
+``results`` (each with its outline ``slide`` and post-ExpandBuilds
+``deck_slide``, null for a build parent), and the ``backgrounds_manifest`` path
+(null when no FULL slide needs a background). The manifest's keys are
+post-ExpandBuilds deck slide numbers, so run the backgrounds pass after
+``expand-builds.sh``. With ``footer_style``, every stamped slide image and every
+declared build frame must share one size, checked before anything is written. Progress lines go to stderr. A refusal exits non-zero
 with its message on stderr and names the fix: an eligible slide whose image is
 missing or that lies past the deck's end (nothing is written), an unreadable
 source deck, an unwritable output deck or backgrounds manifest, or a slide image
@@ -80,6 +85,7 @@ sys.path.insert(
 import outline_schema  # noqa: E402  (path appended above)
 from footer_stamp import (  # noqa: E402  (sibling module)
     FooterStampError,
+    deck_stamp_set,
     require_one_geometry,
     stamp_footer_file,
     stamp_spec,
@@ -414,6 +420,28 @@ def apply_img_txt_layout(slide) -> tuple[int, int]:
     return pic_moved, text_moved
 
 
+def deck_slide_number(n: int, build_counts: dict[int, int]) -> int | None:
+    """Outline slide ``n``'s 1-based deck number after ExpandBuilds, or None.
+
+    ExpandBuilds runs before the backgrounds pass and replaces each build parent
+    with its frames, so every later slide moves by that parent's frame count
+    minus one. A parent itself has no slide left to key: its frames carry their
+    own backgrounds from the build manifest.
+    """
+    if n in build_counts:
+        return None
+    return n + sum(count - 1 for parent, count in build_counts.items() if parent < n)
+
+
+def parse_build_counts(outline_path: Path) -> dict[int, int]:
+    """Frame count per build parent, from the outline's per-slide ``builds``."""
+    return {
+        s.n: len(s.builds)
+        for s in outline_schema.load_outline_partial(outline_path).slides
+        if s.builds
+    }
+
+
 class ApplyError(RuntimeError):
     """A refusal whose message names the operation that failed and its fix."""
 
@@ -447,14 +475,18 @@ def apply(
     scrim_alpha: int,
     poster_full_slides: set | None = None,
     footer_stamp: tuple[str, dict] | None = None,
+    build_counts: dict[int, int] | None = None,
 ) -> tuple[list[dict], dict]:
     """Apply scrim + title for FULL slides and the IMG+TXT layout.
 
     FULL-slide illustrations are NOT inserted as picture shapes here; they are
     recorded in the returned ``backgrounds`` map ({slide_num: abs_image_path})
     for the ApplyBackgrounds VBA pass, which sets them as slide background fills
-    as the final write. Returns ``(results, backgrounds)``.
+    as the final write. Its keys are post-ExpandBuilds deck slide numbers
+    (``deck_slide_number``), and a build parent has no entry. Returns
+    ``(results, backgrounds)``.
     """
+    build_counts = build_counts or {}
     poster_full_slides = poster_full_slides or set()
     try:
         prs = Presentation(str(deck))
@@ -485,7 +517,9 @@ def apply(
         illust = illust_dir / f"slide-{n:02d}.{ext}"
 
         slide = prs.slides[n - 1]
-        backgrounds[n] = str(illust.resolve())
+        deck_n = deck_slide_number(n, build_counts)
+        if deck_n is not None:
+            backgrounds[deck_n] = str(illust.resolve())
 
         scrim_added = ensure_scrim(slide, zone, scrim_hex, scrim_alpha)
         moved = reposition_title(slide, zone)
@@ -495,6 +529,7 @@ def apply(
         results.append(
             {
                 "slide": n,
+                "deck_slide": deck_n,
                 "format": "FULL",
                 "zone": zone,
                 "text_moved": moved,
@@ -529,15 +564,15 @@ def apply(
     # Poster-theatrical FULL slides — background only. Title + footer are baked
     # into the image, so no scrim and no overlaid title; QR (added later) is the
     # only inserted shape.
-    if footer_stamp is not None:
-        # Refuse a mixed set before stamping any of it.
-        require_one_geometry(
-            illust_dir / f"slide-{n:02d}.{ext}" for n in sorted(poster_full_slides)
-        )
     for n in sorted(poster_full_slides):
         illust = illust_dir / f"slide-{n:02d}.{ext}"
-        if footer_stamp is None:
-            backgrounds[n] = str(illust.resolve())
+        deck_n = deck_slide_number(n, build_counts)
+        if deck_n is None:
+            # A build parent: its frames, stamped by the build manifest,
+            # replace it and carry their own backgrounds.
+            _progress(f"  [{n:02d}] poster FULL  build parent (frames carry it)")
+        elif footer_stamp is None:
+            backgrounds[deck_n] = str(illust.resolve())
             _progress(
                 f"  [{n:02d}] poster FULL  bg->VBA  (title+footer baked into image)"
             )
@@ -552,16 +587,17 @@ def apply(
                     "regenerate or replace the image if it is unreadable, or make "
                     "the directory writable, then re-run"
                 ) from exc
-            backgrounds[n] = str(stamped.resolve())
+            backgrounds[deck_n] = str(stamped.resolve())
             _progress(
                 f"  [{n:02d}] poster FULL  bg->VBA  (title baked, footer stamped)"
             )
         results.append(
             {
                 "slide": n,
+                "deck_slide": deck_n,
                 "format": "FULL-POSTER",
                 "zone": None,
-                "footer_stamped": footer_stamp is not None,
+                "footer_stamped": footer_stamp is not None and deck_n is not None,
             }
         )
 
@@ -668,7 +704,19 @@ def main():
     if not (0 <= args.scrim_alpha <= 100000):
         raise SystemExit(f"--scrim-alpha must be 0..100000, got {args.scrim_alpha}")
 
+    footer = parse_footer_stamp(args.outline) if poster else None
     try:
+        if footer is not None:
+            # One deck-wide set, the same one the build manifest checks, so a
+            # mixed deck is refused before either command stamps anything.
+            require_one_geometry(
+                deck_stamp_set(
+                    outline_schema.load_outline_partial(args.outline).slides,
+                    args.illustrations,
+                    args.illustrations / "builds",
+                    args.image_ext,
+                )
+            )
         results, backgrounds = apply(
             args.deck,
             args.illustrations,
@@ -679,7 +727,8 @@ def main():
             scrim_hex,
             args.scrim_alpha,
             poster_full_slides,
-            parse_footer_stamp(args.outline) if poster else None,
+            footer,
+            parse_build_counts(args.outline),
         )
     except (ApplyError, FooterStampError) as exc:
         raise SystemExit(f"ERROR: {exc}") from exc
@@ -703,8 +752,9 @@ def main():
             f"Wrote {len(backgrounds)} FULL-slide background(s) -> {backgrounds_out}"
         )
         _progress(
-            f"Apply them via: apply-backgrounds.sh <uniquely-named copy of {out_deck.name}> "
-            f"<final.pptx> {backgrounds_out.name}"
+            "Keys are post-ExpandBuilds slide numbers: run expand-builds.sh first "
+            "when the outline has builds, then apply them via: apply-backgrounds.sh "
+            f"<uniquely-named copy> <final.pptx> {backgrounds_out.name}"
         )
     else:
         _progress(
