@@ -366,7 +366,8 @@ def test_an_ffmpeg_that_overruns_its_budget_is_stopped(
     fake = tmp_path / "slow-bin" / "ffmpeg"
     fake.parent.mkdir()
     fake.write_text(
-        "#!/usr/bin/env bash\nset -euo pipefail\nexec /bin/sleep 30\n",
+        # Absolute: PATH below holds only this directory, so env cannot find bash.
+        "#!/bin/bash\nset -euo pipefail\nexec /bin/sleep 30\n",
         encoding="utf-8",
     )
     fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
