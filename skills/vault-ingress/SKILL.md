@@ -116,12 +116,8 @@ Do not select work until migration succeeds, the catalog is structurally valid,
 and offline preflight has no blocking finding. Before preflight may inspect any
 preserved local recording declared by
 `structured_data.video_extraction.source_video_path`, `video_local_path`, or
-`video_path`, require:
-
-```bash
-"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/check-runtime.py" \
-  --lanes core,source-video --require-lanes core,source-video
-```
+`video_path`, or any audio in `local_audio`, pass the reference's conditional
+`source-video` and declared-audio `source-media` runtime gates.
 
 Never pre-open, hash, hydrate, or call `ffprobe` directly. Video failure disables
 only video evidence; retain independent transcript/PDF/PPTX evidence. Then read

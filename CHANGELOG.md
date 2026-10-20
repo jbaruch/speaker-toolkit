@@ -62,6 +62,17 @@ recording exceeds the 8 GiB input ceiling.
   never a transcode renamed to `{youtube_id}.mp4`.
   `subagent-instructions.md` names the declaration for non-YouTube talks, and
   the `schemas-db.md` compatibility table moves to root 5.
+- A `local_media_duration` receipt binds whichever owner-bound local medium its
+  digest names: the probed video or the declared audio. An audio-bound
+  transcript therefore stays valid beside a usable video, and local Whisper
+  timing is checked against the duration of the medium it names; a provider's
+  duration applies only to provider-owned provenance.
+- Wherever declared audio may be probed, the flow first requires
+  `check-runtime.py --require-lanes core,source-media`. That covers preflight
+  (`bootstrap-and-preflight.md`, pointed to from vault-ingress Step 1), batch
+  validation, persistence and rendering (`batch-persistence.md`), and
+  vault-profile's load, validation and Section 15 reads. Each gate fires when
+  `local_audio` is non-empty, beside the existing `source-video` gates.
 - The declaration is a mutation of the tracking database's own collection, not
   an `apply-source-repairs.py` talk field, for the reason above.
 

@@ -92,6 +92,21 @@ def test_returned_source_video_requires_runtime_gate_before_persistence() -> Non
     assert "references/batch-persistence.md" in docs["skill"]
 
 
+def test_declared_audio_requires_the_media_lane_before_it_is_probed() -> None:
+    """Preflight and batch persistence probe local_audio through the media owner."""
+    docs = _docs()
+    media_gate = "--lanes core,source-media --require-lanes core,source-media"
+    for doc, consumer in (
+        (docs["bootstrap"], "scripts/preflight-vault.py"),
+        (docs["persistence"], "persist-results.py"),
+    ):
+        assert media_gate in doc
+        assert "`local_audio`" in doc
+        assert doc.index(media_gate) < doc.index(consumer)
+    assert "`local_audio`" in docs["skill"]
+    assert "source-media" in docs["skill"]
+
+
 def test_workers_use_the_immutable_claim_baseline_not_section_15() -> None:
     docs = _docs()
     assert "references/subagent-instructions.md" in docs["skill"]

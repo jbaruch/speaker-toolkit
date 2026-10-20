@@ -365,7 +365,10 @@ def test_an_ffmpeg_that_overruns_its_budget_is_stopped(
     recording = _recording(tmp_path / "videos")
     fake = tmp_path / "slow-bin" / "ffmpeg"
     fake.parent.mkdir()
-    fake.write_text("#!/bin/sh\nexec /bin/sleep 30\n", encoding="utf-8")
+    fake.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\nexec /bin/sleep 30\n",
+        encoding="utf-8",
+    )
     fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
     monkeypatch.setenv("PATH", str(fake.parent))
     with pytest.raises(extract_local_audio.ExtractionError) as caught:

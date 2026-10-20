@@ -21,6 +21,15 @@ That success gates validation, persistence, and analysis rendering for the
 batch. Do not pre-open, hash, hydrate, or invoke `ffprobe` directly to decide
 whether to run the gate.
 
+If the owner-read database's `local_audio` declares audio for any talk in the
+batch, validation, persistence, and rendering probe that audio too. Require its
+lane once for the batch first:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/check-runtime.py" \
+  --lanes core,source-media --require-lanes core,source-media
+```
+
 - **Validate the whole batch before any write.** Run
   `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/validate-returns.py" batch-returns.json`.
   The command accepts one return object, an array, a directory of JSON returns,

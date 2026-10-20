@@ -323,6 +323,15 @@ def test_profile_requires_source_video_lane_before_freshness_work() -> None:
     )
 
 
+def test_profile_requires_the_media_lane_before_declared_audio_reads() -> None:
+    profile = (SKILLS_ROOT / "vault-profile" / "SKILL.md").read_text(encoding="utf-8")
+
+    media_gate = "--lanes core,source-media --require-lanes core,source-media"
+    assert media_gate in profile
+    assert "`local_audio`" in profile
+    assert profile.index(media_gate) < profile.index("## Step 1 — Load Vault Sources")
+
+
 def test_profile_construction_rules_are_linked_and_shipped() -> None:
     skill_path = SKILLS_ROOT / "vault-profile" / "SKILL.md"
     reference = (
