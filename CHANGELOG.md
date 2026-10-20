@@ -1,5 +1,29 @@
 # Changelog
 
+### Separate talk authoring from building, publishing, and CFP work
+
+The presentation creator's entry point had reached 4,998 estimated tokens.
+Independent exports, abstracts, and QR requests inherited full vault loading and
+unrelated publishing credentials. Issues #504–#508 split those requests into
+focused discovery surfaces while retaining the existing outline owner.
+
+- `presentation-creator` keeps intake, intent, architecture, content, and revision.
+  New `presentation-builder`, `presentation-publisher`, and `cfp-writer` skills
+  own deck operations/export, publishing coordination, and submissions/catalog
+  updates. Existing illustration and shownotes skills handle post-event requests.
+- Engine- and action-specific references load only when selected. Shared runtime
+  discovery accepts readable legacy databases for local work, preserves strict
+  interpreter/generation checks, and requires the current owner generation before
+  paired publishing/tracking effects. Core-only CFP/export checks need no outline
+  dependency lane; provider credentials apply to their selected action. Task
+  profile projections keep unrelated history, badges, visual history, and
+  configuration out of agent context.
+- A compact phase-filtered pattern menu reads the unchanged catalog on demand.
+  No catalog bytes, scoring identities, outline schemas, or public script paths
+  change. The four focused entry points have enforced 1,500-token budgets.
+- Packaging, installed-path, runtime, discovery-menu, and workflow scenario
+  validation cover the new entry points and legacy-outline return path.
+
 ## 0.20.189 — 2026-10-20
 
 ### Stamp a poster deck's footer deterministically

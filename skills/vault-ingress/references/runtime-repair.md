@@ -1,7 +1,7 @@
 # Runtime Repair
 
 A repair-only entry into vault-ingress. Another skill's runtime resolver (the
-shownotes publisher's `skills/shownotes-publisher/scripts/resolve-runtime.py`)
+shared presentation/publishing `skills/shownotes-publisher/scripts/resolve-runtime.py`)
 refused and invoked vault-ingress with a `runtime_repair` handoff carrying its
 `reason_code`, the lane it needs, and the absolute `database` locator it read.
 Run only the repair that code names, then finish: never select a batch,
@@ -21,7 +21,7 @@ locator. A handoff without `database` names no target: report that and finish.
 | `owner_read_failed`, `runtime_probe_failed`, `vault_root_invalid`, `resolver_failed` | none: report the resolver's `error` to the speaker; it carries the owner's remedy when `owner_code` is present |
 
 Confirm an interpreter repair with the lane the handoff names (`outline` for
-the shownotes publisher):
+schema consumers, `core` for text/export tasks):
 
 ```bash
 "{configured python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/check-runtime.py" \

@@ -40,9 +40,9 @@ def _database(vault: Path, **config: object) -> Path:
     return path
 
 
-def _resolve(database: Path):
+def _resolve(database: Path, *options: str):
     completed = subprocess.run(
-        [sys.executable, str(SCRIPT), "--database", str(database)],
+        [sys.executable, str(SCRIPT), "--database", str(database), *options],
         capture_output=True,
         text=True,
         check=False,
@@ -112,6 +112,66 @@ def test_a_legacy_database_is_handed_to_the_owner_migration(tmp_path):
     data["schema_version"] = CURRENT_ROOT_SCHEMA_VERSION - 1
     database.write_text(json.dumps(data), encoding="utf-8")
     assert "owner migration" in _refused(database, "database_not_current")
+
+
+def test_read_only_authoring_accepts_legacy_without_migrating_it(tmp_path):
+    database = _database(tmp_path / "vault", python_path=sys.executable)
+    data = json.loads(database.read_text())
+    data["schema_version"] = CURRENT_ROOT_SCHEMA_VERSION - 1
+    database.write_text(json.dumps(data))
+    before = database.read_bytes()
+
+    code, payload, stderr = _resolve(database, "--read-only")
+
+    assert code == 0, stderr
+    assert payload["database_state"] == "legacy"
+    assert payload["lane"] == "outline"
+    assert database.read_bytes() == before
+    # A later paired publishing effect still requires the write-mode gate.
+    assert "owner migration" in _refused(database, "database_not_current")
+    assert database.read_bytes() == before
+
+
+@pytest.mark.parametrize("action", ["cfp", "catalog", "export"])
+def test_text_and_export_runtime_work_without_outline_dependencies_or_vault_docs(
+    tmp_path, action
+):
+    """The selected core lane executes despite an unavailable outline lane."""
+    interpreter = _fake_interpreter(
+        tmp_path,
+        f"python-for-{action}",
+        'case "$1" in *check-runtime.py)\n'
+        '  case " $* " in *" --require-lanes outline "*)\n'
+        f"    echo '{MISSING_PYDANTIC}'; exit 1;;\n"
+        "  esac;;\n"
+        "esac",
+    )
+    vault = tmp_path / "vault"
+    database = _database(vault, python_path=str(interpreter))
+    before = database.read_bytes()
+
+    code, payload, stderr = _resolve(database, "--read-only", "--lane", "core")
+
+    assert code == 0, stderr
+    assert payload["python_path"] == str(interpreter)
+    assert payload["lane"] == "core"
+    assert sorted(p.name for p in vault.iterdir()) == ["tracking-database.json"]
+    assert database.read_bytes() == before
+    _refused(database, "runtime_lane_unavailable")
+
+
+def test_read_only_mode_still_refuses_future_generations(tmp_path):
+    database = _database(tmp_path / "vault", python_path=sys.executable)
+    data = json.loads(database.read_text())
+    data["schema_version"] = CURRENT_ROOT_SCHEMA_VERSION + 1
+    database.write_text(json.dumps(data))
+    before = database.read_bytes()
+
+    code, payload, _ = _resolve(database, "--read-only", "--lane", "core")
+
+    assert code == 1
+    assert payload["reason_code"] == "owner_read_failed"
+    assert database.read_bytes() == before
 
 
 def test_a_future_database_fails_the_owner_read(tmp_path):

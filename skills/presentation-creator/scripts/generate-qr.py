@@ -1203,7 +1203,7 @@ def insert_qr_via_powerpoint(deck_path, jobs, scripts_dir):
             raise SystemExit(
                 f"ERROR: QR insertion failed in PowerPoint (insert-qr.sh, spec '{spec}'). "
                 "Confirm DeckOps.pptm is open with macros enabled and Automation consent "
-                "granted — see skills/presentation-creator/references/deck-editing-setup.md"
+                "granted — see skills/presentation-builder/references/deck-editing-setup.md"
             )
         if current != deck_path:
             os.remove(current)  # drop the prior intermediate

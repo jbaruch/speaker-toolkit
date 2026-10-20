@@ -44,7 +44,7 @@ Authored in Phase 1; never re-edited carelessly. Field reference (see
 | `speakers` | yes | List of speaker names; multi-speaker talks force `speaker:` on every script line |
 | `duration_min` | yes | Slot length in minutes |
 | `audience`, `mode`, `venue` | yes | Short prose |
-| `audience_spread` | yes | `heterogeneous` (cover all four registers) or `homogeneous` (match one). Set at intake — see `phase0-intake.md` Step 0.4 and `patterns/prepare/walk-around.md` |
+| `audience_spread` | yes | `heterogeneous` (cover all four registers) or `homogeneous` (match one). Set at intake — see `phase0-intake.md` — Read the Audience Spread and `patterns/prepare/walk-around.md` |
 | `dominant_register` | conditional | `A` \| `B` \| `C` \| `D`. Required iff `audience_spread: homogeneous`; rejected otherwise |
 | `slide_budget` | yes | Integer; expanded build count is validated against this |
 | `pacing_rate` | yes for new outlines | Complete typed narration rate from owner planning output; see `skills/vault-profile/references/speech-rates.md` |

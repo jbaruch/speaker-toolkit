@@ -146,6 +146,7 @@ executionEnvironments = [
     { root = "skills/presentation-creator/scripts", extraPaths = [
         "skills/presentation-creator/scripts",
         "skills/vault-profile/scripts",
+        "skills/vault-ingress/scripts",
     ] },
     # clarification and profile splice the vault-ingress scripts onto sys.path
     # at import time to share its validators.

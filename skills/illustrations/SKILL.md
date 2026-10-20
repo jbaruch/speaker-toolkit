@@ -1,19 +1,11 @@
 ---
 name: illustrations
 description: >
-  Generates the visual layer of a talk: deck illustrations (FULL / IMG+TXT slides
-  with a shared style anchor), progressive-reveal build chains, and YouTube
-  thumbnails. Owns style-strategy collaboration (informed by the speaker's
-  visual_style_history in the vault), prompt safety, edit-vs-regenerate
-  asymmetry, build chaining, title-safe-zone composition, and thumbnail
-  composition with a real speaker photo. Invoked by presentation-creator
-  during illustration strategy (Phase 2), illustration generation and
-  application to the deck (Phase 5), and the post-event YouTube thumbnail
-  (Phase 7). Triggers: "illustrate the deck", "generate illustrations",
-  "create slide visuals", "design the visual style", "make a thumbnail",
-  "build a YouTube thumbnail", "add visuals to my talk", "regenerate slide
-  image", "fix the thumbnail", "generate progressive reveals", "build
-  sequence for a slide".
+  Create deck illustrations, progressive-reveal image builds, and YouTube
+  thumbnails. Establish a shared visual style, generate or edit slide art, and
+  apply approved images to a deck. Use for illustration strategy, slide visuals,
+  image fixes, build sequences, or standalone thumbnail requests. Talk authoring
+  invokes strategy; presentation-builder invokes deck application.
 user-invocable: true
 ---
 

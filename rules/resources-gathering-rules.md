@@ -1,6 +1,6 @@
 ---
 alwaysApply: false
-applyTo: "skills/presentation-creator/** — when extracting or curating presentation resources"
+applyTo: "skills/presentation-publisher/** — when extracting or curating presentation resources"
 ---
 
 # Resources Gathering Rules
@@ -16,7 +16,7 @@ matching, book patterns, RFC citations, and tool mentions consistently.
 Manual scanning misses items and introduces inconsistency.
 
 Use the installed-root, configured-interpreter command in
-`skills/presentation-creator/references/phase6-publishing.md`; do not duplicate
+`skills/presentation-publisher/references/resources.md`; do not duplicate
 or improvise its invocation here.
 
 ## 2. Speaker Review is Mandatory

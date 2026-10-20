@@ -33,3 +33,8 @@ and report the `reason_code`. Never fall back to whichever `python3` is on
 
 The checks the resolver composes, and its reason codes, are its own contract:
 see `skills/shownotes-publisher/scripts/resolve-runtime.py` (module docstring).
+
+The same resolver also supports focused presentation tasks through
+[presentation runtime context](../../presentation-creator/references/runtime-and-context.md).
+Their optional read-only/core modes do not change this publisher's default:
+owner-current database and outline runtime before publishing.

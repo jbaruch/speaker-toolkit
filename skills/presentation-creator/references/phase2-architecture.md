@@ -6,6 +6,16 @@ Architecture decisions in this phase happen at the conceptual level — mode, op
 
 When the author is making architecture decisions in this phase, encourage analog tools — paper sketches, whiteboard diagrams, Post-it notes — for working through the structure before any slide is created. The five-step Reynolds workflow keeps slideware out of the picture for the first four steps: brainstorm → group/identify the core → analog storyboard → sketch visuals → only then transfer into slideware. Architecture decisions in this phase belong to steps 1–3; slideware belongs to Phase 5. See `patterns/prepare/concurrent-creation.md` for the full workflow.
 
+### Architecture Decisions
+
+Make the relevant decisions jointly, using `instrument_catalog` entries and the
+matching summary sections: Mode; Engine and Theme; Opening; Narrative; Humor;
+Audience Interaction; Closing; Slide Design; Persuasion; Template Patterns;
+Pattern Strategy; and optional Illustration Strategy. Add co-presenter roles and
+voice differentiation when applicable. Read `slide-design-spec.md` for visual
+choices, not before the authoring interview. Recommendations use the current
+talk's audience, duration, purpose and speaker-confirmed constraints.
+
 ### The Joint Selection Process
 
 This phase is a conversation, not a monologue. **Use `AskUserQuestion` for each
@@ -95,8 +105,9 @@ This is an architecture-phase concern (not a content-phase one) because the asks
 
 ### Decision #11: Pattern Strategy
 
-Read [patterns/_index.md](patterns/_index.md) for the current taxonomy. Use only the
-catalog-history source selected by Phase 0's emitted `history_source`. When its status
+Read [pattern-menu.md](pattern-menu.md) for current-taxonomy discovery. Run the
+status command in [pattern-history-authorization.md](pattern-history-authorization.md)
+before historical recommendations. Use only its emitted `history_source`. When its status
 has `history_enabled: true`, authorize each derived lane independently through
 `available_classification_domains` / `domain_available(domain)`. Never infer a domain
 from profile recency, schema tolerance, Section 15 prose,

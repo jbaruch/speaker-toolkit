@@ -1609,8 +1609,8 @@ def test_guardrail_uses_policy_bound_section15_without_inventing_recurrence(
 def test_creator_docs_delegate_history_source_resolution():
     creator = ROOT / "skills" / "presentation-creator"
     docs = {
-        # SKILL.md keeps the pattern_history_status.py invocation and routes to
-        # this file, which owns the Section 15 eligibility contract.
+        # The entrypoint and intake route to one historical-claim contract;
+        # classification begins only when a phase needs historical claims.
         "pattern_history": (
             creator / "references" / "pattern-history-authorization.md"
         ).read_text(encoding="utf-8"),
@@ -1623,12 +1623,13 @@ def test_creator_docs_delegate_history_source_resolution():
     }
     skill = (creator / "SKILL.md").read_text(encoding="utf-8")
 
-    for text in docs.values():
-        assert "history_source" in text
+    for name in ("pattern_history", "phase4"):
+        assert "history_source" in docs[name]
     assert "references/pattern-history-authorization.md" in skill
-    assert "resolve_creator_pattern_history()" in docs["phase0"]
+    assert "(pattern-history-authorization.md)" in docs["phase0"]
+    assert "resolve_creator_pattern_history()" in docs["pattern_history"]
     assert "section15_pattern_history.py" in docs["pattern_history"]
-    assert "section15_pattern_history.py" in docs["phase0"]
+    assert "section15_pattern_history.py" not in docs["phase0"]
     assert "section15_pattern_history.py" not in docs["phase4"]
     assert "recurring_pattern_history_items()" in docs["phase4"]
 

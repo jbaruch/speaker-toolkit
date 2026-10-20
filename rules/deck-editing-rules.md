@@ -35,7 +35,7 @@ generating slide structure (see `rules/slide-generation-rules.md`).
 - One-time setup is a manual, GUI-bound sequence (enable VBA macros, create the
   `DeckOps.pptm` macro container, import the `.bas`, grant Automation consent).
   Walk the user through it interactively — see
-  `skills/presentation-creator/references/deck-editing-setup.md`.
+  `skills/presentation-builder/references/deck-editing-setup.md`.
 - Never assume whether setup has been done — run `deckops-doctor.py --vault-root <path>`
   and act on its `status`. Statuses and their routing live in Step 0 of the setup doc.
 - The doctor is the only reader of a STALE macro import. A saved `.pptm` yields no
@@ -106,7 +106,7 @@ generating slide structure (see `rules/slide-generation-rules.md`).
   unit-tested in `tests/` — only the PowerPoint-driving layer is exempt.
 - Exempt artifacts: `RunDeckOps.bas` and every `*.applescript` driver beside it,
   `deckops-version.applescript` included. Their manual validation procedure is
-  Step 5 of `skills/presentation-creator/references/deck-editing-setup.md` — what
+  Step 5 of `skills/presentation-builder/references/deck-editing-setup.md` — what
   to run, what to observe, what counts as a pass.
 - `skills/presentation-creator/scripts/deckops-doctor.py` splits along the same line: the AppleScript probe is exempt,
   while path derivation, probe-output parsing, and the verdict table are unit-tested

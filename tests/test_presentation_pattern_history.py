@@ -584,10 +584,8 @@ def _creator_docs() -> dict[str, str]:
     creator = ROOT / "skills" / "presentation-creator"
     return {
         "skill": (creator / "SKILL.md").read_text(encoding="utf-8"),
-        # The authorization contract itself lives here; SKILL.md keeps the
-        # script invocation and routes to this file. Assertions below name
-        # whichever of the two owns each clause, so content that vanishes from
-        # both still fails.
+        # Phases route to one authorization contract; intake and the entrypoint
+        # no longer duplicate its policy or eagerly run history classification.
         "pattern_history": (
             creator / "references" / "pattern-history-authorization.md"
         ).read_text(encoding="utf-8"),
@@ -614,13 +612,24 @@ def _normalized_doc(text: str) -> str:
 def test_phase_instructions_share_the_independent_domain_gate():
     docs = _creator_docs()
 
-    assert "pattern_history_status.py" in docs["skill"]
-    assert "pattern_history_status.py" in docs["phase0"]
-    # SKILL.md runs the script and must route to the contract that governs its
-    # output; an unrouted reference file is invisible to the agent.
-    assert "references/pattern-history-authorization.md" in docs["skill"]
+    from check_skill_entrypoints import extract_link_destinations
+
+    creator = ROOT / "skills" / "presentation-creator"
+    contract = creator / "references" / "pattern-history-authorization.md"
+    callers = {
+        "skill": creator / "SKILL.md",
+        "phase0": creator / "references" / "phase0-intake.md",
+        "phase2": creator / "references" / "phase2-architecture.md",
+        "phase4": creator / "references" / "phase4-guardrails.md",
+    }
+    for name, path in callers.items():
+        destinations = extract_link_destinations(docs[name])
+        targets = {
+            (path.parent / dest.split("#", 1)[0]).resolve() for dest in destinations
+        }
+        assert contract.resolve() in targets, path
+    assert "pattern_history_status.py" in docs["pattern_history"]
     assert "available_classification_domains" in docs["pattern_history"]
-    assert "available_classification_domains" in docs["phase0"]
     assert "available_classification_domains" in docs["phase2"]
     assert "available_classification_domains" in docs["phase4"]
     assert "at least one policy-bound domain" in docs["rules"]
@@ -629,8 +638,7 @@ def test_phase_instructions_share_the_independent_domain_gate():
 def test_docs_keep_nonpattern_and_contextual_lanes_enabled():
     docs = _creator_docs()
 
-    assert 'source_lane: "non_pattern"' in docs["skill"]
-    assert 'source_lane: "non_pattern"' in docs["phase0"]
+    assert 'source_lane: "non_pattern"' in docs["pattern_history"]
     assert 'source_lane: "non_pattern"' in docs["phase4"]
     assert "current-outline scan always runs" in docs["phase4"]
     assert (
@@ -646,9 +654,7 @@ def test_docs_suppress_history_tiers_and_cross_generation_diffs():
     assert "flat current-taxonomy menu" in docs["skill"]
     assert "flat relevant-patterns list" in docs["phase2"]
     assert "generation reset" in docs["pattern_history"]
-    assert "generation reset" in docs["phase0"]
     assert "classification-comparison reset" in docs["pattern_history"]
-    assert "classification comparison reset" in _normalized_doc(docs["phase0"])
     assert "Neither reset is\never evidence" in docs["rules"]
 
 
@@ -658,7 +664,7 @@ def test_docs_define_exact_novelty_and_delegate_recurrence_filtering():
     for name in ("pattern_history", "phase2", "rules", "index"):
         assert "never_tried" in docs[name]
         assert "not_yet_observed" in docs[name]
-    for name in ("skill", "phase2", "phase4", "rules", "index"):
+    for name in ("pattern_history", "phase2", "phase4", "rules", "index"):
         assert "recurring_antipatterns" in docs[name]
         assert "high_frequency" not in docs[name]
         assert "moderate_frequency" not in docs[name]
@@ -669,9 +675,9 @@ def test_docs_define_exact_novelty_and_delegate_recurrence_filtering():
 def test_docs_delegate_history_source_precedence_once():
     docs = _creator_docs()
 
-    for name in ("pattern_history", "phase0", "phase2", "phase4"):
+    for name in ("pattern_history", "phase2", "phase4"):
         assert "history_source" in docs[name]
-    assert "resolve_creator_pattern_history()" in docs["phase0"]
+    assert "resolve_creator_pattern_history()" in docs["pattern_history"]
     assert (
         sum(text.count("resolve_creator_pattern_history()") for text in docs.values())
         == 1
@@ -681,7 +687,7 @@ def test_docs_delegate_history_source_precedence_once():
 def test_docs_distinguish_occurrence_only_and_policy_bound_contracts():
     docs = _creator_docs()
 
-    for name in ("pattern_history", "phase0", "phase2", "rules"):
+    for name in ("pattern_history", "phase2", "rules"):
         normalized = _normalized_doc(docs[name])
         assert "schema v4" in normalized.lower()
         assert "schema v5" in normalized.lower()

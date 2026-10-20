@@ -1,6 +1,6 @@
 ---
 alwaysApply: false
-applyTo: "skills/presentation-creator/** — when generating or editing presentation slide structure"
+applyTo: "skills/presentation-builder/** — when generating or editing presentation slide structure"
 ---
 
 # Slide Generation Rules
@@ -10,7 +10,7 @@ applyTo: "skills/presentation-creator/** — when generating or editing presenta
 Slide structure is created by the real PowerPoint app via the `BuildDeck` macro
 (`scripts/build-deck.sh`), driven by a flat op sequence — never python-pptx, never
 the MCP PPT server. The agent emits the ops; `BuildDeck` executes them. Op
-vocabulary and state rules: `skills/presentation-creator/references/deckops-spec.md`.
+vocabulary and state rules: `skills/presentation-builder/references/deckops-spec.md`.
 
 ## Speaker Notes — Separate Batch Pass
 

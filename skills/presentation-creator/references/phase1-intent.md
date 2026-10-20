@@ -2,7 +2,7 @@
 
 Throughout this doc, "the spec" refers to the `talk:` block of `outline.yaml`
 — the metadata fields authored in this phase. See `outline_schema.py:TalkMetadata`
-for the schema and SKILL.md Phase 1 for the YAML template.
+for the schema and [phase3-content.md](phase3-content.md#the-talk-block) for the metadata fields.
 
 ### The Art of Asking
 
