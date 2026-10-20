@@ -5,7 +5,8 @@ Load this file when the request is not a fresh linear Phase 0–6 build:
 - a **late-entry single task** (QR code, export, shownotes) — read "Late Entry";
 - **adapting an existing talk** — read "Adapting Existing Talks";
 - a **CFP abstract** — read "CFP Abstract Writing";
-- any **sessions-catalog** read or write — read "Sessions Catalog".
+- any **sessions-catalog** read or write — read "Sessions Catalog";
+- another skill's **outline-migration handoff** — read "Outline Migration Handoff".
 
 Vault loading (SKILL.md "Before You Start") is mandatory for every flow here.
 
@@ -93,3 +94,15 @@ starting a new CFP; adapt rather than rewrite.
   partial copy drifts from the catalog blog-writer maintains. Keep the
   "Last updated" date current.
 - Entries are separated by `---` horizontal rules for easy scanning.
+
+## Outline Migration Handoff
+
+Another skill refused an older `outline.yaml` and handed it here, since only
+presentation-creator migrates it.
+
+1. Run the validation command from SKILL.md "Talk-directory artifacts" on the
+   named outline. It restamps a schema 1 outline to 2 in place, saying so on
+   stderr, then validates it.
+2. On exit 1, follow the fix its `FAIL:` names, then re-run the command.
+3. Return to the skill that handed off once it exits 0, so that skill re-runs
+   the refused command.

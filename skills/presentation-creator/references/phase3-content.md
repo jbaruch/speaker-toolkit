@@ -16,7 +16,8 @@ exact `schema_version: 1` to 2 in place (changing nothing else, and saying so
 on stderr) before it validates. `--migrate outline.yaml` runs that restamp
 alone. An outline written before versioning has the schema 1 shape: add
 `schema_version: 1` as its first root key, then validate. Other skills' readers
-refuse an older outline and name that command. A missing, non-integer or
+refuse an older outline and hand it to presentation-creator; they never run
+the migration. A missing, non-integer or
 unsupported root version, and text that is not UTF-8, fail closed with the fix
 named. A poster-theatrical
 outline illustrates FULL slides only: an `image_prompt` on any other format is

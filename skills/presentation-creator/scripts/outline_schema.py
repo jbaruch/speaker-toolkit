@@ -1066,8 +1066,8 @@ def require_current_outline(path: Path | str) -> None:
     """Refuse an older outline for a non-owner reader; the owner migrates it.
 
     presentation-creator owns outline.yaml. Every other skill reads only the
-    current schema and treats an older one as no usable prior state, naming the
-    owner's migration (``outline_schema.py --migrate``).
+    current schema and treats an older one as no usable prior state: it never
+    runs the migration, and the refusal hands the outline to presentation-creator.
     """
     target = Path(path)
     version = _root_version(target, _decode(target, target.read_bytes()))
@@ -1080,8 +1080,9 @@ def require_current_outline(path: Path | str) -> None:
         )
     raise OutlineVersionError(
         f"{path} is outline schema {version}; this reader needs schema "
-        f"{OUTLINE_SCHEMA_VERSION}. Run the owner migration: "
-        f"outline_schema.py --migrate {path}"
+        f"{OUTLINE_SCHEMA_VERSION} and never migrates it. Hand off to "
+        "presentation-creator, which owns outline.yaml and migrates it when it "
+        "validates the outline, then re-run this command"
     )
 
 

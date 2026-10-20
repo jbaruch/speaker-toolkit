@@ -63,20 +63,22 @@ discipline reduced the drift but cannot guarantee typographic identity.
   restamps a v1 or unversioned outline to schema 2 in place, rewriting only
   the root stamp so comments survive, and validates it before the atomic
   replace. The illustration scripts are non-owner readers: they refuse an
-  older outline (`require_current_outline`) and name that command. Step 9 sets
+  older outline (`require_current_outline`) and never migrate it. Step 9 sets
   `schema_version: 2` in the same edit that adds `footer_style`. The build
   manifest's docstring now defines `parent` as the built-deck position and
-  names the stamped frame copies as its one write. Illustrations Step 1 states the
-  migration's in-place effect, its stdout and its exits, and both apply and the
-  manifest name a missing outline before checking its version. The migration
+  names the stamped frame copies as its one write. Illustrations Step 1 stops
+  on an older outline and invokes `Skill(skill: "presentation-creator")`, whose
+  new "Outline Migration Handoff" entry flow (`alternate-entry-flows.md`)
+  validates, and so migrates, the outline before the refused script re-runs.
+  Both apply and the manifest name a missing outline before checking its
+  version. The migration
   rewrites only the root version's value, so an inline comment, a quoted key,
   a preamble before `---` and CRLF line endings survive; it refuses a layout
   it cannot restamp. Non-owner
   readers refuse every version but the current one: an older outline names the
-  migration, a newer one says to update speaker-toolkit. A model-rendered
+  handoff to presentation-creator, a newer one says to update speaker-toolkit. A model-rendered
   footer is directed verbatim, delimited and escaped as a JSON string, never
-  rewritten. Step 1 runs the migration with the same `python3` its other
-  commands use.
+  rewritten.
 - The owner migrates before it consumes: presentation-creator's validation
   (`outline_schema.py outline.yaml`, its first read of any outline, including
   the late-entry and resume flows) restamps a schema 1 outline in place, says

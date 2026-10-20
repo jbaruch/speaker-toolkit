@@ -1068,7 +1068,9 @@ def test_a_non_owner_reader_refuses_an_older_outline(
 ):
     path = tmp_path / "outline.yaml"
     path.write_text(_v1_text(base_data, stamp=True), encoding="utf-8")
-    with pytest.raises(outline_schema.OutlineVersionError, match="--migrate"):
+    with pytest.raises(
+        outline_schema.OutlineVersionError, match="Hand off to presentation-creator"
+    ):
         outline_schema.require_current_outline(path)
     outline_schema.migrate_outline(path)
     outline_schema.require_current_outline(path)
@@ -1168,7 +1170,7 @@ def test_emit_json_refuses_an_older_outline_without_rewriting_it(
     assert outline_schema.main(["outline_schema.py", "--emit-json", str(path)]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert "--migrate" in captured.err
+    assert "Hand off to presentation-creator" in captured.err
     assert path.read_text(encoding="utf-8") == original
 
 

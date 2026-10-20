@@ -63,14 +63,10 @@ Do not restate them here — apply them.
 ## Step 1 — Route by Mode
 
 Determine which of three modes applies and execute only the matching steps.
-The illustration scripts read outline schema 2 only; when one refuses an
-outline, apply the fix it names. For an older one that is the owner migration,
-with the same `python3` that ran the refused script
-(`python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py" --migrate outline.yaml`).
-It rewrites only that file's root `schema_version` to 2, in place, and prints
-`{ok, path, migrated, to}` (`migrated: false` when already current), exit 0;
-exit 1 prints `FAIL:` on stderr and leaves the file untouched. Then re-run the
-script.
+The illustration scripts read outline schema 2 only and never migrate
+`outline.yaml`. When one refuses an older outline, stop: invoke
+`Skill(skill: "presentation-creator")` for its outline-migration handoff, then
+re-run the refused script. For any other refusal, apply the fix it names.
 
 - **Strategy** — outline has no STYLE ANCHOR yet, or the author wants to revise
   it. Run Step 2 (freshness), then Steps 3-9 (style strategy), then stop unless

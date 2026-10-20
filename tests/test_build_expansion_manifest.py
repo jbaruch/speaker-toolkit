@@ -428,7 +428,7 @@ def test_the_manifest_refuses_an_outline_its_owner_has_not_migrated(
     builds.mkdir()
     with pytest.raises(SystemExit) as exc:
         build_expansion_manifest.main([str(outline), str(builds)])
-    assert "outline_schema.py --migrate" in str(exc.value)
+    assert "Hand off to presentation-creator" in str(exc.value)
 
 
 def test_a_missing_outline_is_named_not_a_traceback(build_expansion_manifest, tmp_path):
