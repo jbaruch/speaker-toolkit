@@ -1,5 +1,63 @@
 # Changelog
 
+### Bind the shownotes analysis to its exact delivery
+
+Copilot's advisories on #459 (#460) asked the standalone publisher to make its
+rhetoric-analysis input explicit. The runtime and vault-root bootstrap is
+`resolve-runtime.py` from #458; the rest lands here.
+
+- New `skills/shownotes-publisher/scripts/find-talk-analysis.py` binds the
+  analysis through the tracking database owner, not the rendered file's header
+  alone. It selects the talk record by exact filename, or by title, event and
+  date together (title and event match after whitespace collapsing and case
+  folding), requires a processed record, and accepts
+  `analyses/{filename}.md` only when its header names that record's title,
+  filename and `processed_date`. A similar title at another event is a miss
+  that names the near record, two records for one delivery are `ambiguous`,
+  and a stale render is `analysis_stale`. The file is read through one
+  descriptor opened without following a link, so a link or a non-regular file
+  is `analysis_missing` and a read error is `analysis_unreadable`, never a
+  traceback. It is a current reader, listed as
+  such in the owner's reader contract in `schemas-db.md`: an older database
+  refuses as `database_not_current` for the owner migration, and a future one
+  as `database_unsupported`. The vault root is the locator's directory only
+  when `config.vault_storage_path` is absent, null or that same root
+  (`vault_root_authority.resolve_vault_root_authority`); any other value
+  refuses as `vault_root_invalid`. A read failure keeps the owner's typed code
+  and remedy from `DATABASE_READ_DIAGNOSTICS`, so a concurrent write says to
+  rerun (`database_generation_conflict`) rather than to repair the database.
+  `talk-skill.md` routes each refusal: a generation conflict reruns the lookup,
+  `database_not_current` goes to vault-ingress's `runtime_repair` owner
+  migration and then a fresh lookup, and every other code stops with its
+  `error`. A stored filename with a control character (NUL included) is
+  `analysis_missing` before any path is opened, never a traceback, and a
+  title-less record binds the filename-stem heading `write-analysis.py` writes
+  for it. A newer database generation than this reader refuses as
+  `database_unsupported`, which only a newer speaker-toolkit fixes, never a
+  repair. A supported generation in a malformed shape is `database_invalid`,
+  the owner's to repair through vault-ingress Step 1. An `analysis_unreadable`
+  error names its remedy (make the file readable, or restore or re-render it),
+  and when the lookup stops, `talk-skill.md` reports that `error` with what must
+  change before rerunning.
+- A bound answer carries `analysis_text`, the exact bytes the binding checked,
+  so the publisher never reopens a path that could have changed since.
+- An unbound answer carries a `handoff` naming this one delivery and
+  `scope: one_talk` only when the record is in a status vault-ingress's queue
+  can claim. The publisher resolves ambiguity with the speaker, invokes
+  vault-ingress with that handoff as its explicit one-talk Step 2 selection, and
+  looks the analysis up again before resuming. With no handoff (no matching
+  record, or a processed record whose render is missing, stale or unreadable,
+  which vault-ingress cannot re-render on its own) it stops and reports. The
+  analysis is decoded as strict UTF-8, so bad bytes are `analysis_unreadable`
+  rather than text the digest never covered. Blank selectors refuse as
+  `invalid_arguments`.
+- `talk-skill.md` runs the lookup, describes an example by what it establishes
+  and its role in the argument instead of "why these examples were chosen",
+  which would infer private intent, and says what to do when plan, transcript,
+  demo evidence and analysis still disagree: publish the point as unresolved
+  with what each source shows, or ask the speaker one question, never a
+  qualification written as fact.
+
 ## 0.20.185 — 2026-10-20
 
 ### Harden shownotes verification inputs and runtime selection

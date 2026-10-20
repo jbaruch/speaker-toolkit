@@ -40,9 +40,27 @@ that separate artifact.
 
 ### Sources and their roles
 
-1. Load the rhetoric analysis for this exact delivery from the speaker's vault.
-   Match title, event, date, and source receipts; a similar title is insufficient.
-   Treat the analysis as a primary synthesis input, not an optional final check.
+1. Load the rhetoric analysis for this exact delivery from the speaker's vault
+   through its owner-read binding; a similar title is insufficient:
+
+   ```bash
+   "{python_path}" "{speaker_toolkit_root}/skills/shownotes-publisher/scripts/find-talk-analysis.py" \
+     --database "{vault_root}/tracking-database.json" \
+     --title "{talk title}" --event "{event}" --date "{YYYY-MM-DD}"
+   ```
+
+   Pass `--filename` instead when the talk record's filename is known. Exit 2
+   is a refusal with a `reason_code` and an `error` naming its fix: on
+   `database_generation_conflict` (another writer mid-read), run the lookup
+   once more; on `database_not_current`, invoke `Skill(skill: "vault-ingress")`
+   with `runtime_repair: {reason_code: "database_not_current", lane: "outline",
+   database: "{vault_root}/tracking-database.json"}` for the owner migration,
+   then look up again; on any other code, stop and report the `error`. When
+   `binding` is `bound`, synthesize from the verdict's `analysis_text`, the exact
+   bytes the binding checked; never reopen `analysis_path`, which could have
+   changed since. The binding fields and every other `binding` value are the
+   script's contract (module docstring). Treat the analysis as a primary
+   synthesis input, not an optional final check.
    Read its argument structure, persuasion, example/analogy roles, questions,
    transitions, callbacks, conclusion, and delivery-versus-plan findings. Consult
    detection evidence when a relevant interpretation needs grounding; do not
@@ -56,10 +74,26 @@ that separate artifact.
    actually established, and an interpretation from rhetoric analysis. Analysis
    explains the argument but does not override primary evidence or establish
    private intent, audience reception, or measured effectiveness. Correct or
-   qualify conflicts before publication.
-4. For a delivered talk with missing or mismatched rhetoric analysis, invoke
-   `Skill(skill: "vault-ingress")` for that delivery and resume once its analysis
-   is available. Do not silently substitute a generic transcript summary. For a
+   qualify conflicts before publication. When the plan, transcript, demo
+   evidence, and analysis still disagree after checking the primary sources,
+   either publish the point as unresolved, saying what each source shows, or
+   ask the speaker one question and use the answer. Never settle it by
+   writing a qualification as if it were established fact.
+4. For a delivered talk whose lookup is not `bound`, first resolve
+   `ambiguous`: list the `candidates`, ask the speaker which delivery this brief
+   is for, and look it up again by `--filename`; resume synthesis if that
+   answers `bound`. Otherwise, when `handoff` is present, invoke
+   `Skill(skill: "vault-ingress")` with it as context: its exact filename is the
+   explicit one-talk selection vault-ingress Step 2 takes, never a batch. When
+   it returns, run the lookup again and resume only once it answers `bound`.
+   When an unbound lookup's `handoff` is null (no matching record, or a
+   processed record whose rendered analysis is missing, stale or unreadable,
+   which vault-ingress has no one-talk action to re-render), stop and report
+   the `binding`, the `talk`, and any `error` (it names the fix for an
+   unreadable analysis) to the speaker. Say what must change before the lookup
+   is rerun: the record for a miss, the rendered analysis restored or
+   re-rendered for a missing, stale or unreadable one. Do not silently substitute a
+   generic transcript summary. For a
    pre-talk skill, use the approved rhetorical architecture and any
    `rhetorical-review.md` as planned analysis, clearly label that status, and
    refresh against delivered analysis after the event. If the user explicitly
@@ -91,9 +125,9 @@ count or the order in which tool names appear:
   files. Do not copy private paths, secrets, analysis receipts, or unpublished
   notes verbatim.
 
-The value beyond “summarize YouTube” is the recovered reasoning: why these
-examples were chosen, what changes in the listener's understanding, and how the
-argument resolves. A rhetoric-label inventory or a chronological recap alone
+The value beyond “summarize YouTube” is the recovered reasoning: what each
+example establishes and its role in the argument, what changes in the
+listener's understanding, and how the argument resolves. A rhetoric-label inventory or a chronological recap alone
 does not deliver that value. The analysis must shape the actual brief, not just
 appear in a provenance sentence.
 
