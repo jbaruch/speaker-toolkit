@@ -21,9 +21,11 @@ recording exceeds the 8 GiB input ceiling.
 - The `declare_local_audio` mutation writes a declaration with an optimistic
   `expect`. The path must be `.mp3`, `.m4a` or `.wav`
   (`tracking_database.AUDIO_DECLARATION_SUFFIXES`, which the owner validator
-  enforces too). It requeues an analyzed talk as `source_added`, makes a
-  `skipped_no_sources` talk claimable as `pending`, and refuses an active queue
-  claim.
+  enforces too). It requeues an analyzed talk as `source_added`, and a
+  `skipped_no_sources` talk whose queue claim completed the same way, since
+  that claim pins the talk to its `result_status` unless deliberately
+  requeued; any other `skipped_no_sources` talk becomes claimable as `pending`.
+  It refuses an active queue claim.
 - Evidence readers probe the declared file with the bounded media owner and bind
   a `local_media_duration` receipt when its digest matches, only when no local
   video binds or the declared video fails its probe (the InfoQ case). Both

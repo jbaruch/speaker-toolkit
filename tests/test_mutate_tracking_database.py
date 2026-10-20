@@ -2635,6 +2635,43 @@ def test_declared_audio_lands_in_its_collection_and_requeues_analyzed_talks(
     assert changes[0]["after"]["status"] == after
 
 
+def test_declared_audio_requeues_a_sourceless_talk_the_queue_closed(
+    mutate_tracking_database,
+) -> None:
+    """Pending would contradict the completed claim's result_status."""
+    database = _base_database()
+    talk = database["talks"][0]
+    talk.update(
+        {
+            "status": "skipped_no_sources",
+            "reprocess_generation": 1,
+            "_queue_claim": {
+                "schema_version": 2,
+                "run_id": "reparse-2026-07",
+                "batch_id": "25",
+                "claimed_at": "2026-10-19T00:00:00Z",
+                "previous_status": "pending",
+                "reprocess_generation": 1,
+                "state": "completed",
+                "released_at": "2026-10-19T00:00:00Z",
+                "release_reason": "batch persisted",
+                "result_status": "skipped_no_sources",
+                "result_payload_sha256": "0" * 64,
+            },
+        }
+    )
+
+    candidate, changes = mutate_tracking_database.build_candidate(
+        database, [_declare_audio()]
+    )
+
+    requeued = candidate["talks"][0]
+    assert requeued["status"] == "needs-reprocessing"
+    assert requeued["reprocess_reason"] == "source_added"
+    assert requeued["_queue_claim"] == talk["_queue_claim"]
+    assert changes[0]["after"]["status"] == "needs-reprocessing"
+
+
 def test_a_replayed_declaration_changes_nothing(mutate_tracking_database) -> None:
     database = _base_database()
     first, _ = mutate_tracking_database.build_candidate(database, [_declare_audio()])

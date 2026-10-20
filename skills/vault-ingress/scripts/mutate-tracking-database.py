@@ -2075,7 +2075,14 @@ def _apply_declare_local_audio(
         key=lambda entry: entry.get("talk_filename", ""),
     )
     prior_status = talk.get("status")
-    if prior_status in {"processed", "processed_partial"}:
+    claim = talk.get("_queue_claim")
+    # A completed claim pins the talk to its result_status unless the talk is
+    # deliberately requeued, so a sourceless talk the queue already closed
+    # requeues the same way an analyzed one does.
+    completed = isinstance(claim, dict) and claim.get("state") == "completed"
+    if prior_status in {"processed", "processed_partial"} or (
+        prior_status == "skipped_no_sources" and completed
+    ):
         talk["status"] = "needs-reprocessing"
         talk["reprocess_reason"] = "source_added"
     elif prior_status == "skipped_no_sources":
