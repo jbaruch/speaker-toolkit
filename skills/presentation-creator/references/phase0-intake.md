@@ -1,97 +1,19 @@
-# Phase 0: Intake & Context Loading — Detail
+# Phase 0: Intake and Context
 
-### Step 0.1: Load the Vault
+Resolve the read-only outline runtime using
+[runtime-and-context.md](runtime-and-context.md). Read the rhetoric summary and
+speaker profile for voice, confirmed intent, and structured configuration. Read
+only a relevant sessions-catalog entry when checking overlap with active talks.
+The visual design spec is opened when a visual decision needs it.
 
-Read three vault documents in order from the vault root.
+The summary supplies nuance and examples; the profile supplies configuration.
+Compare freshness when both are loaded. Pattern-history authorization is deferred
+to historical pattern selection/review; use
+[pattern-history-authorization.md](pattern-history-authorization.md) before any
+such claim. An unavailable history domain does not disable independent profile
+configuration.
 
-**A. Rhetoric vault summary** — `rhetoric-style-summary.md`
-
-The constitution. Contains all cataloged patterns across rhetoric dimensions,
-areas for improvement, speaker-confirmed intent, and per-talk observation log.
-
-Pay special attention to the Speaker-Confirmed Intent section. These are ground-truth
-design decisions that override any pattern inference. Read the `confirmed_intents` array
-in the speaker profile for the structured version.
-
-**B. Slide design spec** — `slide-design-spec.md`
-
-Visual design reference: background colors, typography, footer structure, shape census,
-template layout catalog, and generation rules.
-
-**C. Speaker profile** — `speaker-profile.json`
-
-Structured design decisions: presentation modes, rhetoric defaults, confirmed intents,
-guardrail sources, pacing data, infrastructure, and instrument catalog.
-
-**The summary is the rich narrative; the profile is the structured data.** When you
-need nuance, voice examples, or context — read the summary. When you need thresholds,
-counts, or rules — read the profile.
-
-**Freshness check:** Compare `speaker-profile.json` → `generated_date` against the
-`Last updated` line in `rhetoric-style-summary.md`. If the summary is newer, warn:
-
-> "The vault summary was updated {date} but the speaker profile was generated {date}.
-> Run 'update speaker profile' to sync, or proceed with the current profile?"
-
-**Pattern-history authorization:** run
-`"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/pattern_history_status.py"`
-against the loaded profile and summary before reading any catalog-derived history. Use
-`-` as its profile argument when no profile exists. Surface a disabled result's exact
-`warning`.
-`history_enabled: true` says that at least one policy-bound classification domain is
-available, not that all derived fields are authorized. For every classification use,
-require its name in `available_classification_domains` (Python consumers use
-`domain_available(domain)`). The domains are `mastery_and_novelty`, `underuse`,
-`signature_combinations`, `antipattern_recurrence`, `trends`, and `modes`.
-`opportunity_rows_available: true` means only that exact raw occurrence rows are
-auditable. It does not authorize history tiers or labels. Treat the emitted
-`history_source` as the sole source selector. Read only the named source and never merge
-catalog history inputs. Source resolution is owned by
-`pattern_history_status.py` `resolve_creator_pattern_history()`. A disabled history
-lane does not invalidate the whole profile. Keep using independent pacing, visual,
-infrastructure, publishing, presentation-mode, instrument-catalog, and confirmed-intent
-fields.
-
-Gate each historical claim independently:
-
-- Mastery tiers, strengths, and exact never-tried New-to-You claims require
-  `mastery_and_novelty`.
-- Underuse requires `underuse`.
-- Combinations require `signature_combinations`.
-- Movements and score/breadth trend require `trends`.
-- By-mode history requires `modes`.
-- Catalog recurrence comes only from Phase 4's emitted `recurring_antipatterns`.
-
-The current pattern taxonomy remains available for analyzing the new outline. Profile
-schemas v1/v2/v3 are non-pattern compatibility inputs; schema v4 has auditable
-occurrence rows only; schema v5 binds classifications to a versioned policy.
-Schema-v4/v5 top-level `guardrail_sources.recurring_issues[]` and `badges[]` are separate:
-use an entry only when it explicitly carries `source_lane: "non_pattern"`. Catalog
-warnings and reinforcement come from authorized `pattern_profile` history, never from
-an unmarked duplicate in a top-level lane.
-
-If the profile is absent, malformed, or history-disabled, Section 15 does not restore
-history by implication. Use Section 15 history only when its current block carries
-explicit provenance matching the bundled catalog/scoring generation and a complete
-structured contract accepted by
-`"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/section15_pattern_history.py"`.
-That parser delegates the payload to the shared profile provenance assessor. Section
-15 v2 is occurrence-only; Section 15 v3 is policy-bound, and every consumer must still
-require its relevant available domain. A date, a recent heading, an unlabeled count,
-or ordinary prose is insufficient; use taxonomy-only fallback when the proof is absent.
-
-When an older profile is available for comparison, compare catalog fingerprint and
-pattern-scoring schema before catalog-derived values. Different identities mean a
-generation reset. Report the reset, but do not describe the score, frequency, mastery,
-strength, or underuse differences as improvement or regression. Even within one
-generation, raw-score comparisons are unavailable across a changed or null
-`opportunity_coverage_identity`.
-
-A changed `policy_semantic_sha256` within the same generation is a classification
-comparison reset. Do not describe tier, recurrence, combination, or trend changes
-across that policy boundary as speaker improvement or regression.
-
-### Step 0.2: Gather User Context
+### Gather User Context
 
 Extract from the conversation what the user has already shared. Common starting points:
 
@@ -101,7 +23,7 @@ Extract from the conversation what the user has already shared. Common starting 
 - "Write me a CFP for X conference" — abstract-writing scenario
 - "I have this idea about X, could it be a talk?" — exploratory scenario
 
-### Step 0.3: Set the Audience-as-Hero Stance
+### Set the Audience-as-Hero Stance
 
 Before any further data-gathering, set the planning stance for the rest of the workflow. Per the `mentor` pattern (and Duarte's central reframe in *Resonate*), the talk's planning posture is **audience-as-hero, presenter-as-mentor** — Yoda not Luke; Mr. Miyagi not Daniel.
 
@@ -111,7 +33,7 @@ This is not just a delivery posture; it shapes every Phase 0–6 decision. Befor
 
 The answer surfaces three things at once: who the hero is, what their current ordinary world looks like, and what the special world (the proposed change) is. If the speaker frames the answer as "I want to talk about X" (presenter-as-hero — your topic at the center), redirect: "What does the audience need to walk away with, that they don't currently have?" The reframe matters because every downstream decision (thesis, structure, examples, asks, visuals) is sized differently depending on whether the speaker is at the center or the audience is.
 
-### Step 0.4: Read the Audience Spread
+### Read the Audience Spread
 
 Ask a second audience question, and ask it now rather than at review time — it decides what gets built, not just what gets scored:
 
@@ -131,6 +53,6 @@ Record the answer in the spec. `check-rhetorical.py` enforces the declaration at
 
 What this step owes that check: `talk.audience_spread`, `talk.dominant_register` when the room is homogeneous, and — during Phase 3 — a `registers:` list on each `walk-around` application naming which questions that claim answers. Judging which registers a claim lands is the agent's call; the script only reads what the agent declared.
 
-### Step 0.5: Report and Advance
+### Report and Advance
 
 Summarize what you know and what you need.

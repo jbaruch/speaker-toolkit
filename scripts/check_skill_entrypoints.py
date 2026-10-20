@@ -48,6 +48,16 @@ MANIFEST = ".tessl-plugin/plugin.json"
 
 # Tessl's recommended maximum tokens per skill entrypoint.
 TOKEN_BUDGET = 5000
+# Focused presentation entrypoints keep per-task discovery below the old router.
+PRESENTATION_TOKEN_BUDGET = 1500
+PRESENTATION_SKILLS = frozenset(
+    {
+        "presentation-creator",
+        "presentation-builder",
+        "presentation-publisher",
+        "cfp-writer",
+    }
+)
 # Divisor for the chars-per-token estimate. See the module docstring on why
 # this rounds against us rather than for us.
 CHARS_PER_TOKEN = 4
@@ -486,12 +496,18 @@ def check_entrypoint(
         )
 
     tokens = estimate_tokens(body)
+    budget = (
+        PRESENTATION_TOKEN_BUDGET
+        if skill_md.parent.name in PRESENTATION_SKILLS
+        else TOKEN_BUDGET
+    )
     return (
         {
             "path": relative,
             "chars": len(body),
             "tokens": tokens,
-            "over_budget_by": max(0, tokens - TOKEN_BUDGET),
+            "token_budget": budget,
+            "over_budget_by": max(0, tokens - budget),
             "dangling_links": unresolved,
         },
         shipped,
@@ -549,14 +565,18 @@ def run(repo_root: Path) -> tuple[dict, list[str]]:
 
     diagnostics: list[str] = []
     if oversized:
+        limit = (
+            f"the {TOKEN_BUDGET}-token budget"
+            if all(r["token_budget"] == TOKEN_BUDGET for r in oversized)
+            else "their task-specific token budgets"
+        )
         diagnostics.append(
-            f"ERROR: {len(oversized)} of {len(results)} skill entrypoints exceed "
-            f"the {TOKEN_BUDGET}-token budget."
+            f"ERROR: {len(oversized)} of {len(results)} skill entrypoints exceed {limit}."
         )
         for r in oversized:
             diagnostics.append(
                 f"  {r['path']}\t~{r['tokens']} tokens ({r['chars']} chars) — "
-                f"{r['over_budget_by']} over budget"
+                f"{r['over_budget_by']} over the {r['token_budget']}-token budget"
             )
         diagnostics.append(
             "  A SKILL.md loads in full when its skill triggers, before any"

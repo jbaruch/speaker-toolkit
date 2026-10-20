@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Resolve the configured vault interpreter for standalone shownotes publishing.
+"""Resolve the configured vault interpreter for presentation and publishing work.
 
 Composes two owner scripts and adds no parsing of its own beyond their JSON:
 
 1. ``read-tracking-database.py`` under the host interpreter running this script,
    on the given database path (default: the documented vault locator). The
-   database must be the owner-current generation (``tracking_database``'s own
-   assessment); a legacy one is the owner's to migrate.
+   database must be owner-current by default. ``--read-only`` also accepts
+   owner-readable legacy generations without migrating them.
 2. The same owner read of the same path under ``config.python_path``, which must
    be an absolute interpreter path; the database and its SHA-256 must match the
    first read. The vault root is the database locator's directory, resolved
@@ -14,8 +14,8 @@ Composes two owner scripts and adds no parsing of its own beyond their JSON:
    ``config.vault_storage_path`` naming another root refuses as
    ``vault_root_invalid``; the optional, possibly stale ``config.vault_root``
    is never an authority.
-3. ``check-runtime.py`` under ``config.python_path`` with the ``outline`` lane
-   required: PyYAML and Pydantic v2, which ``outline_schema.py`` and
+3. ``check-runtime.py`` under ``config.python_path`` with the selected lane
+   required (``--lane outline`` by default): PyYAML and Pydantic v2, which ``outline_schema.py`` and
    ``verify-talk-skill.py`` import. Its JSON verdict is classified, never just
    its exit code (``classify_runtime_check``): an unsupported Python is
    ``interpreter_unsupported``, missing modules or commands are
@@ -35,8 +35,13 @@ under ``config.python_path``, unless it timed out, which is
 nothing about the interpreter. ``config.python_path`` failing to launch the
 runtime check is ``interpreter_unusable``.
 
+``--lane core`` requires only the core runtime for CFP/catalog work and
+standalone export; it does not probe Pydantic. Read-only success never
+authorizes a database write or its paired external effect.
+
 Stdout: one JSON object. Success is ``{"ok": true, "python_path", "vault_root",
-"database_sha256"}``. Failure is ``{"ok": false, "reason_code", "error",
+"database_sha256", "database", "database_state", "lane"}``.
+Failure is ``{"ok": false, "reason_code", "error",
 "handoff", "database"}``, plus ``owner_code`` when the owner classified it,
 with a stderr diagnostic; ``handoff`` names the vault-ingress step that repairs
 the configuration, and ``database`` is the absolute locator this run read, the
@@ -261,15 +266,13 @@ def _config_text(config: dict, field: str, database: Path) -> str:
     return value
 
 
-def _require_current(database: object, locator: Path) -> dict:
+def _require_generation(database: object, locator: Path, read_only: bool) -> dict:
     try:
-        current = (
-            isinstance(database, dict)
-            and assess_tracking_database(database).state == "current"
-        )
+        assessment = assess_tracking_database(database)
+        accepted = assessment.usable and (read_only or assessment.state == "current")
     except TrackingDatabaseError:
-        current = False
-    if not current or not isinstance(database, dict):
+        accepted = False
+    if not accepted or not isinstance(database, dict):
         raise RuntimeResolutionError(
             "database_not_current",
             f"the tracking database at {locator} is not the current owner "
@@ -278,9 +281,12 @@ def _require_current(database: object, locator: Path) -> dict:
     return database
 
 
-def resolve(database: Path) -> dict:
+def resolve(
+    database: Path, *, read_only: bool = False, lane: str = REQUIRED_LANE
+) -> dict:
     first = owner_read(sys.executable, database)
-    config = _require_current(first.get("database"), database).get("config")
+    loaded = _require_generation(first.get("database"), database, read_only)
+    config = loaded.get("config")
     config = config if isinstance(config, dict) else {}
     python_path = _config_text(config, "python_path", database)
     if not Path(python_path).is_absolute():
@@ -319,9 +325,9 @@ def resolve(database: Path) -> dict:
             python_path,
             str(RUNTIME_CHECK),
             "--lanes",
-            REQUIRED_LANE,
+            lane,
             "--require-lanes",
-            REQUIRED_LANE,
+            lane,
         ],
         launch_failure=(
             "interpreter_unusable",
@@ -332,12 +338,12 @@ def resolve(database: Path) -> dict:
             f"run {RUNTIME_CHECK.name} under it directly to see where it stalls",
         ),
     )
-    reason = classify_runtime_check(check.returncode, check.stdout, REQUIRED_LANE)
+    reason = classify_runtime_check(check.returncode, check.stdout, lane)
     if reason is not None:
         raise RuntimeResolutionError(
             reason,
-            f"config.python_path cannot serve the {REQUIRED_LANE} lane (PyYAML "
-            f"and Pydantic v2; check-runtime exit {check.returncode}): "
+            f"config.python_path cannot serve the {lane} lane "
+            f"(check-runtime exit {check.returncode}): "
             f"{RUNTIME_CHECK_ACTIONS[reason]}, through {HANDOFF}",
         )
     return {
@@ -345,6 +351,9 @@ def resolve(database: Path) -> dict:
         "python_path": python_path,
         "vault_root": vault_root,
         "database_sha256": first.get("sha256"),
+        "database": str(database),
+        "database_state": assess_tracking_database(loaded).state,
+        "lane": lane,
     }
 
 
@@ -355,12 +364,23 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_DATABASE,
         help="Tracking database locator; the documented vault path by default",
     )
+    parser.add_argument(
+        "--read-only",
+        action="store_true",
+        help="Accept owner-readable legacy databases without authorizing writes",
+    )
+    parser.add_argument(
+        "--lane",
+        choices=("core", "outline"),
+        default=REQUIRED_LANE,
+        help="Require core for text/export work or outline for schema consumers",
+    )
     args = parser.parse_args(argv)
     # The one locator this run reads, and the one any repair must act on.
     database = Path(args.database).expanduser().absolute()
     failure: dict[str, object]
     try:
-        print(json.dumps(resolve(database)))
+        print(json.dumps(resolve(database, read_only=args.read_only, lane=args.lane)))
         return 0
     except RuntimeResolutionError as exc:
         failure = {

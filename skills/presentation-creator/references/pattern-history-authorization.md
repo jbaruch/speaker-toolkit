@@ -1,8 +1,9 @@
 # Pattern-History Authorization — Detail
 
-Load this after `pattern_history_status.py` returns and before consuming any
-catalog-derived historical field. Phase 0 runs the script; this file defines what
-its output authorizes.
+Load this before historical pattern selection or review. Run
+`pattern_history_status.py` below before consuming any catalog-derived historical
+field; this file defines what its output authorizes. Intake, CFPs, deck exports,
+and QR actions do not run history classification.
 
 ## The status payload
 
@@ -43,8 +44,9 @@ A recurrence claim may be available without a trend claim.
 
 A non-null `history_source` selects the sole catalog-history input. Use the
 emitted value without reproducing source-selection logic and without merging
-inputs. Surface a disabled result's `warning` verbatim and recommend profile
-regeneration.
+inputs. Source resolution is owned by `pattern_history_status.py`
+`resolve_creator_pattern_history()`. Surface a disabled result's `warning`
+verbatim and recommend profile regeneration.
 
 Continue using independent non-pattern fields regardless of history status:
 pacing, visual rules, presentation modes, infrastructure, publishing config, and

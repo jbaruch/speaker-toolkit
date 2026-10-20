@@ -19,6 +19,7 @@ import pytest
 from check_skill_entrypoints import (
     CHARS_PER_TOKEN,
     TOKEN_BUDGET,
+    PRESENTATION_TOKEN_BUDGET,
     estimate_tokens,
     extract_link_destinations,
     is_repo_relative,
@@ -47,6 +48,27 @@ def _body(chars: int) -> str:
     """A SKILL.md body of exactly `chars` characters."""
     header = "# Skill\n\n"
     return header + "x" * (chars - len(header))
+
+
+@pytest.mark.parametrize("excess,expected", [(0, 0), (1, 1)])
+def test_focused_presentation_skill_enforces_its_own_budget(
+    plugin: Path, excess: int, expected: int
+) -> None:
+    _write(
+        plugin,
+        "skills/presentation-creator/SKILL.md",
+        _body(PRESENTATION_TOKEN_BUDGET * CHARS_PER_TOKEN + excess),
+    )
+    result = _run(plugin)
+    assert result.returncode == expected, result.stderr
+    report = json.loads(result.stdout)
+    creator = next(
+        row
+        for row in report["entrypoints"]
+        if row["path"] == "skills/presentation-creator/SKILL.md"
+    )
+    assert creator["token_budget"] == PRESENTATION_TOKEN_BUDGET
+    assert creator["over_budget_by"] == excess
 
 
 @pytest.fixture()

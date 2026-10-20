@@ -236,9 +236,10 @@ Common anti-patterns (may or may not apply to a given speaker):
 
 ### 9B. Presentation Patterns Taxonomy Scan
 
-Read [references/patterns/_index.md](patterns/_index.md) (Phase 4 section of the
-phase-grouped lookup table) and classification-derived profile history only when the
-Phase 0 pattern-history status lists the domain required for that claim.
+Use [pattern-menu.md](pattern-menu.md) with phase `guardrails` and kind
+`antipattern` for the current taxonomy. Read classification-derived history only
+when the current status lists the domain required for that claim; the contract is
+in [pattern-history-authorization.md](pattern-history-authorization.md).
 
 **Speaker-specific antipatterns.** Emit one `[RECURRING]` line per
 `recurring_antipatterns` record in the guardrail report. Preserve each record's

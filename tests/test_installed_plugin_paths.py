@@ -19,6 +19,9 @@ EXPECTED_SKILLS = {
     "screencast-recorder",
     "screencast-editor",
     "presentation-creator",
+    "presentation-builder",
+    "presentation-publisher",
+    "cfp-writer",
     "shownotes-publisher",
     "vault-clarification",
     "vault-ingress",
@@ -69,6 +72,9 @@ def _configured_interpreter_workflow_doc_paths() -> tuple[Path, ...]:
     paths: set[Path] = set()
     for skill_name in (
         "presentation-creator",
+        "presentation-builder",
+        "presentation-publisher",
+        "cfp-writer",
         "vault-clarification",
         "vault-ingress",
         "vault-profile",

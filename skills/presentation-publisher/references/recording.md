@@ -1,63 +1,21 @@
-# Phase 7: Post-Event — Detail
+# Recording Updates for Other Shownotes Systems
 
-Triggered separately — days or weeks after delivery. Not part of the linear
-Phase 0-6 flow. The talk has been given, the recording exists, and the speaker
-wants a YouTube thumbnail and/or to update shownotes with the video.
+Use this only when the site is not handled by `shownotes-publisher`. Jekyll recording updates invoke `Skill(skill: "shownotes-publisher")` and finish after its verified result.
 
-## Pre-Flight Checklist
-
-Before ANY Phase 7 action, load these files. If any is missing, STOP and ask.
-
-1. **`speaker-profile.json`** — thumbnail preferences, video publishing config
-2. **`secrets.json`** — API keys (Gemini for thumbnail generation)
-3. **`outline.yaml`** — source of truth for talk slug, metadata, slides, and illustration refs.
-   Load via `scripts/outline_schema.py`.
-4. **YouTube video URL** — provided by the speaker at trigger time
-
-Read the tracking database through the main presentation-creator compatibility
-gate and the [owner compatibility contract](../../vault-ingress/references/schemas-db.md#schema-versioning).
-Thumbnail and shownotes lookup may read the owner's readable generations. Any
-database update in this phase requires the owner-current database and talk
-schema 8 before the thumbnail, shownotes, or video side effect paired with it.
-Route legacy generations through
-`Skill(skill: "vault-ingress")`; preserve all schema fields and apply the main
-skill's exact-generation atomic-write contract.
-
-If shownotes don't exist and the speaker wants Step 7.2, STOP and ask — either
-run Phase 6 Step 6.1 first, or get the shownotes URL manually.
-
----
-
-### Step 7.1: YouTube Thumbnail Generation
-
-Delegate to the illustrations skill — it owns slide selection, photo
-resolution, aesthetic precedence, composition via Gemini, speaker iteration,
-shownotes copy, and tracking-database updates:
-
-```
-Skill(skill: "illustrations")
-```
-
-See `skills/illustrations/references/thumbnails.md` for the full
-workflow. Returns control here once the thumbnail is approved and the
-tracking database is updated.
-
----
-
-### Step 7.2: Video to Shownotes
+Require the supplied recording URL, profile video-publishing settings, and existing page. Resolve the shared runtime without `--read-only` before the paired page/tracking write. Use the [owner compatibility contract](../../vault-ingress/references/schemas-db.md#schema-versioning) and [mutation contract](../../vault-ingress/references/schemas-db.md#owner-read-and-mutation-contract).
 
 Update the existing shownotes page with the video recording link.
 
 #### 1. Verify Shownotes Exist
 
-Check that shownotes were published in Phase 6 Step 6.1. Look for:
+Locate the existing published shownotes page. Look for:
 - The shownotes URL in the strict owner-reader result for this talk
 - Or construct from `publishing_process.shownotes.url.base` +
   `publishing_process.shownotes.url.template` (substitute `{slug}` and any
-  date variables) — see phase6-publishing.md for the full template semantics
+  date variables) — see [shownotes.md](shownotes.md) for template semantics
 
 If shownotes don't exist, STOP and ask the speaker. Options:
-- Run Phase 6 Step 6.1 to create them now
+- Create shownotes through a separately requested publishing action
 - Provide the shownotes URL manually
 - Skip this step
 
@@ -95,7 +53,7 @@ Include the video title, conference name, and year from the presentation spec.
 
 #### 4. Apply Update
 
-Use the same publishing method as Phase 6 Step 6.1:
+Use the publishing method configured for this shownotes destination:
 - If git-based: create/update the shownotes file, commit, push
 - If CMS: provide the content for the speaker to paste
 - If manual: present the formatted content block
@@ -112,14 +70,3 @@ Keep that talk record at `schema_version: 8`; this workflow is an authorized
 current writer, not a schema owner or migrator.
 
 ---
-
-### Phase 7 Report
-
-```
-POST-EVENT REPORT — {talk title}
-==================================
-[DONE/SKIP] Thumbnail: {path, dimensions, size}
-[DONE/SKIP] Video to shownotes: {shownotes URL, embed method}
-[INFO] YouTube URL: {url}
-==================================
-```

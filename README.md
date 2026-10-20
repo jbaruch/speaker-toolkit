@@ -2,7 +2,14 @@
 
 [![tessl](https://img.shields.io/endpoint?url=https%3A%2F%2Fapi.tessl.io%2Fv1%2Fbadges%2Fjbaruch%2Fspeaker-toolkit)](https://tessl.io/registry/jbaruch/speaker-toolkit)
 
-An eight-skill presentation system for conference speakers: analyze your existing talks to extract your rhetoric patterns, create new presentations that match your documented style, produce the deck illustrations + thumbnail visual layer, publish talk pages to a Jekyll shownotes site, verify a recorded screencast against its storyboard, and edit a Camtasia screencast into a finished video.
+An eleven-skill presentation system for conference speakers: analyze your existing talks to extract your rhetoric patterns, create new presentations that match your documented style, produce the deck illustrations + thumbnail visual layer, publish talk pages to a Jekyll shownotes site, verify a recorded screencast against its storyboard, and edit a Camtasia screencast into a finished video.
+
+## What's New (0.21.0)
+
+**Focused presentation skills** — author a talk with presentation-creator, build or
+export it with presentation-builder, coordinate delivery with presentation-publisher,
+and write submissions with cfp-writer. Independent requests open only their action's
+references and selected profile fields. The catalog's historical identity is preserved.
 
 ## What's New (0.19.0)
 
@@ -145,7 +152,7 @@ See [CHANGELOG.md](CHANGELOG.md) for full history.
 
 ## How It Works
 
-The toolkit is built on eight skills connected by a shared **rhetoric vault** — a directory of structured knowledge about how you present.
+The toolkit is built on eleven skills connected by a shared **rhetoric vault** — a directory of structured knowledge about how you present.
 
 ```
                    VAULT
@@ -164,8 +171,11 @@ The toolkit is built on eight skills connected by a shared **rhetoric vault** �
 - **vault-profile** generates a schema-v5 speaker profile with source-exact opportunity rows, a self-contained policy stamp, and independently gated classifications after enough talks are analyzed.
 
 **Creator skills (generation):**
-- **presentation-creator** reads the vault at runtime and uses your documented rhetoric as a constitutional style guide to build new presentations. It follows a 7-phase process from intent distillation through slide generation, with a current-taxonomy Pattern Strategy and a go-live checklist before delivery. It uses each available profile domain independently. Mastery drives the four history tiers. Antipattern recurrence drives recurring warnings. When either domain is unavailable, the creator falls back to the corresponding current-taxonomy behavior. The skill delegates the visual layer to the illustrations skill.
-- **illustrations** owns the deck illustration strategy, generation, build chains, and YouTube thumbnails. Invoked by presentation-creator at the relevant phases (Phase 2 strategy, Phase 5 application, Phase 7 thumbnail).
+- **presentation-creator** develops the argument, narrative, outline, and speaker notes in your documented voice. Intent, architecture, content, and revision stay together; approved deck and publishing work hand off to focused skills.
+- **presentation-builder** builds or edits a PowerPoint or presenterm deck and exports existing decks. It reads engine-specific instructions only for the chosen action. Exporting a deck does not start an authoring interview or require publishing credentials.
+- **presentation-publisher** curates resources, coordinates QR codes and short links, prepares delivery, and runs your configured publishing workflow. It invokes the builder for exports and shownotes-publisher for Jekyll page publication.
+- **cfp-writer** writes conference submissions and maintains the sessions catalog of approved titles, abstracts, outlines, and Program Committee notes. CFPs need no slide outline or deck setup.
+- **illustrations** owns the deck illustration strategy, generation, build chains, and YouTube thumbnails. Invoked by presentation-creator for strategy and presentation-builder for deck application. Thumbnail requests enter this skill directly.
 - **shownotes-publisher** creates a downloadable Agent Skill containing each talk's substance and writes talk pages into a Jekyll-based shownotes site (e.g., `speaking.jbaru.ch`). Encodes the custom parser's format contract so authored content actually renders: abstract is one paragraph, video field absent = "coming soon" badge, slides/video URLs must be markdown links, no frontmatter title, etc. Uses the delivery-specific rhetoric analysis, reconciled with notes, demos, and transcripts, to explain the thesis, argument, example roles, and caveats. Audience agents can summarize the talk and answer questions from the skill without retrieving a transcript. Publishes `_skills/{talk-page-stem}/SKILL.md` with the page through a PR and verifies the download. Runs before or after delivery; video-only updates preserve existing skills.
 - **screencast-recorder** verifies a recorded screen sequence against its approved storyboard — route and data revision, content framing and label readability at delivery size, deliberate pans, the pointer landing on what it clicks, clip-to-clip continuity, and whether each visual proof happens while its phrase is actually spoken. Verification only: it does not record. The unchecked pixel axis reports `unverified`, never `pass`.
 - **screencast-editor** turns a Camtasia for Mac recording (screen, camera and mic in one take) into a speaker-first video. It plans cuts between sentences from Camtasia's own word timings, zooms the screen evidence clear of the presenter inset, audits every framing against the pointer path recorded in the `.trec`, generates the Camtasia project, replaces the dynamic-caption words with a corrected transcript while keeping Camtasia's onsets, and times YouTube chapters from the captions. It composes the thumbnail from exact frames of the take with the illustrations skill's thumbnail script.
@@ -175,7 +185,10 @@ The toolkit is built on eight skills connected by a shared **rhetoric vault** �
 | `vault-ingress` | Parse recorded talks into the rhetoric vault |
 | `vault-clarification` | Validate findings and capture intent with the speaker |
 | `vault-profile` | Generate the structured speaker profile |
-| `presentation-creator` | Build new talks from the documented rhetoric |
+| `presentation-creator` | Develop or adapt an argument and approved talk outline |
+| `presentation-builder` | Build, edit, or export PowerPoint and presenterm decks |
+| `presentation-publisher` | Resources, QR codes, publishing coordination, delivery preparation |
+| `cfp-writer` | Conference submissions and approved sessions catalog |
 | `illustrations` | Deck illustrations, build chains, and YouTube thumbnails |
 | `shownotes-publisher` | Publish talk pages and downloadable talk skills |
 | `screencast-recorder` | Verify a recorded screen sequence against its storyboard |
@@ -227,15 +240,34 @@ create a presentation about [topic] for [conference]
 ```
 
 The creator will:
-1. Load your vault (summary, design spec, profile) and the pattern taxonomy
+1. Load the speaker context needed for the current task
 2. Walk you through intent distillation (purpose, audience, constraints)
 3. Jointly select rhetorical instruments, using the available schema-v5 mastery history for the four tiers or a flat current-taxonomy strategy when that domain is unavailable
 4. Write a section-by-section outline with speaker notes in your voice
 5. Run guardrail checks (slide budget, Act 1 ratio, profanity, branding, pattern-based antipattern scan)
-6. Generate a .pptx deck from your template
-7. Execute your publishing workflow and present a go-live preparation checklist
+6. Hand the approved outline to presentation-builder for a PowerPoint or presenterm deck
+7. Hand the finished deck to presentation-publisher when publishing is requested
 
-Every phase requires your approval before proceeding. The skill brings the rhetoric knowledge; you bring the topic expertise.
+You approve metadata, narrative, outline, and slides before their dependent stages. The skill brings the rhetoric knowledge; you bring the topic expertise.
+
+### Start Directly at the Task You Need
+
+| Request | Skill selected |
+|---|---|
+| “Develop a talk for this conference” | `presentation-creator` |
+| “Build slides from this approved outline” | `presentation-builder` |
+| “Export this deck to PDF” | `presentation-builder`, export only |
+| “Write a CFP abstract” | `cfp-writer` |
+| “Replace this talk's QR code” | `presentation-publisher`, QR only |
+| “Make a YouTube thumbnail” | `illustrations` |
+| “Add this recording to shownotes” | `shownotes-publisher` |
+
+The four authoring/delivery entry points have a 1,500-token budget each. A shared
+runtime resolver verifies the configured interpreter and database generation;
+each action then reads only its required context. A compact, phase-filtered
+pattern menu opens detailed patterns on demand without changing catalog history.
+Standalone exports need no complete outline, rhetoric summary, image keys, or
+shownotes setup. An outline migration returns to the creator for a bounded repair.
 
 ## Architecture
 
@@ -292,7 +324,12 @@ vault-profile      ----+      slide-design-spec.md           illustrations
                                                               presentation-creator
                                                               produces outline.yaml
                                                                       |
-                                                                      v
+                                                              presentation-builder
+                                                              builds/exports decks
+                                                                      |
+                                                              presentation-publisher
+                                                              coordinates delivery
+                                                                      |
                                                               shownotes-publisher
                                                               reads outline.yaml +
                                                               resources.json, writes
@@ -524,7 +561,7 @@ If the speaker profile doesn't exist yet (fewer than 10 talks parsed), the creat
 - Talks with at least one usable transcript, slide, or delivery-video source
 
 ### For the Presentation Creator & Illustrations Skills
-- Microsoft PowerPoint with VBA macros — the deck engine: slide generation, structural edits, speaker notes, backgrounds, and QR all drive the real app (macOS only). One-time `DeckOps.pptm` macro setup: `skills/presentation-creator/references/deck-editing-setup.md`
+- Microsoft PowerPoint with VBA macros — the deck engine: slide generation, structural edits, speaker notes, backgrounds, and QR all drive the real app (macOS only). One-time `DeckOps.pptm` macro setup: `skills/presentation-builder/references/deck-editing-setup.md`
 - `python-pptx` (extraction reads + the illustration scrim/title apply pass)
 - A PowerPoint template (the vault captures the path; a generic template works too)
 
@@ -608,12 +645,21 @@ speaker-toolkit/
     |   |   +-- insert-qr.sh                    # Wrapper for InsertQR (QR PNG bottom-right via real PowerPoint)
     |   |   +-- insert-qr.applescript           # AppleScript driver for InsertQR
     |   +-- references/
-    |       +-- phase0-intake.md through phase7-post-event.md  # Phase detail docs
+    |       +-- phase0-intake.md through phase4-guardrails.md # Authoring phase details
     |       +-- patterns/                     # Presentation Patterns taxonomy (113 entries)
     |           +-- _index.md                 # Master index, phase mapping, dimension lookup
     |           +-- prepare/                  # 20 patterns + 4 antipatterns
     |           +-- build/                    # 41 patterns + 10 antipatterns
     |           +-- deliver/                  # 22 patterns + 14 antipatterns (14 unobservable)
+    +-- presentation-builder/
+    |   +-- SKILL.md                          # Build, edit, export action router
+    |   +-- references/                       # PowerPoint, presenterm, export, setup
+    +-- presentation-publisher/
+    |   +-- SKILL.md                          # Publishing and single-action router
+    |   +-- references/                       # Resources, QR, shownotes, delivery
+    +-- cfp-writer/
+    |   +-- SKILL.md                          # CFP and sessions-catalog router
+    |   +-- references/                       # Submissions and catalog contract
     +-- illustrations/
     |   +-- SKILL.md                          # Visual layer workflow (7 mode-routed steps)
     |   +-- scripts/

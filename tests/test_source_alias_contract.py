@@ -588,8 +588,8 @@ def test_invalid_candidate_digest_names_its_own_flag(
     "relative",
     [
         "vault-clarification/SKILL.md",
-        "presentation-creator/SKILL.md",
-        "presentation-creator/references/phase7-post-event.md",
+        "presentation-creator/references/runtime-and-context.md",
+        "presentation-publisher/references/recording.md",
         "illustrations/references/thumbnails.md",
         "vault-ingress/references/bootstrap-and-preflight.md",
         "vault-ingress/references/batch-persistence.md",

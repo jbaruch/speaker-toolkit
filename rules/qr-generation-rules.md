@@ -1,6 +1,6 @@
 ---
 alwaysApply: false
-applyTo: "skills/presentation-creator/** — when generating or replacing QR codes during the presentation publishing flow (Phase 6)"
+applyTo: "skills/presentation-publisher/** — when generating or replacing QR codes during the presentation publishing flow (Phase 6)"
 ---
 
 # QR Generation Rules
@@ -88,8 +88,9 @@ Silent generation with a raw URL when shortening was never discussed = failure.
 
 ## 7. Missing API Token = STOP
 
-If `secrets.json` is missing or lacks the required API token, STOP and guide
-the user to create it. Do not silently degrade to a raw URL.
+On the direct API path, if `secrets.json` is missing or lacks the selected
+shortener's token, STOP and guide the user to create it. MCP-preresolved links
+and explicit `shortener: none` do not require direct API tokens. Do not silently degrade to a raw URL.
 
 The script prints actionable creation commands — but the agent must treat a
 missing token as a blocker, not a fallback trigger.
