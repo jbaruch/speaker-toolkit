@@ -118,10 +118,12 @@ never open the ledger file directly.
 Pass `--run-id` when the call carries one. Without it, the command selects the
 accepted session that never finished, if any; which one, when several are
 pending, is the script's rule (`run-obligations.py`, the `pending_sessions`
-docstring). Exit 0 with `session: null` means this session is standalone: it
-has no seed agenda and touches the ledger no further. Otherwise
-`session.run_id` is this session's run and `session.topics`, in its recorded
-order, is the seed agenda. Exit 2 writes `{"ok": false, "error",
+docstring). Check `running_sessions` first: `session: null` with a non-empty
+`running_sessions` means another host is conducting a session, so stop and
+report it. Exit 0 with `session: null` and an empty `running_sessions` means
+this session is standalone: it has no seed agenda, claims nothing, and touches
+the ledger no further. Otherwise `session.run_id` is this session's run and
+`session.topics`, in its recorded order, is the seed agenda. Exit 2 writes `{"ok": false, "error",
 "reason_code"}` to stdout and the same message to stderr: a named run with no
 pending session (`invalid_transition`), one another host holds
 (`session_claimed`), an unknown run (`run_not_found`), or a ledger not yet
@@ -135,8 +137,7 @@ Claim the selected session before asking anything, and keep the returned
   "{vault_root}/tracking-database.json" claim-session --run-id "{run_id}" --now "{iso_timestamp}"
 ```
 
-Exit 2 with `session_claimed`, or `session: null` with a non-empty
-`running_sessions`, means another host is conducting a session: stop and
+Exit 2 with `session_claimed` means another host claimed it first: stop and
 report it. Freeing a dead host's claim (`release-session`) is the operator's
 decision, never this session's.
 

@@ -12,6 +12,9 @@ Two session-lifecycle gaps Copilot raised on PR #465, deferred to #466:
   claims what `session-agenda` selected and stops when another host holds a
   session, `session-agenda` lists claimed sessions under `running_sessions` and
   never selects them, and a named claimed run refuses as `session_claimed`.
+  Step 2 reads `running_sessions` before anything else: `session: null` is a
+  standalone session only when that list is empty, and otherwise means another
+  host is conducting one, so the session stops.
   `record-session` now requires `--claim-token` and closes only the claim it
   names. `release-session --claim-token`, with a reason, is the operator's
   explicit decision to free that one claim; a retry after a lost response can
