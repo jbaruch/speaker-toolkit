@@ -66,7 +66,8 @@ recording exceeds the 8 GiB input ceiling.
   the `schemas-db.md` compatibility table moves to root 5.
 - Timing binds the medium its own receipt names, checked against that medium's
   duration (`transcript_timing.verified_timing_local_media_sha256`); provider
-  timing keeps the provider duration. The quality receipt can be refreshed alone
+  timing keeps the provider duration, falling back only to the identity-bound
+  predeclared video's duration, never to declared audio. The quality receipt can be refreshed alone
   by `--audio`, so it never decides which medium timing binds.
 - Extraction syncs the installed audio's bytes before its directory, on a fresh
   hard-link install and on an identical rerun.

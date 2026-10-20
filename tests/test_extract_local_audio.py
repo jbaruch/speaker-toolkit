@@ -389,21 +389,21 @@ def test_an_extraction_stopped_by_the_ceiling_is_never_installed(
 def test_an_ffmpeg_that_overruns_its_budget_is_stopped(
     tmp_path, extract_local_audio, monkeypatch
 ):
+    """The budget is the runner's; a stub stands in for an ffmpeg that hangs."""
     recording = _recording(tmp_path / "videos")
-    fake = tmp_path / "slow-bin" / "ffmpeg"
-    fake.parent.mkdir()
-    fake.write_text(
-        # Absolute: PATH below holds only this directory, so env cannot find bash.
-        "#!/bin/bash\nset -euo pipefail\nexec /bin/sleep 30\n",
-        encoding="utf-8",
-    )
-    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
-    monkeypatch.setenv("PATH", str(fake.parent))
+    budgets: list[float] = []
+
+    def overrun(command, **kwargs):
+        budgets.append(kwargs["timeout"])
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr(extract_local_audio.subprocess, "run", overrun)
     with pytest.raises(extract_local_audio.ExtractionError) as caught:
         extract_local_audio.extract(
             recording, tmp_path / "talk.m4a", timeout_seconds=0.5
         )
     assert caught.value.reason_code == "extraction_timeout"
+    assert budgets == [0.5]
     assert _staged(tmp_path) == []
 
 

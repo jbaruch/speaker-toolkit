@@ -1765,11 +1765,12 @@ def build_evidence_context(
         predeclared_video_probe,
         _declared_audio_locator(source_roots, talk),
     )
-    # Provider provenance is checked against the provider duration; a
+    # Provider timing is checked against the provider duration, falling back
+    # only to the identity-bound predeclared video, never to declared audio; a
     # local-media receipt is checked against the medium it names instead.
     timing_owner_duration = _identity_duration(talk)
-    if timing_owner_duration is None and transcript_media.media:
-        timing_owner_duration = transcript_media.media[0].duration_seconds
+    if timing_owner_duration is None and predeclared_video_probe is not None:
+        timing_owner_duration = predeclared_video_probe.duration_seconds
     timed_segments: list[dict[str, object]] = []
     timing_reason = "timed transcript is unavailable"
     transcript_bundle: _TranscriptBundleSnapshot | None = None
