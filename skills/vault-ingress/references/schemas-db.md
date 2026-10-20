@@ -839,8 +839,9 @@ digest-mismatched file still fails closed. A receipt binds whichever
 owner-bound local medium its own digest names, the declared audio or a local
 video (`pattern_evidence._transcript_media`, docstring). The declaration binds
 transcript and timing receipts only, never `delivery_video` evidence. The locator
-follows the shared artifact-locator contract; a relative value is
-vault-root-relative, and its suffix is one of
+follows the shared artifact-locator contract and must be vault-root-relative
+(an absolute value is refused at the schema boundary, since the reader binds
+only beneath the vault root), and its suffix is one of
 `tracking_database.AUDIO_DECLARATION_SUFFIXES`, which the owner validator, the
 mutation, and the evidence reader all enforce. Callers pass the
 declarations to evidence readers through `source_roots`

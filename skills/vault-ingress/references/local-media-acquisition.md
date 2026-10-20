@@ -67,7 +67,7 @@ whole. Extract its audio stream first:
 The script's docstring owns the output modes, bounds, refusal reason codes,
 and JSON report. `.m4a` copies the stream; when the refusal says the codec does
 not fit, re-run with a `.wav` output. Transcribe the reported `output` with
-`--audio`, then declare it. Never rename a local transcode to `{youtube_id}.mp4`
+`--audio`, then declare it by its vault-relative path (`recordings/{talk_stem}.m4a`). Never rename a local transcode to `{youtube_id}.mp4`
 to satisfy the YouTube filename rule: that fakes provider identity.
 
 ## Refusal and Recovery

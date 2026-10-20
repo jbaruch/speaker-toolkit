@@ -77,6 +77,9 @@ recording exceeds the 8 GiB input ceiling.
   `source_reasons` name the fix. Timing is read only after the quality check
   passes, and a timing sidecar that is not UTF-8 is unavailable, never a
   traceback.
+- `local_audio.audio_local_path` must be vault-root-relative; the owner
+  validator refuses an absolute locator at the schema boundary, since the
+  evidence reader binds a declaration only beneath the vault root.
 - Wherever declared audio may be probed, the flow first requires
   `check-runtime.py --require-lanes core,source-media`. That covers preflight
   (`bootstrap-and-preflight.md`, pointed to from vault-ingress Step 1), batch

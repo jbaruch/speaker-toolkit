@@ -2686,11 +2686,12 @@ def test_a_replayed_declaration_changes_nothing(mutate_tracking_database) -> Non
 @pytest.mark.parametrize(
     "updates,detail",
     [
+        ({"audio_local_path": "/outside/talk.mp3"}, "must be relative to the vault"),
         ({"audio_local_path": "videos/talk.mp4"}, "must name an audio file"),
         ({"expect": {"audio_local_path": "recordings/other.mp3"}}, "expect"),
         ({"declared_at": "yesterday"}, "timezone-aware"),
     ],
-    ids=["video-suffix", "stale-expect", "bad-time"],
+    ids=["absolute", "video-suffix", "stale-expect", "bad-time"],
 )
 def test_an_unusable_declaration_is_refused(
     mutate_tracking_database, updates: dict[str, Any], detail: str

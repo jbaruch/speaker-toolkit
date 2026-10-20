@@ -1340,8 +1340,10 @@ def validate_local_audio_declaration(
     unbindable, since `video_local_path` admits video containers only.
 
     The locator goes through `classify_artifact_locator`, the lexical contract
-    every persisted artifact path uses; a relative value is vault-root
-    relative, and its suffix must be one of `AUDIO_DECLARATION_SUFFIXES`.
+    every persisted artifact path uses, and must be relative: the evidence
+    reader binds a declaration only beneath the vault root, so an absolute
+    value could never bind. Its suffix must be one of
+    `AUDIO_DECLARATION_SUFFIXES`.
     Existence is not checked here; an absent file fails at binding time.
     """
     _require_closed_shape(record, required=LOCAL_AUDIO_REQUIRED_FIELDS, label=label)
@@ -1359,12 +1361,18 @@ def validate_local_audio_declaration(
         record["audio_local_path"], f"{label}.audio_local_path"
     )
     try:
-        classify_artifact_locator(value)
+        kind = classify_artifact_locator(value)
     except ArtifactLocatorError as exc:
         raise TrackingDatabaseError(
             f"{label}.audio_local_path is not a usable artifact locator "
             f"({exc.reason_code}): {value!r}"
         ) from exc
+    if kind != "relative":
+        raise TrackingDatabaseError(
+            f"{label}.audio_local_path must be relative to the vault root, the "
+            f"only place a declaration binds; declare the file by its path "
+            f"inside the vault: {value!r}"
+        )
     if value.endswith("/"):
         raise TrackingDatabaseError(
             f"{label}.audio_local_path ends in '/', which names a directory: {value!r}"

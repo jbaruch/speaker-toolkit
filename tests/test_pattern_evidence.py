@@ -4531,3 +4531,51 @@ def test_a_failed_quality_check_never_reads_a_broken_timing_sidecar(
         transcript, "", owner_source="whisper"
     )
     assert reason == []
+
+
+def test_a_declaration_the_owner_accepts_binds_in_the_reader(
+    tmp_path: Path, mutate_tracking_database
+) -> None:
+    """Writer and reader agree: the mutation's locator is the one that binds."""
+    from conftest import CURRENT_ROOT_SCHEMA_VERSION, current_tracking_config
+
+    tracking_database = importlib.import_module("tracking_database")
+    vault = tmp_path / "vault"
+    audio = _declared_audio(vault)
+    transcript, _probe = _audio_bound_transcript(vault, audio)
+    talk = {**_audio_talk(vault, transcript), "schema_version": 8, "status": "pending"}
+    database = {
+        "schema_version": CURRENT_ROOT_SCHEMA_VERSION,
+        "config": current_tracking_config(),
+        "talks": [talk],
+        "pptx_catalog": [],
+        "qr_codes": [],
+        "resources": [],
+        "thumbnails": [],
+        "confirmed_intents": [],
+        "improvement_goals": [],
+        "local_audio": [],
+    }
+    candidate, _changes = mutate_tracking_database.build_candidate(
+        database,
+        [
+            {
+                "kind": "declare_local_audio",
+                "filename": talk["filename"],
+                "expect": {"audio_local_path": {"$missing": True}},
+                "audio_local_path": audio.relative_to(vault).as_posix(),
+                "declared_at": "2026-10-19T00:00:00Z",
+            }
+        ],
+    )
+    source_roots = {
+        pattern_evidence.LOCAL_AUDIO_SOURCE_ROOTS_KEY: (
+            tracking_database.local_audio_declarations(candidate)
+        )
+    }
+
+    context = pattern_evidence.build_evidence_context(
+        vault, talk, source_roots=source_roots
+    )
+
+    assert "transcript" in context["verified_evidence_sources"]
