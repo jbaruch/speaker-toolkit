@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import re
+import shutil
 import subprocess
 from collections.abc import Iterator
 from pathlib import Path
+
+import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -123,6 +127,45 @@ def test_every_shipped_skill_defines_an_installed_plugin_root() -> None:
         assert "two directories above the directory\ncontaining this file" in text, path
         assert "Never derive it from the consumer working directory" in text, path
         assert "Treat `{speaker_toolkit_root}` as absolute" in text, path
+
+
+def _declared_lookup(skill_md: Path) -> Path:
+    """`rules/toolkit-root-lookup.md`: two directories above the SKILL.md's."""
+    return skill_md.resolve().parent.parent.parent
+
+
+def _rooted_targets() -> set[str]:
+    return {
+        match.group("path")
+        for path in _command_doc_paths()
+        for match in ROOTED_TOOLKIT_PATH_RE.finditer(path.read_text(encoding="utf-8"))
+    }
+
+
+@pytest.mark.parametrize("layout", ["clone", "installed-mount"])
+def test_the_declared_lookup_resolves_the_plugin_root(tmp_path, layout) -> None:
+    """From a clone or an install, every skill finds this plugin and its targets."""
+    if layout == "clone":
+        root = REPO_ROOT
+    else:
+        root = tmp_path / ".tessl" / "plugins" / "jbaruch" / "speaker-toolkit"
+        for shipped in ("skills", "rules", ".tessl-plugin"):
+            shutil.copytree(REPO_ROOT / shipped, root / shipped, symlinks=True)
+    targets = _rooted_targets()
+    assert targets
+
+    for skill_md in sorted((root / "skills").glob("*/SKILL.md")):
+        resolved = _declared_lookup(skill_md)
+        assert resolved == root.resolve(), skill_md
+        manifest = json.loads(
+            (resolved / ".tessl-plugin" / "plugin.json").read_text(encoding="utf-8")
+        )
+        assert manifest["name"] == "jbaruch/speaker-toolkit"
+        assert f"skills/{skill_md.parent.name}" in manifest["skills"]
+        missing = sorted(
+            target for target in targets if not (resolved / target).exists()
+        )
+        assert not missing, (skill_md, missing)
 
 
 def test_operational_toolkit_paths_are_rooted() -> None:
