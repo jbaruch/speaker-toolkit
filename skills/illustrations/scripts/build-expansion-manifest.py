@@ -244,13 +244,12 @@ def main(argv=None):
         "parent's notes ride onto its final frame so expansion keeps them",
     )
     args = ap.parse_args(argv)
+    if not args.outline.is_file():
+        raise SystemExit(f"ERROR: outline not found: {args.outline}")
     try:
         outline_schema.require_current_outline(args.outline)
     except outline_schema.OutlineVersionError as exc:
         raise SystemExit(f"ERROR: {exc}") from exc
-
-    if not args.outline.is_file():
-        raise SystemExit(f"ERROR: outline not found: {args.outline}")
 
     notes_map = None
     if args.notes is not None:

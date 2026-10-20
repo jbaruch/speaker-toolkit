@@ -696,6 +696,8 @@ def main():
         "apply-backgrounds.sh to set the backgrounds via PowerPoint.",
     )
     args = ap.parse_args()
+    if not args.outline.is_file():
+        raise SystemExit(f"ERROR: outline not found: {args.outline}")
     try:
         outline_schema.require_current_outline(args.outline)
     except outline_schema.OutlineVersionError as exc:

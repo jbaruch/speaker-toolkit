@@ -1084,3 +1084,14 @@ def test_a_zero_based_outline_keys_backgrounds_by_deck_position(
     # Slide 1's two frames take deck slides 2-3, so slide 2 is deck slide 4.
     assert sorted(backgrounds) == [1, 4]
     assert {r["slide"]: r["deck_slide"] for r in results} == {0: 1, 1: None, 2: 4}
+
+
+def test_a_missing_outline_is_named_by_apply(
+    apply_illustrations, tmp_path, monkeypatch
+):
+    deck = tmp_path / "deck.pptx"
+    make_deck(2).save(str(deck))
+    _cli(monkeypatch, str(deck), str(tmp_path), str(tmp_path / "absent.yaml"))
+    with pytest.raises(SystemExit) as exc:
+        apply_illustrations.main()
+    assert "outline not found" in str(exc.value)
