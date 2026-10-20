@@ -41,7 +41,11 @@ Two session-lifecycle gaps Copilot raised on PR #465, deferred to #466:
   empty arrays into the `initialize_database` mutation, which accepts only
   `kind` and `config` and rejects any config version but the current one; the
   initializer stamps both versions and creates the arrays. Every migration and
-  initialization statement now describes config v1/v2 input and v3 output.
+  initialization statement now describes config v1/v2 input and v3 output, and
+  the post-migration write gate requires config schema 3. A docs test refuses
+  any skill reference sentence that requires, stamps or calls current a config
+  schema other than `CONFIG_RECORD_SCHEMA_VERSION`, outside a legacy or
+  migration context.
 - Preflight's exclusions check compared a container-valued
   `config.schema_version` against the readable-version set and crashed with a
   `TypeError`; it now takes exact integers only, so a malformed version reports

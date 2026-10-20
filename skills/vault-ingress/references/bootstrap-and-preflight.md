@@ -131,8 +131,7 @@ before another config write.
 ```
 
 All owner-authored tracking writes below require the owner-current database and config
-schema 2 after this
-gate. Preserve every independent record version and validate the complete
+schema 3 after this gate. Preserve every independent record version and validate the complete
 candidate before installing it. Only `migrate-tracking-database.py` may move
 readable legacy roots to the current schema; its hash precondition binds replacement to the exact input
 bytes as documented above.
