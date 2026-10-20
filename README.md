@@ -319,6 +319,7 @@ The plugin ships persistent rules (auto-loaded by the agent at runtime via `.tes
 | [`shownotes-content-publish`](rules/shownotes-content-publish.md) | Authority-of-record for the shownotes content direct-push carve-out (paired with `skills/shownotes-publisher/scripts/content-only-gate.sh`). |
 | [`transcript-fetch-authority`](rules/transcript-fetch-authority.md) | Authority-of-record for the Whisper layer's platform-bound untestable carve-out (paired with `skills/vault-ingress/scripts/fetch-transcript.py`). |
 | [`camtasia-validation-authority`](rules/camtasia-validation-authority.md) | Authority-of-record for the Camtasia rendering boundary's platform-bound untestable carve-out (paired with `skills/screencast-editor/scripts/build-project.py` and `apply-captions.py`). |
+| [`toolkit-root-lookup`](rules/toolkit-root-lookup.md) | Named lookup rule for the `{speaker_toolkit_root}` path form: how each skill resolves the plugin root, which co-shipped targets it may name, and the tests that verify it. |
 
 ## Vault Skills Details
 

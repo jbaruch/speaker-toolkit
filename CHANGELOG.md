@@ -1,5 +1,32 @@
 # Changelog
 
+### Name the toolkit-root lookup as a rule
+
+`jbaruch/coding-policy` 0.4.1 permits a resolved plugin root in a skill that
+runs from both a clone and an installed mount only under the scoped bootstrap
+or the plugin's own named lookup rule. Every speaker-toolkit skill already
+resolves `{speaker_toolkit_root}` from its own `SKILL.md` location, and 46 skill
+documents use it, but no rule named that lookup, so the policy reviewer
+refused new commands in that form (PR #494).
+
+- New `rules/toolkit-root-lookup.md` is that named rule. It states the lookup's
+  input (the loaded `SKILL.md`'s absolute path) and output (the plugin root two
+  directories above its directory), forbids deriving it from the working
+  directory, `PATH`, the environment or a git remote, and bounds its targets to
+  files or data directories co-shipped under `skills/` and `rules/` that resolve
+  inside the plugin root. Each script's docstring is authoritative for its I/O,
+  and a command's step prose still summarizes the inputs, outputs, exit codes
+  and side effects the caller acts on. The lookup grants no runtime authority
+  and waives no check.
+- `tests/test_installed_plugin_paths.py` now exercises the lookup itself: from
+  the clone and from a copy laid out as an installed mount, each shipped
+  `SKILL.md` resolves to the root whose manifest is `jbaruch/speaker-toolkit`
+  and lists that skill, and every rooted command target, file or directory,
+  exists and resolves inside it. The
+  existing checks still require the lookup in every `SKILL.md` and a rooted path
+  in every operational command.
+- The manifest's `rules` and the README rules table list the new rule.
+
 ## 0.20.183 — 2026-10-19
 
 ### Harden the run-obligations ledger's edges
