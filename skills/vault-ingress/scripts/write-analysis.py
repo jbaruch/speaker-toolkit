@@ -69,10 +69,12 @@ from pathlib import Path
 
 from failure_diagnostics import emit_unexpected_failure
 from tracking_database import (
+    local_audio_declarations,
     TrackingDatabaseError,
     assess_tracking_database,
 )
 from pattern_evidence import (
+    LOCAL_AUDIO_SOURCE_ROOTS_KEY,
     LEGACY_PATTERN_EVIDENCE_SCHEMA_VERSION,
     PATTERN_EVIDENCE_SCHEMA_VERSION,
     PatternEvidenceError,
@@ -1267,6 +1269,7 @@ def main():
     except VaultRootAuthorityError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
+    source_roots[LOCAL_AUDIO_SOURCE_ROOTS_KEY] = local_audio_declarations(db)
     video_evidence_assessment = VideoEvidenceAssessment()
     returns = load_json(batch_path, "batch-returns")
     try:

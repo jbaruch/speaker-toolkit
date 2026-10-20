@@ -47,6 +47,37 @@ pins. A failed optional lane does not invalidate independent captions or slides.
   returns no truncated transcript and preserves the prior bundle. It does not
   migrate an existing quality receipt or authenticate a recording's catalog identity.
 
+## Declaring an Audio Recording
+
+A transcript Whisper'd from a local audio file binds its `local_media_duration`
+receipt only after the owner declares that file as the talk's recording with
+the `declare_local_audio` mutation; see
+[schemas-db.md](schemas-db.md#declared-local-audio). The declaration binds
+transcript and timing receipts, never `delivery_video` evidence.
+
+A recording over the `MEDIA_MAX_INPUT_BYTES` ceiling in
+`skills/vault-ingress/scripts/local_media_contract.py` cannot be acquired
+whole. Extract its audio stream first:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/extract-local-audio.py" \
+  --recording "{recording_path}" --output "{vault_root}/recordings/{talk_stem}.m4a"
+```
+
+Exit 0 prints `{ok: true, output, written, media_sha256, size_bytes,
+duration_seconds, mode}`: `output` is installed and owner-probed, and
+`written: false` means identical audio was already there and was left as is.
+Exit 2 prints `{ok: false, reason_code, error}` with the message on stderr:
+nothing was installed, an existing output was never replaced, and the staged
+file was removed (or the error names it). Follow the `error`'s action; when it
+says the codec does not fit, re-run with a `.wav` output, and for
+`output_exists` choose another output name. Exit 3 is an unexpected failure:
+stdout is empty, stderr carries the closed failure document, and nothing was
+installed; report it. The script's docstring owns the output modes, bounds and
+reason codes. `.m4a` copies the stream. Transcribe the reported `output` with
+`--audio`, then declare it by its vault-relative path (`recordings/{talk_stem}.m4a`). Never rename a local transcode to `{youtube_id}.mp4`
+to satisfy the YouTube filename rule: that fakes provider identity.
+
 ## Refusal and Recovery
 
 The fetcher reports worker refusal through its existing failure JSON and stderr.

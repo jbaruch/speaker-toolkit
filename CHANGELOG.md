@@ -1,5 +1,99 @@
 # Changelog
 
+### Let a declared local audio file bind its transcript receipt
+
+`fetch-transcript.py --audio` accepts `.mp3` and `.m4a` and writes a
+`local_media_duration` receipt bound to the audio's SHA-256, but owner binding
+resolved local media only through `video_local_path` and `video_path`, with
+video suffixes. An audio receipt could never bind (#485). On the live vault that
+left `2016-qcon-sf-java-puzzlers-ng-s02.md` with an unrepairable
+`transcript_quality_provenance_mismatch` (its InfoQ MP4 fails strict decode),
+and `baselone-2026-context.md` had to wait for YouTube because its 11.8 GB room
+recording exceeds the 8 GiB input ceiling.
+
+- A new optional top-level `local_audio` collection holds owner declarations,
+  `{schema_version: 1, talk_filename, audio_local_path, declared_at}`, one per
+  talk. It is top-level for the reason `date_provenance` is: the talks it is
+  for are legacy records, and a talk field is unreachable at their generation.
+  A new top-level key is part of the root shape, so the root moves to
+  **schema 5**; v4 databases stay readable and the owner migration advances
+  them.
+- The `declare_local_audio` mutation writes a declaration with an optimistic
+  `expect`. The path must be `.mp3`, `.m4a` or `.wav`
+  (`tracking_database.AUDIO_DECLARATION_SUFFIXES`, which the owner validator
+  enforces too). It requeues an analyzed talk as `source_added`, and a
+  `skipped_no_sources` talk whose queue claim completed the same way, since
+  that claim pins the talk to its `result_status` unless deliberately
+  requeued; any other `skipped_no_sources` talk becomes claimable as `pending`.
+  It refuses an active queue claim.
+- Evidence readers probe the declared file with the bounded media owner. A
+  receipt binds whichever owner-bound local medium its own digest names, the
+  declared audio or a probed local video, so an audio-bound transcript stays
+  valid beside a usable video, and a declared video that does not decode (the
+  InfoQ case) leaves the audio. Both receipt readers, preflight and evidence
+  resolution, share that one selection.
+  Audio never reaches `delivery_video` evidence. The declarations
+  travel in `source_roots` under `pattern_evidence.LOCAL_AUDIO_SOURCE_ROOTS_KEY`
+  from every caller (persistence, analysis rendering, queue normalization,
+  preflight and the vault-profile cohort), so freshness never reads a declared
+  transcript as stale and requeues it.
+- New `skills/vault-ingress/scripts/extract-local-audio.py` is the sanctioned
+  path for a recording over the input ceiling: it extracts the first audio
+  stream (stream copy to `.m4a`/`.mp3`, or 16-bit PCM `.wav`) under a wall-clock
+  limit and the owner's byte ceiling, refuses a recording that changed
+  mid-extraction, verifies the result through `probe_local_media` before
+  installing it (hard link, or an exclusive-create copy on a volume without
+  links), and never replaces existing audio. A probe refusal names the action
+  its reason code calls for; only a container or codec mismatch suggests `.wav`.
+  A filesystem error refuses as `io_failed`, and anything unexpected leaves
+  stdout empty and writes the shared closed failure document to stderr (exit 3).
+  An ffmpeg failure is classified from its own message: disk-full or permission
+  failures are `io_failed`, a recording with no audio is
+  `recording_has_no_audio`, and only a codec that does not fit the container
+  suggests `.wav`. Argument errors return the JSON verdict too. ffmpeg reads
+  the recording through a held descriptor (`/dev/fd/N`), never the path, and
+  the descriptor's ctime joins size, mtime, inode and device in the generation
+  check, so a path repointed for the run is never read and an in-place rewrite
+  that restores the mtime is refused. Any error-level ffmpeg diagnostic refuses
+  even on exit 0. An identical rerun syncs the output's directory, so a run
+  whose sync failed completes on retry. A `-fs` stop leaves the file at or over
+  the ceiling (measured across 14 limits for each of `.m4a`, `.mp3` and `.wav`
+  on ffmpeg 9.0.2), so it is always refused as `output_over_ceiling`, and a test
+  pins that on CI's ffmpeg. Non-POSIX hosts refuse as `platform_unsupported`.
+  `local-media-acquisition.md` runs it, then `--audio`, then a declaration —
+  never a transcode renamed to `{youtube_id}.mp4`.
+  `subagent-instructions.md` names the declaration for non-YouTube talks, and
+  the `schemas-db.md` compatibility table moves to root 5.
+- Timing binds the medium its own receipt names, checked against that medium's
+  duration (`transcript_timing.verified_timing_local_media_sha256`); provider
+  timing keeps the provider duration, falling back only to the identity-bound
+  predeclared video's duration, never to declared audio. The quality receipt can be refreshed alone
+  by `--audio`, so it never decides which medium timing binds.
+- Extraction syncs the installed audio's bytes before its directory, on a fresh
+  hard-link install and on an identical rerun.
+- A declared audio file that fails to bind keeps its reason: a locator the
+  declaration cannot resolve, or the bounded owner's refusal code, with what to
+  do (restore the file, repair the source-media lane, or re-declare it). Both
+  receipt readers append it to a local-media mismatch, so preflight and
+  `source_reasons` name the fix. Timing is read only after the quality check
+  passes, and a timing sidecar that is not UTF-8 is unavailable, never a
+  traceback.
+- `local_audio.audio_local_path` must be vault-root-relative; the owner
+  validator refuses an absolute locator at the schema boundary, since the
+  evidence reader binds a declaration only beneath the vault root.
+- vault-profile states its two runtime gates as independent conditions, so an
+  audio-only vault still requires the media lane, and
+  `local-media-acquisition.md` summarizes the extraction command's exit 0, 2
+  and 3 outcomes and what each leaves installed.
+- Wherever declared audio may be probed, the flow first requires
+  `check-runtime.py --require-lanes core,source-media`. That covers preflight
+  (`bootstrap-and-preflight.md`, pointed to from vault-ingress Step 1), batch
+  validation, persistence and rendering (`batch-persistence.md`), and
+  vault-profile's load, validation and Section 15 reads. Each gate fires when
+  `local_audio` is non-empty, beside the existing `source-video` gates.
+- The declaration is a mutation of the tracking database's own collection, not
+  an `apply-source-repairs.py` talk field, for the reason above.
+
 ## 0.20.187 — 2026-10-20
 
 ### Reserve each clarification session and count it once

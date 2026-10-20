@@ -2870,6 +2870,96 @@ def test_a_v1_record_is_readable_so_the_database_can_be_assessed(tracking_databa
     assert tracking_database.assess_tracking_database(database).usable is True
 
 
+# An owner's declaration of a talk's local audio recording (#485).
+
+
+def _audio(**updates):
+    record = {
+        "schema_version": _tracking_database.LOCAL_AUDIO_RECORD_SCHEMA_VERSION,
+        "talk_filename": "one.md",
+        "audio_local_path": "recordings/one/infoq.mp3",
+        "declared_at": "2026-10-19T00:00:00Z",
+    }
+    record.update(updates)
+    return record
+
+
+def _database_with_audio(tracking_database, records):
+    migrated = tracking_database.migrate_tracking_database(_legacy_database()).database
+    migrated["local_audio"] = records
+    return migrated
+
+
+def test_a_local_audio_declaration_leaves_the_database_current(tracking_database):
+    database = _database_with_audio(tracking_database, [_audio()])
+    assessment = tracking_database.assess_tracking_database(database)
+    assert assessment.state == "current"
+    assert tracking_database.local_audio_declarations(database) == {
+        "one.md": "recordings/one/infoq.mp3"
+    }
+
+
+@pytest.mark.parametrize(
+    "record,detail",
+    [
+        (_audio(schema_version=2), "schema_version must be"),
+        ({**_audio(), "extra": 1}, "extra"),
+        (_audio(audio_local_path="../outside.mp3"), "not a usable artifact locator"),
+        (_audio(audio_local_path="recordings/"), "not a usable artifact locator"),
+        (_audio(declared_at="2026-10-19T00:00:00"), "timezone-aware"),
+        (_audio(talk_filename="nobody.md"), "names no talk"),
+        (_audio(audio_local_path="videos/one.mp4"), "must name an audio file"),
+        (
+            _audio(audio_local_path="recordings/one/infoq"),
+            "must name an audio file",
+        ),
+    ],
+    ids=[
+        "version",
+        "closed-shape",
+        "locator",
+        "directory",
+        "naive-time",
+        "no-talk",
+        "video-suffix",
+        "no-suffix",
+    ],
+)
+def test_a_malformed_local_audio_declaration_is_refused(
+    tracking_database, record, detail
+):
+    with pytest.raises(tracking_database.TrackingDatabaseError, match=detail):
+        tracking_database.assess_tracking_database(
+            _database_with_audio(tracking_database, [record])
+        )
+
+
+def test_a_talk_declares_one_audio_recording(tracking_database):
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="second local audio"
+    ):
+        tracking_database.assess_tracking_database(
+            _database_with_audio(
+                tracking_database,
+                [_audio(), _audio(audio_local_path="recordings/one/other.m4a")],
+            )
+        )
+
+
+def test_a_root_v4_database_is_legacy_and_migrates_to_v5(tracking_database):
+    """The collection is a new top-level key, so it moves the root generation."""
+    current = tracking_database.migrate_tracking_database(_legacy_database()).database
+    v4 = {**current, "schema_version": 4}
+    assessment = tracking_database.assess_tracking_database(v4)
+    assert assessment.usable is True
+    assert assessment.state != "current"
+    migrated = tracking_database.migrate_tracking_database(v4)
+    assert migrated.database["schema_version"] == 5
+    assert tracking_database.assess_tracking_database(migrated.database).state == (
+        "current"
+    )
+
+
 # The session counter and the ledger runs it includes (#466).
 
 

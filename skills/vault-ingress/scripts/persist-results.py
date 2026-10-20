@@ -91,8 +91,10 @@ from ingress_contract import (
     validate_talk_record_schemas,
 )
 from tracking_database import TrackingDatabaseError, require_current_tracking_database
+from tracking_database import local_audio_declarations
 from persisted_pattern_observations import persisted_observation_assessor
 from pattern_evidence import (
+    LOCAL_AUDIO_SOURCE_ROOTS_KEY,
     PatternEvidenceError,
     admit_return_artifacts,
     assess_batch_artifact_capabilities,
@@ -989,6 +991,7 @@ def main():
     except VaultRootAuthorityError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
+    source_roots[LOCAL_AUDIO_SOURCE_ROOTS_KEY] = local_audio_declarations(db)
     video_evidence_assessment = VideoEvidenceAssessment()
     returns = load_json(batch_path, "batch-returns")
     try:

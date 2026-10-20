@@ -84,6 +84,7 @@ from return_validation import (  # noqa: E402  # pyright: ignore[reportMissingIm
 from tracking_database import (  # noqa: E402  # pyright: ignore[reportMissingImports]
     TrackingDatabaseError,
     assess_tracking_database,
+    local_audio_declarations,
 )
 
 # Pyright cannot resolve this sibling script module added to sys.path at runtime.
@@ -279,6 +280,7 @@ def main(argv: list[str]) -> int:
                 vault_root,
                 db.get("config"),
                 catalog=catalog,
+                local_audio=local_audio_declarations(db),
             ),
             catalog=catalog,
         )

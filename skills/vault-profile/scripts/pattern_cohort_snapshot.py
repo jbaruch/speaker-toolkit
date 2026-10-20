@@ -27,6 +27,7 @@ from adherence_baseline import (  # noqa: E402
     build_current_cohort_baseline,
     partition_pattern_scoring_cohort,
 )
+from pattern_evidence import LOCAL_AUDIO_SOURCE_ROOTS_KEY  # noqa: E402
 from pattern_opportunities import (  # noqa: E402
     PatternOpportunityError,
     build_pattern_opportunity_rows,
@@ -67,9 +68,15 @@ def configured_evidence_freshness_assessor(
     config: object,
     *,
     catalog: Any | None = None,
+    local_audio: Mapping[str, str] | None = None,
 ) -> EvidenceFreshnessAssessor:
-    """Bind the shared evidence-freshness check to trusted live source roots."""
+    """Bind the shared evidence-freshness check to trusted live source roots.
+
+    ``local_audio`` is `tracking_database.local_audio_declarations(database)`:
+    without it a transcript bound to declared audio would read as stale.
+    """
     source_roots = dict(config) if isinstance(config, Mapping) else {}
+    source_roots[LOCAL_AUDIO_SOURCE_ROOTS_KEY] = dict(local_audio or {})
     try:
         evidence_vault_root = resolve_vault_root_authority(
             database_path=vault_root / "tracking-database.json",

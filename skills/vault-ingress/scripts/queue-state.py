@@ -74,6 +74,7 @@ from ingress_contract import (
     has_video_source,
 )
 from tracking_database import (
+    local_audio_declarations,
     TrackingDatabaseError,
     assess_tracking_database,
     require_current_tracking_database,
@@ -101,6 +102,7 @@ from adherence_baseline import (
 )
 from persisted_pattern_observations import persisted_observation_assessor
 from pattern_evidence import (
+    LOCAL_AUDIO_SOURCE_ROOTS_KEY,
     assess_talk_artifact_capabilities,
     required_pptx_evidence_blocking_reason,
 )
@@ -234,9 +236,11 @@ def has_video(talk):
 
 def evidence_roots(database, path):
     """Return the database-bound vault root and configured source roots."""
-    source_roots = (
-        database.get("config") if isinstance(database.get("config"), dict) else {}
-    )
+    config = database.get("config")
+    source_roots = {
+        **(config if isinstance(config, dict) else {}),
+        LOCAL_AUDIO_SOURCE_ROOTS_KEY: local_audio_declarations(database),
+    }
     vault_root = resolve_vault_root_authority(
         database_path=path,
         config=database.get("config"),

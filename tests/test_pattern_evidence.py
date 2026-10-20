@@ -4166,3 +4166,461 @@ def test_a_v4_manifest_still_binds_its_youtube_id(tmp_path: Path) -> None:
     )
 
     assert bound_path is not None, reason
+
+
+# ── #485: owner-declared local audio binds transcript receipts ────────
+
+
+def _declared_audio(vault: Path, name: str = "talk.mp3", frequency: int = 440) -> Path:
+    import subprocess
+
+    audio = vault / "recordings" / name
+    audio.parent.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            f"sine=frequency={frequency}:sample_rate=16000",
+            # Long enough that the fixture transcript stays under the WPM
+            # ceiling the quality policy derives from this duration.
+            "-t",
+            "300",
+            "-ac",
+            "1",
+            "-b:a",
+            "16k",
+            "-y",
+            str(audio),
+        ],
+        capture_output=True,
+        check=False,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr.decode("utf-8", errors="replace")
+    return audio
+
+
+def _audio_bound_transcript(vault: Path, audio: Path) -> tuple[Path, Any]:
+    local_media_evidence = importlib.import_module("local_media_evidence")
+    probe = local_media_evidence.probe_local_media(audio, trusted_root=vault)
+    transcript, _ = _write_transcript(vault, timed=False)
+    text = transcript.read_text(encoding="utf-8")
+    transcript_timing.write_quality_receipt(
+        transcript,
+        text,
+        transcript_timing.build_quality_policy(
+            400, trusted_duration_seconds=probe.duration_seconds
+        ),
+        {
+            "kind": "local_media_duration",
+            "media_sha256": probe.source_sha256,
+            "duration_seconds": probe.duration_seconds,
+        },
+    )
+    return transcript, probe
+
+
+def _audio_talk(vault: Path, transcript: Path) -> dict[str, object]:
+    return {
+        "filename": "synthetic-talk.md",
+        "title": "Synthetic Talk",
+        "transcript_path": transcript.relative_to(vault).as_posix(),
+        "transcript_source": "manual",
+        "slide_source": "none",
+    }
+
+
+def _audio_roots(locator: str) -> dict[str, object]:
+    return {
+        pattern_evidence.LOCAL_AUDIO_SOURCE_ROOTS_KEY: {"synthetic-talk.md": locator}
+    }
+
+
+def test_declared_local_audio_binds_its_local_media_quality_receipt(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    audio = _declared_audio(vault)
+    transcript, _probe = _audio_bound_transcript(vault, audio)
+    talk = _audio_talk(vault, transcript)
+
+    declared = pattern_evidence.build_evidence_context(
+        vault, talk, source_roots=_audio_roots("recordings/talk.mp3")
+    )
+    undeclared = pattern_evidence.build_evidence_context(vault, talk)
+
+    assert "transcript" in declared["verified_evidence_sources"]
+    assert "transcript" not in undeclared["verified_evidence_sources"]
+    # Audio binds transcript and timing receipts only.
+    assert "delivery_video" not in declared["verified_evidence_sources"]
+
+
+def test_declared_audio_whose_bytes_changed_no_longer_binds(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    audio = _declared_audio(vault)
+    transcript, _probe = _audio_bound_transcript(vault, audio)
+    talk = _audio_talk(vault, transcript)
+    _declared_audio(vault, "other.mp3", frequency=880).replace(audio)
+    context = pattern_evidence.build_evidence_context(
+        vault, talk, source_roots=_audio_roots("recordings/talk.mp3")
+    )
+    assert "transcript" not in context["verified_evidence_sources"]
+
+
+def test_a_video_declared_through_the_audio_lane_does_not_bind(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    audio = _declared_audio(vault)
+    transcript, _probe = _audio_bound_transcript(vault, audio)
+    talk = _audio_talk(vault, transcript)
+    renamed = audio.with_suffix(".mp4")
+    audio.rename(renamed)
+    context = pattern_evidence.build_evidence_context(
+        vault, talk, source_roots=_audio_roots("recordings/talk.mp4")
+    )
+    assert "transcript" not in context["verified_evidence_sources"]
+
+
+def test_preflight_validator_binds_declared_audio_only_when_passed(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    audio = _declared_audio(vault)
+    transcript, _probe = _audio_bound_transcript(vault, audio)
+    talk = _audio_talk(vault, transcript)
+    text = transcript.read_text(encoding="utf-8")
+
+    declared = pattern_evidence.validate_transcript_quality_for_owner(
+        transcript,
+        text,
+        talk,
+        vault_root=vault,
+        local_audio_path="recordings/talk.mp3",
+    )
+    undeclared = pattern_evidence.validate_transcript_quality_for_owner(
+        transcript, text, talk, vault_root=vault
+    )
+
+    assert declared[0] is True
+    assert undeclared[0] is False
+
+
+def test_declared_audio_binds_when_the_declared_video_fails_its_probe(
+    tmp_path: Path,
+) -> None:
+    """The motivating InfoQ case: a declared MP4 that does not decode."""
+    vault = tmp_path / "vault"
+    audio = _declared_audio(vault)
+    transcript, _probe = _audio_bound_transcript(vault, audio)
+    broken = vault / "recordings" / "room-camera.mp4"
+    broken.write_bytes(b"not an mp4 at all")
+    talk = {
+        **_audio_talk(vault, transcript),
+        "video_local_path": broken.relative_to(vault).as_posix(),
+    }
+    text = transcript.read_text(encoding="utf-8")
+
+    preflight = pattern_evidence.validate_transcript_quality_for_owner(
+        transcript,
+        text,
+        talk,
+        vault_root=vault,
+        local_audio_path="recordings/talk.mp3",
+    )
+    context = pattern_evidence.build_evidence_context(
+        vault, talk, source_roots=_audio_roots("recordings/talk.mp3")
+    )
+
+    assert preflight[0] is True, preflight
+    assert "transcript" in context["verified_evidence_sources"]
+    assert "delivery_video" not in context["verified_evidence_sources"]
+
+
+def test_an_audio_bound_transcript_binds_beside_a_usable_local_video(
+    tmp_path: Path,
+) -> None:
+    """A receipt binds the medium whose digest it names, not the video first."""
+    vault = tmp_path / "vault"
+    audio = _declared_audio(vault)
+    transcript, _probe = _audio_bound_transcript(vault, audio)
+    video = vault / "videos" / "room-camera.mp4"
+    video.parent.mkdir(parents=True)
+    video.write_bytes(b"a usable room recording with different bytes")
+    talk = {
+        **_audio_talk(vault, transcript),
+        "video_local_path": video.relative_to(vault).as_posix(),
+    }
+    text = transcript.read_text(encoding="utf-8")
+    video_assessment = _TestVideoAssessment()
+
+    preflight = pattern_evidence.validate_transcript_quality_for_owner(
+        transcript,
+        text,
+        talk,
+        vault_root=vault,
+        video_evidence_assessment=video_assessment,
+        local_audio_path="recordings/talk.mp3",
+    )
+    context = pattern_evidence.build_evidence_context(
+        vault,
+        talk,
+        source_roots=_audio_roots("recordings/talk.mp3"),
+        video_evidence_assessment=video_assessment,
+    )
+
+    assert video_assessment.calls, "the video must probe for this to be a test"
+    assert preflight[0] is True, preflight
+    assert "transcript" in context["verified_evidence_sources"]
+    assert "delivery_video" in context["verified_evidence_sources"]
+
+
+def test_local_timing_is_checked_against_the_audio_not_the_provider(
+    tmp_path: Path,
+) -> None:
+    """A provider duration that differs from the audio never rejects its timing."""
+    vault = tmp_path / "vault"
+    audio = _declared_audio(vault)
+    local_media_evidence = importlib.import_module("local_media_evidence")
+    probe = local_media_evidence.probe_local_media(audio, trusted_root=vault)
+    transcript = vault / "transcripts" / "talk.txt"
+    transcript.parent.mkdir(parents=True, exist_ok=True)
+    text = "\n".join(_transcript_lines())
+    transcript_timing.write_transcript_bundle(
+        transcript,
+        text,
+        [{"text": text, "start": 2.0, "end": 6.0}],
+        source="whisper",
+        timing_provenance=transcript_timing.local_media_timing_provenance(
+            probe.source_sha256, probe.duration_seconds
+        ),
+        quality_policy=transcript_timing.build_quality_policy(
+            400, trusted_duration_seconds=probe.duration_seconds
+        ),
+        quality_policy_provenance={
+            "kind": "local_media_duration",
+            "media_sha256": probe.source_sha256,
+            "duration_seconds": probe.duration_seconds,
+        },
+    )
+    talk = {
+        **_audio_talk(vault, transcript),
+        "transcript_source": "whisper",
+        "video_url": VIMEO_TALK_URL,
+        "source_identity": {
+            "schema_version": 1,
+            "provider": "vimeo",
+            "video_id": "1223667266",
+            # The provider's full recording runs longer than the audio.
+            "duration_seconds": probe.duration_seconds + 120.0,
+        },
+    }
+
+    context = pattern_evidence.build_evidence_context(
+        vault, talk, source_roots=_audio_roots("recordings/talk.mp3")
+    )
+
+    assert "transcript" in context["verified_evidence_sources"]
+    assert context["timed_segments"], context["timing_reason"]
+
+
+def test_provider_timing_survives_a_quality_refresh_bound_to_the_audio(
+    tmp_path: Path,
+) -> None:
+    """A quality-only refresh never decides which medium the timing binds."""
+    vault = tmp_path / "vault"
+    audio = _declared_audio(vault)
+    local_media_evidence = importlib.import_module("local_media_evidence")
+    probe = local_media_evidence.probe_local_media(audio, trusted_root=vault)
+    provider_duration = probe.duration_seconds + 120.0
+    # A YouTube talk's transcript is named for its video id.
+    transcript = vault / "transcripts" / f"{SYNTHETIC_VIDEO_ID}.txt"
+    transcript.parent.mkdir(parents=True, exist_ok=True)
+    text = "\n".join(_transcript_lines())
+    transcript_timing.write_transcript_bundle(
+        transcript,
+        text,
+        [{"text": text, "start": 2.0, "end": 6.0}],
+        source="whisper",
+        timing_provenance=transcript_timing.youtube_timing_provenance(
+            "whisper", SYNTHETIC_VIDEO_ID, provider_duration
+        ),
+        # The quality receipt names the declared audio, as `--audio` refreshes it.
+        quality_policy=transcript_timing.build_quality_policy(
+            400, trusted_duration_seconds=probe.duration_seconds
+        ),
+        quality_policy_provenance={
+            "kind": "local_media_duration",
+            "media_sha256": probe.source_sha256,
+            "duration_seconds": probe.duration_seconds,
+        },
+    )
+    talk = {
+        **_audio_talk(vault, transcript),
+        "transcript_source": "whisper",
+        "youtube_id": SYNTHETIC_VIDEO_ID,
+        "video_url": f"https://youtu.be/{SYNTHETIC_VIDEO_ID}",
+        "source_identity": {
+            "schema_version": 1,
+            "provider": "youtube",
+            "video_id": SYNTHETIC_VIDEO_ID,
+            "duration_seconds": provider_duration,
+        },
+    }
+
+    context = pattern_evidence.build_evidence_context(
+        vault, talk, source_roots=_audio_roots("recordings/talk.mp3")
+    )
+
+    assert "transcript" in context["verified_evidence_sources"]
+    assert context["timed_segments"], context["timing_reason"]
+
+
+def test_a_declared_audio_that_cannot_probe_says_what_to_fix(tmp_path: Path) -> None:
+    """The probe's reason reaches the caller, not a bare owner mismatch."""
+    vault = tmp_path / "vault"
+    audio = _declared_audio(vault)
+    transcript, _probe = _audio_bound_transcript(vault, audio)
+    talk = _audio_talk(vault, transcript)
+    audio.unlink()
+    text = transcript.read_text(encoding="utf-8")
+
+    ok, reason, _policy_reason, _bound = (
+        pattern_evidence.validate_transcript_quality_for_owner(
+            transcript,
+            text,
+            talk,
+            vault_root=vault,
+            local_audio_path="recordings/talk.mp3",
+        )
+    )
+    context = pattern_evidence.build_evidence_context(
+        vault, talk, source_roots=_audio_roots("recordings/talk.mp3")
+    )
+
+    assert ok is False
+    assert "declared local audio is unusable" in reason
+    assert "restore the declared file" in reason
+    assert "restore the declared file" in context["source_reasons"]["transcript"]
+
+
+def test_a_failed_quality_check_never_reads_a_broken_timing_sidecar(
+    tmp_path: Path,
+) -> None:
+    """Timing is read only after quality passes, and bad bytes are unavailable."""
+    vault = tmp_path / "vault"
+    audio = _declared_audio(vault)
+    transcript, _probe = _audio_bound_transcript(vault, audio)
+    talk = _audio_talk(vault, transcript)
+    transcript_timing.quality_sidecar_path(transcript).unlink()
+    transcript_timing.sidecar_path(transcript).write_bytes(b"\xff\xfe not json")
+
+    context = pattern_evidence.build_evidence_context(
+        vault, talk, source_roots=_audio_roots("recordings/talk.mp3")
+    )
+
+    assert "transcript" not in context["verified_evidence_sources"]
+    assert context["timed_segments"] == []
+    reason, _ = transcript_timing.load_verified_segments(
+        transcript, "", owner_source="whisper"
+    )
+    assert reason == []
+
+
+def test_a_declaration_the_owner_accepts_binds_in_the_reader(
+    tmp_path: Path, mutate_tracking_database
+) -> None:
+    """Writer and reader agree: the mutation's locator is the one that binds."""
+    from conftest import CURRENT_ROOT_SCHEMA_VERSION, current_tracking_config
+
+    tracking_database = importlib.import_module("tracking_database")
+    vault = tmp_path / "vault"
+    audio = _declared_audio(vault)
+    transcript, _probe = _audio_bound_transcript(vault, audio)
+    talk = {**_audio_talk(vault, transcript), "schema_version": 8, "status": "pending"}
+    database = {
+        "schema_version": CURRENT_ROOT_SCHEMA_VERSION,
+        "config": current_tracking_config(),
+        "talks": [talk],
+        "pptx_catalog": [],
+        "qr_codes": [],
+        "resources": [],
+        "thumbnails": [],
+        "confirmed_intents": [],
+        "improvement_goals": [],
+        "local_audio": [],
+    }
+    candidate, _changes = mutate_tracking_database.build_candidate(
+        database,
+        [
+            {
+                "kind": "declare_local_audio",
+                "filename": talk["filename"],
+                "expect": {"audio_local_path": {"$missing": True}},
+                "audio_local_path": audio.relative_to(vault).as_posix(),
+                "declared_at": "2026-10-19T00:00:00Z",
+            }
+        ],
+    )
+    source_roots = {
+        pattern_evidence.LOCAL_AUDIO_SOURCE_ROOTS_KEY: (
+            tracking_database.local_audio_declarations(candidate)
+        )
+    }
+
+    context = pattern_evidence.build_evidence_context(
+        vault, talk, source_roots=source_roots
+    )
+
+    assert "transcript" in context["verified_evidence_sources"]
+
+
+def test_provider_timing_never_borrows_a_declared_audio_duration(
+    tmp_path: Path,
+) -> None:
+    """With no provider duration, YouTube timing has no trusted owner duration."""
+    vault = tmp_path / "vault"
+    audio = _declared_audio(vault)
+    local_media_evidence = importlib.import_module("local_media_evidence")
+    probe = local_media_evidence.probe_local_media(audio, trusted_root=vault)
+    transcript = vault / "transcripts" / f"{SYNTHETIC_VIDEO_ID}.txt"
+    transcript.parent.mkdir(parents=True, exist_ok=True)
+    text = "\n".join(_transcript_lines())
+    transcript_timing.write_transcript_bundle(
+        transcript,
+        text,
+        [{"text": text, "start": 2.0, "end": 6.0}],
+        source="whisper",
+        # Provider timing whose duration happens to equal the audio's.
+        timing_provenance=transcript_timing.youtube_timing_provenance(
+            "whisper", SYNTHETIC_VIDEO_ID, probe.duration_seconds
+        ),
+        quality_policy=transcript_timing.build_quality_policy(
+            400, trusted_duration_seconds=probe.duration_seconds
+        ),
+        quality_policy_provenance={
+            "kind": "local_media_duration",
+            "media_sha256": probe.source_sha256,
+            "duration_seconds": probe.duration_seconds,
+        },
+    )
+    talk = {
+        **_audio_talk(vault, transcript),
+        "transcript_source": "whisper",
+        "youtube_id": SYNTHETIC_VIDEO_ID,
+        "video_url": f"https://youtu.be/{SYNTHETIC_VIDEO_ID}",
+    }
+
+    context = pattern_evidence.build_evidence_context(
+        vault, talk, source_roots=_audio_roots("recordings/talk.mp3")
+    )
+
+    assert "transcript" in context["verified_evidence_sources"]
+    assert context["timed_segments"] == []
+    assert "duration" in context["timing_reason"]

@@ -1335,16 +1335,22 @@ def test_profile_cohort_uses_database_root_for_every_valid_authority_form(
     assert assessor(first_talk) == ()
     assert assessor(second_talk) == ()
     assert created == [assessment]
+    # The configured roots pass through, plus the (here empty) declared local
+    # audio every evidence reader receives (#485).
+    expected_roots = {
+        **(config if isinstance(config, dict) else {}),
+        "local_audio_by_talk": {},
+    }
     assert observed == [
         {
             "vault_root": tmp_path,
-            "source_roots": config,
+            "source_roots": expected_roots,
             "catalog": None,
             "video_evidence_assessment": assessment,
         },
         {
             "vault_root": tmp_path,
-            "source_roots": config,
+            "source_roots": expected_roots,
             "catalog": None,
             "video_evidence_assessment": assessment,
         },

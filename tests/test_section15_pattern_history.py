@@ -1015,8 +1015,8 @@ def test_replace_cli_accepts_matching_symlink_lexical_authority(
     )
     observed = {}
 
-    def capture_freshness(vault_root, config):
-        observed.update(vault_root=vault_root, config=config)
+    def capture_freshness(vault_root, config, *, local_audio=None):
+        observed.update(vault_root=vault_root, config=config, local_audio=local_audio)
         return _fresh_evidence
 
     monkeypatch.setattr(
@@ -1050,6 +1050,7 @@ def test_replace_cli_accepts_matching_symlink_lexical_authority(
     assert observed == {
         "vault_root": locator,
         "config": {"vault_storage_path": str(locator)},
+        "local_audio": {},
     }
 
 

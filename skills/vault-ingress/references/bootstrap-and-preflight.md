@@ -385,6 +385,20 @@ allowing preflight to inspect that recording. An unavailable or unreadable video
 disables only source-video evidence; it must not erase or invalidate independently
 verified transcript, rendered-PDF, or native-PPTX evidence.
 
+**Conditional declared-audio runtime gate:** When the same owner-read payload
+has a non-empty `local_audio` collection, preflight probes each declared audio
+file through the bounded media owner. Require its lane before invoking
+preflight:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/check-runtime.py" \
+  --lanes core,source-media --require-lanes core,source-media
+```
+
+Repair a failed required lane before preflight inspects declared audio. Never
+probe the audio directly; an unusable declaration unbinds only the transcript
+and timing receipts it would have bound.
+
 **Source/identity preflight:** After bootstrapping and scanning, and before talk
 selection or re-analysis, run the read-only offline gate:
 

@@ -111,7 +111,11 @@ untimed and are never relabeled.
 **Non-YouTube talks** (InfoQ, Vimeo, conference platforms): the orchestrator must
 acquire the transcript and register its canonical vault-relative
 `transcript_path` before claiming the talk. Pass the audio or video file to the
-same script with `--audio`. Do not call
+same script with `--audio`. A video file binds its receipt through
+`video_local_path`; an audio file (`.mp3`, `.m4a`, `.wav`) binds only once the
+owner declares it with the `declare_local_audio` mutation (see
+[schemas-db.md](schemas-db.md#declared-local-audio)), and an undeclared audio
+receipt is refused as `receipt_owner_mismatch`. Do not call
 `mlx_whisper.transcribe()` yourself — the validation, the atomic write and the
 JSON contract all live in the script, and a hand-rolled call has none of them.
 
