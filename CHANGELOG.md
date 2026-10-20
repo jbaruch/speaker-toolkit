@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.186 — 2026-10-20
+
 ### Bind the shownotes analysis to its exact delivery
 
 Copilot's advisories on #459 (#460) asked the standalone publisher to make its
