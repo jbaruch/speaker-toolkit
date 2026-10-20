@@ -80,6 +80,10 @@ recording exceeds the 8 GiB input ceiling.
 - `local_audio.audio_local_path` must be vault-root-relative; the owner
   validator refuses an absolute locator at the schema boundary, since the
   evidence reader binds a declaration only beneath the vault root.
+- vault-profile states its two runtime gates as independent conditions, so an
+  audio-only vault still requires the media lane, and
+  `local-media-acquisition.md` summarizes the extraction command's exit 0, 2
+  and 3 outcomes and what each leaves installed.
 - Wherever declared audio may be probed, the flow first requires
   `check-runtime.py --require-lanes core,source-media`. That covers preflight
   (`bootstrap-and-preflight.md`, pointed to from vault-ingress Step 1), batch

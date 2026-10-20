@@ -64,9 +64,17 @@ whole. Extract its audio stream first:
   --recording "{recording_path}" --output "{vault_root}/recordings/{talk_stem}.m4a"
 ```
 
-The script's docstring owns the output modes, bounds, refusal reason codes,
-and JSON report. `.m4a` copies the stream; when the refusal says the codec does
-not fit, re-run with a `.wav` output. Transcribe the reported `output` with
+Exit 0 prints `{ok: true, output, written, media_sha256, size_bytes,
+duration_seconds, mode}`: `output` is installed and owner-probed, and
+`written: false` means identical audio was already there and was left as is.
+Exit 2 prints `{ok: false, reason_code, error}` with the message on stderr:
+nothing was installed, an existing output was never replaced, and the staged
+file was removed (or the error names it). Follow the `error`'s action; when it
+says the codec does not fit, re-run with a `.wav` output, and for
+`output_exists` choose another output name. Exit 3 is an unexpected failure:
+stdout is empty, stderr carries the closed failure document, and nothing was
+installed; report it. The script's docstring owns the output modes, bounds and
+reason codes. `.m4a` copies the stream. Transcribe the reported `output` with
 `--audio`, then declare it by its vault-relative path (`recordings/{talk_stem}.m4a`). Never rename a local transcode to `{youtube_id}.mp4`
 to satisfy the YouTube filename rule: that fakes provider identity.
 

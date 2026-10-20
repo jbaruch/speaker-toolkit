@@ -75,10 +75,14 @@ configuration. Never fall back to whichever `python3` happens to be on `PATH`.
 - Also runs on explicit request (overrides prerequisites).
 - Auto-triggered by vault-ingress Step 7 (Regenerate Speaker Profile) if profile already exists.
 
-If any talk declares a preserved local recording through
-`structured_data.video_extraction.source_video_path`, `video_local_path`, or
-`video_path`, first require the configured interpreter's source-video evidence
-lane (first command); if `local_audio` is non-empty, also its media lane (second):
+Before the load, validation, and Section 15 freshness reads below, require
+each configured-interpreter lane whose condition holds, independently:
+
+- A talk declares a preserved local recording through
+  `structured_data.video_extraction.source_video_path`, `video_local_path`, or
+  `video_path`: the source-video lane (first command).
+- The tracking database's `local_audio` is non-empty: the media lane (second
+  command), with or without any recording.
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/check-runtime.py" \
@@ -87,8 +91,7 @@ lane (first command); if `local_audio` is non-empty, also its media lane (second
   --lanes core,source-media --require-lanes core,source-media
 ```
 
-These checks gate the load, validation, and Section 15 freshness reads below,
-which may inspect that recording or declared audio. Let the toolkit scripts perform
+Those reads may inspect that recording or declared audio. Let the toolkit scripts perform
 the bounded, exact-generation probe; do not pre-open, hash, hydrate, or invoke
 `ffprobe` on a source recording directly. Use `source-video` for evidence over
 an existing recording and the separate `video` lane only for frame extraction.
@@ -191,8 +194,7 @@ echo "$PACING_INPUT" | "{python_path}" "{speaker_toolkit_root}/skills/vault-prof
 - Stdout (JSON): the `pacing.adherence` data fields (`talks_over_budget`,
   `talks_scored`, `over_budget_rate`, `trend`, `worst_offenders`). Copy them into
   `pacing.adherence`; also set `pacing.adherence.cohort` to
-  `current_instrumentation_talks`. The schema's `note` is optional descriptive text
-  (as elsewhere in the schema) and is not emitted by the script.
+  `current_instrumentation_talks`. The schema's optional `note` is not emitted.
 - Exit non-zero on malformed input.
 
 Set `schema_version` to `5` and `generated_date` to today's date in `YYYY-MM-DD` form.
