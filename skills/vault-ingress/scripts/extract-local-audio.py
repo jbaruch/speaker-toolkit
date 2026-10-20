@@ -346,6 +346,22 @@ def _copy_exclusive(staged: Path, output: Path, digest: str) -> None:
         ) from exc
 
 
+def _sync_file(path: Path) -> None:
+    """Flush ``path``'s bytes to disk; a hard link shares the staged inode."""
+    try:
+        descriptor = os.open(path, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    except OSError as exc:
+        raise ExtractionError(
+            "output_write_failed",
+            f"the audio bytes at {path} did not sync: {exc} — re-run once the "
+            "volume is healthy",
+        ) from exc
+
+
 def _sync_directory(output: Path) -> None:
     try:
         directory = os.open(output.parent, os.O_RDONLY)
@@ -371,6 +387,7 @@ def _install(staged: Path, output: Path, digest: str) -> bool:
     if output.exists():
         if _sha256(output) == digest:
             # An earlier run may have installed it and then failed to sync.
+            _sync_file(output)
             _sync_directory(output)
             return False
         raise ExtractionError(
@@ -378,6 +395,8 @@ def _install(staged: Path, output: Path, digest: str) -> bool:
             f"{output} already holds different audio; a transcript receipt may "
             "bind it, so it is never replaced — choose another output name",
         )
+    # ffmpeg never syncs what it writes; the link below shares this inode.
+    _sync_file(staged)
     try:
         # A hard link installs without replacing anything a racing writer put
         # there.

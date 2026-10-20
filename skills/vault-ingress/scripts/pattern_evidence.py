@@ -43,6 +43,7 @@ from transcript_timing import (
     quality_sidecar_path,
     resolve_quote,
     sidecar_path,
+    verified_timing_local_media_sha256,
 )
 from pptx_evidence import (
     PPTX_EXTRACTION_PIPELINE_VERSION,
@@ -837,19 +838,6 @@ def _medium_named(media: Sequence[_LocalMedium], sha256: object) -> _LocalMedium
     return next((medium for medium in media if medium.sha256 == sha256), None)
 
 
-def _quality_receipt_medium(
-    transcript_path: Path, transcript_text: str, media: Sequence[_LocalMedium]
-) -> _LocalMedium | None:
-    """The local medium a hash-current quality receipt names, if it names one."""
-    receipt, _reason = load_verified_quality_receipt(transcript_path, transcript_text)
-    provenance = receipt.get("provenance") if isinstance(receipt, Mapping) else None
-    if not isinstance(provenance, Mapping):
-        return None
-    if provenance.get("kind") != "local_media_duration":
-        return None
-    return _medium_named(media, provenance.get("media_sha256"))
-
-
 def resolve_video_extraction_source(
     vault_root: str | Path,
     manifest: Mapping[str, object],
@@ -1619,9 +1607,12 @@ def _load_verified_transcript_snapshot(
             talk,
             trusted_local_media=local_media,
         )
-        # Timing binds the medium the quality receipt named, with that
-        # medium's own duration; provider provenance keeps the provider's.
-        named = _quality_receipt_medium(transcript_path, transcript_text, local_media)
+        # Timing binds the medium its own receipt names, with that medium's
+        # duration; provider timing keeps the provider's. The quality receipt
+        # can be refreshed alone, so it never decides which medium timing binds.
+        named = _medium_named(
+            local_media, verified_timing_local_media_sha256(transcript_path)
+        )
         owner_media_sha256 = (
             named.sha256
             if named is not None

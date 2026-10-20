@@ -26,10 +26,12 @@ recording exceeds the 8 GiB input ceiling.
   that claim pins the talk to its `result_status` unless deliberately
   requeued; any other `skipped_no_sources` talk becomes claimable as `pending`.
   It refuses an active queue claim.
-- Evidence readers probe the declared file with the bounded media owner and bind
-  a `local_media_duration` receipt when its digest matches, only when no local
-  video binds or the declared video fails its probe (the InfoQ case). Both
-  receipt readers, preflight and evidence resolution, share that one fallback.
+- Evidence readers probe the declared file with the bounded media owner. A
+  receipt binds whichever owner-bound local medium its own digest names, the
+  declared audio or a probed local video, so an audio-bound transcript stays
+  valid beside a usable video, and a declared video that does not decode (the
+  InfoQ case) leaves the audio. Both receipt readers, preflight and evidence
+  resolution, share that one selection.
   Audio never reaches `delivery_video` evidence. The declarations
   travel in `source_roots` under `pattern_evidence.LOCAL_AUDIO_SOURCE_ROOTS_KEY`
   from every caller (persistence, analysis rendering, queue normalization,
@@ -62,11 +64,12 @@ recording exceeds the 8 GiB input ceiling.
   never a transcode renamed to `{youtube_id}.mp4`.
   `subagent-instructions.md` names the declaration for non-YouTube talks, and
   the `schemas-db.md` compatibility table moves to root 5.
-- A `local_media_duration` receipt binds whichever owner-bound local medium its
-  digest names: the probed video or the declared audio. An audio-bound
-  transcript therefore stays valid beside a usable video, and local Whisper
-  timing is checked against the duration of the medium it names; a provider's
-  duration applies only to provider-owned provenance.
+- Timing binds the medium its own receipt names, checked against that medium's
+  duration (`transcript_timing.verified_timing_local_media_sha256`); provider
+  timing keeps the provider duration. The quality receipt can be refreshed alone
+  by `--audio`, so it never decides which medium timing binds.
+- Extraction syncs the installed audio's bytes before its directory, on a fresh
+  hard-link install and on an identical rerun.
 - Wherever declared audio may be probed, the flow first requires
   `check-runtime.py --require-lanes core,source-media`. That covers preflight
   (`bootstrap-and-preflight.md`, pointed to from vault-ingress Step 1), batch

@@ -1103,6 +1103,24 @@ def load_verified_segments(
     return segments, f"{len(segments)} verified owner-bound timed segments"
 
 
+def verified_timing_local_media_sha256(
+    transcript_path: str | os.PathLike[str],
+) -> str | None:
+    """The media digest a valid local-Whisper timing receipt names, else None.
+
+    Readers use it to pick which owner-bound local medium the timing binds; the
+    full owner check still runs afterwards through ``load_verified_segments``.
+    """
+    payload, _reason = _load_verified_timing_receipt(transcript_path)
+    provenance = payload.get("provenance") if payload is not None else None
+    if not isinstance(provenance, dict):
+        return None
+    if provenance.get("kind") != "local_media_whisper":
+        return None
+    digest = provenance.get("media_sha256")
+    return digest if isinstance(digest, str) else None
+
+
 def _load_verified_timing_receipt(
     transcript_path: str | os.PathLike[str],
 ) -> tuple[dict[str, object] | None, str]:

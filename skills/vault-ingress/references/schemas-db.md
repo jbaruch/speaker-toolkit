@@ -835,9 +835,10 @@ An owner's declaration that a local audio file is a talk's recording (#485).
 Whisper'd from audio carried a `local_media_duration` receipt nothing could
 bind. Evidence readers probe the declared file with the bounded media owner,
 and the receipt binds when its `media_sha256` matches; an undeclared or
-digest-mismatched file still fails closed. The declaration binds transcript and
-timing receipts only, never `delivery_video` evidence, and is consulted only
-when no local video binds or the declared video fails its probe. The locator
+digest-mismatched file still fails closed. A receipt binds whichever
+owner-bound local medium its own digest names, the declared audio or a local
+video (`pattern_evidence._transcript_media`, docstring). The declaration binds
+transcript and timing receipts only, never `delivery_video` evidence. The locator
 follows the shared artifact-locator contract; a relative value is
 vault-root-relative, and its suffix is one of
 `tracking_database.AUDIO_DECLARATION_SUFFIXES`, which the owner validator, the

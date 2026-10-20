@@ -321,26 +321,53 @@ def test_a_rerun_after_a_failed_directory_sync_completes_it(
     recording = _recording(tmp_path / "videos")
     output = tmp_path / "talk.m4a"
     real_fsync = os.fsync
-    synced: list[int] = []
+    synced: list[str] = []
 
-    def failing_fsync(_descriptor):
-        raise OSError(5, "Input/output error")
+    def kind(descriptor):
+        return "dir" if stat.S_ISDIR(os.fstat(descriptor).st_mode) else "file"
 
-    monkeypatch.setattr(extract_local_audio.os, "fsync", failing_fsync)
+    def failing_directory_fsync(descriptor):
+        if kind(descriptor) == "dir":
+            raise OSError(5, "Input/output error")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(extract_local_audio.os, "fsync", failing_directory_fsync)
     with pytest.raises(extract_local_audio.ExtractionError) as caught:
         extract_local_audio.extract(recording, output)
     assert caught.value.reason_code == "output_write_failed"
     assert output.exists()
 
     def recording_fsync(descriptor):
-        synced.append(descriptor)
+        synced.append(kind(descriptor))
         real_fsync(descriptor)
 
     monkeypatch.setattr(extract_local_audio.os, "fsync", recording_fsync)
     result = extract_local_audio.extract(recording, output)
 
     assert result["written"] is False
-    assert synced, "the unchanged rerun must sync the output's directory"
+    # The audio's bytes first, then the directory entry naming them.
+    assert synced[-2:] == ["file", "dir"]
+
+
+def test_a_fresh_install_syncs_the_audio_before_its_directory(
+    tmp_path, extract_local_audio, monkeypatch
+):
+    """A hard link shares the staged inode, which ffmpeg never synced."""
+    recording = _recording(tmp_path / "videos")
+    output = tmp_path / "talk.m4a"
+    real_fsync = os.fsync
+    synced: list[str] = []
+
+    def recording_fsync(descriptor):
+        mode = os.fstat(descriptor).st_mode
+        synced.append("dir" if stat.S_ISDIR(mode) else "file")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(extract_local_audio.os, "fsync", recording_fsync)
+    result = extract_local_audio.extract(recording, output)
+
+    assert result["written"] is True
+    assert synced[-2:] == ["file", "dir"]
 
 
 @pytest.mark.parametrize("suffix", [".m4a", ".wav"])

@@ -4428,3 +4428,55 @@ def test_local_timing_is_checked_against_the_audio_not_the_provider(
 
     assert "transcript" in context["verified_evidence_sources"]
     assert context["timed_segments"], context["timing_reason"]
+
+
+def test_provider_timing_survives_a_quality_refresh_bound_to_the_audio(
+    tmp_path: Path,
+) -> None:
+    """A quality-only refresh never decides which medium the timing binds."""
+    vault = tmp_path / "vault"
+    audio = _declared_audio(vault)
+    local_media_evidence = importlib.import_module("local_media_evidence")
+    probe = local_media_evidence.probe_local_media(audio, trusted_root=vault)
+    provider_duration = probe.duration_seconds + 120.0
+    # A YouTube talk's transcript is named for its video id.
+    transcript = vault / "transcripts" / f"{SYNTHETIC_VIDEO_ID}.txt"
+    transcript.parent.mkdir(parents=True, exist_ok=True)
+    text = "\n".join(_transcript_lines())
+    transcript_timing.write_transcript_bundle(
+        transcript,
+        text,
+        [{"text": text, "start": 2.0, "end": 6.0}],
+        source="whisper",
+        timing_provenance=transcript_timing.youtube_timing_provenance(
+            "whisper", SYNTHETIC_VIDEO_ID, provider_duration
+        ),
+        # The quality receipt names the declared audio, as `--audio` refreshes it.
+        quality_policy=transcript_timing.build_quality_policy(
+            400, trusted_duration_seconds=probe.duration_seconds
+        ),
+        quality_policy_provenance={
+            "kind": "local_media_duration",
+            "media_sha256": probe.source_sha256,
+            "duration_seconds": probe.duration_seconds,
+        },
+    )
+    talk = {
+        **_audio_talk(vault, transcript),
+        "transcript_source": "whisper",
+        "youtube_id": SYNTHETIC_VIDEO_ID,
+        "video_url": f"https://youtu.be/{SYNTHETIC_VIDEO_ID}",
+        "source_identity": {
+            "schema_version": 1,
+            "provider": "youtube",
+            "video_id": SYNTHETIC_VIDEO_ID,
+            "duration_seconds": provider_duration,
+        },
+    }
+
+    context = pattern_evidence.build_evidence_context(
+        vault, talk, source_roots=_audio_roots("recordings/talk.mp3")
+    )
+
+    assert "transcript" in context["verified_evidence_sources"]
+    assert context["timed_segments"], context["timing_reason"]
