@@ -14,7 +14,7 @@ import hashlib
 import json
 import math
 import re
-from collections.abc import Collection, Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
@@ -802,21 +802,52 @@ def _declared_audio_probe(
     return probe, f"owner-declared local audio {path}"
 
 
-def _transcript_media_probe(
+@dataclass(frozen=True)
+class _LocalMedium:
+    """One owner-bound local medium a receipt may name: digest and duration."""
+
+    sha256: str
+    duration_seconds: float
+
+
+def _transcript_media(
     vault_root: str | Path,
     video_probe: VideoArtifactProbe | None,
     audio_locator: object,
-) -> VideoArtifactProbe | MediaArtifactProbe | None:
-    """The local media a transcript or timing receipt binds to (#485).
+) -> tuple[_LocalMedium, ...]:
+    """Every owner-bound local medium a transcript or timing receipt may bind (#485).
 
-    The predeclared video when it probed, otherwise the owner-declared audio.
-    Every receipt reader resolves through here, so a video that fails its
-    probe falls back to the declared audio on every path alike.
+    The predeclared video when it probed, and the owner-declared audio when it
+    probes. A receipt binds the one whose digest it names, so an audio-bound
+    transcript stays valid beside a usable video, and a video that fails its
+    probe leaves the declared audio. Every receipt reader resolves through here.
     """
+    probes: list[VideoArtifactProbe | MediaArtifactProbe] = []
     if video_probe is not None:
-        return video_probe
+        probes.append(video_probe)
     audio_probe, _ = _declared_audio_probe(vault_root, audio_locator)
-    return audio_probe
+    if audio_probe is not None:
+        probes.append(audio_probe)
+    return tuple(
+        _LocalMedium(probe.source_sha256, probe.duration_seconds) for probe in probes
+    )
+
+
+def _medium_named(media: Sequence[_LocalMedium], sha256: object) -> _LocalMedium | None:
+    return next((medium for medium in media if medium.sha256 == sha256), None)
+
+
+def _quality_receipt_medium(
+    transcript_path: Path, transcript_text: str, media: Sequence[_LocalMedium]
+) -> _LocalMedium | None:
+    """The local medium a hash-current quality receipt names, if it names one."""
+    receipt, _reason = load_verified_quality_receipt(transcript_path, transcript_text)
+    provenance = receipt.get("provenance") if isinstance(receipt, Mapping) else None
+    if not isinstance(provenance, Mapping):
+        return None
+    if provenance.get("kind") != "local_media_duration":
+        return None
+    return _medium_named(media, provenance.get("media_sha256"))
 
 
 def resolve_video_extraction_source(
@@ -1314,10 +1345,13 @@ def _validate_transcript_quality_for_owner(
     transcript_text: str,
     talk: Mapping[str, object],
     *,
-    trusted_fallback_duration: float | None = None,
-    trusted_local_media_sha256: str | None = None,
+    trusted_local_media: Sequence[_LocalMedium] = (),
 ) -> tuple[bool, str, str, bool]:
-    """Apply a hash-current acquisition receipt in current owner context."""
+    """Apply a hash-current acquisition receipt in current owner context.
+
+    A ``local_media_duration`` receipt binds the one ``trusted_local_media``
+    entry whose digest it names, and its duration is checked against that one.
+    """
     receipt, receipt_reason = load_verified_quality_receipt(
         transcript_path, transcript_text
     )
@@ -1373,7 +1407,8 @@ def _validate_transcript_quality_for_owner(
                 True,
             )
     elif provenance_kind == "local_media_duration":
-        if trusted_local_media_sha256 is None:
+        named = _medium_named(trusted_local_media, provenance.get("media_sha256"))
+        if not trusted_local_media:
             return (
                 False,
                 "receipt_owner_mismatch: transcript quality receipt cites "
@@ -1382,7 +1417,7 @@ def _validate_transcript_quality_for_owner(
                 receipt_reason,
                 True,
             )
-        if provenance.get("media_sha256") != trusted_local_media_sha256:
+        if named is None:
             return (
                 False,
                 "receipt_owner_mismatch: transcript quality receipt local-media "
@@ -1392,10 +1427,9 @@ def _validate_transcript_quality_for_owner(
                 True,
             )
         if (
-            trusted_fallback_duration is None
-            or not isinstance(quality_duration, (int, float))
+            not isinstance(quality_duration, (int, float))
             or isinstance(quality_duration, bool)
-            or abs(float(quality_duration) - trusted_fallback_duration) > 1.0
+            or abs(float(quality_duration) - named.duration_seconds) > 1.0
         ):
             return (
                 False,
@@ -1433,8 +1467,9 @@ def validate_transcript_quality_for_owner(
 ) -> tuple[bool, str, str, bool]:
     """Validate one transcript against its full receipt and current owner.
 
-    ``local_audio_path`` is the talk's owner-declared audio locator, if any; it
-    binds a `local_media_duration` receipt only when no local video binds.
+    ``local_audio_path`` is the talk's owner-declared audio locator, if any; a
+    `local_media_duration` receipt binds it or the local video, whichever digest
+    the receipt names.
 
     The public wrapper is shared by offline preflight and evidence resolution.
     The path is authoritative; the compatibility text argument is never mixed
@@ -1457,11 +1492,7 @@ def validate_transcript_quality_for_owner(
             # A declared video that fails its probe binds nothing; the
             # declared audio is the next owner-bound medium to try.
             video_probe = None
-    media_probe = _transcript_media_probe(vault_root, video_probe, local_audio_path)
-    local_media_duration = (
-        media_probe.duration_seconds if media_probe is not None else None
-    )
-    local_media_sha256 = media_probe.source_sha256 if media_probe is not None else None
+    local_media = _transcript_media(vault_root, video_probe, local_audio_path)
     unstable_reason = (
         "transcript bundle changed during quality validation; retry after "
         "acquisition or cloud sync completes"
@@ -1497,8 +1528,7 @@ def validate_transcript_quality_for_owner(
                     transcript_path,
                     current_text,
                     talk,
-                    trusted_fallback_duration=local_media_duration,
-                    trusted_local_media_sha256=local_media_sha256,
+                    trusted_local_media=local_media,
                 )
         try:
             after = _capture_transcript_bundle(transcript_path)
@@ -1516,9 +1546,8 @@ def _load_verified_transcript_snapshot(
     *,
     owner_source: str,
     owner_video_id: str | None,
-    owner_media_sha256: str | None,
     owner_duration_seconds: float | None,
-    local_media_probe: VideoArtifactProbe | MediaArtifactProbe | None,
+    local_media: Sequence[_LocalMedium],
 ) -> _VerifiedTranscriptSnapshot:
     """Load text and both receipts from one stable bundle generation.
 
@@ -1588,16 +1617,18 @@ def _load_verified_transcript_snapshot(
             transcript_path,
             transcript_text,
             talk,
-            trusted_fallback_duration=(
-                local_media_probe.duration_seconds
-                if local_media_probe is not None
-                else None
-            ),
-            trusted_local_media_sha256=(
-                local_media_probe.source_sha256
-                if local_media_probe is not None
-                else None
-            ),
+            trusted_local_media=local_media,
+        )
+        # Timing binds the medium the quality receipt named, with that
+        # medium's own duration; provider provenance keeps the provider's.
+        named = _quality_receipt_medium(transcript_path, transcript_text, local_media)
+        owner_media_sha256 = (
+            named.sha256
+            if named is not None
+            else (local_media[0].sha256 if local_media else None)
+        )
+        timing_duration = (
+            named.duration_seconds if named is not None else owner_duration_seconds
         )
         provenance_reason = "timing provenance was not inspected"
         timed_segments: list[dict[str, object]] = []
@@ -1609,7 +1640,7 @@ def _load_verified_transcript_snapshot(
                 owner_source=owner_source,
                 owner_video_id=owner_video_id,
                 owner_media_sha256=owner_media_sha256,
-                owner_duration_seconds=owner_duration_seconds,
+                owner_duration_seconds=timing_duration,
             )
             timed_segments, timing_reason = load_verified_segments(
                 transcript_path,
@@ -1617,7 +1648,7 @@ def _load_verified_transcript_snapshot(
                 owner_source=owner_source,
                 owner_video_id=owner_video_id,
                 owner_media_sha256=owner_media_sha256,
-                owner_duration_seconds=owner_duration_seconds,
+                owner_duration_seconds=timing_duration,
             )
 
         try:
@@ -1711,23 +1742,16 @@ def build_evidence_context(
     # Transcript and timing receipts bind to local media: the predeclared video,
     # or failing that the owner-declared audio (#485). The audio never reaches
     # `predeclared_video_probe`, which alone carries `delivery_video` evidence.
-    transcript_media_probe = _transcript_media_probe(
+    transcript_media = _transcript_media(
         vault_root,
         predeclared_video_probe,
         _declared_audio_locator(source_roots, talk),
     )
+    # Provider provenance is checked against the provider duration; a
+    # local-media receipt is checked against the medium it names instead.
     timing_owner_duration = _identity_duration(talk)
-    if timing_owner_duration is None:
-        timing_owner_duration = (
-            transcript_media_probe.duration_seconds
-            if transcript_media_probe is not None
-            else None
-        )
-    timing_owner_media_sha256 = (
-        transcript_media_probe.source_sha256
-        if transcript_media_probe is not None
-        else None
-    )
+    if timing_owner_duration is None and transcript_media:
+        timing_owner_duration = transcript_media[0].duration_seconds
     timed_segments: list[dict[str, object]] = []
     timing_reason = "timed transcript is unavailable"
     transcript_bundle: _TranscriptBundleSnapshot | None = None
@@ -1738,9 +1762,8 @@ def build_evidence_context(
             talk,
             owner_source=timing_owner_source,
             owner_video_id=bound_youtube_id,
-            owner_media_sha256=timing_owner_media_sha256,
             owner_duration_seconds=timing_owner_duration,
-            local_media_probe=transcript_media_probe,
+            local_media=transcript_media,
         )
         transcript_text = verified_transcript.text
         transcript_reason = verified_transcript.transcript_reason
