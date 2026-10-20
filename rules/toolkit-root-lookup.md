@@ -22,9 +22,12 @@ description: Named lookup rule for the {speaker_toolkit_root} path form toolkit 
 ## Authored Scope and Co-Shipped Targets
 
 - Scope: the skills listed in `.tessl-plugin/plugin.json` `skills`, and their `references/`.
-- Targets: files co-shipped in this plugin under `{speaker_toolkit_root}/skills/` or `{speaker_toolkit_root}/rules/`, named literally in a command.
+- Targets: files or directories co-shipped in this plugin under `skills/` or `rules/`, named literally in a command after the resolved root.
+- A directory target is a co-shipped data directory a command passes as an argument (a pattern catalog, a bundled CLI's source tree).
+- Every target, file or directory, resolves inside the plugin root.
 - A target outside this plugin's package source does NOT qualify.
-- Each target script's module docstring (or header comment) owns its input/output contract; commands follow it, never a restatement.
+- Each target script's module docstring (or header comment) is authoritative for its input/output contract.
+- A command's step prose summarizes the inputs, outputs, exit codes and side effects the caller acts on, and leaves internal logic to the script.
 - Consumer-owned paths (talk directories, vault paths, shownotes sites) are never rooted here.
 
 ## No Authority Granted
@@ -38,5 +41,5 @@ description: Named lookup rule for the {speaker_toolkit_root} path form toolkit 
 - `tests/test_installed_plugin_paths.py` verifies the lookup and its output:
   - every shipped `SKILL.md` declares the lookup;
   - the declared lookup resolves the plugin root, from a clone and from an installed mount copy;
-  - every rooted command path names a target that exists under that root;
+  - every rooted command path names a file or directory that exists and resolves inside that root;
   - no operational toolkit path is left unrooted.

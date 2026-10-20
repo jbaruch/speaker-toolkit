@@ -152,7 +152,11 @@ def test_the_declared_lookup_resolves_the_plugin_root(tmp_path, layout) -> None:
         for shipped in ("skills", "rules", ".tessl-plugin"):
             shutil.copytree(REPO_ROOT / shipped, root / shipped, symlinks=True)
     targets = _rooted_targets()
-    assert targets
+    kinds = {
+        "file" if (REPO_ROOT / target).is_file() else "directory" for target in targets
+    }
+    # Commands name both: scripts, and data directories passed as arguments.
+    assert kinds == {"file", "directory"}, kinds
 
     for skill_md in sorted((root / "skills").glob("*/SKILL.md")):
         resolved = _declared_lookup(skill_md)
@@ -166,6 +170,13 @@ def test_the_declared_lookup_resolves_the_plugin_root(tmp_path, layout) -> None:
             target for target in targets if not (resolved / target).exists()
         )
         assert not missing, (skill_md, missing)
+        # A file or a directory, either way contained in the plugin root.
+        escaped = sorted(
+            target
+            for target in targets
+            if not (resolved / target).resolve().is_relative_to(resolved)
+        )
+        assert not escaped, (skill_md, escaped)
 
 
 def test_operational_toolkit_paths_are_rooted() -> None:
