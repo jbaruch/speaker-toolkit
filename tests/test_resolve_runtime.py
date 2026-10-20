@@ -252,11 +252,42 @@ def _verdict(**fields):
                     "outline": {
                         "missing_modules": ["pydantic"],
                         "unresolved_modules": ["pydantic"],
+                        "module_failures": {"pydantic": {"reason": "timeout"}},
                         "missing_commands": [],
                     }
                 }
             ),
             "runtime_lane_unresolved",
+        ),
+        (
+            1,
+            _verdict(
+                lanes={
+                    "outline": {
+                        "missing_modules": ["pydantic", "yaml"],
+                        "unresolved_modules": ["pydantic", "yaml"],
+                        "module_failures": {
+                            "pydantic": {"reason": "timeout"},
+                            "yaml": {"reason": "probe_start_failure"},
+                        },
+                        "missing_commands": [],
+                    }
+                }
+            ),
+            "runtime_probe_failed",
+        ),
+        (
+            1,
+            _verdict(
+                lanes={
+                    "outline": {
+                        "missing_modules": ["pydantic"],
+                        "unresolved_modules": ["pydantic"],
+                        "missing_commands": [],
+                    }
+                }
+            ),
+            "runtime_probe_failed",
         ),
         (
             1,
@@ -284,6 +315,8 @@ def _verdict(**fields):
         "ok-but-lane-unavailable",
         "old-python",
         "cold-imports",
+        "probe-could-not-start",
+        "unresolved-without-a-reason",
         "missing-module",
         "probe-fault",
         "garbage",
@@ -297,3 +330,46 @@ def test_each_runtime_verdict_routes_to_its_own_repair(returncode, stdout, expec
 def test_an_unreadable_database_is_refused(tmp_path):
     missing = tmp_path / "nowhere" / "tracking-database.json"
     _refused(missing, "owner_read_failed")
+
+
+@pytest.mark.parametrize(
+    "call,failure,expected",
+    [
+        (1, subprocess.TimeoutExpired("python", 120), "owner_read_failed"),
+        (1, OSError("exec format error"), "owner_read_failed"),
+        (2, subprocess.TimeoutExpired("python", 120), "owner_read_failed"),
+        (2, OSError("exec format error"), "interpreter_unusable"),
+        (3, subprocess.TimeoutExpired("python", 120), "runtime_probe_failed"),
+        (3, OSError("exec format error"), "interpreter_unusable"),
+    ],
+    ids=[
+        "host-read-timeout",
+        "host-read-launch",
+        "configured-read-timeout",
+        "configured-read-launch",
+        "runtime-check-timeout",
+        "runtime-check-launch",
+    ],
+)
+def test_each_call_site_names_its_own_repair(
+    tmp_path, monkeypatch, call, failure, expected
+):
+    """A host read that hangs is never routed to replacing config.python_path."""
+    module = _runtime_module()
+    database = _database(tmp_path / "vault", python_path=sys.executable)
+    real_run = subprocess.run
+    calls: list[list[str]] = []
+
+    def failing_at(command, **kwargs):
+        calls.append(command)
+        if len(calls) == call:
+            raise failure
+        return real_run(command, **kwargs)
+
+    monkeypatch.setattr(module.subprocess, "run", failing_at)
+
+    with pytest.raises(module.RuntimeResolutionError) as refused:
+        module.resolve(database)
+
+    assert refused.value.reason_code == expected
+    assert len(calls) == call

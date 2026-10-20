@@ -38,10 +38,14 @@ Follow-ups from the advisory Copilot review on #457 (#458).
   nothing repairs it. A readable older
   database refuses as `database_not_current`; a future one fails the owner
   read as `owner_read_failed`. The same read failing only under
-  `config.python_path` is `interpreter_unusable`, and the lane check's JSON
+  `config.python_path` is `interpreter_unusable`; a read that timed out under
+  either interpreter is `owner_read_failed`, never a reason to replace
+  `config.python_path`. The lane check failing to launch is
+  `interpreter_unusable` and timing out is `runtime_probe_failed`. Its JSON
   verdict is classified rather than its exit code: an unsupported Python, a
-  missing module, a cold interpreter whose imports never finished probing, and
-  a probe fault each get their own reason code and repair. `references/runtime.md` documents the contract,
+  missing module, a cold interpreter whose module probes all timed out, and a
+  probe fault (including a probe child that could not start) each get their
+  own reason code and repair. `references/runtime.md` documents the contract,
   keeping `SKILL.md` under the entrypoint token budget.
 - `check-runtime.py` gains an `outline` lane (PyYAML and Pydantic, with an
   exact `PYDANTIC_REQUIRED_VERSION` matching `pyproject.toml`):

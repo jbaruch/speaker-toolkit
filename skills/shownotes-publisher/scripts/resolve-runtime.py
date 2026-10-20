@@ -16,12 +16,16 @@ Composes two owner scripts and adds no parsing of its own beyond their JSON:
    ``verify-talk-skill.py`` import. Its JSON verdict is classified, never just
    its exit code (``classify_runtime_check``): an unsupported Python is
    ``interpreter_unsupported``, missing modules or commands are
-   ``runtime_lane_unavailable``, probes that never finished (a cold interpreter
-   on a network filesystem) are ``runtime_lane_unresolved``, and a probe fault
-   or unreadable verdict is ``runtime_probe_failed``.
+   ``runtime_lane_unavailable``, module probes that timed out (a cold
+   interpreter on a network filesystem) are ``runtime_lane_unresolved``, and a
+   probe that could not start, a probe fault, an unreadable verdict, or a check
+   that did not finish in time is ``runtime_probe_failed``.
 
 The first owner read failing is ``owner_read_failed``; the same read failing
-only under ``config.python_path`` is ``interpreter_unusable``.
+only under ``config.python_path`` is ``interpreter_unusable``, unless it timed
+out, which is ``owner_read_failed`` under either interpreter, since a read that
+never finished says nothing about the interpreter. ``config.python_path``
+failing to launch the runtime check is ``interpreter_unusable``.
 
 Stdout: one JSON object. Success is ``{"ok": true, "python_path", "vault_root",
 "database_sha256"}``. Failure is ``{"ok": false, "reason_code", "error",
@@ -46,6 +50,9 @@ REQUIRED_LANE = "outline"
 RUNTIME_REPORT_SCHEMA_VERSION = 3
 HANDOFF = "vault-ingress Step 1"
 TIMEOUT_SECONDS = 120
+# The check-runtime.py module-failure reason a cold import reports; its other
+# unresolved reason, a probe that could not start, is not fixed by warming.
+COLD_IMPORT_REASON = "timeout"
 
 # The owner's generation check is stdlib-only, so the host interpreter can run it.
 sys.path.insert(0, str(TOOLKIT_ROOT / "skills/vault-ingress/scripts"))
@@ -65,7 +72,13 @@ class RuntimeResolutionError(RuntimeError):
         self.reason_code = reason_code
 
 
-def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
+def _run(
+    command: list[str],
+    *,
+    launch_failure: tuple[str, str],
+    timeout_failure: tuple[str, str],
+) -> subprocess.CompletedProcess[str]:
+    """Run one call; each failure pairs the call site's reason code and repair."""
     try:
         return subprocess.run(
             command,
@@ -74,11 +87,17 @@ def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
             check=False,
             timeout=TIMEOUT_SECONDS,
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+    except subprocess.TimeoutExpired as exc:
+        code, repair = timeout_failure
         raise RuntimeResolutionError(
-            "interpreter_unusable",
-            f"cannot run {command[0]} ({exc}); repair config.python_path through "
-            f"{HANDOFF}",
+            code,
+            f"{Path(command[1]).name} under {command[0]} did not finish within "
+            f"{TIMEOUT_SECONDS} seconds; {repair}",
+        ) from exc
+    except OSError as exc:
+        code, repair = launch_failure
+        raise RuntimeResolutionError(
+            code, f"cannot run {command[0]} ({exc}); {repair}"
         ) from exc
 
 
@@ -90,7 +109,20 @@ def owner_read(
     ``failure_code`` names what a failure means: the database for the host's
     read, the interpreter for the configured one's.
     """
-    completed = _run([interpreter, str(OWNER_READER), str(database)])
+    direct = f"run {OWNER_READER.name} under {interpreter} directly to see why"
+    completed = _run(
+        [interpreter, str(OWNER_READER), str(database)],
+        launch_failure=(
+            failure_code,
+            f"repair config.python_path through {HANDOFF}"
+            if failure_code == "interpreter_unusable"
+            else direct,
+        ),
+        timeout_failure=(
+            "owner_read_failed",
+            f"re-run once the vault volume responds, or {direct}",
+        ),
+    )
     try:
         report = json.loads(completed.stdout)
     except json.JSONDecodeError as exc:
@@ -162,7 +194,16 @@ def classify_runtime_check(returncode: int, stdout: str, lane: str) -> str | Non
     missing = set(lane_report.get("missing_modules") or []) - unresolved
     if missing or lane_report.get("missing_commands"):
         return "runtime_lane_unavailable"
-    if unresolved:
+    failures = lane_report.get("module_failures")
+    failures = failures if isinstance(failures, dict) else {}
+
+    def timed_out(name: str) -> bool:
+        failure = failures.get(name)
+        return isinstance(failure, dict) and failure.get("reason") == COLD_IMPORT_REASON
+
+    # Every unresolved module must have timed out: a probe that could not start
+    # is a probe fault, which warming the imports does not repair.
+    if unresolved and all(timed_out(name) for name in unresolved):
         return "runtime_lane_unresolved"
     return "runtime_probe_failed"
 
@@ -235,7 +276,15 @@ def resolve(database: Path) -> dict:
             REQUIRED_LANE,
             "--require-lanes",
             REQUIRED_LANE,
-        ]
+        ],
+        launch_failure=(
+            "interpreter_unusable",
+            f"repair config.python_path through {HANDOFF}",
+        ),
+        timeout_failure=(
+            "runtime_probe_failed",
+            f"run {RUNTIME_CHECK.name} under it directly to see where it stalls",
+        ),
     )
     reason = classify_runtime_check(check.returncode, check.stdout, REQUIRED_LANE)
     if reason is not None:
