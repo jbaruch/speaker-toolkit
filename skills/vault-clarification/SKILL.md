@@ -289,10 +289,21 @@ Proceed immediately to Step 9.
 ## Step 9 — Mark Session Complete
 
 With a ledger session from Step 2, count it through the owner mutation
-contract with `count_clarification_session`, naming `run_id` and expecting the
-exact prior `config.clarification_sessions_completed` (the missing marker when
-absent). The owner records the run with the count, so a session re-entered
-after a crash counts nothing more. Without a ledger session, persist
+contract with `count_clarification_session`, naming `run_id`, the Step 2
+`claim_token`, and expecting the exact prior
+`config.clarification_sessions_completed` (the missing marker when absent). The
+owner counts only a session running under that claim and records the run with
+the count, so a session re-entered after a crash counts nothing more. When it
+refuses a session begun under schema 2 (it may already be counted), ask the
+speaker whether that interrupted session already counted, record the answer
+under the same claim, then count it:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
+  "{vault_root}/tracking-database.json" reconcile-count --run-id "{run_id}" \
+  --now "{iso_timestamp}" --claim-token "{claim_token}" --counted yes|no
+```
+ Without a ledger session, persist
 `config.clarification_sessions_completed + 1` with `set_config`, expecting the
 exact prior value. This counter gates profile generation (vault-profile skill
 requires >= 1).

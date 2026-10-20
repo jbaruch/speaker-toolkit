@@ -77,7 +77,8 @@ canonical owner default.
 (absent means zero); vault-profile requires at least one before generating a
 profile. `clarification_counted_runs` lists the run ids of the ledger sessions
 the counter already includes (absent means none). The owner's
-`count_clarification_session` mutation advances the counter and appends the
+`count_clarification_session` mutation, bound to the session running under
+its claim in the obligations ledger, advances the counter and appends the
 run id in one write, so a ledger session counts once however often it is
 re-entered. A standalone session with no ledger record advances the counter
 with `set_config` alone. The owner validates both fields on every read: a

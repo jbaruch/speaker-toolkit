@@ -12,7 +12,9 @@ explicit disposition and the end report has been delivered.
   the only writer and owns every shape change and migration.
 - Readers: vault-ingress Step 1 (`pending`) and Steps 9 and 11 (`status`);
   vault-clarification Step 2 (`session-agenda`) to resolve the seed agenda of
-  a pending session. vault-profile never reads it.
+  a pending session; and `mutate-tracking-database.py`, which reads the ledger
+  read-only, never migrating it, to bind a `count_clarification_session` to
+  its session. vault-profile never reads it.
 - vault-clarification claims the session it runs (`claim-session`, Step 2)
   through the owner script, and counts it with the tracking database's owner
   `count_clarification_session` mutation (Step 9). A standalone session then
@@ -107,7 +109,7 @@ reported.
 | `offered_at` | when the offer was put to the speaker |
 | `resolved_at` | when the disposition was recorded |
 | `return_condition` | the speaker's words for when a deferred offer is raised again; null otherwise |
-| `session` | null, or `{state: pending \| running \| completed, completed_at, profile_inputs, profile_refreshed, claim_token, claimed_at}` once accepted; `profile_inputs` is `changed` or `unchanged` as the session reported it; `claim_token` and `claimed_at` name the claim a host holds (`claim-session`) |
+| `session` | null, or `{state: pending \| running \| completed, completed_at, profile_inputs, profile_refreshed, claim_token, claimed_at}` once accepted, plus `legacy_count` on a session upgraded from run-record schema 2 while pending; `profile_inputs` is `changed` or `unchanged` as the session reported it; `claim_token` and `claimed_at` name the claim a host holds (`claim-session`); `legacy_count` is `unknown` until `reconcile-count` records `counted` or `uncounted` |
 
 | State | Meaning | Set by |
 |---|---|---|
@@ -128,7 +130,11 @@ null otherwise; `session` is an object only for `accepted`, with
 `completed` one keeps the claim it completed under, or neither when it
 completed before claims existed. Whether a session was counted is the tracking
 database's fact, not the ledger's: its run id in
-`config.clarification_counted_runs`. `offer_mode` is the one the recorded
+`config.clarification_counted_runs`. The count mutation counts a run only
+while its session is `running` under the plan's `claim_token` in this ledger,
+read at the generation the commit is checked against; a schema-2 session whose
+`legacy_count` is `unknown` refuses until reconciled, and one reconciled as
+`counted` joins the counted runs without advancing the counter. `offer_mode` is the one the recorded
 talks give (`run-obligations.py` `offer_mode_for`), and the state is
 `not_applicable` exactly when that mode is `none`.
 
@@ -212,6 +218,7 @@ special file is `report_unreadable`.
 | `record-disposition --run-id --now --disposition ... [--return-condition \| --return-condition-from]` | state `offered` or `deferred`; `deferred` needs a non-blank return condition | the disposition; `accepted` opens a pending session |
 | `claim-session --run-id --now [--claim-token]` | state `accepted`, session `pending`; a `running` session refuses (`session_claimed`) unless `--claim-token` names its claim, which is a replay | session `running` with a new `claim_token`, returned as `claim_token` |
 | `release-session --run-id --now --claim-token (--reason \| --reason-from)` | session `running` under the named claim; another claim refuses (`session_claimed`), so a retry never frees a claim taken since; `pending` is a replay | session `pending` without a claim; returns the released claim |
+| `reconcile-count --run-id --now --claim-token --counted yes\|no` | session `running` under that claim with `legacy_count: unknown`; the same answer is a replay, a different recorded one conflicts, and a session without `legacy_count` refuses (`invalid_transition`) | `legacy_count` `counted` or `uncounted` |
 | `record-session --run-id --now --claim-token --profile-inputs changed\|unchanged [--profile-refreshed]` | session `running` under that claim (`session_claimed` otherwise), and its run in `config.clarification_counted_runs` (`session_not_counted` otherwise); `changed` with `{vault_root}/speaker-profile.json` present needs `--profile-refreshed` (`profile_refresh_required` otherwise) | session `completed` with both flags recorded |
 | `record-report --run-id --now --report-file` | downstream `completed`; clarification resolved; non-empty file | copies the report, binds its digest, sets `completed_at` |
 | `dismiss --run-id --now (--reason \| --reason-from)` | the ledger is adopted; the run has no record and is listed as `unrecorded_run` | records the exact facts listed now as deliberately not opened; a run listed again after an earlier dismissal renews that entry, adding the new facts (`renewed: true`); with nothing new listed, the same reason is a replay and another reason is refused |
@@ -349,6 +356,9 @@ Run-record schema 2 predates session claims. Every command reads a schema-2
 record as schema 3, a session it carries gaining a null `claim_token` and
 `claimed_at` (`_upgrade_session_claim`): a pending
 session stays claimable, and one completed before claims stays completed.
+Schema 2's Step 9 advanced the counter before recording the session, so a
+pending one may already be counted: it gains `legacy_count: unknown`, and its
+count waits for `reconcile-count`.
 
 The ledger is a gate store, and it claims the `rules/stateful-artifacts.md`
 Migration Policy exception for gate stores: an open record refuses actions

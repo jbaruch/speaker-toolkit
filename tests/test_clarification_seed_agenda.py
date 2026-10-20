@@ -132,9 +132,15 @@ def test_session_completion_runs_the_owner_command_and_typed_calls() -> None:
     assert "`config.clarification_sessions_completed + 1`" in body
     assert "`set_config`" in body
     commands = _commands(body)
-    assert len(commands) == 1
-    assert commands[0].startswith(OWNER_SCRIPT)
-    assert commands[0].endswith(
+    assert len(commands) == 2
+    assert all(command.startswith(OWNER_SCRIPT) for command in commands)
+    # A session begun under schema 2 is reconciled under its claim first.
+    reconcile, record = commands
+    assert reconcile.endswith(
+        '"{vault_root}/tracking-database.json" reconcile-count --run-id "{run_id}" '
+        '--now "{iso_timestamp}" --claim-token "{claim_token}" --counted yes|no'
+    )
+    assert record.endswith(
         '"{vault_root}/tracking-database.json" record-session '
         '--run-id "{run_id}" --now "{iso_timestamp}" --claim-token "{claim_token}" '
         "--profile-inputs changed|unchanged [--profile-refreshed]"

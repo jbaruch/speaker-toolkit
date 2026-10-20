@@ -76,6 +76,19 @@ READABLE_CONFIG_RECORD_SCHEMA_VERSIONS = frozenset(
 # exclusions are validated.
 CLARIFICATION_SESSIONS_FIELD = "clarification_sessions_completed"
 CLARIFICATION_COUNTED_RUNS_FIELD = "clarification_counted_runs"
+# The run obligations ledger beside the database, owned by run-obligations.py.
+# The count mutation reads it to bind a count to the session it counts.
+OBLIGATIONS_LEDGER_FILENAME = "ingress-obligations.json"
+# A session upgraded from run-record schema 2, whose Step 9 advanced the counter
+# before recording the session, may or may not be counted already: "unknown"
+# until reconciled to "counted" or "uncounted". Absent on schema-3 sessions.
+LEGACY_COUNT_FIELD = "legacy_count"
+LEGACY_COUNT_UNKNOWN = "unknown"
+LEGACY_COUNT_COUNTED = "counted"
+LEGACY_COUNT_UNCOUNTED = "uncounted"
+LEGACY_COUNT_STATES = frozenset(
+    {LEGACY_COUNT_UNKNOWN, LEGACY_COUNT_COUNTED, LEGACY_COUNT_UNCOUNTED}
+)
 LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION = 1
 PPTX_CATALOG_EVIDENCE_BOUND_RECORD_SCHEMA_VERSION = 2
 PPTX_CATALOG_RECORD_SCHEMA_VERSION = 3

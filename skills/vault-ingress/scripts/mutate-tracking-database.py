@@ -23,6 +23,10 @@ from typing import Any, Mapping, NoReturn
 from tracking_database import (
     CLARIFICATION_COUNTED_RUNS_FIELD,
     CLARIFICATION_SESSIONS_FIELD,
+    LEGACY_COUNT_COUNTED,
+    LEGACY_COUNT_FIELD,
+    LEGACY_COUNT_UNKNOWN,
+    OBLIGATIONS_LEDGER_FILENAME,
     CONFIG_RECORD_SCHEMA_VERSION,
     CONFIRMED_INTENT_OPTIONAL_FIELDS,
     CONFIRMED_INTENT_RECORD_SCHEMA_VERSION,
@@ -769,26 +773,124 @@ def _apply_set_config(
     )
 
 
+class ObligationsLedgerView:
+    """Read-only view of the run obligations ledger a count is bound to.
+
+    ``sessions`` maps each run id to its clarification session (or None), as
+    the ledger stores it; ``sha256`` is the generation it was read from. This
+    reader never migrates: run-obligations.py owns the ledger's shape.
+    """
+
+    def __init__(self, sha256: str, sessions: dict[str, Any]) -> None:
+        self.sha256 = sha256
+        self.sessions = sessions
+
+
+def read_obligations_ledger(path: Path) -> ObligationsLedgerView:
+    """The ledger beside the database, for binding a count to its session."""
+    try:
+        raw = path.read_bytes()
+    except FileNotFoundError as exc:
+        raise TrackingDatabaseMutationError(
+            f"count_clarification_session counts a ledger session, but there is "
+            f"no obligations ledger at {path}; a standalone session counts with "
+            "set_config"
+        ) from exc
+    except OSError as exc:
+        raise TrackingDatabaseMutationError(
+            f"cannot read the obligations ledger {path} "
+            f"({type(exc).__name__}: {exc.strerror or exc}); check its "
+            "permissions and retry"
+        ) from exc
+    try:
+        payload = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise TrackingDatabaseMutationError(
+            f"the obligations ledger at {path} is not valid JSON; read it with "
+            "run-obligations.py status to see the owner's diagnosis"
+        ) from exc
+    runs = payload.get("runs") if isinstance(payload, dict) else None
+    if not isinstance(runs, list):
+        raise TrackingDatabaseMutationError(
+            f"the obligations ledger at {path} has no runs array; read it with "
+            "run-obligations.py status to see the owner's diagnosis"
+        )
+    sessions: dict[str, Any] = {}
+    for run in runs:
+        if isinstance(run, dict) and isinstance(run.get("run_id"), str):
+            clarification = run.get("clarification")
+            sessions[run["run_id"]] = (
+                clarification.get("session")
+                if isinstance(clarification, dict)
+                else None
+            )
+    return ObligationsLedgerView(hashlib.sha256(raw).hexdigest(), sessions)
+
+
+def _counted_session(
+    ledger: ObligationsLedgerView | None, run_id: str, token: str, label: str
+) -> bool:
+    """Whether counting ``run_id`` advances the counter; refuses an unbound count.
+
+    The run's session must be running under ``token`` in the live ledger. A
+    session upgraded from schema 2 is counted only once reconciled: one already
+    counted joins the counted runs without advancing the counter again.
+    """
+    if ledger is None:
+        raise TrackingDatabaseMutationError(
+            f"{label} counts a ledger session; apply it through "
+            "mutate-tracking-database.py, which reads the obligations ledger"
+        )
+    if run_id not in ledger.sessions:
+        raise TrackingDatabaseMutationError(
+            f"{label}.run_id {run_id!r} names no run in the obligations ledger — "
+            "use the run id session-agenda returned"
+        )
+    session = ledger.sessions[run_id]
+    if not isinstance(session, dict) or "claim_token" not in session:
+        raise TrackingDatabaseMutationError(
+            f"run {run_id!r} has no claimable session in the ledger; read it with "
+            "run-obligations.py status --run-id so its owner upgrades it, then "
+            "claim it with claim-session"
+        )
+    if session.get("state") != "running" or session.get("claim_token") != token:
+        raise TrackingDatabaseMutationError(
+            f"run {run_id!r} session is not running under the claim this count "
+            "names; count only the session this host claimed (claim-session)"
+        )
+    legacy = session.get(LEGACY_COUNT_FIELD)
+    if legacy == LEGACY_COUNT_UNKNOWN:
+        raise TrackingDatabaseMutationError(
+            f"run {run_id!r} session began under run-record schema 2, whose Step 9 "
+            "counted before recording, so it may be counted already; record which "
+            "with run-obligations.py reconcile-count, then count it"
+        )
+    return legacy != LEGACY_COUNT_COUNTED
+
+
 def _apply_count_clarification_session(
     database: dict[str, Any],
     mutation: dict[str, Any],
     changes: list[dict[str, Any]],
     *,
     index: int,
+    ledger: ObligationsLedgerView | None,
 ) -> None:
     """Count one ledger clarification session toward the session counter (#466).
 
-    The counter advances and the session's `run_id` joins
-    `config.clarification_counted_runs` in this one owner write. A run already
-    counted changes nothing, whatever `expect` says, so a session re-entered
-    after a crash never counts twice; two sessions always count twice, the
-    second's stale `expect` refusing until it re-reads. `expect` is the counter
-    value the plan saw, or the missing marker when it was absent.
+    The run's session must be running in the live obligations ledger under the
+    mutation's `claim_token` (`_counted_session`). The counter advances and the
+    session's `run_id` joins `config.clarification_counted_runs` in this one
+    owner write. A run already counted changes nothing, whatever `expect` says,
+    so a session re-entered after a crash never counts twice; two sessions
+    always count twice, the second's stale `expect` refusing until it re-reads.
+    `expect` is the counter value the plan saw, or the missing marker when it
+    was absent.
     """
     label = f"mutations[{index}]"
     _require_keys(
         mutation,
-        required={"kind", "run_id", "expect"},
+        required={"kind", "run_id", "claim_token", "expect"},
         optional=set(),
         label=label,
     )
@@ -797,6 +899,7 @@ def _apply_count_clarification_session(
         raise TrackingDatabaseMutationError(
             f"{label}.run_id {run_id!r} contains whitespace — use the ledger run id"
         )
+    token = _nonempty(mutation["claim_token"], f"{label}.claim_token")
     config = database.setdefault("config", {})
     if not isinstance(config, dict):
         raise TrackingDatabaseMutationError("database config must be an object")
@@ -807,6 +910,7 @@ def _apply_count_clarification_session(
         )
     if run_id in counted:
         return
+    advances = _counted_session(ledger, run_id, token, label)
     exists = CLARIFICATION_SESSIONS_FIELD in config
     before = config.get(CLARIFICATION_SESSIONS_FIELD, MISSING_MARKER)
     _expect_value(
@@ -820,14 +924,15 @@ def _apply_count_clarification_session(
         raise TrackingDatabaseMutationError(
             f"config.{CLARIFICATION_SESSIONS_FIELD} must be a non-negative integer"
         )
-    config[CLARIFICATION_SESSIONS_FIELD] = current + 1
+    after = current + 1 if advances else current
+    config[CLARIFICATION_SESSIONS_FIELD] = after
     config[CLARIFICATION_COUNTED_RUNS_FIELD] = [*counted, run_id]
     _record_change(
         changes,
         kind="count_clarification_session",
         identity=run_id,
         before={CLARIFICATION_SESSIONS_FIELD: before},
-        after={CLARIFICATION_SESSIONS_FIELD: current + 1},
+        after={CLARIFICATION_SESSIONS_FIELD: after},
     )
 
 
@@ -2062,6 +2167,8 @@ def initial_database(mutation: dict[str, Any], *, index: int) -> dict[str, Any]:
 def build_candidate(
     database: dict[str, Any],
     mutations: list[dict[str, Any]],
+    *,
+    ledger: ObligationsLedgerView | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     try:
         require_current_tracking_database(database)
@@ -2087,7 +2194,7 @@ def build_candidate(
             _apply_set_config(candidate, mutation, changes, index=index)
         elif kind == "count_clarification_session":
             _apply_count_clarification_session(
-                candidate, mutation, changes, index=index
+                candidate, mutation, changes, index=index, ledger=ledger
             )
         elif kind in COLLECTION_IDENTITIES:
             _apply_collection_upsert(candidate, mutation, changes, index=index)
@@ -2261,7 +2368,13 @@ def execute(
             f"input sha256 precondition failed: expected {expected_sha256}, "
             f"found {snapshot.sha256}"
         )
-    candidate, changes = build_candidate(database, mutations)
+    ledger_path = database_path.parent / OBLIGATIONS_LEDGER_FILENAME
+    ledger = (
+        read_obligations_ledger(ledger_path)
+        if any(m.get("kind") == "count_clarification_session" for m in mutations)
+        else None
+    )
+    candidate, changes = build_candidate(database, mutations, ledger=ledger)
     rendered = render_json_object(candidate) if changes else snapshot.raw
     output_sha256 = hashlib.sha256(rendered).hexdigest()
     if expected_output_sha256 is not None and expected_output_sha256 != output_sha256:
@@ -2269,6 +2382,14 @@ def execute(
             "reviewed candidate output sha256 precondition failed; repeat the dry run and review"
         )
     if apply:
+        # The count is bound to the ledger generation it checked; a session
+        # released or recorded since then refuses rather than counting.
+        if ledger is not None and changes:
+            if read_obligations_ledger(ledger_path).sha256 != ledger.sha256:
+                raise TrackingDatabaseMutationError(
+                    "the obligations ledger changed while this count was checked; "
+                    "repeat the dry run against the current ledger"
+                )
         try:
             result = commit_tracking_database(snapshot, rendered)
         except TrackingDatabaseIOError as exc:

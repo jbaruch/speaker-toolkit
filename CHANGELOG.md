@@ -29,7 +29,11 @@ Two session-lifecycle gaps Copilot raised on PR #465, deferred to #466:
   appends the run id to the new optional `config.clarification_counted_runs` in
   one tracking-database write. A run already counted changes nothing, two runs
   always count twice, and `record-session` refuses (`session_not_counted`) until
-  the run is listed. The new field moves the config record to **schema 3**:
+  the run is listed. The mutation is bound to the live ledger: it names the
+  session's `claim_token`, reads `{vault_root}/ingress-obligations.json`
+  read-only, counts only a session `running` under that claim, and re-reads the
+  ledger before the commit, refusing if it changed. A typo or a fabricated run
+  id never becomes counted authority. The new field moves the config record to **schema 3**:
   v1 and v2 stay readable, the owner migration restamps a v2 config to v3
   unchanged, a v2 config carrying the field is refused, and the owner validates
   both fields on every read. Writers and docs that named config v2 as current
@@ -40,6 +44,11 @@ Two session-lifecycle gaps Copilot raised on PR #465, deferred to #466:
   or has a non-string state is refused as `ledger_invalid` instead of upgraded.
   A session completed before claims existed keeps a null token, so an identical
   `record-session` retry after the upgrade replays under any claim token.
+  Schema 2's Step 9 advanced the counter before recording the session, so a
+  pending schema-2 session upgrades with `legacy_count: unknown`. The count
+  refuses it until the new `reconcile-count --counted yes|no` records the
+  speaker's answer under the session's claim; a session reconciled as already
+  counted joins `clarification_counted_runs` without advancing the counter.
 - First-time setup no longer tells the agent to put root and config versions or
   empty arrays into the `initialize_database` mutation, which accepts only
   `kind` and `config` and rejects any config version but the current one; the

@@ -245,8 +245,8 @@ def _record_report(database: Path, run_id: str, report: Path, now: str = LATER):
     )
 
 
-def _count_session(database: Path, run_id: str) -> None:
-    """Apply the owner count_clarification_session mutation for one run."""
+def _count_session(database: Path, run_id: str, token: str) -> None:
+    """Apply the owner count_clarification_session mutation for one claimed run."""
     mutate = _import_script(
         os.path.join(SCRIPTS_VI, "mutate-tracking-database.py"),
         "mutate_tracking_database",
@@ -260,7 +260,17 @@ def _count_session(database: Path, run_id: str) -> None:
     )
     candidate, _changes = mutate.build_candidate(
         data,
-        [{"kind": "count_clarification_session", "run_id": run_id, "expect": expect}],
+        [
+            {
+                "kind": "count_clarification_session",
+                "run_id": run_id,
+                "claim_token": token,
+                "expect": expect,
+            }
+        ],
+        ledger=mutate.read_obligations_ledger(
+            database.parent / "ingress-obligations.json"
+        ),
     )
     database.write_text(json.dumps(candidate), encoding="utf-8")
 
@@ -299,7 +309,7 @@ def _session_token(database: Path, run_id: str, now: str = NOW) -> str:
         database, run_id, hashlib.sha256(run_id.encode()).hexdigest()[:32], now
     )
     assert code == 0, payload
-    _count_session(database, run_id)
+    _count_session(database, run_id, payload["claim_token"])
     return payload["claim_token"]
 
 
@@ -3368,7 +3378,7 @@ def test_a_session_is_recorded_only_by_its_claim_after_its_count(fresh_db):
     assert uncounted["reason_code"] == "session_not_counted"
     assert "count_clarification_session" in uncounted["error"]
 
-    _count_session(fresh_db, "run-x")
+    _count_session(fresh_db, "run-x", token)
     code, other, _stderr = _record(fresh_db, "d" * 32)
     assert code == 2 and other is not None
     assert other["reason_code"] == "session_claimed"
@@ -3389,7 +3399,7 @@ def test_a_session_re_entered_after_a_crash_counts_once(
     _accepted(fresh_db)
     first = _claim_token(fresh_db, token="1" * 32)
     if counted_before_crash:
-        _count_session(fresh_db, "run-x")
+        _count_session(fresh_db, "run-x", first)
 
     reason = tmp_path / "reason.txt"
     reason.write_text("the laptop died mid-session\n", encoding="utf-8")
@@ -3411,7 +3421,7 @@ def test_a_session_re_entered_after_a_crash_counts_once(
 
     second = _claim_token(fresh_db, now=LATER, token="2" * 32)
     # The re-entered session counts again; the owner keys the count on the run.
-    _count_session(fresh_db, "run-x")
+    _count_session(fresh_db, "run-x", second)
     assert _counter(fresh_db) == 1
     code, stale, _stderr = _record(fresh_db, first)
     assert code == 2 and stale is not None
@@ -3425,11 +3435,11 @@ def test_two_sessions_counted_together_count_twice(fresh_db):
     """Two hosts each read the same counter; neither count is lost."""
     _accepted(fresh_db, "run-a")
     _accepted(fresh_db, "run-b")
-    _count_session(fresh_db, "run-a")
-    _count_session(fresh_db, "run-b")
+    tokens = {run_id: _claim_token(fresh_db, run_id) for run_id in ("run-a", "run-b")}
+    _count_session(fresh_db, "run-a", tokens["run-a"])
+    _count_session(fresh_db, "run-b", tokens["run-b"])
     assert _counter(fresh_db) == 2
-    for run_id in ("run-a", "run-b"):
-        token = _claim_token(fresh_db, run_id)
+    for run_id, token in tokens.items():
         code, _recorded, stderr = _record(fresh_db, token, run_id)
         assert code == 0, stderr
 
@@ -3499,7 +3509,11 @@ def test_a_schema_2_session_is_upgraded_and_rewritten_on_read(tmp_path, fresh_db
     assert payload["session"]["run_id"] == "r"
     persisted = _ledger(tmp_path)["runs"][0]
     assert persisted["schema_version"] == 3
-    assert persisted["clarification"]["session"] == _PENDING_SESSION
+    # Schema 2 counted before recording, so whether this one counted is unknown.
+    assert persisted["clarification"]["session"] == {
+        **_PENDING_SESSION,
+        "legacy_count": "unknown",
+    }
 
 
 def test_a_migrated_legacy_completed_session_replays_its_record(tmp_path, fresh_db):
@@ -3569,6 +3583,75 @@ def test_a_schema_2_session_with_a_malformed_state_is_refused(
 
     assert refused["reason_code"] == "ledger_invalid"
     assert ledger.read_bytes() == before
+
+
+@pytest.mark.parametrize("already_counted,counter", [("yes", 1), ("no", 2)])
+def test_a_schema_2_session_is_reconciled_before_it_counts(
+    tmp_path, fresh_db, already_counted, counter
+):
+    """Schema 2 counted before recording; a pending session's count is unknown."""
+    run = _valid_run(**_ACCEPTED)
+    run["schema_version"] = 2
+    run["clarification"]["session"] = {
+        "state": "pending",
+        "completed_at": None,
+        "profile_inputs": None,
+        "profile_refreshed": None,
+    }
+    (tmp_path / "ingress-obligations.json").write_text(
+        json.dumps({**ENVELOPE, "runs": [run]}), encoding="utf-8"
+    )
+    # The old host's Step 9 advanced the counter, or crashed before it did.
+    data = json.loads(fresh_db.read_text(encoding="utf-8"))
+    data["config"]["clarification_sessions_completed"] = 1
+    fresh_db.write_text(json.dumps(data), encoding="utf-8")
+    token = _claim_token(fresh_db, "r")
+    session = _ok(fresh_db, "status", "--run-id", "r")["run"]["clarification"][
+        "session"
+    ]
+    assert session["legacy_count"] == "unknown"
+    mutate = _import_script(
+        os.path.join(SCRIPTS_VI, "mutate-tracking-database.py"),
+        "mutate_tracking_database",
+    )
+    with pytest.raises(mutate.TrackingDatabaseMutationError, match="reconcile-count"):
+        _count_session(fresh_db, "r", token)
+
+    _ok(
+        fresh_db,
+        "reconcile-count",
+        "--run-id",
+        "r",
+        "--now",
+        NOW,
+        "--claim-token",
+        token,
+        "--counted",
+        already_counted,
+    )
+    _count_session(fresh_db, "r", token)
+
+    assert _counter(fresh_db) == counter
+    code, _recorded, stderr = _record(fresh_db, token, "r")
+    assert code == 0, stderr
+
+
+def test_reconcile_count_refuses_a_session_begun_under_schema_3(fresh_db):
+    _accepted(fresh_db)
+    token = _claim_token(fresh_db)
+    refused = _refused(
+        fresh_db,
+        "reconcile-count",
+        "--run-id",
+        "run-x",
+        "--now",
+        NOW,
+        "--claim-token",
+        token,
+        "--counted",
+        "yes",
+    )
+    assert refused["reason_code"] == "invalid_transition"
 
 
 @pytest.mark.parametrize(

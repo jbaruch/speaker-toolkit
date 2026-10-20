@@ -30,6 +30,8 @@ Usage:
     run-obligations.py <tracking-database.json> release-session \
         --run-id <id> --now <ISO-8601> --claim-token <token> \
         (--reason <text> | --reason-from <file>)
+    run-obligations.py <tracking-database.json> reconcile-count \
+        --run-id <id> --now <ISO-8601> --claim-token <token> --counted yes|no
     run-obligations.py <tracking-database.json> record-session \
         --run-id <id> --now <ISO-8601> --claim-token <token> \
         --profile-inputs changed|unchanged [--profile-refreshed]
@@ -105,6 +107,12 @@ from queue_claim_contract import (
     require_queue_identifier,
 )
 from tracking_database import (
+    LEGACY_COUNT_COUNTED,
+    LEGACY_COUNT_FIELD,
+    LEGACY_COUNT_STATES,
+    LEGACY_COUNT_UNCOUNTED,
+    LEGACY_COUNT_UNKNOWN,
+    OBLIGATIONS_LEDGER_FILENAME,
     TrackingDatabaseError,
     counted_clarification_runs,
     require_current_tracking_database,
@@ -125,7 +133,7 @@ from vault_root_authority import (
     resolve_vault_root_authority,
 )
 
-LEDGER_FILENAME = "ingress-obligations.json"
+LEDGER_FILENAME = OBLIGATIONS_LEDGER_FILENAME
 REPORTS_DIRECTORY = "ingress-reports"
 PROFILE_FILENAME = "speaker-profile.json"
 LEDGER_SCHEMA_VERSION = 1
@@ -637,6 +645,12 @@ def _validate_clarification(record: Any, label: str) -> None:
         session["state"], SESSION_STATES, f"{label}.session.state"
     )
     _validate_session_claim(session, session_state, f"{label}.session")
+    if LEGACY_COUNT_FIELD in session:
+        _require_choice(
+            session[LEGACY_COUNT_FIELD],
+            LEGACY_COUNT_STATES,
+            f"{label}.session.{LEGACY_COUNT_FIELD}",
+        )
     completed = session_state == SESSION_COMPLETED
     _require_timestamp_or_null(
         session["completed_at"], f"{label}.session.completed_at", present=completed
@@ -813,6 +827,10 @@ def _upgrade_session_claim(run: dict[str, Any], label: str) -> None:
         )
     session["claim_token"] = None
     session["claimed_at"] = None
+    if state == SESSION_PENDING:
+        # Schema 2's Step 9 advanced the counter before recording the session,
+        # so a pending one may already be counted; reconcile-count decides.
+        session[LEGACY_COUNT_FIELD] = LEGACY_COUNT_UNKNOWN
 
 
 def _validate_run(run: dict[str, Any], label: str, vault_root: Path) -> None:
@@ -1850,6 +1868,32 @@ def command_release_session(
     return _transition(context, args, mutate)
 
 
+def command_reconcile_count(
+    context: Context, args: argparse.Namespace
+) -> dict[str, Any]:
+    """Record whether a session upgraded from schema 2 was already counted."""
+    answer = LEGACY_COUNT_COUNTED if args.counted == "yes" else LEGACY_COUNT_UNCOUNTED
+
+    def mutate(run: dict[str, Any], _stamp: str, _now: datetime) -> dict[str, Any]:
+        session = _accepted_session(run)
+        _require_claim(run, session, args.claim_token)
+        state = session.get(LEGACY_COUNT_FIELD)
+        if state == answer:
+            return {"replayed": True}
+        if state is None:
+            raise RunObligationsError(
+                f"run {run['run_id']!r} session began under schema 3, so its count "
+                "is never in doubt; count it with count_clarification_session",
+                reason_code="invalid_transition",
+            )
+        if state != LEGACY_COUNT_UNKNOWN:
+            raise _conflict(run, "legacy count", f"{LEGACY_COUNT_FIELD}={state!r}")
+        session[LEGACY_COUNT_FIELD] = answer
+        return {}
+
+    return _transition(context, args, mutate)
+
+
 def command_record_session(
     context: Context, args: argparse.Namespace
 ) -> dict[str, Any]:
@@ -2418,6 +2462,19 @@ def build_parser() -> JsonArgumentParser:
         "--reason-from", help="a file holding the reason in the operator's words"
     )
 
+    reconcile = actions.add_parser(
+        "reconcile-count",
+        help="record whether a session begun under schema 2 was already counted",
+    )
+    with_run(reconcile)
+    reconcile.add_argument("--claim-token", required=True)
+    reconcile.add_argument(
+        "--counted",
+        choices=("yes", "no"),
+        required=True,
+        help="whether clarification_sessions_completed already includes it",
+    )
+
     session = actions.add_parser(
         "record-session", help="the accepted clarification session completed"
     )
@@ -2476,6 +2533,7 @@ COMMANDS = {
     "record-disposition": command_record_disposition,
     "claim-session": command_claim_session,
     "release-session": command_release_session,
+    "reconcile-count": command_reconcile_count,
     "record-session": command_record_session,
     "record-report": command_record_report,
     "dismiss": command_dismiss,
