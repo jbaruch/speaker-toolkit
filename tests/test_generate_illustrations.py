@@ -1690,15 +1690,15 @@ def test_gate_fails_when_outline_dir_missing(generate_illustrations, tmp_path):
     assert "outline_dir" in v["error"]
 
 
-def test_poster_embed_directive_normalizes_embedded_quotes(generate_illustrations):
-    # A title/footer containing double quotes must not create nested double
-    # quotes in the directive (they degrade model compliance).
+def test_poster_embed_directive_normalizes_title_quotes_keeps_footer_exact(
+    generate_illustrations,
+):
+    # A title's double quotes become single so the directive's own quotes do
+    # not nest; the footer must render verbatim, so it is escaped instead.
     gi = generate_illustrations
     d = gi.apply_poster_embed_directive("a scene", 'He said "Hello"', 'tag "x"')
-    # The wrapping quotes around title/footer remain, but embedded ones are now '
-    assert '""' not in d
     assert "He said 'Hello'" in d
-    assert "tag 'x'" in d
+    assert json.dumps('tag "x"') in d
 
 
 def test_gate_fails_closed_on_non_dict_manifest(generate_illustrations, tmp_path):
@@ -1875,7 +1875,9 @@ def test_every_slide_carries_the_same_canonical_footer_block(generate_illustrati
     footer = "@jbaruch    #RoboCoders    speaking.jbaru.ch"
     first = gi.apply_poster_embed_directive("a factory", "Title one", footer)
     second = gi.apply_poster_embed_directive("a vault", "Title two", footer)
-    block = gi.POSTER_FOOTER_BLOCK_TEMPLATE.format(footer=footer)
+    block = gi.POSTER_FOOTER_BLOCK_TEMPLATE.format(
+        footer=json.dumps(footer, ensure_ascii=False)
+    )
     assert block in first and block in second
     assert first.index("Title one") < first.index(block)
     assert first.endswith(gi.POSTER_NO_INVENTED_TEXT)
@@ -1961,3 +1963,13 @@ def test_a_title_less_stamped_slide_still_reserves_its_footer_strip(
     assert gi.apply_poster_embed_directive("A quiet scene.", "", None) == (
         "A quiet scene."
     )
+
+
+def test_a_model_rendered_footer_is_directed_verbatim(generate_illustrations):
+    """Quotes stay quotes: the footer is delimited and escaped, never rewritten."""
+    footer = 'jbaruch • "Shift Left" Devoxx'
+    prompt = generate_illustrations.apply_poster_embed_directive(
+        "A scene.", "Title", footer
+    )
+    assert json.dumps(footer, ensure_ascii=False) in prompt
+    assert "'Shift Left'" not in prompt

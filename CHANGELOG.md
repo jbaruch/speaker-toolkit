@@ -68,7 +68,14 @@ discipline reduced the drift but cannot guarantee typographic identity.
   manifest's docstring now defines `parent` as the built-deck position and
   names the stamped frame copies as its one write. Illustrations Step 1 states the
   migration's in-place effect, its stdout and its exits, and both apply and the
-  manifest name a missing outline before checking its version.
+  manifest name a missing outline before checking its version. The migration
+  rewrites only the root version's value, so an inline comment, a quoted key
+  and CRLF line endings survive; it stamps after a `---` marker even when
+  comments precede it, and refuses a layout it cannot restamp. Non-owner
+  readers refuse every version but the current one: an older outline names the
+  migration, a newer one says to update speaker-toolkit. A model-rendered
+  footer is directed verbatim, delimited and escaped as a JSON string, never
+  rewritten.
 - Apply and the build manifest check one deck-wide stamp set,
   `footer_stamp.deck_stamp_set`: every stamped slide image plus every declared
   build frame. Whichever command runs first refuses a mixed deck before either

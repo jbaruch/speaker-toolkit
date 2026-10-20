@@ -1061,3 +1061,58 @@ def test_a_non_owner_reader_refuses_an_older_outline(
         outline_schema.require_current_outline(path)
     outline_schema.migrate_outline(path)
     outline_schema.require_current_outline(path)
+
+
+def _body(base_data) -> str:
+    data = copy.deepcopy(base_data)
+    data.pop("schema_version", None)
+    return yaml.safe_dump(data, sort_keys=False)
+
+
+@pytest.mark.parametrize(
+    "head,expected_head",
+    [
+        (
+            "schema_version: 1  # stamped by the creator\n",
+            "schema_version: 2  # stamped by the creator\n",
+        ),
+        ('"schema_version": 1\n', '"schema_version": 2\n'),
+        ("# preamble\n\n---\n", "# preamble\n\n---\nschema_version: 2\n"),
+    ],
+    ids=["inline-comment", "quoted-key", "preamble-before-marker"],
+)
+def test_the_migration_restamps_every_root_layout(
+    outline_schema, base_data, tmp_path, head, expected_head
+):
+    path = tmp_path / "outline.yaml"
+    path.write_text(head + _body(base_data), encoding="utf-8")
+    outline_schema.migrate_outline(path)
+    after = path.read_text(encoding="utf-8")
+    assert after.startswith(expected_head)
+    assert yaml.safe_load(after)["schema_version"] == 2
+
+
+def test_the_migration_keeps_crlf_line_endings(outline_schema, base_data, tmp_path):
+    path = tmp_path / "outline.yaml"
+    crlf = ("schema_version: 1\n" + _body(base_data)).replace("\n", "\r\n")
+    path.write_bytes(crlf.encode("utf-8"))
+    outline_schema.migrate_outline(path)
+    after = path.read_bytes().decode("utf-8")
+    assert after == crlf.replace("schema_version: 1", "schema_version: 2", 1)
+
+
+@pytest.mark.parametrize(
+    "version,detail",
+    [(3, "update speaker-toolkit"), ("two", "not an integer")],
+    ids=["newer", "not-an-integer"],
+)
+def test_a_non_owner_reader_refuses_every_other_version(
+    outline_schema, base_data, tmp_path, version, detail
+):
+    path = tmp_path / "outline.yaml"
+    path.write_text(
+        yaml.safe_dump({**base_data, "schema_version": version}, sort_keys=False),
+        encoding="utf-8",
+    )
+    with pytest.raises(outline_schema.OutlineVersionError, match=detail):
+        outline_schema.require_current_outline(path)

@@ -199,7 +199,7 @@ DEFAULT_POSTER_TEXT_TREATMENT = (
 # generation (footer_stamp.py) and the prompt reserves a quiet strip instead.
 POSTER_FOOTER_BLOCK_TEMPLATE = (
     " FOOTER -- EXACT DECK-WIDE SPECIFICATION: Along the extreme bottom edge, "
-    'render one centered single-line footer with the exact literal text "{footer}". '
+    "render one centered single-line footer with the exact literal text {footer}. "
     "Use the same sober sans-serif type treatment on every slide: medium weight, "
     "small but clearly legible, off-white ink, no outline, no drop shadow, no "
     "box, no icon, no logo, no decorative breaks, no perspective distortion, and "
@@ -469,8 +469,10 @@ def apply_poster_embed_directive(
             strip=reserved_strip_pct(footer_text, footer_style)
         )
     elif footer_text:
+        # Verbatim: a JSON string delimits the footer and escapes its quotes
+        # without changing a character of it.
         directive += POSTER_FOOTER_BLOCK_TEMPLATE.format(
-            footer=footer_text.replace('"', "'")
+            footer=json.dumps(footer_text, ensure_ascii=False)
         )
     return prompt + directive + POSTER_NO_INVENTED_TEXT
 
