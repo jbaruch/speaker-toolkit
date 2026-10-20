@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.187 — 2026-10-20
+
 ### Reserve each clarification session and count it once
 
 Two session-lifecycle gaps Copilot raised on PR #465, deferred to #466:
