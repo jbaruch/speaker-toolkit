@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.185 — 2026-10-20
+
 ### Harden shownotes verification inputs and runtime selection
 
 Follow-ups from the advisory Copilot review on #457 (#458).
