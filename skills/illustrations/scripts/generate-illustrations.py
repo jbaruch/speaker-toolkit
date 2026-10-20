@@ -444,12 +444,12 @@ def apply_poster_embed_directive(
     no-invented-text instruction. Idempotent: an existing EMBEDDED TEXT block,
     and everything appended after it, is replaced.
     """
-    # A stamped footer needs its quiet strip whether or not the slide has a
-    # title to embed; without either there is nothing to direct.
-    stamped = bool(footer_text) and footer_style is not None
-    if not title_text and not stamped:
+    # The footer is directed whether or not the slide has a title to embed:
+    # a stamped footer's quiet strip, or the canonical model-rendered block.
+    if not title_text and not footer_text:
         return prompt
-    for marker in ("EMBEDDED TEXT", "FOOTER STRIP"):
+    # Each directive block this function appends, so a rerun replaces them all.
+    for marker in ("EMBEDDED TEXT", "FOOTER STRIP", "FOOTER -- EXACT"):
         if marker in prompt:
             prompt = prompt.split(marker, 1)[0].rstrip()
     directive = ""
@@ -2425,6 +2425,11 @@ def main():
 
     if not os.path.isfile(args.outline):
         print(f"ERROR: Outline file not found: {args.outline}")
+        sys.exit(1)
+    try:
+        outline_schema.require_current_outline(args.outline)
+    except outline_schema.OutlineVersionError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
 
     # Store vault path for _load_context

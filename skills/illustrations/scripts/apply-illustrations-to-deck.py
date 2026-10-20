@@ -696,6 +696,10 @@ def main():
         "apply-backgrounds.sh to set the backgrounds via PowerPoint.",
     )
     args = ap.parse_args()
+    try:
+        outline_schema.require_current_outline(args.outline)
+    except outline_schema.OutlineVersionError as exc:
+        raise SystemExit(f"ERROR: {exc}") from exc
 
     out_deck = args.out or args.deck.with_name(args.deck.stem + "-with-titles.pptx")
     backgrounds_out = args.backgrounds_out or out_deck.with_name(

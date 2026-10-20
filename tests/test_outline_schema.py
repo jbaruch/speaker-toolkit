@@ -1017,3 +1017,47 @@ def test_a_poster_deck_refuses_an_illustrated_non_full_slide(outline_schema, bas
     data["style_anchor"]["composition"] = "poster-theatrical"
     with pytest.raises(ValidationError, match="illustrate FULL slides only"):
         outline_schema.Outline.model_validate(data)
+
+
+def _v1_text(base_data, *, stamp: bool) -> str:
+    data = copy.deepcopy(base_data)
+    data.pop("schema_version", None)
+    body = yaml.safe_dump(data, sort_keys=False)
+    head = "# authored outline — keep this comment\n"
+    return head + ("schema_version: 1\n" if stamp else "") + body
+
+
+@pytest.mark.parametrize("stamp", [True, False], ids=["v1", "unversioned"])
+def test_the_owner_migration_restamps_an_older_outline_in_place(
+    outline_schema, base_data, tmp_path, stamp
+):
+    """Only the root stamp changes; comments and layout survive."""
+    path = tmp_path / "outline.yaml"
+    before = _v1_text(base_data, stamp=stamp)
+    path.write_text(before, encoding="utf-8")
+
+    result = outline_schema.migrate_outline(path)
+
+    after = path.read_text(encoding="utf-8")
+    assert result == {
+        "ok": True,
+        "path": str(path),
+        "migrated": True,
+        "from": 1,
+        "to": 2,
+    }
+    assert "# authored outline — keep this comment" in after
+    assert yaml.safe_load(after)["schema_version"] == 2
+    assert outline_schema.load_outline(path).schema_version == 2
+    assert outline_schema.migrate_outline(path)["migrated"] is False
+
+
+def test_a_non_owner_reader_refuses_an_older_outline(
+    outline_schema, base_data, tmp_path
+):
+    path = tmp_path / "outline.yaml"
+    path.write_text(_v1_text(base_data, stamp=True), encoding="utf-8")
+    with pytest.raises(outline_schema.OutlineVersionError, match="--migrate"):
+        outline_schema.require_current_outline(path)
+    outline_schema.migrate_outline(path)
+    outline_schema.require_current_outline(path)

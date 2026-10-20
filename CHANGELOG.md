@@ -56,8 +56,17 @@ discipline reduced the drift but cannot guarantee typographic identity.
   carrying it is refused, v1 outlines without it read unchanged, and new
   outlines declare `schema_version: 2`. A poster-theatrical outline refuses an
   `image_prompt` on any slide that is not FULL, and phase 5 omits the TITLE and
-  FOOTER ops only for illustrated FULL poster slides. A stamped footer's quiet
-  strip is reserved even on a title-less poster slide.
+  FOOTER ops only for illustrated FULL poster slides. A title-less poster
+  slide still gets its footer directive: the stamped footer's quiet strip, or
+  the canonical model-rendered block.
+- presentation-creator owns `outline.yaml`. `outline_schema.py --migrate`
+  restamps a v1 or unversioned outline to schema 2 in place, rewriting only
+  the root stamp so comments survive, and validates it before the atomic
+  replace. The illustration scripts are non-owner readers: they refuse an
+  older outline (`require_current_outline`) and name that command. Step 9 sets
+  `schema_version: 2` in the same edit that adds `footer_style`. The build
+  manifest's docstring now defines `parent` as the built-deck position and
+  names the stamped frame copies as its one write.
 - Apply and the build manifest check one deck-wide stamp set,
   `footer_stamp.deck_stamp_set`: every stamped slide image plus every declared
   build frame. Whichever command runs first refuses a mixed deck before either

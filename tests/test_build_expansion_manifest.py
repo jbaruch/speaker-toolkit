@@ -63,6 +63,7 @@ def _fill_numbering(slides):
 
 def _make_outline(tmp_path, slides=None):
     data = {
+        "schema_version": 2,
         "talk": copy.deepcopy(_TALK),
         "slides": _fill_numbering(slides or DEFAULT_SLIDES),
     }
@@ -414,3 +415,17 @@ def test_a_zero_based_outline_keys_the_deck_by_position(
 
     assert manifest["builds"][0]["parent"] == 2
     assert manifest["builds"][0]["notes"] == "notes for the reveal"
+
+
+def test_the_manifest_refuses_an_outline_its_owner_has_not_migrated(
+    build_expansion_manifest, tmp_path
+):
+    outline = _make_outline(tmp_path)
+    data = yaml.safe_load(outline.read_text(encoding="utf-8"))
+    data["schema_version"] = 1
+    outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    builds = tmp_path / "builds"
+    builds.mkdir()
+    with pytest.raises(SystemExit) as exc:
+        build_expansion_manifest.main([str(outline), str(builds)])
+    assert "outline_schema.py --migrate" in str(exc.value)

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import copy
+import os
 import re
 import sys
 from enum import Enum
@@ -990,13 +991,86 @@ def load_outline_partial(path: Path | str) -> PartialOutline:
     return PartialOutline.model_validate(data)
 
 
+class OutlineVersionError(ValueError):
+    """An outline older than the current schema, read by a non-owner."""
+
+
+_ROOT_VERSION_LINE = re.compile(r"^schema_version:[^\n]*$", re.MULTILINE)
+
+
+def _root_version(data: object) -> object:
+    # A missing root stamp is the legacy v1 view.
+    return data.get("schema_version", 1) if isinstance(data, dict) else None
+
+
+def require_current_outline(path: Path | str) -> None:
+    """Refuse an older outline for a non-owner reader; the owner migrates it.
+
+    presentation-creator owns outline.yaml. Every other skill reads only the
+    current schema and treats an older one as no usable prior state, naming the
+    owner's migration (``outline_schema.py --migrate``).
+    """
+    data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    version = _root_version(data)
+    if isinstance(version, int) and not isinstance(version, bool):
+        if version < OUTLINE_SCHEMA_VERSION:
+            raise OutlineVersionError(
+                f"{path} is outline schema {version}; this reader needs schema "
+                f"{OUTLINE_SCHEMA_VERSION}. Run the owner migration: "
+                f"outline_schema.py --migrate {path}"
+            )
+
+
+def migrate_outline(path: Path | str) -> dict[str, object]:
+    """Restamp an older outline at the current schema, as its owner, in place.
+
+    v2 only adds an optional field, so the migration is the root stamp: the
+    ``schema_version`` line is rewritten (or added) and nothing else changes,
+    comments and layout included. The result is validated before it replaces
+    the file atomically.
+    """
+    target = Path(path)
+    text = target.read_text(encoding="utf-8")
+    version = _root_version(yaml.safe_load(text))
+    if version == OUTLINE_SCHEMA_VERSION:
+        return {"ok": True, "path": str(target), "migrated": False, "to": version}
+    if version != 1:
+        raise OutlineVersionError(
+            f"{target} has root schema_version {version!r}; only schema 1 "
+            f"migrates to {OUTLINE_SCHEMA_VERSION}"
+        )
+    stamp = f"schema_version: {OUTLINE_SCHEMA_VERSION}"
+    if _ROOT_VERSION_LINE.search(text):
+        migrated = _ROOT_VERSION_LINE.sub(stamp, text, count=1)
+    elif text.startswith("---\n"):
+        migrated = "---\n" + stamp + "\n" + text[4:]
+    else:
+        migrated = stamp + "\n" + text
+    PartialOutline.model_validate(yaml.safe_load(migrated))
+    staged = target.with_name(f".{target.name}.migrating")
+    staged.write_text(migrated, encoding="utf-8")
+    os.replace(staged, target)
+    return {"ok": True, "path": str(target), "migrated": True, "from": 1, "to": 2}
+
+
 def main(argv: list[str]) -> int:
     args = argv[1:]
+    if args[:1] == ["--migrate"]:
+        if len(args) != 2:
+            print("usage: outline_schema.py --migrate <outline.yaml>", file=sys.stderr)
+            return 2
+        try:
+            print(json.dumps(migrate_outline(args[1])))
+        except (OSError, yaml.YAMLError, ValidationError, OutlineVersionError) as exc:
+            print(f"FAIL: {exc}", file=sys.stderr)
+            return 1
+        return 0
     emit_json = "--emit-json" in args
     args = [a for a in args if a != "--emit-json"]
     if len(args) != 1:
         print(
-            "usage: outline_schema.py [--emit-json] <outline.yaml>",
+            "usage: outline_schema.py [--emit-json] <outline.yaml> | "
+            "--migrate <outline.yaml>",
             file=sys.stderr,
         )
         return 2

@@ -62,7 +62,11 @@ Do not restate them here — apply them.
 
 ## Step 1 — Route by Mode
 
-Determine which of three modes applies and execute only the matching steps:
+Determine which of three modes applies and execute only the matching steps.
+The illustration scripts read outline schema 2 only; when one refuses an older
+outline, run presentation-creator's owner migration it names
+(`"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py" --migrate outline.yaml`),
+then re-run the script.
 
 - **Strategy** — outline has no STYLE ANCHOR yet, or the author wants to revise
   it. Run Step 2 (freshness), then Steps 3-9 (style strategy), then stop unless
@@ -239,8 +243,9 @@ composition, also set `style_anchor.composition: poster-theatrical`,
 `style_anchor.embedded_footer: <text>`, and `style_anchor.text_treatment: <how
 the baked title is rendered>` (e.g. "glowing hand-script neon on an in-scene
 surface"). For the Step 5 stamped-footer choice, also set
-`style_anchor.footer_style` (`{}` takes the defaults), then read the footer
-passage of this step's strategy reference:
+`style_anchor.footer_style` (`{}` takes the defaults) and, in the same edit, the
+root `schema_version: 2`, then read the footer passage of this step's strategy
+reference:
 
 ```text
 skills/illustrations/references/strategy.md

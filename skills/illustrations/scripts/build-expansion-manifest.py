@@ -9,7 +9,8 @@ with its frames.
 
 Why a manifest (not direct deck edits): structural deck edits go through real
 PowerPoint / RunDeckOps, never python-pptx — see rules/deck-editing-rules.md.
-This script only produces the plan; it does not touch the deck.
+This script never touches the deck. Its one write besides ``--out`` is the
+stamped frame copies described below, when the outline stamps its footer.
 
 Manifest shape (schema_version 1):
 
@@ -24,7 +25,10 @@ Manifest shape (schema_version 1):
       ]
     }
 
-- `parent` — the 1-based outline slide number that carries the `builds` block.
+- `parent` — the 1-based position, in the built deck, of the slide that
+  carries the `builds` block (`outline_schema.deck_positions`): the slide
+  ExpandBuilds replaces. It equals the outline number only when numbering runs
+  1..N; a zero-based or gapped outline still names the right slide.
 - `frames` — absolute paths to build-00 .. build-N, in ascending step order.
   The parent slide is replaced by these frames (build-00 first, build-N last).
 - `notes` — speaker notes for the FINAL frame only (empty when none); earlier
@@ -240,6 +244,10 @@ def main(argv=None):
         "parent's notes ride onto its final frame so expansion keeps them",
     )
     args = ap.parse_args(argv)
+    try:
+        outline_schema.require_current_outline(args.outline)
+    except outline_schema.OutlineVersionError as exc:
+        raise SystemExit(f"ERROR: {exc}") from exc
 
     if not args.outline.is_file():
         raise SystemExit(f"ERROR: outline not found: {args.outline}")

@@ -40,7 +40,7 @@ def _write_outline(
     title are filled in so the partial schema validates.
     """
     norm = _fill_numbering([{"chapter": "c", "title": "S", **s} for s in slides])
-    data = {"talk": copy.deepcopy(_TALK), "slides": norm}
+    data = {"schema_version": 2, "talk": copy.deepcopy(_TALK), "slides": norm}
     if composition is not None or embedded_footer is not None:
         anchor = {"model": "imagen-4", "full": "F", "imgtxt": "I", "conventions": "C"}
         if composition is not None:

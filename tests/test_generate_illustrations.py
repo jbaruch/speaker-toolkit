@@ -33,7 +33,11 @@ def _write_outline(
     the slides the test cares about. parse_outline reads it via
     load_outline_partial, so full-deck invariants are not required.
     """
-    data = {"talk": copy.deepcopy(_FIXTURE_DATA["talk"]), "slides": slides}
+    data = {
+        "schema_version": 2,
+        "talk": copy.deepcopy(_FIXTURE_DATA["talk"]),
+        "slides": slides,
+    }
     if model:
         anchor = {
             "model": model,
@@ -1948,7 +1952,12 @@ def test_a_title_less_stamped_slide_still_reserves_its_footer_strip(
         gi.apply_poster_embed_directive(once, "", "@jbaruch", footer_style=FOOTER_STYLE)
         == once
     )
-    # A model-rendered footer still needs a title to sit under.
-    assert gi.apply_poster_embed_directive("A quiet scene.", "", "@jbaruch") == (
+    # A model-rendered footer is directed on a title-less slide too.
+    rendered = gi.apply_poster_embed_directive("A quiet scene.", "", "@jbaruch")
+    assert '"@jbaruch"' in rendered and "FOOTER -- EXACT" in rendered
+    assert gi.POSTER_NO_INVENTED_TEXT in rendered
+    assert gi.apply_poster_embed_directive(rendered, "", "@jbaruch") == rendered
+    # Nothing to direct without a title or a footer.
+    assert gi.apply_poster_embed_directive("A quiet scene.", "", None) == (
         "A quiet scene."
     )
