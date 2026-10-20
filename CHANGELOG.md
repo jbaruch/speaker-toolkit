@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.188 — 2026-10-20
+
 ### Let a declared local audio file bind its transcript receipt
 
 `fetch-transcript.py --audio` accepts `.mp3` and `.m4a` and writes a
