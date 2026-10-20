@@ -48,7 +48,9 @@ Two session-lifecycle gaps Copilot raised on PR #465, deferred to #466:
   the post-migration write gate requires config schema 3. A docs test refuses
   any skill reference sentence that requires, stamps or calls current a config
   schema other than `CONFIG_RECORD_SCHEMA_VERSION`, outside a legacy or
-  migration context.
+  migration context. `source-identity-preflight.md` now lists the readable config
+  generations preflight reports as `[1, 2, 3]`, and a test reads that list
+  against `READABLE_CONFIG_RECORD_SCHEMA_VERSIONS`.
 - Preflight's exclusions check compared a container-valued
   `config.schema_version` against the readable-version set and crashed with a
   `TypeError`; it now takes exact integers only, so a malformed version reports

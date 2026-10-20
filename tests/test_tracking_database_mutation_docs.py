@@ -88,3 +88,17 @@ def test_no_operational_reference_calls_a_superseded_config_current() -> None:
             ):
                 failures.append(f"{path.relative_to(ROOT)}: {sentence}")
     assert not failures, "\n" + "\n".join(failures)
+
+
+def test_preflight_reference_lists_the_readable_config_generations() -> None:
+    """The documented expected list is the one preflight reports."""
+    readable = _import_script(
+        str(Path(SCRIPTS_VI) / "tracking_database.py"), "tracking_database"
+    ).READABLE_CONFIG_RECORD_SCHEMA_VERSIONS
+    reference = " ".join(
+        _read("skills/vault-ingress/references/source-identity-preflight.md").split()
+    )
+    match = re.search(r"expects readable generations `\[([0-9, ]+)\]`", reference)
+    assert match is not None
+    documented = [int(part) for part in match.group(1).split(",")]
+    assert documented == sorted(readable)

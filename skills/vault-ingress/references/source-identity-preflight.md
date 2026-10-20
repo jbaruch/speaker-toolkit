@@ -189,7 +189,7 @@ text.
 
 An unusable owner-schema finding retains the assessment's closed
 `reason_codes` in structured `actual` detail. A config-version failure names
-`config.schema_version`, expects readable generations `[1, 2]`, and reports the
+`config.schema_version`, expects readable generations `[1, 2, 3]`, and reports the
 stored config generation separately from those reasons; it is not mislabeled as
 a root-schema failure.
 
