@@ -2,6 +2,7 @@
 
 import copy
 import re
+import stat
 from pathlib import Path
 
 import pytest
@@ -1323,3 +1324,76 @@ def test_the_owner_migration_names_each_fix(
     with pytest.raises(outline_schema.OutlineVersionError, match=re.escape(fix)):
         outline_schema.migrate_outline(path)
     assert path.read_bytes() == raw
+
+
+def test_migrate_names_a_path_fix_for_a_missing_outline_or_a_directory(
+    outline_schema, tmp_path, capsys
+):
+    missing = tmp_path / "outline.yaml"
+    assert outline_schema.main(["outline_schema.py", "--migrate", str(missing)]) == 1
+    assert (
+        "pass the path to the talk's existing outline.yaml" in capsys.readouterr().err
+    )
+    assert outline_schema.main(["outline_schema.py", "--migrate", str(tmp_path)]) == 1
+    assert "is a directory; pass the outline.yaml inside it" in capsys.readouterr().err
+
+
+def test_migrate_names_the_fix_for_an_unreadable_outline(
+    outline_schema, base_data, tmp_path, monkeypatch, capsys
+):
+    path = tmp_path / "outline.yaml"
+    path.write_text(_v1_text(base_data, stamp=True), encoding="utf-8")
+    real = Path.read_bytes
+
+    def denied(self):
+        if self == path:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real(self)
+
+    monkeypatch.setattr(Path, "read_bytes", denied)
+    assert outline_schema.main(["outline_schema.py", "--migrate", str(path)]) == 1
+    assert "permission denied; make it readable" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("stage", ["stage", "replace"])
+def test_a_failed_write_names_its_fix_and_leaves_the_outline(
+    outline_schema, base_data, tmp_path, monkeypatch, capsys, stage
+):
+    path = tmp_path / "outline.yaml"
+    original = _v1_text(base_data, stamp=True)
+    path.write_text(original, encoding="utf-8")
+    full = OSError(28, "No space left on device")
+
+    def fail(*args, **kwargs):
+        raise full
+
+    if stage == "stage":
+        monkeypatch.setattr(outline_schema.tempfile, "mkstemp", fail)
+    else:
+        monkeypatch.setattr(outline_schema.os, "replace", fail)
+    assert outline_schema.main(["outline_schema.py", "--migrate", str(path)]) == 1
+    err = capsys.readouterr().err
+    assert f"make {tmp_path} writable" in err
+    assert "The outline is unchanged" in err
+    assert path.read_text(encoding="utf-8") == original
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["outline.yaml"]
+
+
+def test_the_migration_stages_privately_and_keeps_the_file_mode(
+    outline_schema, base_data, tmp_path
+):
+    """A leftover staging file from another run is never reused or clobbered."""
+    path = tmp_path / "outline.yaml"
+    path.write_text(_v1_text(base_data, stamp=True), encoding="utf-8")
+    path.chmod(0o640)
+    stale = tmp_path / ".outline.yaml.migrating"
+    stale.write_text("another run's half-written stage", encoding="utf-8")
+
+    assert outline_schema.migrate_outline(path)["migrated"] is True
+
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
+    assert stale.read_text(encoding="utf-8") == "another run's half-written stage"
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        ".outline.yaml.migrating",
+        "outline.yaml",
+    ]

@@ -60,7 +60,7 @@ discipline reduced the drift but cannot guarantee typographic identity.
   slide still gets its footer directive: the stamped footer's quiet strip, or
   the canonical model-rendered block.
 - presentation-creator owns `outline.yaml`. `outline_schema.py --migrate`
-  restamps a v1 or unversioned outline to schema 2 in place, rewriting only
+  restamps a v1 outline to schema 2 in place, rewriting only
   the root stamp so comments survive, and validates it before the atomic
   replace. The illustration scripts are non-owner readers: they refuse an
   older outline (`require_current_outline`) and never migrate it. Step 9 sets
@@ -69,8 +69,9 @@ discipline reduced the drift but cannot guarantee typographic identity.
   names the stamped frame copies as its one write. Illustrations Step 1 stops
   when a refusal says to hand off and invokes
   `Skill(skill: "presentation-creator")`, whose new "Outline Handoff" entry
-  flow (`alternate-entry-flows.md`) validates, and so migrates, the outline
-  before the refused script re-runs.
+  flow (`alternate-entry-flows.md`) runs the owner's `--migrate` before the
+  refused script re-runs. `--migrate` needs only a partial outline, so an
+  unfinished Phase 1–2 outline completes the handoff too.
   Both apply and the manifest name a missing outline before checking its
   version. The migration
   rewrites only the root version's value, so an inline comment, a quoted key,
@@ -105,6 +106,22 @@ discipline reduced the drift but cannot guarantee typographic identity.
 - The worked example `tests/fixtures/outline-example.yaml` is stamped at
   schema 2, and a test pins it there, so the CLI tests no longer rewrite a
   committed fixture.
+- `--migrate` and plain validation turn a failed read or write into its fix
+  instead of a bare errno: a missing path, a directory, a permission denial,
+  an unwritable directory or a full disk. The migration stages through a file
+  unique to the call (`tempfile.mkstemp` beside the outline), keeps the
+  outline's file mode, and on failure removes its stage and says the outline
+  is unchanged. A shared `.outline.yaml.migrating` path let two concurrent
+  migrations truncate each other's stage.
+- Apply and the build manifest decode every image they list before writing
+  anything (`footer_stamp.unusable_image`). Existence was the only check, so a
+  truncated download or a directory with an image's name produced `ok: true`
+  and a backgrounds or ExpandBuilds manifest that failed later inside
+  PowerPoint. Safe-zone FULL backgrounds, model-rendered poster backgrounds
+  and unstamped build frames were never decoded at all. A refusal names the
+  slide, the file and the regeneration command. `footer_stamp` now imports with
+  the other modules in both scripts instead of after the `sys.path` insert, so
+  its E402 suppression is gone.
 - Apply's safe-zone path takes illustrated slides only, as its IMG+TXT path
   already did: a prompt-free FULL screenshot with a safe zone has no generated
   image, so the mandatory preflight no longer aborts the whole apply over its

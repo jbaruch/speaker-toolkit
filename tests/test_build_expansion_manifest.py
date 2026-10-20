@@ -73,11 +73,15 @@ def _make_outline(tmp_path, slides=None):
 
 
 def _make_frames(builds_dir, parent, steps, ext="jpg"):
-    """Create build-MM frames for the given step numbers (a list) or count (int)."""
+    """Create decodable build-MM frames for the step numbers (a list) or count (int)."""
+    from PIL import Image
+
     builds_dir.mkdir(parents=True, exist_ok=True)
     nums = range(steps) if isinstance(steps, int) else steps
     for m in nums:
-        (builds_dir / f"slide-{parent:02d}-build-{m:02d}.{ext}").write_bytes(b"img")
+        Image.new("RGB", (16, 9), (10, 20, 30)).save(
+            builds_dir / f"slide-{parent:02d}-build-{m:02d}.{ext}"
+        )
 
 
 def test_parses_build_specs(build_expansion_manifest, tmp_path):
@@ -306,21 +310,46 @@ def test_a_poster_build_parent_off_the_poster_contract_is_refused(
     assert not (builds / "footer-stamped").exists()
 
 
-def test_a_frame_that_cannot_be_stamped_stops_the_manifest(
+@pytest.mark.parametrize("stamped", [True, False], ids=["stamped", "unstamped"])
+def test_a_frame_that_does_not_decode_stops_the_manifest(
+    build_expansion_manifest, tmp_path, stamped
+):
+    """Unstamped frames are never opened by stamping; the preflight decodes them."""
+    slides = [s for s in DEFAULT_SLIDES if s["n"] == 7]
+    outline = (
+        _stamping_outline(tmp_path, slides)
+        if stamped
+        else _make_outline(tmp_path, slides)
+    )
+    builds = tmp_path / "builds"
+    _make_frames(builds, 7, 4)
+    (builds / "slide-07-build-02.jpg").write_bytes(b"placeholder bytes")
+    out = tmp_path / "manifest.json"
+
+    with pytest.raises(SystemExit) as exc:
+        build_expansion_manifest.main([str(outline), str(builds), "--out", str(out)])
+
+    # The unusable frame is named, with what to do about it; nothing is written.
+    assert "slide 7's build frames cannot be placed" in str(exc.value)
+    assert "slide-07-build-02.jpg cannot be decoded" in str(exc.value)
+    assert "--build 7" in str(exc.value)
+    assert not out.exists()
+    assert not (builds / "footer-stamped").exists()
+
+
+def test_a_directory_named_like_a_frame_stops_the_manifest(
     build_expansion_manifest, tmp_path
 ):
     slides = [s for s in DEFAULT_SLIDES if s["n"] == 7]
-    outline = _stamping_outline(tmp_path, slides)
+    outline = _make_outline(tmp_path, slides)
     builds = tmp_path / "builds"
-    _make_frames(builds, 7, 4)  # placeholder bytes, not images
+    _make_frames(builds, 7, [0, 1, 3])
+    (builds / "slide-07-build-02.jpg").mkdir()
 
     with pytest.raises(SystemExit) as exc:
         build_expansion_manifest.build_manifest(outline, builds)
 
-    # The unreadable frame is named, with what to do about it.
-    assert "cannot stamp the build frames" in str(exc.value)
-    assert "slide-07-build-00.jpg" in str(exc.value)
-    assert "regenerate or replace it" in str(exc.value)
+    assert "slide-07-build-02.jpg is not a file" in str(exc.value)
 
 
 def test_frames_of_mixed_size_are_refused_before_any_stamp(

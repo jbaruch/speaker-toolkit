@@ -141,6 +141,25 @@ def require_one_geometry(images: Iterable[Path]) -> tuple[int, int] | None:
     return next(iter(sizes), None)
 
 
+def unusable_image(path: Path) -> str | None:
+    """Why ``path`` cannot be placed on a slide, or None when it decodes.
+
+    Existence is not enough: a corrupt file or a directory with an image's name
+    would pass a path check and fail only later, inside PowerPoint. A full
+    decode is the check, so every pass that lists an image runs it first.
+    """
+    if not path.is_file():
+        return f"{path.name} is not a file"
+    try:
+        with Image.open(path) as image:
+            image.load()
+    except (OSError, SyntaxError, ValueError, Image.DecompressionBombError) as exc:
+        return (
+            f"{path.name} cannot be decoded as an image ({type(exc).__name__}: {exc})"
+        )
+    return None
+
+
 def stamped_slide(slide: Any) -> bool:
     """Whether a poster deck's slide is an illustrated full-bleed background.
 

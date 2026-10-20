@@ -50,13 +50,25 @@ Usage:
 
 stdout: the manifest JSON (also written to --out when given).
 Exit non-zero with a stderr diagnostic when a declared build parent has no
-frames on disk.
+frames on disk, or a declared frame is not a file that decodes as an image.
 """
 
 import argparse
 import json
 import sys
 from pathlib import Path
+
+# A sibling module: this script's own directory is already importable.
+from footer_stamp import (
+    FRAME_RE,
+    FooterStampError,
+    deck_stamp_set,
+    require_one_geometry,
+    stamp_footer_file,
+    stamp_spec,
+    stamped_slide,
+    unusable_image,
+)
 
 # outline.yaml is the single source of truth; its schema + loader live with the
 # presentation-creator scripts.
@@ -69,15 +81,6 @@ sys.path.insert(
     ),
 )
 import outline_schema  # noqa: E402  (path appended above)
-from footer_stamp import (  # noqa: E402  (sibling module)
-    FRAME_RE,
-    FooterStampError,
-    deck_stamp_set,
-    require_one_geometry,
-    stamp_footer_file,
-    stamp_spec,
-    stamped_slide,
-)
 
 SCHEMA_VERSION = 1
 
@@ -125,6 +128,36 @@ def frames_for(builds_dir: Path, parent: int) -> dict[int, Path]:
     return found
 
 
+def _require_usable_frames(specs: list[dict], builds_dir: Path) -> None:
+    """Every declared frame is on disk and decodes, before any is stamped or listed.
+
+    parse_build_specs reads outline.yaml through the schema, which already
+    guarantees each slide's build steps are contiguous from 0, so step count,
+    ordering and contiguity need no re-checking here.
+    """
+    for spec in specs:
+        parent, steps = spec["parent"], spec["steps"]
+        found = frames_for(builds_dir, parent)
+        missing = [s for s in steps if s not in found]
+        if missing:
+            raise SystemExit(
+                f"ERROR: slide {parent} is missing build frame(s) for step(s) "
+                f"{missing} (declared build-NN entries: {steps}). A partial "
+                "sequence would expand into a broken reveal. Regenerate: "
+                f"generate-illustrations.py <outline> --build {parent}"
+            )
+        unusable = [
+            why for step in steps if (why := unusable_image(found[step])) is not None
+        ]
+        if unusable:
+            raise SystemExit(
+                f"ERROR: slide {parent}'s build frames cannot be placed: "
+                f"{'; '.join(unusable)}. ExpandBuilds would fail on them inside "
+                f"PowerPoint. Regenerate: generate-illustrations.py <outline> "
+                f"--build {parent}"
+            )
+
+
 def _require_one_stamped_geometry(
     outline_path: Path, specs: list[dict], builds_dir: Path
 ) -> None:
@@ -163,23 +196,12 @@ def build_manifest(
         outline_schema.load_outline_partial(outline_path).slides
     )
     specs = sorted(parse_build_specs(outline_path), key=lambda s: s["parent"])
+    _require_usable_frames(specs, builds_dir)
     _require_one_stamped_geometry(outline_path, specs, builds_dir)
     builds = []
-    # parse_build_specs reads outline.yaml through the schema, which already
-    # guarantees each slide's build steps are contiguous from 0 — so step
-    # count, ordering, and contiguity need no re-checking here. The only
-    # remaining failure mode is a declared step whose frame isn't on disk yet.
     for spec in specs:
         parent, steps = spec["parent"], spec["steps"]
         found = frames_for(builds_dir, parent)
-        missing = [s for s in steps if s not in found]
-        if missing:
-            raise SystemExit(
-                f"ERROR: slide {parent} is missing build frame(s) for step(s) "
-                f"{missing} (declared build-NN entries: {steps}). A partial "
-                "sequence would expand into a broken reveal. Regenerate: "
-                f"generate-illustrations.py <outline> --build {parent}"
-            )
         # A null/absent note is empty; a non-string note is an error — never
         # coerce it, or a JSON null would become the literal "None" on the final
         # build frame (mirrors notes-to-packed.py's drop-empty contract).

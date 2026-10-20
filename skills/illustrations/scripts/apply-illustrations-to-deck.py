@@ -55,7 +55,8 @@ post-ExpandBuilds deck slide numbers, so run the backgrounds pass after
 (``outline_schema.deck_positions``), so outline numbering may start at 0. With ``footer_style``, every stamped slide image and every
 declared build frame must share one size, checked before anything is written. Progress lines go to stderr. A refusal exits non-zero
 with its message on stderr and names the fix: an eligible slide whose image is
-missing or that lies past the deck's end (nothing is written), an unreadable
+missing, is not a file or does not decode as an image (``footer_stamp.unusable_image``),
+or that lies past the deck's end (nothing is written), an unreadable
 source deck, an unwritable output deck or backgrounds manifest, or a slide image
 that cannot be read or stamped.
 """
@@ -72,6 +73,17 @@ from pptx.enum.shapes import MSO_SHAPE, MSO_SHAPE_TYPE
 from pptx.oxml.ns import qn
 from pptx.util import Inches
 
+# A sibling module: this script's own directory is already importable.
+from footer_stamp import (
+    FooterStampError,
+    deck_stamp_set,
+    require_one_geometry,
+    stamp_footer_file,
+    stamp_spec,
+    stamped_slide,
+    unusable_image,
+)
+
 # outline.yaml is the single source of truth; its schema + loader live with the
 # presentation-creator scripts.
 sys.path.insert(
@@ -85,14 +97,6 @@ sys.path.insert(
     ),
 )
 import outline_schema  # noqa: E402  (path appended above)
-from footer_stamp import (  # noqa: E402  (sibling module)
-    FooterStampError,
-    deck_stamp_set,
-    require_one_geometry,
-    stamp_footer_file,
-    stamp_spec,
-    stamped_slide,
-)
 
 # 16:9 slide geometry (inches)
 SLIDE_W_IN = 13.333
@@ -488,6 +492,8 @@ def _unapplied(
             problems.append(f"slide {n} is past the deck's {slide_count} slides")
         elif not illust.exists():
             problems.append(f"slide {n} has no {illust.name}")
+        elif (why := unusable_image(illust)) is not None:
+            problems.append(f"slide {n}: {why}")
     return problems
 
 

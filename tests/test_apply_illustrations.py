@@ -893,8 +893,8 @@ def test_an_unreadable_img_txt_image_names_the_image(
     with pytest.raises(SystemExit) as exc:
         apply_illustrations.main()
 
-    assert "cannot read the slide image" in str(exc.value)
-    assert "slide-02.jpg" in str(exc.value)
+    assert "slide 2: slide-02.jpg cannot be decoded as an image" in str(exc.value)
+    assert not (tmp_path / "deck-with-titles.pptx").exists()
 
 
 def test_deck_slide_numbers_follow_build_expansion(apply_illustrations):
@@ -1161,3 +1161,50 @@ def test_a_prompt_free_safe_zone_slide_is_left_to_the_slide_walk(
     summary = json.loads(capsys.readouterr().out)
     assert summary["eligible"] == 1
     assert [r["slide"] for r in summary["results"]] == [1]
+
+
+@pytest.mark.parametrize(
+    "slide,composition",
+    [
+        ({"format": "FULL", "safe_zone": {"zone": "upper_third"}}, None),
+        ({"format": "FULL"}, "poster-theatrical"),
+    ],
+    ids=["standard-full", "unstamped-poster"],
+)
+@pytest.mark.parametrize("bad", ["corrupt", "directory"])
+def test_a_background_that_does_not_decode_writes_nothing(
+    apply_illustrations, tmp_path, monkeypatch, slide, composition, bad
+):
+    """A background only PowerPoint would open is decoded here first: a corrupt
+    file or a directory never reaches the manifest as ``ok: true``."""
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    (illust_dir / "slide-01.png").write_bytes(_MIN_PNG)
+    target = illust_dir / "slide-02.png"
+    if bad == "corrupt":
+        # A valid PNG header over truncated pixel data: only a full decode fails.
+        target.write_bytes(_MIN_PNG[:45])
+    else:
+        target.mkdir()
+    outline = _write_outline(
+        tmp_path,
+        [
+            {"n": 1, "image_prompt": "P", **slide},
+            {"n": 2, "image_prompt": "Q", **slide},
+        ],
+        composition=composition,
+        embedded_footer="@jbaruch" if composition else None,
+    )
+    out = tmp_path / "deck-with-titles.pptx"
+    _cli(monkeypatch, str(deck), str(illust_dir), str(outline), "--image-ext", "png")
+
+    with pytest.raises(SystemExit) as exc:
+        apply_illustrations.main()
+
+    reason = "cannot be decoded as an image" if bad == "corrupt" else "is not a file"
+    assert f"slide 2: slide-02.png {reason}" in str(exc.value)
+    assert "no deck was written" in str(exc.value)
+    assert not out.exists()
+    assert not (tmp_path / "deck-with-titles.backgrounds.json").exists()

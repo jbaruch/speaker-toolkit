@@ -19,7 +19,9 @@ import json
 import copy
 import os
 import re
+import stat
 import sys
+import tempfile
 from enum import Enum
 from pathlib import Path
 from typing import Literal
@@ -1059,6 +1061,62 @@ def _decode(path: Path, raw: bytes, *, handoff: bool) -> str:
         ) from exc
 
 
+def _read(path: Path, *, handoff: bool) -> str:
+    """The outline's text; a failed read names the path fix, never an errno."""
+    try:
+        raw = path.read_bytes()
+    except FileNotFoundError as exc:
+        raise OutlineVersionError(
+            f"no outline at {path}; pass the path to the talk's existing "
+            "outline.yaml, then re-run"
+        ) from exc
+    except IsADirectoryError as exc:
+        raise OutlineVersionError(
+            f"{path} is a directory; pass the outline.yaml inside it, then re-run"
+        ) from exc
+    except PermissionError as exc:
+        raise OutlineVersionError(
+            f"cannot read {path}: permission denied; make it readable, then re-run"
+        ) from exc
+    except OSError as exc:
+        raise OutlineVersionError(
+            f"cannot read {path} ({exc.strerror or exc}); check the path and the "
+            "disk, then re-run"
+        ) from exc
+    return _decode(path, raw, handoff=handoff)
+
+
+def _replace_in_place(target: Path, text: str) -> None:
+    """Swap ``text`` in for ``target`` atomically, keeping its file mode.
+
+    The staging file is unique to this call, so concurrent migrations never
+    share one, and a failure removes it and leaves the outline unchanged.
+    """
+    try:
+        mode = stat.S_IMODE(target.stat().st_mode)
+        handle, name = tempfile.mkstemp(
+            dir=target.parent, prefix=f".{target.name}.", suffix=".migrating"
+        )
+    except OSError as exc:
+        raise OutlineVersionError(
+            f"cannot stage the migration beside {target} ({exc.strerror or exc}); "
+            f"make {target.parent} writable, then re-run. The outline is unchanged"
+        ) from exc
+    staged = Path(name)
+    try:
+        with os.fdopen(handle, "wb") as out:
+            out.write(text.encode("utf-8"))
+        os.chmod(staged, mode)
+        os.replace(staged, target)
+    except OSError as exc:
+        staged.unlink(missing_ok=True)
+        raise OutlineVersionError(
+            f"cannot replace {target} ({exc.strerror or exc}); make "
+            f"{target.parent} writable and check free space, then re-run. The "
+            "outline is unchanged"
+        ) from exc
+
+
 def _root_version(path: Path, text: str, *, handoff: bool) -> int:
     """The exact integer root stamp; anything else is refused with its fix."""
     try:
@@ -1099,7 +1157,7 @@ def require_current_outline(path: Path | str) -> None:
     hands it to presentation-creator.
     """
     target = Path(path)
-    text = _decode(target, target.read_bytes(), handoff=True)
+    text = _read(target, handoff=True)
     version = _root_version(target, text, handoff=True)
     if version == OUTLINE_SCHEMA_VERSION:
         return
@@ -1125,7 +1183,7 @@ def migrate_outline(path: Path | str) -> dict[str, object]:
     """
     target = Path(path)
     # Bytes in, bytes out: universal-newline reads would rewrite CRLF files.
-    text = _decode(target, target.read_bytes(), handoff=False)
+    text = _read(target, handoff=False)
     version = _root_version(target, text, handoff=False)
     if version == OUTLINE_SCHEMA_VERSION:
         return {"ok": True, "path": str(target), "migrated": False, "to": version}
@@ -1149,10 +1207,16 @@ def migrate_outline(path: Path | str) -> dict[str, object]:
             f"cannot restamp; set it to {OUTLINE_SCHEMA_VERSION} by hand"
         )
     PartialOutline.model_validate(loaded)
-    staged = target.with_name(f".{target.name}.migrating")
-    staged.write_bytes(migrated.encode("utf-8"))
-    os.replace(staged, target)
+    _replace_in_place(target, migrated)
     return {"ok": True, "path": str(target), "migrated": True, "from": 1, "to": 2}
+
+
+def _os_failure(path: str, exc: OSError) -> str:
+    return (
+        f"FAIL: cannot access {path} ({exc.strerror or exc}); check that the path "
+        "names the talk's outline.yaml and that it and its directory are readable "
+        "and writable, then re-run"
+    )
 
 
 def main(argv: list[str]) -> int:
@@ -1163,8 +1227,11 @@ def main(argv: list[str]) -> int:
             return 2
         try:
             print(json.dumps(migrate_outline(args[1])))
-        except (OSError, yaml.YAMLError, ValidationError, OutlineVersionError) as exc:
+        except (yaml.YAMLError, ValidationError, OutlineVersionError) as exc:
             print(f"FAIL: {exc}", file=sys.stderr)
+            return 1
+        except OSError as exc:
+            print(_os_failure(args[1], exc), file=sys.stderr)
             return 1
         return 0
     emit_json = "--emit-json" in args
@@ -1191,8 +1258,11 @@ def main(argv: list[str]) -> int:
                     file=sys.stderr,
                 )
         outline = load_outline(args[0])
-    except (OSError, yaml.YAMLError, ValidationError, OutlineVersionError) as exc:
+    except (yaml.YAMLError, ValidationError, OutlineVersionError) as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
+        return 1
+    except OSError as exc:
+        print(_os_failure(args[0], exc), file=sys.stderr)
         return 1
     if emit_json:
         json.dump(outline.model_dump(mode="json"), sys.stdout, indent=2)
