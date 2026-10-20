@@ -733,9 +733,13 @@ class VaultPreflight:
         """Report one typed exclusion fault and suppress generic schema noise."""
         message: str | None = None
         actual: Any = config.get("pptx_directory_exclusions")
+        version = config.get("schema_version")
+        # Exact integers only: a container would raise in the set lookup, and
+        # True would compare equal to 1.
         if (
-            config.get("schema_version") in READABLE_CONFIG_RECORD_SCHEMA_VERSIONS
-            and config.get("schema_version") != LEGACY_CONFIG_RECORD_SCHEMA_VERSION
+            type(version) is int
+            and version in READABLE_CONFIG_RECORD_SCHEMA_VERSIONS
+            and version != LEGACY_CONFIG_RECORD_SCHEMA_VERSION
             and "pptx_directory_exclusions" not in config
         ):
             message = (

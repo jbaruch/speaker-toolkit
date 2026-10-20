@@ -41,7 +41,11 @@ Two session-lifecycle gaps Copilot raised on PR #465, deferred to #466:
   empty arrays into the `initialize_database` mutation, which accepts only
   `kind` and `config` and rejects any config version but the current one; the
   initializer stamps both versions and creates the arrays. Every migration and
-  initialization statement now describes config v1/v2 input and v3 output. `schemas-obligations.md`, `schemas-db.md`,
+  initialization statement now describes config v1/v2 input and v3 output.
+- Preflight's exclusions check compared a container-valued
+  `config.schema_version` against the readable-version set and crashed with a
+  `TypeError`; it now takes exact integers only, so a malformed version reports
+  the schema finding instead. `schemas-obligations.md`, `schemas-db.md`,
   `schemas-config.md`, `clarification-handoff.md` and vault-clarification
   Steps 2 and 9 carry the new contract.
 
