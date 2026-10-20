@@ -407,7 +407,9 @@ def test_apply_imgtxt_keeps_picture_shape(apply_illustrations, tmp_path):
     illust_dir.mkdir()
     (illust_dir / "slide-02.png").write_bytes(_MIN_PNG)
 
-    outline = _write_outline(tmp_path, [{"n": 2, "format": "IMG+TXT"}])
+    outline = _write_outline(
+        tmp_path, [{"n": 2, "format": "IMG+TXT", "image_prompt": "P"}]
+    )
     out_deck = tmp_path / "out.pptx"
 
     img_txt = apply_illustrations.parse_img_txt_slides(outline)
@@ -841,7 +843,9 @@ def test_an_unreadable_img_txt_image_names_the_image(
     illust_dir = tmp_path / "illustrations"
     illust_dir.mkdir()
     (illust_dir / "slide-02.jpg").write_bytes(b"not an image")
-    outline = _write_outline(tmp_path, [{"n": 2, "format": "IMG+TXT"}])
+    outline = _write_outline(
+        tmp_path, [{"n": 2, "format": "IMG+TXT", "image_prompt": "P"}]
+    )
     _cli(monkeypatch, str(deck), str(illust_dir), str(outline))
 
     with pytest.raises(SystemExit) as exc:
@@ -967,3 +971,50 @@ def test_a_multiline_stamped_footer_is_refused_by_the_schema(
     with pytest.raises(ValidationError, match="as one line"):
         _poster_outline_with_footer_style(tmp_path, "@jbaruch\nspeaking.jbaru.ch", {})
         outline_schema.load_outline_partial(tmp_path / "outline.yaml")
+
+
+def test_a_prompt_free_img_txt_slide_is_left_to_the_slide_walk(
+    apply_illustrations, tmp_path, monkeypatch, capsys
+):
+    """A screenshot IMG+TXT slide has no generated image and never blocks apply."""
+    deck = tmp_path / "deck.pptx"
+    make_deck(5).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    (illust_dir / "slide-02.png").write_bytes(_MIN_PNG)
+    (illust_dir / "slide-04.png").write_bytes(_MIN_PNG)
+    outline = _write_outline(
+        tmp_path,
+        [
+            {
+                "n": 2,
+                "format": "IMG+TXT",
+                "image_prompt": "P",
+                "builds": [
+                    {"step": 0, "desc": "a", "erase": "e"},
+                    {"step": 1, "desc": "b", "erase": "e"},
+                    {"step": 2, "desc": "c"},
+                ],
+            },
+            {"n": 3, "format": "IMG+TXT"},
+            {"n": 4, "format": "IMG+TXT", "image_prompt": "Q"},
+        ],
+    )
+    _cli(
+        monkeypatch,
+        str(deck),
+        str(illust_dir),
+        str(outline),
+        "--image-ext",
+        "png",
+    )
+
+    apply_illustrations.main()
+
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["eligible"] == 2
+    # Every result carries its post-expansion number: slide 4 follows 3 frames.
+    assert {r["slide"]: r["deck_slide"] for r in summary["results"]} == {
+        2: None,
+        4: 6,
+    }

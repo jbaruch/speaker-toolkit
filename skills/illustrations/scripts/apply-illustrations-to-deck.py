@@ -204,15 +204,17 @@ def parse_zones(outline_path: Path) -> dict:
 
 
 def parse_img_txt_slides(outline_path: Path) -> set:
-    """Slide numbers whose format is IMG+TXT and which have no safe_zone.
+    """Illustrated IMG+TXT slide numbers: an ``image_prompt`` and no safe_zone.
 
     Safe zone takes precedence (it implies FULL), so a slide carrying both is
-    handled by the zones path instead.
+    handled by the zones path instead. A slide without an ``image_prompt`` gets
+    no generated image (generation skips it) and keeps the asset the slide walk
+    inserted, so it is never eligible here.
     """
     return {
         s.n
         for s in outline_schema.load_outline_partial(outline_path).slides
-        if s.format.value == "IMG+TXT" and not s.safe_zone
+        if s.format.value == "IMG+TXT" and not s.safe_zone and s.image_prompt
     }
 
 
@@ -555,6 +557,7 @@ def apply(
         results.append(
             {
                 "slide": n,
+                "deck_slide": deck_slide_number(n, build_counts),
                 "format": "IMG+TXT",
                 "picture_repositioned": pic_moved,
                 "text_moved": text_moved,
