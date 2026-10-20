@@ -9,7 +9,12 @@ import sys
 
 import pytest
 
-from conftest import CURRENT_ROOT_SCHEMA_VERSION, current_tracking_config
+from conftest import (
+    CURRENT_ROOT_SCHEMA_VERSION,
+    SCRIPTS_VI,
+    _import_script,
+    current_tracking_config,
+)
 
 SCRIPT = (
     Path(__file__).resolve().parents[1]
@@ -46,7 +51,7 @@ ROBOCODERS_REPEAT = _talk(
 )
 
 
-def _vault(tmp_path: Path, talks, *, root_version=None) -> Path:
+def _vault(tmp_path: Path, talks, *, root_version=None, config=None) -> Path:
     vault = tmp_path / "vault"
     (vault / "analyses").mkdir(parents=True)
     database = vault / "tracking-database.json"
@@ -54,7 +59,7 @@ def _vault(tmp_path: Path, talks, *, root_version=None) -> Path:
         json.dumps(
             {
                 "schema_version": root_version or CURRENT_ROOT_SCHEMA_VERSION,
-                "config": current_tracking_config(),
+                "config": config or current_tracking_config(),
                 "talks": talks,
                 "pptx_catalog": [],
                 "qr_codes": [],
@@ -293,3 +298,56 @@ def test_an_analysis_that_is_not_utf8_is_unreadable_not_bound(tmp_path):
     assert payload["binding"] == "analysis_unreadable"
     assert "not UTF-8" in payload["error"]
     assert "analysis_text" not in payload
+
+
+def test_a_stored_root_that_matches_the_locator_binds(tmp_path):
+    vault = tmp_path / "vault"
+    database = _vault(
+        tmp_path,
+        [ROBOCODERS],
+        config=current_tracking_config(vault_storage_path=str(vault)),
+    )
+    _analysis(database, ROBOCODERS)
+    code, payload, stderr = _find(database, "--filename", ROBOCODERS["filename"])
+    assert code == 0, stderr
+    assert payload["binding"] == "bound"
+
+
+@pytest.mark.parametrize(
+    "stored",
+    ["/somewhere/else", "relative/vault", ""],
+    ids=["other", "relative", "empty"],
+)
+def test_a_stored_root_that_disagrees_with_the_locator_refuses(tmp_path, stored):
+    """An asserted root elsewhere must never let the locator's directory bind."""
+    database = _vault(
+        tmp_path,
+        [ROBOCODERS],
+        config=current_tracking_config(vault_storage_path=stored),
+    )
+    _analysis(database, ROBOCODERS)
+    code, payload, stderr = _find(database, "--filename", ROBOCODERS["filename"])
+    assert code == 2
+    assert payload["reason_code"] == "vault_root_invalid"
+    assert "vault_storage_path" in stderr
+
+
+def test_a_concurrent_write_mid_read_asks_for_a_rerun(tmp_path, monkeypatch, capsys):
+    """A generation conflict is fixed by rerunning, never by a repair."""
+    module = _import_script(str(SCRIPT), "find_talk_analysis_under_test")
+    io = _import_script(
+        str(Path(SCRIPTS_VI) / "tracking_database_io.py"), "tracking_database_io"
+    )
+    database = _vault(tmp_path, [ROBOCODERS])
+
+    def conflict(_path):
+        raise io.TrackingDatabaseConflictError("changed mid-read")
+
+    monkeypatch.setattr(module, "snapshot_tracking_database", conflict)
+
+    code = module.main(["--database", str(database), "--filename", "x.md"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert code == 2
+    assert payload["reason_code"] == "database_generation_conflict"
+    assert "rerun" in payload["error"]

@@ -20,7 +20,12 @@ rhetoric-analysis input explicit. The runtime and vault-root bootstrap is
   traceback. It is a current reader, listed as
   such in the owner's reader contract in `schemas-db.md`: an older database
   refuses as `database_not_current` for the owner migration, and a future one
-  as `database_unsupported`.
+  as `database_unsupported`. The vault root is the locator's directory only
+  when `config.vault_storage_path` is absent, null or that same root
+  (`vault_root_authority.resolve_vault_root_authority`); any other value
+  refuses as `vault_root_invalid`. A read failure keeps the owner's typed code
+  and remedy from `DATABASE_READ_DIAGNOSTICS`, so a concurrent write says to
+  rerun (`database_generation_conflict`) rather than to repair the database.
 - A bound answer carries `analysis_text`, the exact bytes the binding checked,
   so the publisher never reopens a path that could have changed since.
 - An unbound answer carries a `handoff` naming this one delivery and

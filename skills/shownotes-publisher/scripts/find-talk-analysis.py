@@ -15,24 +15,32 @@ tracking database owner, not through whatever the rendered file's header says:
 3. The record must be processed (``ANALYZED_STATUSES``), and
    ``{vault_root}/analyses/{filename}.md`` must be a regular file whose header,
    as ``write-analysis.py`` renders it, names the record's title, filename and
-   ``processed_date``. The vault root is the database locator's directory.
+   ``processed_date``. The vault root is the database locator's directory,
+   resolved through ``vault_root_authority.resolve_vault_root_authority`` so a
+   ``config.vault_storage_path`` that names any other root refuses.
 
 Stdout: one JSON object, exit 0 for every answered lookup. ``binding`` is
 ``bound`` with ``talk``, ``analysis_path``, ``analysis_sha256`` and
 ``analysis_text``, the checked bytes decoded as UTF-8 for synthesis; or one of
 ``not_found``, ``ambiguous``, ``not_processed``, ``analysis_missing`` (also a
 link or non-regular file at the path), ``analysis_unreadable`` (with the
-read ``error``), ``analysis_stale``, each with ``talk`` (null unless one record matched),
-``candidates`` (the records that share the event and date, or the title, for a
-miss; every match for ``ambiguous``) and ``handoff``: the one delivery to hand
-vault-ingress as its explicit one-talk selection, present only when the record
-is in a status its queue can claim (``CLAIMABLE_STATUSES``), else null (``scope: one_talk`` plus the exact filename when a record
-matched, else the requested title, event and date). Exit 2 writes ``{"ok":
-false, "reason_code", "error"}`` and the message to stderr when the database
-cannot be read (``database_unreadable``), is an older generation
-(``database_not_current``) or one this toolkit does not read
-(``database_unsupported``), or the arguments name no delivery
-(``invalid_arguments``).
+read ``error``), ``analysis_stale``, each with ``talk`` (null unless one record
+matched), ``candidates`` (the records that share the event and date, or the
+title, for a miss; every match for ``ambiguous``) and ``handoff``. The handoff
+is non-null only when exactly one record matched and its status is one
+vault-ingress's queue can claim (``CLAIMABLE_STATUSES``): ``skill``,
+``scope: one_talk`` and that record's ``filename``, ``title``, ``event`` and
+``date``, the explicit one-talk selection vault-ingress Step 2 takes. It is null
+for ``bound``, ``not_found``, ``ambiguous`` and every unclaimable record.
+
+Exit 2 writes ``{"ok": false, "reason_code", "error"}`` and the message to
+stderr when the database cannot be read (the owner's
+``tracking_database_io.DATABASE_READ_DIAGNOSTICS`` code and remedy, such as
+``database_generation_conflict`` for a concurrent write, which a rerun fixes),
+is an older generation (``database_not_current``) or one this toolkit does not
+read (``database_unsupported``), its ``config.vault_storage_path`` does not
+agree with its location (``vault_root_invalid``), or the arguments name no
+delivery (``invalid_arguments``).
 """
 
 from __future__ import annotations
@@ -58,9 +66,15 @@ from tracking_database import (  # noqa: E402
 )
 from queue_claim_contract import CLAIMABLE_STATUSES  # noqa: E402
 from tracking_database_io import (  # noqa: E402
+    DATABASE_READ_DIAGNOSTICS,
+    DATABASE_READ_FALLBACK,
     TrackingDatabaseIOError,
     decode_json_object,
     snapshot_tracking_database,
+)
+from vault_root_authority import (  # noqa: E402
+    VaultRootAuthorityError,
+    resolve_vault_root_authority,
 )
 
 DEFAULT_DATABASE = "~/.claude/rhetoric-knowledge-vault/tracking-database.json"
@@ -104,11 +118,12 @@ def read_current_database(path: Path) -> tuple[dict[str, Any], Path]:
         snapshot = snapshot_tracking_database(path)
         database = decode_json_object(snapshot)
     except TrackingDatabaseIOError as exc:
-        raise AnalysisLookupError(
-            "database_unreadable",
-            f"the tracking database at {path} could not be read "
-            f"({exc.reason_code}); repair it through vault-ingress Step 1",
-        ) from exc
+        # The owner's closed vocabulary carries the remedy: a concurrent write
+        # is rerun, a damaged file is repaired.
+        code, remedy = DATABASE_READ_DIAGNOSTICS.get(
+            exc.reason_code, DATABASE_READ_FALLBACK
+        )
+        raise AnalysisLookupError(code, f"{path}: {remedy}") from exc
     try:
         assessment = assess_tracking_database(database)
     except TrackingDatabaseError as exc:
@@ -131,7 +146,19 @@ def read_current_database(path: Path) -> tuple[dict[str, Any], Path]:
             f"the tracking database at {path} is an older owner generation; run "
             "the owner migration through vault-ingress Step 1",
         )
-    return database, path.parent
+    try:
+        vault_root = resolve_vault_root_authority(
+            database_path=path, config=database.get("config")
+        )
+    except VaultRootAuthorityError as exc:
+        raise AnalysisLookupError(
+            "vault_root_invalid",
+            f"the tracking database at {path} does not agree with its "
+            f"config.vault_storage_path ({exc.reason_code}); pass the database "
+            "at the vault root it names, or repair config.vault_storage_path "
+            "through vault-ingress Step 1",
+        ) from exc
+    return database, vault_root
 
 
 def select_talks(
@@ -258,7 +285,9 @@ def lookup(args: argparse.Namespace) -> dict[str, Any]:
             "name the delivery by --filename, or by --title, --event and --date "
             "together",
         )
-    database, vault_root = read_current_database(Path(args.database).expanduser())
+    database, vault_root = read_current_database(
+        Path(args.database).expanduser().absolute()
+    )
     matches, near = select_talks(
         database.get("talks", []),
         filename=args.filename,
