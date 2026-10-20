@@ -4480,3 +4480,54 @@ def test_provider_timing_survives_a_quality_refresh_bound_to_the_audio(
 
     assert "transcript" in context["verified_evidence_sources"]
     assert context["timed_segments"], context["timing_reason"]
+
+
+def test_a_declared_audio_that_cannot_probe_says_what_to_fix(tmp_path: Path) -> None:
+    """The probe's reason reaches the caller, not a bare owner mismatch."""
+    vault = tmp_path / "vault"
+    audio = _declared_audio(vault)
+    transcript, _probe = _audio_bound_transcript(vault, audio)
+    talk = _audio_talk(vault, transcript)
+    audio.unlink()
+    text = transcript.read_text(encoding="utf-8")
+
+    ok, reason, _policy_reason, _bound = (
+        pattern_evidence.validate_transcript_quality_for_owner(
+            transcript,
+            text,
+            talk,
+            vault_root=vault,
+            local_audio_path="recordings/talk.mp3",
+        )
+    )
+    context = pattern_evidence.build_evidence_context(
+        vault, talk, source_roots=_audio_roots("recordings/talk.mp3")
+    )
+
+    assert ok is False
+    assert "declared local audio is unusable" in reason
+    assert "restore the declared file" in reason
+    assert "restore the declared file" in context["source_reasons"]["transcript"]
+
+
+def test_a_failed_quality_check_never_reads_a_broken_timing_sidecar(
+    tmp_path: Path,
+) -> None:
+    """Timing is read only after quality passes, and bad bytes are unavailable."""
+    vault = tmp_path / "vault"
+    audio = _declared_audio(vault)
+    transcript, _probe = _audio_bound_transcript(vault, audio)
+    talk = _audio_talk(vault, transcript)
+    transcript_timing.quality_sidecar_path(transcript).unlink()
+    transcript_timing.sidecar_path(transcript).write_bytes(b"\xff\xfe not json")
+
+    context = pattern_evidence.build_evidence_context(
+        vault, talk, source_roots=_audio_roots("recordings/talk.mp3")
+    )
+
+    assert "transcript" not in context["verified_evidence_sources"]
+    assert context["timed_segments"] == []
+    reason, _ = transcript_timing.load_verified_segments(
+        transcript, "", owner_source="whisper"
+    )
+    assert reason == []

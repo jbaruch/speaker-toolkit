@@ -70,6 +70,13 @@ recording exceeds the 8 GiB input ceiling.
   by `--audio`, so it never decides which medium timing binds.
 - Extraction syncs the installed audio's bytes before its directory, on a fresh
   hard-link install and on an identical rerun.
+- A declared audio file that fails to bind keeps its reason: a locator the
+  declaration cannot resolve, or the bounded owner's refusal code, with what to
+  do (restore the file, repair the source-media lane, or re-declare it). Both
+  receipt readers append it to a local-media mismatch, so preflight and
+  `source_reasons` name the fix. Timing is read only after the quality check
+  passes, and a timing sidecar that is not UTF-8 is unavailable, never a
+  traceback.
 - Wherever declared audio may be probed, the flow first requires
   `check-runtime.py --require-lanes core,source-media`. That covers preflight
   (`bootstrap-and-preflight.md`, pointed to from vault-ingress Step 1), batch

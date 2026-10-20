@@ -1132,6 +1132,10 @@ def _load_verified_timing_receipt(
         return None, f"timed transcript sidecar is missing: {timing_path}"
     except OSError as exc:
         return None, f"cannot read timed transcript sidecar {timing_path}: {exc}"
+    except UnicodeDecodeError:
+        return None, (
+            f"timed transcript sidecar {timing_path} is not UTF-8; regenerate it"
+        )
     except json.JSONDecodeError as exc:
         return None, f"timed transcript sidecar {timing_path} is invalid JSON: {exc}"
     if not isinstance(payload, dict) or set(payload) != TIMING_RECEIPT_FIELDS:
