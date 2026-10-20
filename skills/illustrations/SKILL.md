@@ -65,7 +65,8 @@ Do not restate them here — apply them.
 Determine which of three modes applies and execute only the matching steps.
 The illustration scripts read outline schema 2 only; when one refuses an older
 outline, run presentation-creator's owner migration it names
-(`"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py" --migrate outline.yaml`).
+with the same `python3` that ran the refused script
+(`python3 "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py" --migrate outline.yaml`).
 It rewrites only that file's root `schema_version` to 2, in place, and prints
 `{ok, path, migrated, to}` (`migrated: false` when already current), exit 0;
 exit 1 prints `FAIL:` on stderr and leaves the file untouched. Then re-run the

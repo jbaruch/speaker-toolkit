@@ -75,7 +75,8 @@ discipline reduced the drift but cannot guarantee typographic identity.
   readers refuse every version but the current one: an older outline names the
   migration, a newer one says to update speaker-toolkit. A model-rendered
   footer is directed verbatim, delimited and escaped as a JSON string, never
-  rewritten.
+  rewritten. Step 1 runs the migration with the same `python3` its other
+  commands use.
 - Apply and the build manifest check one deck-wide stamp set,
   `footer_stamp.deck_stamp_set`: every stamped slide image plus every declared
   build frame. Whichever command runs first refuses a mixed deck before either
