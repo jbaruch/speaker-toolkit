@@ -87,7 +87,7 @@ it is refused, and the owner migration restamps a v2 config to v3 unchanged.
 
 ### PPTX directory exclusions
 
-Config schema v2 requires `pptx_directory_exclusions`: a bounded, unique array
+Config schemas v2 and v3 require `pptx_directory_exclusions`: a bounded, unique array
 of literal directory-name components. Matching is case-insensitive and exact at
 any descendant depth. Values are not paths, substrings, globs, or regular
 expressions; `/`, `\\`, control characters, pattern metacharacters,
@@ -97,12 +97,13 @@ default is intentionally not reproduced here; use the
 Do not broaden the code-owned default to plausible authored-content directory
 names without an explicit speaker-specific customization.
 
-Dual readers accept config schema v1 only as read-only compatibility and
-owner-migration state; it is never current or writable. It cannot authorize PPTX
-catalog coverage or an absence conclusion because no current directory-exclusion
-policy is established until migration succeeds. The vault-ingress migration
-stamps schema v2 and supplies the canonical defaults when the list is absent. A
-valid custom list already present on a schema-v1 record is preserved exactly. A
+Dual readers accept config schemas v1 and v2 only as read-only compatibility
+and owner-migration state; neither is current or writable. A v1 config cannot
+authorize PPTX catalog coverage or an absence conclusion because no current
+directory-exclusion policy is established until migration succeeds. The
+vault-ingress migration stamps schema v3: it supplies the canonical defaults to a
+v1 config whose list is absent, preserves a valid custom list already present on
+a schema-v1 record exactly, and restamps a v2 config unchanged. A
 root-schema-v1/config-schema-v1 vault receives only this config upgrade; the root
 and every unrelated record remain unchanged. Future or malformed config
 generations fail closed. Consumers never synthesize defaults or rewrite config

@@ -33,7 +33,15 @@ Two session-lifecycle gaps Copilot raised on PR #465, deferred to #466:
   now name v3.
 - Run records move to schema 3 (the claim fields). A schema-2 record reads as
   schema 3 with null claim fields and is rewritten on that read, the same owner
-  path schema 1 took. `schemas-obligations.md`, `schemas-db.md`,
+  path schema 1 took. A schema-2 session that is running, carries claim fields,
+  or has a non-string state is refused as `ledger_invalid` instead of upgraded.
+  A session completed before claims existed keeps a null token, so an identical
+  `record-session` retry after the upgrade replays under any claim token.
+- First-time setup no longer tells the agent to put root and config versions or
+  empty arrays into the `initialize_database` mutation, which accepts only
+  `kind` and `config` and rejects any config version but the current one; the
+  initializer stamps both versions and creates the arrays. Every migration and
+  initialization statement now describes config v1/v2 input and v3 output. `schemas-obligations.md`, `schemas-db.md`,
   `schemas-config.md`, `clarification-handoff.md` and vault-clarification
   Steps 2 and 9 carry the new contract.
 

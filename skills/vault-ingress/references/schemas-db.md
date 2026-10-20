@@ -206,7 +206,7 @@ v1 and v2 for the rollout window.
 ### Schema versioning
 
 A schema-v4 database with current child records is an idempotent no-op.
-Earlier roots advance to v4; config v1 advances to v2 in the same pass.
+Earlier roots advance to v4; config v1 and v2 advance to v3 in the same pass.
 The root-only transition to v4 preserves every child value and does not
 create or infer any source alias. Before migration, queue `inspect` may read
 schema 0 and queue `recover` may close an active schema-0 lease in place.
@@ -217,8 +217,9 @@ receipt from v1 to v2 while adding its release fields.
 The owner migration is a preservation migration. Its only allowed semantic
 changes are advancing the root to schema v4, adding the validated historical
 version to an unversioned owner record, creating absent owned arrays as empty
-arrays, and upgrading config v1 to v2. A missing exclusion list receives the canonical
-defaults; a valid owner-supplied list is preserved exactly. It
+arrays, and upgrading config v1 or v2 to v3. A v1 config missing its exclusion
+list receives the canonical defaults; a valid owner-supplied list is preserved
+exactly. It
 preserves every other JSON value and missing-vs-present distinction, including
 legacy-v1 `pattern_observations` objects, arrays, or nulls and every historical
 citation/source-inspection field. Explicit version 0 sentinels, future owner
@@ -861,8 +862,8 @@ review its `changes`, then bind apply to that report's exact input hash:
   --apply --expected-sha256 <input-sha256-from-dry-run>
 ```
 
-Initialization uses a sole `initialize_database` mutation, stamps database
-schema version 2 and config schema version 2, supplies the canonical
+Initialization uses a sole `initialize_database` mutation, stamps the current
+database and config schema versions, supplies the canonical
 `pptx_directory_exclusions` when the plan omits that field, defaults to dry-run,
 and applies with the literal
 `--expected-sha256 missing`. All other applies

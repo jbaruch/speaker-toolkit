@@ -374,7 +374,7 @@ content, but it cannot waive a duplicate-ID fault.
 Checks apply to a record with a declared transcript, slide, or video capability
 (processable) or status `processed` / `processed_partial` (completed):
 
-Config schema v2 must contain a bounded unique
+Config schemas v2 and v3 must contain a bounded unique
 `pptx_directory_exclusions` array of literal directory-name components. Missing
 or malformed current state is blocking as
 `pptx_directory_exclusions_invalid`; config v1 remains readable only so the

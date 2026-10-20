@@ -2361,7 +2361,7 @@ def migrate_tracking_database_root(database: object) -> TrackingDatabaseMigratio
 
 
 def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
-    """Build the deterministic owner migration to root v3/config v2."""
+    """Build the deterministic owner migration to the current root and config."""
     assessment = assess_tracking_database(database)
     if not assessment.usable:
         raise TrackingDatabaseError(
