@@ -163,7 +163,7 @@ def write_database(
                 "improvement_goals": [],
             }
         )
-        database["config"]["schema_version"] = 2
+        database["config"]["schema_version"] = 3
         database["config"].setdefault(
             "pptx_directory_exclusions",
             deepcopy(DEFAULT_DIRECTORY_EXCLUSIONS),
@@ -2208,7 +2208,7 @@ def test_preflight_fails_closed_on_future_config_generation(
 ):
     write_database(vault_fixture, [], current=True)
     database = json.loads(vault_fixture["database"].read_text(encoding="utf-8"))
-    database["config"]["schema_version"] = 3
+    database["config"]["schema_version"] = 4
     vault_fixture["database"].write_text(
         json.dumps(database, indent=2),
         encoding="utf-8",
@@ -2224,11 +2224,35 @@ def test_preflight_fails_closed_on_future_config_generation(
     )
     assert finding["severity"] == "blocking"
     assert finding["field"] == "config.schema_version"
-    assert finding["expected"] == [1, 2]
+    assert finding["expected"] == [1, 2, 3]
     assert finding["actual"] == {
-        "schema_version": 3,
+        "schema_version": 4,
         "reason_codes": ["config_schema_version_unsupported"],
     }
+
+
+@pytest.mark.parametrize("version", [[], {}, [3], True], ids=repr)
+def test_preflight_reports_a_malformed_config_version_without_crashing(
+    preflight_vault,
+    vault_fixture,
+    version,
+):
+    write_database(vault_fixture, [], current=True)
+    database = json.loads(vault_fixture["database"].read_text(encoding="utf-8"))
+    database["config"]["schema_version"] = version
+    del database["config"]["pptx_directory_exclusions"]
+    vault_fixture["database"].write_text(
+        json.dumps(database, indent=2),
+        encoding="utf-8",
+    )
+
+    report = preflight_vault.run_preflight(vault_fixture["root"])
+
+    # The schema finding, not a TypeError from the exclusions lookup.
+    assert report["ok"] is False
+    assert [(item["code"], item["severity"]) for item in report["findings"]] == [
+        ("tracking_database_schema_invalid", "blocking")
+    ]
 
 
 def test_preflight_null_configured_pptx_root_uses_vault_fallback(

@@ -87,14 +87,14 @@ Exit 0 writes one JSON object with `from_schema_version`,
 `to_schema_version`, `changed`, `database_written: false`, `input_sha256`, and
 `record_counts`. Continue only for `changed: false` at the current database
 generation in the [owner compatibility contract](../vault-ingress/references/schemas-db.md#schema-versioning)
-with config schema v2. A legacy root or config report requires the owner workflow;
+with config schema v3. A legacy root or config report requires the owner workflow;
 invoke `Skill(skill: "vault-ingress")`
 with the migration report as handoff context, then finish this clarification run.
 Exit 2 writes one error object to stdout plus an `ERROR:` diagnostic to stderr;
 stop without changing session state.
 
 Every tracking write in Steps 3–9 is current-only. Preserve the owner-current root,
-config schema 2, talk schema 8, and every unrelated record. Stamp confirmed
+config schema 3, talk schema 8, and every unrelated record. Stamp confirmed
 intents with schema 1 and new improvement goals with schema 2. Capture the exact
 input bytes immediately before each write, reject a changed generation, validate
 the complete current shape, and use a same-directory atomic replacement. Never
@@ -107,8 +107,8 @@ Proceed immediately to Step 2.
 The seed agenda is the list of candidate topics vault-ingress recorded when it
 offered this session. It lives in the run obligations ledger
 ([../vault-ingress/references/schemas-obligations.md](../vault-ingress/references/schemas-obligations.md)),
-which only `run-obligations.py` writes. Read it through that owner: never open
-the ledger file directly, and never write it in this step.
+which only `run-obligations.py` writes. Read and claim it through that owner;
+never open the ledger file directly.
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
@@ -118,14 +118,28 @@ the ledger file directly, and never write it in this step.
 Pass `--run-id` when the call carries one. Without it, the command selects the
 accepted session that never finished, if any; which one, when several are
 pending, is the script's rule (`run-obligations.py`, the `pending_sessions`
-docstring). Exit 0 with `session: null` means this session is standalone: it
-has no seed agenda and touches the ledger no further. Otherwise
-`session.run_id` is this session's run and `session.topics`, in its recorded
-order, is the seed agenda. Exit 2 writes `{"ok": false, "error",
+docstring). Check `running_sessions` first: `session: null` with a non-empty
+`running_sessions` means another host is conducting a session, so stop and
+report it. Exit 0 with `session: null` and an empty `running_sessions` means
+this session is standalone: it has no seed agenda, claims nothing, and touches
+the ledger no further. Otherwise `session.run_id` is this session's run and
+`session.topics`, in its recorded order, is the seed agenda. Exit 2 writes `{"ok": false, "error",
 "reason_code"}` to stdout and the same message to stderr: a named run with no
-pending session (`invalid_transition`), an unknown run (`run_not_found`), or a
-ledger not yet adopted (`ledger_not_adopted`). Stop and report it; never guess
-the topics.
+pending session (`invalid_transition`), one another host holds
+(`session_claimed`), an unknown run (`run_not_found`), or a ledger not yet
+adopted (`ledger_not_adopted`). Stop and report it; never guess the topics.
+
+Claim the selected session before asking anything, and keep the returned
+`claim_token` for Step 9:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
+  "{vault_root}/tracking-database.json" claim-session --run-id "{run_id}" --now "{iso_timestamp}"
+```
+
+Exit 2 with `session_claimed` means another host claimed it first: stop and
+report it. Freeing a dead host's claim (`release-session`) is the operator's
+decision, never this session's.
 
 Proceed immediately to Step 3.
 
@@ -274,12 +288,34 @@ Proceed immediately to Step 9.
 
 ## Step 9 — Mark Session Complete
 
-Using the latest strict read, persist
-`config.clarification_sessions_completed + 1` with `set_config`, expecting the
-exact prior integer. This counter gates profile generation (vault-profile skill
-requires >= 1).
-The owner mutation preserves `config.schema_version: 2` and every unrelated
-field.
+With a ledger session from Step 2, count it under the Step 2 claim:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
+  "{vault_root}/tracking-database.json" count-session --run-id "{run_id}" \
+  --claim-token "{claim_token}"
+```
+
+It counts only a session running under that claim, holding the ledger's lock
+through the tracking-database write, and records the run with the count, so a
+session re-entered after a crash counts nothing more (`replayed: true`). Exit 2
+with `session_count_unknown` means the session began under schema 2, which
+counted before recording: ask the speaker one `AskUserQuestion`, "Did the
+interrupted session already count toward your clarification sessions?", with
+the options "No, count it now" (recommended) and "Yes, it already counted",
+and wait for the answer. Record it under the same claim (`no` for the first
+option, `yes` for the second), then count again:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
+  "{vault_root}/tracking-database.json" reconcile-count --run-id "{run_id}" \
+  --now "{iso_timestamp}" --claim-token "{claim_token}" --counted yes|no
+```
+
+Without a ledger session, persist `config.clarification_sessions_completed + 1`
+with `set_config`, expecting the exact prior value. This counter gates profile
+generation (vault-profile skill requires >= 1). Both preserve
+`config.schema_version: 3` and every unrelated field.
 
 Then close the ledger session Step 2 resolved; a standalone session with no
 seed agenda finishes here. Name `profile_inputs`: `changed` when this session
@@ -287,8 +323,8 @@ wrote a confirmed intent, a config field (Step 6), or the rhetoric summary, or
 created, retired, or changed an improvement goal; `unchanged` otherwise. List
 the recorded topics the session covered.
 
-- Invoked from vault-ingress Step 9: return `run_id`, `profile_inputs`, and the
-  covered topics to the caller, which records the session per
+- Invoked from vault-ingress Step 9: return `run_id`, `claim_token`,
+  `profile_inputs`, and the covered topics to the caller, which records the session per
   [Clarification Handoff](../vault-ingress/references/clarification-handoff.md#record-the-answer).
   Do not record it here; the caller owns the profile refresh the record may
   require.
@@ -297,7 +333,8 @@ the recorded topics the session covered.
   ```bash
   "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
     "{vault_root}/tracking-database.json" record-session \
-    --run-id "{run_id}" --now "{iso_timestamp}" --profile-inputs changed|unchanged [--profile-refreshed]
+    --run-id "{run_id}" --now "{iso_timestamp}" --claim-token "{claim_token}" \
+    --profile-inputs changed|unchanged [--profile-refreshed]
   ```
 
   Exit 2 with `profile_refresh_required` means `changed` inputs and an existing
@@ -306,8 +343,8 @@ the recorded topics the session covered.
   context, then repeat the command with `--profile-refreshed`.
   `report_reopened: true` in the output means the run's end report is owed
   again; say so, and the next vault-ingress run delivers it. Any other exit 2
-  is reported as returned, and the session stays pending for the next run to
-  record.
+  is reported as returned, and the session stays claimed for the operator to
+  record or release.
 
 Finish here.
 

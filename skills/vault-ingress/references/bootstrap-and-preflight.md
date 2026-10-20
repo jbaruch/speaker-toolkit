@@ -10,10 +10,12 @@ each section in order; later sections assume every earlier gate succeeded.
    [schemas-db.md](schemas-db.md#owner-read-and-mutation-contract).
 2. **Path missing** — first-time setup: ask preferred location via `AskUserQuestion`,
    create the directory (and symlink if a custom path was chosen), then use a sole
-   `initialize_database` mutation. Include database `schema_version: 3`, config
-   `schema_version: 2`, and empty `talks`, `pptx_catalog`, `qr_codes`, `resources`,
-   `thumbnails`, `confirmed_intents`, and `improvement_goals` arrays. The plan may
-   omit `pptx_directory_exclusions`; the initializer supplies the canonical default
+   `initialize_database` mutation carrying only `kind` and `config`. Omit
+   `config.schema_version`: the initializer stamps the current database and
+   config schema versions and creates the empty `talks`, `pptx_catalog`,
+   `qr_codes`, `resources`, `thumbnails`, `confirmed_intents`, and
+   `improvement_goals` arrays itself. The plan may also omit
+   `pptx_directory_exclusions`; the initializer supplies the canonical default
    defined by the [PPTX scan contract](#scan-for-pptx-files). Include that field
    only when the speaker explicitly requests a valid customization.
    Review the dry-run and apply it with `--expected-sha256 missing`; never create
@@ -73,8 +75,8 @@ changed report authorizes this exact apply command:
 Exit 0 from apply writes one JSON report with `database_written: true`, preserves
 the complete original bytes under `{vault_root}/.backups/`, and atomically
 installs the current root from the [owner compatibility contract](schemas-db.md#schema-versioning)
-with config schema v2. A current root with config
-schema v1 is also a migration: root `from_schema_version` and
+with config schema v3. A current root with config
+schema v1 or v2 is also a migration: root `from_schema_version` and
 `to_schema_version` both remain at that current root, while `record_counts.config` records the
 config upgrade.
 
@@ -129,8 +131,7 @@ before another config write.
 ```
 
 All owner-authored tracking writes below require the owner-current database and config
-schema 2 after this
-gate. Preserve every independent record version and validate the complete
+schema 3 after this gate. Preserve every independent record version and validate the complete
 candidate before installing it. Only `migrate-tracking-database.py` may move
 readable legacy roots to the current schema; its hash precondition binds replacement to the exact input
 bytes as documented above.
@@ -223,7 +224,7 @@ array produces zero arguments; never add an implicit default.
 Set `{directory_exclusion_arguments}` the same way, using one
 `--exclude-directory=<exact-component>` argument per exclusion. These are
 case-insensitive exact directory-name components at any descendant depth—not
-substrings, paths, globs, or regular expressions. The sole config-v2 owner-default
+substrings, paths, globs, or regular expressions. The sole owner-default
 source is
 `skills/vault-ingress/scripts/pptx_discovery_contract.py::DEFAULT_PPTX_DIRECTORY_EXCLUSIONS`;
 do not copy or reconstruct that list in workflow prose.

@@ -1,5 +1,78 @@
 # Changelog
 
+### Reserve each clarification session and count it once
+
+Two session-lifecycle gaps Copilot raised on PR #465, deferred to #466:
+
+- `session-agenda` was a read, not a reservation: two standalone hosts, or the
+  typed ingress call plus a standalone trigger, could both conduct the same
+  session and both write the tracking database before either reached
+  `record-session`. The new `claim-session` reserves the session (`running`,
+  with a random `claim_token` and `claimed_at`); vault-clarification Step 2
+  claims what `session-agenda` selected and stops when another host holds a
+  session, `session-agenda` lists claimed sessions under `running_sessions` and
+  never selects them, and a named claimed run refuses as `session_claimed`.
+  Step 2 reads `running_sessions` before anything else: `session: null` is a
+  standalone session only when that list is empty, and otherwise means another
+  host is conducting one, so the session stops.
+  `record-session` now requires `--claim-token` and closes only the claim it
+  names. `release-session --claim-token`, with a reason, is the operator's
+  explicit decision to free that one claim; a retry after a lost response can
+  never free a claim another host took since.
+- `config.clarification_sessions_completed` advanced before the ledger session
+  closed, so a session re-entered after a crash, or after a
+  `profile_refresh_required` that never returned, counted twice. A first
+  attempt pinned the counter target in the ledger, but a counter value cannot
+  say whose increment landed: two sessions pinning the same target let the
+  loser's retry read the winner's increment as its own. A plan-level mutation
+  bound to the ledger by a hash re-check still left a window: the ledger and
+  the database have separate locks, so a release could land between the check
+  and the commit. The count is now the ledger owner's command,
+  `run-obligations.py count-session --run-id --claim-token`. It takes the
+  ledger's writer lock and reads the ledger strictly without writing it. It
+  verifies the session is `running` under the named claim, then advances the
+  counter and appends the run id to the new optional
+  `config.clarification_counted_runs` in one generation-checked
+  tracking-database commit, all before releasing the lock (lock order: ledger,
+  then database). A run already counted replays, two runs always count twice,
+  and `record-session` refuses (`session_not_counted`) until the run is listed.
+  `set_config` refuses `clarification_counted_runs`, so a typo or a fabricated
+  run id never becomes counted authority. The new field moves the config record to **schema 3**:
+  v1 and v2 stay readable, the owner migration restamps a v2 config to v3
+  unchanged, a v2 config carrying the field is refused, and the owner validates
+  both fields on every read. Writers and docs that named config v2 as current
+  now name v3.
+- Run records move to schema 3 (the claim fields). A schema-2 record reads as
+  schema 3 with null claim fields and is rewritten on that read, the same owner
+  path schema 1 took. A schema-2 session that is running, carries claim fields,
+  or has a non-string state is refused as `ledger_invalid` instead of upgraded.
+  A session completed before claims existed keeps a null token, so an identical
+  `record-session` retry after the upgrade replays under any claim token.
+  Schema 2's Step 9 advanced the counter before recording the session, so a
+  pending schema-2 session upgrades with `legacy_count: unknown`. `count-session`
+  refuses it (`session_count_unknown`) until the new
+  `reconcile-count --counted yes|no` records the speaker's answer under the
+  session's claim; vault-clarification Step 9 asks it as one `AskUserQuestion`
+  with the recommended "count it now" first. A session reconciled as already
+  counted joins `clarification_counted_runs` without advancing the counter.
+- First-time setup no longer tells the agent to put root and config versions or
+  empty arrays into the `initialize_database` mutation, which accepts only
+  `kind` and `config` and rejects any config version but the current one; the
+  initializer stamps both versions and creates the arrays. Every migration and
+  initialization statement now describes config v1/v2 input and v3 output, and
+  the post-migration write gate requires config schema 3. A docs test refuses
+  any skill reference sentence that requires, stamps or calls current a config
+  schema other than `CONFIG_RECORD_SCHEMA_VERSION`, outside a legacy or
+  migration context. `source-identity-preflight.md` now lists the readable config
+  generations preflight reports as `[1, 2, 3]`, and a test reads that list
+  against `READABLE_CONFIG_RECORD_SCHEMA_VERSIONS`.
+- Preflight's exclusions check compared a container-valued
+  `config.schema_version` against the readable-version set and crashed with a
+  `TypeError`; it now takes exact integers only, so a malformed version reports
+  the schema finding instead. `schemas-obligations.md`, `schemas-db.md`,
+  `schemas-config.md`, `clarification-handoff.md` and vault-clarification
+  Steps 2 and 9 carry the new contract.
+
 ## 0.20.186 — 2026-10-20
 
 ### Bind the shownotes analysis to its exact delivery

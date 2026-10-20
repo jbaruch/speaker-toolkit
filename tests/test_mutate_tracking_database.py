@@ -51,7 +51,7 @@ DEFAULT_DIRECTORY_EXCLUSIONS = [
 
 def _current_config(**updates: object) -> dict[str, Any]:
     config: dict[str, object] = {
-        "schema_version": 2,
+        "schema_version": 3,
         "pptx_directory_exclusions": copy.deepcopy(DEFAULT_DIRECTORY_EXCLUSIONS),
     }
     config.update(updates)
@@ -430,7 +430,7 @@ def test_initialization_dry_run_and_missing_precondition(
     assert applied["database_written"] is True
     initialized = json.loads(database_path.read_text(encoding="utf-8"))
     assert initialized["schema_version"] == CURRENT_ROOT
-    assert initialized["config"]["schema_version"] == 2
+    assert initialized["config"]["schema_version"] == 3
     assert (
         initialized["config"]["pptx_directory_exclusions"]
         == DEFAULT_DIRECTORY_EXCLUSIONS
@@ -483,7 +483,7 @@ def test_initialization_preserves_valid_custom_directory_exclusions(
         index=0,
     )
 
-    assert initialized["config"]["schema_version"] == 2
+    assert initialized["config"]["schema_version"] == 3
     assert initialized["config"]["pptx_directory_exclusions"] == [
         "generated",
         "VendorCache",
@@ -952,7 +952,7 @@ def test_delete_missing_nested_config_does_not_materialize_parents(
     )
 
     assert candidate["config"] == {
-        "schema_version": 2,
+        "schema_version": 3,
         "pptx_directory_exclusions": DEFAULT_DIRECTORY_EXCLUSIONS,
         "shownotes": {"enabled": True},
     }
@@ -1150,14 +1150,14 @@ def test_versioned_owner_records_require_schema_version(
         mutate_tracking_database.build_candidate(_base_database(), [mutation])
 
 
-@pytest.mark.parametrize("schema_version", [True, 1, 3])
+@pytest.mark.parametrize("schema_version", [True, 1, 2, 4])
 def test_initialization_rejects_noncurrent_config_schema_version(
     mutate_tracking_database,
     schema_version,
 ) -> None:
     with pytest.raises(
         mutate_tracking_database.TrackingDatabaseMutationError,
-        match="config.schema_version must be exact integer 2",
+        match="config.schema_version must be exact integer 3",
     ):
         mutate_tracking_database.initial_database(
             {
@@ -2582,3 +2582,38 @@ def test_a_legacy_talk_record_can_still_carry_provenance(
 
     assert candidate["date_provenance"][0]["talk_filename"] == "talk.md"
     assert candidate["talks"][0]["schema_version"] == 1
+
+
+# Session counting belongs to run-obligations.py count-session (#466).
+
+
+def test_counting_a_session_is_not_a_plan_mutation(mutate_tracking_database) -> None:
+    """Only the ledger owner counts, under the session's claim and its lock."""
+    with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
+        mutate_tracking_database.build_candidate(
+            _base_database(),
+            [
+                {
+                    "kind": "count_clarification_session",
+                    "run_id": "run-a",
+                    "expect": {"$missing": True},
+                }
+            ],
+        )
+
+
+def test_set_config_cannot_fabricate_a_counted_run(mutate_tracking_database) -> None:
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError, match="count-session"
+    ):
+        mutate_tracking_database.build_candidate(
+            _base_database(),
+            [
+                {
+                    "kind": "set_config",
+                    "path": ["clarification_counted_runs"],
+                    "expect": {"$missing": True},
+                    "value": ["typo-run"],
+                }
+            ],
+        )
