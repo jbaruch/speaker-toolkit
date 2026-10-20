@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.189 — 2026-10-20
+
 ### Stamp a poster deck's footer deterministically
 
 Poster-theatrical decks baked the footer into every generated image, and the
