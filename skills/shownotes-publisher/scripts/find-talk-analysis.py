@@ -37,8 +37,10 @@ Exit 2 writes ``{"ok": false, "reason_code", "error"}`` and the message to
 stderr when the database cannot be read (the owner's
 ``tracking_database_io.DATABASE_READ_DIAGNOSTICS`` code and remedy, such as
 ``database_generation_conflict`` for a concurrent write, which a rerun fixes),
-is an older generation (``database_not_current``) or one this toolkit does not
-read (``database_unsupported``), its ``config.vault_storage_path`` does not
+is an older generation (``database_not_current``), a supported one in a
+malformed shape (``database_invalid``, the owner's to repair) or a newer one
+this toolkit does not read (``database_unsupported``, which only a newer
+toolkit fixes), its ``config.vault_storage_path`` does not
 agree with its location (``vault_root_invalid``), or the arguments name no
 delivery (``invalid_arguments``).
 """
@@ -129,18 +131,21 @@ def read_current_database(path: Path) -> tuple[dict[str, Any], Path]:
     try:
         assessment = assess_tracking_database(database)
     except TrackingDatabaseError as exc:
+        # A supported generation in a malformed shape is the owner's to repair.
         raise AnalysisLookupError(
-            "database_unsupported",
-            f"the tracking database at {path} is not a generation this "
-            "speaker-toolkit reads; update speaker-toolkit, or repair the "
-            "database through vault-ingress Step 1",
+            "database_invalid",
+            f"the tracking database at {path} is malformed ({exc}); repair it "
+            "through vault-ingress Step 1",
         ) from exc
     if not assessment.usable or not isinstance(database, dict):
+        # A generation newer than this reader: the reader is lagging, so the
+        # only remedy is a newer toolkit, never a repair of the database.
         raise AnalysisLookupError(
             "database_unsupported",
-            f"the tracking database at {path} is not a generation this "
-            "speaker-toolkit reads; update speaker-toolkit, or repair the "
-            "database through vault-ingress Step 1",
+            f"the tracking database at {path} is a newer generation than this "
+            "speaker-toolkit reads ("
+            + ", ".join(assessment.reason_codes)
+            + "); update speaker-toolkit, then rerun the lookup",
         )
     if assessment.state != "current":
         raise AnalysisLookupError(
@@ -251,7 +256,11 @@ def bind_analysis(talk: dict[str, Any], vault_root: Path) -> dict[str, Any]:
         return {
             "binding": "analysis_unreadable",
             "analysis_path": str(path),
-            "error": f"{type(raw).__name__}: {raw.strerror or 'no detail'}",
+            "error": (
+                f"{type(raw).__name__}: {raw.strerror or 'no detail'}; make the "
+                "analysis file readable (its permissions or its volume), then "
+                "rerun the lookup"
+            ),
         }
     try:
         text = raw.decode("utf-8")
@@ -259,7 +268,10 @@ def bind_analysis(talk: dict[str, Any], vault_root: Path) -> dict[str, Any]:
         return {
             "binding": "analysis_unreadable",
             "analysis_path": str(path),
-            "error": f"not UTF-8 at byte {exc.start}",
+            "error": (
+                f"not UTF-8 at byte {exc.start}; restore the analysis from a "
+                "good copy or re-render it, then rerun the lookup"
+            ),
         }
     if not _header_binds(text, talk):
         return {"binding": "analysis_stale", "analysis_path": str(path)}

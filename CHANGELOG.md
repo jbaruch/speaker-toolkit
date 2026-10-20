@@ -32,7 +32,13 @@ rhetoric-analysis input explicit. The runtime and vault-root bootstrap is
   `error`. A stored filename with a control character (NUL included) is
   `analysis_missing` before any path is opened, never a traceback, and a
   title-less record binds the filename-stem heading `write-analysis.py` writes
-  for it.
+  for it. A newer database generation than this reader refuses as
+  `database_unsupported`, which only a newer speaker-toolkit fixes, never a
+  repair. A supported generation in a malformed shape is `database_invalid`,
+  the owner's to repair through vault-ingress Step 1. An `analysis_unreadable`
+  error names its remedy (make the file readable, or restore or re-render it),
+  and when the lookup stops, `talk-skill.md` reports that `error` with what must
+  change before rerunning.
 - A bound answer carries `analysis_text`, the exact bytes the binding checked,
   so the publisher never reopens a path that could have changed since.
 - An unbound answer carries a `handoff` naming this one delivery and

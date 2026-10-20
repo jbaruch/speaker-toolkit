@@ -258,6 +258,20 @@ def test_a_future_database_is_not_handed_to_the_migration(tmp_path):
     assert code == 2
     assert payload["reason_code"] == "database_unsupported"
     assert "update speaker-toolkit" in payload["error"]
+    # A lagging reader is never told to repair a newer database.
+    assert "vault-ingress" not in payload["error"]
+    assert "repair" not in payload["error"]
+
+
+def test_a_malformed_current_database_is_the_owner_s_to_repair(tmp_path):
+    database = _vault(tmp_path, [ROBOCODERS])
+    data = json.loads(database.read_text(encoding="utf-8"))
+    del data["config"]
+    database.write_text(json.dumps(data), encoding="utf-8")
+    code, payload, _stderr = _find(database, "--filename", ROBOCODERS["filename"])
+    assert code == 2
+    assert payload["reason_code"] == "database_invalid"
+    assert "repair it through vault-ingress Step 1" in payload["error"]
 
 
 def test_an_unreadable_database_is_refused(tmp_path):
@@ -277,6 +291,7 @@ def test_an_analysis_that_cannot_be_read_is_a_stable_answer(tmp_path):
     assert code == 0, stderr
     assert payload["binding"] == "analysis_unreadable"
     assert "PermissionError" in payload["error"]
+    assert "make the analysis file readable" in payload["error"]
     assert payload["handoff"] is None
 
 
@@ -297,6 +312,7 @@ def test_an_analysis_that_is_not_utf8_is_unreadable_not_bound(tmp_path):
     assert code == 0, stderr
     assert payload["binding"] == "analysis_unreadable"
     assert "not UTF-8" in payload["error"]
+    assert "restore the analysis from a good copy or re-render it" in payload["error"]
     assert "analysis_text" not in payload
 
 

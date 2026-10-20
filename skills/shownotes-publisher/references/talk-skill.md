@@ -89,7 +89,10 @@ that separate artifact.
    When an unbound lookup's `handoff` is null (no matching record, or a
    processed record whose rendered analysis is missing, stale or unreadable,
    which vault-ingress has no one-talk action to re-render), stop and report
-   the `binding` and `talk` to the speaker. Do not silently substitute a
+   the `binding`, the `talk`, and any `error` (it names the fix for an
+   unreadable analysis) to the speaker. Say what must change before the lookup
+   is rerun: the record for a miss, the rendered analysis restored or
+   re-rendered for a missing, stale or unreadable one. Do not silently substitute a
    generic transcript summary. For a
    pre-talk skill, use the approved rhetorical architecture and any
    `rhetorical-review.md` as planned analysis, clearly label that status, and
