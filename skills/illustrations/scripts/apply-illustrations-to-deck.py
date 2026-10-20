@@ -47,17 +47,20 @@ Stdout is one JSON object: ``ok``, the written ``deck`` (null when the outline
 has nothing to apply), ``updated`` and ``eligible`` slide counts, the per-slide
 ``results``, and the ``backgrounds_manifest`` path (null when no FULL slide
 needs a background). Progress lines go to stderr. A refusal exits non-zero
-with its message on stderr.
+with its message on stderr and names the fix: an eligible slide whose image is
+missing or that lies past the deck's end (nothing is written), an unreadable
+source deck, an unwritable output deck or backgrounds manifest, or a slide image
+that cannot be read or stamped.
 """
 
 import argparse
 import json
-import shutil
 import sys
 from pathlib import Path
 
 from lxml import etree
 from pptx import Presentation
+from pptx.exc import PackageNotFoundError
 from pptx.enum.shapes import MSO_SHAPE, MSO_SHAPE_TYPE
 from pptx.oxml.ns import qn
 from pptx.util import Inches
@@ -411,6 +414,28 @@ def apply_img_txt_layout(slide) -> tuple[int, int]:
     return pic_moved, text_moved
 
 
+class ApplyError(RuntimeError):
+    """A refusal whose message names the operation that failed and its fix."""
+
+
+def _why(exc: BaseException) -> str:
+    return f"{type(exc).__name__}: {getattr(exc, 'strerror', None) or exc}"
+
+
+def _unapplied(
+    illust_dir: Path, ext: str, slides: set[int], slide_count: int
+) -> list[str]:
+    """Each eligible slide that cannot be applied, and why."""
+    problems = []
+    for n in sorted(slides):
+        illust = illust_dir / f"slide-{n:02d}.{ext}"
+        if n > slide_count:
+            problems.append(f"slide {n} is past the deck's {slide_count} slides")
+        elif not illust.exists():
+            problems.append(f"slide {n} has no {illust.name}")
+    return problems
+
+
 def apply(
     deck: Path,
     illust_dir: Path,
@@ -430,24 +455,34 @@ def apply(
     for the ApplyBackgrounds VBA pass, which sets them as slide background fills
     as the final write. Returns ``(results, backgrounds)``.
     """
-    if out_deck.exists():
-        out_deck.unlink()
-    shutil.copy2(deck, out_deck)
-
-    prs = Presentation(str(out_deck))
+    poster_full_slides = poster_full_slides or set()
+    try:
+        prs = Presentation(str(deck))
+    except (OSError, PackageNotFoundError) as exc:
+        raise ApplyError(
+            f"cannot read the source deck {deck} ({_why(exc)}); pass an existing "
+            ".pptx, then re-run"
+        ) from exc
+    # Every eligible slide, or nothing: a partial deck would ship with the
+    # skipped slides unillustrated.
+    problems = _unapplied(
+        illust_dir,
+        ext,
+        set(zones) | set(img_txt_slides) | poster_full_slides,
+        len(prs.slides),
+    )
+    if problems:
+        raise ApplyError(
+            "not every eligible slide can be applied, so no deck was written: "
+            f"{'; '.join(problems)} — generate the missing slide images, or fix "
+            "the outline's slide numbers against the deck, then re-run"
+        )
     results = []
     backgrounds: dict[int, str] = {}
-    poster_full_slides = poster_full_slides or set()
 
     # FULL slides with Safe zone — scrim + title here; background via VBA pass
     for n, zone in sorted(zones.items()):
         illust = illust_dir / f"slide-{n:02d}.{ext}"
-        if not illust.exists():
-            _progress(f"  [{n:02d}] SKIP: missing {illust.name}")
-            continue
-        if n > len(prs.slides):
-            _progress(f"  [{n:02d}] SKIP: out of deck range")
-            continue
 
         slide = prs.slides[n - 1]
         backgrounds[n] = str(illust.resolve())
@@ -470,15 +505,15 @@ def apply(
     # IMG+TXT slides — image-left + text-right layout
     for n in sorted(img_txt_slides):
         illust = illust_dir / f"slide-{n:02d}.{ext}"
-        if not illust.exists():
-            _progress(f"  [{n:02d}] SKIP: missing {illust.name}")
-            continue
-        if n > len(prs.slides):
-            _progress(f"  [{n:02d}] SKIP: out of deck range")
-            continue
 
         slide = prs.slides[n - 1]
-        swap_or_insert_picture(slide, illust)
+        try:
+            swap_or_insert_picture(slide, illust)
+        except OSError as exc:
+            raise ApplyError(
+                f"cannot read the slide image {illust} ({_why(exc)}); regenerate "
+                "or replace it, then re-run"
+            ) from exc
 
         pic_moved, text_moved = apply_img_txt_layout(slide)
         _progress(f"  [{n:02d}] format=IMG+TXT  pic+{pic_moved}  text+{text_moved}")
@@ -497,19 +532,10 @@ def apply(
     if footer_stamp is not None:
         # Refuse a mixed set before stamping any of it.
         require_one_geometry(
-            illust
-            for n in sorted(poster_full_slides)
-            if n <= len(prs.slides)
-            and (illust := illust_dir / f"slide-{n:02d}.{ext}").exists()
+            illust_dir / f"slide-{n:02d}.{ext}" for n in sorted(poster_full_slides)
         )
     for n in sorted(poster_full_slides):
         illust = illust_dir / f"slide-{n:02d}.{ext}"
-        if not illust.exists():
-            _progress(f"  [{n:02d}] SKIP: missing {illust.name}")
-            continue
-        if n > len(prs.slides):
-            _progress(f"  [{n:02d}] SKIP: out of deck range")
-            continue
         if footer_stamp is None:
             backgrounds[n] = str(illust.resolve())
             _progress(
@@ -517,9 +543,15 @@ def apply(
             )
         else:
             text, style = footer_stamp
-            stamped = stamp_footer_file(
-                illust, illust_dir / "footer-stamped", text, style
-            )
+            stamped_dir = illust_dir / "footer-stamped"
+            try:
+                stamped = stamp_footer_file(illust, stamped_dir, text, style)
+            except OSError as exc:
+                raise ApplyError(
+                    f"cannot stamp {illust.name} into {stamped_dir} ({_why(exc)}); "
+                    "regenerate or replace the image if it is unreadable, or make "
+                    "the directory writable, then re-run"
+                ) from exc
             backgrounds[n] = str(stamped.resolve())
             _progress(
                 f"  [{n:02d}] poster FULL  bg->VBA  (title baked, footer stamped)"
@@ -533,7 +565,13 @@ def apply(
             }
         )
 
-    prs.save(str(out_deck))
+    try:
+        prs.save(str(out_deck))
+    except OSError as exc:
+        raise ApplyError(
+            f"cannot write the output deck {out_deck} ({_why(exc)}); make its "
+            "directory writable or pass --out elsewhere, then re-run"
+        ) from exc
     return results, backgrounds
 
 
@@ -643,15 +681,8 @@ def main():
             poster_full_slides,
             parse_footer_stamp(args.outline) if poster else None,
         )
-    except FooterStampError as exc:
+    except (ApplyError, FooterStampError) as exc:
         raise SystemExit(f"ERROR: {exc}") from exc
-    except OSError as exc:
-        raise SystemExit(
-            f"ERROR: cannot read a slide image or write its stamped copy "
-            f"({type(exc).__name__}: {exc.strerror or exc}); check that every "
-            "slide image is a readable image and the illustrations directory "
-            "is writable, then re-run"
-        ) from exc
     _progress(f"\nSaved {out_deck}")
     _progress(f"Updated {len(results)}/{total_slides} slides")
 

@@ -174,3 +174,19 @@ def test_a_short_footer_stops_at_the_height_cap(stamp):
     assert box[3] - box[1] <= size[1] * stamp.MAX_HEIGHT_PCT / 100
     stamped = stamp.stamp_footer(_scene((20, 30, 40)), "@jbaruch", STYLE)
     assert stamp.verify_footer(stamped, "@jbaruch", STYLE) == (True, 1.0)
+
+
+def test_an_unreadable_image_is_named_by_the_geometry_check(stamp, tmp_path):
+    """Not an OSError the caller must translate: the refusal names the file."""
+    from PIL import Image
+
+    good = tmp_path / "slide-02.jpg"
+    Image.new("RGB", (1536, 864), (30, 40, 50)).save(good)
+    broken = tmp_path / "slide-03.jpg"
+    broken.write_bytes(b"not an image")
+
+    with pytest.raises(stamp.FooterStampError) as exc:
+        stamp.require_one_geometry([good, broken])
+
+    assert "cannot read slide-03.jpg" in str(exc.value)
+    assert "regenerate or replace it" in str(exc.value)

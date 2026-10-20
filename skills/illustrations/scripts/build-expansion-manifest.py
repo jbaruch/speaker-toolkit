@@ -139,7 +139,7 @@ def _require_one_stamped_geometry(specs: list[dict], builds_dir: Path) -> None:
         )
     try:
         require_one_geometry(sorted(images))
-    except (FooterStampError, OSError) as exc:
+    except FooterStampError as exc:
         raise SystemExit(f"ERROR: cannot stamp the build frames: {exc}") from exc
 
 
@@ -187,16 +187,24 @@ def build_manifest(
         frames = [found[s] for s in steps]
         if spec["footer"] is not None:
             text, style = spec["footer"]
-            try:
-                frames = [
-                    stamp_footer_file(frame, builds_dir / "footer-stamped", text, style)
-                    for frame in frames
-                ]
-            except (FooterStampError, OSError) as exc:
-                raise SystemExit(
-                    f"ERROR: cannot stamp the footer on slide {parent}'s build "
-                    f"frames: {exc}"
-                ) from exc
+            stamped_dir = builds_dir / "footer-stamped"
+            stamped: list[Path] = []
+            for frame in frames:
+                try:
+                    stamped.append(stamp_footer_file(frame, stamped_dir, text, style))
+                except FooterStampError as exc:
+                    raise SystemExit(
+                        f"ERROR: cannot stamp the footer on slide {parent}'s build "
+                        f"frames: {exc}"
+                    ) from exc
+                except OSError as exc:
+                    raise SystemExit(
+                        f"ERROR: cannot stamp {frame.name} into {stamped_dir} "
+                        f"({type(exc).__name__}: {exc.strerror or exc}); regenerate "
+                        "or replace that frame if it is unreadable, or make the "
+                        "directory writable, then re-run"
+                    ) from exc
+            frames = stamped
         builds.append(
             {
                 "parent": parent,

@@ -29,10 +29,16 @@ discipline reduced the drift but cannot guarantee typographic identity.
   unless `footer_style` stamps it.
 - `apply-illustrations-to-deck.py` now prints one JSON summary on stdout (the
   written deck, slide counts, per-slide results, the backgrounds manifest) and
-  sends its progress lines to stderr; Step 12 documents it and what
-  `updated` below `eligible` means. An unreadable slide image or unwritable
-  output, and in `generate-illustrations.py` an unusable `footer_style`, exit
-  with the fix on stderr instead of a traceback.
+  sends its progress lines to stderr; Step 12 documents it. An eligible slide
+  with no image, or past the deck's end, used to be skipped with `ok: true`; it
+  now refuses before any deck is written, naming each such slide. Each
+  failure names its own operation and fix: an unreadable source deck, an
+  unwritable output deck or backgrounds manifest, an unreadable IMG+TXT image,
+  or a poster image that cannot be stamped. `generate-illustrations.py` exits
+  with the fix for an unusable `footer_style`. `footer_stamp.require_one_geometry`
+  names an unreadable image and says to regenerate or replace it, so the
+  geometry checks in both apply and the build manifest are actionable, and the
+  manifest names a frame that cannot be stamped.
 - `strategy.md` Steps 5 and 9 and `SKILL.md` Step 9 describe the model-rendered
   and stamped footer modes separately. `text_treatment` styles the title only,
   as generation already did: the schema comment, the style-catalog field

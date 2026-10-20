@@ -336,10 +336,10 @@ python3 "{speaker_toolkit_root}/skills/illustrations/scripts/apply-illustrations
 ```
 
 Stdout is one JSON summary: `deck`, `updated`, `eligible`, per-slide
-`results`, and `backgrounds_manifest`; progress goes to stderr. `updated` below
-`eligible` means slides were skipped (a missing image, or past the deck's end;
-stderr names each): report them and regenerate before Phase 5 continues. A
-non-zero exit is a refusal whose fix is on stderr.
+`results`, and `backgrounds_manifest`; progress goes to stderr. A non-zero exit
+is a refusal whose fix is on stderr. An eligible slide with no image, or past
+the deck's end, refuses before any deck is written: generate the missing images
+or fix the outline, then re-run.
 
 If no .pptx exists yet (Phase 5 hasn't run), finish here — presentation-creator
 Phase 5 will call back into this skill at Step 12 once the deck is built.

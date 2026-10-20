@@ -295,7 +295,10 @@ def test_a_frame_that_cannot_be_stamped_stops_the_manifest(
     with pytest.raises(SystemExit) as exc:
         build_expansion_manifest.build_manifest(outline, builds)
 
+    # The unreadable frame is named, with what to do about it.
     assert "cannot stamp the build frames" in str(exc.value)
+    assert "slide-07-build-00.jpg" in str(exc.value)
+    assert "regenerate or replace it" in str(exc.value)
 
 
 def test_frames_of_mixed_size_are_refused_before_any_stamp(

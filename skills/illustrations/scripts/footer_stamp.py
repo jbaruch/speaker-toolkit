@@ -85,8 +85,16 @@ def require_one_geometry(images: Iterable[Path]) -> tuple[int, int] | None:
     """
     sizes: dict[tuple[int, int], list[str]] = {}
     for path in images:
-        with Image.open(path) as image:
-            sizes.setdefault(image.size, []).append(path.name)
+        try:
+            with Image.open(path) as image:
+                size = image.size
+        except OSError as exc:
+            raise FooterStampError(
+                f"cannot read {path.name} to check its size "
+                f"({type(exc).__name__}: {getattr(exc, 'strerror', None) or exc}); "
+                "regenerate or replace it, then re-run"
+            ) from exc
+        sizes.setdefault(size, []).append(path.name)
     if len(sizes) > 1:
         common = max(sizes, key=lambda size: len(sizes[size]))
         outliers = sorted(

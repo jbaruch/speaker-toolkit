@@ -706,7 +706,8 @@ def test_an_unreadable_poster_image_exits_with_its_fix(
     with pytest.raises(SystemExit) as exc:
         apply_illustrations.main()
 
-    assert "cannot read a slide image" in str(exc.value)
+    assert "cannot read slide-02.jpg" in str(exc.value)
+    assert "regenerate or replace it" in str(exc.value)
 
 
 def test_an_unwritable_backgrounds_manifest_exits_with_its_fix(
@@ -737,3 +738,114 @@ def test_an_unwritable_backgrounds_manifest_exits_with_its_fix(
         apply_illustrations.main()
 
     assert "cannot write the backgrounds manifest" in str(exc.value)
+
+
+def _cli(monkeypatch, *arguments):
+    monkeypatch.setattr("sys.argv", ["apply-illustrations-to-deck.py", *arguments])
+
+
+@pytest.mark.parametrize(
+    "slides,problem",
+    [
+        (
+            [
+                {"n": 2, "format": "FULL", "text_overlay": "T", "image_prompt": "P"},
+                {"n": 3, "format": "FULL", "text_overlay": "U", "image_prompt": "Q"},
+            ],
+            "slide 3 has no slide-03.jpg",
+        ),
+        (
+            [
+                {"n": 2, "format": "FULL", "text_overlay": "T", "image_prompt": "P"},
+                {"n": 5, "format": "FULL", "text_overlay": "U", "image_prompt": "Q"},
+            ],
+            "slide 5 is past the deck's 3 slides",
+        ),
+    ],
+    ids=["missing-image", "past-the-deck"],
+)
+def test_a_partial_application_is_refused_before_any_deck_is_written(
+    apply_illustrations, tmp_path, monkeypatch, slides, problem
+):
+    """An unillustrated eligible slide is a failure, never ok with a lower count."""
+    from PIL import Image
+
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    Image.new("RGB", (1536, 864), (30, 40, 50)).save(illust_dir / "slide-02.jpg")
+    if slides[1]["n"] == 5:
+        Image.new("RGB", (1536, 864), (30, 40, 50)).save(illust_dir / "slide-05.jpg")
+    outline = _write_outline(
+        tmp_path,
+        slides,
+        composition="poster-theatrical",
+        embedded_footer="@jbaruch",
+    )
+    _cli(monkeypatch, str(deck), str(illust_dir), str(outline))
+
+    with pytest.raises(SystemExit) as exc:
+        apply_illustrations.main()
+
+    assert problem in str(exc.value)
+    assert "no deck was written" in str(exc.value)
+    assert not (tmp_path / "deck-with-titles.pptx").exists()
+
+
+def test_a_missing_source_deck_names_the_deck(
+    apply_illustrations, tmp_path, monkeypatch
+):
+    from PIL import Image
+
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    Image.new("RGB", (1536, 864), (30, 40, 50)).save(illust_dir / "slide-02.jpg")
+    outline = _poster_outline_with_footer_style(tmp_path, "@jbaruch", {})
+    missing = tmp_path / "absent.pptx"
+    _cli(monkeypatch, str(missing), str(illust_dir), str(outline))
+
+    with pytest.raises(SystemExit) as exc:
+        apply_illustrations.main()
+
+    assert f"cannot read the source deck {missing}" in str(exc.value)
+    assert "pass an existing .pptx" in str(exc.value)
+
+
+def test_an_unwritable_output_deck_names_the_output(
+    apply_illustrations, tmp_path, monkeypatch
+):
+    from PIL import Image
+
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    Image.new("RGB", (1536, 864), (30, 40, 50)).save(illust_dir / "slide-02.jpg")
+    outline = _poster_outline_with_footer_style(tmp_path, "@jbaruch", {})
+    out = tmp_path / "no-such-dir" / "out.pptx"
+    _cli(monkeypatch, str(deck), str(illust_dir), str(outline), "--out", str(out))
+
+    with pytest.raises(SystemExit) as exc:
+        apply_illustrations.main()
+
+    assert f"cannot write the output deck {out}" in str(exc.value)
+    assert "pass --out elsewhere" in str(exc.value)
+
+
+def test_an_unreadable_img_txt_image_names_the_image(
+    apply_illustrations, tmp_path, monkeypatch
+):
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    (illust_dir / "slide-02.jpg").write_bytes(b"not an image")
+    outline = _write_outline(tmp_path, [{"n": 2, "format": "IMG+TXT"}])
+    _cli(monkeypatch, str(deck), str(illust_dir), str(outline))
+
+    with pytest.raises(SystemExit) as exc:
+        apply_illustrations.main()
+
+    assert "cannot read the slide image" in str(exc.value)
+    assert "slide-02.jpg" in str(exc.value)
