@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.20.184 — 2026-10-20
+
 ### Name the toolkit-root lookup as a rule
 
 `jbaruch/coding-policy` 0.4.1 permits a resolved plugin root in a skill that
