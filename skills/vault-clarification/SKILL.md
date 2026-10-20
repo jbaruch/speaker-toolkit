@@ -288,27 +288,34 @@ Proceed immediately to Step 9.
 
 ## Step 9 — Mark Session Complete
 
-With a ledger session from Step 2, count it through the owner mutation
-contract with `count_clarification_session`, naming `run_id`, the Step 2
-`claim_token`, and expecting the exact prior
-`config.clarification_sessions_completed` (the missing marker when absent). The
-owner counts only a session running under that claim and records the run with
-the count, so a session re-entered after a crash counts nothing more. When it
-refuses a session begun under schema 2 (it may already be counted), ask the
-speaker whether that interrupted session already counted, record the answer
-under the same claim, then count it:
+With a ledger session from Step 2, count it under the Step 2 claim:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
+  "{vault_root}/tracking-database.json" count-session --run-id "{run_id}" \
+  --claim-token "{claim_token}"
+```
+
+It counts only a session running under that claim, holding the ledger's lock
+through the tracking-database write, and records the run with the count, so a
+session re-entered after a crash counts nothing more (`replayed: true`). Exit 2
+with `session_count_unknown` means the session began under schema 2, which
+counted before recording: ask the speaker one `AskUserQuestion`, "Did the
+interrupted session already count toward your clarification sessions?", with
+the options "No, count it now" (recommended) and "Yes, it already counted",
+and wait for the answer. Record it under the same claim (`no` for the first
+option, `yes` for the second), then count again:
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/run-obligations.py" \
   "{vault_root}/tracking-database.json" reconcile-count --run-id "{run_id}" \
   --now "{iso_timestamp}" --claim-token "{claim_token}" --counted yes|no
 ```
- Without a ledger session, persist
-`config.clarification_sessions_completed + 1` with `set_config`, expecting the
-exact prior value. This counter gates profile generation (vault-profile skill
-requires >= 1).
-The owner mutation preserves `config.schema_version: 3` and every unrelated
-field.
+
+Without a ledger session, persist `config.clarification_sessions_completed + 1`
+with `set_config`, expecting the exact prior value. This counter gates profile
+generation (vault-profile skill requires >= 1). Both preserve
+`config.schema_version: 3` and every unrelated field.
 
 Then close the ledger session Step 2 resolved; a standalone session with no
 seed agenda finishes here. Name `profile_inputs`: `changed` when this session

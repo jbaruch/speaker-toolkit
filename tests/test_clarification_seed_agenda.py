@@ -132,10 +132,15 @@ def test_session_completion_runs_the_owner_command_and_typed_calls() -> None:
     assert "`config.clarification_sessions_completed + 1`" in body
     assert "`set_config`" in body
     commands = _commands(body)
-    assert len(commands) == 2
+    assert len(commands) == 3
     assert all(command.startswith(OWNER_SCRIPT) for command in commands)
+    count, reconcile, record = commands
+    # The owner counts the session under its claim and the ledger's lock.
+    assert count.endswith(
+        '"{vault_root}/tracking-database.json" count-session --run-id "{run_id}" '
+        '--claim-token "{claim_token}"'
+    )
     # A session begun under schema 2 is reconciled under its claim first.
-    reconcile, record = commands
     assert reconcile.endswith(
         '"{vault_root}/tracking-database.json" reconcile-count --run-id "{run_id}" '
         '--now "{iso_timestamp}" --claim-token "{claim_token}" --counted yes|no'
@@ -145,8 +150,7 @@ def test_session_completion_runs_the_owner_command_and_typed_calls() -> None:
         '--run-id "{run_id}" --now "{iso_timestamp}" --claim-token "{claim_token}" '
         "--profile-inputs changed|unchanged [--profile-refreshed]"
     )
-    # A ledger session is counted by the owner mutation keyed on its run.
-    assert "`count_clarification_session`" in body
+    assert "`AskUserQuestion`" in body
     assert "clarification-handoff.md#record-the-answer" in body
     assert 'Skill(skill: "vault-profile")' in body
     for read_field in (

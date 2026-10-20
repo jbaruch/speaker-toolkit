@@ -245,34 +245,9 @@ def _record_report(database: Path, run_id: str, report: Path, now: str = LATER):
     )
 
 
-def _count_session(database: Path, run_id: str, token: str) -> None:
-    """Apply the owner count_clarification_session mutation for one claimed run."""
-    mutate = _import_script(
-        os.path.join(SCRIPTS_VI, "mutate-tracking-database.py"),
-        "mutate_tracking_database",
-    )
-    data = json.loads(database.read_text(encoding="utf-8"))
-    config = data["config"]
-    expect = (
-        config["clarification_sessions_completed"]
-        if "clarification_sessions_completed" in config
-        else {"$missing": True}
-    )
-    candidate, _changes = mutate.build_candidate(
-        data,
-        [
-            {
-                "kind": "count_clarification_session",
-                "run_id": run_id,
-                "claim_token": token,
-                "expect": expect,
-            }
-        ],
-        ledger=mutate.read_obligations_ledger(
-            database.parent / "ingress-obligations.json"
-        ),
-    )
-    database.write_text(json.dumps(candidate), encoding="utf-8")
+def _count_session(database: Path, run_id: str, token: str) -> dict:
+    """Count one claimed run through the owner command, under its claim."""
+    return _ok(database, "count-session", "--run-id", run_id, "--claim-token", token)
 
 
 def _claim_with_token(
@@ -3376,7 +3351,7 @@ def test_a_session_is_recorded_only_by_its_claim_after_its_count(fresh_db):
     code, uncounted, _stderr = _record(fresh_db, token)
     assert code == 2 and uncounted is not None
     assert uncounted["reason_code"] == "session_not_counted"
-    assert "count_clarification_session" in uncounted["error"]
+    assert "count-session" in uncounted["error"]
 
     _count_session(fresh_db, "run-x", token)
     code, other, _stderr = _record(fresh_db, "d" * 32)
@@ -3610,12 +3585,11 @@ def test_a_schema_2_session_is_reconciled_before_it_counts(
         "session"
     ]
     assert session["legacy_count"] == "unknown"
-    mutate = _import_script(
-        os.path.join(SCRIPTS_VI, "mutate-tracking-database.py"),
-        "mutate_tracking_database",
+    unknown = _refused(
+        fresh_db, "count-session", "--run-id", "r", "--claim-token", token
     )
-    with pytest.raises(mutate.TrackingDatabaseMutationError, match="reconcile-count"):
-        _count_session(fresh_db, "r", token)
+    assert unknown["reason_code"] == "session_count_unknown"
+    assert "reconcile-count" in unknown["error"]
 
     _ok(
         fresh_db,
@@ -3685,3 +3659,87 @@ def test_a_schema_2_session_claiming_a_claim_is_refused(
     assert refused["reason_code"] == "ledger_invalid"
     assert "schema-2 record whose session carries a claim" in refused["error"]
     assert ledger.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "run_id,token,reason_code",
+    [
+        ("typo-run", "a" * 32, "run_not_found"),
+        ("run-x", "d" * 32, "session_claimed"),
+    ],
+    ids=["unknown-run", "other-claim"],
+)
+def test_a_count_is_bound_to_the_claimed_ledger_session(
+    fresh_db, run_id, token, reason_code
+):
+    """A typo or a fabricated id never becomes counted authority."""
+    _accepted(fresh_db)
+    _claim_token(fresh_db)
+    refused = _refused(
+        fresh_db, "count-session", "--run-id", run_id, "--claim-token", token
+    )
+    assert refused["reason_code"] == reason_code
+    assert _counter(fresh_db) is None
+
+
+def test_an_unclaimed_session_is_not_counted(fresh_db):
+    _accepted(fresh_db)
+    refused = _refused(
+        fresh_db, "count-session", "--run-id", "run-x", "--claim-token", "a" * 32
+    )
+    assert refused["reason_code"] == "invalid_transition"
+
+
+def test_a_counted_run_replays_without_counting_again(fresh_db):
+    _accepted(fresh_db)
+    token = _claim_token(fresh_db)
+    first = _count_session(fresh_db, "run-x", token)
+    again = _count_session(fresh_db, "run-x", token)
+    assert first["counted"] is True and first["clarification_sessions_completed"] == 1
+    assert again["replayed"] is True and _counter(fresh_db) == 1
+
+
+def test_the_ledger_stays_locked_through_the_database_commit(fresh_db, monkeypatch):
+    """A release cannot land between the claim check and the count's write."""
+    import fcntl
+
+    module = _import_script(
+        os.path.join(SCRIPTS_VI, "run-obligations.py"), "run_obligations"
+    )
+    lock_module = _import_script(
+        os.path.join(SCRIPTS_VI, "cooperative_lock.py"), "cooperative_lock"
+    )
+    _accepted(fresh_db)
+    token = _claim_token(fresh_db)
+    ledger_lock = lock_module.lock_path_for(
+        fresh_db.parent / "ingress-obligations.json"
+    )
+    real_commit = module.commit_tracking_database
+    observed: list[bool] = []
+
+    def commit_while_probing(snapshot, candidate):
+        with open(ledger_lock, "rb") as probe:
+            try:
+                fcntl.flock(probe.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                observed.append(True)
+            else:
+                fcntl.flock(probe.fileno(), fcntl.LOCK_UN)
+                observed.append(False)
+        return real_commit(snapshot, candidate)
+
+    monkeypatch.setattr(module, "commit_tracking_database", commit_while_probing)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = module.main(
+            [
+                str(fresh_db),
+                "count-session",
+                "--run-id",
+                "run-x",
+                "--claim-token",
+                token,
+            ]
+        )
+    assert code == 0, out.getvalue()
+    assert observed == [True]

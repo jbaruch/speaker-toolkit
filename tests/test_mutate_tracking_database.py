@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 from typing import Any
 from pathlib import Path
@@ -2585,228 +2584,36 @@ def test_a_legacy_talk_record_can_still_carry_provenance(
     assert candidate["talks"][0]["schema_version"] == 1
 
 
-# A ledger clarification session counted once per run (#466).
+# Session counting belongs to run-obligations.py count-session (#466).
 
 
-COUNT_TOKEN = "c" * 32
-
-
-def _count(run_id: Any, expect: Any, token: str = COUNT_TOKEN) -> dict[str, Any]:
-    return {
-        "kind": "count_clarification_session",
-        "run_id": run_id,
-        "claim_token": token,
-        "expect": expect,
-    }
-
-
-def _ledger(mutate_tracking_database, **sessions: Any):
-    """A ledger view where each named run's session runs under COUNT_TOKEN."""
-    running = {
-        "state": "running",
-        "claim_token": COUNT_TOKEN,
-        "claimed_at": "2026-10-19T00:00:00Z",
-    }
-    return mutate_tracking_database.ObligationsLedgerView(
-        "0" * 64,
-        {
-            run_id: {**running, **(session or {})}
-            for run_id, session in (sessions or {"run-a": None}).items()
-        },
-    )
-
-
-def test_a_counted_session_advances_the_counter_and_records_its_run(
-    mutate_tracking_database,
-) -> None:
-    candidate, changes = mutate_tracking_database.build_candidate(
-        _base_database(),
-        [_count("run-a", {"$missing": True})],
-        ledger=_ledger(mutate_tracking_database),
-    )
-    assert candidate["config"]["clarification_sessions_completed"] == 1
-    assert candidate["config"]["clarification_counted_runs"] == ["run-a"]
-    assert changes[0]["kind"] == "count_clarification_session"
-    assert changes[0]["identity"] == "run-a"
-
-
-def test_a_run_counted_already_counts_nothing_whatever_it_expects(
-    mutate_tracking_database,
-) -> None:
-    """A session re-entered after a crash replays its count."""
-    ledger = _ledger(mutate_tracking_database)
-    counted, _ = mutate_tracking_database.build_candidate(
-        _base_database(), [_count("run-a", {"$missing": True})], ledger=ledger
-    )
-    replay, changes = mutate_tracking_database.build_candidate(
-        counted, [_count("run-a", {"$missing": True})], ledger=ledger
-    )
-    assert replay == counted
-    assert changes == []
-
-
-def test_two_runs_count_twice_and_a_stale_expect_refuses(
-    mutate_tracking_database,
-) -> None:
-    """Two hosts read the same counter; the second must re-read, never merge."""
-    ledger = _ledger(mutate_tracking_database, **{"run-a": None, "run-b": None})
-    first, _ = mutate_tracking_database.build_candidate(
-        _base_database(), [_count("run-a", {"$missing": True})], ledger=ledger
-    )
-    with pytest.raises(
-        mutate_tracking_database.TrackingDatabaseMutationError, match="expect"
-    ):
-        mutate_tracking_database.build_candidate(
-            first, [_count("run-b", {"$missing": True})], ledger=ledger
-        )
-    second, _ = mutate_tracking_database.build_candidate(
-        first, [_count("run-b", 1)], ledger=ledger
-    )
-    assert second["config"]["clarification_sessions_completed"] == 2
-    assert second["config"]["clarification_counted_runs"] == ["run-a", "run-b"]
-
-
-@pytest.mark.parametrize(
-    "run_id,token,session,detail",
-    [
-        ("typo-run", COUNT_TOKEN, None, "names no run in the obligations ledger"),
-        ("run-a", "d" * 32, None, "not running under the claim"),
-        (
-            "run-a",
-            COUNT_TOKEN,
-            {"state": "pending", "claim_token": None},
-            "not running",
-        ),
-        ("run-a", COUNT_TOKEN, {"legacy_count": "unknown"}, "reconcile-count"),
-    ],
-    ids=["unknown-run", "other-claim", "not-claimed", "legacy-unknown"],
-)
-def test_a_count_is_bound_to_its_live_ledger_session(
-    mutate_tracking_database, run_id, token, session, detail
-) -> None:
-    """A typo or a fabricated id never becomes counted authority."""
-    with pytest.raises(
-        mutate_tracking_database.TrackingDatabaseMutationError, match=detail
-    ):
-        mutate_tracking_database.build_candidate(
-            _base_database(),
-            [_count(run_id, {"$missing": True}, token)],
-            ledger=_ledger(mutate_tracking_database, **{"run-a": session}),
-        )
-
-
-def test_a_count_without_the_ledger_is_refused(mutate_tracking_database) -> None:
-    with pytest.raises(
-        mutate_tracking_database.TrackingDatabaseMutationError, match="ledger"
-    ):
-        mutate_tracking_database.build_candidate(
-            _base_database(), [_count("run-a", {"$missing": True})]
-        )
-
-
-@pytest.mark.parametrize("legacy,after", [("counted", 4), ("uncounted", 5)])
-def test_a_reconciled_legacy_session_counts_once(
-    mutate_tracking_database, legacy, after
-) -> None:
-    """A schema-2 session already counted joins the runs without counting again."""
-    database = _base_database()
-    database["config"]["clarification_sessions_completed"] = 4
-    candidate, _ = mutate_tracking_database.build_candidate(
-        database,
-        [_count("run-a", 4)],
-        ledger=_ledger(mutate_tracking_database, **{"run-a": {"legacy_count": legacy}}),
-    )
-    assert candidate["config"]["clarification_sessions_completed"] == after
-    assert candidate["config"]["clarification_counted_runs"] == ["run-a"]
-
-
-@pytest.mark.parametrize("run_id", ["", "run a", None])
-def test_a_count_needs_a_ledger_run_id(mutate_tracking_database, run_id) -> None:
+def test_counting_a_session_is_not_a_plan_mutation(mutate_tracking_database) -> None:
+    """Only the ledger owner counts, under the session's claim and its lock."""
     with pytest.raises(mutate_tracking_database.TrackingDatabaseMutationError):
         mutate_tracking_database.build_candidate(
             _base_database(),
-            [_count(run_id, {"$missing": True})],
-            ledger=_ledger(mutate_tracking_database),
+            [
+                {
+                    "kind": "count_clarification_session",
+                    "run_id": "run-a",
+                    "expect": {"$missing": True},
+                }
+            ],
         )
 
 
-def _ledger_file(path: Path, session: dict[str, Any]) -> None:
-    _write_json(
-        path,
-        {
-            "schema_version": 1,
-            "runs": [{"run_id": "run-a", "clarification": {"session": session}}],
-        },
-    )
-
-
-def test_an_applied_count_reads_the_live_ledger_beside_the_database(
-    mutate_tracking_database, tmp_path: Path
-) -> None:
-    database_path = tmp_path / "tracking-database.json"
-    plan_path = tmp_path / "plan.json"
-    _write_json(database_path, _base_database())
-    _write_json(
-        plan_path,
-        {"schema_version": 1, "mutations": [_count("run-a", {"$missing": True})]},
-    )
-    _ledger_file(
-        tmp_path / "ingress-obligations.json",
-        {
-            "state": "running",
-            "claim_token": COUNT_TOKEN,
-            "claimed_at": "2026-10-19T00:00:00Z",
-        },
-    )
-    dry_run = mutate_tracking_database.execute(
-        database_path, plan_path, apply=False, expected_sha256=None
-    )
-    mutate_tracking_database.execute(
-        database_path, plan_path, apply=True, expected_sha256=dry_run["input_sha256"]
-    )
-    result = json.loads(database_path.read_text(encoding="utf-8"))
-    assert result["config"]["clarification_counted_runs"] == ["run-a"]
-
-
-def test_a_ledger_that_changes_before_the_commit_refuses_the_count(
-    mutate_tracking_database, tmp_path: Path, monkeypatch
-) -> None:
-    """The count is bound to the generation it checked, not a later one."""
-    database_path = tmp_path / "tracking-database.json"
-    plan_path = tmp_path / "plan.json"
-    _write_json(database_path, _base_database())
-    _write_json(
-        plan_path,
-        {"schema_version": 1, "mutations": [_count("run-a", {"$missing": True})]},
-    )
-    ledger_path = tmp_path / "ingress-obligations.json"
-    running = {
-        "state": "running",
-        "claim_token": COUNT_TOKEN,
-        "claimed_at": "2026-10-19T00:00:00Z",
-    }
-    _ledger_file(ledger_path, running)
-    before = database_path.read_bytes()
-    real_read = mutate_tracking_database.read_obligations_ledger
-    reads: list[Path] = []
-
-    def released_after_first_read(path: Path):
-        reads.append(path)
-        if len(reads) == 2:
-            # Another host released the claim between the check and the commit.
-            _ledger_file(
-                ledger_path, {**running, "state": "pending", "claim_token": None}
-            )
-        return real_read(path)
-
-    monkeypatch.setattr(
-        mutate_tracking_database, "read_obligations_ledger", released_after_first_read
-    )
-    sha = hashlib.sha256(before).hexdigest()
+def test_set_config_cannot_fabricate_a_counted_run(mutate_tracking_database) -> None:
     with pytest.raises(
-        mutate_tracking_database.TrackingDatabaseMutationError, match="ledger changed"
+        mutate_tracking_database.TrackingDatabaseMutationError, match="count-session"
     ):
-        mutate_tracking_database.execute(
-            database_path, plan_path, apply=True, expected_sha256=sha
+        mutate_tracking_database.build_candidate(
+            _base_database(),
+            [
+                {
+                    "kind": "set_config",
+                    "path": ["clarification_counted_runs"],
+                    "expect": {"$missing": True},
+                    "value": ["typo-run"],
+                }
+            ],
         )
-    assert database_path.read_bytes() == before

@@ -69,8 +69,9 @@ READABLE_CONFIG_RECORD_SCHEMA_VERSIONS = frozenset(
     }
 )
 # The completed-session counter, and the run ids of the ledger sessions it
-# already includes (#466). The owner's count_clarification_session mutation
-# advances one and appends to the other in the same write, so a session counts
+# already includes (#466). run-obligations.py count-session, holding the
+# ledger lock under the session's claim, advances one and appends to the other
+# in the same write, so a session counts
 # once however often it is re-entered. Both optional: absent means zero and
 # none. The counted-runs list belongs to config v3; only these and the PPTX
 # exclusions are validated.

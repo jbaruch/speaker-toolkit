@@ -24,16 +24,20 @@ Two session-lifecycle gaps Copilot raised on PR #465, deferred to #466:
   `profile_refresh_required` that never returned, counted twice. A first
   attempt pinned the counter target in the ledger, but a counter value cannot
   say whose increment landed: two sessions pinning the same target let the
-  loser's retry read the winner's increment as its own. The count is now an
-  owner mutation, `count_clarification_session`, that advances the counter and
-  appends the run id to the new optional `config.clarification_counted_runs` in
-  one tracking-database write. A run already counted changes nothing, two runs
-  always count twice, and `record-session` refuses (`session_not_counted`) until
-  the run is listed. The mutation is bound to the live ledger: it names the
-  session's `claim_token`, reads `{vault_root}/ingress-obligations.json`
-  read-only, counts only a session `running` under that claim, and re-reads the
-  ledger before the commit, refusing if it changed. A typo or a fabricated run
-  id never becomes counted authority. The new field moves the config record to **schema 3**:
+  loser's retry read the winner's increment as its own. A plan-level mutation
+  bound to the ledger by a hash re-check still left a window: the ledger and
+  the database have separate locks, so a release could land between the check
+  and the commit. The count is now the ledger owner's command,
+  `run-obligations.py count-session --run-id --claim-token`. It takes the
+  ledger's writer lock and reads the ledger strictly without writing it. It
+  verifies the session is `running` under the named claim, then advances the
+  counter and appends the run id to the new optional
+  `config.clarification_counted_runs` in one generation-checked
+  tracking-database commit, all before releasing the lock (lock order: ledger,
+  then database). A run already counted replays, two runs always count twice,
+  and `record-session` refuses (`session_not_counted`) until the run is listed.
+  `set_config` refuses `clarification_counted_runs`, so a typo or a fabricated
+  run id never becomes counted authority. The new field moves the config record to **schema 3**:
   v1 and v2 stay readable, the owner migration restamps a v2 config to v3
   unchanged, a v2 config carrying the field is refused, and the owner validates
   both fields on every read. Writers and docs that named config v2 as current
@@ -45,9 +49,11 @@ Two session-lifecycle gaps Copilot raised on PR #465, deferred to #466:
   A session completed before claims existed keeps a null token, so an identical
   `record-session` retry after the upgrade replays under any claim token.
   Schema 2's Step 9 advanced the counter before recording the session, so a
-  pending schema-2 session upgrades with `legacy_count: unknown`. The count
-  refuses it until the new `reconcile-count --counted yes|no` records the
-  speaker's answer under the session's claim; a session reconciled as already
+  pending schema-2 session upgrades with `legacy_count: unknown`. `count-session`
+  refuses it (`session_count_unknown`) until the new
+  `reconcile-count --counted yes|no` records the speaker's answer under the
+  session's claim; vault-clarification Step 9 asks it as one `AskUserQuestion`
+  with the recommended "count it now" first. A session reconciled as already
   counted joins `clarification_counted_runs` without advancing the counter.
 - First-time setup no longer tells the agent to put root and config versions or
   empty arrays into the `initialize_database` mutation, which accepts only

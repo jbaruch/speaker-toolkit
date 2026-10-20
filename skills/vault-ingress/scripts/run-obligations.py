@@ -30,6 +30,8 @@ Usage:
     run-obligations.py <tracking-database.json> release-session \
         --run-id <id> --now <ISO-8601> --claim-token <token> \
         (--reason <text> | --reason-from <file>)
+    run-obligations.py <tracking-database.json> count-session \
+        --run-id <id> --claim-token <token>
     run-obligations.py <tracking-database.json> reconcile-count \
         --run-id <id> --now <ISO-8601> --claim-token <token> --counted yes|no
     run-obligations.py <tracking-database.json> record-session \
@@ -71,9 +73,10 @@ offer with the speaker's return condition, so it can be raised again.
 has not completed, with the topics recorded at the offer as its seed agenda,
 selected here (see ``pending_sessions``) so the session never picks one by
 hand. ``claim-session`` reserves that session for one host and returns the
-claim token every later session command carries; ``record-session`` closes it
-only once the tracking database's owner ``count_clarification_session``
-mutation has counted its run; ``release-session`` is the operator's explicit
+claim token every later session command carries; ``count-session`` counts it
+toward the tracking database's ``clarification_sessions_completed`` while
+holding the ledger's lock through that database write; ``record-session``
+closes it only once its run is counted; ``release-session`` is the operator's explicit
 decision to free one named claim whose host died. Field
 meanings, transitions, and the reader/writer contract live in
 ``skills/vault-ingress/references/schemas-obligations.md``.
@@ -106,7 +109,10 @@ from queue_claim_contract import (
     QueueClaimContractError,
     require_queue_identifier,
 )
+from cooperative_lock import CooperativeLockError, exclusive_file_lock
 from tracking_database import (
+    CLARIFICATION_COUNTED_RUNS_FIELD,
+    CLARIFICATION_SESSIONS_FIELD,
     LEGACY_COUNT_COUNTED,
     LEGACY_COUNT_FIELD,
     LEGACY_COUNT_STATES,
@@ -118,12 +124,15 @@ from tracking_database import (
     require_current_tracking_database,
 )
 from tracking_database_io import (
+    DATABASE_LOCK_LABEL,
     DATABASE_READ_DIAGNOSTICS,
     DATABASE_READ_FALLBACK,
     TrackingDatabaseIOError,
     TrackingDatabaseSnapshot,
+    commit_tracking_database,
     decode_json_object,
     initialize_tracking_database,
+    render_json_object,
     snapshot_tracking_database,
     write_json_object,
 )
@@ -1868,6 +1877,119 @@ def command_release_session(
     return _transition(context, args, mutate)
 
 
+def _read_ledger_unwritten(
+    context: Context,
+) -> tuple[TrackingDatabaseSnapshot, dict[str, Any]]:
+    """The current ledger, read strictly without writing; for use under its lock.
+
+    ``load_ledger`` rewrites an older record it upgrades, which takes this same
+    lock, so a caller already holding it reads here and refuses an older record.
+    """
+    try:
+        snapshot = snapshot_tracking_database(context.ledger_path)
+        payload = decode_json_object(snapshot)
+    except TrackingDatabaseIOError as exc:
+        raise _io_failure(
+            exc, f"obligations ledger {context.ledger_path}", "ledger_unreadable"
+        ) from exc
+    runs = payload.get("runs") if isinstance(payload, dict) else None
+    if isinstance(runs, list) and any(
+        isinstance(run, dict) and run.get("schema_version") != RUN_RECORD_SCHEMA_VERSION
+        for run in runs
+    ):
+        raise RunObligationsError(
+            f"obligations ledger {context.ledger_path} gained an older record "
+            "while this command ran; re-run it",
+            reason_code="ledger_changed",
+        )
+    return snapshot, validate_ledger(payload, context.ledger_path, context.vault_root)
+
+
+def _count_in_database(
+    context: Context, run_id: str, *, advances: bool
+) -> dict[str, Any]:
+    """Advance the counter and record the run, against one database generation."""
+    try:
+        snapshot = snapshot_tracking_database(context.database_path)
+        database = decode_json_object(snapshot)
+        require_current_tracking_database(database)
+    except TrackingDatabaseIOError as exc:
+        raise _io_failure(
+            exc, f"tracking database {context.database_path}", "database_unusable"
+        ) from exc
+    except TrackingDatabaseError as exc:
+        raise RunObligationsError(str(exc), reason_code="database_unusable") from exc
+    config = database["config"]
+    counted = counted_clarification_runs(config)
+    sessions = config.get(CLARIFICATION_SESSIONS_FIELD, 0)
+    if run_id in counted:
+        return {
+            "counted": False,
+            "replayed": True,
+            CLARIFICATION_SESSIONS_FIELD: sessions,
+        }
+    candidate = json.loads(json.dumps(database))
+    after = sessions + 1 if advances else sessions
+    candidate["config"][CLARIFICATION_SESSIONS_FIELD] = after
+    candidate["config"][CLARIFICATION_COUNTED_RUNS_FIELD] = [*counted, run_id]
+    try:
+        require_current_tracking_database(candidate)
+        result = commit_tracking_database(snapshot, render_json_object(candidate))
+    except TrackingDatabaseIOError as exc:
+        raise _io_failure(
+            exc, f"tracking database {context.database_path}", "database_write_failed"
+        ) from exc
+    except TrackingDatabaseError as exc:
+        raise RunObligationsError(str(exc), reason_code="database_unusable") from exc
+    for warning in result.warnings:
+        print(f"WARNING: tracking database: {warning}", file=sys.stderr)
+    return {
+        "counted": True,
+        "advanced": advances,
+        CLARIFICATION_SESSIONS_FIELD: after,
+        "durability_state": result.durability_state,
+        "warnings": list(result.warnings),
+    }
+
+
+def command_count_session(context: Context, args: argparse.Namespace) -> dict[str, Any]:
+    """Count the claimed session once, holding the ledger's lock through the write.
+
+    The claim check and the database commit happen under the ledger's own
+    writer lock, so no release or record can land between them. Lock order is
+    ledger, then database; nothing takes them the other way. The ledger itself
+    is not written.
+    """
+    run_id = require_run_id(args.run_id)
+    # Any older record is upgraded here, by the owner's read that rewrites it.
+    load_ledger(context.ledger_path, context.vault_root)
+    try:
+        with exclusive_file_lock(context.ledger_path, label=DATABASE_LOCK_LABEL):
+            _snapshot, ledger = _read_ledger_unwritten(context)
+            require_adopted(ledger, context.ledger_path)
+            run = find_run(ledger, run_id)
+            session = _accepted_session(run)
+            _require_claim(run, session, args.claim_token)
+            legacy = session.get(LEGACY_COUNT_FIELD)
+            if legacy == LEGACY_COUNT_UNKNOWN:
+                raise RunObligationsError(
+                    f"run {run_id!r} session began under run-record schema 2, "
+                    "whose Step 9 counted before recording, so it may be "
+                    "counted already; record which with reconcile-count, then "
+                    "count it",
+                    reason_code="session_count_unknown",
+                )
+            outcome = _count_in_database(
+                context, run_id, advances=legacy != LEGACY_COUNT_COUNTED
+            )
+    except CooperativeLockError as exc:
+        raise RunObligationsError(
+            f"cannot hold the obligations ledger lock: {exc}; re-run",
+            reason_code="ledger_unreadable",
+        ) from exc
+    return {"ok": True, "run_id": run_id, **outcome}
+
+
 def command_reconcile_count(
     context: Context, args: argparse.Namespace
 ) -> dict[str, Any]:
@@ -1883,7 +2005,7 @@ def command_reconcile_count(
         if state is None:
             raise RunObligationsError(
                 f"run {run['run_id']!r} session began under schema 3, so its count "
-                "is never in doubt; count it with count_clarification_session",
+                "is never in doubt; count it with count-session",
                 reason_code="invalid_transition",
             )
         if state != LEGACY_COUNT_UNKNOWN:
@@ -1923,9 +2045,9 @@ def command_record_session(
         _require_claim(run, session, args.claim_token)
         if run["run_id"] not in counted_clarification_runs(context.database["config"]):
             raise RunObligationsError(
-                f"run {run['run_id']!r} session has not been counted: apply the "
-                "owner count_clarification_session mutation for this run before "
-                "recording the session",
+                f"run {run['run_id']!r} session has not been counted: run "
+                "count-session for this run under its claim before recording "
+                "the session",
                 reason_code="session_not_counted",
             )
         if (
@@ -2462,6 +2584,13 @@ def build_parser() -> JsonArgumentParser:
         "--reason-from", help="a file holding the reason in the operator's words"
     )
 
+    count = actions.add_parser(
+        "count-session",
+        help="count the claimed session toward clarification_sessions_completed",
+    )
+    count.add_argument("--run-id", required=True)
+    count.add_argument("--claim-token", required=True)
+
     reconcile = actions.add_parser(
         "reconcile-count",
         help="record whether a session begun under schema 2 was already counted",
@@ -2533,6 +2662,7 @@ COMMANDS = {
     "record-disposition": command_record_disposition,
     "claim-session": command_claim_session,
     "release-session": command_release_session,
+    "count-session": command_count_session,
     "reconcile-count": command_reconcile_count,
     "record-session": command_record_session,
     "record-report": command_record_report,

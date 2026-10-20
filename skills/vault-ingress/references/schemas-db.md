@@ -653,7 +653,6 @@ exact-type rule. The supported mutation kinds are:
 |---|---|
 | `initialize_database` | Sole mutation for a missing database; carries initial `config` |
 | `set_config` | Set or delete one nested config path against its exact prior value |
-| `count_clarification_session` | Count one ledger clarification session: `run_id`, `claim_token`, and `expect` (the prior `clarification_sessions_completed`, or the missing marker); the run's session must be `running` under that claim in `{vault_root}/ingress-obligations.json`, re-read before the commit, and a schema-2 session with `legacy_count: unknown` refuses until `reconcile-count`; advances the counter (not for a session reconciled as `counted`) and appends `run_id` to `clarification_counted_runs` in one write; a run already counted changes nothing (#466) |
 | `record_pptx` | Replace/add one complete schema-v3 PPTX catalog record — generation binding included, plus the identity assessment proving the deck belongs to the talk it names — and, when matched, bind the talk's expected `pptx_path` |
 | `upsert_confirmed_intent` | Replace/add one complete schema-v1 record identified by `pattern` |
 | `upsert_improvement_goal` | Replace/add one complete record identified by `id` |

@@ -76,12 +76,12 @@ canonical owner default.
 `clarification_sessions_completed` counts completed clarification sessions
 (absent means zero); vault-profile requires at least one before generating a
 profile. `clarification_counted_runs` lists the run ids of the ledger sessions
-the counter already includes (absent means none). The owner's
-`count_clarification_session` mutation, bound to the session running under
-its claim in the obligations ledger, advances the counter and appends the
-run id in one write, so a ledger session counts once however often it is
-re-entered. A standalone session with no ledger record advances the counter
-with `set_config` alone. The owner validates both fields on every read: a
+the counter already includes (absent means none). Only
+`run-obligations.py count-session` writes it: holding the obligations ledger's
+lock under the session's claim, it advances the counter and appends the run id
+in one write, so a ledger session counts once however often it is re-entered.
+`set_config` refuses `clarification_counted_runs`. A standalone session with no
+ledger record advances the counter with `set_config` alone. The owner validates both fields on every read: a
 non-negative integer, and unique run ids no more numerous than the count.
 `clarification_counted_runs` is a config schema v3 field; a v2 config carrying
 it is refused, and the owner migration restamps a v2 config to v3 unchanged.
