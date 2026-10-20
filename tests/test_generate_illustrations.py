@@ -1579,17 +1579,11 @@ def test_run_generate_poster_rejects_non_full_slide(
     data = yaml.safe_load(outline.read_text(encoding="utf-8"))
     data["slides"][0]["format"] = "IMG+TXT"
     outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-    outline_dict = gi.parse_outline(str(outline))
-    _write_manifest(tmp_path, ["gemini-3-pro-image"])
-    gen_calls = []
-    _stub_generate(gi, monkeypatch, outline_dict, str(tmp_path), gen_calls)
+    from pydantic import ValidationError
 
-    with pytest.raises(SystemExit) as exc:
-        gi.run_generate(str(outline), ["all"])
-
-    assert exc.value.code == 1
-    assert gen_calls == []
-    assert "poster-theatrical" in capsys.readouterr().err
+    # The outline schema refuses it before the generator could run.
+    with pytest.raises(ValidationError, match="poster-theatrical decks illustrate"):
+        gi.parse_outline(str(outline))
 
 
 def test_run_generate_poster_validates_whole_outline_not_just_subset(
@@ -1622,17 +1616,11 @@ def test_run_generate_poster_validates_whole_outline_not_just_subset(
             },
         ],
     )
-    outline_dict = gi.parse_outline(str(outline))
-    _write_manifest(tmp_path, ["gemini-3-pro-image"])
-    gen_calls = []
-    _stub_generate(gi, monkeypatch, outline_dict, str(tmp_path), gen_calls)
+    from pydantic import ValidationError
 
-    with pytest.raises(SystemExit) as exc:
-        gi.run_generate(str(outline), ["1"])  # subset: only slide 1
-
-    assert exc.value.code == 1
-    assert gen_calls == []
-    assert "2" in capsys.readouterr().err  # slide 2 named as the offender
+    # Deck-level: the schema names slide 2 even when only slide 1 is wanted.
+    with pytest.raises(ValidationError, match=r"slide\(s\) 2 carry"):
+        gi.run_generate(str(outline), ["1"])
 
 
 def test_gate_rejects_rel_path_traversal(generate_illustrations, tmp_path):
@@ -1908,6 +1896,7 @@ def test_parse_outline_carries_the_footer_style(generate_illustrations, tmp_path
 
     outline = _write_poster_outline(tmp_path)
     data = yaml.safe_load(outline.read_text(encoding="utf-8"))
+    data["schema_version"] = 2
     data["style_anchor"]["footer_style"] = {"target_width_pct": 70}
     outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     parsed = generate_illustrations.parse_outline(str(outline))
@@ -1943,3 +1932,23 @@ def test_an_unstampable_footer_exits_with_its_fix_not_a_traceback(
     assert "the poster footer cannot be stamped" in err
     assert "too long to fit" in err
     assert "Traceback" not in err
+
+
+def test_a_title_less_stamped_slide_still_reserves_its_footer_strip(
+    generate_illustrations,
+):
+    """The strip depends on the stamped footer, never on the title text."""
+    gi = generate_illustrations
+    once = gi.apply_poster_embed_directive(
+        "A quiet scene.", "", "@jbaruch", footer_style=FOOTER_STYLE
+    )
+    assert "FOOTER STRIP" in once
+    assert "EMBEDDED TEXT" not in once
+    assert (
+        gi.apply_poster_embed_directive(once, "", "@jbaruch", footer_style=FOOTER_STYLE)
+        == once
+    )
+    # A model-rendered footer still needs a title to sit under.
+    assert gi.apply_poster_embed_directive("A quiet scene.", "", "@jbaruch") == (
+        "A quiet scene."
+    )

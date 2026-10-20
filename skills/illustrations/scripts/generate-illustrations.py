@@ -444,20 +444,26 @@ def apply_poster_embed_directive(
     no-invented-text instruction. Idempotent: an existing EMBEDDED TEXT block,
     and everything appended after it, is replaced.
     """
-    if not title_text:
+    # A stamped footer needs its quiet strip whether or not the slide has a
+    # title to embed; without either there is nothing to direct.
+    stamped = bool(footer_text) and footer_style is not None
+    if not title_text and not stamped:
         return prompt
-    if "EMBEDDED TEXT" in prompt:
-        prompt = prompt.split("EMBEDDED TEXT", 1)[0].rstrip()
-    # The directive wraps the title/footer in double quotes; normalize any
-    # embedded double quotes to single so a title like He said "Hi" doesn't
-    # produce ambiguous nested quotes that degrade model compliance.
-    title = title_text.replace('"', "'")
-    treatment = (text_treatment or "").strip() or DEFAULT_POSTER_TEXT_TREATMENT
-    directive = POSTER_EMBED_DIRECTIVE_TEMPLATE.format(
-        title=title,
-        treatment=treatment,
-        footer_clause="",
-    )
+    for marker in ("EMBEDDED TEXT", "FOOTER STRIP"):
+        if marker in prompt:
+            prompt = prompt.split(marker, 1)[0].rstrip()
+    directive = ""
+    if title_text:
+        # The directive wraps the title/footer in double quotes; normalize any
+        # embedded double quotes to single so a title like He said "Hi" doesn't
+        # produce ambiguous nested quotes that degrade model compliance.
+        title = title_text.replace('"', "'")
+        treatment = (text_treatment or "").strip() or DEFAULT_POSTER_TEXT_TREATMENT
+        directive = POSTER_EMBED_DIRECTIVE_TEMPLATE.format(
+            title=title,
+            treatment=treatment,
+            footer_clause="",
+        )
     if footer_text and footer_style is not None:
         directive += POSTER_FOOTER_STRIP_TEMPLATE.format(
             strip=reserved_strip_pct(footer_text, footer_style)

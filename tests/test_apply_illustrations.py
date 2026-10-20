@@ -20,6 +20,17 @@ FIXTURE = Path(__file__).parent / "fixtures" / "outline-example.yaml"
 _TALK = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))["talk"]
 
 
+def _fill_numbering(slides):
+    """Pad 1..max(n) with plain slides: a built deck has one per outline slide."""
+    present = {slide["n"] for slide in slides}
+    filler = [
+        {"n": k, "chapter": "c", "title": f"Filler {k}", "format": "FULL"}
+        for k in range(1, max(present, default=0) + 1)
+        if k not in present
+    ]
+    return sorted([*slides, *filler], key=lambda slide: slide["n"])
+
+
 def _write_outline(
     tmp_path, slides, *, composition=None, embedded_footer=None, name="outline.yaml"
 ):
@@ -28,7 +39,7 @@ def _write_outline(
     `slides` is a list of dicts; each needs at least `n` + `format`. chapter and
     title are filled in so the partial schema validates.
     """
-    norm = [{"chapter": "c", "title": "S", **s} for s in slides]
+    norm = _fill_numbering([{"chapter": "c", "title": "S", **s} for s in slides])
     data = {"talk": copy.deepcopy(_TALK), "slides": norm}
     if composition is not None or embedded_footer is not None:
         anchor = {"model": "imagen-4", "full": "F", "imgtxt": "I", "conventions": "C"}
@@ -549,6 +560,7 @@ def _poster_outline_with_footer_style(tmp_path, footer, footer_style):
         embedded_footer=footer,
     )
     data = yaml.safe_load(outline.read_text(encoding="utf-8"))
+    data["schema_version"] = 2
     data["style_anchor"]["footer_style"] = footer_style
     outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     return outline
@@ -677,6 +689,7 @@ def test_poster_slides_of_mixed_size_are_refused_before_any_stamp(
         embedded_footer="@jbaruch",
     )
     data = yaml.safe_load(outline.read_text(encoding="utf-8"))
+    data["schema_version"] = 2
     data["style_anchor"]["footer_style"] = {}
     outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     monkeypatch.setattr(
@@ -949,6 +962,7 @@ def test_a_build_frame_of_another_size_is_refused_before_apply_stamps(
         embedded_footer="@jbaruch",
     )
     data = yaml.safe_load(outline.read_text(encoding="utf-8"))
+    data["schema_version"] = 2
     data["style_anchor"]["footer_style"] = {}
     outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     _cli(monkeypatch, str(deck), str(illust_dir), str(outline))
@@ -1018,3 +1032,55 @@ def test_a_prompt_free_img_txt_slide_is_left_to_the_slide_walk(
         2: None,
         4: 6,
     }
+
+
+def test_a_zero_based_outline_keys_backgrounds_by_deck_position(
+    apply_illustrations, tmp_path
+):
+    """Outline slide 0 is deck slide 1, and later keys follow from there."""
+    import outline_schema
+
+    deck = tmp_path / "deck.pptx"
+    make_deck(4).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    for n in (0, 1, 2):
+        (illust_dir / f"slide-{n:02d}.png").write_bytes(_MIN_PNG)
+    zone = {"zone": "upper_third", "surface": "sky"}
+    outline = _write_outline(
+        tmp_path,
+        [
+            {"n": 0, "format": "FULL", "safe_zone": zone},
+            {
+                "n": 1,
+                "format": "FULL",
+                "safe_zone": zone,
+                "builds": [
+                    {"step": 0, "desc": "a", "erase": "e"},
+                    {"step": 1, "desc": "b"},
+                ],
+            },
+            {"n": 2, "format": "FULL", "safe_zone": zone},
+        ],
+    )
+    positions = outline_schema.deck_positions(
+        outline_schema.load_outline_partial(outline).slides
+    )
+
+    results, backgrounds = apply_illustrations.apply(
+        deck,
+        illust_dir,
+        apply_illustrations.parse_zones(outline),
+        set(),
+        tmp_path / "out.pptx",
+        "png",
+        "000000",
+        45000,
+        build_counts=apply_illustrations.parse_build_counts(outline),
+        positions=positions,
+    )
+
+    assert positions == {0: 1, 1: 2, 2: 3}
+    # Slide 1's two frames take deck slides 2-3, so slide 2 is deck slide 4.
+    assert sorted(backgrounds) == [1, 4]
+    assert {r["slide"]: r["deck_slide"] for r in results} == {0: 1, 1: None, 2: 4}

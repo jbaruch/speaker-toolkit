@@ -50,7 +50,8 @@ has nothing to apply), ``updated`` and ``eligible`` slide counts, the per-slide
 ``deck_slide``, null for a build parent), and the ``backgrounds_manifest`` path
 (null when no FULL slide needs a background). The manifest's keys are
 post-ExpandBuilds deck slide numbers, so run the backgrounds pass after
-``expand-builds.sh``. With ``footer_style``, every stamped slide image and every
+``expand-builds.sh``. Deck access and keys count outline slides in order
+(``outline_schema.deck_positions``), so outline numbering may start at 0. With ``footer_style``, every stamped slide image and every
 declared build frame must share one size, checked before anything is written. Progress lines go to stderr. A refusal exits non-zero
 with its message on stderr and names the fix: an eligible slide whose image is
 missing or that lies past the deck's end (nothing is written), an unreadable
@@ -422,17 +423,29 @@ def apply_img_txt_layout(slide) -> tuple[int, int]:
     return pic_moved, text_moved
 
 
-def deck_slide_number(n: int, build_counts: dict[int, int]) -> int | None:
+def deck_slide_number(
+    n: int,
+    build_counts: dict[int, int],
+    positions: dict[int, int] | None = None,
+) -> int | None:
     """Outline slide ``n``'s 1-based deck number after ExpandBuilds, or None.
 
-    ExpandBuilds runs before the backgrounds pass and replaces each build parent
-    with its frames, so every later slide moves by that parent's frame count
-    minus one. A parent itself has no slide left to key: its frames carry their
-    own backgrounds from the build manifest.
+    ``positions`` maps outline numbers to built-deck positions
+    (``outline_schema.deck_positions``); without it ``n`` is taken as the
+    position. ExpandBuilds runs before the backgrounds pass and replaces each
+    build parent with its frames, so every later slide moves by that parent's
+    frame count minus one. A parent itself has no slide left to key: its frames
+    carry their own backgrounds from the build manifest.
     """
     if n in build_counts:
         return None
-    return n + sum(count - 1 for parent, count in build_counts.items() if parent < n)
+    place = positions or {}
+    here = place.get(n, n)
+    return here + sum(
+        count - 1
+        for parent, count in build_counts.items()
+        if place.get(parent, parent) < here
+    )
 
 
 def parse_build_counts(outline_path: Path) -> dict[int, int]:
@@ -452,14 +465,23 @@ def _why(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {getattr(exc, 'strerror', None) or exc}"
 
 
+def _position(place: dict[int, int], n: int) -> int:
+    """Outline slide ``n``'s 1-based built-deck position; ``n`` itself if unmapped."""
+    return place.get(n, n)
+
+
 def _unapplied(
-    illust_dir: Path, ext: str, slides: set[int], slide_count: int
+    illust_dir: Path,
+    ext: str,
+    slides: set[int],
+    slide_count: int,
+    positions: dict[int, int],
 ) -> list[str]:
     """Each eligible slide that cannot be applied, and why."""
     problems = []
     for n in sorted(slides):
         illust = illust_dir / f"slide-{n:02d}.{ext}"
-        if n > slide_count:
+        if _position(positions, n) > slide_count:
             problems.append(f"slide {n} is past the deck's {slide_count} slides")
         elif not illust.exists():
             problems.append(f"slide {n} has no {illust.name}")
@@ -478,6 +500,7 @@ def apply(
     poster_full_slides: set | None = None,
     footer_stamp: tuple[str, dict] | None = None,
     build_counts: dict[int, int] | None = None,
+    positions: dict[int, int] | None = None,
 ) -> tuple[list[dict], dict]:
     """Apply scrim + title for FULL slides and the IMG+TXT layout.
 
@@ -489,6 +512,8 @@ def apply(
     ``(results, backgrounds)``.
     """
     build_counts = build_counts or {}
+    # Outline number -> built-deck position; identity when not given.
+    place: dict[int, int] = positions or {}
     poster_full_slides = poster_full_slides or set()
     try:
         prs = Presentation(str(deck))
@@ -504,6 +529,7 @@ def apply(
         ext,
         set(zones) | set(img_txt_slides) | poster_full_slides,
         len(prs.slides),
+        place,
     )
     if problems:
         raise ApplyError(
@@ -518,8 +544,8 @@ def apply(
     for n, zone in sorted(zones.items()):
         illust = illust_dir / f"slide-{n:02d}.{ext}"
 
-        slide = prs.slides[n - 1]
-        deck_n = deck_slide_number(n, build_counts)
+        slide = prs.slides[_position(place, n) - 1]
+        deck_n = deck_slide_number(n, build_counts, place)
         if deck_n is not None:
             backgrounds[deck_n] = str(illust.resolve())
 
@@ -543,7 +569,7 @@ def apply(
     for n in sorted(img_txt_slides):
         illust = illust_dir / f"slide-{n:02d}.{ext}"
 
-        slide = prs.slides[n - 1]
+        slide = prs.slides[_position(place, n) - 1]
         try:
             swap_or_insert_picture(slide, illust)
         except OSError as exc:
@@ -557,7 +583,7 @@ def apply(
         results.append(
             {
                 "slide": n,
-                "deck_slide": deck_slide_number(n, build_counts),
+                "deck_slide": deck_slide_number(n, build_counts, place),
                 "format": "IMG+TXT",
                 "picture_repositioned": pic_moved,
                 "text_moved": text_moved,
@@ -569,7 +595,7 @@ def apply(
     # only inserted shape.
     for n in sorted(poster_full_slides):
         illust = illust_dir / f"slide-{n:02d}.{ext}"
-        deck_n = deck_slide_number(n, build_counts)
+        deck_n = deck_slide_number(n, build_counts, place)
         if deck_n is None:
             # A build parent: its frames, stamped by the build manifest,
             # replace it and carry their own backgrounds.
@@ -732,6 +758,9 @@ def main():
             poster_full_slides,
             footer,
             parse_build_counts(args.outline),
+            outline_schema.deck_positions(
+                outline_schema.load_outline_partial(args.outline).slides
+            ),
         )
     except (ApplyError, FooterStampError) as exc:
         raise SystemExit(f"ERROR: {exc}") from exc

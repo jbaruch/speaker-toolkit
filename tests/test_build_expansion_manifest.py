@@ -50,8 +50,22 @@ DEFAULT_SLIDES = [
 ]
 
 
+def _fill_numbering(slides):
+    """Pad 1..max(n) with plain slides: a built deck has one per outline slide."""
+    present = {slide["n"] for slide in slides}
+    filler = [
+        {"n": k, "chapter": "c", "title": f"Filler {k}", "format": "FULL"}
+        for k in range(1, max(present, default=0) + 1)
+        if k not in present
+    ]
+    return sorted([*slides, *filler], key=lambda slide: slide["n"])
+
+
 def _make_outline(tmp_path, slides=None):
-    data = {"talk": copy.deepcopy(_TALK), "slides": slides or DEFAULT_SLIDES}
+    data = {
+        "talk": copy.deepcopy(_TALK),
+        "slides": _fill_numbering(slides or DEFAULT_SLIDES),
+    }
     p = tmp_path / "outline.yaml"
     p.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     return p
@@ -201,6 +215,7 @@ FOOTER = "@jbaruch    speaking.jbaru.ch"
 
 def _stamping_outline(tmp_path, slides):
     data = {
+        "schema_version": 2,
         "talk": copy.deepcopy(_TALK),
         "style_anchor": {
             "model": "imagen-4",
@@ -211,7 +226,7 @@ def _stamping_outline(tmp_path, slides):
             "embedded_footer": FOOTER,
             "footer_style": {},
         },
-        "slides": slides,
+        "slides": _fill_numbering(slides),
     }
     p = tmp_path / "outline.yaml"
     p.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
@@ -262,25 +277,31 @@ def test_a_poster_parents_frames_are_stamped_copies(build_expansion_manifest, tm
 
 
 @pytest.mark.parametrize(
-    "change",
+    "change,refusal",
     [
-        {"safe_zone": {"zone": "upper_third", "surface": "sky"}},
-        {"format": "IMG+TXT"},
+        (
+            {"safe_zone": {"zone": "upper_third", "surface": "sky"}},
+            "slide 7 is a build parent in a poster deck",
+        ),
+        # The outline schema refuses an illustrated non-FULL poster slide first.
+        ({"format": "IMG+TXT"}, "poster-theatrical decks illustrate FULL slides"),
     ],
     ids=["safe-zone", "img-txt"],
 )
 def test_a_poster_build_parent_off_the_poster_contract_is_refused(
-    build_expansion_manifest, tmp_path, change
+    build_expansion_manifest, tmp_path, change, refusal
 ):
+    from pydantic import ValidationError
+
     slide = next(s for s in DEFAULT_SLIDES if s["n"] == 7)
     outline = _stamping_outline(tmp_path, [{**slide, **change}])
     builds = tmp_path / "builds"
     _image_frames(builds, 7, 4)
 
-    with pytest.raises(SystemExit) as exc:
+    with pytest.raises((SystemExit, ValidationError)) as exc:
         build_expansion_manifest.build_manifest(outline, builds)
 
-    assert "slide 7 is a build parent in a poster deck" in str(exc.value)
+    assert refusal in str(exc.value)
     assert not (builds / "footer-stamped").exists()
 
 
@@ -366,3 +387,30 @@ def test_a_poster_slide_of_another_size_stops_the_manifest_before_any_stamp(
     assert "must share one size" in str(exc.value)
     assert "slide-09.jpg" in str(exc.value)
     assert not (builds / "footer-stamped").exists()
+
+
+def test_a_zero_based_outline_keys_the_deck_by_position(
+    build_expansion_manifest, tmp_path
+):
+    """Slide 0 is the deck's first slide; ExpandBuilds indexes positions."""
+    slides = [
+        {"n": 0, "chapter": "c", "title": "Cold open", "format": "FULL"},
+        {
+            "n": 1,
+            "chapter": "c",
+            "title": "Reveal",
+            "format": "FULL",
+            "image_prompt": "[STYLE ANCHOR] a reveal",
+            "builds": [{"step": 0, "desc": "Empty"}, {"step": 1, "desc": "Full"}],
+        },
+    ]
+    outline = _make_outline(tmp_path, slides)
+    builds = tmp_path / "builds"
+    _make_frames(builds, 1, [0, 1])
+
+    manifest = build_expansion_manifest.build_manifest(
+        outline, builds, {"1": "notes for the reveal"}
+    )
+
+    assert manifest["builds"][0]["parent"] == 2
+    assert manifest["builds"][0]["notes"] == "notes for the reveal"

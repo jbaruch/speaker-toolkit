@@ -8,10 +8,13 @@ regenerate deterministically — never hand-edit them.
 
 A complete worked example lives at `tests/fixtures/outline-example.yaml`.
 
-New outlines declare root `schema_version: 1`. Previously unversioned outlines
-remain read-only-compatible; the creator adds the stamp on the next authoring
-pass. Explicit unsupported root versions fail closed. This does not rewrite
-an existing file during loading.
+New outlines declare root `schema_version: 2`; v2 adds the optional
+`style_anchor.footer_style`, which a v1 outline may not carry. Version 1 and
+previously unversioned outlines remain read-only-compatible; the creator stamps
+2 on the next authoring pass. Explicit unsupported root versions fail closed.
+This does not rewrite an existing file during loading. A poster-theatrical
+outline illustrates FULL slides only: an `image_prompt` on any other format is
+refused.
 
 ## Writing the Outline
 

@@ -767,6 +767,10 @@ def test_rejects_erase_region_inverted_box(outline_schema, base_data):
 
 def test_accepts_style_anchor_composition_and_footer(outline_schema, base_data):
     data = copy.deepcopy(base_data)
+    # A poster deck illustrates FULL slides only.
+    for slide in data["slides"]:
+        if slide.get("format") != "FULL":
+            slide.pop("image_prompt", None)
     data["style_anchor"]["composition"] = "poster-theatrical"
     data["style_anchor"]["embedded_footer"] = "@speaker · example.com/talk"
     outline = outline_schema.Outline.model_validate(data)
@@ -988,3 +992,28 @@ def test_accepts_free_string_theme_and_source(outline_schema, base_data):
     out = outline_schema.Outline.model_validate(data)
     assert out.talk.deck_theme == "dark minimal"
     assert out.talk.engine_source == "match-mode"
+
+
+def test_footer_style_needs_outline_schema_2(outline_schema, base_data):
+    """footer_style is the v2 shape; a v1 outline carrying it is refused."""
+    data = copy.deepcopy(base_data)
+    for slide in data["slides"]:
+        if slide.get("format") != "FULL":
+            slide.pop("image_prompt", None)
+    data["style_anchor"].update(
+        composition="poster-theatrical",
+        embedded_footer="@speaker",
+        footer_style={},
+    )
+    data["schema_version"] = 1
+    with pytest.raises(ValidationError, match="belongs to outline schema 2"):
+        outline_schema.Outline.model_validate(data)
+    data["schema_version"] = 2
+    assert outline_schema.Outline.model_validate(data).schema_version == 2
+
+
+def test_a_poster_deck_refuses_an_illustrated_non_full_slide(outline_schema, base_data):
+    data = copy.deepcopy(base_data)
+    data["style_anchor"]["composition"] = "poster-theatrical"
+    with pytest.raises(ValidationError, match="illustrate FULL slides only"):
+        outline_schema.Outline.model_validate(data)

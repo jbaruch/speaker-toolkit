@@ -732,15 +732,69 @@ def _check_beat_slide_refs(
 # ── Top-level outline ────────────────────────────────────────────────
 
 
+def deck_positions(slides: list["Slide"]) -> dict[int, int]:
+    """Each outline slide's 1-based position in the structurally built deck.
+
+    The build lays down one deck slide per outline slide, in outline order, so a
+    slide's position is its rank by ``n``, not ``n`` itself: numbering may start
+    at 0 or skip values. Every by-index deck pass keys on this, never on ``n``.
+    """
+    return {
+        slide.n: position
+        for position, slide in enumerate(sorted(slides, key=lambda s: s.n), start=1)
+    }
+
+
+# Outline root schema. v2 adds the optional `style_anchor.footer_style`; a v1
+# outline reads unchanged with none, and the creator stamps v2 on its next
+# authoring pass. No loader rewrites an existing outline.
+OUTLINE_SCHEMA_VERSION = 2
+FOOTER_STYLE_OUTLINE_SCHEMA_VERSION = 2
+
+
+def _check_outline_version_and_poster(
+    schema_version: int, style_anchor: "StyleAnchor | None", slides: list["Slide"]
+) -> None:
+    """Root checks shared by the full and partial views."""
+    if (
+        style_anchor is not None
+        and style_anchor.footer_style is not None
+        and schema_version < FOOTER_STYLE_OUTLINE_SCHEMA_VERSION
+    ):
+        raise ValueError(
+            "style_anchor.footer_style belongs to outline schema "
+            f"{FOOTER_STYLE_OUTLINE_SCHEMA_VERSION}; set the root schema_version: "
+            f"{FOOTER_STYLE_OUTLINE_SCHEMA_VERSION}"
+        )
+    if (
+        style_anchor is not None
+        and style_anchor.composition == Composition.poster_theatrical
+    ):
+        offenders = [s.n for s in slides if s.image_prompt and s.format.value != "FULL"]
+        if offenders:
+            raise ValueError(
+                "poster-theatrical decks illustrate FULL slides only; slide(s) "
+                f"{', '.join(map(str, offenders))} carry an image_prompt with "
+                "another format — set them to FULL, or drop the image_prompt"
+            )
+
+
 class Outline(_StrictModel):
-    # Missing root stamp is the legacy read-only view. The owner writes v1 on
-    # its next authoring pass; no loader rewrites an existing outline.
-    schema_version: int = Field(default=1, strict=True, ge=1, le=1)
+    # Missing root stamp is the legacy read-only view. The owner writes the
+    # current version on its next authoring pass; no loader rewrites an outline.
+    schema_version: int = Field(default=1, strict=True, ge=1, le=OUTLINE_SCHEMA_VERSION)
     talk: TalkMetadata
     style_anchor: StyleAnchor | None = None
     chapters: list[Chapter] = Field(min_length=1)
     slides: list[Slide] = Field(min_length=1)
     interludes: list[Interlude] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _version_and_poster_slides(self) -> "Outline":
+        _check_outline_version_and_poster(
+            self.schema_version, self.style_anchor, self.slides
+        )
+        return self
 
     @model_validator(mode="after")
     def _chapter_ids_unique(self) -> "Outline":
@@ -901,12 +955,19 @@ class PartialOutline(_StrictModel):
     stays the Phase 3+ source-of-truth contract.
     """
 
-    schema_version: int = Field(default=1, strict=True, ge=1, le=1)
+    schema_version: int = Field(default=1, strict=True, ge=1, le=OUTLINE_SCHEMA_VERSION)
     talk: TalkMetadata
     style_anchor: StyleAnchor | None = None
     chapters: list[Chapter] = Field(default_factory=list)
     slides: list[Slide] = Field(default_factory=list)
     interludes: list[Interlude] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _version_and_poster_slides(self) -> "PartialOutline":
+        _check_outline_version_and_poster(
+            self.schema_version, self.style_anchor, self.slides
+        )
+        return self
 
     @model_validator(mode="after")
     def _argument_beat_slide_refs_valid(self) -> "PartialOutline":

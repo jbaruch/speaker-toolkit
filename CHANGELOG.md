@@ -47,6 +47,17 @@ discipline reduced the drift but cannot guarantee typographic identity.
   parent). Only illustrated IMG+TXT slides (with an `image_prompt`) are
   eligible: a prompt-free screenshot slide gets no generated image and keeps the
   asset the slide walk inserted, so it never blocks the apply.
+- Deck access and every by-index key count outline slides in order
+  (`outline_schema.deck_positions`), not by their `n` label, which may start at
+  0 or skip values: apply indexes the deck and keys backgrounds that way, and
+  the build manifest's `parent` and notes key are deck positions, the index
+  ExpandBuilds replaces.
+- `style_anchor.footer_style` is the outline schema 2 shape: a v1 outline
+  carrying it is refused, v1 outlines without it read unchanged, and new
+  outlines declare `schema_version: 2`. A poster-theatrical outline refuses an
+  `image_prompt` on any slide that is not FULL, and phase 5 omits the TITLE and
+  FOOTER ops only for illustrated FULL poster slides. A stamped footer's quiet
+  strip is reserved even on a title-less poster slide.
 - Apply and the build manifest check one deck-wide stamp set,
   `footer_stamp.deck_stamp_set`: every stamped slide image plus every declared
   build frame. Whichever command runs first refuses a mixed deck before either

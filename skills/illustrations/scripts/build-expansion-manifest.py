@@ -146,12 +146,18 @@ def build_manifest(
     """Build the expansion manifest.
 
     notes_map: optional {"<0-based deck slide #>": "notes"} (the historical
-    inject-notes format). A build parent at 1-based outline slide N maps to
-    0-based key str(N-1); its notes ride onto the FINAL build frame so expansion
+    inject-notes format). A build parent at 1-based deck position P
+    (``outline_schema.deck_positions``, so outline numbering may start at 0)
+    maps to 0-based key str(P-1), and P is the manifest's ``parent``, the index
+    ExpandBuilds replaces; its notes ride onto the FINAL build frame so expansion
     doesn't drop them. When omitted, notes are empty and the post-expansion
     notes pass must carry them instead.
     """
     notes_map = notes_map or {}
+    # ExpandBuilds and the notes map index the built deck, not outline numbers.
+    positions = outline_schema.deck_positions(
+        outline_schema.load_outline_partial(outline_path).slides
+    )
     specs = sorted(parse_build_specs(outline_path), key=lambda s: s["parent"])
     _require_one_stamped_geometry(outline_path, specs, builds_dir)
     builds = []
@@ -173,12 +179,13 @@ def build_manifest(
         # A null/absent note is empty; a non-string note is an error — never
         # coerce it, or a JSON null would become the literal "None" on the final
         # build frame (mirrors notes-to-packed.py's drop-empty contract).
-        raw_note = notes_map.get(str(parent - 1))
+        position = positions[parent]
+        raw_note = notes_map.get(str(position - 1))
         if raw_note is None:
             raw_note = ""
         elif not isinstance(raw_note, str):
             raise SystemExit(
-                f"ERROR: note for slide {parent} (notes key {parent - 1}) must be a "
+                f"ERROR: note for slide {parent} (notes key {position - 1}) must be a "
                 f"string, got {type(raw_note).__name__} — fix the --notes JSON."
             )
         frames = [found[s] for s in steps]
@@ -204,7 +211,7 @@ def build_manifest(
             frames = stamped
         builds.append(
             {
-                "parent": parent,
+                "parent": position,
                 "frames": [str(frame.resolve()) for frame in frames],
                 "notes": raw_note,
             }
