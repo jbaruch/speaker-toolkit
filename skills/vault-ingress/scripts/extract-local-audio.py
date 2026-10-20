@@ -19,15 +19,22 @@ Bounds and contract, all named constants below:
 
 - ``ffmpeg`` runs under a wall-clock limit (``EXTRACT_TIMEOUT_SECONDS``) and
   stops writing at the owner's input ceiling; an output at or over it is
-  refused, since the owner could not admit it either.
-- The recording's size, mtime, inode and device are compared before and after
-  the run; a recording that changed mid-extraction is refused.
+  refused, since the owner could not admit it either. ffmpeg's ``-fs`` stop
+  leaves the file at or slightly over the limit, never under it, so a stopped
+  extraction is always refused here. Any error-level diagnostic is a refusal,
+  even when ffmpeg exits 0.
+- The recording is opened once and ffmpeg reads that held descriptor
+  (``/dev/fd/N``), never the path, so a path swapped mid-run is not read. The
+  descriptor's size, mtime, ctime, inode and device are compared before and
+  after the run; a rewrite in place, even one that restores the mtime, changes
+  the ctime and is refused. This needs a POSIX system.
 - ffmpeg writes a private staged file beside the output, the bounded media
   owner probes it (``probe_local_media``), and only a probed file is installed:
   by hard link, or on a volume without links by an exclusive-create copy whose
   digest is checked. Neither can replace an existing file. An existing output
   with the same bytes is an unchanged success; different bytes are refused, so a
-  file a receipt may already bind is never replaced.
+  file a receipt may already bind is never replaced. Both outcomes sync the
+  output's directory, so a run whose directory sync failed completes on rerun.
 - A probe refusal names the action its reason code calls for
   (``PROBE_REFUSAL_ACTIONS``); only a container or codec mismatch suggests a
   ``.wav`` output.
@@ -37,7 +44,8 @@ Bounds and contract, all named constants below:
 Stdout: one JSON object. Success is ``{"ok": true, "output", "written",
 "media_sha256", "size_bytes", "duration_seconds", "mode"}``. A refusal is
 ``{"ok": false, "reason_code", "error"}`` with the same message on stderr, exit
-2. Reason codes: ``invalid_arguments``, ``recording_unreadable``,
+2. Reason codes: ``invalid_arguments``, ``platform_unsupported``,
+``recording_unreadable``,
 ``ffmpeg_unavailable``, ``extraction_failed``, ``extraction_timeout``,
 ``output_over_ceiling``, ``recording_changed``, ``recording_has_no_audio``,
 ``output_unusable``, ``output_exists``, ``output_write_failed``, ``io_failed``.
@@ -200,28 +208,52 @@ class ExtractionError(RuntimeError):
 class RecordingGeneration:
     size: int
     mtime_ns: int
+    # Any write, and restoring the mtime afterwards, moves the ctime.
+    ctime_ns: int
     inode: int
     device: int
 
+    @classmethod
+    def of(cls, value: os.stat_result) -> RecordingGeneration:
+        return cls(
+            value.st_size,
+            value.st_mtime_ns,
+            value.st_ctime_ns,
+            value.st_ino,
+            value.st_dev,
+        )
 
-def _recording_generation(recording: Path) -> RecordingGeneration:
+
+def _hold_recording(recording: Path) -> tuple[int, RecordingGeneration]:
+    """Open the recording once; ffmpeg reads this descriptor, never the path."""
     try:
-        value = os.stat(recording)
+        descriptor = os.open(recording, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
     except OSError as exc:
         raise ExtractionError(
             "recording_unreadable",
-            f"cannot stat the recording {recording}: {exc} — pass an existing "
+            f"cannot open the recording {recording}: {exc} — pass an existing "
             "local video file",
         ) from exc
-    if not stat.S_ISREG(value.st_mode):
+    try:
+        value = os.fstat(descriptor)
+        if not stat.S_ISREG(value.st_mode):
+            raise ExtractionError(
+                "recording_unreadable",
+                f"the recording {recording} is not a regular file — pass the "
+                "video file itself",
+            )
+        os.set_blocking(descriptor, True)
+    except OSError as exc:
+        os.close(descriptor)
         raise ExtractionError(
             "recording_unreadable",
-            f"the recording {recording} is not a regular file — pass the video "
-            "file itself",
-        )
-    return RecordingGeneration(
-        value.st_size, value.st_mtime_ns, value.st_ino, value.st_dev
-    )
+            f"cannot inspect the recording {recording}: {exc} — pass an "
+            "existing local video file",
+        ) from exc
+    except ExtractionError:
+        os.close(descriptor)
+        raise
+    return descriptor, RecordingGeneration.of(value)
 
 
 def _sha256(path: Path) -> str:
@@ -233,8 +265,9 @@ def _sha256(path: Path) -> str:
 
 
 def _run_ffmpeg(
-    command: list[str], timeout_seconds: float
+    command: list[str], timeout_seconds: float, *, held: int
 ) -> subprocess.CompletedProcess[bytes]:
+    """Run ffmpeg with ``held`` as its only inherited descriptor."""
     try:
         return subprocess.run(
             command,
@@ -243,6 +276,7 @@ def _run_ffmpeg(
             stderr=subprocess.PIPE,
             check=False,
             timeout=timeout_seconds,
+            pass_fds=(held,),
         )
     except subprocess.TimeoutExpired as exc:
         raise ExtractionError(
@@ -312,6 +346,21 @@ def _copy_exclusive(staged: Path, output: Path, digest: str) -> None:
         ) from exc
 
 
+def _sync_directory(output: Path) -> None:
+    try:
+        directory = os.open(output.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    except OSError as exc:
+        raise ExtractionError(
+            "output_write_failed",
+            f"{output} is installed but its directory did not sync: {exc} — "
+            "re-run once the volume is healthy; the re-run syncs it",
+        ) from exc
+
+
 def _install(staged: Path, output: Path, digest: str) -> bool:
     """Install ``staged`` at ``output``; whether a new file was written."""
     if output.is_symlink() or (output.exists() and not output.is_file()):
@@ -321,6 +370,8 @@ def _install(staged: Path, output: Path, digest: str) -> bool:
         )
     if output.exists():
         if _sha256(output) == digest:
+            # An earlier run may have installed it and then failed to sync.
+            _sync_directory(output)
             return False
         raise ExtractionError(
             "output_exists",
@@ -337,18 +388,7 @@ def _install(staged: Path, output: Path, digest: str) -> bool:
         # The volume has no hard links; an exclusive create is just as unable
         # to replace a file.
         _copy_exclusive(staged, output, digest)
-    try:
-        directory = os.open(output.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
-    except OSError as exc:
-        raise ExtractionError(
-            "output_write_failed",
-            f"{output} was installed but its directory did not sync: {exc} — "
-            "re-run once the volume is healthy",
-        ) from exc
+    _sync_directory(output)
     return True
 
 
@@ -371,12 +411,43 @@ def extract(
             "invalid_arguments",
             f"the output directory {output.parent} does not exist — create it first",
         )
+    if os.name != "posix":
+        raise ExtractionError(
+            "platform_unsupported",
+            "extraction reads the recording through a held descriptor, which "
+            "needs macOS or Linux; run it there",
+        )
     executable = shutil.which("ffmpeg")
     if executable is None:
         raise ExtractionError(
             "ffmpeg_unavailable", "ffmpeg is not on PATH; install it and re-run"
         )
-    before = _recording_generation(recording)
+    held, before = _hold_recording(recording)
+    try:
+        return _extract_held(
+            recording,
+            held,
+            before,
+            output,
+            executable=executable,
+            max_output_bytes=max_output_bytes,
+            timeout_seconds=timeout_seconds,
+        )
+    finally:
+        os.close(held)
+
+
+def _extract_held(
+    recording: Path,
+    held: int,
+    before: RecordingGeneration,
+    output: Path,
+    *,
+    executable: str,
+    max_output_bytes: int,
+    timeout_seconds: float,
+) -> dict[str, object]:
+    suffix = output.suffix.lower()
     muxer, codec, mode = MODES[suffix]
     staged = output.parent / f".{output.stem}.{secrets.token_hex(8)}.partial{suffix}"
     command = [
@@ -385,8 +456,9 @@ def extract(
         "-hide_banner",
         "-loglevel",
         "error",
+        "-xerror",
         "-i",
-        str(recording),
+        f"/dev/fd/{held}",
         "-map",
         "0:a:0",
         "-vn",
@@ -400,8 +472,12 @@ def extract(
         str(staged),
     ]
     try:
-        completed = _run_ffmpeg(command, timeout_seconds)
-        if completed.returncode != 0:
+        # macOS shares this offset with the child's /dev/fd open.
+        os.lseek(held, 0, os.SEEK_SET)
+        completed = _run_ffmpeg(command, timeout_seconds, held=held)
+        # Any error-level line counts: ffmpeg can log a decode error, drop the
+        # damaged audio, and still exit 0.
+        if completed.returncode != 0 or completed.stderr.strip():
             tail = completed.stderr[-DIAGNOSTIC_TAIL_BYTES:].decode(
                 "utf-8", errors="replace"
             )
@@ -418,7 +494,7 @@ def extract(
                 "bounded media owner's input ceiling; a .m4a or .mp3 copy of a "
                 "compressed stream is the smallest lossless output",
             )
-        if _recording_generation(recording) != before:
+        if RecordingGeneration.of(os.fstat(held)) != before:
             raise ExtractionError(
                 "recording_changed",
                 f"{recording} changed during extraction — let any sync or copy "

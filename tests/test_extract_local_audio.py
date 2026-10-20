@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import shutil
 import stat
 import subprocess
 import sys
@@ -192,8 +193,8 @@ def test_a_recording_that_changes_mid_extraction_is_refused(
     output = tmp_path / "talk.m4a"
     real_run = extract_local_audio._run_ffmpeg
 
-    def run_then_touch(command, timeout_seconds):
-        completed = real_run(command, timeout_seconds)
+    def run_then_touch(command, timeout_seconds, *, held):
+        completed = real_run(command, timeout_seconds, held=held)
         with recording.open("ab") as handle:
             handle.write(b"\0")
         return completed
@@ -204,6 +205,158 @@ def test_a_recording_that_changes_mid_extraction_is_refused(
     assert caught.value.reason_code == "recording_changed"
     assert not output.exists()
     assert _staged(tmp_path) == []
+
+
+def test_an_in_place_rewrite_that_restores_the_mtime_is_refused(
+    tmp_path, extract_local_audio, monkeypatch
+):
+    """Same size, same inode, same mtime: only the ctime shows the rewrite."""
+    recording = _recording(tmp_path / "videos")
+    output = tmp_path / "talk.m4a"
+    real_run = extract_local_audio._run_ffmpeg
+
+    def run_then_rewrite(command, timeout_seconds, *, held):
+        completed = real_run(command, timeout_seconds, held=held)
+        before = recording.stat()
+        with recording.open("r+b") as handle:
+            handle.seek(before.st_size // 2)
+            handle.write(b"\xff" * 64)
+        os.utime(recording, ns=(before.st_atime_ns, before.st_mtime_ns))
+        after = recording.stat()
+        assert (after.st_size, after.st_mtime_ns) == (
+            before.st_size,
+            before.st_mtime_ns,
+        )
+        return completed
+
+    monkeypatch.setattr(extract_local_audio, "_run_ffmpeg", run_then_rewrite)
+    with pytest.raises(extract_local_audio.ExtractionError) as caught:
+        extract_local_audio.extract(recording, output)
+    assert caught.value.reason_code == "recording_changed"
+    assert not output.exists()
+    assert _staged(tmp_path) == []
+
+
+def test_ffmpeg_reads_the_held_recording_not_a_swapped_path(
+    tmp_path, extract_local_audio, monkeypatch
+):
+    """A link repointed for the run and restored after leaves no stat trace."""
+    original = _recording(tmp_path / "videos", seconds=3)
+    other = _recording(tmp_path / "other", seconds=8)
+    recording = tmp_path / "link.mp4"
+    recording.symlink_to(original)
+    output = tmp_path / "talk.m4a"
+    real_run = extract_local_audio._run_ffmpeg
+
+    def _point(target):
+        staged_link = tmp_path / "link.next"
+        staged_link.symlink_to(target)
+        os.replace(staged_link, recording)
+
+    def swap_for_the_run(command, timeout_seconds, *, held):
+        _point(other)
+        try:
+            return real_run(command, timeout_seconds, held=held)
+        finally:
+            _point(original)
+
+    monkeypatch.setattr(extract_local_audio, "_run_ffmpeg", swap_for_the_run)
+    result = extract_local_audio.extract(recording, output)
+
+    # The 3-second recording it held, never the 8-second one the path named.
+    assert result["duration_seconds"] < 5
+
+
+def test_a_recording_renamed_over_mid_run_is_refused(
+    tmp_path, extract_local_audio, monkeypatch
+):
+    """Unlinking the held file moves its ctime, so the swap never installs."""
+    recording = _recording(tmp_path / "videos", seconds=3)
+    other = _recording(tmp_path / "other", seconds=8)
+    output = tmp_path / "talk.m4a"
+    real_run = extract_local_audio._run_ffmpeg
+
+    def swap_then_run(command, timeout_seconds, *, held):
+        os.replace(other, recording)
+        return real_run(command, timeout_seconds, held=held)
+
+    monkeypatch.setattr(extract_local_audio, "_run_ffmpeg", swap_then_run)
+    with pytest.raises(extract_local_audio.ExtractionError) as caught:
+        extract_local_audio.extract(recording, output)
+    assert caught.value.reason_code == "recording_changed"
+    assert not output.exists()
+
+
+def test_an_ffmpeg_error_is_refused_even_when_it_exits_zero(
+    tmp_path, extract_local_audio, monkeypatch
+):
+    """ffmpeg can log a decode error, drop the audio, and still exit 0."""
+    recording = _recording(tmp_path / "videos")
+    real = shutil.which("ffmpeg")
+    assert real is not None
+    fake = tmp_path / "noisy-bin" / "ffmpeg"
+    fake.parent.mkdir()
+    fake.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        f'"{real}" "$@"\n'
+        "echo '[aac @ 0x1] Error decoding frame' >&2\n",
+        encoding="utf-8",
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setenv("PATH", f"{fake.parent}{os.pathsep}{os.environ['PATH']}")
+    output = tmp_path / "talk.m4a"
+    with pytest.raises(extract_local_audio.ExtractionError) as caught:
+        extract_local_audio.extract(recording, output)
+    assert caught.value.reason_code == "extraction_failed"
+    assert "Error decoding frame" in str(caught.value)
+    assert not output.exists()
+    assert _staged(tmp_path) == []
+
+
+def test_a_rerun_after_a_failed_directory_sync_completes_it(
+    tmp_path, extract_local_audio, monkeypatch
+):
+    """The first run installs and fails to sync; the identical rerun syncs."""
+    recording = _recording(tmp_path / "videos")
+    output = tmp_path / "talk.m4a"
+    real_fsync = os.fsync
+    synced: list[int] = []
+
+    def failing_fsync(_descriptor):
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(extract_local_audio.os, "fsync", failing_fsync)
+    with pytest.raises(extract_local_audio.ExtractionError) as caught:
+        extract_local_audio.extract(recording, output)
+    assert caught.value.reason_code == "output_write_failed"
+    assert output.exists()
+
+    def recording_fsync(descriptor):
+        synced.append(descriptor)
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(extract_local_audio.os, "fsync", recording_fsync)
+    result = extract_local_audio.extract(recording, output)
+
+    assert result["written"] is False
+    assert synced, "the unchanged rerun must sync the output's directory"
+
+
+@pytest.mark.parametrize("suffix", [".m4a", ".wav"])
+@pytest.mark.parametrize("fraction", [0.3, 0.6, 0.9, 0.99])
+def test_an_extraction_stopped_by_the_ceiling_is_never_installed(
+    tmp_path, extract_local_audio, suffix, fraction
+):
+    """ffmpeg's -fs stop leaves the file at or over the limit, never under it."""
+    recording = _recording(tmp_path / "videos", seconds=10)
+    whole = extract_local_audio.extract(recording, tmp_path / f"whole{suffix}")
+    ceiling = int(int(whole["size_bytes"]) * fraction)
+    output = tmp_path / f"talk{suffix}"
+    with pytest.raises(extract_local_audio.ExtractionError) as caught:
+        extract_local_audio.extract(recording, output, max_output_bytes=ceiling)
+    assert caught.value.reason_code == "output_over_ceiling"
+    assert not output.exists()
 
 
 def test_an_ffmpeg_that_overruns_its_budget_is_stopped(

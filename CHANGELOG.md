@@ -46,7 +46,16 @@ recording exceeds the 8 GiB input ceiling.
   An ffmpeg failure is classified from its own message: disk-full or permission
   failures are `io_failed`, a recording with no audio is
   `recording_has_no_audio`, and only a codec that does not fit the container
-  suggests `.wav`. Argument errors return the JSON verdict too.
+  suggests `.wav`. Argument errors return the JSON verdict too. ffmpeg reads
+  the recording through a held descriptor (`/dev/fd/N`), never the path, and
+  the descriptor's ctime joins size, mtime, inode and device in the generation
+  check, so a path repointed for the run is never read and an in-place rewrite
+  that restores the mtime is refused. Any error-level ffmpeg diagnostic refuses
+  even on exit 0. An identical rerun syncs the output's directory, so a run
+  whose sync failed completes on retry. A `-fs` stop leaves the file at or over
+  the ceiling (measured across 14 limits for each of `.m4a`, `.mp3` and `.wav`
+  on ffmpeg 9.0.2), so it is always refused as `output_over_ceiling`, and a test
+  pins that on CI's ffmpeg. Non-POSIX hosts refuse as `platform_unsupported`.
   `local-media-acquisition.md` runs it, then `--audio`, then a declaration —
   never a transcode renamed to `{youtube_id}.mp4`.
   `subagent-instructions.md` names the declaration for non-YouTube talks, and
