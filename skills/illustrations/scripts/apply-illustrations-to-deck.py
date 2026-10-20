@@ -5,7 +5,8 @@ Reads outline.yaml (the single source of truth — schema + loader in
 skills/presentation-creator/scripts/outline_schema.py). Two slide formats are
 supported, distinguished by the per-slide fields:
 
-FULL — slide has a `safe_zone:` field (zone of upper_third / middle_third /
+FULL — an illustrated slide (one with an `image_prompt`, which generation
+  draws) has a `safe_zone:` field (zone of upper_third / middle_third /
   lower_third / left_half / right_half):
   1. Record the slide + illustration in the backgrounds manifest (--backgrounds-out),
      keyed by its deck slide number after ExpandBuilds (a build parent has none).
@@ -19,7 +20,7 @@ FULL — slide has a `safe_zone:` field (zone of upper_third / middle_third /
      upper_third/middle_third/lower_third -> full-width band at the matching Y;
      left_half/right_half -> narrower column on that side.
 
-IMG+TXT — slide has `format: IMG+TXT` and no `safe_zone`:
+IMG+TXT — an illustrated slide has `format: IMG+TXT` and no `safe_zone`:
   1. Replace the background picture with the matching illustration.
   2. Resize and position the picture as a left-column image (~60% of slide).
   3. Reposition title and body placeholders into the right column.
@@ -192,15 +193,17 @@ def parse_footer_stamp(outline_path: Path) -> tuple[str, dict] | None:
 
 
 def parse_zones(outline_path: Path) -> dict:
-    """Read `safe_zone` from the outline.
+    """Read `safe_zone` from the outline's illustrated slides.
 
     Returns {slide_num: zone_name} where zone_name is a key of ZONE_LAYOUT.
-    Slides without a safe_zone are absent from the dict.
+    Slides without a safe_zone are absent from the dict, and so is a slide
+    without an ``image_prompt``: generation skips it and the slide walk's
+    inserted asset stays, as for IMG+TXT.
     """
     return {
         s.n: s.safe_zone.zone.value
         for s in outline_schema.load_outline_partial(outline_path).slides
-        if s.safe_zone
+        if s.safe_zone and s.image_prompt
     }
 
 

@@ -88,6 +88,10 @@ discipline reduced the drift but cannot guarantee typographic identity.
   of passing as current or older. The worked example
   `tests/fixtures/outline-example.yaml` is stamped at schema 2, and a test
   pins it there, so the CLI tests no longer rewrite a committed fixture.
+- Apply's safe-zone path takes illustrated slides only, as its IMG+TXT path
+  already did: a prompt-free FULL screenshot with a safe zone has no generated
+  image, so the mandatory preflight no longer aborts the whole apply over its
+  missing `slide-NN` file, and the slide walk's inserted asset stays.
 - Apply and the build manifest check one deck-wide stamp set,
   `footer_stamp.deck_stamp_set`: every stamped slide image plus every declared
   build frame. Whichever command runs first refuses a mixed deck before either

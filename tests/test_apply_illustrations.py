@@ -57,16 +57,19 @@ ZONES_SLIDES = [
     {
         "n": 2,
         "format": "FULL",
+        "image_prompt": "P",
         "safe_zone": {"zone": "upper_third", "surface": "painted sky"},
     },
     {
         "n": 5,
         "format": "FULL",
+        "image_prompt": "P",
         "safe_zone": {"zone": "lower_third", "surface": "flat gradient"},
     },
     {
         "n": 8,
         "format": "FULL",
+        "image_prompt": "P",
         "safe_zone": {"zone": "left_half", "surface": "studio backdrop"},
     },
 ]
@@ -90,11 +93,36 @@ def test_parse_zones_all_types(apply_illustrations, tmp_path):
     outline = _write_outline(
         tmp_path,
         [
-            {"n": 1, "format": "FULL", "safe_zone": {"zone": "upper_third"}},
-            {"n": 2, "format": "FULL", "safe_zone": {"zone": "middle_third"}},
-            {"n": 3, "format": "FULL", "safe_zone": {"zone": "lower_third"}},
-            {"n": 4, "format": "FULL", "safe_zone": {"zone": "left_half"}},
-            {"n": 5, "format": "FULL", "safe_zone": {"zone": "right_half"}},
+            {
+                "n": 1,
+                "format": "FULL",
+                "image_prompt": "P",
+                "safe_zone": {"zone": "upper_third"},
+            },
+            {
+                "n": 2,
+                "format": "FULL",
+                "image_prompt": "P",
+                "safe_zone": {"zone": "middle_third"},
+            },
+            {
+                "n": 3,
+                "format": "FULL",
+                "image_prompt": "P",
+                "safe_zone": {"zone": "lower_third"},
+            },
+            {
+                "n": 4,
+                "format": "FULL",
+                "image_prompt": "P",
+                "safe_zone": {"zone": "left_half"},
+            },
+            {
+                "n": 5,
+                "format": "FULL",
+                "image_prompt": "P",
+                "safe_zone": {"zone": "right_half"},
+            },
         ],
     )
     zones = apply_illustrations.parse_zones(outline)
@@ -380,6 +408,7 @@ def test_apply_full_records_background_not_picture(apply_illustrations, tmp_path
             {
                 "n": 2,
                 "format": "FULL",
+                "image_prompt": "P",
                 "safe_zone": {"zone": "upper_third", "surface": "sky"},
             },
         ],
@@ -896,10 +925,11 @@ def test_backgrounds_are_keyed_past_an_earlier_build(apply_illustrations, tmp_pa
     outline = _write_outline(
         tmp_path,
         [
-            {"n": 2, "format": "FULL", "safe_zone": zone},
+            {"n": 2, "format": "FULL", "image_prompt": "P", "safe_zone": zone},
             {
                 "n": 3,
                 "format": "FULL",
+                "image_prompt": "P",
                 "safe_zone": zone,
                 "builds": [
                     {"step": 0, "desc": "a", "erase": "e"},
@@ -907,7 +937,7 @@ def test_backgrounds_are_keyed_past_an_earlier_build(apply_illustrations, tmp_pa
                     {"step": 2, "desc": "c"},
                 ],
             },
-            {"n": 4, "format": "FULL", "safe_zone": zone},
+            {"n": 4, "format": "FULL", "image_prompt": "P", "safe_zone": zone},
         ],
     )
 
@@ -1050,17 +1080,18 @@ def test_a_zero_based_outline_keys_backgrounds_by_deck_position(
     outline = _write_outline(
         tmp_path,
         [
-            {"n": 0, "format": "FULL", "safe_zone": zone},
+            {"n": 0, "format": "FULL", "image_prompt": "P", "safe_zone": zone},
             {
                 "n": 1,
                 "format": "FULL",
+                "image_prompt": "P",
                 "safe_zone": zone,
                 "builds": [
                     {"step": 0, "desc": "a", "erase": "e"},
                     {"step": 1, "desc": "b"},
                 ],
             },
-            {"n": 2, "format": "FULL", "safe_zone": zone},
+            {"n": 2, "format": "FULL", "image_prompt": "P", "safe_zone": zone},
         ],
     )
     positions = outline_schema.deck_positions(
@@ -1095,3 +1126,38 @@ def test_a_missing_outline_is_named_by_apply(
     with pytest.raises(SystemExit) as exc:
         apply_illustrations.main()
     assert "outline not found" in str(exc.value)
+
+
+def test_a_prompt_free_safe_zone_slide_is_left_to_the_slide_walk(
+    apply_illustrations, tmp_path, monkeypatch, capsys
+):
+    """A screenshot FULL slide with a safe zone has no generated image and
+    never blocks apply, like a prompt-free IMG+TXT slide."""
+    deck = tmp_path / "deck.pptx"
+    make_deck(3).save(str(deck))
+    illust_dir = tmp_path / "illustrations"
+    illust_dir.mkdir()
+    (illust_dir / "slide-01.png").write_bytes(_MIN_PNG)
+    zone = {"zone": "upper_third", "surface": "sky"}
+    outline = _write_outline(
+        tmp_path,
+        [
+            {"n": 1, "format": "FULL", "image_prompt": "P", "safe_zone": zone},
+            {"n": 2, "format": "FULL", "safe_zone": zone},
+        ],
+    )
+    assert apply_illustrations.parse_zones(outline) == {1: "upper_third"}
+    _cli(
+        monkeypatch,
+        str(deck),
+        str(illust_dir),
+        str(outline),
+        "--image-ext",
+        "png",
+    )
+
+    apply_illustrations.main()
+
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["eligible"] == 1
+    assert [r["slide"] for r in summary["results"]] == [1]
