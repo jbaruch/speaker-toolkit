@@ -67,9 +67,10 @@ discipline reduced the drift but cannot guarantee typographic identity.
   `schema_version: 2` in the same edit that adds `footer_style`. The build
   manifest's docstring now defines `parent` as the built-deck position and
   names the stamped frame copies as its one write. Illustrations Step 1 stops
-  on an older outline and invokes `Skill(skill: "presentation-creator")`, whose
-  new "Outline Migration Handoff" entry flow (`alternate-entry-flows.md`)
-  validates, and so migrates, the outline before the refused script re-runs.
+  when a refusal says to hand off and invokes
+  `Skill(skill: "presentation-creator")`, whose new "Outline Handoff" entry
+  flow (`alternate-entry-flows.md`) validates, and so migrates, the outline
+  before the refused script re-runs.
   Both apply and the manifest name a missing outline before checking its
   version. The migration
   rewrites only the root version's value, so an inline comment, a quoted key,
@@ -94,10 +95,13 @@ discipline reduced the drift but cannot guarantee typographic identity.
   which compare equal to 2 or 1, are refused instead of passing as current or
   older. Phase 1 authors the stamp with the talk block, so a partial outline
   carries it from birth.
-- The gate and the migration refuse text that is not UTF-8 and a root that is
-  not a mapping with a `FAIL:` naming the fix, instead of a traceback, at every
+- The gate and the migration refuse text that is not UTF-8, invalid YAML and
+  a root that is not a mapping with a `FAIL:` instead of a traceback, at every
   boundary that uses them: `--migrate`, plain validation, `--emit-json` and the
-  illustration scripts.
+  illustration scripts. The owner's refusals name the edit that fixes the file.
+  Every refusal through the non-owner gate names the problem and the handoff to
+  presentation-creator instead, never an edit, so no reader skill is told to
+  write the owner's file; a sweep test pins that for every refusal kind.
 - The worked example `tests/fixtures/outline-example.yaml` is stamped at
   schema 2, and a test pins it there, so the CLI tests no longer rewrite a
   committed fixture.

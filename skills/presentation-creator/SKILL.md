@@ -100,7 +100,7 @@ Do not skip phases. Do not write content before Phase 3. Phase 2 is joint, not a
 **Where to enter.** A fresh talk starts at Step 0. Five requests enter later
 instead: a single post-authoring task (QR code, export, shownotes, thumbnail,
 linking a recording), adapting an existing talk, writing a CFP abstract,
-sessions-catalog work, and an outline-migration handoff. Read
+sessions-catalog work, and an outline handoff. Read
 [references/alternate-entry-flows.md](references/alternate-entry-flows.md) for
 the matching one — it names the step to enter at and the only sanctioned skip
 (the CFP flow omits Phase 2, which an abstract does not need). Vault loading

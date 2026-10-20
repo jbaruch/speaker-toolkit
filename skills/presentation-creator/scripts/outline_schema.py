@@ -752,18 +752,20 @@ def deck_positions(slides: list["Slide"]) -> dict[int, int]:
 OUTLINE_SCHEMA_VERSION = 2
 FOOTER_STYLE_OUTLINE_SCHEMA_VERSION = 2
 
-_MISSING_VERSION = (
-    "has no root schema_version. A new outline starts with "
-    f"`schema_version: {OUTLINE_SCHEMA_VERSION}`; one written before versioning "
-    "has the schema 1 shape, so add `schema_version: 1` as its first root key "
-    "and run presentation-creator's `outline_schema.py outline.yaml` to migrate it"
+_MISSING_STAMP_FIX = (
+    f"a new outline starts with `schema_version: {OUTLINE_SCHEMA_VERSION}`, and "
+    "one written before versioning has the schema 1 shape, so add "
+    "`schema_version: 1` as its first root key and run presentation-creator's "
+    "`outline_schema.py outline.yaml` to migrate it"
 )
 
 
 def _require_root_stamp(data: object) -> object:
     """Refuse a root mapping without ``schema_version``; there is no default."""
     if isinstance(data, dict) and "schema_version" not in data:
-        raise ValueError(f"the outline {_MISSING_VERSION}")
+        raise ValueError(
+            f"the outline has no root schema_version; {_MISSING_STAMP_FIX}"
+        )
     return data
 
 
@@ -1033,31 +1035,57 @@ _ROOT_VERSION_LINE = re.compile(
 )
 
 
-def _decode(path: Path, raw: bytes) -> str:
+# A non-owner reader never edits outline.yaml, so every refusal of the file
+# itself sends it to the owner instead of naming an edit.
+_HANDOFF = (
+    "this reader never edits outline.yaml. Hand off to presentation-creator, "
+    "which owns it and migrates or repairs it when it validates the outline, "
+    "then re-run this command"
+)
+
+
+def _refuse(problem: str, fix: str, *, handoff: bool) -> OutlineVersionError:
+    return OutlineVersionError(f"{problem}; {_HANDOFF if handoff else fix}")
+
+
+def _decode(path: Path, raw: bytes, *, handoff: bool) -> str:
     try:
         return raw.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise OutlineVersionError(
-            f"{path} is not UTF-8 text (undecodable byte at offset {exc.start}); "
-            "re-save it as UTF-8 and re-run"
+        raise _refuse(
+            f"{path} is not UTF-8 text (undecodable byte at offset {exc.start})",
+            "re-save it as UTF-8 and re-run",
+            handoff=handoff,
         ) from exc
 
 
-def _root_version(path: Path, text: str) -> int:
+def _root_version(path: Path, text: str, *, handoff: bool) -> int:
     """The exact integer root stamp; anything else is refused with its fix."""
-    data = yaml.safe_load(text)
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise _refuse(
+            f"{path} is not valid YAML ({exc})",
+            "fix the YAML and re-run",
+            handoff=handoff,
+        ) from exc
     if not isinstance(data, dict):
-        raise OutlineVersionError(
-            f"{path} is not an outline: its root is not a YAML mapping"
+        raise _refuse(
+            f"{path} is not an outline: its root is not a YAML mapping",
+            "restore the outline's root mapping and re-run",
+            handoff=handoff,
         )
     if "schema_version" not in data:
-        raise OutlineVersionError(f"{path} {_MISSING_VERSION}")
+        raise _refuse(
+            f"{path} has no root schema_version", _MISSING_STAMP_FIX, handoff=handoff
+        )
     version = data["schema_version"]
     # Exact type: YAML 2.0 equals 2 and true equals 1.
     if type(version) is not int:
-        raise OutlineVersionError(
-            f"{path} has root schema_version {version!r}, not an integer; set it "
-            f"to {OUTLINE_SCHEMA_VERSION}"
+        raise _refuse(
+            f"{path} has root schema_version {version!r}, not an integer",
+            f"set it to {OUTLINE_SCHEMA_VERSION}",
+            handoff=handoff,
         )
     return version
 
@@ -1067,10 +1095,12 @@ def require_current_outline(path: Path | str) -> None:
 
     presentation-creator owns outline.yaml. Every other skill reads only the
     current schema and treats an older one as no usable prior state: it never
-    runs the migration, and the refusal hands the outline to presentation-creator.
+    runs the migration or edits the file, and every refusal of the file itself
+    hands it to presentation-creator.
     """
     target = Path(path)
-    version = _root_version(target, _decode(target, target.read_bytes()))
+    text = _decode(target, target.read_bytes(), handoff=True)
+    version = _root_version(target, text, handoff=True)
     if version == OUTLINE_SCHEMA_VERSION:
         return
     if version > OUTLINE_SCHEMA_VERSION:
@@ -1079,10 +1109,8 @@ def require_current_outline(path: Path | str) -> None:
             f"reads ({OUTLINE_SCHEMA_VERSION}); update speaker-toolkit"
         )
     raise OutlineVersionError(
-        f"{path} is outline schema {version}; this reader needs schema "
-        f"{OUTLINE_SCHEMA_VERSION} and never migrates it. Hand off to "
-        "presentation-creator, which owns outline.yaml and migrates it when it "
-        "validates the outline, then re-run this command"
+        f"{path} is outline schema {version} and this reader needs schema "
+        f"{OUTLINE_SCHEMA_VERSION}; {_HANDOFF}"
     )
 
 
@@ -1097,8 +1125,8 @@ def migrate_outline(path: Path | str) -> dict[str, object]:
     """
     target = Path(path)
     # Bytes in, bytes out: universal-newline reads would rewrite CRLF files.
-    text = _decode(target, target.read_bytes())
-    version = _root_version(target, text)
+    text = _decode(target, target.read_bytes(), handoff=False)
+    version = _root_version(target, text, handoff=False)
     if version == OUTLINE_SCHEMA_VERSION:
         return {"ok": True, "path": str(target), "migrated": False, "to": version}
     if version != 1:

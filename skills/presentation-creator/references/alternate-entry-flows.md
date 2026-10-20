@@ -6,7 +6,7 @@ Load this file when the request is not a fresh linear Phase 0–6 build:
 - **adapting an existing talk** — read "Adapting Existing Talks";
 - a **CFP abstract** — read "CFP Abstract Writing";
 - any **sessions-catalog** read or write — read "Sessions Catalog";
-- another skill's **outline-migration handoff** — read "Outline Migration Handoff".
+- another skill's **outline handoff** — read "Outline Handoff".
 
 Vault loading (SKILL.md "Before You Start") is mandatory for every flow here.
 
@@ -95,10 +95,11 @@ starting a new CFP; adapt rather than rewrite.
   "Last updated" date current.
 - Entries are separated by `---` horizontal rules for easy scanning.
 
-## Outline Migration Handoff
+## Outline Handoff
 
-Another skill refused an older `outline.yaml` and handed it here, since only
-presentation-creator migrates it.
+Another skill refused `outline.yaml` itself and handed it here: an older
+schema, a missing or non-integer root stamp, or text it cannot parse. Only
+presentation-creator migrates or edits the file.
 
 1. Run the validation command from SKILL.md "Talk-directory artifacts" on the
    named outline. It restamps a schema 1 outline to 2 in place, saying so on

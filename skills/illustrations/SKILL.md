@@ -63,10 +63,10 @@ Do not restate them here — apply them.
 ## Step 1 — Route by Mode
 
 Determine which of three modes applies and execute only the matching steps.
-The illustration scripts read outline schema 2 only and never migrate
-`outline.yaml`. When one refuses an older outline, stop: invoke
-`Skill(skill: "presentation-creator")` for its outline-migration handoff, then
-re-run the refused script. For any other refusal, apply the fix it names.
+The illustration scripts read outline schema 2 only and never migrate or edit
+`outline.yaml`. When a refusal says to hand off, stop: invoke
+`Skill(skill: "presentation-creator")` for its outline handoff, then re-run the
+refused script. For any other refusal, apply the fix it names.
 
 - **Strategy** — outline has no STYLE ANCHOR yet, or the author wants to revise
   it. Run Step 2 (freshness), then Steps 3-9 (style strategy), then stop unless

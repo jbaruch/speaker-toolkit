@@ -1,6 +1,7 @@
 """Tests for outline_schema.py — pydantic validators on the outline source-of-truth."""
 
 import copy
+import re
 from pathlib import Path
 
 import pytest
@@ -1039,6 +1040,9 @@ def _v1_text(base_data, *, stamp: bool) -> str:
     return head + ("schema_version: 1\n" if stamp else "") + body
 
 
+_HANDOFF = "Hand off to presentation-creator"
+
+
 def test_the_owner_migration_restamps_an_older_outline_in_place(
     outline_schema, base_data, tmp_path
 ):
@@ -1068,9 +1072,7 @@ def test_a_non_owner_reader_refuses_an_older_outline(
 ):
     path = tmp_path / "outline.yaml"
     path.write_text(_v1_text(base_data, stamp=True), encoding="utf-8")
-    with pytest.raises(
-        outline_schema.OutlineVersionError, match="Hand off to presentation-creator"
-    ):
+    with pytest.raises(outline_schema.OutlineVersionError, match=_HANDOFF):
         outline_schema.require_current_outline(path)
     outline_schema.migrate_outline(path)
     outline_schema.require_current_outline(path)
@@ -1170,14 +1172,15 @@ def test_emit_json_refuses_an_older_outline_without_rewriting_it(
     assert outline_schema.main(["outline_schema.py", "--emit-json", str(path)]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert "Hand off to presentation-creator" in captured.err
+    assert _HANDOFF in captured.err
     assert path.read_text(encoding="utf-8") == original
 
 
 def test_a_missing_root_stamp_is_refused_everywhere(
     outline_schema, base_data, tmp_path, capsys
 ):
-    """No reader defaults a missing stamp to 1; the fix is named instead."""
+    """No reader defaults a missing stamp to 1; the owner is told the fix and a
+    non-owner reader is told to hand off."""
     path = tmp_path / "outline.yaml"
     original = _v1_text(base_data, stamp=False)
     path.write_text(original, encoding="utf-8")
@@ -1186,12 +1189,16 @@ def test_a_missing_root_stamp_is_refused_everywhere(
         with pytest.raises(ValidationError, match=fix):
             view.model_validate(yaml.safe_load(original))
     with pytest.raises(outline_schema.OutlineVersionError, match=fix):
-        outline_schema.require_current_outline(path)
-    with pytest.raises(outline_schema.OutlineVersionError, match=fix):
         outline_schema.migrate_outline(path)
-    for mode in ([], ["--emit-json"], ["--migrate"]):
+    with pytest.raises(outline_schema.OutlineVersionError, match=_HANDOFF):
+        outline_schema.require_current_outline(path)
+    for mode, expected in (
+        ([], fix),
+        (["--migrate"], fix),
+        (["--emit-json"], _HANDOFF),
+    ):
         assert outline_schema.main(["outline_schema.py", *mode, str(path)]) == 1
-        assert fix in capsys.readouterr().err
+        assert expected in capsys.readouterr().err
     assert path.read_text(encoding="utf-8") == original
 
 
@@ -1214,11 +1221,16 @@ def test_a_non_utf8_outline_is_refused_with_its_fix(
     path = tmp_path / "outline.yaml"
     raw = _v1_text(base_data, stamp=True).encode("utf-8") + b"# caf\xe9\n"
     path.write_bytes(raw)
-    with pytest.raises(outline_schema.OutlineVersionError, match="UTF-8"):
+    with pytest.raises(outline_schema.OutlineVersionError, match="not UTF-8"):
         outline_schema.require_current_outline(path)
-    for mode in ([], ["--emit-json"], ["--migrate"]):
+    fix = "re-save it as UTF-8"
+    for mode, expected in (
+        ([], fix),
+        (["--migrate"], fix),
+        (["--emit-json"], _HANDOFF),
+    ):
         assert outline_schema.main(["outline_schema.py", *mode, str(path)]) == 1
-        assert "re-save it as UTF-8" in capsys.readouterr().err
+        assert expected in capsys.readouterr().err
     assert path.read_bytes() == raw
 
 
@@ -1240,3 +1252,74 @@ def test_the_worked_example_is_stamped_at_the_current_schema(outline_schema):
     an older outline in place, so a stale example would be rewritten by the suite."""
     data = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
     assert data["schema_version"] == outline_schema.OUTLINE_SCHEMA_VERSION
+
+
+def _refused_outlines(base_data):
+    """Every way the file itself can be refused, as raw bytes."""
+    body = yaml.safe_dump({**copy.deepcopy(base_data), "schema_version": 1})
+    return {
+        "older": body.encode("utf-8"),
+        "missing-stamp": _v1_text(base_data, stamp=False).encode("utf-8"),
+        "not-an-integer": body.replace(
+            "schema_version: 1", "schema_version: 2.0"
+        ).encode(),
+        "not-utf8": body.encode("utf-8") + b"# caf\xe9\n",
+        "not-a-mapping": b"- schema_version: 2\n",
+        "invalid-yaml": b"schema_version: 2\ntalk: [unclosed\n",
+    }
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "older",
+        "missing-stamp",
+        "not-an-integer",
+        "not-utf8",
+        "not-a-mapping",
+        "invalid-yaml",
+    ],
+)
+def test_every_non_owner_refusal_hands_off_and_names_no_edit(
+    outline_schema, base_data, tmp_path, kind
+):
+    """A non-owner reader never edits outline.yaml, so no refusal it emits may
+    tell it to; each one sends the file to presentation-creator."""
+    raw = _refused_outlines(base_data)[kind]
+    path = tmp_path / "outline.yaml"
+    path.write_bytes(raw)
+    with pytest.raises(outline_schema.OutlineVersionError) as exc:
+        outline_schema.require_current_outline(path)
+    message = str(exc.value)
+    assert _HANDOFF in message
+    for edit in (
+        "set it to",
+        "add `schema_version",
+        "re-save",
+        "fix the YAML",
+        "restore",
+        "--migrate",
+    ):
+        assert edit not in message, (kind, edit)
+    assert path.read_bytes() == raw
+
+
+@pytest.mark.parametrize(
+    "kind,fix",
+    [
+        ("missing-stamp", "add `schema_version: 1`"),
+        ("not-an-integer", "set it to 2"),
+        ("not-utf8", "re-save it as UTF-8"),
+        ("not-a-mapping", "restore the outline's root mapping"),
+        ("invalid-yaml", "fix the YAML"),
+    ],
+)
+def test_the_owner_migration_names_each_fix(
+    outline_schema, base_data, tmp_path, kind, fix
+):
+    raw = _refused_outlines(base_data)[kind]
+    path = tmp_path / "outline.yaml"
+    path.write_bytes(raw)
+    with pytest.raises(outline_schema.OutlineVersionError, match=re.escape(fix)):
+        outline_schema.migrate_outline(path)
+    assert path.read_bytes() == raw
