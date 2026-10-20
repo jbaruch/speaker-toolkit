@@ -241,7 +241,7 @@ def _legacy_database() -> dict:
 def _expected_migration(database: dict) -> dict:
     expected = copy.deepcopy(database)
     expected["schema_version"] = CURRENT_ROOT
-    expected["config"]["schema_version"] = 2
+    expected["config"]["schema_version"] = 3
     expected["config"]["pptx_directory_exclusions"] = DEFAULT_DIRECTORY_EXCLUSIONS
     for talk in expected["talks"]:
         talk.setdefault("schema_version", 1)
@@ -869,7 +869,7 @@ def test_current_root_config_v1_migrates_only_config(tracking_database):
     assert migration.to_schema_version == CURRENT_ROOT
     assert migration.record_counts["config"] == 1
     assert migration.database["config"] == {
-        "schema_version": 2,
+        "schema_version": 3,
         "python_path": "/opt/python",
         "pptx_directory_exclusions": DEFAULT_DIRECTORY_EXCLUSIONS,
     }
@@ -895,7 +895,7 @@ def test_config_v1_migration_preserves_valid_custom_exclusions(tracking_database
     migration = tracking_database.migrate_tracking_database(current)
 
     assert migration.database["config"] == {
-        "schema_version": 2,
+        "schema_version": 3,
         "pptx_directory_exclusions": ["generated", "VendorCache"],
     }
 
@@ -909,7 +909,7 @@ def test_config_v1_migration_preserves_valid_custom_exclusions(tracking_database
         ),
         (
             {
-                "schema_version": 2,
+                "schema_version": 3,
                 "pptx_directory_exclusions": ["venv", "VENV"],
             },
             "case-insensitive duplicate",
@@ -932,7 +932,7 @@ def test_future_config_generation_fails_closed_without_poisoning_root_version(
     tracking_database,
 ):
     current = tracking_database.migrate_tracking_database(_legacy_database()).database
-    current["config"]["schema_version"] = 3
+    current["config"]["schema_version"] = 4
 
     assessment = tracking_database.assess_tracking_database(current)
 
@@ -1157,7 +1157,7 @@ def test_config_only_migration_tolerates_cloud_stage_churn_and_is_idempotent(
     assert backup.read_bytes() == raw
     assert applied["backup"] == str(backup)
     assert json.loads(installed)["config"] == {
-        "schema_version": 2,
+        "schema_version": 3,
         "python_path": "/opt/python",
         "pptx_directory_exclusions": DEFAULT_DIRECTORY_EXCLUSIONS,
     }
@@ -2958,3 +2958,76 @@ def test_a_root_v4_database_is_legacy_and_migrates_to_v5(tracking_database):
     assert tracking_database.assess_tracking_database(migrated.database).state == (
         "current"
     )
+
+
+# The session counter and the ledger runs it includes (#466).
+
+
+@pytest.mark.parametrize(
+    "config_fields,detail",
+    [
+        ({"clarification_sessions_completed": -1}, "non-negative integer"),
+        ({"clarification_sessions_completed": True}, "non-negative integer"),
+        ({"clarification_counted_runs": "run-a"}, "array of run ids"),
+        (
+            {
+                "clarification_sessions_completed": 2,
+                "clarification_counted_runs": ["a", "a"],
+            },
+            "twice",
+        ),
+        (
+            {
+                "clarification_sessions_completed": 1,
+                "clarification_counted_runs": ["a", "b"],
+            },
+            "names 2 counted sessions",
+        ),
+        ({"clarification_counted_runs": ["run a"]}, "whitespace"),
+    ],
+    ids=["negative", "bool", "not-a-list", "duplicate", "more-than-counted", "bad-id"],
+)
+def test_a_malformed_session_counter_is_refused(
+    tracking_database, config_fields, detail
+):
+    database = tracking_database.migrate_tracking_database(_legacy_database()).database
+    database["config"].update(config_fields)
+    with pytest.raises(tracking_database.TrackingDatabaseError, match=detail):
+        tracking_database.assess_tracking_database(database)
+
+
+def test_counted_runs_within_the_counter_leave_the_database_current(tracking_database):
+    database = tracking_database.migrate_tracking_database(_legacy_database()).database
+    database["config"]["clarification_sessions_completed"] = 15
+    database["config"]["clarification_counted_runs"] = ["run-a"]
+    assert tracking_database.assess_tracking_database(database).state == "current"
+    assert tracking_database.counted_clarification_runs(database["config"]) == {"run-a"}
+
+
+def test_a_v2_config_restamps_to_v3_unchanged(tracking_database):
+    """Config v3 only adds the optional counted-runs list (#466)."""
+    database = tracking_database.migrate_tracking_database(_legacy_database()).database
+    database["config"]["schema_version"] = 2
+    database["config"]["clarification_sessions_completed"] = 4
+    before = copy.deepcopy(database["config"])
+    assert tracking_database.assess_tracking_database(database).state == "legacy"
+
+    migrated = tracking_database.migrate_tracking_database(database)
+
+    assert migrated.changed is True
+    assert migrated.record_counts["config"] == 1
+    assert migrated.database["config"] == {**before, "schema_version": 3}
+    assert tracking_database.assess_tracking_database(migrated.database).state == (
+        "current"
+    )
+
+
+def test_a_v2_config_carrying_counted_runs_is_refused(tracking_database):
+    database = tracking_database.migrate_tracking_database(_legacy_database()).database
+    database["config"]["schema_version"] = 2
+    database["config"]["clarification_sessions_completed"] = 1
+    database["config"]["clarification_counted_runs"] = ["run-a"]
+    with pytest.raises(
+        tracking_database.TrackingDatabaseError, match="belongs to config"
+    ):
+        tracking_database.assess_tracking_database(database)

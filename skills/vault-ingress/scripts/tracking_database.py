@@ -20,6 +20,7 @@ from artifact_locator import ArtifactLocatorError, classify_artifact_locator
 from queue_claim_contract import (
     QueueClaimContractError,
     classify_queue_claim_versions,
+    require_queue_identifier,
     validate_queue_claim_database,
 )
 from pptx_discovery_contract import (
@@ -59,7 +60,39 @@ PRE_PROVIDER_AUTO_TALK_RECORD_SCHEMA_VERSION = 7
 # provenance value. Older record generations retain their closed enum.
 TALK_RECORD_SCHEMA_VERSION = 8
 LEGACY_CONFIG_RECORD_SCHEMA_VERSION = 1
-CONFIG_RECORD_SCHEMA_VERSION = 2
+# v2 added the required PPTX exclusions; v3 adds the optional counted-runs list
+# (#466). v1 and v2 stay readable and the owner migration restamps them.
+PRE_SESSION_COUNT_CONFIG_RECORD_SCHEMA_VERSION = 2
+CONFIG_RECORD_SCHEMA_VERSION = 3
+READABLE_CONFIG_RECORD_SCHEMA_VERSIONS = frozenset(
+    {
+        LEGACY_CONFIG_RECORD_SCHEMA_VERSION,
+        PRE_SESSION_COUNT_CONFIG_RECORD_SCHEMA_VERSION,
+        CONFIG_RECORD_SCHEMA_VERSION,
+    }
+)
+# The completed-session counter, and the run ids of the ledger sessions it
+# already includes (#466). run-obligations.py count-session, holding the
+# ledger lock under the session's claim, advances one and appends to the other
+# in the same write, so a session counts
+# once however often it is re-entered. Both optional: absent means zero and
+# none. The counted-runs list belongs to config v3; only these and the PPTX
+# exclusions are validated.
+CLARIFICATION_SESSIONS_FIELD = "clarification_sessions_completed"
+CLARIFICATION_COUNTED_RUNS_FIELD = "clarification_counted_runs"
+# The run obligations ledger beside the database, owned by run-obligations.py.
+# The count mutation reads it to bind a count to the session it counts.
+OBLIGATIONS_LEDGER_FILENAME = "ingress-obligations.json"
+# A session upgraded from run-record schema 2, whose Step 9 advanced the counter
+# before recording the session, may or may not be counted already: "unknown"
+# until reconciled to "counted" or "uncounted". Absent on schema-3 sessions.
+LEGACY_COUNT_FIELD = "legacy_count"
+LEGACY_COUNT_UNKNOWN = "unknown"
+LEGACY_COUNT_COUNTED = "counted"
+LEGACY_COUNT_UNCOUNTED = "uncounted"
+LEGACY_COUNT_STATES = frozenset(
+    {LEGACY_COUNT_UNKNOWN, LEGACY_COUNT_COUNTED, LEGACY_COUNT_UNCOUNTED}
+)
 LEGACY_PPTX_CATALOG_RECORD_SCHEMA_VERSION = 1
 PPTX_CATALOG_EVIDENCE_BOUND_RECORD_SCHEMA_VERSION = 2
 PPTX_CATALOG_RECORD_SCHEMA_VERSION = 3
@@ -856,17 +889,63 @@ def _require_string_array(
         seen.add(item)
 
 
+def _validate_clarification_counter(config: Mapping[str, object]) -> None:
+    if CLARIFICATION_SESSIONS_FIELD in config:
+        value = config[CLARIFICATION_SESSIONS_FIELD]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise TrackingDatabaseError(
+                f"config.{CLARIFICATION_SESSIONS_FIELD} must be a non-negative integer"
+            )
+    if CLARIFICATION_COUNTED_RUNS_FIELD not in config:
+        return
+    runs = config[CLARIFICATION_COUNTED_RUNS_FIELD]
+    label = f"config.{CLARIFICATION_COUNTED_RUNS_FIELD}"
+    if not isinstance(runs, list):
+        raise TrackingDatabaseError(f"{label} must be an array of run ids")
+    seen: set[str] = set()
+    for position, run_id in enumerate(runs):
+        try:
+            require_queue_identifier(run_id, f"{label}[{position}]")
+        except QueueClaimContractError as exc:
+            raise TrackingDatabaseError(str(exc)) from exc
+        if run_id in seen:
+            raise TrackingDatabaseError(f"{label} counts run {run_id!r} twice")
+        seen.add(run_id)
+    counter = config.get(CLARIFICATION_SESSIONS_FIELD, 0)
+    if isinstance(counter, int) and len(seen) > counter:
+        raise TrackingDatabaseError(
+            f"{label} names {len(seen)} counted sessions but "
+            f"config.{CLARIFICATION_SESSIONS_FIELD} is {counter}"
+        )
+
+
+def counted_clarification_runs(config: Mapping[str, object]) -> frozenset[str]:
+    """Run ids whose ledger session the session counter already includes."""
+    runs = config.get(CLARIFICATION_COUNTED_RUNS_FIELD, [])
+    return frozenset(runs) if isinstance(runs, list) else frozenset()
+
+
 def _validate_config_record(
     config: Mapping[str, object],
     *,
     version: int,
 ) -> None:
-    """Validate the owner-versioned PPTX discovery configuration."""
-    if version == CONFIG_RECORD_SCHEMA_VERSION and (
+    """Validate the owner-versioned config fields an owner script relies on."""
+    if (
+        version < CONFIG_RECORD_SCHEMA_VERSION
+        and CLARIFICATION_COUNTED_RUNS_FIELD in config
+    ):
+        raise TrackingDatabaseError(
+            f"config.{CLARIFICATION_COUNTED_RUNS_FIELD} belongs to config schema "
+            f"v{CONFIG_RECORD_SCHEMA_VERSION}, not v{version}; run the owner "
+            "migration through vault-ingress Step 1"
+        )
+    _validate_clarification_counter(config)
+    if version >= PRE_SESSION_COUNT_CONFIG_RECORD_SCHEMA_VERSION and (
         "pptx_directory_exclusions" not in config
     ):
         raise TrackingDatabaseConfigExclusionsError(
-            "config schema v2 requires pptx_directory_exclusions"
+            f"config schema v{version} requires pptx_directory_exclusions"
         )
     exclusions = config.get("pptx_directory_exclusions")
     if exclusions is None and "pptx_directory_exclusions" not in config:
@@ -1712,10 +1791,7 @@ def assess_tracking_database(database: object) -> TrackingDatabaseAssessment:
         "config",
         missing_version=LEGACY_CONFIG_RECORD_SCHEMA_VERSION,
     )
-    if config_version not in {
-        LEGACY_CONFIG_RECORD_SCHEMA_VERSION,
-        CONFIG_RECORD_SCHEMA_VERSION,
-    }:
+    if config_version not in READABLE_CONFIG_RECORD_SCHEMA_VERSIONS:
         reasons.append("config_schema_version_unsupported")
 
     accepted_versions_by_collection = {
@@ -2436,7 +2512,7 @@ def migrate_tracking_database_root(database: object) -> TrackingDatabaseMigratio
 
 
 def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
-    """Build the deterministic owner migration to root v3/config v2."""
+    """Build the deterministic owner migration to the current root and config."""
     assessment = assess_tracking_database(database)
     if not assessment.usable:
         raise TrackingDatabaseError(
@@ -2501,6 +2577,10 @@ def migrate_tracking_database(database: object) -> TrackingDatabaseMigration:
         else:
             exclusions = list(DEFAULT_PPTX_DIRECTORY_EXCLUSIONS)
         config["pptx_directory_exclusions"] = exclusions
+        config["schema_version"] = CONFIG_RECORD_SCHEMA_VERSION
+        counts["config"] = 1
+    elif config_version == PRE_SESSION_COUNT_CONFIG_RECORD_SCHEMA_VERSION:
+        # v3 only adds the optional counted-runs list; absent means none.
         config["schema_version"] = CONFIG_RECORD_SCHEMA_VERSION
         counts["config"] = 1
 

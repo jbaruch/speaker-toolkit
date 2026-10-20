@@ -87,14 +87,29 @@ def test_seed_agenda_step_runs_the_owner_command() -> None:
 
     assert title == "Resolve the Seed Agenda"
     commands = _commands(body)
-    assert len(commands) == 1
-    assert commands[0].startswith(OWNER_SCRIPT)
+    assert len(commands) == 2
+    assert all(command.startswith(OWNER_SCRIPT) for command in commands)
     assert commands[0].endswith(
         '"{vault_root}/tracking-database.json" session-agenda [--run-id "{run_id}"]'
     )
-    for read_field in ("`session.run_id`", "`session.topics`", "`session: null`"):
+    # The selected session is claimed for this host before anything is asked.
+    assert commands[1].endswith(
+        '"{vault_root}/tracking-database.json" claim-session '
+        '--run-id "{run_id}" --now "{iso_timestamp}"'
+    )
+    for read_field in (
+        "`session.run_id`",
+        "`session.topics`",
+        "`session: null`",
+        "`claim_token`",
+    ):
         assert read_field in body
-    for reason in ("`invalid_transition`", "`run_not_found`", "`ledger_not_adopted`"):
+    for reason in (
+        "`invalid_transition`",
+        "`run_not_found`",
+        "`ledger_not_adopted`",
+        "`session_claimed`",
+    ):
         assert reason in body
     # The selection rule is the script's, named by its anchor.
     assert "`pending_sessions`" in body
@@ -117,13 +132,25 @@ def test_session_completion_runs_the_owner_command_and_typed_calls() -> None:
     assert "`config.clarification_sessions_completed + 1`" in body
     assert "`set_config`" in body
     commands = _commands(body)
-    assert len(commands) == 1
-    assert commands[0].startswith(OWNER_SCRIPT)
-    assert commands[0].endswith(
+    assert len(commands) == 3
+    assert all(command.startswith(OWNER_SCRIPT) for command in commands)
+    count, reconcile, record = commands
+    # The owner counts the session under its claim and the ledger's lock.
+    assert count.endswith(
+        '"{vault_root}/tracking-database.json" count-session --run-id "{run_id}" '
+        '--claim-token "{claim_token}"'
+    )
+    # A session begun under schema 2 is reconciled under its claim first.
+    assert reconcile.endswith(
+        '"{vault_root}/tracking-database.json" reconcile-count --run-id "{run_id}" '
+        '--now "{iso_timestamp}" --claim-token "{claim_token}" --counted yes|no'
+    )
+    assert record.endswith(
         '"{vault_root}/tracking-database.json" record-session '
-        '--run-id "{run_id}" --now "{iso_timestamp}" '
+        '--run-id "{run_id}" --now "{iso_timestamp}" --claim-token "{claim_token}" '
         "--profile-inputs changed|unchanged [--profile-refreshed]"
     )
+    assert "`AskUserQuestion`" in body
     assert "clarification-handoff.md#record-the-answer" in body
     assert 'Skill(skill: "vault-profile")' in body
     for read_field in (

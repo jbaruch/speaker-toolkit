@@ -21,6 +21,7 @@ import sys
 from typing import Any, Mapping, NoReturn
 
 from tracking_database import (
+    CLARIFICATION_COUNTED_RUNS_FIELD,
     CONFIG_RECORD_SCHEMA_VERSION,
     CONFIRMED_INTENT_OPTIONAL_FIELDS,
     CONFIRMED_INTENT_RECORD_SCHEMA_VERSION,
@@ -701,6 +702,14 @@ def _apply_set_config(
     ):
         raise TrackingDatabaseMutationError(
             f"mutations[{index}].path must be nonempty config keys outside schema_version"
+        )
+    if path[0] == CLARIFICATION_COUNTED_RUNS_FIELD:
+        # Counted runs are authority: only run-obligations.py count-session,
+        # holding the ledger lock under the session's claim, records one.
+        raise TrackingDatabaseMutationError(
+            f"mutations[{index}].path config.{CLARIFICATION_COUNTED_RUNS_FIELD} is "
+            "written only by run-obligations.py count-session under the session's "
+            "claim; count a ledger session there"
         )
     config = database.setdefault("config", {})
     if not isinstance(config, dict):

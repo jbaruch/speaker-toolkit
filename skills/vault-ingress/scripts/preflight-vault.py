@@ -104,8 +104,8 @@ from pptx_evidence import (
 )
 from tracking_database import (
     local_audio_declarations,
-    CONFIG_RECORD_SCHEMA_VERSION,
     LEGACY_CONFIG_RECORD_SCHEMA_VERSION,
+    READABLE_CONFIG_RECORD_SCHEMA_VERSIONS,
     PPTX_EVIDENCE_CURRENT,
     TALK_RECORD_SCHEMA_VERSION,
     TrackingDatabaseConfigExclusionsError,
@@ -606,10 +606,7 @@ class VaultPreflight:
                         else None
                     )
                     field = "config.schema_version"
-                    expected = [
-                        LEGACY_CONFIG_RECORD_SCHEMA_VERSION,
-                        CONFIG_RECORD_SCHEMA_VERSION,
-                    ]
+                    expected = sorted(READABLE_CONFIG_RECORD_SCHEMA_VERSIONS)
                     actual = {
                         "schema_version": config_version,
                         "reason_codes": reason_codes,
@@ -738,8 +735,13 @@ class VaultPreflight:
         """Report one typed exclusion fault and suppress generic schema noise."""
         message: str | None = None
         actual: Any = config.get("pptx_directory_exclusions")
+        version = config.get("schema_version")
+        # Exact integers only: a container would raise in the set lookup, and
+        # True would compare equal to 1.
         if (
-            config.get("schema_version") == CONFIG_RECORD_SCHEMA_VERSION
+            type(version) is int
+            and version in READABLE_CONFIG_RECORD_SCHEMA_VERSIONS
+            and version != LEGACY_CONFIG_RECORD_SCHEMA_VERSION
             and "pptx_directory_exclusions" not in config
         ):
             message = (

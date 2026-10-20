@@ -82,7 +82,7 @@ def database(rows: list[dict], talks: list[dict], source_root: Path) -> dict:
     return {
         "schema_version": CURRENT_ROOT,
         "config": {
-            "schema_version": 2,
+            "schema_version": 3,
             "pptx_directory_exclusions": [],
             "pptx_source_dir": str(source_root),
         },
