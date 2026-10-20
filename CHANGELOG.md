@@ -69,9 +69,9 @@ discipline reduced the drift but cannot guarantee typographic identity.
   names the stamped frame copies as its one write. Illustrations Step 1 states the
   migration's in-place effect, its stdout and its exits, and both apply and the
   manifest name a missing outline before checking its version. The migration
-  rewrites only the root version's value, so an inline comment, a quoted key
-  and CRLF line endings survive; it stamps after a `---` marker even when
-  comments precede it, and refuses a layout it cannot restamp. Non-owner
+  rewrites only the root version's value, so an inline comment, a quoted key,
+  a preamble before `---` and CRLF line endings survive; it refuses a layout
+  it cannot restamp. Non-owner
   readers refuse every version but the current one: an older outline names the
   migration, a newer one says to update speaker-toolkit. A model-rendered
   footer is directed verbatim, delimited and escaped as a JSON string, never
@@ -79,15 +79,26 @@ discipline reduced the drift but cannot guarantee typographic identity.
   commands use.
 - The owner migrates before it consumes: presentation-creator's validation
   (`outline_schema.py outline.yaml`, its first read of any outline, including
-  the late-entry and resume flows) restamps an older outline in place, says so
-  on stderr, then validates. The "next authoring pass" deferral is gone from
-  `phase3-content.md` and `speech-rates.md`. `--emit-json` serves non-owner
-  readers such as shownotes-publisher and never writes. Both the migration and
-  the non-owner gate require the root version to be an exact integer, so YAML
-  `2.0`, `1.0` and `true`, which compare equal to 2 or 1, are refused instead
-  of passing as current or older. The worked example
-  `tests/fixtures/outline-example.yaml` is stamped at schema 2, and a test
-  pins it there, so the CLI tests no longer rewrite a committed fixture.
+  the late-entry and resume flows) restamps a schema 1 outline in place, says
+  so on stderr, then validates. The "next authoring pass" deferral is gone from
+  `phase3-content.md`, `speech-rates.md` and the schema comments.
+  `--emit-json` serves non-owner readers such as shownotes-publisher, so it
+  runs the non-owner gate and never writes.
+- No reader defaults a missing root stamp to 1 any more. `Outline` and
+  `PartialOutline` require `schema_version`, and the gate and the migration
+  refuse its absence, each naming the fix: an outline written before
+  versioning has the schema 1 shape, so its owner adds `schema_version: 1` and
+  validates. Only an exact integer 1 migrates; YAML `2.0`, `1.0` and `true`,
+  which compare equal to 2 or 1, are refused instead of passing as current or
+  older. Phase 1 authors the stamp with the talk block, so a partial outline
+  carries it from birth.
+- The gate and the migration refuse text that is not UTF-8 and a root that is
+  not a mapping with a `FAIL:` naming the fix, instead of a traceback, at every
+  boundary that uses them: `--migrate`, plain validation, `--emit-json` and the
+  illustration scripts.
+- The worked example `tests/fixtures/outline-example.yaml` is stamped at
+  schema 2, and a test pins it there, so the CLI tests no longer rewrite a
+  committed fixture.
 - Apply's safe-zone path takes illustrated slides only, as its IMG+TXT path
   already did: a prompt-free FULL screenshot with a safe zone has no generated
   image, so the mandatory preflight no longer aborts the whole apply over its

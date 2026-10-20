@@ -746,11 +746,25 @@ def deck_positions(slides: list["Slide"]) -> dict[int, int]:
     }
 
 
-# Outline root schema. v2 adds the optional `style_anchor.footer_style`; a v1
-# outline reads unchanged with none, and the creator stamps v2 on its next
-# authoring pass. No loader rewrites an existing outline.
+# Outline root schema. v2 adds the optional `style_anchor.footer_style`. Every
+# outline carries its root stamp; a v1 outline loads read-only, and only the
+# owner's migration (`migrate_outline`) rewrites it.
 OUTLINE_SCHEMA_VERSION = 2
 FOOTER_STYLE_OUTLINE_SCHEMA_VERSION = 2
+
+_MISSING_VERSION = (
+    "has no root schema_version. A new outline starts with "
+    f"`schema_version: {OUTLINE_SCHEMA_VERSION}`; one written before versioning "
+    "has the schema 1 shape, so add `schema_version: 1` as its first root key "
+    "and run presentation-creator's `outline_schema.py outline.yaml` to migrate it"
+)
+
+
+def _require_root_stamp(data: object) -> object:
+    """Refuse a root mapping without ``schema_version``; there is no default."""
+    if isinstance(data, dict) and "schema_version" not in data:
+        raise ValueError(f"the outline {_MISSING_VERSION}")
+    return data
 
 
 def _check_outline_version_and_poster(
@@ -781,14 +795,19 @@ def _check_outline_version_and_poster(
 
 
 class Outline(_StrictModel):
-    # Missing root stamp is the legacy read-only view. The owner's validation
-    # CLI migrates an older outline before reading it; the loader never writes.
-    schema_version: int = Field(default=1, strict=True, ge=1, le=OUTLINE_SCHEMA_VERSION)
+    # The owner's validation CLI migrates a v1 outline before reading it; the
+    # loader reads one read-only and never writes.
+    schema_version: int = Field(strict=True, ge=1, le=OUTLINE_SCHEMA_VERSION)
     talk: TalkMetadata
     style_anchor: StyleAnchor | None = None
     chapters: list[Chapter] = Field(min_length=1)
     slides: list[Slide] = Field(min_length=1)
     interludes: list[Interlude] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _root_stamp(cls, data: object) -> object:
+        return _require_root_stamp(data)
 
     @model_validator(mode="after")
     def _version_and_poster_slides(self) -> "Outline":
@@ -956,12 +975,17 @@ class PartialOutline(_StrictModel):
     stays the Phase 3+ source-of-truth contract.
     """
 
-    schema_version: int = Field(default=1, strict=True, ge=1, le=OUTLINE_SCHEMA_VERSION)
+    schema_version: int = Field(strict=True, ge=1, le=OUTLINE_SCHEMA_VERSION)
     talk: TalkMetadata
     style_anchor: StyleAnchor | None = None
     chapters: list[Chapter] = Field(default_factory=list)
     slides: list[Slide] = Field(default_factory=list)
     interludes: list[Interlude] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _root_stamp(cls, data: object) -> object:
+        return _require_root_stamp(data)
 
     @model_validator(mode="after")
     def _version_and_poster_slides(self) -> "PartialOutline":
@@ -992,7 +1016,12 @@ def load_outline_partial(path: Path | str) -> PartialOutline:
 
 
 class OutlineVersionError(ValueError):
-    """An outline older than the current schema, read by a non-owner."""
+    """An outline the gate or the migration cannot take as it stands.
+
+    Raised for an older or newer schema, a missing or non-integer root stamp,
+    text that is not UTF-8, and a stamp layout the migration cannot rewrite;
+    the message names the fix.
+    """
 
 
 # The root `schema_version` key at column 0, bare or quoted; only its value is
@@ -1002,12 +1031,35 @@ _ROOT_VERSION_LINE = re.compile(
     r"""(?P<sep>[ \t]*:[ \t]*)(?P<value>[^\s#]+)""",
     re.MULTILINE,
 )
-_DOCUMENT_MARKER = re.compile(r"^---[ \t]*(?:\r?\n|$)", re.MULTILINE)
 
 
-def _root_version(data: object) -> object:
-    # A missing root stamp is the legacy v1 view.
-    return data.get("schema_version", 1) if isinstance(data, dict) else None
+def _decode(path: Path, raw: bytes) -> str:
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise OutlineVersionError(
+            f"{path} is not UTF-8 text (undecodable byte at offset {exc.start}); "
+            "re-save it as UTF-8 and re-run"
+        ) from exc
+
+
+def _root_version(path: Path, text: str) -> int:
+    """The exact integer root stamp; anything else is refused with its fix."""
+    data = yaml.safe_load(text)
+    if not isinstance(data, dict):
+        raise OutlineVersionError(
+            f"{path} is not an outline: its root is not a YAML mapping"
+        )
+    if "schema_version" not in data:
+        raise OutlineVersionError(f"{path} {_MISSING_VERSION}")
+    version = data["schema_version"]
+    # Exact type: YAML 2.0 equals 2 and true equals 1.
+    if type(version) is not int:
+        raise OutlineVersionError(
+            f"{path} has root schema_version {version!r}, not an integer; set it "
+            f"to {OUTLINE_SCHEMA_VERSION}"
+        )
+    return version
 
 
 def require_current_outline(path: Path | str) -> None:
@@ -1017,14 +1069,8 @@ def require_current_outline(path: Path | str) -> None:
     current schema and treats an older one as no usable prior state, naming the
     owner's migration (``outline_schema.py --migrate``).
     """
-    data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-    version = _root_version(data)
-    # Exact type first: YAML 2.0 equals 2 and true equals 1.
-    if type(version) is not int:
-        raise OutlineVersionError(
-            f"{path} has root schema_version {version!r}, not an integer; set it "
-            f"to {OUTLINE_SCHEMA_VERSION}"
-        )
+    target = Path(path)
+    version = _root_version(target, _decode(target, target.read_bytes()))
     if version == OUTLINE_SCHEMA_VERSION:
         return
     if version > OUTLINE_SCHEMA_VERSION:
@@ -1042,22 +1088,16 @@ def require_current_outline(path: Path | str) -> None:
 def migrate_outline(path: Path | str) -> dict[str, object]:
     """Restamp an older outline at the current schema, as its owner, in place.
 
-    v2 only adds an optional field, so the migration is the root stamp: the
-    root ``schema_version`` value is rewritten (or the key added after any
-    document marker) and nothing else changes, comments, quoting and line
-    endings included. The result must load at the current version before it
-    replaces the file atomically; a layout this cannot restamp is refused.
+    v2 only adds an optional field, so the migration is the root stamp: only an
+    exact integer 1 migrates, its value is rewritten, and nothing else changes,
+    comments, quoting and line endings included. The result must load at the
+    current version before it replaces the file atomically; a missing stamp or
+    a layout this cannot restamp is refused.
     """
     target = Path(path)
     # Bytes in, bytes out: universal-newline reads would rewrite CRLF files.
-    text = target.read_bytes().decode("utf-8")
-    newline = "\r\n" if "\r\n" in text else "\n"
-    version = _root_version(yaml.safe_load(text))
-    if type(version) is not int:
-        raise OutlineVersionError(
-            f"{target} has root schema_version {version!r}, not an integer; set "
-            f"it to {OUTLINE_SCHEMA_VERSION}"
-        )
+    text = _decode(target, target.read_bytes())
+    version = _root_version(target, text)
     if version == OUTLINE_SCHEMA_VERSION:
         return {"ok": True, "path": str(target), "migrated": False, "to": version}
     if version != 1:
@@ -1065,21 +1105,16 @@ def migrate_outline(path: Path | str) -> dict[str, object]:
             f"{target} has root schema_version {version!r}; only schema 1 "
             f"migrates to {OUTLINE_SCHEMA_VERSION}"
         )
-    stamp = f"schema_version: {OUTLINE_SCHEMA_VERSION}{newline}"
     existing = _ROOT_VERSION_LINE.search(text)
-    marker = _DOCUMENT_MARKER.search(text)
-    if existing:
-        migrated = (
-            text[: existing.start("value")]
-            + str(OUTLINE_SCHEMA_VERSION)
-            + text[existing.end("value") :]
-        )
-    elif marker:
-        migrated = text[: marker.end()] + stamp + text[marker.end() :]
-    else:
-        migrated = stamp + text
+    migrated = (
+        text[: existing.start("value")]
+        + str(OUTLINE_SCHEMA_VERSION)
+        + text[existing.end("value") :]
+        if existing
+        else text
+    )
     loaded = yaml.safe_load(migrated)
-    if _root_version(loaded) != OUTLINE_SCHEMA_VERSION:
+    if not existing or loaded.get("schema_version") != OUTLINE_SCHEMA_VERSION:
         raise OutlineVersionError(
             f"{target} keeps its root schema_version in a layout the migration "
             f"cannot restamp; set it to {OUTLINE_SCHEMA_VERSION} by hand"
@@ -1114,8 +1149,11 @@ def main(argv: list[str]) -> int:
         return 2
     try:
         # Plain validation is the owner's read, so an older outline is migrated
-        # before it is consumed; --emit-json serves other skills and never writes.
-        if not emit_json:
+        # before it is consumed; --emit-json serves other skills, which refuse
+        # an older outline and never write.
+        if emit_json:
+            require_current_outline(args[0])
+        else:
             migration = migrate_outline(args[0])
             if migration["migrated"]:
                 print(

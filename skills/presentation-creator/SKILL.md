@@ -129,7 +129,7 @@ Regenerate the four derived artifacts after every edit to `outline.yaml`:
 "{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/check-rhetorical.py"  outline.yaml > rhetorical-review.md
 ```
 
-Validate the YAML with `"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py" outline.yaml` — it migrates an older outline to schema 2 in place first, then exits non-zero with a typed error if any validator fails.
+Validate the YAML with `"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py" outline.yaml` — it migrates a schema 1 outline in place first, then exits non-zero with a typed error if any validator fails.
 
 `narrative.md` is the exception to "by end of Phase 3" — it is generated earlier
 in partial form during Phases 1–2 with `--partial`, which validates `talk` +
@@ -155,7 +155,7 @@ Proceed immediately to Step 1.
 Read [references/phase1-intent.md](references/phase1-intent.md) for the full
 question set. Ask about what's missing; skip what's known.
 
-Author the **talk metadata block** of `outline.yaml`. The field-by-field
+Author root `schema_version: 2` and the **talk metadata block** of `outline.yaml`. The field-by-field
 reference is the `## The talk: block` table in
 [references/phase3-content.md](references/phase3-content.md); `outline_schema.py:TalkMetadata`
 is the authoritative list. Leave `architecture`, `engine`, `deck_theme`, and
@@ -243,7 +243,7 @@ Fill `slides[]` and `interludes[]` in `outline.yaml`.
 Use the typed narration-planning contract in
 [speech-rates.md](../vault-profile/references/speech-rates.md). Prefer a current
 owner-validated measured profile; label uncalibrated rates as assumptions.
-Author `talk.pacing_rate` and root `schema_version: 2`; never use articulation
+Author `talk.pacing_rate`; never use articulation
 WPM to plan elapsed narration or predicted timing to verify a recording.
 
 Placeholders use typed, independent numbering (each type starts at 01):

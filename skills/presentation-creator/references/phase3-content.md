@@ -9,12 +9,16 @@ regenerate deterministically — never hand-edit them.
 A complete worked example lives at `tests/fixtures/outline-example.yaml`.
 
 New outlines declare root `schema_version: 2`; v2 adds the optional
-`style_anchor.footer_style`, which a v1 outline may not carry. presentation-creator owns the file and migrates an older one before consuming
-it: the validation command above, its first read of any outline, restamps a v1
-or unversioned outline to 2 in place (changing nothing else, and saying so on
-stderr) before it validates. `--migrate outline.yaml` runs that restamp alone.
-Other skills' readers refuse an older outline and name that command. Explicit
-unsupported or non-integer root versions fail closed. A poster-theatrical
+`style_anchor.footer_style`, which a v1 outline may not carry. Every outline carries the root stamp: no reader defaults a missing one.
+presentation-creator owns the file and migrates an older one before consuming
+it: the validation command above, its first read of any outline, restamps an
+exact `schema_version: 1` to 2 in place (changing nothing else, and saying so
+on stderr) before it validates. `--migrate outline.yaml` runs that restamp
+alone. An outline written before versioning has the schema 1 shape: add
+`schema_version: 1` as its first root key, then validate. Other skills' readers
+refuse an older outline and name that command. A missing, non-integer or
+unsupported root version, and text that is not UTF-8, fail closed with the fix
+named. A poster-theatrical
 outline illustrates FULL slides only: an `image_prompt` on any other format is
 refused.
 
