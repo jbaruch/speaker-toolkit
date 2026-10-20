@@ -155,6 +155,50 @@ def test_build_catches_silent_publish_failures(site, broken):
     assert json.loads(result.stdout)["ok"] is False
 
 
+def test_a_raw_link_outside_the_skill_section_does_not_satisfy_it(site):
+    """#458: the download link must live inside section.talk-skill."""
+    output = build(site)
+    page = output / "talks" / STEM / "index.html"
+    page.write_text(
+        '<section class="talk-skill"><section class="nested"></section></section>'
+        f'<a class="talk-skill__raw" href="/skills/{STEM}/SKILL.md">Download</a>'
+    )
+    assert_failure(run(site, "--build-dir", str(output)), "download link missing")
+
+
+def test_a_raw_link_in_a_nested_element_of_the_section_still_counts(site):
+    output = build(site)
+    page = output / "talks" / STEM / "index.html"
+    page.write_text(
+        '<section class="talk-skill"><section class="inner"></section><div>'
+        f'<a class="talk-skill__raw" href="/skills/{STEM}/SKILL.md">Download</a>'
+        "</div></section>"
+    )
+    result = run(site, "--build-dir", str(output))
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("baseurl", ["//", "///", "//cdn.example", "shownotes"])
+def test_a_baseurl_that_is_not_site_relative_is_refused_before_stripping(site, baseurl):
+    """#458: "//" must not strip down to the site root."""
+    output = build(site)
+    assert_failure(
+        run(site, "--build-dir", str(output), "--baseurl", baseurl),
+        "--baseurl must be empty or a site-relative path",
+    )
+
+
+def test_a_root_baseurl_still_means_the_site_root(site):
+    output = build(site)
+    result = run(site, "--build-dir", str(output), "--baseurl", "/")
+    assert result.returncode == 0, result.stderr
+
+
+def test_an_explicitly_empty_site_url_is_refused_not_skipped(site):
+    """#458: --site-url "" is a malformed origin, not an omitted live check."""
+    assert_failure(run(site, "--site-url", ""), "--site-url must be an HTTP(S) origin")
+
+
 @pytest.fixture
 def server(site):
     output = build(site, "/shownotes")

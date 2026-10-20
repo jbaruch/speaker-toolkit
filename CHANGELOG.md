@@ -1,5 +1,65 @@
 # Changelog
 
+### Harden shownotes verification inputs and runtime selection
+
+Follow-ups from the advisory Copilot review on #457 (#458).
+
+- `verify-talk-skill.py` refuses an explicitly empty `--site-url` as a malformed
+  origin; it had read `""` as "no live check" and reported success without one.
+- `--baseurl` is validated before trailing slashes are stripped. `//` and `///`
+  had stripped down to the site root, and `//host` is protocol-relative, not
+  site-relative. `/` still means the root.
+- The raw download link counts only inside `section.talk-skill`, with nested
+  sections tracked by depth. A `talk-skill__raw` anchor anywhere else on the
+  page had satisfied the section's contract.
+- `resolve-deploy-run.py` refuses a row without string `headSha`, `event` and
+  `headBranch` as malformed `gh` output. Such a row could never match, so a
+  `{}` row sat out the whole bounded wait before failing as "no matching run".
+- The standalone publisher resolves its interpreter through the new
+  `scripts/resolve-runtime.py`: one owner read of the tracking database under
+  the host interpreter, then `config.python_path`, a confirming owner re-read
+  of `{vault_root}/tracking-database.json` that must match byte for byte, and
+  `check-runtime.py --require-lanes outline`. It emits one JSON verdict and
+  names `vault-ingress Step 1` as the repair handoff on refusal. It requires the
+  owner-current database generation (a legacy one is the owner's to migrate)
+  and an absolute `python_path`, re-reads the same database path, and takes the
+  vault root from the locator's directory rather than the optional, possibly
+  stale `config.vault_root`, and resolves it through
+  `vault_root_authority.resolve_vault_root_authority`, so a
+  `config.vault_storage_path` naming another root refuses as
+  `vault_root_invalid`. An owner read that fails with the owner's own verdict
+  keeps its classification (`owner_code`) and remedy; a concurrent write is
+  `database_generation_conflict`, which the publisher answers by rerunning the
+  resolver. Every refusal carries the absolute `database` locator it read, the
+  `runtime_repair` handoff passes it on, and the repair reads, migrates and
+  configures only that database, never the default vault. `schemas-db.md` lists it as a current reader in
+  the owner's reader contract, beside the dual readers. Every Python toolkit
+  command in the skill and `references/talk-skill.md` runs on
+  `"{python_path}"`, never a bare `python3` from `PATH`; shell scripts keep
+  their `bash` invocation. After a refusal the publisher invokes
+  `Skill(skill: "vault-ingress")` with a `runtime_repair` handoff (the
+  `reason_code` and the `outline` lane). vault-ingress Step 1 gains that
+  repair-only entry, `references/runtime-repair.md`, which runs only the repair
+  the code names, confirms an interpreter repair with `check-runtime.py
+  --require-lanes {lane}`, and finishes without starting an ingest. The
+  publisher then re-runs the resolver once and resumes Step 1, or finishes when
+  nothing repairs it. A readable older
+  database refuses as `database_not_current`; a future one fails the owner
+  read as `owner_read_failed`. The same read failing only under
+  `config.python_path` is `interpreter_unusable`; a read that timed out under
+  either interpreter is `owner_read_failed`, never a reason to replace
+  `config.python_path`. The lane check failing to launch is
+  `interpreter_unusable` and timing out is `runtime_probe_failed`. Its JSON
+  verdict is classified rather than its exit code: an unsupported Python, a
+  missing module, a cold interpreter whose module probes all timed out, and a
+  probe fault (including a probe child that could not start) each get their
+  own reason code and repair. `references/runtime.md` documents the contract,
+  keeping `SKILL.md` under the entrypoint token budget.
+- `check-runtime.py` gains an `outline` lane (PyYAML and Pydantic, with an
+  exact `PYDANTIC_REQUIRED_VERSION` matching `pyproject.toml`):
+  `outline_schema.py` imports Pydantic v2 at module load, so an interpreter
+  with PyYAML alone used to pass and then fail mid-publish.
+
 ## 0.20.184 — 2026-10-20
 
 ### Name the toolkit-root lookup as a rule

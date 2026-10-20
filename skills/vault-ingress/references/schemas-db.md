@@ -9,11 +9,12 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
 shape, and all migrations. vault-clarification may write current config,
 confirmed-intent, and improvement-goal records. presentation-creator may write
 current QR records. vault-profile and the remaining presentation consumers are
-read-only. Non-owner readers accept every readable database generation during
-rollout — legacy 0, pre-`markdown_decks` 1, pre-`source_aliases` 2,
+read-only. Non-owner dual readers in the table below accept every readable
+database generation during rollout — legacy 0, pre-`markdown_decks` 1, pre-`source_aliases` 2,
 pre-`date_provenance` 3, and current 4. They never rewrite
-legacy state. An unsupported future database or record version is no usable
-prior state.
+legacy state. A current reader requires the current generation and hands any
+older one to the owner migration. An unsupported future database or record
+version is no usable prior state.
 
 The independently versioned records are the database root, `config`, each
 `talks[]`, `pptx_catalog[]`, `qr_codes[]`, `resources[]`, `thumbnails[]`,
@@ -252,6 +253,7 @@ or root state; the standalone root-only mode below preserves their contracts.
 | presentation-creator publishing/post-event | authorized current writer | Require schema 4 before tracking writes; stamp resource v1 and preserve talk v8 |
 | illustrations thumbnail workflow | authorized current writer | Require schema 4 before tracking writes; stamp thumbnail v1 and preserve talk v8 |
 | vault-profile | dual reader | Parse schemas 0-4; treat unsupported generations as unavailable; never migrate |
+| shownotes-publisher runtime resolution (`resolve-runtime.py`) | current reader | Require the generation `assess_tracking_database` reports `current` before reading `config.python_path`; a readable older generation refuses as `database_not_current` and hands off to vault-ingress Step 1 for the owner migration; an unsupported future generation fails the owner read as `owner_read_failed`; never rewrite |
 
 Current database schema 4 with config schema 2 requires all eight top-level
 state fields shown below. `source_title_equivalences`, `source_aliases`,

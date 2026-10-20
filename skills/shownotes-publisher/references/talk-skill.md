@@ -161,14 +161,14 @@ integrity, not rhetorical fidelity, completeness, or answer quality.
 Run the source check after writing both the page and the skill:
 
 ```bash
-python3 "{speaker_toolkit_root}/skills/shownotes-publisher/scripts/verify-talk-skill.py" \
+"{python_path}" "{speaker_toolkit_root}/skills/shownotes-publisher/scripts/verify-talk-skill.py" \
   --site "{shownotes_repo}" --stem "{talk_page_stem}"
 ```
 
 After a fresh successful Jekyll build, verify attachment and raw bytes:
 
 ```bash
-python3 "{speaker_toolkit_root}/skills/shownotes-publisher/scripts/verify-talk-skill.py" \
+"{python_path}" "{speaker_toolkit_root}/skills/shownotes-publisher/scripts/verify-talk-skill.py" \
   --site "{shownotes_repo}" --stem "{talk_page_stem}" \
   --build-dir "{shownotes_repo}/_site" --baseurl "{site.baseurl}"
 ```
@@ -184,7 +184,7 @@ in the same reviewed change as the page. After the Pages deployment for that
 commit succeeds, run:
 
 ```bash
-python3 "{speaker_toolkit_root}/skills/shownotes-publisher/scripts/verify-talk-skill.py" \
+"{python_path}" "{speaker_toolkit_root}/skills/shownotes-publisher/scripts/verify-talk-skill.py" \
   --site "{shownotes_repo}" --stem "{talk_page_stem}" \
   --site-url "{site.url}" --baseurl "{site.baseurl}"
 ```

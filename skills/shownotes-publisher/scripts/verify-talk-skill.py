@@ -16,21 +16,35 @@ import yaml
 
 
 class SkillPage(HTMLParser):
-    """Collect the site's skill section and download link from rendered HTML."""
+    """Collect the site's skill section and the download links inside it.
+
+    A ``talk-skill__raw`` anchor elsewhere on the page does not satisfy the
+    section's contract, so links count only while a ``talk-skill`` section is
+    open; nested sections are tracked by depth.
+    """
 
     def __init__(self) -> None:
         super().__init__()
         self.section = False
         self.links: set[str] = set()
+        self._depth = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         fields = dict(attrs)
         classes = (fields.get("class") or "").split()
-        if tag == "section" and "talk-skill" in classes:
-            self.section = True
+        if tag == "section":
+            if self._depth:
+                self._depth += 1
+            elif "talk-skill" in classes:
+                self.section = True
+                self._depth = 1
         href = fields.get("href")
-        if tag == "a" and "talk-skill__raw" in classes and href:
+        if self._depth and tag == "a" and "talk-skill__raw" in classes and href:
             self.links.add(href)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "section" and self._depth:
+            self._depth -= 1
 
 
 def validate_source(site: Path, stem: str) -> tuple[Path, bytes, str]:
@@ -117,11 +131,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         skill, raw, name = validate_source(args.site, args.stem)
-        base = args.baseurl.rstrip("/")
-        if base and (not base.startswith("/") or base.startswith("//")):
+        # Validate before stripping: "//" or "///" would otherwise strip to the
+        # site root, and "//host" is protocol-relative, not site-relative.
+        if args.baseurl and (
+            not args.baseurl.startswith("/") or args.baseurl.startswith("//")
+        ):
             raise ValueError(
                 "--baseurl must be empty or a site-relative path such as /shownotes"
             )
+        base = args.baseurl.rstrip("/")
         skill_path = f"{base}/skills/{args.stem}/SKILL.md"
         page_path = f"{base}/talks/{args.stem}/"
         report = {
@@ -138,7 +156,8 @@ def main(argv: list[str] | None = None) -> int:
                 skill_path,
             )
             report["checks"].append("build")
-        if args.site_url:
+        # An explicitly empty --site-url is a malformed origin, not an omitted check.
+        if args.site_url is not None:
             origin = args.site_url.rstrip("/")
             parsed = urlsplit(origin)
             if (
