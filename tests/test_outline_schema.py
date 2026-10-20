@@ -1116,3 +1116,48 @@ def test_a_non_owner_reader_refuses_every_other_version(
     )
     with pytest.raises(outline_schema.OutlineVersionError, match=detail):
         outline_schema.require_current_outline(path)
+
+
+@pytest.mark.parametrize("version", [2.0, True, 1.0], ids=repr)
+def test_a_version_that_only_compares_equal_is_refused(
+    outline_schema, base_data, tmp_path, version
+):
+    """2.0 equals 2 and true equals 1, but neither is the integer stamp."""
+    path = tmp_path / "outline.yaml"
+    path.write_text(
+        yaml.safe_dump({**base_data, "schema_version": version}, sort_keys=False),
+        encoding="utf-8",
+    )
+    with pytest.raises(outline_schema.OutlineVersionError, match="not an integer"):
+        outline_schema.require_current_outline(path)
+    with pytest.raises(outline_schema.OutlineVersionError, match="not an integer"):
+        outline_schema.migrate_outline(path)
+
+
+def test_the_owner_validation_migrates_before_it_reads(
+    outline_schema, base_data, tmp_path, capsys
+):
+    path = tmp_path / "outline.yaml"
+    path.write_text(_v1_text(base_data, stamp=True), encoding="utf-8")
+    assert outline_schema.main(["outline_schema.py", str(path)]) == 0
+    assert "from outline schema 1 to 2" in capsys.readouterr().err
+    assert yaml.safe_load(path.read_text(encoding="utf-8"))["schema_version"] == 2
+
+
+def test_emit_json_reads_an_older_outline_without_rewriting_it(
+    outline_schema, base_data, tmp_path, capsys
+):
+    """--emit-json serves non-owner readers, which must never migrate."""
+    path = tmp_path / "outline.yaml"
+    original = _v1_text(base_data, stamp=True)
+    path.write_text(original, encoding="utf-8")
+    assert outline_schema.main(["outline_schema.py", "--emit-json", str(path)]) == 0
+    assert capsys.readouterr().err == ""
+    assert path.read_text(encoding="utf-8") == original
+
+
+def test_the_worked_example_is_stamped_at_the_current_schema(outline_schema):
+    """The CLI tests validate this fixture, and the owner's validation migrates
+    an older outline in place, so a stale example would be rewritten by the suite."""
+    data = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
+    assert data["schema_version"] == outline_schema.OUTLINE_SCHEMA_VERSION

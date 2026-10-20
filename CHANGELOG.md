@@ -77,6 +77,17 @@ discipline reduced the drift but cannot guarantee typographic identity.
   footer is directed verbatim, delimited and escaped as a JSON string, never
   rewritten. Step 1 runs the migration with the same `python3` its other
   commands use.
+- The owner migrates before it consumes: presentation-creator's validation
+  (`outline_schema.py outline.yaml`, its first read of any outline, including
+  the late-entry and resume flows) restamps an older outline in place, says so
+  on stderr, then validates. The "next authoring pass" deferral is gone from
+  `phase3-content.md` and `speech-rates.md`. `--emit-json` serves non-owner
+  readers such as shownotes-publisher and never writes. Both the migration and
+  the non-owner gate require the root version to be an exact integer, so YAML
+  `2.0`, `1.0` and `true`, which compare equal to 2 or 1, are refused instead
+  of passing as current or older. The worked example
+  `tests/fixtures/outline-example.yaml` is stamped at schema 2, and a test
+  pins it there, so the CLI tests no longer rewrite a committed fixture.
 - Apply and the build manifest check one deck-wide stamp set,
   `footer_stamp.deck_stamp_set`: every stamped slide image plus every declared
   build frame. Whichever command runs first refuses a mixed deck before either

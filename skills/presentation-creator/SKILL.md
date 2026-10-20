@@ -129,7 +129,7 @@ Regenerate the four derived artifacts after every edit to `outline.yaml`:
 "{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/check-rhetorical.py"  outline.yaml > rhetorical-review.md
 ```
 
-Validate the YAML with `"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py" outline.yaml` — exits non-zero with a typed error if any validator fails.
+Validate the YAML with `"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py" outline.yaml` — it migrates an older outline to schema 2 in place first, then exits non-zero with a typed error if any validator fails.
 
 `narrative.md` is the exception to "by end of Phase 3" — it is generated earlier
 in partial form during Phases 1–2 with `--partial`, which validates `talk` +

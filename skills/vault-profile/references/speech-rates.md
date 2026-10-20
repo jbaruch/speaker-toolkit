@@ -214,10 +214,10 @@ versions and validate v1/v2 embedded rates without migration. The creator never 
 edits measured provenance. Use a fresh owner-validated measured profile when
 available. A stale or invalid present profile requires owner attention.
 
-Version 1 and previously unversioned outlines remain readable to the owner.
-The loader does not rewrite them; the owner migration
-(`outline_schema.py --migrate`) or the next creator authoring pass stamps
-schema 2, and other skills' readers refuse an older outline until it does.
+Version 1 and previously unversioned outlines belong to the owner, which
+migrates them before consuming them: its validation (`outline_schema.py
+outline.yaml`) restamps schema 2 in place first, `--migrate` runs that restamp
+alone, and other skills' readers refuse an older outline until it has run.
 Legacy `talk.pacing_wpm: [low, high]` has one compatibility meaning: an
 unverified narration planning assumption with the v1 2-second gap definition.
 It cannot coexist with `pacing_rate`; the owner replaces it with a typed

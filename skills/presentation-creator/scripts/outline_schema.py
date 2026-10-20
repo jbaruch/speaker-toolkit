@@ -781,8 +781,8 @@ def _check_outline_version_and_poster(
 
 
 class Outline(_StrictModel):
-    # Missing root stamp is the legacy read-only view. The owner writes the
-    # current version on its next authoring pass; no loader rewrites an outline.
+    # Missing root stamp is the legacy read-only view. The owner's validation
+    # CLI migrates an older outline before reading it; the loader never writes.
     schema_version: int = Field(default=1, strict=True, ge=1, le=OUTLINE_SCHEMA_VERSION)
     talk: TalkMetadata
     style_anchor: StyleAnchor | None = None
@@ -1019,13 +1019,14 @@ def require_current_outline(path: Path | str) -> None:
     """
     data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     version = _root_version(data)
-    if version == OUTLINE_SCHEMA_VERSION:
-        return
-    if not isinstance(version, int) or isinstance(version, bool):
+    # Exact type first: YAML 2.0 equals 2 and true equals 1.
+    if type(version) is not int:
         raise OutlineVersionError(
             f"{path} has root schema_version {version!r}, not an integer; set it "
             f"to {OUTLINE_SCHEMA_VERSION}"
         )
+    if version == OUTLINE_SCHEMA_VERSION:
+        return
     if version > OUTLINE_SCHEMA_VERSION:
         raise OutlineVersionError(
             f"{path} is outline schema {version}, newer than this speaker-toolkit "
@@ -1052,6 +1053,11 @@ def migrate_outline(path: Path | str) -> dict[str, object]:
     text = target.read_bytes().decode("utf-8")
     newline = "\r\n" if "\r\n" in text else "\n"
     version = _root_version(yaml.safe_load(text))
+    if type(version) is not int:
+        raise OutlineVersionError(
+            f"{target} has root schema_version {version!r}, not an integer; set "
+            f"it to {OUTLINE_SCHEMA_VERSION}"
+        )
     if version == OUTLINE_SCHEMA_VERSION:
         return {"ok": True, "path": str(target), "migrated": False, "to": version}
     if version != 1:
@@ -1107,8 +1113,18 @@ def main(argv: list[str]) -> int:
         )
         return 2
     try:
+        # Plain validation is the owner's read, so an older outline is migrated
+        # before it is consumed; --emit-json serves other skills and never writes.
+        if not emit_json:
+            migration = migrate_outline(args[0])
+            if migration["migrated"]:
+                print(
+                    f"migrated {args[0]} from outline schema {migration['from']} "
+                    f"to {migration['to']}",
+                    file=sys.stderr,
+                )
         outline = load_outline(args[0])
-    except (OSError, yaml.YAMLError, ValidationError) as exc:
+    except (OSError, yaml.YAMLError, ValidationError, OutlineVersionError) as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 1
     if emit_json:

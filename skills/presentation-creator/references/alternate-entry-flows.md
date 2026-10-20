@@ -20,7 +20,8 @@ Minimum context before ANY Phase 6 action:
   shownotes URL. Read it via
   `"{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/outline_schema.py"`
   (the pydantic model exposes `talk.slug`, `talk.title`,
-  `talk.shownotes_url_base`, etc.) — never re-parse the YAML by hand.
+  `talk.shownotes_url_base`, etc.; an older outline is migrated to schema 2
+  in place before it validates) — never re-parse the YAML by hand.
 
 If a file is missing or fails to validate, STOP and ask. Do not guess values that
 should come from files. Never hand-write code when a script exists — if the
