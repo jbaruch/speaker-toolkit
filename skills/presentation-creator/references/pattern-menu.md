@@ -17,6 +17,23 @@ Read individual files under the returned catalog root only for relevant options,
 selected patterns, or contextual warnings. Delivery preparation selects publishing
 patterns; unobservable entries become reminders, never historical detections.
 
+## Lifecycle Owners
+
+Interpret the catalog's lifecycle labels through the current skill owners:
+
+- `slides` and legacy Phase 5 labels refer to `Skill(skill: "presentation-builder")`.
+- `publishing` and legacy creator Phase 6 labels refer to
+  `Skill(skill: "presentation-publisher")`. Its Step 4 owns delivery preparation;
+  the full publishing action includes that preparation when requested.
+- Go-live reminders, including Spaced Follow-Up under **Post-Event**, belong to
+  the publisher's [delivery checklist](../../presentation-publisher/references/delivery.md).
+
+Use the current owner's requested action and approvals; never resume a retired
+creator phase. This mapping lives outside the catalog's fingerprinted bytes.
+See the [catalog fingerprint contract](../../vault-ingress/references/pattern-catalog-contract.md#report-contract).
+
+## History Authorization
+
 This is current taxonomy, not speaker history. Before consuming usage, mastery,
 novelty, recurrence, or trend data, use
 [pattern-history-authorization.md](pattern-history-authorization.md). A taxonomy

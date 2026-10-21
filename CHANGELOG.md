@@ -7,7 +7,9 @@ cross-skill pointers still sent readers through removed creator phases. The
 README now names each task's owner and separates authoring from deck setup,
 publishing, CFPs, and post-event requests. Correct the taxonomy totals and
 refresh resource, QR, thumbnail, profile-consumer, and deck-repair references
-to the focused skills; retain the canonical pattern catalog unchanged.
+to the focused skills. Interpret legacy catalog lifecycle labels through the
+current owners outside the fingerprinted tree, retaining the canonical pattern
+catalog and history identity unchanged.
 
 ## 0.21.0 — 2026-10-20
 
