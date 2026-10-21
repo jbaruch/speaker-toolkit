@@ -787,5 +787,5 @@ version acceptance follow [Schema Versioning](#schema-versioning); only
 | `pattern_profile` | Creator history and guardrail scripts, using the original profile through the history authorization contract | Auditable occurrence and exhaustive classification rows; recommendations and warnings gated by the relevant availability domain and row evidence |
 | `badges` | Informational | Fun speaker achievements mined from vault data |
 | `infrastructure.template_layouts` | Builder | Layout map and selection logic |
-| `infrastructure.font_pair` | Builder; illustrations | Font usage rules |
+| `infrastructure.font_pair` | Builder | Font usage rules |
 | `publishing_process` | Publisher; selected shownotes, thumbnail, or export action | Export, shownotes, QR code, distribution steps, thumbnail preferences, video publishing |
