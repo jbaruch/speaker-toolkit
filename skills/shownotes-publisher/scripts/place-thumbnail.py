@@ -2,10 +2,11 @@
 """Place a decoded PNG/JPEG thumbnail as a verified PNG for shownotes.
 
 Usage: place-thumbnail.py --source IMAGE --destination CONVENTION_PATH.png
-Requires Pillow in the configured toolkit runtime. The input must decode at
-1280x720. PNG bytes are preserved; JPEG pixels are encoded as PNG without
-resizing. This website derivative has no YouTube file-size limit. The source
-is unchanged, and the destination is replaced atomically only after validation.
+Requires Pillow in the configured toolkit runtime. Input dimensions are
+preserved, including legacy thumbnails. PNG bytes are preserved; JPEG pixels
+are encoded as PNG without resizing. This website derivative has no YouTube
+file-size limit. The source is unchanged, and the destination is replaced
+atomically only after validation.
 An already-valid PNG at the destination is a no-op when also selected as source.
 
 Stdout: one JSON object with ok, path, mime_type and dimensions on success;
@@ -24,9 +25,6 @@ import sys
 import tempfile
 
 
-DIMENSIONS = (1280, 720)
-
-
 def place_thumbnail(source: Path, destination: Path) -> dict[str, object]:
     from PIL import Image
 
@@ -40,8 +38,7 @@ def place_thumbnail(source: Path, destination: Path) -> dict[str, object]:
     with image:
         if image.format not in {"PNG", "JPEG"}:
             raise ValueError("thumbnail source must contain PNG or JPEG bytes")
-        if image.size != DIMENSIONS:
-            raise ValueError("thumbnail source must be 1280x720; use illustrations")
+        dimensions = image.size
         image.load()
         source_is_png = image.format == "PNG"
         if source_is_png:
@@ -62,7 +59,7 @@ def place_thumbnail(source: Path, destination: Path) -> dict[str, object]:
             staged = Path(temporary) / "thumbnail.png"
             staged.write_bytes(output)
             with Image.open(staged) as placed:
-                if placed.format != "PNG" or placed.size != DIMENSIONS:
+                if placed.format != "PNG" or placed.size != dimensions:
                     raise ValueError("placed thumbnail did not validate as PNG")
                 placed.load()
             os.replace(staged, destination)
@@ -71,7 +68,7 @@ def place_thumbnail(source: Path, destination: Path) -> dict[str, object]:
         "ok": True,
         "path": str(destination.resolve()),
         "mime_type": "image/png",
-        "dimensions": list(DIMENSIONS),
+        "dimensions": list(dimensions),
     }
 
 

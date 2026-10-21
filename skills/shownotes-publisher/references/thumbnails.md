@@ -15,7 +15,9 @@ Do not set `thumbnail_url:` in frontmatter; see
 Decide explicitly:
 
 - If the convention-path image exists, select it as `{thumbnail_source}` for
-  validation below. A valid PNG needs no rewrite. A failed validation stops the
+  validation below. A valid PNG needs no rewrite; retain legacy dimensions,
+  including 4:3 thumbnails, so recording updates do not require regeneration.
+  A failed decoding or format validation stops the
   publish until a valid source is available.
 - If it is absent and the talk has slides, a YouTube thumbnail, or a video frame,
   invoke `Skill(skill: "illustrations")` to generate the thumbnail. Set

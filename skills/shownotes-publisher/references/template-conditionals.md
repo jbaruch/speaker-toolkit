@@ -219,6 +219,7 @@ list thumbnails are 64×36. These are CSS display sizes, not source-image
 conversion requirements; preserve the illustrations owner's source dimensions.
 The Step 6 [placement owner](thumbnails.md) validates or converts its PNG/JPEG
 result to PNG for the site's fixed filename without changing the source.
+Existing thumbnails retain their legacy dimensions; the CSS handles their display.
 The templates and social-image metadata use the same convention-path asset.
 
 Source: [shownotes CSS at a69a4b3](https://github.com/jbaruch/shownotes/blob/a69a4b359be1fbdcea7eead0de4572ea17c8f54f/assets/css/main.css#L749).

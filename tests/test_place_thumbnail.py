@@ -28,8 +28,9 @@ def image_file(path, *, format="JPEG", size=(1280, 720), mode="RGB"):
     return path
 
 
-def test_jpeg_with_png_filename_becomes_png_and_keeps_original(tmp_path):
-    source = image_file(tmp_path / "generated.png")
+@pytest.mark.parametrize("size", [(400, 300), (1280, 720)])
+def test_jpeg_with_png_filename_becomes_png_and_keeps_original(tmp_path, size):
+    source = image_file(tmp_path / "generated.png", size=size)
     original = source.read_bytes()
     destination = tmp_path / "site" / "talk-thumbnail.png"
 
@@ -40,7 +41,7 @@ def test_jpeg_with_png_filename_becomes_png_and_keeps_original(tmp_path):
     assert source.read_bytes() == original
     with Image.open(source) as before, Image.open(destination) as after:
         assert after.format == "PNG"
-        assert after.size == before.size == (1280, 720)
+        assert after.size == before.size == size
         assert after.tobytes() == before.tobytes()
     placed = destination.read_bytes()
     assert placement.place_thumbnail(source, destination) == receipt
@@ -60,23 +61,22 @@ def test_png_copy_preserves_transparency_and_exact_bytes(tmp_path):
         assert image.getpixel((0, 0)) == (24, 64, 96, 128)
 
 
-def test_existing_valid_png_is_verified_without_rewriting(tmp_path):
-    destination = image_file(tmp_path / "talk-thumbnail.png", format="PNG")
+@pytest.mark.parametrize("size", [(400, 300), (640, 480), (1280, 720)])
+def test_existing_valid_png_is_verified_without_rewriting(tmp_path, size):
+    destination = image_file(tmp_path / "talk-thumbnail.png", format="PNG", size=size)
     original = destination.read_bytes()
 
-    assert placement.place_thumbnail(destination, destination)["ok"] is True
+    receipt = placement.place_thumbnail(destination, destination)
+    assert receipt["ok"] is True
+    assert receipt["dimensions"] == list(size)
 
     assert destination.read_bytes() == original
 
 
-@pytest.mark.parametrize(
-    "bad_image", ["wrong_size", "unsupported", "invalid", "truncated"]
-)
+@pytest.mark.parametrize("bad_image", ["unsupported", "invalid", "truncated"])
 def test_invalid_source_preserves_an_existing_destination(tmp_path, bad_image):
     source = tmp_path / "source.png"
-    if bad_image == "wrong_size":
-        image_file(source, size=(640, 480))
-    elif bad_image == "unsupported":
+    if bad_image == "unsupported":
         image_file(source, format="GIF")
     elif bad_image == "truncated":
         image_file(source)

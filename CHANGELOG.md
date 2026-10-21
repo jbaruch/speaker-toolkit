@@ -17,6 +17,7 @@ Shownotes preserves the illustrations owner's 1280×720, 16:9 source dimensions,
 matching the destination site's CSS instead of requiring an unsupported 4:3 image.
 Its placement owner validates PNG input or converts the generator's JPEG fallback
 to PNG for the site's fixed filename, leaving the original image unchanged.
+Existing PNGs retain their legacy dimensions without blocking recording updates.
 
 ### Confirm delayed Darwin worker exits within the cleanup budget
 
