@@ -16,6 +16,15 @@ phases and supported legacy labels. Its routing is deterministic and tested.
 Shownotes now preserves the illustrations owner's 1280×720, 16:9 source image,
 matching the destination site's CSS instead of requiring an unsupported 4:3 image.
 
+### Confirm delayed Darwin worker exits within the cleanup budget
+
+The macOS platform checks exposed an exit-confirmation window limited to one
+sampling interval. An already-exiting worker could take longer to become
+waitable after process-group signalling returned `EPERM`, making valid video
+extraction fail containment cleanup. Allow confirmation to use half the existing
+cleanup budget, reserving the remainder for descendants and pipes. Live workers,
+surviving descendants, late exits, and invalid responses still fail closed.
+
 ## 0.21.0 — 2026-10-20
 
 ### Separate talk authoring from building, publishing, and CFP work
