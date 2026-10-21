@@ -20,12 +20,16 @@ Decide explicitly:
   A failed decoding or format validation stops the
   publish until a valid source is available.
 - If it is absent and the talk has slides, a YouTube thumbnail, or a video frame,
-  invoke `Skill(skill: "illustrations")` to generate the thumbnail. Set
+  invoke `Skill(skill: "illustrations")` with `thumbnail_scope: source_only`.
+  Follow its [source-generation scope](../../illustrations/references/thumbnails.md#requested-scope):
+  it returns an approved image without calling shownotes or placing/publishing it.
+  Set
   `{thumbnail_source}` to the returned file's actual path; the generator may
   emit PNG or JPEG. Keep that original for its other destinations.
 - If it is absent and no source exists yet, explicitly record the deferral.
   The site's placeholder SVG is the interim. When a source becomes available,
-  invoke illustrations and place its result through the command below.
+  invoke the same source-only illustrations handoff and place its result through
+  the command below.
 
 For an available image, run the placement owner; never rename JPEG bytes to PNG:
 
@@ -44,3 +48,6 @@ The site's [thumbnail display geometry](template-conditionals.md#thumbnail-displ
 accepts the illustrations owner's source dimensions. Check title and face
 visibility in the destination preview. Finish Step 6 only after validated
 placement or the explicit no-source deferral, then proceed to Step 7.
+Retain the approved `thumbnail_source` and placement receipt with the publication
+result. Return them to an invoking illustrations workflow so it can resume its
+remaining tracking work without generating the image again.

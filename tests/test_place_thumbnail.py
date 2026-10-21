@@ -4,6 +4,8 @@ import builtins
 import importlib.util
 import json
 from pathlib import Path
+import shlex
+import shutil
 import subprocess
 import sys
 
@@ -255,3 +257,54 @@ def test_cli_missing_decoder_reports_runtime_repair(tmp_path, monkeypatch, capsy
     output = capsys.readouterr()
     assert json.loads(output.out)["ok"] is False
     assert "runtime" in output.err
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "skills/illustrations/references/thumbnails.md",
+        "skills/shownotes-publisher/references/thumbnails.md",
+    ],
+)
+def test_both_documented_handoffs_place_generator_jpeg_as_png(tmp_path, reference):
+    installed = tmp_path / "mounted plugin"
+    shutil.copytree(SCRIPT.parent.parent, installed / "skills" / "shownotes-publisher")
+    source = image_file(tmp_path / "generator output.png")
+    original = source.read_bytes()
+    site = tmp_path / "site with spaces"
+    destination = (
+        site / "assets" / "images" / "thumbnails" / "legacy-talk-thumbnail.png"
+    )
+    content = (SCRIPT.parents[3] / reference).read_text()
+    commands = [
+        part.split("```", 1)[0]
+        for part in content.split("```bash\n")[1:]
+        if "place-thumbnail.py" in part.split("```", 1)[0]
+    ]
+    assert len(commands) == 1
+    command = commands[0]
+    for key, value in {
+        "python_path": sys.executable,
+        "speaker_toolkit_root": str(installed),
+        "thumbnail_source": str(source),
+        "shownotes_repo": str(site),
+        "talk_page_stem": "legacy-talk",
+        "shownotes_thumbnail_destination": str(destination),
+    }.items():
+        command = command.replace("{" + key + "}", value)
+    consumer = tmp_path / "unrelated consumer"
+    consumer.mkdir()
+
+    result = subprocess.run(
+        shlex.split(command.replace("\\\n", " ")),
+        cwd=consumer,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["mime_type"] == "image/png"
+    assert source.read_bytes() == original
+    with Image.open(destination) as image:
+        assert image.format == "PNG"
+        assert image.size == (1280, 720)

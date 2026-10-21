@@ -19,6 +19,8 @@ Its placement owner validates PNG input or converts the generator's JPEG fallbac
 to PNG for the site's fixed filename, leaving the original image unchanged.
 Existing PNGs retain their legacy dimensions without blocking recording updates.
 Placement failures name the source, decoding, or destination repair to perform.
+Both thumbnail entry paths use this owner. A source-only illustrations handoff
+returns to the active shownotes publisher without recursively publishing pages.
 
 ### Confirm delayed Darwin worker exits within the cleanup budget
 

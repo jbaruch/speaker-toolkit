@@ -4,16 +4,31 @@ Reference for Step 13 (thumbnail) in `SKILL.md`. The
 `thumbnail-generation-rules` steering rule is auto-loaded — apply it, don't
 restate it.
 
+## Requested Scope
+
+A shownotes-publisher generation handoff supplies `thumbnail_scope: source_only`.
+Run the read-only preflight and Sub-steps 1–8, retaining their speaker-selection
+and approval gates. Return the approved source's actual absolute path as
+`thumbnail_source` to the caller. Do not invoke shownotes-publisher or run
+Sub-steps 9–10 in this scope; the caller already owns placement and publication.
+It needs no YouTube URL and may run before delivery.
+
+Other thumbnail requests retain the full workflow below. On return from an
+authorized shownotes handoff, reuse any approved `thumbnail_source` it returns
+and continue at Sub-step 9 instead of generating the image twice.
+
 ## Pre-Flight
 
 Before any thumbnail work, confirm the inputs:
 
 1. **`speaker-profile.json`** — `publishing_process.thumbnail` config and
    `visual_style_history`.
-2. **`secrets.json`** — Gemini API key.
+2. **Image-lane authentication** — follow the selected
+   [provider lane](image-provider-lanes.md); an API lane uses its configured key.
 3. **Validated `outline.yaml`** — talk slug, metadata, and slide references; the
    `style_anchor` block (if present) feeds `--portrait-style`.
-4. **YouTube video URL** — provided by the speaker at trigger time.
+4. **YouTube video URL** — provided by the speaker for the full workflow;
+   unnecessary for `source_only`.
 5. **Tracking database** — load through the ingress owner's strict reader and
    retain its SHA-256. Use the exact non-empty `config.python_path` for the
    mutation in Sub-step 10. Missing or invalid config stops this flow and invokes
@@ -37,16 +52,18 @@ never fall back to a PATH interpreter.
 Read `tracking-database.json` through the vault path used by
 presentation-creator. Selection and composition may read the generations in the
 [owner compatibility contract](../../vault-ingress/references/schemas-db.md#schema-versioning)
-without mutation. Before copying the approved thumbnail or writing tracking
+without mutation. Before placing the approved thumbnail or writing tracking
 state, require the owner-current database, current independent records, and talk
 schema 8. Invoke `Skill(skill: "vault-ingress")` for legacy generations and stop
 this run. Unknown future generations are no usable prior state. Preserve every
 schema field and use the presentation-creator exact-generation atomic-write
 contract.
 
-If shownotes are needed too and don't exist yet, STOP and ask before
-generating the thumbnail. An authorized shownotes request invokes
-`Skill(skill: "shownotes-publisher")`; resume here after it returns.
+For the full workflow, if shownotes are needed too and don't exist yet, confirm
+that page publication is authorized before generating the thumbnail. An already
+authorized shownotes request invokes `Skill(skill: "shownotes-publisher")`;
+resume here after it returns. The source-only scope returns to its existing
+caller instead, as specified above.
 
 ## Sub-step 1: Slide Selection
 
@@ -171,8 +188,8 @@ The script (per invocation, runs once per `--aesthetic`):
 - Sends slide image + speaker photo + prompt to Gemini as multimodal input.
 - Uses the researched prompt strategy per the chosen aesthetic.
 - Validates output: exactly 1280×720, <2MB, PNG preferred.
-- Saves to the specified output path (default: `thumbnail.png` in the
-  illustrations dir).
+- Saves to the specified output path; without `--output`, its default filename
+  follows the emitted format. Retain the actual path and format from its report.
 
 ## Sub-step 8: Speaker Review
 
@@ -186,7 +203,7 @@ from scratch:
 - "Too busy" → switch to a simpler style variant.
 - "Wrong mood" → adjust expression guidance in the prompt.
 
-## Sub-step 9: Copy Thumbnail to Shownotes Site
+## Sub-step 9: Place Thumbnail in Shownotes Site
 
 If `publishing_process.shownotes.enabled` is true, the SSG template expects
 the thumbnail at a specific path relative to the shownotes site root —
@@ -198,22 +215,37 @@ Resolve the destination using `publishing_process.shownotes`:
 {shownotes.source.path_or_url}/{shownotes.thumbnail_path_template}
 ```
 
-with `{slug}` substituted from the Presentation Spec. For Jekyll-based
+with `{slug}` bound to the shownotes page's actual filename stem (the outline's
+talk slug for a new page). For Jekyll-based
 shownotes the default template is
 `assets/images/thumbnails/{slug}-thumbnail.png` — the nested `thumbnails/`
 subdirectory AND the `-thumbnail` suffix are both mandatory. Do not strip
 either.
 
-Create the `thumbnails/` directory if it doesn't exist, then **copy** (don't
-move) the generated thumbnail. The local copy in `illustrations/thumbnail.png`
-stays with the talk's working directory for tracking.
+For a Jekyll page, retain its actual filename stem when resolving the convention
+path, including a legacy date prefix; see the shownotes owner's
+[placement workflow](../../shownotes-publisher/references/thumbnails.md).
+Set `{thumbnail_source}` to the generator's actual output path and
+`{shownotes_thumbnail_destination}` to the resolved absolute site path. Use the
+placement owner for every shownotes write, preserving the local source:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/shownotes-publisher/scripts/place-thumbnail.py" \
+  --source "{thumbnail_source}" \
+  --destination "{shownotes_thumbnail_destination}"
+```
+
+Use the script contract linked by the placement workflow. Require exit 0 and
+`ok: true` before recording its emitted destination path in Sub-step 10. On
+failure, apply its reported repair and rerun; never substitute a raw copy.
 
 If `shownotes.ssg_template_pointer` is set, read that file after a site
 redesign to re-derive the path convention. Don't reinvent it from folklore.
 
 ## Sub-step 10: Tracking Database Update
 
-Prepare this complete `thumbnails[]` record:
+Prepare this complete `thumbnails[]` record from the approved source and
+placement receipt; the example values are not defaults:
 
 ```json
 {

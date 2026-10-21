@@ -66,7 +66,8 @@ refused script. For any other refusal, apply the fix it names.
 - **Generation** — outline has a STYLE ANCHOR and per-slide prompts. Run
   Step 2 (freshness), Step 10 (illustrations), Step 11 (builds, if any slides
   have a `builds:` block), and Step 12 (apply to deck, if a .pptx exists).
-- **Thumbnail** — talk has been delivered and a video URL is available.
+- **Thumbnail** — a delivered talk with a video URL, or a
+  `thumbnail_scope: source_only` handoff from shownotes-publisher.
   Skip to Step 13.
 
 ### Multi-mode chaining
@@ -344,11 +345,12 @@ resumes this skill at Step 12 once the deck is built.
 
 ## Step 13 — Generate Thumbnail
 
-Run the thumbnail composition for a delivered talk. Surface 3–5 candidate
-slides ranked by visual impact, let the speaker pick, then compose:
+First read [the thumbnail workflow](references/thumbnails.md) for its scope and
+runtime preflight. Surface 3–5 candidate slides ranked by visual impact, let the
+speaker pick, then compose:
 
 ```bash
-python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-thumbnail.py" \
+"{python_path}" "{speaker_toolkit_root}/skills/illustrations/scripts/generate-thumbnail.py" \
   --slide-image illustrations/slide-NN.png \
   --speaker-photo "$SPEAKER_PHOTO" \
   --title "HOOK TITLE" \
