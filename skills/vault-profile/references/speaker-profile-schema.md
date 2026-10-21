@@ -1,8 +1,8 @@
 # Speaker Profile Schema
 
 The speaker profile (`speaker-profile.json`) is the machine-readable bridge between
-the rhetoric-knowledge-vault (analysis) and the presentation-creator skill
-(generation). It lives in the vault root alongside `rhetoric-style-summary.md` and
+the rhetoric-knowledge-vault and the downstream authoring, build, illustration,
+and publishing skills. It lives in the vault root alongside `rhetoric-style-summary.md` and
 `slide-design-spec.md`.
 
 The narrative summary is the *constitution* (rich, prose, nuanced). The speaker profile
@@ -749,26 +749,42 @@ instrumentation cohort.
 
 ## How Downstream Skills Use Each Section
 
-Downstream skills read the profile at runtime through task-specific projections.
-Their reference files define the process; the profile provides the data.
-Projection inputs and outputs belong to
+The focused authoring, builder, publisher, and CFP workflows use task-specific
+projections under the shared runtime contract. Projection inputs and outputs belong to
 `skills/presentation-creator/scripts/read-task-profile.py` (module docstring and
-`--help`); the shared runtime contract lives in
-`skills/presentation-creator/references/runtime-and-context.md`.
+`--help`); their runtime contract lives in
+`skills/presentation-creator/references/runtime-and-context.md`. Projections do not
+validate the profile or authorize history. Owner validators and guardrail/history
+scripts receive the original profile path.
+
+Forwarded owners use their own context-loading contracts. `illustrations` reads
+visual configuration directly from the profile, including `visual_style_history`
+and `publishing_process.thumbnail`; there is no illustration or thumbnail
+projection task. Its accepted fields and defaults are documented in
+[strategy.md](../../illustrations/references/strategy.md) and
+[thumbnails.md](../../illustrations/references/thumbnails.md). Null or absent
+visual history uses strategy's no-profile/summary-only path. The thumbnail
+reference owns its field defaults and required inputs. These direct
+configuration reads do not authorize `pattern_profile` claims.
+
+The table identifies consumers, not projection allowlists. Profile generation and
+version acceptance follow [Schema Versioning](#schema-versioning); only
+`vault-profile` regenerates the artifact. Other skills remain read-only consumers.
 
 | Profile section | Reader | What it drives |
 |---|---|---|
-| `speaker` + `infrastructure` | Selected authoring, CFP, build, or publishing action | Speaker identity, vault path, template reference, file conventions |
-| `presentation_modes` | Creator architecture; CFP adaptation | Mode selection menu and recommendations |
+| `speaker` | Creator and CFP writing | Speaker identity and biography |
+| `infrastructure` | Selected authoring field; PowerPoint builder/edit actions | Template reference and file conventions |
+| `presentation_modes` | Creator architecture | Mode selection menu and recommendations |
 | `presentation_engines` | Creator architecture; builder | Engine sourcing menu and selected renderer; absent on older profiles, which use a flat pptx/presenterm menu |
 | `design_rules` | Builder; illustrations | Background colors, footer specs, shape vocabulary |
 | `rhetoric_defaults` | Creator intent and content; CFP writing | Voice calibration, opening/closing defaults |
 | `confirmed_intents` | Creator architecture and guardrails; CFP writing | Hard rules that override pattern inference |
 | `pacing` | Creator content and guardrails | Slide budget tables and legacy unverified narration assumptions; measured speech rates use the separate owner artifact |
-| `guardrail_sources` | Creator guardrails | All guardrail checks with thresholds |
-| `instrument_catalog` | Creator architecture | Complete instrument menu by dimension |
+| `guardrail_sources` | Creator guardrail scripts, using the original profile | All guardrail checks with thresholds |
+| `instrument_catalog` | Creator architecture; CFP verbal-signature context | Complete instrument menu by dimension; CFPs select verbal signatures only |
 | `visual_style_history` | Illustrations strategy | Default aesthetic, mode-specific departures, style proposals |
-| `pattern_profile` | Creator architecture and guardrails, through the history authorization contract | Auditable occurrence and exhaustive classification rows; recommendations and warnings gated by the relevant availability domain and row evidence |
+| `pattern_profile` | Creator history and guardrail scripts, using the original profile through the history authorization contract | Auditable occurrence and exhaustive classification rows; recommendations and warnings gated by the relevant availability domain and row evidence |
 | `badges` | Informational | Fun speaker achievements mined from vault data |
 | `infrastructure.template_layouts` | Builder | Layout map and selection logic |
 | `infrastructure.font_pair` | Builder; illustrations | Font usage rules |
