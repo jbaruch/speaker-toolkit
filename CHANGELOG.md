@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.2 — 2026-10-21
+
 ### Align documentation with the focused presentation skills
 
 The overview listed eleven skills, while detailed workflow sections and
