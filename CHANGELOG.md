@@ -1,5 +1,36 @@
 # Changelog
 
+### Align documentation with the focused presentation skills
+
+The overview listed eleven skills, while detailed workflow sections and
+cross-skill pointers still sent readers through removed creator phases. The
+README now names each task's owner and separates authoring from deck setup,
+publishing, CFPs, and post-event requests. Correct the taxonomy totals and
+refresh resource, QR, thumbnail, profile-consumer, and deck-repair references
+to the focused skills. Interpret legacy catalog lifecycle labels through the
+current owners outside the fingerprinted tree, retaining the canonical pattern
+catalog and history identity unchanged.
+
+The compact pattern menu emits the workflow owner, action, and step for canonical
+phases and supported legacy labels. Its routing is deterministic and tested.
+Shownotes preserves the illustrations owner's 1280×720, 16:9 source dimensions,
+matching the destination site's CSS instead of requiring an unsupported 4:3 image.
+Its placement owner validates PNG input or converts the generator's JPEG fallback
+to PNG for the site's fixed filename, leaving the original image unchanged.
+Existing PNGs retain their legacy dimensions without blocking recording updates.
+Placement failures name the source, decoding, or destination repair to perform.
+Both thumbnail entry paths use this owner. A source-only illustrations handoff
+returns to the active shownotes publisher without recursively publishing pages.
+
+### Confirm delayed Darwin worker exits within the cleanup budget
+
+The macOS platform checks exposed an exit-confirmation window limited to one
+sampling interval. An already-exiting worker could take longer to become
+waitable after process-group signalling returned `EPERM`, making valid video
+extraction fail containment cleanup. Allow confirmation to use half the existing
+cleanup budget, reserving the remainder for descendants and pipes. Live workers,
+surviving descendants, late exits, and invalid responses still fail closed.
+
 ## 0.21.0 — 2026-10-20
 
 ### Separate talk authoring from building, publishing, and CFP work

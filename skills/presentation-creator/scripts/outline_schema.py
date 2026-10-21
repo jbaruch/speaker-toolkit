@@ -9,8 +9,9 @@ Pattern IDs are validated against the closed enum discovered from
 `references/patterns/{prepare,build,deliver}/*.md` at import time. Antipatterns
 (`_anti_*.md`) are deliberately excluded — antipatterns surface as detections
 in `rhetorical-review.md`, never as authored declarations. The observable
-vs unobservable distinction within the patterns taxonomy is a Phase 6
-checklist concern, not a schema concern; the schema accepts any non-antipattern.
+vs unobservable distinction within the patterns taxonomy belongs to the
+presentation-publisher delivery checklist, not the schema; the schema accepts
+any non-antipattern.
 """
 
 from __future__ import annotations

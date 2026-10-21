@@ -28,7 +28,7 @@ for `visual_style_history` and `publishing_process.thumbnail` config.
 
 The auto-loaded steering rules are the constitution: `illustration-rules`
 (edit vs regenerate, build chains, iteration hygiene), `title-overlay-rules`
-(safe-zone composition), and `thumbnail-generation-rules` (Phase 7 specifics).
+(safe-zone composition), and `thumbnail-generation-rules` (thumbnail composition).
 Do not restate them here — apply them.
 
 ## Key Files & References
@@ -44,7 +44,7 @@ Do not restate them here — apply them.
 | [skills/illustrations/references/generation.md](references/generation.md) | Deck generation, edit/fix workflow, model comparison |
 | [skills/illustrations/references/image-provider-lanes.md](references/image-provider-lanes.md) | Subscription CLI capability, authentication, failure handling, and renewal |
 | [skills/illustrations/references/builds.md](references/builds.md) | Backwards-chained build generation |
-| [skills/illustrations/references/thumbnails.md](references/thumbnails.md) | Phase 7 thumbnail composition + slide selection |
+| [skills/illustrations/references/thumbnails.md](references/thumbnails.md) | Thumbnail composition + slide selection |
 | [skills/illustrations/references/style-explore-candidates-schema.md](references/style-explore-candidates-schema.md) | `--style-explore` contract — `candidates.json` input + `rendered.json` output |
 | `skills/illustrations/scripts/model_registry.py` | Model roster, aliases, attributes; `--check-freshness` + `--shortlist` |
 | [skills/illustrations/references/style-catalog.md](references/style-catalog.md) | Packaged/public + personal style catalog, selection, owner writes, and opt-in contributions |
@@ -66,7 +66,8 @@ refused script. For any other refusal, apply the fix it names.
 - **Generation** — outline has a STYLE ANCHOR and per-slide prompts. Run
   Step 2 (freshness), Step 10 (illustrations), Step 11 (builds, if any slides
   have a `builds:` block), and Step 12 (apply to deck, if a .pptx exists).
-- **Thumbnail** — talk has been delivered and a video URL is available.
+- **Thumbnail** — a delivered talk with a video URL, or a
+  `thumbnail_scope: source_only` handoff from shownotes-publisher.
   Skip to Step 13.
 
 ### Multi-mode chaining
@@ -339,16 +340,17 @@ is a refusal whose fix is on stderr. An eligible slide with no image, or past
 the deck's end, refuses before any deck is written: generate the missing images
 or fix the outline, then re-run.
 
-If no .pptx exists yet (Phase 5 hasn't run), finish here — presentation-creator
-Phase 5 will call back into this skill at Step 12 once the deck is built.
+If no .pptx exists yet, finish here. `Skill(skill: "presentation-builder")`
+resumes this skill at Step 12 once the deck is built.
 
 ## Step 13 — Generate Thumbnail
 
-Run the thumbnail composition for a delivered talk. Surface 3–5 candidate
-slides ranked by visual impact, let the speaker pick, then compose:
+First read [the thumbnail workflow](references/thumbnails.md) for its scope and
+runtime preflight. Surface 3–5 candidate slides ranked by visual impact, let the
+speaker pick, then compose:
 
 ```bash
-python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-thumbnail.py" \
+"{python_path}" "{speaker_toolkit_root}/skills/illustrations/scripts/generate-thumbnail.py" \
   --slide-image illustrations/slide-NN.png \
   --speaker-photo "$SPEAKER_PHOTO" \
   --title "HOOK TITLE" \

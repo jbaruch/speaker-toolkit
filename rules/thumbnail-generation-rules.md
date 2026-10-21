@@ -5,7 +5,7 @@ applyTo: "skills/illustrations/**, skills/presentation-creator/**, skills/screen
 
 # Thumbnail Generation Rules
 
-Steering rules for Phase 7 Step 7.1 — YouTube thumbnail generation.
+Steering rules for YouTube thumbnail generation through `illustrations`.
 
 ## 1. Script First
 
@@ -144,7 +144,7 @@ approach for at least one speaker whose `default_illustration_style`
 matches the comic-book family; expand the evidence base by trying it
 on other talks where the speaker's brand fits.
 
-**Phase 7 Step 7.1 protocol:** lead with the recommendation from the
+**Thumbnail selection protocol:** lead with the recommendation from the
 precedence chain above. Offer a two-candidate side-by-side comparison
 when the speaker is genuinely undecided or wants to validate before
 committing — not as a default. The comic-book treatment is high-variance:

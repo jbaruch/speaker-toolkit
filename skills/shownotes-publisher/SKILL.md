@@ -79,8 +79,8 @@ Parse the JSON, never re-parse YAML by hand. Map fields directly:
 
 **From the talk directory:**
 
-- `resources.json` (produced by `extract-resources.py` in Phase 6
-  Step 6.0) — becomes the `## Resources` section. If the file is
+- `resources.json` (curated through `Skill(skill: "presentation-publisher")`
+  Step 2) — becomes the `## Resources` section. If the file is
   missing OR has no `approved: true` items, omit the section
 - Any existing `_talks/` page — check `{talk_slug}.md`, then a legacy
   `{YYYY-MM-DD}-{talk_slug}.md`. The filename that exists is
@@ -263,45 +263,10 @@ Proceed immediately to Step 6.
 
 ## Step 6 — Thumbnail
 
-Thumbnails are resolved by **filename naming convention** — the
-site's templates compute the path from the `.md` filename:
-
-```
-/assets/images/thumbnails/{talk_page_stem}-thumbnail.png
-```
-
-Example (new talk, stem = slug): `geecon-2026-absolutely-right.md` →
-`assets/images/thumbnails/geecon-2026-absolutely-right-thumbnail.png`.
-
-Drop the thumbnail file (4:3 PNG; the site resizes to 400×300) at
-that path. Do NOT set `thumbnail_url:` in frontmatter — it's
-checked only for truthiness as a featured-talks signal and never
-read as a URL; see
-[references/common-mistakes.md](references/common-mistakes.md)
-entry 1c and
-[references/template-conditionals.md](references/template-conditionals.md)
-for the three template locations that hard-code the slug-derived
-path.
-
-**Decide explicitly — do not skip this step.** Check whether the
-convention-path file already exists in the shownotes repo
-(`assets/images/thumbnails/{talk_page_stem}-thumbnail.png`):
-
-- **Exists** → done; the page uses it.
-- **Absent, and a source image is available** (the talk's slides
-  exist, or a YouTube thumbnail / video frame was already produced) →
-  produce it now: hand off to `Skill(skill: "illustrations")` to
-  generate the thumbnail (this skill places files, it does not generate
-  images), then drop the 4:3 PNG at the convention path.
-- **Absent, and no source image yet** (pre-talk publish, no slides or
-  video) → record that the thumbnail is deferred to Phase 7
-  (post-event). The placeholder SVG (`onerror` fallback) is the
-  intentional interim, not a silent skip; when the video lands and
-  Phase 7 runs, generate the thumbnail and drop it at the convention
-  path.
-
-Never fall through this step without either producing the thumbnail or
-explicitly recording the deferral. Proceed immediately to Step 7.
+Read and follow [thumbnail placement](references/thumbnails.md): resolve the
+convention path, delegate generation to illustrations when needed, and validate
+or convert the returned image through the placement script. Complete placement
+or explicitly record the no-source deferral before proceeding to Step 7.
 
 ## Step 7 — Create the Talk Skill
 
@@ -468,7 +433,6 @@ Either flow requires the CI/deploy watch + HTTP 200 — `ci-safety`
 confirms the publish via both the run conclusion and the 200, PR or not.
 
 If a QR code is needed for the live URL, hand off via
-`Skill(skill: "presentation-creator")` — the QR generation flow
-lives in that skill's Phase 6 Step 6.2.
+`Skill(skill: "presentation-publisher")` with action QR (Step 3).
 
 Finish here — the skill is complete.

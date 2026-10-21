@@ -1,8 +1,8 @@
 # Speaker Profile Schema
 
 The speaker profile (`speaker-profile.json`) is the machine-readable bridge between
-the rhetoric-knowledge-vault (analysis) and the presentation-creator skill
-(generation). It lives in the vault root alongside `rhetoric-style-summary.md` and
+the rhetoric-knowledge-vault and the downstream authoring, build, illustration,
+and publishing skills. It lives in the vault root alongside `rhetoric-style-summary.md` and
 `slide-design-spec.md`.
 
 The narrative summary is the *constitution* (rich, prose, nuanced). The speaker profile
@@ -368,7 +368,7 @@ v5 shape, pattern provenance, or slide-budget `pacing.adherence` lane.
     "by_mode": [],
     "strengths": ["narrative-arc"],
     "strengths_note": "Deterministic projection of regular and signature positive-pattern classifications.",
-    "note": "Only observable patterns are included. Patterns marked observable: false in the taxonomy (pre-event logistics, hidden authoring/provenance processes, physical stage behaviors, post-event follow-up, and external systems the current artifacts cannot prove) are excluded from scoring and surfaced as a go-live checklist in creator Phase 6 instead.",
+    "note": "Only observable patterns are included. Patterns marked observable: false in the taxonomy (pre-event logistics, hidden authoring/provenance processes, physical stage behaviors, post-event follow-up, and external systems the current artifacts cannot prove) are excluded from scoring and surfaced as a go-live checklist by presentation-publisher instead.",
     // Opportunity arrays are abbreviated here for readability. Generated
     // profiles contain one sorted row for every observable catalog entry of
     // the matching polarity.
@@ -747,26 +747,45 @@ breadth average to `null` and derived list/mastery projections to `[]`. Never fa
 to an older profile, the rhetoric summary, excluded scoring generations, or the
 instrumentation cohort.
 
-## How the Presentation Creator Uses Each Section
+## How Downstream Skills Use Each Section
 
-The presentation-creator skill reads the profile at runtime. Its reference files define
-the PROCESS; the profile provides the DATA. No generation step is needed — the creator
-automatically picks up changes when the profile is regenerated.
+The focused authoring, builder, publisher, and CFP workflows use task-specific
+projections under the shared runtime contract. Projection inputs and outputs belong to
+`skills/presentation-creator/scripts/read-task-profile.py` (module docstring and
+`--help`); their runtime contract lives in
+`skills/presentation-creator/references/runtime-and-context.md`. Projections do not
+validate the profile or authorize history. Owner validators and guardrail/history
+scripts receive the original profile path.
 
-| Profile section | Creator phase that reads it | What it drives |
+Forwarded owners use their own context-loading contracts. `illustrations` reads
+visual configuration directly from the profile, including `visual_style_history`
+and `publishing_process.thumbnail`; there is no illustration or thumbnail
+projection task. Its accepted fields and defaults are documented in
+[strategy.md](../../illustrations/references/strategy.md) and
+[thumbnails.md](../../illustrations/references/thumbnails.md). Null or absent
+visual history uses strategy's no-profile/summary-only path. The thumbnail
+reference owns its field defaults and required inputs. These direct
+configuration reads do not authorize `pattern_profile` claims.
+
+The table identifies consumers, not projection allowlists. Profile generation and
+version acceptance follow [Schema Versioning](#schema-versioning); only
+`vault-profile` regenerates the artifact. Other skills remain read-only consumers.
+
+| Profile section | Reader | What it drives |
 |---|---|---|
-| `speaker` + `infrastructure` | Phase 0 (load) | Vault path, template reference, file conventions |
-| `presentation_modes` | Phase 2 (architecture) | Mode selection menu and recommendations |
-| `presentation_engines` | Phase 2 (Decision #2 — engine & theme sourcing), Phase 5 (slide generation) | Engine sourcing menu; Phase 5 reads the chosen renderer. Optional/additive — absent on older profiles, which fall back to a flat pptx/presenterm menu |
-| `design_rules` | Phase 5 (slide generation) | Background colors, footer specs, shape vocabulary |
-| `rhetoric_defaults` | Phase 1-3 (spec, architecture, content) | Voice calibration, opening/closing defaults |
-| `confirmed_intents` | Phase 2-4 (architecture, guardrails) | Hard rules that override pattern inference |
-| `pacing` | Phase 3-4 (content, guardrails) | Slide budget tables and legacy unverified narration assumptions; measured speech rates use the separate owner artifact |
-| `guardrail_sources` | Phase 4 (guardrails) | All guardrail checks with thresholds |
-| `instrument_catalog` | Phase 2 (architecture) | Complete instrument menu by dimension |
-| `visual_style_history` | Phase 2 (architecture — illustration strategy) | Default aesthetic, mode-specific departures, style proposals |
-| `pattern_profile` | Phase 2 (architecture), Phase 4 (guardrails) | Auditable occurrence and exhaustive classification rows; recommendations and warnings gated by the relevant availability domain and row evidence |
+| `speaker` | Creator and CFP writing | Speaker identity and biography |
+| `infrastructure` | Selected authoring field; PowerPoint builder/edit actions | Template reference and file conventions |
+| `presentation_modes` | Creator architecture | Mode selection menu and recommendations |
+| `presentation_engines` | Creator architecture; builder | Engine sourcing menu and selected renderer; absent on older profiles, which use a flat pptx/presenterm menu |
+| `design_rules` | Builder; illustrations | Background colors, footer specs, shape vocabulary |
+| `rhetoric_defaults` | Creator intent and content; CFP writing | Voice calibration, opening/closing defaults |
+| `confirmed_intents` | Creator architecture and guardrails; CFP writing | Hard rules that override pattern inference |
+| `pacing` | Creator content and guardrails | Slide budget tables and legacy unverified narration assumptions; measured speech rates use the separate owner artifact |
+| `guardrail_sources` | Creator guardrail scripts, using the original profile | All guardrail checks with thresholds |
+| `instrument_catalog` | Creator architecture; CFP verbal-signature context | Complete instrument menu by dimension; CFPs select verbal signatures only |
+| `visual_style_history` | Illustrations strategy | Default aesthetic, mode-specific departures, style proposals |
+| `pattern_profile` | Creator history and guardrail scripts, using the original profile through the history authorization contract | Auditable occurrence and exhaustive classification rows; recommendations and warnings gated by the relevant availability domain and row evidence |
 | `badges` | Informational | Fun speaker achievements mined from vault data |
-| `infrastructure.template_layouts` | Phase 5 (slide generation) | Layout map and selection logic |
-| `infrastructure.font_pair` | Phase 5 (slide generation) | Font usage rules |
-| `publishing_process` | Phase 6 (publishing), Phase 7 (post-event) | Export, shownotes, QR code, distribution steps, thumbnail prefs, video publishing |
+| `infrastructure.template_layouts` | Builder | Layout map and selection logic |
+| `infrastructure.font_pair` | Builder | Font usage rules |
+| `publishing_process` | Publisher; selected shownotes, thumbnail, or export action | Export, shownotes, QR code, distribution steps, thumbnail preferences, video publishing |

@@ -1362,8 +1362,11 @@ class _ProcessController:
                 # Darwin reports EPERM for a group whose only member exited
                 # after poll() but remains an unreaped zombie. Confirm that
                 # exit through a bounded Popen wait charged to the caller's
-                # cleanup budget. A live root keeps EPERM fatal, and monitor
-                # cleanup still proves no sampled descendant survives.
+                # cleanup budget. Exit can remain unobservable longer than
+                # one sampling interval. Reserve half the remaining budget
+                # for confirming exit and half for descendant/pipe cleanup.
+                # A live root keeps EPERM fatal, and monitor cleanup still
+                # proves no sampled descendant survives.
                 darwin_group_gone = False
                 if sys.platform == "darwin":
                     settle_budget = (
@@ -1371,10 +1374,7 @@ class _ProcessController:
                         if timeout is None
                         else max(0.0, timeout)
                     )
-                    settle_timeout = min(
-                        self._limits.sample_interval_seconds,
-                        settle_budget,
-                    )
+                    settle_timeout = settle_budget / 2
                     if settle_timeout > 0:
                         try:
                             self._process.wait(timeout=settle_timeout)

@@ -893,11 +893,15 @@ def test_group_kill_permission_race_after_root_exit_is_successful(monkeypatch):
     artifact_supervisor._ProcessController(process, limits).terminate(settle_budget)
 
     assert attempted_groups == [(12345, artifact_supervisor.signal.SIGKILL)]
-    assert process.wait_timeouts == [settle_budget]
+    assert len(process.wait_timeouts) == 1
+    assert 0 < process.wait_timeouts[0] <= settle_budget
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX process-group assertion")
-def test_group_kill_permission_error_for_live_root_remains_visible(monkeypatch):
+@pytest.mark.parametrize("cleanup_budget", [0.0, 0.005, 2.0])
+def test_group_kill_permission_error_for_live_root_remains_visible(
+    monkeypatch, cleanup_budget
+):
     def deny_live_group(_process_group: int, _signal_number: int) -> None:
         raise PermissionError("live group cannot be signalled")
 
@@ -921,7 +925,9 @@ def test_group_kill_permission_error_for_live_root_remains_visible(monkeypatch):
     monkeypatch.setattr(artifact_supervisor.os, "killpg", deny_live_group)
 
     with pytest.raises(artifact_supervisor.SupervisorError) as caught:
-        artifact_supervisor._ProcessController(process, _limits()).terminate()
+        artifact_supervisor._ProcessController(process, _limits()).terminate(
+            cleanup_budget
+        )
 
     assert caught.value.reason_code == "worker_cleanup_failed"
     assert isinstance(caught.value.__cause__, PermissionError)
@@ -1227,6 +1233,7 @@ def cleanup_exit_run(monkeypatch):
         response="success",
         late_pipe_error=None,
         cleanup_failure=False,
+        cleanup_reap_delay=0.0,
         in_cleanup=False,
         finish_time=0.0,
         now=0.0,
@@ -1254,6 +1261,11 @@ def cleanup_exit_run(monkeypatch):
             self.wait_timeouts.append(timeout)
             if self.returncode is None:
                 if not state.in_cleanup or not state.exits_in_cleanup:
+                    raise subprocess.TimeoutExpired("worker", timeout)
+                elapsed = min(timeout, state.cleanup_reap_delay)
+                state.cleanup_reap_delay -= elapsed
+                state.now += elapsed
+                if state.cleanup_reap_delay > 0:
                     raise subprocess.TimeoutExpired("worker", timeout)
                 self.returncode = state.exit_code
             return self.returncode
@@ -1429,7 +1441,6 @@ def test_cleanup_reconciles_disappeared_root_only_after_clean_exit(
     assert run().payload == {"value": 1}
     assert state.process.returncode == 0
     assert state.process.killed is False
-    assert state.process.wait_timeouts[:2] == [0.01, 0.01]
 
 
 def test_cleanup_replay_does_not_require_host_posix_signals(
@@ -1439,6 +1450,19 @@ def test_cleanup_replay_does_not_require_host_posix_signals(
     monkeypatch.setattr(artifact_supervisor, "signal", SimpleNamespace())
 
     assert run().payload == {"value": 1}
+
+
+@pytest.mark.parametrize("reap_delay", [0.1, 0.5])
+def test_cleanup_confirms_darwin_exit_delayed_beyond_one_sample(
+    cleanup_exit_run, reap_delay
+):
+    state, run = cleanup_exit_run
+    state.cleanup_reap_delay = reap_delay
+
+    assert run().payload == {"value": 1}
+    assert state.process.returncode == 0
+    assert state.process.killed is False
+    assert state.cleanup_reap_delay == 0
 
 
 @pytest.mark.parametrize(
@@ -1458,6 +1482,7 @@ def test_cleanup_replay_does_not_require_host_posix_signals(
         ("descendant_alive", True, "worker_monitor_identity_changed"),
         ("platform", "linux", "worker_cleanup_failed"),
         ("exits_in_cleanup", False, "worker_cleanup_failed"),
+        ("cleanup_reap_delay", 3.0, "worker_cleanup_failed"),
         ("finish_time", 5.0, "worker_monitor_identity_changed"),
         ("cleanup_failure", True, "worker_cleanup_failed"),
     ],

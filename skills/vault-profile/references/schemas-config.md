@@ -128,8 +128,12 @@ dry-run/apply/re-read sequence is documented in
 
 ## Shownotes Config — Field Reference
 
-**`shownotes.enabled`** — false means no shownotes site; skip Step 6.1 entirely,
-the QR target must be a `custom_url` if enabled at all.
+**`shownotes.enabled`** — false disables the configured shownotes action in
+`presentation-publisher`; do not generate or publish a shownotes page. If QR is
+enabled, set its target to `custom_url` and supply that URL instead of a
+shownotes result. The current action order and QR fields live in
+[workflow.md](../../presentation-publisher/references/workflow.md) and
+[qr.md](../../presentation-publisher/references/qr.md).
 
 **`shownotes.source.type`** — one of:
 

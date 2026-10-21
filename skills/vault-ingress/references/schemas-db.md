@@ -7,9 +7,11 @@ Canonical path: `~/.claude/rhetoric-knowledge-vault/tracking-database.json`.
 
 **Owner:** vault-ingress owns the artifact shape, every independent record
 shape, and all migrations. vault-clarification may write current config,
-confirmed-intent, and improvement-goal records. presentation-creator may write
-current QR records. vault-profile and the remaining presentation consumers are
-read-only. Non-owner dual readers in the table below accept every readable
+confirmed-intent, and improvement-goal records. presentation-publisher may write
+current QR/resource records and authorized talk-publishing fields under the
+contracts below; illustrations may write current thumbnail records and their
+authorized talk fields. vault-profile and the remaining presentation consumers
+are read-only. Non-owner dual readers in the table below accept every readable
 database generation during rollout — legacy 0, pre-`markdown_decks` 1, pre-`source_aliases` 2,
 pre-`date_provenance` 3, pre-`local_audio` 4, and current 5. They never rewrite
 legacy state. A current reader requires the current generation and hands any
@@ -253,11 +255,12 @@ or root state; the standalone root-only mode below preserves their contracts.
 | vault-ingress queue normalization/claim, persistence, shownotes apply, source repair | current read/write | Require database schema 5, config schema 3, and supported explicit owner-record versions; targeted writers emit their current record generation and never migrate the root implicitly |
 | vault-ingress preflight, source audit, analysis rendering, shownotes dry-run | dual reader | Parse schemas 0-5; gate through existing finding/error channels; never rewrite |
 | vault-clarification | current read/write | Route schema migration to vault-ingress; preserve config v3 and stamp confirmed intent v1/improvement goal v2 |
-| presentation-creator QR writer | dual reader/current writer | Read schemas 0-5; require schema 5 before URL creation or QR metadata persistence; stamp QR v2 |
-| presentation-creator publishing/post-event | authorized current writer | Require schema 5 before tracking writes; stamp resource v1 and preserve talk v8 |
+| presentation-publisher QR workflow (`generate-qr.py`) | dual reader/current writer | Read schemas 0-5; require schema 5 before URL creation or QR metadata persistence; stamp QR v2 |
+| presentation-publisher resources/publishing/recording workflow | authorized current writer | Require schema 5 before tracking writes; stamp resource v1 and preserve talk v8 |
 | illustrations thumbnail workflow | authorized current writer | Require schema 5 before tracking writes; stamp thumbnail v1 and preserve talk v8 |
 | vault-profile | dual reader | Parse schemas 0-5; treat unsupported generations as unavailable; never migrate |
-| shownotes-publisher runtime resolution (`resolve-runtime.py`) | current reader | Require the generation `assess_tracking_database` reports `current` before reading `config.python_path`; a readable older generation refuses as `database_not_current` and hands off to vault-ingress Step 1 for the owner migration; an unsupported future generation fails the owner read as `owner_read_failed`; never rewrite |
+| shownotes-publisher runtime resolution (`resolve-runtime.py`, default mode) | current reader | Require the generation `assess_tracking_database` reports `current` before reading `config.python_path`; a readable older generation refuses as `database_not_current` and hands off to vault-ingress Step 1 for the owner migration; an unsupported future generation fails the owner read as `owner_read_failed`; never rewrite |
+| focused presentation/CFP runtime resolution (`resolve-runtime.py --read-only`) | compatibility reader | Use owner-readable generations under the [shared runtime contract](../../presentation-creator/references/runtime-and-context.md); never migrate or gain tracking-write authority |
 | shownotes-publisher analysis lookup (`find-talk-analysis.py`) | current reader | Require the generation `assess_tracking_database` reports `current` before selecting a talk record; a readable older generation refuses as `database_not_current` and hands off to vault-ingress Step 1 for the owner migration; an unsupported or future generation refuses as `database_unsupported`; reads `analyses/{filename}.md` beside the database and never rewrites either |
 
 Current database schema 5 with config schema 3 requires all eight top-level
