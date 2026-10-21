@@ -12,6 +12,7 @@ An already-valid PNG at the destination is a no-op when also selected as source.
 Stdout: one JSON object with ok, path, mime_type and dimensions on success;
 ok and error on failure. Exit 0 success; 1 dependency, image or filesystem
 failure; 2 invalid CLI arguments (stderr only). Diagnostics go to stderr.
+Expected failures name the operation and how to repair its source or destination.
 """
 
 from __future__ import annotations
@@ -25,48 +26,75 @@ import sys
 import tempfile
 
 
+class ThumbnailPlacementError(ValueError):
+    """An expected failure with an operation-specific recovery instruction."""
+
+
 def place_thumbnail(source: Path, destination: Path) -> dict[str, object]:
     from PIL import Image
 
     if destination.suffix.lower() != ".png":
-        raise ValueError("shownotes destination must have a .png extension")
-    original = source.read_bytes()
+        raise ThumbnailPlacementError(
+            "Set --destination to the site's convention path ending in .png."
+        )
     try:
-        image = Image.open(BytesIO(original))
-    except Image.DecompressionBombError as exc:
-        raise ValueError("thumbnail source exceeds safe decoding limits") from exc
-    with image:
-        if image.format not in {"PNG", "JPEG"}:
-            raise ValueError("thumbnail source must contain PNG or JPEG bytes")
-        dimensions = image.size
-        image.load()
-        source_is_png = image.format == "PNG"
-        if source_is_png:
-            output = original
-        else:
-            buffer = BytesIO()
-            image.convert("RGB").save(buffer, format="PNG", optimize=True)
-            output = buffer.getvalue()
+        original = source.read_bytes()
+    except OSError as exc:
+        raise ThumbnailPlacementError(
+            f"Cannot read thumbnail source {source}: {exc}. "
+            "Restore the file or select a readable source with --source, then rerun."
+        ) from exc
+    try:
+        with Image.open(BytesIO(original)) as image:
+            if image.format not in {"PNG", "JPEG"}:
+                raise ValueError("source must contain PNG or JPEG bytes")
+            dimensions = image.size
+            image.load()
+            source_is_png = image.format == "PNG"
+            if source_is_png:
+                output = original
+            else:
+                buffer = BytesIO()
+                image.convert("RGB").save(buffer, format="PNG", optimize=True)
+                output = buffer.getvalue()
+    except (OSError, ValueError, Image.DecompressionBombError) as exc:
+        raise ThumbnailPlacementError(
+            f"Cannot decode thumbnail source {source}: {exc}. "
+            "Select a valid PNG/JPEG or regenerate it with illustrations, then rerun."
+        ) from exc
 
-    same_path = source.resolve() == destination.resolve()
-    if same_path and not source_is_png:
-        raise ValueError("JPEG source and PNG destination must be distinct paths")
-    if not same_path:
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(
-            prefix=f".{destination.name}.", dir=destination.parent
-        ) as temporary:
-            staged = Path(temporary) / "thumbnail.png"
-            staged.write_bytes(output)
-            with Image.open(staged) as placed:
-                if placed.format != "PNG" or placed.size != dimensions:
-                    raise ValueError("placed thumbnail did not validate as PNG")
-                placed.load()
-            os.replace(staged, destination)
+    try:
+        destination_path = str(destination.resolve())
+        same_path = str(source.resolve()) == destination_path
+        if same_path and not source_is_png:
+            raise ThumbnailPlacementError(
+                "JPEG source and PNG destination must be distinct paths. "
+                "Keep the JPEG at a separate source path and rerun placement."
+            )
+        if not same_path:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(
+                prefix=f".{destination.name}.", dir=destination.parent
+            ) as temporary:
+                staged = Path(temporary) / "thumbnail.png"
+                staged.write_bytes(output)
+                with Image.open(staged) as placed:
+                    if placed.format != "PNG" or placed.size != dimensions:
+                        raise ValueError("placed thumbnail did not validate as PNG")
+                    placed.load()
+                os.replace(staged, destination)
+    except ThumbnailPlacementError:
+        raise
+    except (OSError, ValueError, Image.DecompressionBombError) as exc:
+        raise ThumbnailPlacementError(
+            f"Cannot place thumbnail at destination {destination}: {exc}. "
+            "Check the destination directory, write permissions and free space, "
+            "then rerun with a valid source image."
+        ) from exc
 
     return {
         "ok": True,
-        "path": str(destination.resolve()),
+        "path": destination_path,
         "mime_type": "image/png",
         "dimensions": list(dimensions),
     }
@@ -84,7 +112,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"ok": False, "error": message}))
         print(message, file=sys.stderr)
         return 1
-    except (OSError, ValueError) as exc:
+    except ThumbnailPlacementError as exc:
         print(json.dumps({"ok": False, "error": str(exc)}))
         print(f"Thumbnail placement failed: {exc}", file=sys.stderr)
         return 1

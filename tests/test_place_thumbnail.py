@@ -115,7 +115,7 @@ def test_failed_replacement_preserves_existing_destination(tmp_path, monkeypatch
 
     monkeypatch.setattr(placement.os, "replace", denied_replace)
 
-    with pytest.raises(PermissionError):
+    with pytest.raises(placement.ThumbnailPlacementError):
         placement.place_thumbnail(source, destination)
 
     assert destination.read_bytes() == b"existing content"
@@ -173,8 +173,41 @@ def test_cli_reports_bad_input_without_creating_destination(tmp_path):
     assert result.returncode == 1
     assert json.loads(result.stdout)["ok"] is False
     assert result.stderr
+    assert "read thumbnail source" in result.stderr
+    assert "select a readable source" in result.stderr
     assert "Traceback" not in result.stderr
     assert not destination.parent.exists()
+
+
+@pytest.mark.parametrize("failure", ["truncated_source", "destination_parent_file"])
+def test_cli_failure_names_the_repair_for_its_operation(tmp_path, failure):
+    source = image_file(tmp_path / "source.jpg")
+    destination = tmp_path / "site" / "talk-thumbnail.png"
+    if failure == "truncated_source":
+        source.write_bytes(source.read_bytes()[:100])
+        expected = ("decode thumbnail source", "regenerate it with illustrations")
+    else:
+        destination.parent.write_text("a file blocks this directory")
+        expected = ("destination", "write permissions and free space")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--source",
+            str(source),
+            "--destination",
+            str(destination),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert json.loads(result.stdout)["ok"] is False
+    assert all(instruction in result.stderr for instruction in expected)
+    assert "Traceback" not in result.stderr
+    assert not destination.exists()
 
 
 def test_destination_extension_must_match_png_bytes(tmp_path):
