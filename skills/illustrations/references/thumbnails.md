@@ -1,6 +1,6 @@
 # Thumbnail Generation — Detail
 
-Reference for Step 7 (thumbnail) in `SKILL.md`. The
+Reference for Step 13 (thumbnail) in `SKILL.md`. The
 `thumbnail-generation-rules` steering rule is auto-loaded — apply it, don't
 restate it.
 
@@ -11,11 +11,10 @@ Before any thumbnail work, confirm the inputs:
 1. **`speaker-profile.json`** — `publishing_process.thumbnail` config and
    `visual_style_history`.
 2. **`secrets.json`** — Gemini API key.
-3. **`presentation-spec.md`** — talk slug, metadata.
-4. **`outline.yaml`** — slide references; the
+3. **Validated `outline.yaml`** — talk slug, metadata, and slide references; the
    `style_anchor` block (if present) feeds `--portrait-style`.
-5. **YouTube video URL** — provided by the speaker at trigger time.
-6. **Tracking database** — load through the ingress owner's strict reader and
+4. **YouTube video URL** — provided by the speaker at trigger time.
+5. **Tracking database** — load through the ingress owner's strict reader and
    retain its SHA-256. Use the exact non-empty `config.python_path` for the
    mutation in Sub-step 10. Missing or invalid config stops this flow and invokes
    `Skill(skill: "vault-ingress")` at Step 1.
@@ -45,8 +44,9 @@ this run. Unknown future generations are no usable prior state. Preserve every
 schema field and use the presentation-creator exact-generation atomic-write
 contract.
 
-If shownotes are needed too (Step 7.2 in presentation-creator) and don't
-exist yet, STOP and ask before generating the thumbnail.
+If shownotes are needed too and don't exist yet, STOP and ask before
+generating the thumbnail. An authorized shownotes request invokes
+`Skill(skill: "shownotes-publisher")`; resume here after it returns.
 
 ## Sub-step 1: Slide Selection
 

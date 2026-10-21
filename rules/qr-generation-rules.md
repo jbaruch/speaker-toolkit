@@ -1,6 +1,6 @@
 ---
 alwaysApply: false
-applyTo: "skills/presentation-publisher/** — when generating or replacing QR codes during the presentation publishing flow (Phase 6)"
+applyTo: "skills/presentation-publisher/** — when generating or replacing QR codes during the presentation publishing flow"
 ---
 
 # QR Generation Rules
@@ -68,8 +68,8 @@ The `qr_codes` record MUST describe what was actually produced:
 ## 5. Slug Convention
 
 The back-half IS `talk.slug` — composed and agreed with the author in Phase 1
-(per the speaker's `slug_convention.template`) and persisted in `outline.yaml` /
-`presentation-spec.md`. The QR step uses it VERBATIM: never invent, rephrase,
+(per the speaker's `slug_convention.template`) and persisted in `outline.yaml`.
+The QR step uses it VERBATIM: never invent, rephrase,
 re-derive, abbreviate, or date-prefix it. The back-half must equal the published
 shownotes slug.
 

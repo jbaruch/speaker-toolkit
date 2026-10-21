@@ -124,7 +124,7 @@ Rules:
 - NEVER invent a slug from convention-like patterns you saw in analyses —
   those are snapshots of whatever was current when the analysis was written.
 - The confirmed slug goes into `outline.yaml` as `talk.slug` (kebab-case
-  validated by `outline_schema.py`). All downstream uses (Phase 6 shownotes
+  validated by `outline_schema.py`). All downstream uses (published shownotes
   URL, QR code `--talk-slug`, the renderable deck filename `{slug}.md` for
   presenterm talks, directory name) must use this exact slug.
 

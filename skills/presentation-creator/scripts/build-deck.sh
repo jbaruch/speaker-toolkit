@@ -3,7 +3,7 @@
 # PowerPoint app (BuildDeck VBA macro). The unified creation engine that retires
 # strip-template.py + the MCP structural walk: it opens the template, removes its
 # demo slides, and builds the deck from the ops. See rules/deck-editing-rules.md
-# and references/deckops-spec.md. macOS + Microsoft PowerPoint only.
+# and skills/presentation-builder/references/deckops-spec.md. macOS + Microsoft PowerPoint only.
 #
 # The agent emits the op sequence from outline.yaml / slides.md (layout,
 # placeholder, and content choices are judgment), validates it with
@@ -14,7 +14,7 @@
 #     templatePath  the .pptx template (uniquely-named copy; its custom layouts +
 #                   masters are inherited, its demo slides are stripped)
 #     outPath       where to write the built deck
-#     opsFile       the op sequence (see references/deckops-spec.md)
+#     opsFile       the op sequence (see skills/presentation-builder/references/deckops-spec.md)
 #
 # Prerequisites: RunDeckOps.bas (which defines BuildDeck) imported into an OPEN
 # macro-enabled deck (DeckOps.pptm), macros enabled, Automation consent granted.
@@ -31,7 +31,7 @@ source "$HERE/container-stage.sh"  # stage Google-Drive inputs into the containe
 DRIVER="$HERE/build-deck.applescript"
 
 [[ -f "$TEMPLATE" ]] || { echo "ERROR: template not found: $TEMPLATE — pass a uniquely-named copy of the .pptx template." >&2; exit 1; }
-[[ -f "$OPS" ]]      || { echo "ERROR: ops file not found: $OPS — emit it per references/deckops-spec.md and validate with validate-deckops.py." >&2; exit 1; }
+[[ -f "$OPS" ]]      || { echo "ERROR: ops file not found: $OPS — emit it per skills/presentation-builder/references/deckops-spec.md and validate with validate-deckops.py." >&2; exit 1; }
 [[ -f "$DRIVER" ]]   || { echo "ERROR: driver not found: $DRIVER — reinstall the plugin; build-deck.applescript must sit next to this script." >&2; exit 1; }
 
 # Validate the op sequence up front so malformed ops fail fast (with line/op

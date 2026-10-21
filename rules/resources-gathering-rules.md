@@ -5,8 +5,7 @@ applyTo: "skills/presentation-publisher/** — when extracting or curating prese
 
 # Resources Gathering Rules
 
-Steering rules for Phase 6 Step 6.0 — extracting and curating resource links
-from a presentation outline.
+Steering rules for resource curation through `presentation-publisher` Step 2.
 
 ## 1. Script First
 
@@ -47,7 +46,7 @@ higher in the review list and flag them as "from Coda section."
 
 ## 5. Shownotes Integration
 
-When shownotes are enabled (Step 6.1), the shownotes generation step reads
+When shownotes are enabled, the selected shownotes workflow reads
 `resources.json` for the resource links section. Only `approved: true` items
 are included. If `resources.json` doesn't exist or has no approved items,
 the resource links section is omitted from shownotes.

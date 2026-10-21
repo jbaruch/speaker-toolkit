@@ -56,7 +56,7 @@ Authored in Phase 1; never re-edited carelessly. Field reference (see
 | `applied_patterns` | optional | Talk-level patterns (e.g., `bookends`, `mentor`, `anti-sell`) |
 | `thesis` | optional | Elaborated paragraph; the slide-ready single sentence lives on the call-to-adventure slide via `big_idea_text` |
 | `tldr` | optional | Short distillation of `thesis` (a couple of paragraphs or a bulleted list); `narrative.md` renders it verbatim as the TL;DR and never reprints `thesis` |
-| `shownotes_url_base` | optional | e.g., `https://speaking.example.com/` — used by Phase 6 |
+| `shownotes_url_base` | optional | e.g., `https://speaking.example.com/` — used by `presentation-publisher` |
 | `commercial_intent`, `profanity_register` | optional | Free prose |
 | `must_include`, `must_avoid` | optional | Lists of strings |
 | `catalog_reference` | optional | Pointer to sessions-catalog entry |

@@ -1,5 +1,14 @@
 # Changelog
 
+### Align documentation with the focused presentation skills
+
+The overview listed eleven skills, while detailed workflow sections and
+cross-skill pointers still sent readers through removed creator phases. The
+README now names each task's owner and separates authoring from deck setup,
+publishing, CFPs, and post-event requests. Correct the taxonomy totals and
+refresh resource, QR, thumbnail, profile-consumer, and deck-repair references
+to the focused skills; retain the canonical pattern catalog unchanged.
+
 ## 0.21.0 — 2026-10-20
 
 ### Separate talk authoring from building, publishing, and CFP work

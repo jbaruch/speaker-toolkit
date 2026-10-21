@@ -28,7 +28,7 @@ for `visual_style_history` and `publishing_process.thumbnail` config.
 
 The auto-loaded steering rules are the constitution: `illustration-rules`
 (edit vs regenerate, build chains, iteration hygiene), `title-overlay-rules`
-(safe-zone composition), and `thumbnail-generation-rules` (Phase 7 specifics).
+(safe-zone composition), and `thumbnail-generation-rules` (thumbnail composition).
 Do not restate them here — apply them.
 
 ## Key Files & References
@@ -44,7 +44,7 @@ Do not restate them here — apply them.
 | [skills/illustrations/references/generation.md](references/generation.md) | Deck generation, edit/fix workflow, model comparison |
 | [skills/illustrations/references/image-provider-lanes.md](references/image-provider-lanes.md) | Subscription CLI capability, authentication, failure handling, and renewal |
 | [skills/illustrations/references/builds.md](references/builds.md) | Backwards-chained build generation |
-| [skills/illustrations/references/thumbnails.md](references/thumbnails.md) | Phase 7 thumbnail composition + slide selection |
+| [skills/illustrations/references/thumbnails.md](references/thumbnails.md) | Thumbnail composition + slide selection |
 | [skills/illustrations/references/style-explore-candidates-schema.md](references/style-explore-candidates-schema.md) | `--style-explore` contract — `candidates.json` input + `rendered.json` output |
 | `skills/illustrations/scripts/model_registry.py` | Model roster, aliases, attributes; `--check-freshness` + `--shortlist` |
 | [skills/illustrations/references/style-catalog.md](references/style-catalog.md) | Packaged/public + personal style catalog, selection, owner writes, and opt-in contributions |
@@ -339,8 +339,8 @@ is a refusal whose fix is on stderr. An eligible slide with no image, or past
 the deck's end, refuses before any deck is written: generate the missing images
 or fix the outline, then re-run.
 
-If no .pptx exists yet (Phase 5 hasn't run), finish here — presentation-creator
-Phase 5 will call back into this skill at Step 12 once the deck is built.
+If no .pptx exists yet, finish here. `Skill(skill: "presentation-builder")`
+resumes this skill at Step 12 once the deck is built.
 
 ## Step 13 — Generate Thumbnail
 

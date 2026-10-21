@@ -349,8 +349,8 @@ The plugin ships persistent rules (auto-loaded by the agent at runtime via `.tes
 | [`illustration-rules`](rules/illustration-rules.md) | Edit vs regenerate asymmetry, build chains, iteration hygiene. |
 | [`qr-generation-rules`](rules/qr-generation-rules.md) | QR step contract: always via `generate-qr.py`, slug back-half, shortener-URL encoding, artifact cataloging, custom-domain save, in-place replacement. |
 | [`title-overlay-rules`](rules/title-overlay-rules.md) | Title-safe-zone composition policy for FULL illustrations. |
-| [`thumbnail-generation-rules`](rules/thumbnail-generation-rules.md) | Phase 7 thumbnail composition specifics. |
-| [`resources-gathering-rules`](rules/resources-gathering-rules.md) | Phase 6 shownotes / resources read paths. |
+| [`thumbnail-generation-rules`](rules/thumbnail-generation-rules.md) | Thumbnail composition through illustrations. |
+| [`resources-gathering-rules`](rules/resources-gathering-rules.md) | Resource curation and shownotes read paths. |
 | [`interaction-rules`](rules/interaction-rules.md) | Conversational stance and gate behavior across phases. |
 | [`tessl-version-floating`](rules/tessl-version-floating.md) | Authority-of-record for the `tessl.json` floating-spec carve-out (paired with `scripts/check_tessl_pins.py`). |
 | [`shownotes-content-publish`](rules/shownotes-content-publish.md) | Authority-of-record for the shownotes content direct-push carve-out (paired with `skills/shownotes-publisher/scripts/content-only-gate.sh`). |
@@ -450,37 +450,50 @@ to PATH.
 
 ## Generation & Publishing Skills Details
 
-The downstream skills (`presentation-creator`, `illustrations`,
-`shownotes-publisher`) build new talks from vault data + per-talk
-intent, generate the visual layer, and publish the talk page to the
-shownotes site. `presentation-creator` is the entry point; the other
-two are invoked via typed `Skill(...)` handoffs.
+Choose the skill for the requested task using the
+[task routing table](#start-directly-at-the-task-you-need).
+`presentation-creator` owns talk authoring and outline repair;
+`presentation-builder` owns deck builds, edits, and exports;
+`presentation-publisher` coordinates publishing and delivery;
+`cfp-writer` owns conference submissions and the sessions catalog.
+`illustrations` and `shownotes-publisher` accept direct requests and
+typed `Skill(...)` handoffs from those workflows.
 
 ### Triggers (presentation-creator)
 
 - `create a presentation about [topic]`
 - `build a talk for [conference]`
-- `write a CFP for [conference]`
 - `adapt my [talk name] for [new venue]`
+
+### Triggers (presentation-builder, presentation-publisher, cfp-writer)
+
+- `build slides from this outline` / `edit this deck` / `export this deck to PDF` → `presentation-builder`
+- `publish this talk` / `replace the QR code` / `prepare this talk for delivery` → `presentation-publisher`
+- `write a CFP for [conference]` / `update the sessions catalog` → `cfp-writer`
 
 ### Triggers (shownotes-publisher)
 
 - `publish shownotes` / `add talk to shownotes` / `shownotes for [talk]`
 - `update shownotes with the recording` (once the video URL lands)
-- Fires automatically after `presentation-creator` Phase 6 when the
-  speaker says "now publish to shownotes"
+- Receives a handoff from `presentation-publisher` when the configured
+  publishing workflow includes Jekyll shownotes
 
-### 7-Phase Workflow
+### Authoring and Delivery Workflow
 
-| Phase | What happens | Gate |
-|-------|-------------|------|
-| 0: Intake | Load vault + pattern index, gather context | Topic and context captured |
-| 1: Intent Distillation | Clarifying questions, produce Presentation Spec | Author confirms spec |
-| 2: Rhetorical Architecture | Joint instrument selection + Pattern Strategy | Author approves architecture |
-| 3: Content Development | Section-by-section outline with speaker notes | Draft delivered |
-| 4: Revision & Guardrails | Iterate on feedback, run guardrail checks + antipattern scan | Author declares outline done |
-| 5: Slide Generation | Build .pptx from outline using speaker's template | Author declares slides done |
-| 6: Publishing | Export, shownotes, QR code, go-live checklist | Published and ready to deliver |
+| Owner | Stage | Gate |
+|-------|-------|------|
+| `presentation-creator` Step 0 | Select the task; gather authoring context when needed | Topic and context captured |
+| `presentation-creator` Step 1 | Distill intent into `outline.yaml` metadata and partial `narrative.md` | Author confirms metadata and narrative |
+| `presentation-creator` Step 2 | Select rhetorical instruments, engine, theme, and Pattern Strategy | Author approves argument and architecture |
+| `presentation-creator` Step 3 | Write the outline and speaker notes; generate derived artifacts | Draft delivered |
+| `presentation-creator` Step 4 | Revise, run guardrails, and hand approved catalog work to `cfp-writer` | Author declares outline done |
+| `presentation-creator` Step 5 | Return outline-only results or hand off authorized deck and publishing work | Requested scope determines continuation |
+| `presentation-builder` | Build or edit the chosen PowerPoint or presenterm deck; export when requested | Author declares slides done |
+| `presentation-publisher` | Coordinate resources, shownotes, QR, final export, and delivery preparation | Requested publishing scope verified |
+
+Standalone requests enter their owning skill without running earlier authoring
+stages. Recording updates enter `shownotes-publisher`; thumbnails enter
+`illustrations`.
 
 ### Guardrail System (10 checks + pattern taxonomy scan)
 
@@ -499,7 +512,7 @@ two are invoked via typed `Skill(...)` handoffs.
 
 ### Presentation Patterns Taxonomy
 
-The creator includes a structured reference taxonomy of 111 presentation patterns and
+The creator includes a structured reference taxonomy of 113 presentation patterns and
 antipatterns from *Presentation Patterns* (Ford, McCullough, Schutta 2013) supplemented
 by *Presentation Zen* (Reynolds, 2nd ed. 2012), *Resonate* (Duarte 2010), *Make It Stick*
 (Brown, Roediger, McDaniel 2014), *The Whole Brain Business Book* (Herrmann, 2nd ed.
@@ -509,7 +522,7 @@ across the corpus (`delayed-self-introduction`, `three-part-close`, `progressive
 
 - **Prepare** (24): Know Your Audience, Narrative Arc, Triad, Talklet, Brain Breaks, Takahashi, Cave Painting, Opening PUNCH, Walk-Around, and more
 - **Build** (51): Foreshadowing, Bookends, Defy Defaults, Vacation Photos, Traveling Highlights, Emergence, Sparkline, Call to Adventure, Call to Action, New Bliss, S.T.A.R. Moment, Three-Part Close, Progressive Reveal, Meme as Argument, Guess First, Retrieval Beat, Second Look, and more
-- **Deliver** (36): Carnegie Hall, Breathing Room, Echo Chamber, Seeding the First Question, Screen Blackout, Delayed Self-Introduction, Anti-Sell, Flyover, Spaced Follow-Up, The Nodding Room, and more
+- **Deliver** (38): Carnegie Hall, Breathing Room, Echo Chamber, Seeding the First Question, Screen Blackout, Delayed Self-Introduction, Anti-Sell, Flyover, Spaced Follow-Up, The Nodding Room, and more
 
 Of the 113 entries, **83 are observable** (64 patterns + 19 antipatterns): directly
 detectable through their declared transcript, slide, or video locator channels, with
@@ -533,19 +546,19 @@ remain outside absence denominators until versioned capability/alignment receipt
 | **Vault scoring** (Step 3 B2) | Exhaustive per-talk outcomes aggregate into source-exact `pattern_profile` occurrence rows | Excluded from scoring |
 | **Creator Phase 2** | Four history tiers from an available mastery/novelty domain; flat current taxonomy for an older, missing, or unavailable domain | Included in recommendations |
 | **Creator Phase 4** | `[CONTEXTUAL]` flags always; `[RECURRING]` only when the antipattern-recurrence domain is available | Excluded from scan |
-| **Creator Phase 6** | — | Go-live preparation checklist |
+| **Presentation publisher delivery preparation** | — | Go-live preparation checklist |
 | **Speaker profile** | Schema-v5 `pattern_profile` with opportunity-aware occurrence rows, a self-contained policy stamp, exhaustive classifications, and per-domain availability | Not in profile |
 | **Summary-only mode** | Flat relevant-patterns list from reference files | Go-live checklist still applies |
 
 ### Special Workflows
 
 - **Adapting existing talks** — pre-fills spec from vault analysis, auto-generates adaptation checklist
-- **CFP abstract writing** — lightweight Phase 0-1, produces title + abstract + takeaways + bio
+- **CFP abstract writing** — `cfp-writer` produces title, abstract, takeaways, and bio without a slide outline
 - **Co-presented talks** — role split, footer adaptation, per-speaker voice in notes
 
 ### Summary-Only Mode
 
-If the speaker profile doesn't exist yet (fewer than 10 talks parsed), the creator runs in **summary-only mode** — drawing instruments from the rhetoric summary prose, using default guardrail thresholds, and asking for template/publishing details interactively. The pattern taxonomy still works as a flat relevant list without usage or novelty claims, and the go-live checklist still applies.
+If the speaker profile doesn't exist yet (fewer than 10 talks parsed), the creator runs in **summary-only mode** — drawing instruments from the rhetoric summary prose and using default guardrail thresholds. The pattern taxonomy still works as a flat relevant list without usage or novelty claims. The selected builder or publisher action asks for missing template or publishing details; delivery preparation still includes the go-live checklist.
 
 ## Prerequisites
 
@@ -560,10 +573,18 @@ If the speaker profile doesn't exist yet (fewer than 10 talks parsed), the creat
   `presenterm` + `weasyprint`, `slidev`, `marp`, or `reveal-md`
 - Talks with at least one usable transcript, slide, or delivery-video source
 
-### For the Presentation Creator & Illustrations Skills
+### For Talk Authoring and CFPs
+- The vault's configured Python environment and the speaker context required by the selected task
+- Deck setup, illustration credentials, and publishing services are selected only for actions that use them
+
+### For PowerPoint Builds, Edits, and Illustration Application
 - Microsoft PowerPoint with VBA macros — the deck engine: slide generation, structural edits, speaker notes, backgrounds, and QR all drive the real app (macOS only). One-time `DeckOps.pptm` macro setup: `skills/presentation-builder/references/deck-editing-setup.md`
 - `python-pptx` (extraction reads + the illustration scrim/title apply pass)
 - A PowerPoint template (the vault captures the path; a generic template works too)
+
+Presenterm builds use presenterm instead of the PowerPoint lane. Export-only
+requests use the selected deck engine's export requirements; see
+[`presentation-builder/references/export.md`](skills/presentation-builder/references/export.md).
 
 ### For the Shownotes Publisher Skill
 - A Jekyll-based shownotes site cloned locally (`~/Projects/shownotes`
@@ -611,13 +632,17 @@ speaker-toolkit/
     |       +-- schemas-db.md                 # DB, subagent, and extraction output schemas
     |       +-- video-slide-extraction.md     # Layout heuristics, tuning tables, limitations
     |       +-- processing-rules.md           # Language policy, pattern migration logic
+    +-- vault-clarification/
+    |   +-- SKILL.md                          # Validate observations and capture speaker intent
     +-- vault-profile/
     |   +-- SKILL.md                          # Machine-readable speaker profile workflow
     |   +-- references/
     |       +-- profile-construction-rules.md  # Cohort, merge, trend, and diff authority
     +-- presentation-creator/
-    |   +-- SKILL.md                          # Main creator workflow (7 phases)
+    |   +-- SKILL.md                          # Talk authoring, outline repair, and handoffs
     |   +-- scripts/
+    |   |   +-- pattern-menu.py               # Compact phase-filtered taxonomy discovery
+    |   |   +-- read-task-profile.py          # Selected action's profile fields
     |   |   +-- generate-qr.py                # QR generation + bg-color match (insert via InsertQR)
     |   |   +-- extract-resources.py          # Resource link extraction from outlines
     |   |   +-- guardrail-check.py            # Outline guardrail validation
@@ -650,7 +675,7 @@ speaker-toolkit/
     |           +-- _index.md                 # Master index, phase mapping, dimension lookup
     |           +-- prepare/                  # 20 patterns + 4 antipatterns
     |           +-- build/                    # 41 patterns + 10 antipatterns
-    |           +-- deliver/                  # 22 patterns + 14 antipatterns (14 unobservable)
+    |           +-- deliver/                  # 24 patterns + 14 antipatterns
     +-- presentation-builder/
     |   +-- SKILL.md                          # Build, edit, export action router
     |   +-- references/                       # PowerPoint, presenterm, export, setup
@@ -661,7 +686,7 @@ speaker-toolkit/
     |   +-- SKILL.md                          # CFP and sessions-catalog router
     |   +-- references/                       # Submissions and catalog contract
     +-- illustrations/
-    |   +-- SKILL.md                          # Visual layer workflow (7 mode-routed steps)
+    |   +-- SKILL.md                          # Illustration strategy, generation, application, thumbnails
     |   +-- scripts/
     |   |   +-- model_registry.py             # Model roster, aliases, attributes; --check-freshness + --shortlist
     |   |   +-- generate-illustrations.py     # Illustration generator + model comparison + style exploration + builds
@@ -672,15 +697,19 @@ speaker-toolkit/
     |       +-- strategy.md                   # Phase 2 D#11 — priorities, model shortlist, style proposals, exploration render
     |       +-- generation.md                 # Setup, edit/fix workflow, format vocabulary, apply-to-deck
     |       +-- builds.md                     # Backwards-chained build generation + deck insertion
-    |       +-- thumbnails.md                 # Phase 7 thumbnail composition + slide selection
+    |       +-- thumbnails.md                 # Thumbnail composition + slide selection
     |       +-- style-explore-candidates-schema.md # candidates.json contract for --style-explore
     |       +-- title-placement.md            # Outline schema + scripts for Safe-zone title placement
     +-- shownotes-publisher/
-        +-- SKILL.md                          # Jekyll shownotes publish workflow (9 steps)
-        +-- references/
-            +-- parser-contract.md            # `_plugins/markdown_parser.rb` capture rules per extracted_* field
-            +-- template-conditionals.md      # `talk.html` conditional rendering per extracted field
-            +-- common-mistakes.md            # 13 failure modes (1, 1b, 1c, 2-11) with right-way fixes
+    |   +-- SKILL.md                          # Jekyll shownotes and talk skills; recording updates
+    |   +-- references/
+    |       +-- parser-contract.md            # `_plugins/markdown_parser.rb` capture rules per extracted_* field
+    |       +-- template-conditionals.md      # `talk.html` conditional rendering per extracted field
+    |       +-- common-mistakes.md            # 13 failure modes (1, 1b, 1c, 2-11) with right-way fixes
+    +-- screencast-recorder/
+    |   +-- SKILL.md                          # Verify a recorded sequence against its storyboard
+    +-- screencast-editor/
+        +-- SKILL.md                          # Camtasia edit, captions, and chapters
 ```
 
 ## License

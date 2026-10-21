@@ -79,8 +79,8 @@ Parse the JSON, never re-parse YAML by hand. Map fields directly:
 
 **From the talk directory:**
 
-- `resources.json` (produced by `extract-resources.py` in Phase 6
-  Step 6.0) — becomes the `## Resources` section. If the file is
+- `resources.json` (curated through `Skill(skill: "presentation-publisher")`
+  Step 2) — becomes the `## Resources` section. If the file is
   missing OR has no `approved: true` items, omit the section
 - Any existing `_talks/` page — check `{talk_slug}.md`, then a legacy
   `{YYYY-MM-DD}-{talk_slug}.md`. The filename that exists is
@@ -294,11 +294,11 @@ convention-path file already exists in the shownotes repo
   generate the thumbnail (this skill places files, it does not generate
   images), then drop the 4:3 PNG at the convention path.
 - **Absent, and no source image yet** (pre-talk publish, no slides or
-  video) → record that the thumbnail is deferred to Phase 7
-  (post-event). The placeholder SVG (`onerror` fallback) is the
+  video) → record that the thumbnail is deferred until a source image
+  is available. The placeholder SVG (`onerror` fallback) is the
   intentional interim, not a silent skip; when the video lands and
-  Phase 7 runs, generate the thumbnail and drop it at the convention
-  path.
+  the recording update runs, invoke `Skill(skill: "illustrations")` to
+  generate the thumbnail and drop it at the convention path.
 
 Never fall through this step without either producing the thumbnail or
 explicitly recording the deferral. Proceed immediately to Step 7.
@@ -468,7 +468,6 @@ Either flow requires the CI/deploy watch + HTTP 200 — `ci-safety`
 confirms the publish via both the run conclusion and the 200, PR or not.
 
 If a QR code is needed for the live URL, hand off via
-`Skill(skill: "presentation-creator")` — the QR generation flow
-lives in that skill's Phase 6 Step 6.2.
+`Skill(skill: "presentation-publisher")` with action QR (Step 3).
 
 Finish here — the skill is complete.

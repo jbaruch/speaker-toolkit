@@ -147,16 +147,18 @@ STATUSES = {
     ),
     "setup_required": (
         "First-time setup has not been done on this machine — walk the user "
-        "through references/deck-editing-setup.md (all steps)."
+        "through skills/presentation-builder/references/deck-editing-setup.md (all steps)."
     ),
     "powerpoint_not_running": (
         "PowerPoint is not running — ask the user to open {container} and keep it "
-        "open for the whole build (deck-editing-setup.md Step 6)."
+        "open for the whole build "
+        "(skills/presentation-builder/references/deck-editing-setup.md Step 6)."
     ),
     "macro_unreachable": (
         "PowerPoint is running but the DeckOps macro did not answer — ask the user "
         "to open {container}, confirm macros are enabled, and confirm the module "
-        "was imported into THAT file (deck-editing-setup.md Steps 1-3)."
+        "was imported into THAT file "
+        "(skills/presentation-builder/references/deck-editing-setup.md Steps 1-3)."
     ),
     "probe_failed": (
         "The PowerPoint probe could not run, so the setup state is UNKNOWN — read "
@@ -171,7 +173,8 @@ STATUSES = {
     ),
     "macro_stale": (
         "{container} holds an OLD build of the macro (found {found}, expected "
-        "{expected}) — re-import it per deck-editing-setup.md Step 3 before "
+        "{expected}) — re-import it per "
+        "skills/presentation-builder/references/deck-editing-setup.md Step 3 before "
         "building. Setup is otherwise done; this is a re-import, not a redo."
     ),
     # Reached by reading the container rather than by a macro that answered, so
@@ -181,7 +184,8 @@ STATUSES = {
     "macro_stale_inferred": (
         "{container} is open and holds a DeckOps module with no version macro, so "
         "it is a build predating the stamp (expected {expected}) — re-import it "
-        "per deck-editing-setup.md Step 3. Disabled macros look identical from "
+        "per skills/presentation-builder/references/deck-editing-setup.md Step 3. "
+        "Disabled macros look identical from "
         "outside, so if the re-import does not clear this, confirm macros are "
         "enabled (Step 1)."
     ),
