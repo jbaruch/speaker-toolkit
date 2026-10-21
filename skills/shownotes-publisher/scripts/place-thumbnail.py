@@ -64,8 +64,17 @@ def place_thumbnail(source: Path, destination: Path) -> dict[str, object]:
         ) from exc
 
     try:
-        destination_path = str(destination.resolve())
-        same_path = str(source.resolve()) == destination_path
+        try:
+            destination_path = str(destination.resolve())
+            same_path = str(source.resolve()) == destination_path
+        except (OSError, RuntimeError) as exc:
+            # Python 3.10–3.12 raises RuntimeError for symlink loops even
+            # in non-strict mode. Keep this catch at resolution only.
+            raise ThumbnailPlacementError(
+                f"Cannot resolve thumbnail source {source} or destination {destination}: {exc}. "
+                "Remove symlink loops or choose accessible paths, repair path permissions, "
+                "then rerun placement."
+            ) from exc
         if same_path and not source_is_png:
             raise ThumbnailPlacementError(
                 "JPEG source and PNG destination must be distinct paths. "

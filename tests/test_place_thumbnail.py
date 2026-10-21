@@ -1,6 +1,7 @@
 """Shownotes gets PNG bytes without changing the generated source image."""
 
 import builtins
+import errno
 import importlib.util
 import json
 from pathlib import Path
@@ -308,3 +309,53 @@ def test_both_documented_handoffs_place_generator_jpeg_as_png(tmp_path, referenc
     with Image.open(destination) as image:
         assert image.format == "PNG"
         assert image.size == (1280, 720)
+
+
+@pytest.mark.parametrize("failure", ["legacy_symlink_loop", "inaccessible_parent"])
+def test_path_resolution_failure_has_actionable_diagnostic(
+    tmp_path, monkeypatch, capsys, failure
+):
+    source = image_file(tmp_path / "source.jpg")
+    original = source.read_bytes()
+    destination = tmp_path / "loop" / "talk-thumbnail.png"
+    resolve = Path.resolve
+
+    def symlink_loop(path, *args, **kwargs):
+        if path == destination:
+            if failure == "legacy_symlink_loop":
+                raise RuntimeError("Symlink loop while resolving destination")
+            raise PermissionError(errno.EACCES, "Path cannot be traversed")
+        return resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", symlink_loop)
+
+    code = placement.main(["--source", str(source), "--destination", str(destination)])
+
+    output = capsys.readouterr()
+    assert code == 1
+    assert json.loads(output.out)["ok"] is False
+    assert "Remove symlink loops" in output.err
+    assert "Traceback" not in output.err
+    assert source.read_bytes() == original
+    assert not destination.parent.exists()
+
+
+def test_unexpected_runtime_failure_outside_resolution_still_propagates(
+    tmp_path, monkeypatch
+):
+    source = image_file(tmp_path / "source.jpg")
+
+    def unexpected_directory_bug(*_args, **_kwargs):
+        raise RuntimeError("unexpected filesystem adapter failure")
+
+    monkeypatch.setattr(Path, "mkdir", unexpected_directory_bug)
+
+    with pytest.raises(RuntimeError):
+        placement.main(
+            [
+                "--source",
+                str(source),
+                "--destination",
+                str(tmp_path / "site" / "out.png"),
+            ]
+        )
