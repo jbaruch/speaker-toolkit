@@ -216,7 +216,9 @@ and substitutes `/assets/images/placeholder-thumbnail.svg`.
 The referenced site's `assets/css/main.css` uses a 16:9 featured-thumbnail
 container and 160×90 list thumbnails, both with `object-fit: cover`. Its mobile
 list thumbnails are 64×36. These are CSS display sizes, not source-image
-conversion requirements; keep the illustrations owner's 1280×720 PNG.
+conversion requirements; preserve the illustrations owner's source dimensions.
+The Step 6 [placement owner](thumbnails.md) validates or converts its PNG/JPEG
+result to PNG for the site's fixed filename without changing the source.
 The templates and social-image metadata use the same convention-path asset.
 
 Source: [shownotes CSS at a69a4b3](https://github.com/jbaruch/shownotes/blob/a69a4b359be1fbdcea7eead0de4572ea17c8f54f/assets/css/main.css#L749).

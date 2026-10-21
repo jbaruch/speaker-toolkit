@@ -13,8 +13,10 @@ catalog and history identity unchanged.
 
 The compact pattern menu emits the workflow owner, action, and step for canonical
 phases and supported legacy labels. Its routing is deterministic and tested.
-Shownotes now preserves the illustrations owner's 1280×720, 16:9 source image,
+Shownotes preserves the illustrations owner's 1280×720, 16:9 source dimensions,
 matching the destination site's CSS instead of requiring an unsupported 4:3 image.
+Its placement owner validates PNG input or converts the generator's JPEG fallback
+to PNG for the site's fixed filename, leaving the original image unchanged.
 
 ### Confirm delayed Darwin worker exits within the cleanup budget
 

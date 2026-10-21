@@ -703,10 +703,13 @@ speaker-toolkit/
     |       +-- title-placement.md            # Outline schema + scripts for Safe-zone title placement
     +-- shownotes-publisher/
     |   +-- SKILL.md                          # Jekyll shownotes and talk skills; recording updates
+    |   +-- scripts/
+    |   |   +-- place-thumbnail.py            # Validate or convert the generated image to the site's PNG
     |   +-- references/
     |       +-- parser-contract.md            # `_plugins/markdown_parser.rb` capture rules per extracted_* field
     |       +-- template-conditionals.md      # `talk.html` conditional rendering per extracted field
     |       +-- common-mistakes.md            # 13 failure modes (1, 1b, 1c, 2-11) with right-way fixes
+    |       +-- thumbnails.md                 # Generation handoff and convention-path placement
     +-- screencast-recorder/
     |   +-- SKILL.md                          # Verify a recorded sequence against its storyboard
     +-- screencast-editor/

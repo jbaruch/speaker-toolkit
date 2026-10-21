@@ -263,42 +263,10 @@ Proceed immediately to Step 6.
 
 ## Step 6 — Thumbnail
 
-Thumbnails are resolved by **filename naming convention** — the
-site's templates compute the path from the `.md` filename:
-
-```
-/assets/images/thumbnails/{talk_page_stem}-thumbnail.png
-```
-
-Example (new talk, stem = slug): `geecon-2026-absolutely-right.md` →
-`assets/images/thumbnails/geecon-2026-absolutely-right-thumbnail.png`.
-
-Place the 16:9 PNG at that path; keep illustrations' 1280×720 source.
-The site's CSS sizes previews; see
-[thumbnail geometry](references/template-conditionals.md#thumbnail-display-geometry).
-Do NOT set `thumbnail_url:` in frontmatter; see
-[references/common-mistakes.md](references/common-mistakes.md)
-entry 1c for its featured-talk flag semantics.
-
-**Decide explicitly — do not skip this step.** Check whether the
-convention-path file already exists in the shownotes repo
-(`assets/images/thumbnails/{talk_page_stem}-thumbnail.png`):
-
-- **Exists** → done; the page uses it.
-- **Absent, and a source image is available** (the talk's slides
-  exist, or a YouTube thumbnail / video frame was already produced) →
-  produce it now: hand off to `Skill(skill: "illustrations")` to
-  generate the thumbnail (this skill places files, it does not generate
-  images), then place the 16:9 PNG at the convention path.
-- **Absent, and no source image yet** (pre-talk publish, no slides or
-  video) → record that the thumbnail is deferred until a source image
-  is available. The placeholder SVG (`onerror` fallback) is the
-  intentional interim, not a silent skip; when the video lands and
-  the recording update runs, invoke `Skill(skill: "illustrations")` to
-  generate the thumbnail and drop it at the convention path.
-
-Never fall through this step without either producing the thumbnail or
-explicitly recording the deferral. Proceed immediately to Step 7.
+Read and follow [thumbnail placement](references/thumbnails.md): resolve the
+convention path, delegate generation to illustrations when needed, and validate
+or convert the returned image through the placement script. Complete placement
+or explicitly record the no-source deferral before proceeding to Step 7.
 
 ## Step 7 — Create the Talk Skill
 
