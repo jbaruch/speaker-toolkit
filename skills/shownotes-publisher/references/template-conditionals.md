@@ -211,6 +211,18 @@ So a talk without a thumbnail file at the conventional path still
 renders the page correctly — the browser fires `onerror` on the 404
 and substitutes `/assets/images/placeholder-thumbnail.svg`.
 
+### Thumbnail Display Geometry
+
+The referenced site's `assets/css/main.css` uses a 16:9 featured-thumbnail
+container and 160×90 list thumbnails, both with `object-fit: cover`. Its mobile
+list thumbnails are 64×36. These are CSS display sizes, not source-image
+conversion requirements; keep the illustrations owner's 1280×720 PNG.
+The templates and social-image metadata use the same convention-path asset.
+
+Source: [shownotes CSS at a69a4b3](https://github.com/jbaruch/shownotes/blob/a69a4b359be1fbdcea7eead0de4572ea17c8f54f/assets/css/main.css#L749).
+Inspect the destination's current template and CSS during site validation if its
+theme differs; verify that the title and face remain visible in the previews.
+
 ## Structured Data (JSON-LD)
 
 The layout emits a JSON-LD `PresentationDigitalDocument` block using:

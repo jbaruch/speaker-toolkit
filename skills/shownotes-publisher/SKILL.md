@@ -273,15 +273,12 @@ site's templates compute the path from the `.md` filename:
 Example (new talk, stem = slug): `geecon-2026-absolutely-right.md` →
 `assets/images/thumbnails/geecon-2026-absolutely-right-thumbnail.png`.
 
-Drop the thumbnail file (4:3 PNG; the site resizes to 400×300) at
-that path. Do NOT set `thumbnail_url:` in frontmatter — it's
-checked only for truthiness as a featured-talks signal and never
-read as a URL; see
+Place the 16:9 PNG at that path; keep illustrations' 1280×720 source.
+The site's CSS sizes previews; see
+[thumbnail geometry](references/template-conditionals.md#thumbnail-display-geometry).
+Do NOT set `thumbnail_url:` in frontmatter; see
 [references/common-mistakes.md](references/common-mistakes.md)
-entry 1c and
-[references/template-conditionals.md](references/template-conditionals.md)
-for the three template locations that hard-code the slug-derived
-path.
+entry 1c for its featured-talk flag semantics.
 
 **Decide explicitly — do not skip this step.** Check whether the
 convention-path file already exists in the shownotes repo
@@ -292,7 +289,7 @@ convention-path file already exists in the shownotes repo
   exist, or a YouTube thumbnail / video frame was already produced) →
   produce it now: hand off to `Skill(skill: "illustrations")` to
   generate the thumbnail (this skill places files, it does not generate
-  images), then drop the 4:3 PNG at the convention path.
+  images), then place the 16:9 PNG at the convention path.
 - **Absent, and no source image yet** (pre-talk publish, no slides or
   video) → record that the thumbnail is deferred until a source image
   is available. The placeholder SVG (`onerror` fallback) is the

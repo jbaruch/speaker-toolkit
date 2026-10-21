@@ -9,7 +9,7 @@ ingress; those contracts are not required to select a rhetorical instrument.
 ```
 
 Select the current phase using the script's `--help`; use `--kind antipattern`
-for the guardrail scan. Exit 0 emits `{phase, kind, catalog_root, entries}`;
+for the guardrail scan. Exit 0 emits `{phase, kind, workflow, catalog_root, entries}`;
 each row has `id`, `name`, `path`, `summary`, and `observable`. Non-zero reports
 the catalog repair on stderr with empty stdout. It performs no writes.
 
@@ -19,17 +19,15 @@ patterns; unobservable entries become reminders, never historical detections.
 
 ## Lifecycle Owners
 
-Interpret the catalog's lifecycle labels through the current skill owners:
-
-- `slides` and legacy Phase 5 labels refer to `Skill(skill: "presentation-builder")`.
-- `publishing` and legacy creator Phase 6 labels refer to
-  `Skill(skill: "presentation-publisher")`. Its Step 4 owns delivery preparation;
-  the full publishing action includes that preparation when requested.
-- Go-live reminders, including Spaced Follow-Up under **Post-Event**, belong to
-  the publisher's [delivery checklist](../../presentation-publisher/references/delivery.md).
-
-Use the current owner's requested action and approvals; never resume a retired
-creator phase. This mapping lives outside the catalog's fingerprinted bytes.
+The emitted `workflow` contains `skill`, `action`, and `step` for the selected
+phase. Exact legacy labels are accepted as phase input; `--help` lists them.
+`pattern-menu.py` owns the mapping in `PHASE_WORKFLOWS` and `LEGACY_PHASE_ALIASES`.
+For lifecycle work already requested, use `Skill(skill: "{workflow.skill}")`
+with that action and step. A lookup alone authorizes no additional action.
+Preserve the caller's scope and approvals; never resume a retired creator phase.
+Go-live reminders, including Spaced Follow-Up under **Post-Event**, use the
+current [delivery checklist](../../presentation-publisher/references/delivery.md).
+The mapping remains outside the catalog's fingerprinted bytes.
 See the [catalog fingerprint contract](../../vault-ingress/references/pattern-catalog-contract.md#report-contract).
 
 ## History Authorization

@@ -265,7 +265,8 @@ You approve metadata, narrative, outline, and slides before their dependent stag
 The four authoring/delivery entry points have a 1,500-token budget each. A shared
 runtime resolver verifies the configured interpreter and database generation;
 each action then reads only its required context. A compact, phase-filtered
-pattern menu opens detailed patterns on demand without changing catalog history.
+pattern menu supplies the workflow owner and opens detailed patterns on demand
+without changing catalog history.
 Standalone exports need no complete outline, rhetoric summary, image keys, or
 shownotes setup. An outline migration returns to the creator for a bounded repair.
 

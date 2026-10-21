@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -56,6 +57,53 @@ def test_delivery_menu_preserves_unobservable_reminders(menu, tmp_path):
     assert report["entries"][0]["observable"] is False
 
 
+@pytest.mark.parametrize(
+    ("phase", "skill", "action", "step"),
+    [
+        ("intake", "presentation-creator", "author", 0),
+        ("intent", "presentation-creator", "author", 1),
+        ("architecture", "presentation-creator", "author", 2),
+        ("content", "presentation-creator", "author", 3),
+        ("guardrails", "presentation-creator", "author", 4),
+        ("slides", "presentation-builder", "build", 1),
+        ("publishing", "presentation-publisher", "delivery", 4),
+    ],
+)
+def test_lifecycle_menu_supplies_the_task_owner(
+    menu, tmp_path, phase, skill, action, step
+):
+    _entry(tmp_path, "selected", phase=phase)
+    report = menu.build_menu(tmp_path, phase, "pattern")
+    assert report["phase"] == phase
+    assert report["workflow"] == {"skill": skill, "action": action, "step": step}
+    assert [entry["id"] for entry in report["entries"]] == ["selected"]
+
+
+@pytest.mark.parametrize(
+    ("alias", "phase"),
+    [
+        ("Phase 5", "slides"),
+        ("creator phase 5", "slides"),
+        ("Phase 5: Slides", "slides"),
+        ("Phase 5: Slide Generation", "slides"),
+        ("Phase 6", "publishing"),
+        ("Creator Phase 6", "publishing"),
+        ("Phase 6: Publishing", "publishing"),
+        ("  Creator   Phase 6 (Publishing / Go-Live)  ", "publishing"),
+    ],
+)
+def test_legacy_lifecycle_labels_select_the_same_menu(menu, tmp_path, alias, phase):
+    _entry(tmp_path, "selected", phase=phase)
+    assert menu.build_menu(tmp_path, alias, "pattern") == menu.build_menu(
+        tmp_path, phase, "pattern"
+    )
+
+
+def test_unknown_lifecycle_label_refuses_with_help(menu, tmp_path):
+    with pytest.raises(menu.PatternMenuError, match="choose one from --help"):
+        menu.build_menu(tmp_path, "creator phase 99", "pattern")
+
+
 def test_discovery_does_not_touch_or_load_the_scoring_index(menu, tmp_path):
     _entry(tmp_path, "arc")
     (tmp_path / "_index.md").write_bytes(b"index content is not discovery input\xff")
@@ -89,8 +137,6 @@ def test_invalid_catalog_refuses_with_a_repair(menu, tmp_path, fault):
 
 
 def test_real_cli_returns_openable_paths_without_the_full_index():
-    import json
-
     result = subprocess.run(
         [sys.executable, str(SCRIPT), "--phase", "architecture"],
         capture_output=True,
@@ -105,3 +151,36 @@ def test_real_cli_returns_openable_paths_without_the_full_index():
     assert len(result.stdout) < len(
         (Path(report["catalog_root"]) / "_index.md").read_text()
     )
+
+
+def test_cli_legacy_publishing_label_emits_delivery_handoff_from_any_directory(
+    tmp_path,
+):
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--phase", "Creator Phase 6"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["workflow"] == {
+        "skill": "presentation-publisher",
+        "action": "delivery",
+        "step": 4,
+    }
+    followup = next(row for row in report["entries"] if row["id"] == "spaced-followup")
+    assert followup["observable"] is False
+
+
+def test_cli_unknown_lifecycle_label_has_no_partial_output():
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--phase", "creator phase 99"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert "choose one from --help" in result.stderr
