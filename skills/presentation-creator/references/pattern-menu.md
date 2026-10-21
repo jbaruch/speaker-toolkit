@@ -20,11 +20,15 @@ patterns; unobservable entries become reminders, never historical detections.
 ## Lifecycle Owners
 
 The emitted `workflow` contains `skill`, `action`, and `step` for the selected
-phase. Exact legacy labels are accepted as phase input; `--help` lists them.
+phase. A null `step` leaves context-dependent lane selection to the owner;
+the builder selects its engine from the validated outline. Exact legacy labels
+are accepted as phase input; `--help` lists them.
 `pattern-menu.py` owns the mapping in `PHASE_WORKFLOWS` and `LEGACY_PHASE_ALIASES`.
 For lifecycle work already requested, use `Skill(skill: "{workflow.skill}")`
 with that action and step. A lookup alone authorizes no additional action.
-Preserve the caller's scope and approvals; never resume a retired creator phase.
+Inside an already selected owner action, continue that action instead of
+restarting from the broad lifecycle route. Preserve the caller's scope and
+approvals; never resume a retired creator phase.
 Go-live reminders, including Spaced Follow-Up under **Post-Event**, use the
 current [delivery checklist](../../presentation-publisher/references/delivery.md).
 The mapping remains outside the catalog's fingerprinted bytes.

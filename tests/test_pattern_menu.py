@@ -65,8 +65,8 @@ def test_delivery_menu_preserves_unobservable_reminders(menu, tmp_path):
         ("architecture", "presentation-creator", "author", 2),
         ("content", "presentation-creator", "author", 3),
         ("guardrails", "presentation-creator", "author", 4),
-        ("slides", "presentation-builder", "build", 1),
-        ("publishing", "presentation-publisher", "delivery", 4),
+        ("slides", "presentation-builder", "build", None),
+        ("publishing", "presentation-publisher", "publish", 1),
     ],
 )
 def test_lifecycle_menu_supplies_the_task_owner(
@@ -153,7 +153,7 @@ def test_real_cli_returns_openable_paths_without_the_full_index():
     )
 
 
-def test_cli_legacy_publishing_label_emits_delivery_handoff_from_any_directory(
+def test_cli_legacy_publishing_label_emits_full_workflow_from_any_directory(
     tmp_path,
 ):
     result = subprocess.run(
@@ -167,11 +167,27 @@ def test_cli_legacy_publishing_label_emits_delivery_handoff_from_any_directory(
     report = json.loads(result.stdout)
     assert report["workflow"] == {
         "skill": "presentation-publisher",
-        "action": "delivery",
-        "step": 4,
+        "action": "publish",
+        "step": 1,
     }
     followup = next(row for row in report["entries"] if row["id"] == "spaced-followup")
     assert followup["observable"] is False
+
+
+def test_cli_slides_handoff_defers_engine_selection(tmp_path):
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--phase", "Phase 5"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["workflow"] == {
+        "skill": "presentation-builder",
+        "action": "build",
+        "step": None,
+    }
 
 
 def test_cli_unknown_lifecycle_label_has_no_partial_output():

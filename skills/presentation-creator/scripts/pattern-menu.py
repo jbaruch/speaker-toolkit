@@ -9,7 +9,8 @@ observability, plus the selected phase's workflow owner/action. Canonical phases
 and exact legacy aliases resolve through PHASE_WORKFLOWS and LEGACY_PHASE_ALIASES.
 No speaker history, tiers, novelty or scoring claims are inferred.
 It never writes the catalog or tracking database. Exit 0 emits one JSON object;
-exit 1 emits an actionable diagnostic on stderr with empty stdout.
+exit 1 emits an actionable diagnostic on stderr with empty stdout; CLI usage
+errors exit 2. A null workflow step defers lane selection to the target skill.
 """
 
 from __future__ import annotations
@@ -27,8 +28,8 @@ PHASE_WORKFLOWS = {
     "architecture": {"skill": "presentation-creator", "action": "author", "step": 2},
     "content": {"skill": "presentation-creator", "action": "author", "step": 3},
     "guardrails": {"skill": "presentation-creator", "action": "author", "step": 4},
-    "slides": {"skill": "presentation-builder", "action": "build", "step": 1},
-    "publishing": {"skill": "presentation-publisher", "action": "delivery", "step": 4},
+    "slides": {"skill": "presentation-builder", "action": "build", "step": None},
+    "publishing": {"skill": "presentation-publisher", "action": "publish", "step": 1},
 }
 PHASES = tuple(PHASE_WORKFLOWS)
 LEGACY_PHASE_ALIASES = {
