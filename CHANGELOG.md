@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.4 — 2026-10-29
+
 ### Check image-model freshness every 30 days
 
 Reduce the image-model registry's maximum age from 90 to 30 days so the
