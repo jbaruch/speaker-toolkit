@@ -38,8 +38,22 @@ DRIVER="$HERE/inject-notes.applescript"
 # unit-tested in tests/test_notes_to_packed.py and tests/test_inject_notes_wrapper.py.
 STAGE_DIR="$HOME/.deckops-staging"
 mkdir -p "$STAGE_DIR"
-ARGS_FILE="$STAGE_DIR/$(basename "$OUT").notes.args"
-python3 "$HERE/notes-to-packed.py" --driver-args --deck "$BASE" "$NOTES" "$ARGS_FILE"
+# One fresh directory per run holds the notes' plaintext arguments, the
+# opened-copy marker and the stage file, so concurrent runs never share files
+# and cleanup removes the notes text.
+RUN_DIR="$(mktemp -d "$STAGE_DIR/notes-run.XXXXXX")"
+# Best-effort: a cleanup failure warns and never replaces the run's outcome.
+remove_run_dir() {
+  if ! rm -rf -- "${RUN_DIR:?}"; then
+    echo "WARNING: could not remove $RUN_DIR; it holds this run's notes text, marker and stage files, so delete it by hand." >&2
+  fi
+  return 0
+}
+ARGS_FILE="$RUN_DIR/notes.args"
+if ! python3 "$HERE/notes-to-packed.py" --driver-args --deck "$BASE" "$NOTES" "$ARGS_FILE"; then
+  remove_run_dir
+  exit 1
+fi
 NOTE_ARGS=()
 while IFS= read -r -d '' item; do NOTE_ARGS+=("$item"); done < "$ARGS_FILE"
 
@@ -55,18 +69,10 @@ echo "staging -> $STAGE"
 # The driver creates OPENED_MARKER only after confirming no same-named deck was
 # open and PowerPoint has opened its own copy; log text cannot fake a file. A
 # fresh per-run directory means no earlier marker can be mistaken for this run's.
-RUN_DIR="$(mktemp -d "$STAGE_DIR/notes-run.XXXXXX")"
 OPENED_MARKER="$RUN_DIR/opened"
 # The driver overwrites STAGE_FILE with a fixed token before each stage (open,
 # slide N, save, close); only those tokens select a stage-specific repair.
 STAGE_FILE="$RUN_DIR/stage"
-# Best-effort: a cleanup failure warns and never replaces the run's outcome.
-remove_run_dir() {
-  if ! rm -rf -- "${RUN_DIR:?}"; then
-    echo "WARNING: could not remove $RUN_DIR; it holds only this run's marker and stage files, so delete it by hand." >&2
-  fi
-  return 0
-}
 if ! osascript "$DRIVER" "$STAGED_BASE" "$STAGE" "$(basename "$STAGED_BASE")" "$(basename "$STAGE")" "$OPENED_MARKER" "$STAGE_FILE" ${NOTE_ARGS[@]+"${NOTE_ARGS[@]}"}; then
   LAST_STAGE=""
   if [[ -f "$STAGE_FILE" && -r "$STAGE_FILE" ]]; then

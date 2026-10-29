@@ -194,23 +194,56 @@ def driver_args(notes_map: object, slide_count: int) -> list[str]:
                 "the note"
             )
         items[num - 1] = text
+    # Every run passes one item per slide, so each run also carries a 1-byte
+    # terminator for every slide whose note it leaves empty.
     sizes = [len(item.encode("utf-8")) + 1 for item in items]
     size = sum(sizes)
     if size > DRIVER_ARGS_BUDGET:
-        largest = max(range(slide_count), key=lambda i: sizes[i])
-        if sizes[largest] > DRIVER_ARGS_BUDGET:
+        # Bytes of note text one run can carry after every slide's terminator.
+        capacity = DRIVER_ARGS_BUDGET - slide_count
+        note_bytes = [sizes[i] - 1 for i in range(slide_count)]
+        largest = max(range(slide_count), key=lambda i: note_bytes[i])
+        if note_bytes[largest] > capacity:
             raise ValueError(
-                f"notes for slide {largest} are {sizes[largest]} bytes, over the "
-                f"{DRIVER_ARGS_BUDGET}-byte argument budget on their own; shorten "
-                "that note in notes.json"
+                f"notes for slide {largest} are {note_bytes[largest]} bytes, over "
+                f"the {capacity} bytes one run can carry for a {slide_count}-slide "
+                f"deck ({DRIVER_ARGS_BUDGET}-byte budget less one terminator per "
+                "slide); shorten that note in notes.json"
             )
+        plan = "; ".join(
+            f"map {n}: slides {', '.join(str(i) for i in batch)}"
+            for n, batch in enumerate(split_into_runs(note_bytes, capacity), 1)
+        )
         raise ValueError(
             f"notes total {size} bytes, over the {DRIVER_ARGS_BUDGET}-byte argument "
-            "budget; split notes.json into two maps with different slides, run "
-            "inject-notes.sh with the first, then run it with the second, passing "
-            "the first run's output deck as the base"
+            f"budget; split notes.json by 0-based slide into {plan}, then run "
+            "inject-notes.sh once per map, passing each run's output deck as the "
+            "next run's base"
         )
     return items
+
+
+def split_into_runs(note_bytes: list[int], capacity: int) -> list[list[int]]:
+    """Group the non-empty slides' notes into runs of at most capacity bytes.
+
+    First-fit decreasing: every returned run fits, and each slide appears in
+    exactly one. note_bytes holds each slide's note size, 0 for no note; every
+    size must already be at most capacity.
+    """
+    runs: list[list[int]] = []
+    room: list[int] = []
+    for slide in sorted(
+        (i for i, n in enumerate(note_bytes) if n), key=lambda i: -note_bytes[i]
+    ):
+        for r, left in enumerate(room):
+            if note_bytes[slide] <= left:
+                runs[r].append(slide)
+                room[r] -= note_bytes[slide]
+                break
+        else:
+            runs.append([slide])
+            room.append(capacity - note_bytes[slide])
+    return [sorted(run) for run in runs]
 
 
 def main(argv: list[str] | None = None) -> int:

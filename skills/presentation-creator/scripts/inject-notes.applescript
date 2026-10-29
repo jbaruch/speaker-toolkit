@@ -20,9 +20,6 @@
 property errAlreadyOpen : 1002
 property errNoNotesBody : 1003
 property errNotAuthorized : -1743
--- File Manager errors `open for access` raises for a marker it cannot create:
--- not found, volume or file locked, duplicate, busy, permission, access denied.
-property markerWriteErrors : {-43, -44, -45, -46, -48, -49, -54, -61, -5000}
 
 on run argv
 	if (count of argv) < 6 then error "Expected: basePath outPath baseName outName markerPath stagePath [note for slide 1]... — run the driver through inject-notes.sh."
@@ -58,12 +55,14 @@ on run argv
 		set p to presentation baseName
 	end tell
 	-- No presentation named baseName was open before, so this one is the run's
-	-- own copy. The marker tells inject-notes.sh so if a later stage fails.
+	-- own copy. The marker tells inject-notes.sh so if a later stage fails. Its
+	-- creation is the only step here; whatever stops it (disk full, permissions,
+	-- a missing folder), the copy is already open, so every failure carries
+	-- that context and keeps its original error number.
 	try
 		close access (open for access (POSIX file markerPath) with write permission)
 	on error errMsg number errNum
-		if errNum is in markerWriteErrors then error "ERROR: inject-notes failed at [open]: this run opened " & baseName & " but could not record that at " & markerPath & " (" & errMsg & ") — close " & baseName & " in PowerPoint without saving, make that folder writable, and re-run." number errNum
-		error errMsg number errNum
+		error "ERROR: inject-notes failed at [open]: this run opened " & baseName & " but could not record that at " & markerPath & " (" & errMsg & ") — close " & baseName & " in PowerPoint without saving, free disk space or make that folder writable, and re-run." number errNum
 	end try
 
 	set applied to 0

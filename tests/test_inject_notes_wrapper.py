@@ -243,6 +243,31 @@ def test_raw_powerpoint_error_gets_a_stage_specific_repair(tmp_path, stage, repa
     assert not out.exists()
 
 
+@pytest.mark.parametrize("succeed", [True, False])
+def test_no_notes_text_is_left_in_staging_after_a_run(tmp_path, succeed):
+    _fake_osascript(tmp_path, succeed=succeed, stderr="PowerPoint got an error (-50)\n")
+    secret = "unreleased roadmap → do not leak"
+    result, _ = _run(tmp_path, _deck(tmp_path, 2), {"0": secret})
+    assert result.returncode == (0 if succeed else 1), result.stderr
+    staging = tmp_path / ".deckops-staging"
+    leftovers = [p for p in staging.rglob("*") if p.is_file()]
+    assert not any(secret.encode() in p.read_bytes() for p in leftovers)
+    assert not list(staging.glob("notes-run.*"))
+
+
+def test_every_marker_write_failure_says_the_copy_is_open(tmp_path):
+    # Source contract for the exempt driver: once PowerPoint has opened the
+    # copy, any marker-write failure (disk full -34 included) must carry the
+    # close advice and keep its error number, not filter by number.
+    source = DRIVER.read_text(encoding="utf-8")
+    start = source.index("close access (open for access (POSIX file markerPath)")
+    handler = source[start : source.index("end try", start)]
+    assert "this run opened" in handler
+    assert "without saving" in handler
+    assert "number errNum" in handler
+    assert " is in " not in handler
+
+
 # Directory permissions are what make the cleanup fail; root bypasses them.
 ROOT_IGNORES_PERMISSIONS = pytest.mark.skipif(
     hasattr(os, "geteuid") and os.geteuid() == 0,

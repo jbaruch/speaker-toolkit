@@ -12,7 +12,8 @@ unchanged. The wrapper passes the items, plus both deck file names, to the
 AppleScript driver as plain arguments, so the driver parses nothing; it writes each note through
 PowerPoint's AppleScript object model, which carries Unicode intact. The
 wrapper's arguments and output file stay the same; the driver prints
-`Notes applied: N`, and the notes pass no longer needs `DeckOps.pptm` open. The
+`Notes applied: N`, and the notes pass no longer needs `DeckOps.pptm` open. The notes' plaintext
+arguments live only in a per-run directory that the wrapper removes. The
 driver logs each stage (open, slide N, save, close) before running it. Errors it
 raises itself name the stage and repair; any other error propagates unchanged,
 and the wrapper adds that stage's repair from a fixed token the driver writes
@@ -22,7 +23,8 @@ does after confirming no same-named deck was open and once PowerPoint has opened
 its own copy, so a deck that was already open is never put at risk and no log text
 can fake the marker. The
 helper reports an unreadable or malformed notes file or deck, a note that is
-not valid Unicode, and an unwritable output, with exit 1 and a repair instead of raw exception text or a traceback. A note goes only into the notes body
+not valid Unicode, notes over the argument budget (with a slide-by-slide plan of
+chained runs that each fit), and an unwritable output, with exit 1 and a repair instead of raw exception text or a traceback. A note goes only into the notes body
 placeholder: a notes page without one fails instead of writing the note into a
 footer, date or header placeholder. `SetSpeakerNotes` stays in `RunDeckOps.bas`,
 so an imported DeckOps container needs no re-import. The setup guide's Step 5

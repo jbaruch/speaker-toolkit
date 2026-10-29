@@ -179,20 +179,25 @@ the real edit. Delete the throwaway files.
 ### Notes driver check
 
 Run this after any change to `inject-notes.applescript`, against a copy of the
-smoke-test output. Use a uniquely-named base inside PowerPoint's container,
-`~/Library/Containers/com.microsoft.Powerpoint/Data/`. `notes.json` holds a
-Unicode sentinel for slides 1 and 3 and nothing for slide 2:
+smoke-test output. Every path below is absolute: `{check_dir}` is a new,
+empty directory inside PowerPoint's container, for example the expanded
+`$HOME/Library/Containers/com.microsoft.Powerpoint/Data/notes-check`.
 
-```json
-{"0": "PORT → Factories ⚡ “quoted” — café 日本", "2": "second note"}
-```
+1. Copy the smoke-test output to `{check_dir}/notes-check-base.pptx`.
+2. Save this Unicode sentinel map, with notes for slides 1 and 3 and none for
+   slide 2, as `{check_dir}/notes.json`:
 
-Record `shasum -a 256` of the base, then run:
+   ```json
+   {"0": "PORT → Factories ⚡ “quoted” — café 日本", "2": "second note"}
+   ```
 
-```bash
-bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.sh" \
-  "{base_copy}" "{out_pptx}" notes.json
-```
+3. Record `shasum -a 256 "{check_dir}/notes-check-base.pptx"`, then run:
+
+   ```bash
+   bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.sh" \
+     "{check_dir}/notes-check-base.pptx" "{check_dir}/notes-check-out.pptx" \
+     "{check_dir}/notes.json"
+   ```
 
 It passes when all five hold:
 1. The script exits 0 and the driver prints `Notes applied: 2`.
@@ -206,8 +211,9 @@ It passes when all five hold:
 
 Then check the failure paths. Each must exit non-zero, write no output file, and
 leave no copy open (`name of every presentation` lists only what was open before):
-- `{"9": "x"}` fails before PowerPoint is touched, with `notes for 0-based
-  slide 9 target slide 10, but the deck has 3 slides`.
+- `{"9": "x"}`, saved as `{check_dir}/notes-bad.json`, fails before PowerPoint
+  is touched, with `notes for 0-based slide 9 target slide 10, but the deck has
+  3 slides`.
 - With the base copy already open in PowerPoint, the run fails at `[open]`,
   names the file, leaves that open copy alone, and the wrapper says this run
   recorded no copy of its own.

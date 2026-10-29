@@ -113,16 +113,51 @@ def test_driver_args_reject_a_single_note_over_budget_with_shorten_advice(
         notes_to_packed.driver_args({"1": big}, slide_count=2)
 
 
-def test_driver_args_reject_many_notes_over_budget_with_chained_runs(
+def test_note_that_fits_only_without_the_other_slides_terminators_is_shortened(
     notes_to_packed,
 ):
-    # Each note fits on its own; together they exceed the budget.
-    third = "x" * (notes_to_packed.DRIVER_ARGS_BUDGET // 3 + 1)
+    # On a 2-slide deck one run carries the other slide's empty item too, so a
+    # note sized to the bare budget can never fit, however the map is split.
+    budget = notes_to_packed.DRIVER_ARGS_BUDGET
+    exact = "x" * (budget - 1)
+    with pytest.raises(ValueError, match="notes for slide 0 .* shorten that note"):
+        notes_to_packed.driver_args({"0": exact}, slide_count=2)
+    # One byte less than the 2-slide capacity fits.
+    assert notes_to_packed.driver_args({"0": "x" * (budget - 2)}, slide_count=2)
+
+
+def test_three_notes_over_half_the_budget_get_three_chained_maps(notes_to_packed):
+    # No two fit together, so two maps can never hold them.
+    big = "x" * (notes_to_packed.DRIVER_ARGS_BUDGET * 6 // 10)
     with pytest.raises(ValueError) as exc:
-        notes_to_packed.driver_args({"0": third, "1": third, "2": third}, 3)
+        notes_to_packed.driver_args({"0": big, "1": big, "2": big}, slide_count=3)
     message = str(exc.value)
-    assert "split notes.json into two maps with different slides" in message
-    assert "passing the first run's output deck as the base" in message
+    assert "map 1: slides 0; map 2: slides 1; map 3: slides 2" in message
+    assert "passing each run's output deck as the next run's base" in message
+
+
+def test_split_plan_runs_each_fit_and_cover_every_noted_slide_once(notes_to_packed):
+    budget = notes_to_packed.DRIVER_ARGS_BUDGET
+    sizes = [budget // 4] * 9 + [0, budget // 2, 7]
+    capacity = budget - len(sizes)
+    runs = notes_to_packed.split_into_runs(sizes, capacity)
+    assert sorted(s for run in runs for s in run) == [
+        i for i, n in enumerate(sizes) if n
+    ]
+    assert all(sum(sizes[s] for s in run) <= capacity for run in runs)
+    assert len(runs) == 4  # 2.75 budgets of text, packed into four runs
+
+
+def test_over_budget_message_lists_a_plan_that_fits(notes_to_packed):
+    budget = notes_to_packed.DRIVER_ARGS_BUDGET
+    quarter = "x" * (budget // 4)
+    notes = {str(i): quarter for i in range(9)}
+    with pytest.raises(ValueError) as exc:
+        notes_to_packed.driver_args(notes, slide_count=9)
+    message = str(exc.value)
+    assert "map 1: slides 0, 1, 2; map 2: slides 3, 4, 5; map 3: slides 6, 7, 8" in (
+        message
+    )
 
 
 def test_driver_args_share_note_validation(notes_to_packed):
