@@ -212,7 +212,8 @@ It passes when all five hold:
 Then check the failure paths. Run each case on its own fresh copy of the
 smoke-test output, so no earlier case's open presentation or output can affect
 it, and start each with only the presentations you had open before the check.
-Every case must exit non-zero and must not create its own output file.
+Cases A, C and D must exit non-zero and must not create their own output
+file; case B and case E must succeed.
 
 **Case A — note past the deck.**
 1. Copy the smoke-test output to `{check_dir}/case-a-base.pptx`.
@@ -229,7 +230,8 @@ It passes when it fails before PowerPoint is touched, with `notes for 0-based
 slide 9 target slide 10, but the deck has 3 slides`, and
 `{check_dir}/case-a-out.pptx` does not exist.
 
-**Case B — base already open.**
+**Case B — base already open.** PowerPoint opens a run-unique copy, so an open
+base no longer blocks the run.
 1. Copy the smoke-test output to `{check_dir}/case-b-base.pptx` and open it in
    PowerPoint.
 2. Run:
@@ -240,9 +242,9 @@ slide 9 target slide 10, but the deck has 3 slides`, and
      "{check_dir}/notes.json"
    ```
 
-It passes when it fails at `[open]` naming `case-b-base.pptx`, the wrapper says
-this run recorded no copy of its own, `case-b-base.pptx` is still open, and
-`{check_dir}/case-b-out.pptx` does not exist. Then close `case-b-base.pptx`
+It passes when it exits 0 and writes `{check_dir}/case-b-out.pptx` with the
+sentinel notes, `case-b-base.pptx` is still open in PowerPoint with no notes
+added, and no other presentation is left open. Then close `case-b-base.pptx`
 without saving.
 
 **Case C — marker write fails after the copy opens.**
@@ -279,6 +281,21 @@ It passes when it exits non-zero with `inject-notes failed at [open]: could not
 record that stage at {check_dir}/missing/stage`, the free-space-or-writable
 repair and the shell's original status (`1`), no presentation named
 `case-d-base.pptx` is open, and `{check_dir}/case-d-out.pptx` does not exist.
+
+**Case E — two runs with one output name at once.**
+1. Copy the smoke-test output to `{check_dir}/case-e-base.pptx`, and create
+   the folders `{check_dir}/e1` and `{check_dir}/e2`.
+2. Start both runs together:
+
+   ```bash
+   S="{speaker_toolkit_root}/skills/presentation-creator/scripts"
+   bash "$S/inject-notes.sh" "{check_dir}/case-e-base.pptx" "{check_dir}/e1/deck.pptx" "{check_dir}/notes.json" &
+   bash "$S/inject-notes.sh" "{check_dir}/case-e-base.pptx" "{check_dir}/e2/deck.pptx" "{check_dir}/notes.json" &
+   wait
+   ```
+
+It passes when both exit 0, both `e1/deck.pptx` and `e2/deck.pptx` carry the
+sentinel notes, and no presentation from either run is left open.
 
 ## Step 6 — Every build (recurring)
 

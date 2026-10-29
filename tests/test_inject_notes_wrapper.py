@@ -7,7 +7,9 @@ AppleScript's PowerPoint interaction is the manual-validation gap.
 
 import json
 import os
+import re
 import subprocess
+import time
 import zipfile
 from pathlib import Path
 
@@ -114,16 +116,18 @@ def test_unicode_multiline_and_unchanged_slides_reach_the_driver_intact(tmp_path
     assert result.returncode == 0, result.stderr
     argv = _argv(record)
     assert argv[0] == str(DRIVER)
-    assert argv[1] == str(base)
-    assert Path(argv[2]).name == out.name
-    # The driver gets both file names, so it parses no paths itself.
-    assert argv[3:5] == [base.name, out.name]
-    # Fresh per-run marker and stage paths in one run directory.
+    # PowerPoint opens a run-unique copy of the base and saves a run-unique
+    # name; the driver gets both names, so it parses no paths itself.
     marker, stage_file = Path(argv[5]), Path(argv[6])
+    run_id = marker.parent.name
+    assert run_id.startswith("notes-run.")
+    staged_base, staged_out = Path(argv[1]), Path(argv[2])
+    assert staged_base.name == f"{run_id}-base-{base.name}"
+    assert staged_out.name == f"{run_id}-{out.name}"
+    assert argv[3:5] == [staged_base.name, staged_out.name]
     assert marker.name == "opened"
     assert stage_file.name == "stage"
     assert marker.parent == stage_file.parent
-    assert marker.parent.name.startswith("notes-run.")
     # One argument per slide, in order; "" leaves a slide's notes unchanged.
     assert argv[7:] == [first, "", third, ""]
     assert out.exists()
@@ -168,7 +172,9 @@ def test_failure_after_open_says_to_close_the_copy_this_run_opened(tmp_path):
     assert "It stopped saving to" in result.stderr
     assert "free disk space" in result.stderr
     assert "This run opened its own copy" in result.stderr
-    assert "close the presentation named deck.pptx" in result.stderr
+    assert re.search(
+        r"close the presentation named notes-run\.\S+-base-deck\.pptx", result.stderr
+    )
     assert not Path(_argv(record)[5]).parent.exists()  # run directory removed
     assert not out.exists()
 
@@ -224,7 +230,10 @@ def test_timed_out_open_says_close_the_unique_copy_only_if_it_appears(tmp_path):
     assert result.returncode == 1
     assert "the open did not confirm; it may still finish" in result.stderr
     assert "if one appears in PowerPoint it is this run's copy" in result.stderr
-    assert "No presentation named deck.pptx was open before this run" in result.stderr
+    assert re.search(
+        r"No presentation named notes-run\.\S+-base-deck\.pptx was open before this run",
+        result.stderr,
+    )
     assert "This run opened its own copy" not in result.stderr
     assert not out.exists()
 
@@ -353,7 +362,11 @@ def test_mid_copy_failure_keeps_the_previous_output_and_no_partial(tmp_path):
     # A cp that writes half a file and fails, like a full Drive volume.
     fake_cp = tmp_path / "cp"
     fake_cp.write_text(
-        '#!/bin/bash\nfor last; do :; done\nprintf partial > "$last"\nexit 1\n'
+        "#!/bin/bash\nfor last; do :; done\n"
+        'case "$(basename "$last")" in\n'
+        '  .deck-with-notes.pptx.*) printf partial > "$last"; exit 1 ;;\n'
+        '  *) exec /bin/cp "$@" ;;\n'
+        "esac\n"
     )
     fake_cp.chmod(0o755)
     out_dir = tmp_path / "out"
@@ -373,8 +386,12 @@ def test_interrupted_delivery_leaves_no_partial_copy(tmp_path):
     # A cp that writes half a file, then the wrapper is sent SIGTERM mid-copy.
     fake_cp = tmp_path / "cp"
     fake_cp.write_text(
-        '#!/bin/bash\nfor last; do :; done\nprintf partial > "$last"\n'
-        "kill -TERM $PPID\nsleep 1\nexit 1\n"
+        "#!/bin/bash\nfor last; do :; done\n"
+        'case "$(basename "$last")" in\n'
+        "  .deck-with-notes.pptx.*)\n"
+        '    printf partial > "$last"; kill -TERM $PPID; sleep 1; exit 1 ;;\n'
+        '  *) exec /bin/cp "$@" ;;\n'
+        "esac\n"
     )
     fake_cp.chmod(0o755)
     out_dir = tmp_path / "out"
@@ -567,13 +584,14 @@ def test_base_at_the_old_shared_staging_path_is_preserved(tmp_path):
 
 
 def test_concurrent_runs_with_the_same_output_name_never_share_a_stage(tmp_path):
-    # Each fake save sleeps, then writes the run's own content; shared stage
-    # paths would let one run deliver or delete the other's deck.
+    # Each fake save sleeps, then records its run directory and the two
+    # PowerPoint-visible names it was given; shared paths or names would let
+    # one run deliver or delete the other's deck, or collide inside PowerPoint.
     p = tmp_path / "osascript"
     p.write_text(
         "#!/bin/bash\n"
         'touch "$6"\nsleep 1\n'
-        'printf \'%s\' "$(basename "$(dirname "$(dirname "$3")")")" > "$3"\n'
+        'printf \'%s|%s|%s\' "$(basename "$(dirname "$6")")" "$4" "$5" > "$3"\n'
         'echo "Notes applied: 1"\n'
     )
     p.chmod(0o755)
@@ -594,27 +612,45 @@ def test_concurrent_runs_with_the_same_output_name_never_share_a_stage(tmp_path)
     ]
     results = [proc.communicate() + (proc.returncode,) for proc in procs]
     assert all(rc == 0 for _, _, rc in results), results
-    contents = [out.read_text() for out in outs]
-    assert all(c.startswith("notes-run.") for c in contents)
-    assert contents[0] != contents[1]  # each run delivered its own stage
+    runs = [out.read_text().split("|") for out in outs]
+    assert all(run_dir.startswith("notes-run.") for run_dir, _, _ in runs)
+    assert runs[0][0] != runs[1][0]  # each run delivered its own stage
+    names = [name for _, base_name, out_name in runs for name in (base_name, out_name)]
+    assert len(set(names)) == 4  # no PowerPoint-visible name is shared
+    assert all(name.startswith("notes-run.") for name in names)
     assert not list((tmp_path / ".deckops-staging").glob("notes-run.*"))
 
 
 def test_save_that_finishes_after_cleanup_has_nowhere_to_land(tmp_path):
-    # A timed-out save can complete later; the run-owned stage folder is gone.
+    # A timed-out save can complete later. The late writer waits, as a barrier,
+    # until the run directory is gone, then tries to save and reports that it
+    # tried; the test waits for that report before asserting.
+    attempted = tmp_path / "late-save-attempted"
+    late_log = tmp_path / "late-save.log"
     p = tmp_path / "osascript"
     p.write_text(
         "#!/bin/bash\n"
         'printf \'save\\n\' > "$7"\ntouch "$6"\n'
-        "(sleep 1; printf 'LATE NOTES-BEARING DECK' > \"$3\") &\n"
+        'run_dir="$(dirname "$6")"\n'
+        "(\n"
+        '  while [ -d "$run_dir" ]; do sleep 0.05; done\n'
+        "  if printf 'LATE NOTES-BEARING DECK' > \"$3\"; then echo wrote; fi\n"
+        f"  touch '{attempted}'\n"
+        f") > '{late_log}' 2>&1 &\n"
         'echo "Microsoft PowerPoint got an error: AppleEvent timed out. (-1712)" >&2\n'
         "exit 1\n"
     )
     p.chmod(0o755)
     result, out = _run(tmp_path, _deck(tmp_path, 1), {"0": "x"})
+    for _ in range(200):  # the barrier releases once cleanup has run
+        if attempted.exists():
+            break
+        time.sleep(0.05)
+    assert attempted.exists(), "the late save never ran"
     assert result.returncode == 1
     assert "PowerPoint may still be finishing that save" in result.stderr
     assert "a late save has nowhere to land" in result.stderr
+    assert "wrote" not in late_log.read_text()  # the save had no folder to land in
     assert not out.exists()
     assert not _staging_holds(tmp_path, "LATE NOTES-BEARING DECK")
     assert not list((tmp_path / ".deckops-staging").glob("notes-run.*"))

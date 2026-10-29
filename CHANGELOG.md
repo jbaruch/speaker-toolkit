@@ -24,7 +24,9 @@ before PowerPoint runs. The final rename goes through `atomic-replace.py`, which
 refuses a directory even if one appears while PowerPoint runs, and the staged
 deck lives in a folder the run alone owns and removes as a whole, so concurrent
 runs never share it and a save that finishes after a timeout has nowhere to
-land. An output path that is the base deck itself is refused.
+land. An output path that is the base deck itself is refused. PowerPoint opens a copy
+of the base and saves under names carrying the run's ID, so concurrent runs
+never share a PowerPoint-visible name and the base can stay open meanwhile.
 `container-stage.sh` gains `container_stage_on_exit` so a wrapper can add
 cleanup to its single EXIT trap instead of replacing it. An open that times out records an
 `opening` stage, so the wrapper can say a uniquely named copy may still appear. The

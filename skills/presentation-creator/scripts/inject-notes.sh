@@ -92,15 +92,21 @@ container_stage_on_exit _inject_notes_cleanup
 # as a whole: the container's per-run staging dir, or, without a container,
 # RUN_DIR. No other run or input shares the path, and a save that finishes
 # after a timeout has no folder left to land in.
+# PowerPoint keys open decks by file name, so both staged decks also carry the
+# run's unique ID: concurrent runs, or a base the user has open, never share a
+# PowerPoint-visible name.
+RUN_ID="$(basename "$RUN_DIR")"
 if [[ -n "$CONTAINER_STAGE" ]]; then
-  STAGE="$OUT_STAGE_DIR/$(basename "$OUT")"
+  STAGE_FOLDER="$CONTAINER_STAGE"
+  STAGE="$OUT_STAGE_DIR/$RUN_ID-$(basename "$OUT")"
 else
-  # A subfolder, so no output name can clash with the run's own files.
+  # A subfolder, so no staged name can clash with the run's own files.
   if ! mkdir "$RUN_DIR/out"; then
     echo "ERROR: cannot create $RUN_DIR/out — make $STAGE_DIR writable, or free disk space, and re-run." >&2
     exit 1
   fi
-  STAGE="$RUN_DIR/out/$(basename "$OUT")"
+  STAGE_FOLDER="$RUN_DIR/out"
+  STAGE="$RUN_DIR/out/$RUN_ID-$(basename "$OUT")"
 fi
 
 ARGS_FILE="$RUN_DIR/notes.args"
@@ -120,7 +126,13 @@ if ! rm -f "$STAGE"; then
   echo "ERROR: cannot clear the old staged output $STAGE — remove it by hand and re-run." >&2
   exit 1
 fi
-STAGED_BASE="$(stage_base "$BASE")"
+# The copy PowerPoint opens: in the container when there is one, so the
+# sandboxed app reads it without a prompt, and always under a run-unique name.
+STAGED_BASE="$STAGE_FOLDER/$RUN_ID-base-$(basename "$BASE")"
+if ! cp -p "$BASE" "$STAGED_BASE"; then
+  echo "ERROR: cannot copy the base deck $BASE to $STAGED_BASE — free disk space, or make $STAGE_FOLDER writable, and re-run." >&2
+  exit 1
+fi
 
 echo "staging -> $STAGE"
 # ${arr[@]+...} keeps an empty deck from tripping `set -u` on bash 3.2.
