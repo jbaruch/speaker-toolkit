@@ -15,8 +15,8 @@ vocabulary and state rules: `skills/presentation-builder/references/deckops-spec
 ## Speaker Notes — Separate Batch Pass
 
 Speaker notes MUST be injected as a separate step AFTER all slides are created,
-never inline during slide creation. Inject them with the `SetSpeakerNotes` macro
-(`scripts/inject-notes.sh`) — see Keynote Compatibility below.
+never inline during slide creation. Inject them with `scripts/inject-notes.sh` —
+see Keynote Compatibility below.
 
 ## Template Stripping — Handled by BuildDeck
 
@@ -31,10 +31,15 @@ prevent generated `.pptx` files from being rejected on import.
 
 ### Speaker notes — written by real PowerPoint
 
-Inject notes via the real PowerPoint app (`scripts/inject-notes.sh` →
-`SetSpeakerNotes`); it writes the required `<p:notesMasterIdLst>` element
-natively. No manual patch — the python-pptx pass that omitted-then-patched it
-is retired. See `rules/deck-editing-rules.md`.
+Inject notes via the real PowerPoint app (`scripts/inject-notes.sh`); it writes
+the required `<p:notesMasterIdLst>` element natively. No manual patch — the
+python-pptx pass that omitted-then-patched it is retired. See
+`rules/deck-editing-rules.md`.
+
+The notes driver sets each note through PowerPoint's AppleScript object model,
+never through `run VB macro`. That bridge converts string parameters to Mac
+Roman, so arrows, emoji and every other character outside it reach the notes
+as `?`.
 
 ### Use rectangles for decorative lines — never connectors
 

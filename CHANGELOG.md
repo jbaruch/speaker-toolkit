@@ -1,5 +1,20 @@
 # Changelog
 
+### Keep Unicode in injected speaker notes
+
+`inject-notes.sh` passed every note to the `SetSpeakerNotes` VBA macro through
+`run VB macro`, which converts string parameters to Mac Roman. Arrows, emoji and
+any other character outside it reached the deck as `?`, so a stage cue like
+"PORT → Factories" read "PORT ? Factories". The AppleScript driver now splits
+the packed file itself and writes each note through PowerPoint's AppleScript
+object model, which carries Unicode intact. The wrapper's arguments, the packed
+format and the output stay the same. A failure raises with the slide it
+stopped on and closes the copy it opened. `SetSpeakerNotes` stays in
+`RunDeckOps.bas`, so an imported DeckOps container needs no re-import.
+
+`BuildDeck` text ops, `RunDeckOps` replacements and `ExpandBuilds` notes still
+cross the same bridge.
+
 ## 0.21.2 — 2026-10-21
 
 ### Align documentation with the focused presentation skills

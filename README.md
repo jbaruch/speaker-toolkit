@@ -665,9 +665,9 @@ speaker-toolkit/
     |   |   +-- apply-backgrounds.sh           # Wrapper for ApplyBackgrounds (bulk FULL-slide bg fills)
     |   |   +-- apply-backgrounds.applescript  # AppleScript driver for ApplyBackgrounds
     |   |   +-- backgrounds-manifest-to-spec.py # Manifest JSON -> ApplyBackgrounds spec (tested)
-    |   |   +-- inject-notes.sh                # Wrapper for SetSpeakerNotes (notes via real PowerPoint)
-    |   |   +-- inject-notes.applescript       # AppleScript driver for SetSpeakerNotes (reads notes as UTF-8)
-    |   |   +-- notes-to-packed.py             # Notes JSON -> SetSpeakerNotes wire format (tested)
+    |   |   +-- inject-notes.sh                # Wrapper for the notes driver (notes via real PowerPoint)
+    |   |   +-- inject-notes.applescript       # Notes driver: sets each note via AppleScript, Unicode intact
+    |   |   +-- notes-to-packed.py             # Notes JSON -> notes driver wire format (tested)
     |   |   +-- insert-qr.sh                    # Wrapper for InsertQR (QR PNG bottom-right via real PowerPoint)
     |   |   +-- insert-qr.applescript           # AppleScript driver for InsertQR
     |   +-- references/

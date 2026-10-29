@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Pack a 0-based speaker-notes JSON map into the SetSpeakerNotes wire format.
+"""Pack a 0-based speaker-notes JSON map into the notes driver's wire format.
 
 Input JSON: `{"<0-based slide #>": "notes text", ...}` — the historical
 inject-speaker-notes.py format. Output: a UTF-8 file of records
 `<1-based #>US<text>` joined by RS, where US=Chr(31), RS=Chr(30) (non-printing
-control chars that don't occur in prose notes). AppleScript reads the file as
-UTF-8 and passes it to the SetSpeakerNotes VBA macro, which splits it.
+control chars that don't occur in prose notes). inject-notes.applescript reads
+the file as UTF-8, splits it, and writes each note through PowerPoint's
+AppleScript object model.
 
 Slide numbers are converted 0-based -> 1-based (python-pptx uses 0-based
 indices; PowerPoint VBA uses 1-based). Empty notes are dropped.
