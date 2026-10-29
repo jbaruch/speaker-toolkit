@@ -35,8 +35,8 @@ def _deck(tmp_path, slides):
 def _fake_osascript(dirpath, *, succeed):
     """Write a fake `osascript` that records its argv NUL-separated.
 
-    The wrapper calls `osascript <driver> <base> <STAGE> <note 1>...`, so the
-    staged output path is $3. On success the fake touches it, as PowerPoint's
+    The wrapper calls `osascript <driver> <base> <STAGE> <base name>
+    <STAGE name> <note 1>...`, so the staged output path is $3. On success the fake touches it, as PowerPoint's
     save would; on failure it logs a stage and exits non-zero like the driver.
     """
     record = dirpath / "argv.bin"
@@ -86,8 +86,10 @@ def test_unicode_multiline_and_unchanged_slides_reach_the_driver_intact(tmp_path
     assert argv[0] == str(DRIVER)
     assert argv[1] == str(base)
     assert Path(argv[2]).name == out.name
+    # The driver gets both file names, so it parses no paths itself.
+    assert argv[3:5] == [base.name, out.name]
     # One argument per slide, in order; "" leaves a slide's notes unchanged.
-    assert argv[3:] == [first, "", third, ""]
+    assert argv[5:] == [first, "", third, ""]
     assert out.exists()
     assert f"done -> {out}" in result.stdout
 
@@ -96,14 +98,14 @@ def test_empty_map_passes_one_empty_argument_per_slide(tmp_path):
     record = _fake_osascript(tmp_path, succeed=True)
     result, _ = _run(tmp_path, _deck(tmp_path, 3), {})
     assert result.returncode == 0, result.stderr
-    assert _argv(record)[3:] == ["", "", ""]
+    assert _argv(record)[5:] == ["", "", ""]
 
 
 def test_zero_slide_deck_passes_no_note_arguments(tmp_path):
     record = _fake_osascript(tmp_path, succeed=True)
     result, _ = _run(tmp_path, _deck(tmp_path, 0), {})
     assert result.returncode == 0, result.stderr
-    assert len(_argv(record)) == 3
+    assert len(_argv(record)) == 5
 
 
 def test_out_of_range_note_is_refused_before_powerpoint_runs(tmp_path):

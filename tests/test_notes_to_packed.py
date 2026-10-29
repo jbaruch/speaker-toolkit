@@ -197,3 +197,84 @@ def test_cli_packed_mode_unchanged(notes_to_packed, tmp_path, capsys):
     out = tmp_path / "out.packed"
     assert notes_to_packed.main([str(notes), str(out)]) == 0
     assert out.read_text(encoding="utf-8") == f"2{US}second"
+
+
+def _cli(notes_to_packed, tmp_path, notes_path, deck_path):
+    out = tmp_path / "out.args"
+    rc = notes_to_packed.main(
+        ["--driver-args", "--deck", str(deck_path), str(notes_path), str(out)]
+    )
+    return rc, out
+
+
+def test_cli_missing_notes_file_exits_1_with_repair(notes_to_packed, tmp_path, capsys):
+    rc, out = _cli(
+        notes_to_packed, tmp_path, tmp_path / "nope.json", _deck(tmp_path, 1)
+    )
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "cannot read notes JSON" in err
+    assert "existing, readable notes.json" in err
+    assert not out.exists()
+
+
+def test_cli_invalid_json_exits_1_with_repair(notes_to_packed, tmp_path, capsys):
+    notes = tmp_path / "notes.json"
+    notes.write_text("{not json", encoding="utf-8")
+    rc, out = _cli(notes_to_packed, tmp_path, notes, _deck(tmp_path, 1))
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "is not valid JSON" in err
+    assert "regenerate it" in err
+    assert not out.exists()
+
+
+def test_cli_non_utf8_notes_exit_1_with_repair(notes_to_packed, tmp_path, capsys):
+    notes = tmp_path / "notes.json"
+    notes.write_bytes(b'{"0": "caf\xe9"}')
+    rc, _ = _cli(notes_to_packed, tmp_path, notes, _deck(tmp_path, 1))
+    assert rc == 1
+    assert "re-save it as UTF-8" in capsys.readouterr().err
+
+
+def test_cli_missing_deck_exits_1_with_repair(notes_to_packed, tmp_path, capsys):
+    import json
+
+    notes = tmp_path / "notes.json"
+    notes.write_text(json.dumps({"0": "x"}), encoding="utf-8")
+    rc, out = _cli(notes_to_packed, tmp_path, notes, tmp_path / "nope.pptx")
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "cannot read deck" in err
+    assert "built deck copy" in err
+    assert not out.exists()
+
+
+def test_cli_malformed_presentation_xml_exits_1_with_repair(
+    notes_to_packed, tmp_path, capsys
+):
+    import json
+    import zipfile
+
+    deck = tmp_path / "broken.pptx"
+    with zipfile.ZipFile(deck, "w") as z:
+        z.writestr("ppt/presentation.xml", "<p:presentation")
+    notes = tmp_path / "notes.json"
+    notes.write_text(json.dumps({"0": "x"}), encoding="utf-8")
+    rc, out = _cli(notes_to_packed, tmp_path, notes, deck)
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "malformed ppt/presentation.xml" in err
+    assert "re-save the deck from PowerPoint" in err
+    assert not out.exists()
+
+
+def test_validation_messages_carry_a_repair(notes_to_packed):
+    with pytest.raises(ValueError, match="0-based slide number"):
+        notes_to_packed.note_pairs({"intro": "x"})
+    with pytest.raises(ValueError, match="write the note as a JSON string"):
+        notes_to_packed.note_pairs({"0": 1})
+    with pytest.raises(ValueError, match="remove it from the note"):
+        notes_to_packed.pack_notes({"0": f"a{RS}b"})
+    with pytest.raises(ValueError, match="remove it from the note"):
+        notes_to_packed.driver_args({"0": "a\x00b"}, slide_count=1)

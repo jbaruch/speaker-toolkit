@@ -2,26 +2,27 @@
 -- Writes each note into its slide's notes body placeholder through PowerPoint's
 -- AppleScript object model (`set content`), which carries Unicode text intact.
 -- Never `run VB macro`. The driver parses nothing: inject-notes.sh validates the
--- notes against the deck with notes-to-packed.py --driver-args and passes one
--- argument per slide, in slide order. An empty argument leaves that slide's notes
--- unchanged.
+-- notes against the deck with notes-to-packed.py --driver-args and passes the
+-- two deck file names plus one argument per slide, in slide order. An empty
+-- argument leaves that slide's notes unchanged.
 -- Opens basePath, saves the result to outPath, and closes it; basePath is not
 -- modified. Each stage ([open], [slide N], [save], [close]) is logged to stderr
 -- before it runs. Errors this driver raises name their stage and repair; any other
 -- error propagates unchanged after the last logged stage, and inject-notes.sh adds
 -- the repair.
---   osascript inject-notes.applescript <basePath> <outPath> [<note for slide 1>]...
+--   osascript inject-notes.applescript <basePath> <outPath> <baseName> <outName> [<note for slide 1>]...
 
 property errAlreadyOpen : 1002
 property errNoNotesBody : 1003
 property errNotAuthorized : -1743
 
 on run argv
-	if (count of argv) < 2 then error "Expected: basePath outPath [note for slide 1]..."
+	if (count of argv) < 4 then error "Expected: basePath outPath baseName outName [note for slide 1]... — run the driver through inject-notes.sh."
 	set basePath to item 1 of argv
 	set outPath to item 2 of argv
-	set baseName to my fileName(basePath)
-	set outName to my fileName(outPath)
+	-- PowerPoint keys open decks by file name; the wrapper derives both names.
+	set baseName to item 3 of argv
+	set outName to item 4 of argv
 
 	log "[open] " & basePath
 	-- AppleScript has no typed catch: this handler adds the repair for a denied
@@ -47,11 +48,11 @@ on run argv
 	end tell
 
 	set applied to 0
-	repeat with slideNumber from 3 to (count of argv)
-		set noteText to item slideNumber of argv
+	repeat with argIndex from 5 to (count of argv)
+		set noteText to item argIndex of argv
 		if noteText is not "" then
-			log "[slide " & (slideNumber - 2) & "]"
-			my setNotesBody(p, slideNumber - 2, noteText, baseName)
+			log "[slide " & (argIndex - 4) & "]"
+			my setNotesBody(p, argIndex - 4, noteText, baseName)
 			set applied to applied + 1
 		end if
 	end repeat
@@ -85,11 +86,3 @@ on setNotesBody(p, num, noteText, baseName)
 	end tell
 	error "ERROR: inject-notes failed at [slide " & num & "]: the notes page has no notes body placeholder. The staged copy " & baseName & " is still open in PowerPoint: close it without saving, then in the source deck open View > Notes Master, enable Body under Placeholders, save, and re-run inject-notes.sh." number errNoNotesBody
 end setNotesBody
-
-on fileName(posixPath)
-	set saved to AppleScript's text item delimiters
-	set AppleScript's text item delimiters to "/"
-	set nm to last text item of posixPath
-	set AppleScript's text item delimiters to saved
-	return nm
-end fileName

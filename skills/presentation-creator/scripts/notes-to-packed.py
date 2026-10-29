@@ -66,7 +66,10 @@ def note_pairs(notes_map: object) -> list[tuple[int, str]]:
                 return int(key)
             except ValueError:
                 pass
-        raise ValueError(f"notes key {key!r} is not an integer")
+        raise ValueError(
+            f"notes key {key!r} is not an integer; key each note by its 0-based "
+            'slide number, e.g. "0" for the first slide'
+        )
 
     pairs = []
     for key in sorted(notes_map, key=slide_num):
@@ -80,7 +83,8 @@ def note_pairs(notes_map: object) -> list[tuple[int, str]]:
             continue
         if not isinstance(text, str):
             raise ValueError(
-                f"notes for slide {key} must be a string, got {type(text).__name__}"
+                f"notes for slide {key} must be a string, got {type(text).__name__}; "
+                "write the note as a JSON string"
             )
         pairs.append((num + 1, text))
     return pairs
@@ -96,22 +100,59 @@ def pack_notes(notes_map: object) -> str:
     for num, text in note_pairs(notes_map):
         if RS in text or US in text:
             raise ValueError(
-                f"notes for slide {num - 1} contain a reserved control char (RS/US)"
+                f"notes for slide {num - 1} contain a reserved control char (RS/US); "
+                "remove it from the note"
             )
         records.append(f"{num}{US}{text}")
     return RS.join(records)
 
 
+def read_notes_map(notes_path: Path) -> object:
+    """Return the decoded notes JSON. Raises ValueError with the repair."""
+    try:
+        raw = notes_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(
+            f"cannot read notes JSON {notes_path} ({exc}); pass the path of an "
+            "existing, readable notes.json"
+        ) from exc
+    except UnicodeDecodeError as exc:
+        raise ValueError(
+            f"notes JSON {notes_path} is not UTF-8 ({exc}); re-save it as UTF-8"
+        ) from exc
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"notes JSON {notes_path} is not valid JSON ({exc}); regenerate it "
+            'as a {"<0-based slide #>": "text"} map'
+        ) from exc
+
+
 def deck_slide_count(deck_path: Path) -> int:
-    """Return the number of slides in a .pptx, read from ppt/presentation.xml."""
+    """Return the number of slides in a .pptx, read from ppt/presentation.xml.
+
+    Raises ValueError with the repair when the deck cannot be read or parsed.
+    """
     try:
         with zipfile.ZipFile(deck_path) as deck:
             presentation = deck.read("ppt/presentation.xml")
+    except OSError as exc:
+        raise ValueError(
+            f"cannot read deck {deck_path} ({exc}); pass the path of the built "
+            "deck copy"
+        ) from exc
     except (zipfile.BadZipFile, KeyError) as exc:
         raise ValueError(
             f"{deck_path} is not a .pptx deck ({exc}); pass the built deck copy"
         ) from exc
-    root = ET.fromstring(presentation)
+    try:
+        root = ET.fromstring(presentation)
+    except ET.ParseError as exc:
+        raise ValueError(
+            f"{deck_path} has a malformed ppt/presentation.xml ({exc}); re-save "
+            "the deck from PowerPoint"
+        ) from exc
     for ns in PRESENTATION_NAMESPACES:
         if root.tag == f"{{{ns}}}presentation":
             slide_list = root.find(f"{{{ns}}}sldIdLst")
@@ -140,7 +181,10 @@ def driver_args(notes_map: object, slide_count: int) -> list[str]:
                 "post-expansion deck"
             )
         if NUL in text:
-            raise ValueError(f"notes for slide {num - 1} contain a NUL character")
+            raise ValueError(
+                f"notes for slide {num - 1} contain a NUL character; remove it from "
+                "the note"
+            )
         items[num - 1] = text
     size = sum(len(item.encode("utf-8")) + 1 for item in items)
     if size > DRIVER_ARGS_BUDGET:
@@ -168,8 +212,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.driver_args and args.deck is None:
         parser.error("--driver-args requires --deck")
+    # Every ValueError below carries its own repair.
     try:
-        notes_map = json.loads(args.notes.read_text(encoding="utf-8"))
+        notes_map = read_notes_map(args.notes)
         if args.driver_args:
             items = driver_args(notes_map, deck_slide_count(args.deck))
             payload = "".join(item + NUL for item in items)
@@ -177,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             payload = pack_notes(notes_map)
             count = 0 if payload == "" else payload.count(RS) + 1
-    except (OSError, ValueError, json.JSONDecodeError, ET.ParseError) as exc:
+    except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     try:

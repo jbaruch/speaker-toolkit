@@ -51,7 +51,8 @@ STAGED_BASE="$(stage_base "$BASE")"
 
 echo "staging -> $STAGE"
 # ${arr[@]+...} keeps an empty deck from tripping `set -u` on bash 3.2.
-if ! osascript "$DRIVER" "$STAGED_BASE" "$STAGE" ${NOTE_ARGS[@]+"${NOTE_ARGS[@]}"}; then
+# PowerPoint keys open decks by file name, so the driver gets both names too.
+if ! osascript "$DRIVER" "$STAGED_BASE" "$STAGE" "$(basename "$STAGED_BASE")" "$(basename "$STAGE")" ${NOTE_ARGS[@]+"${NOTE_ARGS[@]}"}; then
   echo "ERROR: the notes driver stopped at the last stage it logged above ([open], [slide N], [save] or [close]). Close any presentation named $(basename "$STAGED_BASE") or $(basename "$OUT") still open in PowerPoint without saving, fix the cause it reported, and re-run. For a denied Automation consent see skills/presentation-builder/references/deck-editing-setup.md Step 4." >&2
   exit 1
 fi
