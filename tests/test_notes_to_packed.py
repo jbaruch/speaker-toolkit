@@ -278,3 +278,21 @@ def test_validation_messages_carry_a_repair(notes_to_packed):
         notes_to_packed.pack_notes({"0": f"a{RS}b"})
     with pytest.raises(ValueError, match="remove it from the note"):
         notes_to_packed.driver_args({"0": "a\x00b"}, slide_count=1)
+
+
+def test_cli_lone_surrogate_exits_1_with_repair_in_both_modes(
+    notes_to_packed, tmp_path, capsys
+):
+    notes = tmp_path / "notes.json"
+    notes.write_text('{"0": "bad \\ud800 text"}', encoding="utf-8")
+    deck = _deck(tmp_path, 1)
+    for argv in (
+        ["--driver-args", "--deck", str(deck), str(notes), str(tmp_path / "o.args")],
+        [str(notes), str(tmp_path / "o.packed")],
+    ):
+        assert notes_to_packed.main(argv) == 1
+        err = capsys.readouterr().err
+        assert "notes for slide 0" in err
+        assert "lone surrogate" in err
+        assert "replace or remove it in notes.json" in err
+        assert "cannot write" not in err

@@ -52,8 +52,21 @@ STAGED_BASE="$(stage_base "$BASE")"
 echo "staging -> $STAGE"
 # ${arr[@]+...} keeps an empty deck from tripping `set -u` on bash 3.2.
 # PowerPoint keys open decks by file name, so the driver gets both names too.
-if ! osascript "$DRIVER" "$STAGED_BASE" "$STAGE" "$(basename "$STAGED_BASE")" "$(basename "$STAGE")" ${NOTE_ARGS[@]+"${NOTE_ARGS[@]}"}; then
-  echo "ERROR: the notes driver stopped at the last stage it logged above ([open], [slide N], [save] or [close]). Close any presentation named $(basename "$STAGED_BASE") or $(basename "$OUT") still open in PowerPoint without saving, fix the cause it reported, and re-run. For a denied Automation consent see skills/presentation-builder/references/deck-editing-setup.md Step 4." >&2
+# Its stderr is kept so a failure can tell whether this run opened a copy.
+DRIVER_LOG="$STAGE_DIR/$(basename "$OUT").driver.log"
+if osascript "$DRIVER" "$STAGED_BASE" "$STAGE" "$(basename "$STAGED_BASE")" "$(basename "$STAGE")" ${NOTE_ARGS[@]+"${NOTE_ARGS[@]}"} 2> "$DRIVER_LOG"; then
+  cat "$DRIVER_LOG" >&2
+else
+  cat "$DRIVER_LOG" >&2
+  # grep: 0 = the driver logged [opened], 1 = it never opened a copy, 2 = log unreadable.
+  if grep -q '^\[opened\] ' "$DRIVER_LOG"; then
+    CLOSE_ADVICE="This run opened a copy: close the presentation named $(basename "$STAGED_BASE") (or $(basename "$STAGE"), if it was saved) in PowerPoint without saving."
+  elif [[ $? -eq 1 ]]; then
+    CLOSE_ADVICE="This run opened no copy: leave every presentation that was already open as it is."
+  else
+    CLOSE_ADVICE="The driver log $DRIVER_LOG could not be read, so it is unknown whether this run opened a copy: close $(basename "$STAGED_BASE") only if you did not have it open before this run."
+  fi
+  echo "ERROR: the notes driver stopped at the last stage it logged above ([open], [slide N], [save] or [close]). $CLOSE_ADVICE Then fix the cause it reported and re-run. For a denied Automation consent see skills/presentation-builder/references/deck-editing-setup.md Step 4." >&2
   exit 1
 fi
 

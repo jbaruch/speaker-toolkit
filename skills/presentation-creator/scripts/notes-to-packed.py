@@ -86,6 +86,14 @@ def note_pairs(notes_map: object) -> list[tuple[int, str]]:
                 f"notes for slide {key} must be a string, got {type(text).__name__}; "
                 "write the note as a JSON string"
             )
+        try:
+            text.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError(
+                f"notes for slide {key} contain {text[exc.start]!r} at offset "
+                f"{exc.start}, a lone surrogate that is not valid Unicode; replace or "
+                "remove it in notes.json"
+            ) from exc
         pairs.append((num + 1, text))
     return pairs
 

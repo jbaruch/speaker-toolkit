@@ -209,7 +209,8 @@ leave no copy open (`name of every presentation` lists only what was open before
 - `{"9": "x"}` fails before PowerPoint is touched, with `notes for 0-based
   slide 9 target slide 10, but the deck has 3 slides`.
 - With the base copy already open in PowerPoint, the run fails at `[open]`,
-  names the file, and leaves that open copy alone.
+  names the file, leaves that open copy alone, and the wrapper says this run
+  opened no copy.
 
 ## Step 6 — Every build (recurring)
 

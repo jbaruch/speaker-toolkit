@@ -46,6 +46,9 @@ on run argv
 		end timeout
 		set p to presentation baseName
 	end tell
+	-- inject-notes.sh reads this line to tell a copy this run opened from a
+	-- presentation that was already open.
+	log "[opened] " & baseName
 
 	set applied to 0
 	repeat with argIndex from 5 to (count of argv)

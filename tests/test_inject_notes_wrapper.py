@@ -32,12 +32,13 @@ def _deck(tmp_path, slides):
     return path
 
 
-def _fake_osascript(dirpath, *, succeed):
+def _fake_osascript(dirpath, *, succeed, stderr=""):
     """Write a fake `osascript` that records its argv NUL-separated.
 
     The wrapper calls `osascript <driver> <base> <STAGE> <base name>
-    <STAGE name> <note 1>...`, so the staged output path is $3. On success the fake touches it, as PowerPoint's
-    save would; on failure it logs a stage and exits non-zero like the driver.
+    <STAGE name> <note 1>...`, so the staged output path is $3. On success the
+    fake touches it, as PowerPoint's save would; on failure it prints `stderr`
+    (the driver's stage log and error) and exits non-zero like the driver.
     """
     record = dirpath / "argv.bin"
     p = dirpath / "osascript"
@@ -45,9 +46,7 @@ def _fake_osascript(dirpath, *, succeed):
     if succeed:
         body += 'touch "$3"\necho "Notes applied: 1"\n'
     else:
-        body += (
-            'echo "[save] $3" >&2\necho "PowerPoint got an error (-50)" >&2\nexit 1\n'
-        )
+        body += f"printf '%s' '{stderr}' >&2\nexit 1\n"
     p.write_text("#!/bin/bash\n" + body)
     p.chmod(0o755)
     return record
@@ -117,13 +116,36 @@ def test_out_of_range_note_is_refused_before_powerpoint_runs(tmp_path):
     assert not out.exists()
 
 
-def test_driver_failure_names_the_logged_stage_and_the_repair(tmp_path):
-    _fake_osascript(tmp_path, succeed=False)
+def test_failure_after_open_says_to_close_the_copy_this_run_opened(tmp_path):
+    _fake_osascript(
+        tmp_path,
+        succeed=False,
+        stderr="[open] /x/deck.pptx\n[opened] deck.pptx\n[save] /x/out.pptx\n"
+        "PowerPoint got an error (-50)\n",
+    )
     result, out = _run(tmp_path, _deck(tmp_path, 2), {"0": "x"})
     assert result.returncode == 1
     assert "[save]" in result.stderr
     assert "stopped at the last stage it logged above" in result.stderr
-    assert "deck.pptx" in result.stderr
+    assert "This run opened a copy: close the presentation named deck.pptx" in (
+        result.stderr
+    )
+    assert not out.exists()
+
+
+def test_already_open_collision_leaves_the_users_deck_alone(tmp_path):
+    _fake_osascript(
+        tmp_path,
+        succeed=False,
+        stderr="[open] /x/deck.pptx\nERROR: inject-notes failed at [open]: a "
+        "presentation named deck.pptx is already open\n",
+    )
+    result, out = _run(tmp_path, _deck(tmp_path, 2), {"0": "x"})
+    assert result.returncode == 1
+    assert "already open" in result.stderr
+    assert "This run opened no copy" in result.stderr
+    assert "leave every presentation that was already open" in result.stderr
+    assert "without saving" not in result.stderr
     assert not out.exists()
 
 

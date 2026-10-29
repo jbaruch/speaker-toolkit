@@ -15,9 +15,11 @@ wrapper's arguments and output file stay the same; the driver prints
 `Notes applied: N`, and the notes pass no longer needs `DeckOps.pptm` open. The
 driver logs each stage (open, slide N, save, close) before running it. Errors it
 raises itself name the stage and repair; any other error propagates unchanged,
-and the wrapper names the last logged stage and the copies to close. The
-helper reports an unreadable or malformed notes file or deck, and an unwritable
-output, with exit 1 and a repair instead of raw exception text or a traceback. A note goes only into the notes body
+and the wrapper names the last logged stage. It tells the caller to close a
+copy only when the driver logged opening one, so a deck that was already open
+is never put at risk. The
+helper reports an unreadable or malformed notes file or deck, a note that is
+not valid Unicode, and an unwritable output, with exit 1 and a repair instead of raw exception text or a traceback. A note goes only into the notes body
 placeholder: a notes page without one fails instead of writing the note into a
 footer, date or header placeholder. `SetSpeakerNotes` stays in `RunDeckOps.bas`,
 so an imported DeckOps container needs no re-import. The setup guide's Step 5
