@@ -57,20 +57,40 @@ echo "staging -> $STAGE"
 # fresh per-run directory means no earlier marker can be mistaken for this run's.
 RUN_DIR="$(mktemp -d "$STAGE_DIR/notes-run.XXXXXX")"
 OPENED_MARKER="$RUN_DIR/opened"
+# The driver overwrites STAGE_FILE with a fixed token before each stage (open,
+# slide N, save, close); only those tokens select a stage-specific repair.
+STAGE_FILE="$RUN_DIR/stage"
 # Best-effort: a cleanup failure warns and never replaces the run's outcome.
 remove_run_dir() {
   if ! rm -rf -- "${RUN_DIR:?}"; then
-    echo "WARNING: could not remove $RUN_DIR; it holds only this run's opened-copy marker, so delete it by hand." >&2
+    echo "WARNING: could not remove $RUN_DIR; it holds only this run's marker and stage files, so delete it by hand." >&2
   fi
   return 0
 }
-if ! osascript "$DRIVER" "$STAGED_BASE" "$STAGE" "$(basename "$STAGED_BASE")" "$(basename "$STAGE")" "$OPENED_MARKER" ${NOTE_ARGS[@]+"${NOTE_ARGS[@]}"}; then
+if ! osascript "$DRIVER" "$STAGED_BASE" "$STAGE" "$(basename "$STAGED_BASE")" "$(basename "$STAGE")" "$OPENED_MARKER" "$STAGE_FILE" ${NOTE_ARGS[@]+"${NOTE_ARGS[@]}"}; then
+  LAST_STAGE=""
+  if [[ -f "$STAGE_FILE" && -r "$STAGE_FILE" ]]; then
+    if ! IFS= read -r LAST_STAGE < "$STAGE_FILE"; then
+      LAST_STAGE=""
+    fi
+  fi
+  if [[ "$LAST_STAGE" == "open" ]]; then
+    STAGE_ADVICE="It stopped while opening the staged copy: open $STAGED_BASE by hand to confirm PowerPoint can read it, dismiss any PowerPoint dialog, and re-run."
+  elif [[ "$LAST_STAGE" =~ ^slide\ ([0-9]+)$ ]]; then
+    STAGE_ADVICE="It stopped writing the note for slide ${BASH_REMATCH[1]}: open the source deck, check that slide's notes page (View > Notes Page) and its note text in notes.json, and re-run."
+  elif [[ "$LAST_STAGE" == "save" ]]; then
+    STAGE_ADVICE="It stopped saving to $STAGE: free disk space, confirm PowerPoint can write to $OUT_STAGE_DIR, and re-run."
+  elif [[ "$LAST_STAGE" == "close" ]]; then
+    STAGE_ADVICE="It stopped after saving, while closing the copy: close $(basename "$STAGE") in PowerPoint without saving, then re-run."
+  else
+    STAGE_ADVICE="It stopped before recording a stage: confirm $RUN_DIR is writable and that PowerPoint is running with no dialog open, then re-run."
+  fi
   if [[ -e "$OPENED_MARKER" ]]; then
     CLOSE_ADVICE="This run opened its own copy (no presentation with that name was open before): close the presentation named $(basename "$STAGED_BASE") (or $(basename "$STAGE"), if it was saved) in PowerPoint without saving."
   else
     CLOSE_ADVICE="This run recorded no copy of its own: leave every presentation that was open before this run as it is."
   fi
-  echo "ERROR: the notes driver stopped at the last stage it logged above ([open], [slide N], [save] or [close]). $CLOSE_ADVICE Then fix the cause it reported and re-run. For a denied Automation consent see skills/presentation-builder/references/deck-editing-setup.md Step 4." >&2
+  echo "ERROR: the notes driver failed; its message is above. If that message gives a repair, follow it. $STAGE_ADVICE $CLOSE_ADVICE For a denied Automation consent see skills/presentation-builder/references/deck-editing-setup.md Step 4." >&2
   remove_run_dir
   exit 1
 fi

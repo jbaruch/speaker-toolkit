@@ -12,7 +12,10 @@
 -- before it runs. Errors this driver raises name their stage and repair; any other
 -- error propagates unchanged after the last logged stage, and inject-notes.sh adds
 -- the repair.
---   osascript inject-notes.applescript <basePath> <outPath> <baseName> <outName> <markerPath> [<note for slide 1>]...
+-- Before each stage it also writes that stage's token (open, slide N, save,
+-- close) to stagePath, so the wrapper can give a stage-specific repair for an
+-- error the driver did not raise itself.
+--   osascript inject-notes.applescript <basePath> <outPath> <baseName> <outName> <markerPath> <stagePath> [<note for slide 1>]...
 
 property errAlreadyOpen : 1002
 property errNoNotesBody : 1003
@@ -22,14 +25,16 @@ property errNotAuthorized : -1743
 property markerWriteErrors : {-43, -44, -45, -46, -48, -49, -54, -61, -5000}
 
 on run argv
-	if (count of argv) < 5 then error "Expected: basePath outPath baseName outName markerPath [note for slide 1]... — run the driver through inject-notes.sh."
+	if (count of argv) < 6 then error "Expected: basePath outPath baseName outName markerPath stagePath [note for slide 1]... — run the driver through inject-notes.sh."
 	set basePath to item 1 of argv
 	set outPath to item 2 of argv
 	-- PowerPoint keys open decks by file name; the wrapper derives both names.
 	set baseName to item 3 of argv
 	set outName to item 4 of argv
 	set markerPath to item 5 of argv
+	set stagePath to item 6 of argv
 
+	my recordStage(stagePath, "open")
 	log "[open] " & basePath
 	-- AppleScript has no typed catch: this handler adds the repair for a denied
 	-- Automation consent and re-raises every other error unchanged.
@@ -62,25 +67,33 @@ on run argv
 	end try
 
 	set applied to 0
-	repeat with argIndex from 6 to (count of argv)
+	repeat with argIndex from 7 to (count of argv)
 		set noteText to item argIndex of argv
 		if noteText is not "" then
-			log "[slide " & (argIndex - 5) & "]"
-			my setNotesBody(p, argIndex - 5, noteText, baseName)
+			my recordStage(stagePath, "slide " & (argIndex - 6))
+			log "[slide " & (argIndex - 6) & "]"
+			my setNotesBody(p, argIndex - 6, noteText, baseName)
 			set applied to applied + 1
 		end if
 	end repeat
 
+	my recordStage(stagePath, "save")
 	log "[save] " & outPath
 	tell application "Microsoft PowerPoint"
 		with timeout of 1800 seconds
 			save p in POSIX file outPath
 		end timeout
 	end tell
+	my recordStage(stagePath, "close")
 	log "[close] " & outName
 	tell application "Microsoft PowerPoint" to close presentation outName saving no
 	return "Notes applied: " & applied
 end run
+
+-- Overwrites stagePath with one fixed stage token and a newline.
+on recordStage(stagePath, token)
+	do shell script "printf '%s\\n' " & quoted form of token & " > " & quoted form of stagePath
+end recordStage
 
 -- Writes noteText into the notes body placeholder of slide num. A notes page
 -- without one raises errNoNotesBody; the note never lands in a title, footer,

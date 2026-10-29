@@ -15,7 +15,8 @@ wrapper's arguments and output file stay the same; the driver prints
 `Notes applied: N`, and the notes pass no longer needs `DeckOps.pptm` open. The
 driver logs each stage (open, slide N, save, close) before running it. Errors it
 raises itself name the stage and repair; any other error propagates unchanged,
-and the wrapper names the last logged stage. It tells the caller to close a
+and the wrapper adds that stage's repair from a fixed token the driver writes
+to a second per-run file before each stage. It tells the caller to close a
 copy only when the driver created the wrapper's per-run marker file, which it
 does after confirming no same-named deck was open and once PowerPoint has opened
 its own copy, so a deck that was already open is never put at risk and no log text

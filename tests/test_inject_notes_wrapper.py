@@ -34,15 +34,19 @@ def _deck(tmp_path, slides, name="deck.pptx"):
     return path
 
 
-def _fake_osascript(dirpath, *, succeed, opened=False, stderr="", lock_run_dir=False):
+def _fake_osascript(
+    dirpath, *, succeed, opened=False, stage=None, stderr="", lock_run_dir=False
+):
     """Write a fake `osascript` that records its argv NUL-separated.
 
     The wrapper calls `osascript <driver> <base> <STAGE> <base name>
-    <STAGE name> <marker> <note 1>...`, so the staged output path is $3 and the
-    opened-copy marker is $6. On success the fake touches the output, as
-    PowerPoint's save would. On failure it creates the marker only when
-    `opened`, as the driver does right before opening its own copy, prints
-    `stderr` (the driver's stage log and error) and exits non-zero. With
+    <STAGE name> <marker> <stage file> <note 1>...`, so the staged output path
+    is $3, the opened-copy marker $6 and the stage file $7. On success the fake
+    touches the output, as PowerPoint's save would. On failure it creates the
+    marker only when `opened`, as the driver does once PowerPoint has opened
+    its own copy, writes `stage` to the stage file as the driver does before
+    each stage, prints `stderr` (the driver's log and error) and exits
+    non-zero. With
     `lock_run_dir` it plants a read-only subdirectory in the run directory so
     the wrapper's cleanup fails.
     """
@@ -59,6 +63,8 @@ def _fake_osascript(dirpath, *, succeed, opened=False, stderr="", lock_run_dir=F
     else:
         if opened:
             body += 'touch "$6"\n'
+        if stage is not None:
+            body += f"printf '%s\\n' '{stage}' > \"$7\"\n"
         body += f"printf '%s' '{stderr}' >&2\nexit 1\n"
     p.write_text("#!/bin/bash\n" + body)
     p.chmod(0o755)
@@ -100,12 +106,14 @@ def test_unicode_multiline_and_unchanged_slides_reach_the_driver_intact(tmp_path
     assert Path(argv[2]).name == out.name
     # The driver gets both file names, so it parses no paths itself.
     assert argv[3:5] == [base.name, out.name]
-    # A fresh per-run marker path the driver creates before opening its copy.
-    marker = Path(argv[5])
+    # Fresh per-run marker and stage paths in one run directory.
+    marker, stage_file = Path(argv[5]), Path(argv[6])
     assert marker.name == "opened"
+    assert stage_file.name == "stage"
+    assert marker.parent == stage_file.parent
     assert marker.parent.name.startswith("notes-run.")
     # One argument per slide, in order; "" leaves a slide's notes unchanged.
-    assert argv[6:] == [first, "", third, ""]
+    assert argv[7:] == [first, "", third, ""]
     assert out.exists()
     assert not marker.parent.exists()  # the run directory is cleaned up
     assert f"done -> {out}" in result.stdout
@@ -115,14 +123,14 @@ def test_empty_map_passes_one_empty_argument_per_slide(tmp_path):
     record = _fake_osascript(tmp_path, succeed=True)
     result, _ = _run(tmp_path, _deck(tmp_path, 3), {})
     assert result.returncode == 0, result.stderr
-    assert _argv(record)[6:] == ["", "", ""]
+    assert _argv(record)[7:] == ["", "", ""]
 
 
 def test_zero_slide_deck_passes_no_note_arguments(tmp_path):
     record = _fake_osascript(tmp_path, succeed=True)
     result, _ = _run(tmp_path, _deck(tmp_path, 0), {})
     assert result.returncode == 0, result.stderr
-    assert len(_argv(record)) == 6
+    assert len(_argv(record)) == 7
 
 
 def test_out_of_range_note_is_refused_before_powerpoint_runs(tmp_path):
@@ -139,12 +147,14 @@ def test_failure_after_open_says_to_close_the_copy_this_run_opened(tmp_path):
         tmp_path,
         succeed=False,
         opened=True,
+        stage="save",
         stderr="[open] /x/deck.pptx\n[save] /x/out.pptx\nPowerPoint got an error (-50)\n",
     )
     result, out = _run(tmp_path, _deck(tmp_path, 2), {"0": "x"})
     assert result.returncode == 1
-    assert "[save]" in result.stderr
-    assert "stopped at the last stage it logged above" in result.stderr
+    assert "PowerPoint got an error (-50)" in result.stderr
+    assert "It stopped saving to" in result.stderr
+    assert "free disk space" in result.stderr
     assert "This run opened its own copy" in result.stderr
     assert "close the presentation named deck.pptx" in result.stderr
     assert not Path(_argv(record)[5]).parent.exists()  # run directory removed
@@ -157,6 +167,7 @@ def test_already_open_collision_leaves_the_users_deck_alone(tmp_path):
     _fake_osascript(
         tmp_path,
         succeed=False,
+        stage="open",
         stderr="[open] /x/deck.pptx\n[opened] deck.pptx\nERROR: inject-notes failed "
         "at [open]: a presentation named deck.pptx is already open\n",
     )
@@ -175,12 +186,14 @@ def test_failed_open_gives_no_close_without_saving_advice(tmp_path):
     _fake_osascript(
         tmp_path,
         succeed=False,
+        stage="open",
         stderr="[open] /x/deck.pptx\nMicrosoft PowerPoint got an error: "
         "AppleEvent timed out. (-1712)\n",
     )
     result, out = _run(tmp_path, _deck(tmp_path, 1), {"0": "x"})
     assert result.returncode == 1
     assert "AppleEvent timed out" in result.stderr
+    assert "It stopped while opening the staged copy" in result.stderr
     assert "This run recorded no copy of its own" in result.stderr
     assert "without saving" not in result.stderr
     assert not out.exists()
@@ -200,6 +213,33 @@ def test_marker_like_text_in_a_multiline_filename_cannot_forge_an_open_copy(
     assert result.returncode == 1
     assert "This run recorded no copy of its own" in result.stderr
     assert "without saving" not in result.stderr
+    assert not out.exists()
+
+
+@pytest.mark.parametrize(
+    ("stage", "repair"),
+    [
+        ("slide 2", "It stopped writing the note for slide 2: open the source deck"),
+        ("close", "It stopped after saving, while closing the copy"),
+        (None, "It stopped before recording a stage: confirm"),
+        # Only the driver's fixed tokens select a stage; anything else is generic.
+        ("slide 2; rm -rf /", "It stopped before recording a stage: confirm"),
+    ],
+)
+def test_raw_powerpoint_error_gets_a_stage_specific_repair(tmp_path, stage, repair):
+    _fake_osascript(
+        tmp_path,
+        succeed=False,
+        opened=True,
+        stage=stage,
+        stderr="Microsoft PowerPoint got an error: Parameter error. (-50)\n",
+    )
+    result, out = _run(tmp_path, _deck(tmp_path, 3), {"1": "x"})
+    assert result.returncode == 1
+    assert "Parameter error. (-50)" in result.stderr
+    assert "If that message gives a repair, follow it." in result.stderr
+    assert repair in result.stderr
+    assert "re-run" in result.stderr
     assert not out.exists()
 
 
@@ -234,6 +274,7 @@ def test_cleanup_failure_after_driver_failure_keeps_the_diagnostic(tmp_path):
         tmp_path,
         succeed=False,
         opened=True,
+        stage="save",
         lock_run_dir=True,
         stderr="[open] /x/deck.pptx\n[save] /x/out.pptx\nPowerPoint got an error (-50)\n",
     )
