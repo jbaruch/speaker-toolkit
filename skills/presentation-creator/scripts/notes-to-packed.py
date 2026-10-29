@@ -194,11 +194,21 @@ def driver_args(notes_map: object, slide_count: int) -> list[str]:
                 "the note"
             )
         items[num - 1] = text
-    size = sum(len(item.encode("utf-8")) + 1 for item in items)
+    sizes = [len(item.encode("utf-8")) + 1 for item in items]
+    size = sum(sizes)
     if size > DRIVER_ARGS_BUDGET:
+        largest = max(range(slide_count), key=lambda i: sizes[i])
+        if sizes[largest] > DRIVER_ARGS_BUDGET:
+            raise ValueError(
+                f"notes for slide {largest} are {sizes[largest]} bytes, over the "
+                f"{DRIVER_ARGS_BUDGET}-byte argument budget on their own; shorten "
+                "that note in notes.json"
+            )
         raise ValueError(
             f"notes total {size} bytes, over the {DRIVER_ARGS_BUDGET}-byte argument "
-            "budget; split notes.json into two runs of inject-notes.sh"
+            "budget; split notes.json into two maps with different slides, run "
+            "inject-notes.sh with the first, then run it with the second, passing "
+            "the first run's output deck as the base"
         )
     return items
 

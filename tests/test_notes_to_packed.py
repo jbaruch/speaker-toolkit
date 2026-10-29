@@ -105,10 +105,24 @@ def test_driver_args_reject_nul(notes_to_packed):
         notes_to_packed.driver_args({"0": "bad\x00text"}, slide_count=1)
 
 
-def test_driver_args_reject_over_budget(notes_to_packed):
+def test_driver_args_reject_a_single_note_over_budget_with_shorten_advice(
+    notes_to_packed,
+):
     big = "x" * (notes_to_packed.DRIVER_ARGS_BUDGET + 1)
-    with pytest.raises(ValueError, match="split notes.json"):
-        notes_to_packed.driver_args({"0": big}, slide_count=1)
+    with pytest.raises(ValueError, match="notes for slide 1 .* shorten that note"):
+        notes_to_packed.driver_args({"1": big}, slide_count=2)
+
+
+def test_driver_args_reject_many_notes_over_budget_with_chained_runs(
+    notes_to_packed,
+):
+    # Each note fits on its own; together they exceed the budget.
+    third = "x" * (notes_to_packed.DRIVER_ARGS_BUDGET // 3 + 1)
+    with pytest.raises(ValueError) as exc:
+        notes_to_packed.driver_args({"0": third, "1": third, "2": third}, 3)
+    message = str(exc.value)
+    assert "split notes.json into two maps with different slides" in message
+    assert "passing the first run's output deck as the base" in message
 
 
 def test_driver_args_share_note_validation(notes_to_packed):
