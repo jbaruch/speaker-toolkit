@@ -104,10 +104,19 @@ generating slide structure (see `rules/slide-generation-rules.md`).
   `<p:bg>`-blipFill check finds the expected slides.
 - The deterministic Python/shell helpers (illustration apply, manifest→spec) ARE
   unit-tested in `tests/` — only the PowerPoint-driving layer is exempt.
-- Exempt artifacts: `RunDeckOps.bas` and every `*.applescript` driver beside it,
-  `deckops-version.applescript` included. Their manual validation procedure is
-  Step 5 of `skills/presentation-builder/references/deck-editing-setup.md` — what
-  to run, what to observe, what counts as a pass.
+- Exempt artifacts, each with its manual validation procedure in
+  `skills/presentation-builder/references/deck-editing-setup.md` (what to run,
+  what to observe, what counts as a pass), all in
+  `skills/presentation-creator/scripts/`:
+  - `RunDeckOps.bas` and `build-deck.applescript` — Step 5 smoke test.
+  - `inject-notes.applescript` — Step 5, Notes driver check.
+  - `deckops-version.applescript` — Step 0, the `deckops-doctor.py` probe.
+  - `run-deck-ops.applescript`, `apply-backgrounds.applescript`,
+    `expand-builds.applescript`, `insert-qr.applescript`,
+    `make-bg-slide.applescript` and `make-placeholder-slide.applescript` —
+    Step 6, item 5: open the pass's output in PowerPoint and Keynote, confirm no
+    "Repair" prompt and the expected slides, art and backgrounds.
+  - Adding a driver means adding it to this list with its procedure.
 - `skills/presentation-creator/scripts/deckops-doctor.py` splits along the same line: the AppleScript probe is exempt,
   while path derivation, probe-output parsing, and the verdict table are unit-tested
   in `tests/test_deckops_doctor.py` against synthetic probe results.

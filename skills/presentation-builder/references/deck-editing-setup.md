@@ -176,13 +176,136 @@ It passes when all four hold:
 Anything else: re-run Step 0 and follow `next_step`. Only after a clean pass run
 the real edit. Delete the throwaway files.
 
+### Notes driver check
+
+Run this after any change to `inject-notes.applescript`, against a copy of the
+smoke-test output. Every path below is absolute: `{check_dir}` is a new,
+empty directory inside PowerPoint's container, for example the expanded
+`$HOME/Library/Containers/com.microsoft.Powerpoint/Data/notes-check`.
+
+1. Copy the smoke-test output to `{check_dir}/notes-check-base.pptx`.
+2. Save this Unicode sentinel map, with notes for slides 1 and 3 and none for
+   slide 2, as `{check_dir}/notes.json`:
+
+   ```json
+   {"0": "PORT → Factories ⚡ “quoted” — café 日本", "2": "second note"}
+   ```
+
+3. Record `shasum -a 256 "{check_dir}/notes-check-base.pptx"`, then run:
+
+   ```bash
+   bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.sh" \
+     "{check_dir}/notes-check-base.pptx" "{check_dir}/notes-check-out.pptx" \
+     "{check_dir}/notes.json"
+   ```
+
+It passes when all five hold:
+1. The script exits 0 and the driver prints `Notes applied: 2`.
+2. Read back with python-pptx, slide 1's notes equal the sentinel character for
+   character, slide 3's are `second note`, and slide 2's are unchanged.
+3. The base's SHA-256 is unchanged.
+4. The output opens in **PowerPoint** with no "Repair" prompt, and the presenter
+   view shows the sentinel intact.
+5. The output opens in **Keynote** with no "Repair" prompt, and its presenter
+   notes show the sentinel intact.
+
+Then check the failure paths. Run each case on its own fresh copy of the
+smoke-test output, so no earlier case's open presentation or output can affect
+it, and start each with only the presentations you had open before the check.
+Cases A, C and D must exit non-zero and must not create their own output
+file; case B and case E must succeed.
+
+**Case A — note past the deck.**
+1. Copy the smoke-test output to `{check_dir}/case-a-base.pptx`.
+2. Save `{"9": "x"}` as `{check_dir}/case-a.json`.
+3. Run:
+
+   ```bash
+   bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.sh" \
+     "{check_dir}/case-a-base.pptx" "{check_dir}/case-a-out.pptx" \
+     "{check_dir}/case-a.json"
+   ```
+
+It passes when it fails before PowerPoint is touched, with `notes for 0-based
+slide 9 target slide 10, but the deck has 3 slides`, and
+`{check_dir}/case-a-out.pptx` does not exist.
+
+**Case B — base already open.** PowerPoint opens a run-unique copy, so an open
+base no longer blocks the run.
+1. Copy the smoke-test output to `{check_dir}/case-b-base.pptx` and open it in
+   PowerPoint.
+2. Run:
+
+   ```bash
+   bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.sh" \
+     "{check_dir}/case-b-base.pptx" "{check_dir}/case-b-out.pptx" \
+     "{check_dir}/notes.json"
+   ```
+
+It passes when it exits 0 and writes `{check_dir}/case-b-out.pptx` with the
+sentinel notes, `case-b-base.pptx` is still open in PowerPoint with no notes
+added, and no other presentation is left open. Then close `case-b-base.pptx`
+without saving.
+
+**Case C — marker write fails after the copy opens.**
+1. Copy the smoke-test output to `{check_dir}/case-c-base.pptx`. Confirm no
+   presentation named `case-c-base.pptx` is open.
+2. Run the driver directly with a marker path in a folder that does not exist:
+
+   ```bash
+   osascript "{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.applescript" \
+     "{check_dir}/case-c-base.pptx" "{check_dir}/case-c-out.pptx" \
+     case-c-base.pptx case-c-out.pptx \
+     "{check_dir}/missing/opened" "{check_dir}/case-c-stage" "note" "" "note"
+   ```
+
+It passes when it exits non-zero with `inject-notes failed at [open]: this run
+opened case-c-base.pptx but could not record that`, the close-without-saving
+repair and osascript's original File Manager error (`-43`, folder not found),
+`case-c-base.pptx` is open in PowerPoint, and `{check_dir}/case-c-out.pptx`
+does not exist. Then close `case-c-base.pptx` without saving.
+
+**Case D — stage write fails.**
+1. Copy the smoke-test output to `{check_dir}/case-d-base.pptx`. Confirm no
+   presentation named `case-d-base.pptx` is open.
+2. Run the driver directly with a stage path in a folder that does not exist:
+
+   ```bash
+   osascript "{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.applescript" \
+     "{check_dir}/case-d-base.pptx" "{check_dir}/case-d-out.pptx" \
+     case-d-base.pptx case-d-out.pptx \
+     "{check_dir}/case-d-opened" "{check_dir}/missing/stage" "note"
+   ```
+
+It passes when it exits non-zero with `inject-notes failed at [open]: could not
+record that stage at {check_dir}/missing/stage`, the free-space-or-writable
+repair and the shell's original status (`1`), no presentation named
+`case-d-base.pptx` is open, and `{check_dir}/case-d-out.pptx` does not exist.
+
+**Case E — two runs with one output name at once.**
+1. Copy the smoke-test output to `{check_dir}/case-e-base.pptx`, and create
+   the folders `{check_dir}/e1` and `{check_dir}/e2`.
+2. Start both runs together:
+
+   ```bash
+   S="{speaker_toolkit_root}/skills/presentation-creator/scripts"
+   bash "$S/inject-notes.sh" "{check_dir}/case-e-base.pptx" "{check_dir}/e1/deck.pptx" "{check_dir}/notes.json" &
+   bash "$S/inject-notes.sh" "{check_dir}/case-e-base.pptx" "{check_dir}/e2/deck.pptx" "{check_dir}/notes.json" &
+   wait
+   ```
+
+It passes when both exit 0, both `e1/deck.pptx` and `e2/deck.pptx` carry the
+sentinel notes, and no presentation from either run is left open.
+
 ## Step 6 — Every build (recurring)
 
 Steps 1–4 are one-time per machine; this is what happens on EVERY real deck build:
 
-1. **Open `DeckOps.pptm` first and keep it open for the entire build.** Every pass
-   (`BuildDeck`, `ExpandBuilds`, speaker notes, backgrounds, QR) drives a macro
-   that lives in this file; the scripts call it in the running PowerPoint instance.
+1. **Open `DeckOps.pptm` first and keep it open for the entire build.** Every macro
+   pass (`BuildDeck`, `ExpandBuilds`, backgrounds, QR) drives a macro that lives in
+   this file; the scripts call it in the running PowerPoint instance. The
+   speaker-notes pass runs no macro: it writes through PowerPoint's AppleScript
+   object model.
    If `DeckOps.pptm` is closed (or PowerPoint quits) mid-build, the next pass fails
    with a macro-not-found error — reopen it and re-run that pass.
 2. Run Step 0 once before the first pass and require `ok`. It is the cheap way to
@@ -232,7 +355,9 @@ which a sandboxed app reads and writes with no prompt:
   sandboxed) moves it to the Drive destination.
 - A single EXIT trap in `container-stage.sh` removes the per-run staging dir;
   wrappers must NOT set their own EXIT trap (it would override that one and leak
-  copies).
+  copies). A wrapper that needs more cleanup registers a function with
+  `container_stage_on_exit <function>`; the helper's trap runs it first and warns,
+  without changing the exit status, if it fails.
 
 So a full build runs with ZERO prompts and no Full Disk Access grant. If the
 container is absent (PowerPoint never launched), the wrappers fall back to the

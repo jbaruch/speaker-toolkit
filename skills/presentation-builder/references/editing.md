@@ -60,7 +60,7 @@ first and act on its `status` rather than assuming a first run;
 [deck-editing-setup.md](deck-editing-setup.md) covers enabling VBA macros, importing
 `RunDeckOps.bas` into a `DeckOps.pptm` container, and granting Automation
 consent. On EVERY build, the user must open `DeckOps.pptm` first and keep it open
-for the whole sequence — each pass calls a macro in that running instance (see
-Step 6 of the setup doc).
+for the whole sequence — each macro pass calls a macro in that running instance
+(see Step 6 of the setup doc). The speaker-notes pass runs no macro.
 The macro writes a COPY — the original is untouched; continue editing from the
 OUTPUT deck.

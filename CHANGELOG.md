@@ -1,5 +1,56 @@
 # Changelog
 
+### Keep Unicode in injected speaker notes
+
+`inject-notes.sh` passed every note to the `SetSpeakerNotes` VBA macro through
+`run VB macro`, which converts string parameters to Mac Roman. Arrows, emoji and
+any other character outside it reached the deck as `?`, so a stage cue like
+"PORT → Factories" read "PORT ? Factories". `notes-to-packed.py --driver-args`
+now validates the notes against the deck's slide count (Transitional or Strict
+OOXML) and emits one item per slide, empty for slides whose notes stay
+unchanged. The wrapper passes the items, plus both deck file names, to the
+AppleScript driver as plain arguments, so the driver parses nothing; it writes each note through
+PowerPoint's AppleScript object model, which carries Unicode intact. The
+wrapper's arguments and output file stay the same; the driver prints
+`Notes applied: N`, and the notes pass no longer needs `DeckOps.pptm` open. The notes' plaintext
+arguments live only in a per-run directory that the wrapper removes on every
+exit. `container-stage.sh`'s shared cleanup now warns instead of letting a
+failed removal change any deck wrapper's exit status. Delivery to the destination
+copies to a temporary file beside it and renames that into place, so a failed
+copy across filesystems (the container to Google Drive) never leaves a partial
+deck and keeps the previous output; the unfinished copy is removed on every
+exit, a signal included, and an output path that is a directory is refused
+before PowerPoint runs. The final rename goes through `atomic-replace.py`, which
+refuses a directory even if one appears while PowerPoint runs, and the staged
+deck lives in a folder the run alone owns and removes as a whole, so concurrent
+runs never share it and a save that finishes after a timeout has nowhere to
+land. An output path that is the base deck itself is refused. PowerPoint opens a copy
+of the base and saves under names carrying the run's ID, so concurrent runs
+never share a PowerPoint-visible name and the base can stay open meanwhile.
+`container-stage.sh` gains `container_stage_on_exit` so a wrapper can add
+cleanup to its single EXIT trap instead of replacing it. An open that times out records an
+`opening` stage, so the wrapper can say a uniquely named copy may still appear. The
+driver logs each stage (open, slide N, save, close) before running it. Errors it
+raises itself name the stage and repair; any other error propagates unchanged,
+and the wrapper adds that stage's repair from a fixed token the driver writes
+to a second per-run file before each stage. It tells the caller to close a
+copy only when the driver created the wrapper's per-run marker file, which it
+does after confirming no same-named deck was open and once PowerPoint has opened
+its own copy, so a deck that was already open is never put at risk and no log text
+can fake the marker. The
+helper reports an unreadable or malformed notes file or deck, a note that is
+not valid Unicode, notes over the argument budget (with a slide-by-slide plan of
+chained runs that each fit), and an unwritable output, with exit 1 and a repair instead of raw exception text or a traceback. A note goes only into the notes body
+placeholder: a notes page without one fails instead of writing the note into a
+footer, date or header placeholder. `SetSpeakerNotes` stays in `RunDeckOps.bas`,
+so an imported DeckOps container needs no re-import. The setup guide's Step 5
+adds a Notes driver check with a Unicode sentinel and the failure paths, and
+`rules/deck-editing-rules.md` now names each exempt AppleScript driver with its
+validation procedure instead of exempting them by glob.
+
+`BuildDeck` text ops, `RunDeckOps` replacements and `ExpandBuilds` notes still
+cross the same bridge.
+
 ## 0.21.2 — 2026-10-21
 
 ### Align documentation with the focused presentation skills

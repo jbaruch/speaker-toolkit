@@ -42,9 +42,11 @@ replacing trusted text.
 real PowerPoint app (VBA driven via AppleScript), replacing python-pptx and the
 MCP PPT server, which had been silently emitting broken `.pptx` files. A single
 `DeckOps` module covers whole-deck creation, placeholder slides, background
-images, speaker notes, and QR insertion; the deterministic pieces (op validation,
-slide targeting, color matching) are unit-tested while the PowerPoint automation
-layer is validated by opening the deck. macOS + Microsoft PowerPoint.
+images, and QR insertion; speaker notes go through PowerPoint's AppleScript
+object model instead of a macro, so they keep every Unicode character. The
+deterministic pieces (op validation, notes validation, slide targeting, color
+matching) are unit-tested while the PowerPoint automation layer is validated by
+opening the deck. macOS + Microsoft PowerPoint.
 
 **QR codes that survive deck reuse** — the QR step detects an existing QR on any
 slide and replaces it in place, so a deck trimmed from another talk no longer ends
@@ -579,7 +581,7 @@ If the speaker profile doesn't exist yet (fewer than 10 talks parsed), the creat
 - Deck setup, illustration credentials, and publishing services are selected only for actions that use them
 
 ### For PowerPoint Builds, Edits, and Illustration Application
-- Microsoft PowerPoint with VBA macros — the deck engine: slide generation, structural edits, speaker notes, backgrounds, and QR all drive the real app (macOS only). One-time `DeckOps.pptm` macro setup: `skills/presentation-builder/references/deck-editing-setup.md`
+- Microsoft PowerPoint with VBA macros — the deck engine: slide generation, structural edits, backgrounds, and QR drive macros in the real app (macOS only). One-time `DeckOps.pptm` macro setup: `skills/presentation-builder/references/deck-editing-setup.md`. Speaker notes need PowerPoint and Automation consent but no macro.
 - `python-pptx` (extraction reads + the illustration scrim/title apply pass)
 - A PowerPoint template (the vault captures the path; a generic template works too)
 
@@ -651,7 +653,7 @@ speaker-toolkit/
     |   |   +-- validate-deckops.py           # Validate a deck op sequence before BuildDeck (tested)
     |   |   +-- build-deck.sh                  # Wrapper for BuildDeck (whole-deck creation via real PowerPoint)
     |   |   +-- build-deck.applescript         # AppleScript driver for BuildDeck (reads ops as UTF-8)
-    |   |   +-- RunDeckOps.bas                 # VBA: BuildDeck + trim/reorder/import/notes/bg/placeholder/QR via real PowerPoint
+    |   |   +-- RunDeckOps.bas                 # VBA: BuildDeck + trim/reorder/import/bg/placeholder/QR via real PowerPoint
     |   |   +-- run-deck-ops.sh                # Wrapper for RunDeckOps (staging + move into place)
     |   |   +-- run-deck-ops.applescript       # AppleScript driver for RunDeckOps
     |   |   +-- deckops-doctor.py              # Is the deck layer set up, open, and current? (tested)
@@ -665,9 +667,10 @@ speaker-toolkit/
     |   |   +-- apply-backgrounds.sh           # Wrapper for ApplyBackgrounds (bulk FULL-slide bg fills)
     |   |   +-- apply-backgrounds.applescript  # AppleScript driver for ApplyBackgrounds
     |   |   +-- backgrounds-manifest-to-spec.py # Manifest JSON -> ApplyBackgrounds spec (tested)
-    |   |   +-- inject-notes.sh                # Wrapper for SetSpeakerNotes (notes via real PowerPoint)
-    |   |   +-- inject-notes.applescript       # AppleScript driver for SetSpeakerNotes (reads notes as UTF-8)
-    |   |   +-- notes-to-packed.py             # Notes JSON -> SetSpeakerNotes wire format (tested)
+    |   |   +-- inject-notes.sh                # Wrapper for the notes driver (notes via real PowerPoint)
+    |   |   +-- inject-notes.applescript       # Notes driver: sets each note via AppleScript, Unicode intact
+    |   |   +-- notes-to-packed.py             # Notes JSON -> notes driver wire format (tested)
+    |   |   +-- atomic-replace.py              # Exact-target rename that refuses directories (tested)
     |   |   +-- insert-qr.sh                    # Wrapper for InsertQR (QR PNG bottom-right via real PowerPoint)
     |   |   +-- insert-qr.applescript           # AppleScript driver for InsertQR
     |   +-- references/
