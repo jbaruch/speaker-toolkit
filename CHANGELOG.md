@@ -6,14 +6,17 @@
 `run VB macro`, which converts string parameters to Mac Roman. Arrows, emoji and
 any other character outside it reached the deck as `?`, so a stage cue like
 "PORT → Factories" read "PORT ? Factories". `notes-to-packed.py --driver-args`
-now validates the notes against the deck's slide count and emits slide-number
-and note-text pairs, which the wrapper passes to the AppleScript driver as plain
-arguments. The driver parses nothing and writes each note through PowerPoint's
-AppleScript object model, which carries Unicode intact. The wrapper's arguments
-and output file stay the same; the driver prints `Notes applied: N`, and the
-notes pass no longer needs `DeckOps.pptm` open. Each failure names its stage
-(open, the slide it stopped on, or save), keeps PowerPoint's error number, gives
-the repair, and closes only the copy the driver opened. A note goes only into the notes body
+now validates the notes against the deck's slide count (Transitional or Strict
+OOXML) and emits one item per slide, empty for slides whose notes stay
+unchanged. The wrapper passes the items to the AppleScript driver as plain
+arguments, so the driver parses nothing; it writes each note through
+PowerPoint's AppleScript object model, which carries Unicode intact. The
+wrapper's arguments and output file stay the same; the driver prints
+`Notes applied: N`, and the notes pass no longer needs `DeckOps.pptm` open. The
+driver logs each stage (open, slide N, save, close) before running it. Errors it
+raises itself name the stage and repair; any other error propagates unchanged,
+and the wrapper names the last logged stage and the copies to close. The
+helper's output write now fails with exit 1 and a repair instead of a traceback. A note goes only into the notes body
 placeholder: a notes page without one fails instead of writing the note into a
 footer, date or header placeholder. `SetSpeakerNotes` stays in `RunDeckOps.bas`,
 so an imported DeckOps container needs no re-import. The setup guide's Step 5

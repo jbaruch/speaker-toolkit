@@ -2,89 +2,75 @@
 -- Writes each note into its slide's notes body placeholder through PowerPoint's
 -- AppleScript object model (`set content`), which carries Unicode text intact.
 -- Never `run VB macro`. The driver parses nothing: inject-notes.sh validates the
--- notes against the deck with notes-to-packed.py --driver-args and passes them
--- as argument pairs of 1-based slide number and note text.
+-- notes against the deck with notes-to-packed.py --driver-args and passes one
+-- argument per slide, in slide order. An empty argument leaves that slide's notes
+-- unchanged.
 -- Opens basePath, saves the result to outPath, and closes it; basePath is not
--- modified. Every failure names its stage (open, slide N, save), keeps the
--- original error number, and gives the repair.
---   osascript inject-notes.applescript <basePath> <outPath> [<slide #> <note text>]...
+-- modified. Each stage ([open], [slide N], [save], [close]) is logged to stderr
+-- before it runs. Errors this driver raises name their stage and repair; any other
+-- error propagates unchanged after the last logged stage, and inject-notes.sh adds
+-- the repair.
+--   osascript inject-notes.applescript <basePath> <outPath> [<note for slide 1>]...
 
--- Error numbers this driver raises itself; anything else is PowerPoint's own.
-property errUnpairedArgs : 1001
 property errAlreadyOpen : 1002
 property errNoNotesBody : 1003
 property errNotAuthorized : -1743
 
 on run argv
-	if (count of argv) < 2 then error "Expected: basePath outPath [slideNumber noteText]..."
+	if (count of argv) < 2 then error "Expected: basePath outPath [note for slide 1]..."
 	set basePath to item 1 of argv
 	set outPath to item 2 of argv
-	if (count of argv) > 2 then
-		set noteArgs to items 3 thru -1 of argv
-	else
-		set noteArgs to {}
-	end if
-	if ((count of noteArgs) mod 2) is not 0 then error "ERROR: inject-notes failed at [args]: slide numbers and note texts must come in pairs — run the driver through inject-notes.sh, which builds them with notes-to-packed.py --driver-args." number errUnpairedArgs
 	set baseName to my fileName(basePath)
 	set outName to my fileName(outPath)
 
-	set openedByUs to false
+	log "[open] " & basePath
+	-- AppleScript has no typed catch: this handler adds the repair for a denied
+	-- Automation consent and re-raises every other error unchanged.
 	try
 		tell application "Microsoft PowerPoint"
 			activate
 			set openNames to name of every presentation
 		end tell
-		-- PowerPoint keys open decks by filename: a same-named open deck would be
-		-- returned instead of the file at basePath, or collide with the output.
-		if openNames contains baseName then error "a presentation named " & baseName & " is already open — pass a uniquely-named copy." number errAlreadyOpen
-		if openNames contains outName then error "a presentation named " & outName & " is already open — close it or choose another output name." number errAlreadyOpen
-		tell application "Microsoft PowerPoint"
-			with timeout of 1800 seconds
-				open POSIX file basePath
-			end timeout
-			set openedByUs to true
-			set p to presentation baseName
-		end tell
 	on error errMsg number errNum
-		if openedByUs then my closeIfOpen(baseName)
-		if errNum is errAlreadyOpen then error "ERROR: inject-notes failed at [open]: " & errMsg number errNum
 		if errNum is errNotAuthorized then error "ERROR: inject-notes failed at [open]: " & errMsg & " — grant this terminal Automation access to Microsoft PowerPoint (System Settings > Privacy & Security > Automation; deck-editing-setup.md Step 4), then re-run." number errNum
-		error "ERROR: inject-notes failed at [open]: " & errMsg & " — confirm " & basePath & " exists inside PowerPoint's container (inject-notes.sh stages it) and PowerPoint can open it, then re-run." number errNum
+		error errMsg number errNum
 	end try
+	-- PowerPoint keys open decks by filename: a same-named open deck would be
+	-- returned instead of the file at basePath, or collide with the output.
+	if openNames contains baseName then error "ERROR: inject-notes failed at [open]: a presentation named " & baseName & " is already open — pass a uniquely-named copy." number errAlreadyOpen
+	if openNames contains outName then error "ERROR: inject-notes failed at [open]: a presentation named " & outName & " is already open — close it or choose another output name." number errAlreadyOpen
+	tell application "Microsoft PowerPoint"
+		with timeout of 1800 seconds
+			open POSIX file basePath
+		end timeout
+		set p to presentation baseName
+	end tell
 
-	set currentSlide to 0
 	set applied to 0
-	try
-		repeat with i from 1 to (count of noteArgs) by 2
-			set currentSlide to (item i of noteArgs) as integer
-			my setNotesBody(p, currentSlide, item (i + 1) of noteArgs)
+	repeat with slideNumber from 3 to (count of argv)
+		set noteText to item slideNumber of argv
+		if noteText is not "" then
+			log "[slide " & (slideNumber - 2) & "]"
+			my setNotesBody(p, slideNumber - 2, noteText, baseName)
 			set applied to applied + 1
-		end repeat
-	on error errMsg number errNum
-		my closeIfOpen(baseName)
-		if errNum is errNoNotesBody then error "ERROR: inject-notes failed at [slide " & currentSlide & "]: " & errMsg number errNum
-		error "ERROR: inject-notes failed at [slide " & currentSlide & "]: PowerPoint refused the note: " & errMsg & " — open the deck in PowerPoint, check slide " & currentSlide & "'s notes page (View > Notes Page), then re-run inject-notes.sh." number errNum
-	end try
+		end if
+	end repeat
 
-	try
-		tell application "Microsoft PowerPoint"
-			with timeout of 1800 seconds
-				save p in POSIX file outPath
-			end timeout
-		end tell
-	on error errMsg number errNum
-		my closeIfOpen(baseName)
-		my closeIfOpen(outName)
-		error "ERROR: inject-notes failed at [save]: " & errMsg & " — " & outPath & " must be inside PowerPoint's container; run the driver through inject-notes.sh, which stages the output." number errNum
-	end try
-	my closeIfOpen(outName)
+	log "[save] " & outPath
+	tell application "Microsoft PowerPoint"
+		with timeout of 1800 seconds
+			save p in POSIX file outPath
+		end timeout
+	end tell
+	log "[close] " & outName
+	tell application "Microsoft PowerPoint" to close presentation outName saving no
 	return "Notes applied: " & applied
 end run
 
 -- Writes noteText into the notes body placeholder of slide num. A notes page
 -- without one raises errNoNotesBody; the note never lands in a title, footer,
 -- date, header or slide-number placeholder.
-on setNotesBody(p, num, noteText)
+on setNotesBody(p, num, noteText, baseName)
 	tell application "Microsoft PowerPoint"
 		set np to notes page of slide num of p
 		repeat with i from 1 to (count of shapes of np)
@@ -97,14 +83,8 @@ on setNotesBody(p, num, noteText)
 			end if
 		end repeat
 	end tell
-	error "the notes page has no notes body placeholder — in PowerPoint open View > Notes Master, enable Body under Placeholders, save the deck, then re-run inject-notes.sh." number errNoNotesBody
+	error "ERROR: inject-notes failed at [slide " & num & "]: the notes page has no notes body placeholder. The staged copy " & baseName & " is still open in PowerPoint: close it without saving, then in the source deck open View > Notes Master, enable Body under Placeholders, save, and re-run inject-notes.sh." number errNoNotesBody
 end setNotesBody
-
-on closeIfOpen(deckName)
-	tell application "Microsoft PowerPoint"
-		if (name of every presentation) contains deckName then close presentation deckName saving no
-	end tell
-end closeIfOpen
 
 on fileName(posixPath)
 	set saved to AppleScript's text item delimiters

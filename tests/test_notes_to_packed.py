@@ -56,35 +56,42 @@ def test_reserved_control_char_in_text_raises(notes_to_packed):
         notes_to_packed.pack_notes({"0": f"bad{US}text"})
 
 
-def _deck(tmp_path, slide_ids):
+TRANSITIONAL = "http://schemas.openxmlformats.org/presentationml/2006/main"
+STRICT = "http://purl.oclc.org/ooxml/presentationml/main"
+
+
+def _deck(tmp_path, slide_ids, ns=TRANSITIONAL, name="deck.pptx"):
     """Write a minimal .pptx-shaped zip whose presentation.xml lists slide_ids."""
     import zipfile
 
-    ns = "http://schemas.openxmlformats.org/presentationml/2006/main"
     ids = "".join(f'<p:sldId id="{256 + i}" r:id="rId{i}"/>' for i in range(slide_ids))
     xml = (
         f'<p:presentation xmlns:p="{ns}" '
         'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
         f"<p:sldIdLst>{ids}</p:sldIdLst></p:presentation>"
     )
-    path = tmp_path / "deck.pptx"
+    path = tmp_path / name
     with zipfile.ZipFile(path, "w") as deck:
         deck.writestr("ppt/presentation.xml", xml)
     return path
 
 
-def test_driver_args_are_one_based_pairs_with_unicode_intact(notes_to_packed):
+def test_driver_args_are_one_item_per_slide_with_unicode_intact(notes_to_packed):
     items = notes_to_packed.driver_args(
         {"2": "third", "0": "", "1": "PORT → Factories ⚡ 日本"}, slide_count=5
     )
-    assert items == ["2", "PORT → Factories ⚡ 日本", "3", "third"]
+    # Item N is slide N; "" leaves that slide's notes unchanged.
+    assert items == ["", "PORT → Factories ⚡ 日本", "third", "", ""]
+
+
+def test_driver_args_for_empty_map_leave_every_slide_unchanged(notes_to_packed):
+    assert notes_to_packed.driver_args({}, slide_count=3) == ["", "", ""]
 
 
 def test_driver_args_keep_separator_chars_the_packed_format_rejects(notes_to_packed):
     # Arguments need no RS/US framing, so those chars pass through untouched.
     assert notes_to_packed.driver_args({"0": f"a{RS}b{US}c"}, slide_count=1) == [
-        "1",
-        f"a{RS}b{US}c",
+        f"a{RS}b{US}c"
     ]
 
 
@@ -111,8 +118,20 @@ def test_driver_args_share_note_validation(notes_to_packed):
         notes_to_packed.driver_args({"intro": "text"}, slide_count=3)
 
 
-def test_deck_slide_count_reads_presentation_xml(notes_to_packed, tmp_path):
+def test_deck_slide_count_reads_transitional_presentation_xml(
+    notes_to_packed, tmp_path
+):
     assert notes_to_packed.deck_slide_count(_deck(tmp_path, 3)) == 3
+
+
+def test_deck_slide_count_reads_strict_ooxml(notes_to_packed, tmp_path):
+    assert notes_to_packed.deck_slide_count(_deck(tmp_path, 4, ns=STRICT)) == 4
+
+
+def test_deck_slide_count_rejects_unknown_root(notes_to_packed, tmp_path):
+    deck = _deck(tmp_path, 2, ns="urn:example:not-presentationml")
+    with pytest.raises(ValueError, match="unrecognized presentation.xml root"):
+        notes_to_packed.deck_slide_count(deck)
 
 
 def test_deck_slide_count_rejects_non_pptx(notes_to_packed, tmp_path):
@@ -122,7 +141,9 @@ def test_deck_slide_count_rejects_non_pptx(notes_to_packed, tmp_path):
         notes_to_packed.deck_slide_count(not_a_deck)
 
 
-def test_cli_driver_args_writes_nul_terminated_items(notes_to_packed, tmp_path, capsys):
+def test_cli_driver_args_writes_one_nul_terminated_item_per_slide(
+    notes_to_packed, tmp_path, capsys
+):
     import json
 
     notes = tmp_path / "notes.json"
@@ -135,9 +156,7 @@ def test_cli_driver_args_writes_nul_terminated_items(notes_to_packed, tmp_path, 
         ["--driver-args", "--deck", str(deck), str(notes), str(out)]
     )
     assert rc == 0
-    assert (
-        out.read_text(encoding="utf-8") == "1\x00line one\nline two →\x003\x00third\x00"
-    )
+    assert out.read_text(encoding="utf-8") == "line one\nline two →\x00\x00third\x00"
     assert json.loads(capsys.readouterr().out) == {"records": 2, "output": str(out)}
 
 
@@ -153,6 +172,21 @@ def test_cli_driver_args_out_of_range_exits_1(notes_to_packed, tmp_path, capsys)
     assert rc == 1
     assert "has 3 slides" in capsys.readouterr().err
     assert not out.exists()
+
+
+def test_cli_unwritable_output_exits_1_with_repair(notes_to_packed, tmp_path, capsys):
+    import json
+
+    notes = tmp_path / "notes.json"
+    notes.write_text(json.dumps({"0": "x"}), encoding="utf-8")
+    out = tmp_path / "missing-dir" / "out.args"
+    rc = notes_to_packed.main(
+        ["--driver-args", "--deck", str(_deck(tmp_path, 1)), str(notes), str(out)]
+    )
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert f"cannot write {out}" in err
+    assert "existing, writable directory" in err
 
 
 def test_cli_packed_mode_unchanged(notes_to_packed, tmp_path, capsys):

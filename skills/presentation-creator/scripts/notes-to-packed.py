@@ -11,10 +11,12 @@ Two output formats:
 - Packed (default): a UTF-8 file of records `<1-based #>US<text>` joined by RS,
   where US=Chr(31), RS=Chr(30). This is the SetSpeakerNotes VBA macro's wire
   format, kept for that macro.
-- Driver arguments (`--driver-args --deck <base.pptx>`): a file of NUL-terminated
-  items, `<1-based #>` then `<text>` for each note. inject-notes.sh passes them to
+- Driver arguments (`--driver-args --deck <base.pptx>`): a file of exactly one
+  NUL-terminated item per deck slide, in slide order: that slide's note, or an
+  empty item to leave its notes unchanged. inject-notes.sh passes the items to
   inject-notes.applescript as plain osascript arguments, so the driver parses
-  nothing. Every slide number is checked against the deck's slide count first.
+  nothing; item N is slide N. Every note is checked against the deck's slide
+  count first.
 
 Usage:
     notes-to-packed.py <notes.json> <out.packed>
@@ -36,7 +38,11 @@ US = "\x1f"  # unit separator
 NUL = "\x00"  # driver-argument terminator
 # macOS ARG_MAX is 1 MiB and covers argv plus the environment; leave room for both.
 DRIVER_ARGS_BUDGET = 768 * 1024
-PRESENTATION_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
+# Transitional and Strict OOXML name the PresentationML namespace differently.
+PRESENTATION_NAMESPACES = (
+    "http://schemas.openxmlformats.org/presentationml/2006/main",
+    "http://purl.oclc.org/ooxml/presentationml/main",
+)
 
 
 def note_pairs(notes_map: object) -> list[tuple[int, str]]:
@@ -106,20 +112,26 @@ def deck_slide_count(deck_path: Path) -> int:
             f"{deck_path} is not a .pptx deck ({exc}); pass the built deck copy"
         ) from exc
     root = ET.fromstring(presentation)
-    slide_list = root.find(f"{{{PRESENTATION_NS}}}sldIdLst")
-    if slide_list is None:
-        return 0
-    return len(slide_list.findall(f"{{{PRESENTATION_NS}}}sldId"))
+    for ns in PRESENTATION_NAMESPACES:
+        if root.tag == f"{{{ns}}}presentation":
+            slide_list = root.find(f"{{{ns}}}sldIdLst")
+            if slide_list is None:
+                return 0
+            return len(slide_list.findall(f"{{{ns}}}sldId"))
+    raise ValueError(
+        f"{deck_path} has an unrecognized presentation.xml root {root.tag!r}; "
+        "re-save it from PowerPoint as a .pptx"
+    )
 
 
 def driver_args(notes_map: object, slide_count: int) -> list[str]:
-    """Return the driver's argument items: `<1-based #>`, `<text>` per note.
+    """Return one driver argument per slide: its note, or "" to leave it unchanged.
 
     Raises ValueError when a note targets a slide past slide_count, contains
     NUL (which an argument cannot carry), or the items exceed the argument
     budget.
     """
-    items = []
+    items = [""] * slide_count
     for num, text in note_pairs(notes_map):
         if num > slide_count:
             raise ValueError(
@@ -129,7 +141,7 @@ def driver_args(notes_map: object, slide_count: int) -> list[str]:
             )
         if NUL in text:
             raise ValueError(f"notes for slide {num - 1} contain a NUL character")
-        items += [str(num), text]
+        items[num - 1] = text
     size = sum(len(item.encode("utf-8")) + 1 for item in items)
     if size > DRIVER_ARGS_BUDGET:
         raise ValueError(
@@ -161,14 +173,22 @@ def main(argv: list[str] | None = None) -> int:
         if args.driver_args:
             items = driver_args(notes_map, deck_slide_count(args.deck))
             payload = "".join(item + NUL for item in items)
-            count = len(items) // 2
+            count = sum(1 for item in items if item)
         else:
             payload = pack_notes(notes_map)
             count = 0 if payload == "" else payload.count(RS) + 1
     except (OSError, ValueError, json.JSONDecodeError, ET.ParseError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
-    args.out.write_text(payload, encoding="utf-8")
+    try:
+        args.out.write_text(payload, encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        print(
+            f"ERROR: cannot write {args.out} ({exc}); pass an output path in an "
+            "existing, writable directory with free space",
+            file=sys.stderr,
+        )
+        return 1
     print(json.dumps({"records": count, "output": str(args.out)}))
     return 0
 

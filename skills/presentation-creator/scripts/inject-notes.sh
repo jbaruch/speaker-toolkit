@@ -33,8 +33,9 @@ DRIVER="$HERE/inject-notes.applescript"
 [[ -f "$DRIVER" ]] || { echo "ERROR: driver not found: $DRIVER — reinstall the plugin; inject-notes.applescript must sit next to this script." >&2; exit 1; }
 
 # Validate the 0-based notes JSON against the deck's slide count and turn it into
-# the driver's argument pairs (1-based slide #, note text), NUL-terminated so
-# multi-line notes survive. Deterministic; unit-tested in tests/test_notes_to_packed.py.
+# one NUL-terminated item per slide (that slide's note, or empty to leave it
+# unchanged), so multi-line notes survive. Producer and this consumer are
+# unit-tested in tests/test_notes_to_packed.py and tests/test_inject_notes_wrapper.py.
 STAGE_DIR="$HOME/.deckops-staging"
 mkdir -p "$STAGE_DIR"
 ARGS_FILE="$STAGE_DIR/$(basename "$OUT").notes.args"
@@ -46,16 +47,20 @@ while IFS= read -r -d '' item; do NOTE_ARGS+=("$item"); done < "$ARGS_FILE"
 # stage locally, then move into place with the shell.
 STAGE="$OUT_STAGE_DIR/$(basename "$OUT")"
 rm -f "$STAGE"
+STAGED_BASE="$(stage_base "$BASE")"
 
 echo "staging -> $STAGE"
-# ${arr[@]+...} keeps an empty notes map from tripping `set -u` on bash 3.2.
-osascript "$DRIVER" "$(stage_base "$BASE")" "$STAGE" ${NOTE_ARGS[@]+"${NOTE_ARGS[@]}"}
+# ${arr[@]+...} keeps an empty deck from tripping `set -u` on bash 3.2.
+if ! osascript "$DRIVER" "$STAGED_BASE" "$STAGE" ${NOTE_ARGS[@]+"${NOTE_ARGS[@]}"}; then
+  echo "ERROR: the notes driver stopped at the last stage it logged above ([open], [slide N], [save] or [close]). Close any presentation named $(basename "$STAGED_BASE") or $(basename "$OUT") still open in PowerPoint without saving, fix the cause it reported, and re-run. For a denied Automation consent see skills/presentation-builder/references/deck-editing-setup.md Step 4." >&2
+  exit 1
+fi
 
 if [[ -f "$STAGE" ]]; then
   mkdir -p "$(dirname "$OUT")"
   mv -f "$STAGE" "$OUT"
   echo "done -> $OUT"
 else
-  echo "ERROR: the notes driver reported success but wrote no file at $STAGE. A driver failure aborts the osascript step above with its stage and repair; reaching here means PowerPoint saved somewhere else. Confirm PowerPoint can write to $OUT_STAGE_DIR and re-run — see skills/presentation-builder/references/deck-editing-setup.md." >&2
+  echo "ERROR: the notes driver reported success but wrote no file at $STAGE, so PowerPoint saved somewhere else. Confirm PowerPoint can write to $OUT_STAGE_DIR and re-run — see skills/presentation-builder/references/deck-editing-setup.md." >&2
   exit 1
 fi
