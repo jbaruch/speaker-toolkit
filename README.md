@@ -670,6 +670,7 @@ speaker-toolkit/
     |   |   +-- inject-notes.sh                # Wrapper for the notes driver (notes via real PowerPoint)
     |   |   +-- inject-notes.applescript       # Notes driver: sets each note via AppleScript, Unicode intact
     |   |   +-- notes-to-packed.py             # Notes JSON -> notes driver wire format (tested)
+    |   |   +-- atomic-replace.py              # Exact-target rename that refuses directories (tested)
     |   |   +-- insert-qr.sh                    # Wrapper for InsertQR (QR PNG bottom-right via real PowerPoint)
     |   |   +-- insert-qr.applescript           # AppleScript driver for InsertQR
     |   +-- references/

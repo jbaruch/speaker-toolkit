@@ -35,7 +35,15 @@ def _deck(tmp_path, slides, name="deck.pptx"):
 
 
 def _fake_osascript(
-    dirpath, *, succeed, opened=False, stage=None, stderr="", lock_run_dir=False
+    dirpath,
+    *,
+    succeed,
+    opened=False,
+    stage=None,
+    stderr="",
+    lock_run_dir=False,
+    saved="",
+    before_save="",
 ):
     """Write a fake `osascript` that records its argv NUL-separated.
 
@@ -46,7 +54,8 @@ def _fake_osascript(
     marker only when `opened`, as the driver does once PowerPoint has opened
     its own copy, writes `stage` to the stage file as the driver does before
     each stage, prints `stderr` (the driver's log and error) and exits
-    non-zero. With
+    non-zero. On success it writes `saved` as the staged deck's content after
+    running the shell snippet `before_save`. With
     `lock_run_dir` it plants a read-only subdirectory in the run directory so
     the wrapper's cleanup fails.
     """
@@ -59,7 +68,10 @@ def _fake_osascript(
             'mkdir "$locked"\ntouch "$locked/pinned"\nchmod 500 "$locked"\n'
         )
     if succeed:
-        body += 'touch "$6"\ntouch "$3"\necho "Notes applied: 1"\n'
+        body += before_save + "\n"
+        body += (
+            f'touch "$6"\nprintf \'%s\' \'{saved}\' > "$3"\necho "Notes applied: 1"\n'
+        )
     else:
         if opened:
             body += 'touch "$6"\n'
@@ -468,6 +480,101 @@ def test_container_stage_cleanup_failure_keeps_a_successful_delivery(tmp_path):
     assert out.exists()
     assert f"done -> {out}" in result.stdout
     assert "WARNING: could not remove the PowerPoint staging folder" in result.stderr
+
+
+def _staging_holds(tmp_path, text):
+    staging = tmp_path / ".deckops-staging"
+    return any(
+        text.encode() in p.read_bytes() for p in staging.rglob("*") if p.is_file()
+    )
+
+
+def test_success_leaves_no_staged_deck_behind(tmp_path):
+    deck = "STAGED DECK WITH ITS NOTES"
+    _fake_osascript(tmp_path, succeed=True, saved=deck)
+    result, out = _run(tmp_path, _deck(tmp_path, 1), {"0": "x"})
+    assert result.returncode == 0, result.stderr
+    assert out.read_text() == deck
+    assert not _staging_holds(tmp_path, deck)
+
+
+@ROOT_IGNORES_PERMISSIONS
+def test_failure_after_save_leaves_no_staged_deck_behind(tmp_path):
+    deck = "STAGED DECK WITH ITS NOTES"
+    _fake_osascript(tmp_path, succeed=True, saved=deck)
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    out_dir.chmod(0o500)
+    try:
+        result, out = _run(tmp_path, _deck(tmp_path, 1), {"0": "x"})
+    finally:
+        out_dir.chmod(0o700)
+    assert result.returncode == 1
+    assert not out.exists()
+    assert not _staging_holds(tmp_path, deck)
+
+
+def test_destination_that_becomes_a_directory_during_the_run_is_refused(tmp_path):
+    out = tmp_path / "out" / "deck-with-notes.pptx"
+    # Passes the up-front check, then turns into a directory while "PowerPoint" runs.
+    _fake_osascript(
+        tmp_path, succeed=True, saved="deck", before_save=f"mkdir -p '{out}'"
+    )
+    result, _ = _run(tmp_path, _deck(tmp_path, 1), {"0": "x"})
+    assert result.returncode == 1
+    assert f"{out} is a directory, so nothing was delivered" in result.stderr
+    assert "done ->" not in result.stdout
+    assert out.is_dir() and list(out.iterdir()) == []
+    assert [p.name for p in out.parent.iterdir()] == ["deck-with-notes.pptx"]
+
+
+def test_output_inside_the_staging_folder_is_refused(tmp_path):
+    record = _fake_osascript(tmp_path, succeed=True)
+    staging = tmp_path / ".deckops-staging"
+    staging.mkdir()
+    notes = tmp_path / "notes.json"
+    notes.write_text(json.dumps({"0": "x"}), encoding="utf-8")
+    env = dict(os.environ, PATH=f"{tmp_path}:{os.environ['PATH']}", HOME=str(tmp_path))
+    result = subprocess.run(
+        [
+            "bash",
+            str(WRAPPER),
+            str(_deck(tmp_path, 1)),
+            str(staging / "o.pptx"),
+            str(notes),
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode == 1
+    assert "inside the staging folder" in result.stderr
+    assert not record.exists()
+
+
+@pytest.mark.parametrize("hook_fails", [False, True])
+def test_container_stage_runs_registered_hooks_without_changing_status(
+    tmp_path, hook_fails
+):
+    (tmp_path / "Library/Containers/com.microsoft.Powerpoint/Data").mkdir(parents=True)
+    ran = tmp_path / "hook-ran"
+    script = tmp_path / "wrapper.sh"
+    script.write_text(
+        "set -euo pipefail\n"
+        f"source '{WRAPPER.with_name('container-stage.sh')}'\n"
+        f"my_cleanup() {{ touch '{ran}'; {'return 1' if hook_fails else 'return 0'}; }}\n"
+        "container_stage_on_exit my_cleanup\n"
+        'echo "$CONTAINER_STAGE"\n'
+        "exit 3\n"
+    )
+    env = dict(os.environ, HOME=str(tmp_path))
+    result = subprocess.run(
+        ["bash", str(script)], capture_output=True, text=True, env=env
+    )
+    assert result.returncode == 3
+    assert ran.exists()
+    assert not Path(result.stdout.strip()).exists()  # staging dir removed too
+    assert ("cleanup step my_cleanup failed" in result.stderr) is hook_fails
 
 
 def test_missing_notes_json_fails_with_actionable_error(tmp_path):

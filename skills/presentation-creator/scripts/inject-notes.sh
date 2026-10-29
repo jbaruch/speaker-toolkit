@@ -32,6 +32,15 @@ if [[ -d "$OUT" ]]; then
   echo "ERROR: the output path $OUT is a directory — pass the path of the deck file to write, for example $OUT/$(basename "$BASE")." >&2
   exit 1
 fi
+# The fallback staged deck is $HOME/.deckops-staging/<OUT name>, which cleanup
+# removes; an OUT in that folder would be that file. A missing folder on either
+# side cannot collide, so only compare when both exist.
+if [[ -d "$(dirname "$OUT")" && -d "$HOME/.deckops-staging" ]]; then
+  if [[ "$(cd "$(dirname "$OUT")" && pwd -P)" == "$(cd "$HOME/.deckops-staging" && pwd -P)" ]]; then
+    echo "ERROR: the output path $OUT is inside the staging folder $HOME/.deckops-staging, which this script empties — pass an output path in another folder." >&2
+    exit 1
+  fi
+fi
 [[ -f "$BASE" ]]   || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the built deck." >&2; exit 1; }
 [[ -f "$NOTES" ]]  || { echo "ERROR: notes JSON not found: $NOTES — a {\"<0-based slide #>\": \"text\"} map." >&2; exit 1; }
 [[ -f "$DRIVER" ]] || { echo "ERROR: driver not found: $DRIVER — reinstall the plugin; inject-notes.applescript must sit next to this script." >&2; exit 1; }
@@ -60,20 +69,26 @@ remove_run_dir() {
 }
 # Set while a delivery copy sits beside OUT, cleared once it is renamed into place.
 DELIVERY_TMP=""
-# Every exit from here on, planned, failed or signalled, removes an unfinished
-# delivery copy and the notes text, then the container staging that
-# container-stage.sh's own EXIT trap used to remove.
+# The deck PowerPoint saves. Inside the container, container-stage.sh removes
+# it with the staging dir; in the no-container fallback it sits in the
+# persistent ~/.deckops-staging, so this run removes it itself.
+STAGE="$OUT_STAGE_DIR/$(basename "$OUT")"
+# On every exit, planned, failed or signalled, remove an unfinished delivery
+# copy, the staged deck and the notes text. container-stage.sh's single EXIT
+# trap runs this before removing its own staging dir.
 _inject_notes_cleanup() {
-  if [[ -n "$DELIVERY_TMP" && -e "$DELIVERY_TMP" ]]; then
-    if ! rm -f "$DELIVERY_TMP"; then
-      echo "WARNING: could not remove the unfinished copy $DELIVERY_TMP; delete it by hand." >&2
+  local leftover
+  for leftover in "$DELIVERY_TMP" "$STAGE"; do
+    if [[ -n "$leftover" && -e "$leftover" ]]; then
+      if ! rm -f "$leftover"; then
+        echo "WARNING: could not remove $leftover, a copy of the deck with its notes; delete it by hand." >&2
+      fi
     fi
-  fi
+  done
   remove_run_dir
-  _container_stage_cleanup
   return 0   # never let cleanup rewrite the script's exit status
 }
-trap _inject_notes_cleanup EXIT
+container_stage_on_exit _inject_notes_cleanup
 
 ARGS_FILE="$RUN_DIR/notes.args"
 if ! python3 "$HERE/notes-to-packed.py" --driver-args --deck "$BASE" "$NOTES" "$ARGS_FILE"; then
@@ -87,8 +102,7 @@ NOTE_ARGS=()
 while IFS= read -r -d '' item; do NOTE_ARGS+=("$item"); done < "$ARGS_FILE"
 
 # Sandboxed PowerPoint can't create a file in a Google Drive folder (E_FAIL) —
-# stage locally, then move into place with the shell.
-STAGE="$OUT_STAGE_DIR/$(basename "$OUT")"
+# stage locally (STAGE, above), then deliver into place with the shell.
 if ! rm -f "$STAGE"; then
   echo "ERROR: cannot clear the old staged output $STAGE — remove it by hand and re-run." >&2
   exit 1
@@ -151,8 +165,9 @@ if [[ -f "$STAGE" ]]; then
     echo "ERROR: PowerPoint saved the deck, but copying it to $OUT_DIR failed, so nothing was delivered and $OUT is unchanged — free disk space in that folder and re-run." >&2
     exit 1
   fi
-  if ! mv -f "$DELIVERY_TMP" "$OUT"; then
-    echo "ERROR: PowerPoint saved the deck, but renaming the complete copy to $OUT failed, so $OUT is unchanged — make $OUT_DIR writable and re-run." >&2
+  # atomic-replace.py renames onto exactly OUT and refuses a directory there,
+  # even one that appeared while PowerPoint was running.
+  if ! python3 "$HERE/atomic-replace.py" "$DELIVERY_TMP" "$OUT"; then
     exit 1
   fi
   DELIVERY_TMP=""

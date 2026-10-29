@@ -20,7 +20,11 @@ copies to a temporary file beside it and renames that into place, so a failed
 copy across filesystems (the container to Google Drive) never leaves a partial
 deck and keeps the previous output; the unfinished copy is removed on every
 exit, a signal included, and an output path that is a directory is refused
-before PowerPoint runs. An open that times out records an
+before PowerPoint runs. The final rename goes through `atomic-replace.py`, which
+refuses a directory even if one appears while PowerPoint runs, and the staged
+deck is removed after delivery in the no-container fallback too.
+`container-stage.sh` gains `container_stage_on_exit` so a wrapper can add
+cleanup to its single EXIT trap instead of replacing it. An open that times out records an
 `opening` stage, so the wrapper can say a uniquely named copy may still appear. The
 driver logs each stage (open, slide N, save, close) before running it. Errors it
 raises itself name the stage and repair; any other error propagates unchanged,

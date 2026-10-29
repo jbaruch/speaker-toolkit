@@ -338,7 +338,9 @@ which a sandboxed app reads and writes with no prompt:
   sandboxed) moves it to the Drive destination.
 - A single EXIT trap in `container-stage.sh` removes the per-run staging dir;
   wrappers must NOT set their own EXIT trap (it would override that one and leak
-  copies).
+  copies). A wrapper that needs more cleanup registers a function with
+  `container_stage_on_exit <function>`; the helper's trap runs it first and warns,
+  without changing the exit status, if it fails.
 
 So a full build runs with ZERO prompts and no Full Disk Access grant. If the
 container is absent (PowerPoint never launched), the wrappers fall back to the

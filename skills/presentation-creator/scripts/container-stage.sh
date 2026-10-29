@@ -15,9 +15,14 @@
 #                     shell-moves the result to the final (Drive) destination
 #   stage_base <deck> echoes a path to OPEN: a container copy of <deck>, or <deck>
 #                     unchanged when the container is absent (fallback: may prompt)
-# A single EXIT trap removes the per-run staging dir (covers success and early
-# failure under set -e). Wrappers MUST NOT set their own EXIT trap — it would
-# override this one and leak the staged copies.
+#   container_stage_on_exit <function>
+#                     registers extra best-effort cleanup for the wrapper
+# A single EXIT trap runs every registered function, in registration order, then
+# removes the per-run staging dir (covers success, early failure under set -e,
+# and signals). Wrappers MUST NOT set their own EXIT trap — it would override
+# this one and leak the staged copies; they register cleanup with
+# container_stage_on_exit instead. A registered function that fails gets a
+# warning, never a changed exit status.
 #
 # Why output goes through the container: SaveCopyAs to a Google-Drive folder hits
 # E_FAIL, AND a local ~/.deckops-staging path is OUTSIDE the sandbox so it raises a
@@ -36,7 +41,18 @@ else
 fi
 mkdir -p "$OUT_STAGE_DIR"
 
+_CONTAINER_STAGE_HOOKS=()
+container_stage_on_exit() {
+  _CONTAINER_STAGE_HOOKS+=("$1")
+}
+
 _container_stage_cleanup() {
+  local hook
+  for hook in ${_CONTAINER_STAGE_HOOKS[@]+"${_CONTAINER_STAGE_HOOKS[@]}"}; do
+    if ! "$hook"; then
+      echo "WARNING: cleanup step $hook failed; check for leftover staging files." >&2
+    fi
+  done
   # Best-effort: a removal failure warns and never replaces the run's outcome.
   # Explicit ifs, not `[[ ]] && rm`: under the caller's `set -e` a failing rm in
   # an && list inside this function would exit before reaching `return 0`.
