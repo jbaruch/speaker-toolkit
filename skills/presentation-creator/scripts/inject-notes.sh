@@ -53,8 +53,8 @@ echo "staging -> $STAGE"
 # ${arr[@]+...} keeps an empty deck from tripping `set -u` on bash 3.2.
 # PowerPoint keys open decks by file name, so the driver gets both names too.
 # The driver creates OPENED_MARKER only after confirming no same-named deck was
-# open, right before opening its own copy; log text cannot fake a file. A fresh
-# per-run directory means no earlier marker can be mistaken for this run's.
+# open and PowerPoint has opened its own copy; log text cannot fake a file. A
+# fresh per-run directory means no earlier marker can be mistaken for this run's.
 RUN_DIR="$(mktemp -d "$STAGE_DIR/notes-run.XXXXXX")"
 OPENED_MARKER="$RUN_DIR/opened"
 # Best-effort: a cleanup failure warns and never replaces the run's outcome.
@@ -68,7 +68,7 @@ if ! osascript "$DRIVER" "$STAGED_BASE" "$STAGE" "$(basename "$STAGED_BASE")" "$
   if [[ -e "$OPENED_MARKER" ]]; then
     CLOSE_ADVICE="This run opened its own copy (no presentation with that name was open before): close the presentation named $(basename "$STAGED_BASE") (or $(basename "$STAGE"), if it was saved) in PowerPoint without saving."
   else
-    CLOSE_ADVICE="This run opened no copy: leave every presentation that was already open as it is."
+    CLOSE_ADVICE="This run recorded no copy of its own: leave every presentation that was open before this run as it is."
   fi
   echo "ERROR: the notes driver stopped at the last stage it logged above ([open], [slide N], [save] or [close]). $CLOSE_ADVICE Then fix the cause it reported and re-run. For a denied Automation consent see skills/presentation-builder/references/deck-editing-setup.md Step 4." >&2
   remove_run_dir

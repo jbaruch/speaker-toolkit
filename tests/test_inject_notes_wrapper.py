@@ -163,8 +163,25 @@ def test_already_open_collision_leaves_the_users_deck_alone(tmp_path):
     result, out = _run(tmp_path, _deck(tmp_path, 2), {"0": "x"})
     assert result.returncode == 1
     assert "already open" in result.stderr
-    assert "This run opened no copy" in result.stderr
-    assert "leave every presentation that was already open" in result.stderr
+    assert "This run recorded no copy of its own" in result.stderr
+    assert "leave every presentation that was open before this run" in result.stderr
+    assert "without saving" not in result.stderr
+    assert not out.exists()
+
+
+def test_failed_open_gives_no_close_without_saving_advice(tmp_path):
+    # The driver writes the marker only after PowerPoint opened its copy, so a
+    # failed or timed-out open leaves none and the advice stays hands-off.
+    _fake_osascript(
+        tmp_path,
+        succeed=False,
+        stderr="[open] /x/deck.pptx\nMicrosoft PowerPoint got an error: "
+        "AppleEvent timed out. (-1712)\n",
+    )
+    result, out = _run(tmp_path, _deck(tmp_path, 1), {"0": "x"})
+    assert result.returncode == 1
+    assert "AppleEvent timed out" in result.stderr
+    assert "This run recorded no copy of its own" in result.stderr
     assert "without saving" not in result.stderr
     assert not out.exists()
 
@@ -181,7 +198,7 @@ def test_marker_like_text_in_a_multiline_filename_cannot_forge_an_open_copy(
     )
     result, out = _run(tmp_path, _deck(tmp_path, 1, name=name), {"0": "x"})
     assert result.returncode == 1
-    assert "This run opened no copy" in result.stderr
+    assert "This run recorded no copy of its own" in result.stderr
     assert "without saving" not in result.stderr
     assert not out.exists()
 

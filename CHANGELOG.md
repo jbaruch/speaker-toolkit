@@ -17,8 +17,8 @@ driver logs each stage (open, slide N, save, close) before running it. Errors it
 raises itself name the stage and repair; any other error propagates unchanged,
 and the wrapper names the last logged stage. It tells the caller to close a
 copy only when the driver created the wrapper's per-run marker file, which it
-does after confirming no same-named deck was open and right before opening its
-own copy, so a deck that was already open is never put at risk and no log text
+does after confirming no same-named deck was open and once PowerPoint has opened
+its own copy, so a deck that was already open is never put at risk and no log text
 can fake the marker. The
 helper reports an unreadable or malformed notes file or deck, a note that is
 not valid Unicode, and an unwritable output, with exit 1 and a repair instead of raw exception text or a traceback. A note goes only into the notes body

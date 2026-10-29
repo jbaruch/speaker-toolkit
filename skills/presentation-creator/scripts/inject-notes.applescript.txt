@@ -5,8 +5,8 @@
 -- notes against the deck with notes-to-packed.py --driver-args and passes the
 -- two deck file names, a marker path, and one argument per slide, in slide
 -- order. An empty argument leaves that slide's notes unchanged. The driver
--- creates the marker file right before it opens its own copy, so the wrapper
--- can tell that copy from a presentation that was already open.
+-- creates the marker file once PowerPoint has opened its own copy, so the
+-- wrapper can tell that copy from a presentation that was already open.
 -- Opens basePath, saves the result to outPath, and closes it; basePath is not
 -- modified. Each stage ([open], [slide N], [save], [close]) is logged to stderr
 -- before it runs. Errors this driver raises name their stage and repair; any other
@@ -17,6 +17,9 @@
 property errAlreadyOpen : 1002
 property errNoNotesBody : 1003
 property errNotAuthorized : -1743
+-- File Manager errors `open for access` raises for a marker it cannot create:
+-- not found, volume or file locked, duplicate, busy, permission, access denied.
+property markerWriteErrors : {-43, -44, -45, -46, -48, -49, -54, -61, -5000}
 
 on run argv
 	if (count of argv) < 5 then error "Expected: basePath outPath baseName outName markerPath [note for slide 1]... — run the driver through inject-notes.sh."
@@ -43,15 +46,20 @@ on run argv
 	-- returned instead of the file at basePath, or collide with the output.
 	if openNames contains baseName then error "ERROR: inject-notes failed at [open]: a presentation named " & baseName & " is already open — pass a uniquely-named copy." number errAlreadyOpen
 	if openNames contains outName then error "ERROR: inject-notes failed at [open]: a presentation named " & outName & " is already open — close it or choose another output name." number errAlreadyOpen
-	-- No presentation named baseName was open, so from here on one by that name
-	-- is this run's copy. The marker tells inject-notes.sh so on failure.
-	close access (open for access (POSIX file markerPath) with write permission)
 	tell application "Microsoft PowerPoint"
 		with timeout of 1800 seconds
 			open POSIX file basePath
 		end timeout
 		set p to presentation baseName
 	end tell
+	-- No presentation named baseName was open before, so this one is the run's
+	-- own copy. The marker tells inject-notes.sh so if a later stage fails.
+	try
+		close access (open for access (POSIX file markerPath) with write permission)
+	on error errMsg number errNum
+		if errNum is in markerWriteErrors then error "ERROR: inject-notes failed at [open]: this run opened " & baseName & " but could not record that at " & markerPath & " (" & errMsg & ") — close " & baseName & " in PowerPoint without saving, make that folder writable, and re-run." number errNum
+		error errMsg number errNum
+	end try
 
 	set applied to 0
 	repeat with argIndex from 6 to (count of argv)

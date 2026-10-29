@@ -210,7 +210,7 @@ leave no copy open (`name of every presentation` lists only what was open before
   slide 9 target slide 10, but the deck has 3 slides`.
 - With the base copy already open in PowerPoint, the run fails at `[open]`,
   names the file, leaves that open copy alone, and the wrapper says this run
-  opened no copy.
+  recorded no copy of its own.
 
 ## Step 6 — Every build (recurring)
 
