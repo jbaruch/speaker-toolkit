@@ -87,7 +87,7 @@ OPENAI_API_BASE = "https://api.openai.com/v1"
 # both the roster and these tiers when new flagships ship — bump
 # REGISTRY_LAST_REVIEWED (ISO date) whenever this block is reconciled.
 REGISTRY_LAST_REVIEWED = "2026-09-08"
-REGISTRY_FRESHNESS_MAX_AGE_DAYS = 90
+REGISTRY_FRESHNESS_MAX_AGE_DAYS = 30
 
 MODEL_REGISTRY = [
     {

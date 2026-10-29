@@ -368,22 +368,18 @@ def test_freshness_fresh_when_recent(model_registry):
     assert result["last_reviewed"] == model_registry.REGISTRY_LAST_REVIEWED
 
 
-def test_freshness_stale_past_max_age(model_registry):
-    reviewed = date.fromisoformat(model_registry.REGISTRY_LAST_REVIEWED)
-    past_cutoff = date.fromordinal(
-        reviewed.toordinal() + model_registry.REGISTRY_FRESHNESS_MAX_AGE_DAYS + 1
-    )
-    result = model_registry.check_freshness(today=past_cutoff)
+def test_freshness_stale_after_thirty_days(model_registry, monkeypatch):
+    monkeypatch.setattr(model_registry, "REGISTRY_LAST_REVIEWED", "2024-01-01")
+    result = model_registry.check_freshness(today=date(2024, 2, 1))
     assert result["stale"] is True
-    assert result["age_days"] == model_registry.REGISTRY_FRESHNESS_MAX_AGE_DAYS + 1
+    assert result["age_days"] == 31
+    assert result["max_age_days"] == 30
 
 
-def test_freshness_boundary_not_stale_at_exactly_max_age(model_registry):
-    reviewed = date.fromisoformat(model_registry.REGISTRY_LAST_REVIEWED)
-    at_cutoff = date.fromordinal(
-        reviewed.toordinal() + model_registry.REGISTRY_FRESHNESS_MAX_AGE_DAYS
-    )
-    result = model_registry.check_freshness(today=at_cutoff)
+def test_freshness_boundary_not_stale_at_thirty_days(model_registry, monkeypatch):
+    monkeypatch.setattr(model_registry, "REGISTRY_LAST_REVIEWED", "2024-01-01")
+    result = model_registry.check_freshness(today=date(2024, 1, 31))
+    assert result["age_days"] == 30
     assert result["stale"] is False
 
 
