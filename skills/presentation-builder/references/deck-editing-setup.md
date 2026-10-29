@@ -218,6 +218,22 @@ leave no copy open (`name of every presentation` lists only what was open before
   names the file, leaves that open copy alone, and the wrapper says this run
   recorded no copy of its own.
 
+Last, force the marker write to fail after PowerPoint has opened the copy. Run
+the driver directly with a marker path in a folder that does not exist:
+
+```bash
+osascript "{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.applescript" \
+  "{check_dir}/notes-check-base.pptx" "{check_dir}/marker-check-out.pptx" \
+  notes-check-base.pptx marker-check-out.pptx \
+  "{check_dir}/missing/opened" "{check_dir}/stage" "note" "" "note"
+```
+
+It passes when the run exits non-zero with
+`inject-notes failed at [open]: this run opened notes-check-base.pptx but could
+not record that` and the close-without-saving repair, osascript reports the
+original File Manager error number (`-43`, folder not found), and
+`notes-check-base.pptx` is open in PowerPoint. Close it without saving.
+
 ## Step 6 — Every build (recurring)
 
 Steps 1–4 are one-time per machine; this is what happens on EVERY real deck build:

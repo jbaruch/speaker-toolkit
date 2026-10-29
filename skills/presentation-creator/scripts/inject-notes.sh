@@ -37,11 +37,16 @@ DRIVER="$HERE/inject-notes.applescript"
 # unchanged), so multi-line notes survive. Producer and this consumer are
 # unit-tested in tests/test_notes_to_packed.py and tests/test_inject_notes_wrapper.py.
 STAGE_DIR="$HOME/.deckops-staging"
-mkdir -p "$STAGE_DIR"
+if ! mkdir -p "$STAGE_DIR"; then
+  echo "ERROR: cannot create $STAGE_DIR — make $HOME writable, or free disk space, and re-run." >&2
+  exit 1
+fi
 # One fresh directory per run holds the notes' plaintext arguments, the
-# opened-copy marker and the stage file, so concurrent runs never share files
-# and cleanup removes the notes text.
-RUN_DIR="$(mktemp -d "$STAGE_DIR/notes-run.XXXXXX")"
+# opened-copy marker and the stage file, so concurrent runs never share files.
+if ! RUN_DIR="$(mktemp -d "$STAGE_DIR/notes-run.XXXXXX")"; then
+  echo "ERROR: cannot create a run directory in $STAGE_DIR — make it writable, or free disk space, and re-run." >&2
+  exit 1
+fi
 # Best-effort: a cleanup failure warns and never replaces the run's outcome.
 remove_run_dir() {
   if ! rm -rf -- "${RUN_DIR:?}"; then
@@ -49,9 +54,21 @@ remove_run_dir() {
   fi
   return 0
 }
+# Every exit from here on, planned or not, removes the notes text, then the
+# container staging that container-stage.sh's own EXIT trap used to remove.
+_inject_notes_cleanup() {
+  remove_run_dir
+  _container_stage_cleanup
+  return 0   # never let cleanup rewrite the script's exit status
+}
+trap _inject_notes_cleanup EXIT
+
 ARGS_FILE="$RUN_DIR/notes.args"
 if ! python3 "$HERE/notes-to-packed.py" --driver-args --deck "$BASE" "$NOTES" "$ARGS_FILE"; then
-  remove_run_dir
+  exit 1
+fi
+if [[ ! -r "$ARGS_FILE" ]]; then
+  echo "ERROR: notes-to-packed.py reported success but $ARGS_FILE is not readable — check $RUN_DIR's permissions and re-run." >&2
   exit 1
 fi
 NOTE_ARGS=()
@@ -60,15 +77,17 @@ while IFS= read -r -d '' item; do NOTE_ARGS+=("$item"); done < "$ARGS_FILE"
 # Sandboxed PowerPoint can't create a file in a Google Drive folder (E_FAIL) —
 # stage locally, then move into place with the shell.
 STAGE="$OUT_STAGE_DIR/$(basename "$OUT")"
-rm -f "$STAGE"
+if ! rm -f "$STAGE"; then
+  echo "ERROR: cannot clear the old staged output $STAGE — remove it by hand and re-run." >&2
+  exit 1
+fi
 STAGED_BASE="$(stage_base "$BASE")"
 
 echo "staging -> $STAGE"
 # ${arr[@]+...} keeps an empty deck from tripping `set -u` on bash 3.2.
 # PowerPoint keys open decks by file name, so the driver gets both names too.
 # The driver creates OPENED_MARKER only after confirming no same-named deck was
-# open and PowerPoint has opened its own copy; log text cannot fake a file. A
-# fresh per-run directory means no earlier marker can be mistaken for this run's.
+# open and PowerPoint has opened its own copy; log text cannot fake a file.
 OPENED_MARKER="$RUN_DIR/opened"
 # The driver overwrites STAGE_FILE with a fixed token before each stage (open,
 # slide N, save, close); only those tokens select a stage-specific repair.
@@ -97,17 +116,20 @@ if ! osascript "$DRIVER" "$STAGED_BASE" "$STAGE" "$(basename "$STAGED_BASE")" "$
     CLOSE_ADVICE="This run recorded no copy of its own: leave every presentation that was open before this run as it is."
   fi
   echo "ERROR: the notes driver failed; its message is above. If that message gives a repair, follow it. $STAGE_ADVICE $CLOSE_ADVICE For a denied Automation consent see skills/presentation-builder/references/deck-editing-setup.md Step 4." >&2
-  remove_run_dir
   exit 1
 fi
 
 if [[ -f "$STAGE" ]]; then
-  mkdir -p "$(dirname "$OUT")"
-  mv -f "$STAGE" "$OUT"
+  if ! mkdir -p "$(dirname "$OUT")"; then
+    echo "ERROR: PowerPoint saved the deck, but the destination folder $(dirname "$OUT") cannot be created, so nothing was delivered — choose an output path in a writable folder and re-run." >&2
+    exit 1
+  fi
+  if ! mv -f "$STAGE" "$OUT"; then
+    echo "ERROR: PowerPoint saved the deck, but moving it to $OUT failed, so nothing was delivered — make $(dirname "$OUT") writable, or free disk space, and re-run." >&2
+    exit 1
+  fi
   echo "done -> $OUT"
-  remove_run_dir
 else
   echo "ERROR: the notes driver reported success but wrote no file at $STAGE, so PowerPoint saved somewhere else. Confirm PowerPoint can write to $OUT_STAGE_DIR and re-run — see skills/presentation-builder/references/deck-editing-setup.md." >&2
-  remove_run_dir
   exit 1
 fi

@@ -26,6 +26,8 @@ Exit 0 prints `{"records": N, "output": "<path>"}`; exit 1 prints `ERROR: ...`
 with the repair on stderr; exit 2 is a usage error.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import sys

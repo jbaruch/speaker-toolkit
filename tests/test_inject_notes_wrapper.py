@@ -255,17 +255,34 @@ def test_no_notes_text_is_left_in_staging_after_a_run(tmp_path, succeed):
     assert not list(staging.glob("notes-run.*"))
 
 
-def test_every_marker_write_failure_says_the_copy_is_open(tmp_path):
-    # Source contract for the exempt driver: once PowerPoint has opened the
-    # copy, any marker-write failure (disk full -34 included) must carry the
-    # close advice and keep its error number, not filter by number.
-    source = DRIVER.read_text(encoding="utf-8")
-    start = source.index("close access (open for access (POSIX file markerPath)")
-    handler = source[start : source.index("end try", start)]
-    assert "this run opened" in handler
-    assert "without saving" in handler
-    assert "number errNum" in handler
-    assert " is in " not in handler
+def test_destination_folder_failure_is_actionable_and_leaves_no_notes(tmp_path):
+    _fake_osascript(tmp_path, succeed=True)
+    blocker = tmp_path / "not-a-folder"
+    blocker.write_text("a regular file where the output folder should be")
+    notes = tmp_path / "notes.json"
+    secret = "delivery failure must not leak this note"
+    notes.write_text(json.dumps({"0": secret}), encoding="utf-8")
+    env = dict(os.environ, PATH=f"{tmp_path}:{os.environ['PATH']}", HOME=str(tmp_path))
+    result = subprocess.run(
+        [
+            "bash",
+            str(WRAPPER),
+            str(_deck(tmp_path, 1)),
+            str(blocker / "out.pptx"),
+            str(notes),
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode == 1
+    assert "cannot be created, so nothing was delivered" in result.stderr
+    assert "choose an output path in a writable folder" in result.stderr
+    staging = tmp_path / ".deckops-staging"
+    assert not list(staging.glob("notes-run.*"))
+    assert not any(
+        secret.encode() in p.read_bytes() for p in staging.rglob("*") if p.is_file()
+    )
 
 
 # Directory permissions are what make the cleanup fail; root bypasses them.
@@ -279,6 +296,22 @@ def _unlock(record):
     locked = Path(_argv(record)[5]).parent / "locked"
     locked.chmod(0o700)  # let pytest clean tmp_path up
     return locked
+
+
+@ROOT_IGNORES_PERMISSIONS
+def test_move_failure_is_actionable_and_leaves_no_notes(tmp_path):
+    _fake_osascript(tmp_path, succeed=True)
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    out_dir.chmod(0o500)  # the folder exists but refuses the move
+    try:
+        result, out = _run(tmp_path, _deck(tmp_path, 1), {"0": "x"})
+    finally:
+        out_dir.chmod(0o700)
+    assert result.returncode == 1
+    assert f"moving it to {out} failed, so nothing was delivered" in result.stderr
+    assert not list((tmp_path / ".deckops-staging").glob("notes-run.*"))
+    assert not out.exists()
 
 
 @ROOT_IGNORES_PERMISSIONS
