@@ -1,5 +1,11 @@
 # Changelog
 
+### Check image-model freshness every 30 days
+
+Reduce the image-model registry's maximum age from 90 to 30 days so the
+illustrations workflow checks for newer models sooner. A registry remains
+fresh at 30 days and becomes stale at 31 days.
+
 ## 0.21.3 — 2026-10-29
 
 ### Keep Unicode in injected speaker notes
