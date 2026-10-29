@@ -1,34 +1,50 @@
 #!/usr/bin/env python3
-"""Pack a 0-based speaker-notes JSON map into the notes driver's wire format.
+"""Turn a 0-based speaker-notes JSON map into the notes driver's input.
 
 Input JSON: `{"<0-based slide #>": "notes text", ...}` — the historical
-inject-speaker-notes.py format. Output: a UTF-8 file of records
-`<1-based #>US<text>` joined by RS, where US=Chr(31), RS=Chr(30) (non-printing
-control chars that don't occur in prose notes). inject-notes.applescript reads
-the file as UTF-8, splits it, and writes each note through PowerPoint's
-AppleScript object model.
+inject-speaker-notes.py format. Slide numbers are converted 0-based -> 1-based
+(python-pptx uses 0-based indices; PowerPoint uses 1-based). Empty notes are
+dropped.
 
-Slide numbers are converted 0-based -> 1-based (python-pptx uses 0-based
-indices; PowerPoint VBA uses 1-based). Empty notes are dropped.
+Two output formats:
+
+- Packed (default): a UTF-8 file of records `<1-based #>US<text>` joined by RS,
+  where US=Chr(31), RS=Chr(30). This is the SetSpeakerNotes VBA macro's wire
+  format, kept for that macro.
+- Driver arguments (`--driver-args --deck <base.pptx>`): a file of NUL-terminated
+  items, `<1-based #>` then `<text>` for each note. inject-notes.sh passes them to
+  inject-notes.applescript as plain osascript arguments, so the driver parses
+  nothing. Every slide number is checked against the deck's slide count first.
 
 Usage:
     notes-to-packed.py <notes.json> <out.packed>
+    notes-to-packed.py --driver-args --deck <base.pptx> <notes.json> <out.args>
+
+Exit 0 prints `{"records": N, "output": "<path>"}`; exit 1 prints `ERROR: ...`
+with the repair on stderr; exit 2 is a usage error.
 """
 
+import argparse
 import json
 import sys
+import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 
 RS = "\x1e"  # record separator
 US = "\x1f"  # unit separator
+NUL = "\x00"  # driver-argument terminator
+# macOS ARG_MAX is 1 MiB and covers argv plus the environment; leave room for both.
+DRIVER_ARGS_BUDGET = 768 * 1024
+PRESENTATION_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
 
 
-def pack_notes(notes_map: object) -> str:
-    """Return RS-joined `<1-based #>US<text>` records, sorted by slide number.
+def note_pairs(notes_map: object) -> list[tuple[int, str]]:
+    """Return `(1-based slide #, text)` pairs, sorted by slide number.
 
     0-based keys become 1-based; empty notes are dropped. Raises ValueError with
     an actionable message on malformed input (non-object map, non-integer key,
-    non-string text, or text containing the RS/US control chars).
+    negative key, or non-string text).
     """
     if not isinstance(notes_map, dict):
         raise ValueError(
@@ -46,7 +62,7 @@ def pack_notes(notes_map: object) -> str:
                 pass
         raise ValueError(f"notes key {key!r} is not an integer")
 
-    records = []
+    pairs = []
     for key in sorted(notes_map, key=slide_num):
         num = slide_num(key)
         if num < 0:
@@ -60,29 +76,102 @@ def pack_notes(notes_map: object) -> str:
             raise ValueError(
                 f"notes for slide {key} must be a string, got {type(text).__name__}"
             )
+        pairs.append((num + 1, text))
+    return pairs
+
+
+def pack_notes(notes_map: object) -> str:
+    """Return RS-joined `<1-based #>US<text>` records, sorted by slide number.
+
+    Same validation as note_pairs, plus a rejection of text containing the
+    RS/US control chars.
+    """
+    records = []
+    for num, text in note_pairs(notes_map):
         if RS in text or US in text:
             raise ValueError(
-                f"notes for slide {key} contain a reserved control char (RS/US)"
+                f"notes for slide {num - 1} contain a reserved control char (RS/US)"
             )
-        records.append(f"{num + 1}{US}{text}")
+        records.append(f"{num}{US}{text}")
     return RS.join(records)
 
 
-def main() -> None:
-    if len(sys.argv) != 3:
-        print("usage: notes-to-packed.py <notes.json> <out.packed>", file=sys.stderr)
-        sys.exit(2)
+def deck_slide_count(deck_path: Path) -> int:
+    """Return the number of slides in a .pptx, read from ppt/presentation.xml."""
     try:
-        notes_map = json.loads(Path(sys.argv[1]).read_text())
-        packed = pack_notes(notes_map)
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        with zipfile.ZipFile(deck_path) as deck:
+            presentation = deck.read("ppt/presentation.xml")
+    except (zipfile.BadZipFile, KeyError) as exc:
+        raise ValueError(
+            f"{deck_path} is not a .pptx deck ({exc}); pass the built deck copy"
+        ) from exc
+    root = ET.fromstring(presentation)
+    slide_list = root.find(f"{{{PRESENTATION_NS}}}sldIdLst")
+    if slide_list is None:
+        return 0
+    return len(slide_list.findall(f"{{{PRESENTATION_NS}}}sldId"))
+
+
+def driver_args(notes_map: object, slide_count: int) -> list[str]:
+    """Return the driver's argument items: `<1-based #>`, `<text>` per note.
+
+    Raises ValueError when a note targets a slide past slide_count, contains
+    NUL (which an argument cannot carry), or the items exceed the argument
+    budget.
+    """
+    items = []
+    for num, text in note_pairs(notes_map):
+        if num > slide_count:
+            raise ValueError(
+                f"notes for 0-based slide {num - 1} target slide {num}, but the deck "
+                f"has {slide_count} slides; rebuild notes.json against the "
+                "post-expansion deck"
+            )
+        if NUL in text:
+            raise ValueError(f"notes for slide {num - 1} contain a NUL character")
+        items += [str(num), text]
+    size = sum(len(item.encode("utf-8")) + 1 for item in items)
+    if size > DRIVER_ARGS_BUDGET:
+        raise ValueError(
+            f"notes total {size} bytes, over the {DRIVER_ARGS_BUDGET}-byte argument "
+            "budget; split notes.json into two runs of inject-notes.sh"
+        )
+    return items
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Turn a 0-based speaker-notes JSON map into the notes driver's input."
+    )
+    parser.add_argument("notes", type=Path, help="0-based notes JSON map")
+    parser.add_argument("out", type=Path, help="output file")
+    parser.add_argument(
+        "--driver-args",
+        action="store_true",
+        help="write NUL-terminated driver arguments instead of the packed format",
+    )
+    parser.add_argument(
+        "--deck", type=Path, help="deck whose slide count bounds the notes"
+    )
+    args = parser.parse_args(argv)
+    if args.driver_args and args.deck is None:
+        parser.error("--driver-args requires --deck")
+    try:
+        notes_map = json.loads(args.notes.read_text(encoding="utf-8"))
+        if args.driver_args:
+            items = driver_args(notes_map, deck_slide_count(args.deck))
+            payload = "".join(item + NUL for item in items)
+            count = len(items) // 2
+        else:
+            payload = pack_notes(notes_map)
+            count = 0 if payload == "" else payload.count(RS) + 1
+    except (OSError, ValueError, json.JSONDecodeError, ET.ParseError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
-        sys.exit(1)
-    out_path = sys.argv[2]
-    Path(out_path).write_text(packed, encoding="utf-8")
-    count = 0 if packed == "" else packed.count(RS) + 1
-    print(json.dumps({"records": count, "output": out_path}))
+        return 1
+    args.out.write_text(payload, encoding="utf-8")
+    print(json.dumps({"records": count, "output": str(args.out)}))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -32,12 +32,15 @@ DRIVER="$HERE/inject-notes.applescript"
 [[ -f "$NOTES" ]]  || { echo "ERROR: notes JSON not found: $NOTES — a {\"<0-based slide #>\": \"text\"} map." >&2; exit 1; }
 [[ -f "$DRIVER" ]] || { echo "ERROR: driver not found: $DRIVER — reinstall the plugin; inject-notes.applescript must sit next to this script." >&2; exit 1; }
 
-# Pack the 0-based notes JSON into the notes driver's wire format (1-based,
-# control-char delimited). Deterministic; unit-tested in tests/test_notes_to_packed.py.
+# Validate the 0-based notes JSON against the deck's slide count and turn it into
+# the driver's argument pairs (1-based slide #, note text), NUL-terminated so
+# multi-line notes survive. Deterministic; unit-tested in tests/test_notes_to_packed.py.
 STAGE_DIR="$HOME/.deckops-staging"
 mkdir -p "$STAGE_DIR"
-PACKED="$STAGE_DIR/$(basename "$OUT").notes.packed"
-python3 "$HERE/notes-to-packed.py" "$NOTES" "$PACKED"
+ARGS_FILE="$STAGE_DIR/$(basename "$OUT").notes.args"
+python3 "$HERE/notes-to-packed.py" --driver-args --deck "$BASE" "$NOTES" "$ARGS_FILE"
+NOTE_ARGS=()
+while IFS= read -r -d '' item; do NOTE_ARGS+=("$item"); done < "$ARGS_FILE"
 
 # Sandboxed PowerPoint can't create a file in a Google Drive folder (E_FAIL) —
 # stage locally, then move into place with the shell.
@@ -45,7 +48,8 @@ STAGE="$OUT_STAGE_DIR/$(basename "$OUT")"
 rm -f "$STAGE"
 
 echo "staging -> $STAGE"
-osascript "$DRIVER" "$(stage_base "$BASE")" "$STAGE" "$PACKED"
+# ${arr[@]+...} keeps an empty notes map from tripping `set -u` on bash 3.2.
+osascript "$DRIVER" "$(stage_base "$BASE")" "$STAGE" ${NOTE_ARGS[@]+"${NOTE_ARGS[@]}"}
 
 if [[ -f "$STAGE" ]]; then
   mkdir -p "$(dirname "$OUT")"

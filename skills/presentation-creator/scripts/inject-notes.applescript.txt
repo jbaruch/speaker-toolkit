@@ -1,44 +1,69 @@
 -- inject-notes.applescript
--- Reads the packed speaker-notes file as UTF-8 and writes each note into its
--- slide's notes body placeholder through PowerPoint's AppleScript object model
--- (`set content`), which carries Unicode text intact. Never `run VB macro`.
--- Packed format: records separated by character id 30 (RS); within a record,
--- the 1-based slide number and the note text separated by character id 31 (US).
+-- Writes each note into its slide's notes body placeholder through PowerPoint's
+-- AppleScript object model (`set content`), which carries Unicode text intact.
+-- Never `run VB macro`. The driver parses nothing: inject-notes.sh validates the
+-- notes against the deck with notes-to-packed.py --driver-args and passes them
+-- as argument pairs of 1-based slide number and note text.
 -- Opens basePath, saves the result to outPath, and closes it; basePath is not
--- modified. Every failure names its stage (open, slide N, save) and the repair.
---   osascript inject-notes.applescript <basePath> <outPath> <packedNotesFile>
+-- modified. Every failure names its stage (open, slide N, save), keeps the
+-- original error number, and gives the repair.
+--   osascript inject-notes.applescript <basePath> <outPath> [<slide #> <note text>]...
+
+-- Error numbers this driver raises itself; anything else is PowerPoint's own.
+property errUnpairedArgs : 1001
+property errAlreadyOpen : 1002
+property errNoNotesBody : 1003
+property errNotAuthorized : -1743
+
 on run argv
-	if (count of argv) < 3 then error "Expected 3 args: basePath outPath packedNotesFile"
+	if (count of argv) < 2 then error "Expected: basePath outPath [slideNumber noteText]..."
 	set basePath to item 1 of argv
 	set outPath to item 2 of argv
-	set packed to read (POSIX file (item 3 of argv)) as «class utf8»
+	if (count of argv) > 2 then
+		set noteArgs to items 3 thru -1 of argv
+	else
+		set noteArgs to {}
+	end if
+	if ((count of noteArgs) mod 2) is not 0 then error "ERROR: inject-notes failed at [args]: slide numbers and note texts must come in pairs — run the driver through inject-notes.sh, which builds them with notes-to-packed.py --driver-args." number errUnpairedArgs
 	set baseName to my fileName(basePath)
 	set outName to my fileName(outPath)
 
-	tell application "Microsoft PowerPoint"
-		activate
+	set openedByUs to false
+	try
+		tell application "Microsoft PowerPoint"
+			activate
+			set openNames to name of every presentation
+		end tell
 		-- PowerPoint keys open decks by filename: a same-named open deck would be
 		-- returned instead of the file at basePath, or collide with the output.
-		if (name of every presentation) contains baseName then error "ERROR: inject-notes failed at [open]: a presentation named " & baseName & " is already open — pass a uniquely-named copy."
-		if (name of every presentation) contains outName then error "ERROR: inject-notes failed at [open]: a presentation named " & outName & " is already open — close it or choose another output name."
-	end tell
-	try
+		if openNames contains baseName then error "a presentation named " & baseName & " is already open — pass a uniquely-named copy." number errAlreadyOpen
+		if openNames contains outName then error "a presentation named " & outName & " is already open — close it or choose another output name." number errAlreadyOpen
 		tell application "Microsoft PowerPoint"
 			with timeout of 1800 seconds
 				open POSIX file basePath
 			end timeout
+			set openedByUs to true
 			set p to presentation baseName
 		end tell
 	on error errMsg number errNum
-		my closeIfOpen(baseName)
-		error "ERROR: inject-notes failed at [open]: " & errMsg & " — confirm " & basePath & " exists inside PowerPoint's container (inject-notes.sh stages it) and that Automation consent is granted (deck-editing-setup.md Step 4)." number errNum
+		if openedByUs then my closeIfOpen(baseName)
+		if errNum is errAlreadyOpen then error "ERROR: inject-notes failed at [open]: " & errMsg number errNum
+		if errNum is errNotAuthorized then error "ERROR: inject-notes failed at [open]: " & errMsg & " — grant this terminal Automation access to Microsoft PowerPoint (System Settings > Privacy & Security > Automation; deck-editing-setup.md Step 4), then re-run." number errNum
+		error "ERROR: inject-notes failed at [open]: " & errMsg & " — confirm " & basePath & " exists inside PowerPoint's container (inject-notes.sh stages it) and PowerPoint can open it, then re-run." number errNum
 	end try
 
+	set currentSlide to 0
+	set applied to 0
 	try
-		set applied to my applyNotes(p, packed)
+		repeat with i from 1 to (count of noteArgs) by 2
+			set currentSlide to (item i of noteArgs) as integer
+			my setNotesBody(p, currentSlide, item (i + 1) of noteArgs)
+			set applied to applied + 1
+		end repeat
 	on error errMsg number errNum
 		my closeIfOpen(baseName)
-		error "ERROR: inject-notes failed at " & errMsg number errNum
+		if errNum is errNoNotesBody then error "ERROR: inject-notes failed at [slide " & currentSlide & "]: " & errMsg number errNum
+		error "ERROR: inject-notes failed at [slide " & currentSlide & "]: PowerPoint refused the note: " & errMsg & " — open the deck in PowerPoint, check slide " & currentSlide & "'s notes page (View > Notes Page), then re-run inject-notes.sh." number errNum
 	end try
 
 	try
@@ -56,47 +81,9 @@ on run argv
 	return "Notes applied: " & applied
 end run
 
--- Returns the number of notes written. Each error message starts with the
--- bracketed stage, so the caller can prefix it unchanged.
-on applyNotes(p, packed)
-	set RS to character id 30
-	set US to character id 31
-	set saved to AppleScript's text item delimiters
-	set AppleScript's text item delimiters to RS
-	set noteRecords to text items of packed
-	set AppleScript's text item delimiters to saved
-	tell application "Microsoft PowerPoint" to set slideCount to count of slides of p
-	set applied to 0
-	repeat with recRef in noteRecords
-		set rec to contents of recRef
-		if length of rec > 0 then
-			set usPos to offset of US in rec
-			if usPos is 0 then error "[parse]: notes record has no unit separator: " & (text 1 thru (my minimum(40, length of rec)) of rec) & " — regenerate the packed file with notes-to-packed.py."
-			try
-				set num to (text 1 thru (usPos - 1) of rec) as integer
-			on error
-				error "[parse]: notes record starts with a non-numeric slide number — regenerate the packed file with notes-to-packed.py."
-			end try
-			if num < 1 or num > slideCount then error "[slide " & num & "]: out of range, the deck has " & slideCount & " slides — rebuild notes.json against the post-expansion deck."
-			if usPos is (length of rec) then
-				set noteText to ""
-			else
-				set noteText to text (usPos + 1) thru -1 of rec
-			end if
-			try
-				my setNotesBody(p, num, noteText)
-			on error errMsg
-				error "[slide " & num & "]: " & errMsg
-			end try
-			set applied to applied + 1
-		end if
-	end repeat
-	return applied
-end applyNotes
-
 -- Writes noteText into the notes body placeholder of slide num. A notes page
--- without one raises; the note never lands in a title, footer, date, header or
--- slide-number placeholder.
+-- without one raises errNoNotesBody; the note never lands in a title, footer,
+-- date, header or slide-number placeholder.
 on setNotesBody(p, num, noteText)
 	tell application "Microsoft PowerPoint"
 		set np to notes page of slide num of p
@@ -110,7 +97,7 @@ on setNotesBody(p, num, noteText)
 			end if
 		end repeat
 	end tell
-	error "the notes page has no notes body placeholder — in PowerPoint open View > Notes Master, enable Body under Placeholders, save the deck, then re-run inject-notes.sh."
+	error "the notes page has no notes body placeholder — in PowerPoint open View > Notes Master, enable Body under Placeholders, save the deck, then re-run inject-notes.sh." number errNoNotesBody
 end setNotesBody
 
 on closeIfOpen(deckName)
@@ -118,11 +105,6 @@ on closeIfOpen(deckName)
 		if (name of every presentation) contains deckName then close presentation deckName saving no
 	end tell
 end closeIfOpen
-
-on minimum(a, b)
-	if a < b then return a
-	return b
-end minimum
 
 on fileName(posixPath)
 	set saved to AppleScript's text item delimiters
