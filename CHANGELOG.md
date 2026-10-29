@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.3 — 2026-10-29
+
 ### Keep Unicode in injected speaker notes
 
 `inject-notes.sh` passed every note to the `SetSpeakerNotes` VBA macro through
