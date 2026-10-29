@@ -107,7 +107,8 @@ generating slide structure (see `rules/slide-generation-rules.md`).
 - Exempt artifacts: `RunDeckOps.bas` and every `*.applescript` driver beside it,
   `deckops-version.applescript` included. Their manual validation procedure is
   Step 5 of `skills/presentation-builder/references/deck-editing-setup.md` — what
-  to run, what to observe, what counts as a pass.
+  to run, what to observe, what counts as a pass. `inject-notes.applescript` has
+  its own procedure there, under Notes driver check.
 - `skills/presentation-creator/scripts/deckops-doctor.py` splits along the same line: the AppleScript probe is exempt,
   while path derivation, probe-output parsing, and the verdict table are unit-tested
   in `tests/test_deckops_doctor.py` against synthetic probe results.

@@ -1,13 +1,11 @@
 -- inject-notes.applescript
--- Reads the packed speaker-notes file as UTF-8 and writes each note through
--- PowerPoint's AppleScript object model (`set content`), which carries Unicode
--- text intact. It does not call the SetSpeakerNotes VBA macro: `run VB macro`
--- converts its string parameters to the Mac Roman code page, so arrows, emoji
--- and every other character outside it reached the notes as "?".
+-- Reads the packed speaker-notes file as UTF-8 and writes each note into its
+-- slide's notes body placeholder through PowerPoint's AppleScript object model
+-- (`set content`), which carries Unicode text intact. Never `run VB macro`.
 -- Packed format: records separated by character id 30 (RS); within a record,
 -- the 1-based slide number and the note text separated by character id 31 (US).
 -- Opens basePath, saves the result to outPath, and closes it; basePath is not
--- modified.
+-- modified. Every failure names its stage (open, slide N, save) and the repair.
 --   osascript inject-notes.applescript <basePath> <outPath> <packedNotesFile>
 on run argv
 	if (count of argv) < 3 then error "Expected 3 args: basePath outPath packedNotesFile"
@@ -21,31 +19,45 @@ on run argv
 		activate
 		-- PowerPoint keys open decks by filename: a same-named open deck would be
 		-- returned instead of the file at basePath, or collide with the output.
-		if (name of every presentation) contains baseName then error "ERROR: a presentation named " & baseName & " is already open — pass a uniquely-named copy."
-		if (name of every presentation) contains outName then error "ERROR: a presentation named " & outName & " is already open — close it or choose another output name."
-		with timeout of 1800 seconds
-			open POSIX file basePath
-		end timeout
-		set p to presentation baseName
+		if (name of every presentation) contains baseName then error "ERROR: inject-notes failed at [open]: a presentation named " & baseName & " is already open — pass a uniquely-named copy."
+		if (name of every presentation) contains outName then error "ERROR: inject-notes failed at [open]: a presentation named " & outName & " is already open — close it or choose another output name."
 	end tell
+	try
+		tell application "Microsoft PowerPoint"
+			with timeout of 1800 seconds
+				open POSIX file basePath
+			end timeout
+			set p to presentation baseName
+		end tell
+	on error errMsg number errNum
+		my closeIfOpen(baseName)
+		error "ERROR: inject-notes failed at [open]: " & errMsg & " — confirm " & basePath & " exists inside PowerPoint's container (inject-notes.sh stages it) and that Automation consent is granted (deck-editing-setup.md Step 4)." number errNum
+	end try
 
-	set applied to 0
 	try
 		set applied to my applyNotes(p, packed)
+	on error errMsg number errNum
+		my closeIfOpen(baseName)
+		error "ERROR: inject-notes failed at " & errMsg number errNum
+	end try
+
+	try
 		tell application "Microsoft PowerPoint"
 			with timeout of 1800 seconds
 				save p in POSIX file outPath
 			end timeout
-			close presentation outName saving no
 		end tell
 	on error errMsg number errNum
 		my closeIfOpen(baseName)
 		my closeIfOpen(outName)
-		error "ERROR: SetSpeakerNotes failed: " & errMsg number errNum
+		error "ERROR: inject-notes failed at [save]: " & errMsg & " — " & outPath & " must be inside PowerPoint's container; run the driver through inject-notes.sh, which stages the output." number errNum
 	end try
-	return "SetSpeakerNotes returned: " & applied
+	my closeIfOpen(outName)
+	return "Notes applied: " & applied
 end run
 
+-- Returns the number of notes written. Each error message starts with the
+-- bracketed stage, so the caller can prefix it unchanged.
 on applyNotes(p, packed)
 	set RS to character id 30
 	set US to character id 31
@@ -53,38 +65,42 @@ on applyNotes(p, packed)
 	set AppleScript's text item delimiters to RS
 	set noteRecords to text items of packed
 	set AppleScript's text item delimiters to saved
+	tell application "Microsoft PowerPoint" to set slideCount to count of slides of p
 	set applied to 0
 	repeat with recRef in noteRecords
 		set rec to contents of recRef
 		if length of rec > 0 then
 			set usPos to offset of US in rec
-			if usPos is 0 then error "Bad notes record (no unit separator): " & rec
-			set num to (text 1 thru (usPos - 1) of rec) as integer
+			if usPos is 0 then error "[parse]: notes record has no unit separator: " & (text 1 thru (my minimum(40, length of rec)) of rec) & " — regenerate the packed file with notes-to-packed.py."
+			try
+				set num to (text 1 thru (usPos - 1) of rec) as integer
+			on error
+				error "[parse]: notes record starts with a non-numeric slide number — regenerate the packed file with notes-to-packed.py."
+			end try
+			if num < 1 or num > slideCount then error "[slide " & num & "]: out of range, the deck has " & slideCount & " slides — rebuild notes.json against the post-expansion deck."
 			if usPos is (length of rec) then
 				set noteText to ""
 			else
 				set noteText to text (usPos + 1) thru -1 of rec
 			end if
-			tell application "Microsoft PowerPoint"
-				set slideCount to count of slides of p
-				if num < 1 or num > slideCount then error "Notes slide " & num & " out of range (deck has " & slideCount & ")"
-				set s to slide num of p
-			end tell
-			my setNotesBody(s, noteText, num)
+			try
+				my setNotesBody(p, num, noteText)
+			on error errMsg
+				error "[slide " & num & "]: " & errMsg
+			end try
 			set applied to applied + 1
 		end if
 	end repeat
 	return applied
 end applyNotes
 
--- Write noteText into the slide's notes body placeholder. Falls back to the
--- first text frame on the notes page that is not the title placeholder; a
--- notes page with neither raises instead of dropping the note.
-on setNotesBody(s, noteText, num)
+-- Writes noteText into the notes body placeholder of slide num. A notes page
+-- without one raises; the note never lands in a title, footer, date, header or
+-- slide-number placeholder.
+on setNotesBody(p, num, noteText)
 	tell application "Microsoft PowerPoint"
-		set np to notes page of s
-		set shapeCount to count of shapes of np
-		repeat with i from 1 to shapeCount
+		set np to notes page of slide num of p
+		repeat with i from 1 to (count of shapes of np)
 			set sh to shape i of np
 			if (shape type of sh) is shape type place holder then
 				if (placeholder type of placeholder format of sh) is placeholder type body placeholder then
@@ -93,20 +109,8 @@ on setNotesBody(s, noteText, num)
 				end if
 			end if
 		end repeat
-		repeat with i from 1 to shapeCount
-			set sh to shape i of np
-			if has text frame of sh then
-				if (shape type of sh) is not shape type place holder then
-					set content of text range of text frame of sh to noteText
-					return
-				else if (placeholder type of placeholder format of sh) is not placeholder type title placeholder then
-					set content of text range of text frame of sh to noteText
-					return
-				end if
-			end if
-		end repeat
 	end tell
-	error "slide " & num & " has no notes text frame"
+	error "the notes page has no notes body placeholder — in PowerPoint open View > Notes Master, enable Body under Placeholders, save the deck, then re-run inject-notes.sh."
 end setNotesBody
 
 on closeIfOpen(deckName)
@@ -114,6 +118,11 @@ on closeIfOpen(deckName)
 		if (name of every presentation) contains deckName then close presentation deckName saving no
 	end tell
 end closeIfOpen
+
+on minimum(a, b)
+	if a < b then return a
+	return b
+end minimum
 
 on fileName(posixPath)
 	set saved to AppleScript's text item delimiters

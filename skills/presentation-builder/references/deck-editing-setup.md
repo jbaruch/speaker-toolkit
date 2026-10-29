@@ -176,13 +176,49 @@ It passes when all four hold:
 Anything else: re-run Step 0 and follow `next_step`. Only after a clean pass run
 the real edit. Delete the throwaway files.
 
+### Notes driver check
+
+Run this after any change to `inject-notes.applescript`, against a copy of the
+smoke-test output. Use a uniquely-named base inside PowerPoint's container,
+`~/Library/Containers/com.microsoft.Powerpoint/Data/`. `notes.json` holds a
+Unicode sentinel for slides 1 and 3 and nothing for slide 2:
+
+```json
+{"0": "PORT → Factories ⚡ “quoted” — café 日本", "2": "second note"}
+```
+
+Record `shasum -a 256` of the base, then run:
+
+```bash
+bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.sh" \
+  "{base_copy}" "{out_pptx}" notes.json
+```
+
+It passes when all five hold:
+1. The script exits 0 and the driver prints `Notes applied: 2`.
+2. Read back with python-pptx, slide 1's notes equal the sentinel character for
+   character, slide 3's are `second note`, and slide 2's are unchanged.
+3. The base's SHA-256 is unchanged.
+4. The output opens in **PowerPoint** with no "Repair" prompt, and the presenter
+   view shows the sentinel intact.
+5. The output opens in **Keynote** with no "Repair" prompt, and its presenter
+   notes show the sentinel intact.
+
+Then check the failure paths. Each must exit non-zero, write no output file, and
+leave no copy open (`name of every presentation` lists only what was open before):
+- `{"9": "x"}` fails with `inject-notes failed at [slide 10]: out of range`.
+- With the base copy already open in PowerPoint, the run fails at `[open]` and
+  names the file.
+
 ## Step 6 — Every build (recurring)
 
 Steps 1–4 are one-time per machine; this is what happens on EVERY real deck build:
 
-1. **Open `DeckOps.pptm` first and keep it open for the entire build.** Every pass
-   (`BuildDeck`, `ExpandBuilds`, speaker notes, backgrounds, QR) drives a macro
-   that lives in this file; the scripts call it in the running PowerPoint instance.
+1. **Open `DeckOps.pptm` first and keep it open for the entire build.** Every macro
+   pass (`BuildDeck`, `ExpandBuilds`, backgrounds, QR) drives a macro that lives in
+   this file; the scripts call it in the running PowerPoint instance. The
+   speaker-notes pass runs no macro: it writes through PowerPoint's AppleScript
+   object model.
    If `DeckOps.pptm` is closed (or PowerPoint quits) mid-build, the next pass fails
    with a macro-not-found error — reopen it and re-run that pass.
 2. Run Step 0 once before the first pass and require `ok`. It is the cheap way to

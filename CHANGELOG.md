@@ -8,9 +8,14 @@ any other character outside it reached the deck as `?`, so a stage cue like
 "PORT → Factories" read "PORT ? Factories". The AppleScript driver now splits
 the packed file itself and writes each note through PowerPoint's AppleScript
 object model, which carries Unicode intact. The wrapper's arguments, the packed
-format and the output stay the same. A failure raises with the slide it
-stopped on and closes the copy it opened. `SetSpeakerNotes` stays in
-`RunDeckOps.bas`, so an imported DeckOps container needs no re-import.
+format and the output file stay the same; the driver now prints
+`Notes applied: N`, and the notes pass no longer needs `DeckOps.pptm` open.
+Each failure names its stage (open, the slide it stopped on, or save) with the
+repair, and closes the copy it opened. A note goes only into the notes body
+placeholder: a notes page without one fails instead of writing the note into a
+footer, date or header placeholder. `SetSpeakerNotes` stays in `RunDeckOps.bas`,
+so an imported DeckOps container needs no re-import. The setup guide's Step 5
+adds a Notes driver check with a Unicode sentinel and the failure paths.
 
 `BuildDeck` text ops, `RunDeckOps` replacements and `ExpandBuilds` notes still
 cross the same bridge.

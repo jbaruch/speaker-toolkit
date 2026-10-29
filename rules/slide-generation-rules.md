@@ -37,9 +37,7 @@ python-pptx pass that omitted-then-patched it is retired. See
 `rules/deck-editing-rules.md`.
 
 The notes driver sets each note through PowerPoint's AppleScript object model,
-never through `run VB macro`. That bridge converts string parameters to Mac
-Roman, so arrows, emoji and every other character outside it reach the notes
-as `?`.
+never through `run VB macro`.
 
 ### Use rectangles for decorative lines — never connectors
 

@@ -1,9 +1,9 @@
 #!/bin/bash
 # inject-notes.sh — set per-slide speaker notes via the real PowerPoint app
-# (SetSpeakerNotes VBA macro), retiring inject-speaker-notes.py. Real PowerPoint
-# serializes valid notes OOXML, so the <p:notesMasterIdLst> Keynote-compat patch
-# the python-pptx path needed is no longer required. See rules/deck-editing-rules.md.
-# macOS + Microsoft PowerPoint only.
+# (inject-notes.applescript, through PowerPoint's AppleScript object model),
+# retiring inject-speaker-notes.py. Real PowerPoint serializes valid notes OOXML,
+# so the <p:notesMasterIdLst> Keynote-compat patch the python-pptx path needed is
+# no longer required. See rules/deck-editing-rules.md. macOS + Microsoft PowerPoint only.
 #
 # Run this in the build pipeline AFTER the structural walk + illustrations apply
 # and BEFORE apply-backgrounds.sh (the VBA background pass must be the final write).
@@ -14,8 +14,8 @@
 #     outPath     where to write the COPY with notes applied
 #     notes.json  {"<0-based slide #>": "notes text", ...} (the historical format)
 #
-# Prerequisites: RunDeckOps.bas (which defines SetSpeakerNotes) imported into an
-# OPEN macro-enabled deck (DeckOps.pptm), macros enabled, Automation consent granted.
+# Prerequisites: Microsoft PowerPoint and Automation consent granted. This pass runs
+# no VBA macro, so it does not need DeckOps.pptm.
 set -euo pipefail
 
 if [[ $# -lt 3 ]]; then
@@ -32,7 +32,7 @@ DRIVER="$HERE/inject-notes.applescript"
 [[ -f "$NOTES" ]]  || { echo "ERROR: notes JSON not found: $NOTES — a {\"<0-based slide #>\": \"text\"} map." >&2; exit 1; }
 [[ -f "$DRIVER" ]] || { echo "ERROR: driver not found: $DRIVER — reinstall the plugin; inject-notes.applescript must sit next to this script." >&2; exit 1; }
 
-# Pack the 0-based notes JSON into the SetSpeakerNotes wire format (1-based,
+# Pack the 0-based notes JSON into the notes driver's wire format (1-based,
 # control-char delimited). Deterministic; unit-tested in tests/test_notes_to_packed.py.
 STAGE_DIR="$HOME/.deckops-staging"
 mkdir -p "$STAGE_DIR"
@@ -52,6 +52,6 @@ if [[ -f "$STAGE" ]]; then
   mv -f "$STAGE" "$OUT"
   echo "done -> $OUT"
 else
-  echo "ERROR: macro did not produce the staged file. On a macro error the osascript step above already aborted with the VBA Err.Description; reaching here means the macro returned without error but wrote no file. Confirm DeckOps.pptm is open with macros enabled and Automation consent granted — see skills/presentation-builder/references/deck-editing-setup.md." >&2
+  echo "ERROR: the notes driver reported success but wrote no file at $STAGE. A driver failure aborts the osascript step above with its stage and repair; reaching here means PowerPoint saved somewhere else. Confirm PowerPoint can write to $OUT_STAGE_DIR and re-run — see skills/presentation-builder/references/deck-editing-setup.md." >&2
   exit 1
 fi
