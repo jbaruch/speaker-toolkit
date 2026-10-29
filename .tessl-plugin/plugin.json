@@ -1,6 +1,6 @@
 {
   "name": "jbaruch/speaker-toolkit",
-  "version": "0.21.3",
+  "version": "0.21.4",
   "description": "Eleven skills for conference speakers covering rhetoric analysis, talk authoring, deck building and export, CFP submissions, publishing, illustrations, shownotes, and screencast production, informed by a 113-entry Presentation Patterns taxonomy (83 observable: 64 patterns + 19 antipatterns; 30 unobservable: 21 patterns + 9 antipatterns).",
   "private": false,
   "skills": [
