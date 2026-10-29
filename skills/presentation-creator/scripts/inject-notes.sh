@@ -57,23 +57,31 @@ echo "staging -> $STAGE"
 # per-run directory means no earlier marker can be mistaken for this run's.
 RUN_DIR="$(mktemp -d "$STAGE_DIR/notes-run.XXXXXX")"
 OPENED_MARKER="$RUN_DIR/opened"
+# Best-effort: a cleanup failure warns and never replaces the run's outcome.
+remove_run_dir() {
+  if ! rm -rf -- "${RUN_DIR:?}"; then
+    echo "WARNING: could not remove $RUN_DIR; it holds only this run's opened-copy marker, so delete it by hand." >&2
+  fi
+  return 0
+}
 if ! osascript "$DRIVER" "$STAGED_BASE" "$STAGE" "$(basename "$STAGED_BASE")" "$(basename "$STAGE")" "$OPENED_MARKER" ${NOTE_ARGS[@]+"${NOTE_ARGS[@]}"}; then
   if [[ -e "$OPENED_MARKER" ]]; then
     CLOSE_ADVICE="This run opened its own copy (no presentation with that name was open before): close the presentation named $(basename "$STAGED_BASE") (or $(basename "$STAGE"), if it was saved) in PowerPoint without saving."
   else
     CLOSE_ADVICE="This run opened no copy: leave every presentation that was already open as it is."
   fi
-  rm -rf -- "${RUN_DIR:?}"
   echo "ERROR: the notes driver stopped at the last stage it logged above ([open], [slide N], [save] or [close]). $CLOSE_ADVICE Then fix the cause it reported and re-run. For a denied Automation consent see skills/presentation-builder/references/deck-editing-setup.md Step 4." >&2
+  remove_run_dir
   exit 1
 fi
-rm -rf -- "${RUN_DIR:?}"
 
 if [[ -f "$STAGE" ]]; then
   mkdir -p "$(dirname "$OUT")"
   mv -f "$STAGE" "$OUT"
   echo "done -> $OUT"
+  remove_run_dir
 else
   echo "ERROR: the notes driver reported success but wrote no file at $STAGE, so PowerPoint saved somewhere else. Confirm PowerPoint can write to $OUT_STAGE_DIR and re-run — see skills/presentation-builder/references/deck-editing-setup.md." >&2
+  remove_run_dir
   exit 1
 fi
