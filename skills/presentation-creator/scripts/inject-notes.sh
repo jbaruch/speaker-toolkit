@@ -99,7 +99,7 @@ if ! osascript "$DRIVER" "$STAGED_BASE" "$STAGE" "$(basename "$STAGED_BASE")" "$
       LAST_STAGE=""
     fi
   fi
-  if [[ "$LAST_STAGE" == "open" ]]; then
+  if [[ "$LAST_STAGE" == "open" || "$LAST_STAGE" == "opening" ]]; then
     STAGE_ADVICE="It stopped while opening the staged copy: open $STAGED_BASE by hand to confirm PowerPoint can read it, dismiss any PowerPoint dialog, and re-run."
   elif [[ "$LAST_STAGE" =~ ^slide\ ([0-9]+)$ ]]; then
     STAGE_ADVICE="It stopped writing the note for slide ${BASH_REMATCH[1]}: open the source deck, check that slide's notes page (View > Notes Page) and its note text in notes.json, and re-run."
@@ -112,20 +112,41 @@ if ! osascript "$DRIVER" "$STAGED_BASE" "$STAGE" "$(basename "$STAGED_BASE")" "$
   fi
   if [[ -e "$OPENED_MARKER" ]]; then
     CLOSE_ADVICE="This run opened its own copy (no presentation with that name was open before): close the presentation named $(basename "$STAGED_BASE") (or $(basename "$STAGE"), if it was saved) in PowerPoint without saving."
+  elif [[ "$LAST_STAGE" == "opening" ]]; then
+    CLOSE_ADVICE="This run asked PowerPoint to open its copy and the open did not confirm; it may still finish. No presentation named $(basename "$STAGED_BASE") was open before this run, so if one appears in PowerPoint it is this run's copy: close it without saving. Leave every other presentation as it is."
   else
     CLOSE_ADVICE="This run recorded no copy of its own: leave every presentation that was open before this run as it is."
   fi
-  echo "ERROR: the notes driver failed; its message is above. If that message gives a repair, follow it. $STAGE_ADVICE $CLOSE_ADVICE For a denied Automation consent see skills/presentation-builder/references/deck-editing-setup.md Step 4." >&2
+  echo "ERROR: the notes driver failed; its message is above. If that message gives a repair, follow it: it takes precedence over this stage guess. $STAGE_ADVICE $CLOSE_ADVICE For a denied Automation consent see skills/presentation-builder/references/deck-editing-setup.md Step 4." >&2
   exit 1
 fi
 
 if [[ -f "$STAGE" ]]; then
-  if ! mkdir -p "$(dirname "$OUT")"; then
-    echo "ERROR: PowerPoint saved the deck, but the destination folder $(dirname "$OUT") cannot be created, so nothing was delivered — choose an output path in a writable folder and re-run." >&2
+  OUT_DIR="$(dirname "$OUT")"
+  if ! mkdir -p "$OUT_DIR"; then
+    echo "ERROR: PowerPoint saved the deck, but the destination folder $OUT_DIR cannot be created, so nothing was delivered — choose an output path in a writable folder and re-run." >&2
     exit 1
   fi
-  if ! mv -f "$STAGE" "$OUT"; then
-    echo "ERROR: PowerPoint saved the deck, but moving it to $OUT failed, so nothing was delivered — make $(dirname "$OUT") writable, or free disk space, and re-run." >&2
+  # The container and the destination (often Google Drive) are different
+  # filesystems, where mv is copy-then-remove and can leave a partial file. Copy
+  # to a temporary file beside OUT, then rename it into place: OUT is either the
+  # previous file or the complete new one, never a partial copy.
+  if ! DELIVERY_TMP="$(mktemp "$OUT_DIR/.$(basename "$OUT").XXXXXX")"; then
+    echo "ERROR: PowerPoint saved the deck, but no temporary file can be created in $OUT_DIR, so nothing was delivered and $OUT is unchanged — make that folder writable, or free disk space, and re-run." >&2
+    exit 1
+  fi
+  if ! cp -p "$STAGE" "$DELIVERY_TMP"; then
+    if ! rm -f "$DELIVERY_TMP"; then
+      echo "WARNING: could not remove the partial copy $DELIVERY_TMP; delete it by hand." >&2
+    fi
+    echo "ERROR: PowerPoint saved the deck, but copying it to $OUT_DIR failed, so nothing was delivered and $OUT is unchanged — free disk space in that folder and re-run." >&2
+    exit 1
+  fi
+  if ! mv -f "$DELIVERY_TMP" "$OUT"; then
+    if ! rm -f "$DELIVERY_TMP"; then
+      echo "WARNING: could not remove the temporary copy $DELIVERY_TMP; delete it by hand." >&2
+    fi
+    echo "ERROR: PowerPoint saved the deck, but renaming the complete copy to $OUT failed, so $OUT is unchanged — make $OUT_DIR writable and re-run." >&2
     exit 1
   fi
   echo "done -> $OUT"

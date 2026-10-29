@@ -15,7 +15,11 @@ wrapper's arguments and output file stay the same; the driver prints
 `Notes applied: N`, and the notes pass no longer needs `DeckOps.pptm` open. The notes' plaintext
 arguments live only in a per-run directory that the wrapper removes on every
 exit. `container-stage.sh`'s shared cleanup now warns instead of letting a
-failed removal change any deck wrapper's exit status. The
+failed removal change any deck wrapper's exit status. Delivery to the destination
+copies to a temporary file beside it and renames that into place, so a failed
+copy across filesystems (the container to Google Drive) never leaves a partial
+deck and keeps the previous output. An open that times out records an
+`opening` stage, so the wrapper can say a uniquely named copy may still appear. The
 driver logs each stage (open, slide N, save, close) before running it. Errors it
 raises itself name the stage and repair; any other error propagates unchanged,
 and the wrapper adds that stage's repair from a fixed token the driver writes

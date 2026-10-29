@@ -12,8 +12,8 @@
 -- before it runs. Errors this driver raises name their stage and repair; any other
 -- error propagates unchanged after the last logged stage, and inject-notes.sh adds
 -- the repair.
--- Before each stage it also writes that stage's token (open, slide N, save,
--- close) to stagePath, so the wrapper can give a stage-specific repair for an
+-- Before each stage it also writes that stage's token (open, opening, slide N,
+-- save, close) to stagePath, so the wrapper can give a stage-specific repair for an
 -- error the driver did not raise itself.
 --   osascript inject-notes.applescript <basePath> <outPath> <baseName> <outName> <markerPath> <stagePath> [<note for slide 1>]...
 
@@ -48,6 +48,9 @@ on run argv
 	-- returned instead of the file at basePath, or collide with the output.
 	if openNames contains baseName then error "ERROR: inject-notes failed at [open]: a presentation named " & baseName & " is already open — pass a uniquely-named copy." number errAlreadyOpen
 	if openNames contains outName then error "ERROR: inject-notes failed at [open]: a presentation named " & outName & " is already open — close it or choose another output name." number errAlreadyOpen
+	-- From here a presentation named baseName can only be this run's copy: an
+	-- open that errors or times out may still finish inside PowerPoint.
+	my recordStage(stagePath, "opening")
 	tell application "Microsoft PowerPoint"
 		with timeout of 1800 seconds
 			open POSIX file basePath
@@ -89,9 +92,14 @@ on run argv
 	return "Notes applied: " & applied
 end run
 
--- Overwrites stagePath with one fixed stage token and a newline.
+-- Overwrites stagePath with one fixed stage token and a newline. Writing it is
+-- the only step here, so every failure gets this context and keeps its number.
 on recordStage(stagePath, token)
-	do shell script "printf '%s\\n' " & quoted form of token & " > " & quoted form of stagePath
+	try
+		do shell script "printf '%s\\n' " & quoted form of token & " > " & quoted form of stagePath
+	on error errMsg number errNum
+		error "ERROR: inject-notes failed at [" & token & "]: could not record that stage at " & stagePath & " (" & errMsg & ") — free disk space or make that folder writable, and re-run." number errNum
+	end try
 end recordStage
 
 -- Writes noteText into the notes body placeholder of slide num. A notes page

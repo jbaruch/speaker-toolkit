@@ -180,9 +180,8 @@ def test_already_open_collision_leaves_the_users_deck_alone(tmp_path):
     assert not out.exists()
 
 
-def test_failed_open_gives_no_close_without_saving_advice(tmp_path):
-    # The driver writes the marker only after PowerPoint opened its copy, so a
-    # failed or timed-out open leaves none and the advice stays hands-off.
+def test_refused_before_opening_gives_no_close_without_saving_advice(tmp_path):
+    # Stopped at the "open" stage, before the open was attempted: hands-off.
     _fake_osascript(
         tmp_path,
         succeed=False,
@@ -196,6 +195,25 @@ def test_failed_open_gives_no_close_without_saving_advice(tmp_path):
     assert "It stopped while opening the staged copy" in result.stderr
     assert "This run recorded no copy of its own" in result.stderr
     assert "without saving" not in result.stderr
+    assert not out.exists()
+
+
+def test_timed_out_open_says_close_the_unique_copy_only_if_it_appears(tmp_path):
+    # A timeout does not cancel PowerPoint's open, so the copy may appear later.
+    # The driver recorded "opening" after confirming no same-named deck was open.
+    _fake_osascript(
+        tmp_path,
+        succeed=False,
+        stage="opening",
+        stderr="[open] /x/deck.pptx\nMicrosoft PowerPoint got an error: "
+        "AppleEvent timed out. (-1712)\n",
+    )
+    result, out = _run(tmp_path, _deck(tmp_path, 1), {"0": "x"})
+    assert result.returncode == 1
+    assert "the open did not confirm; it may still finish" in result.stderr
+    assert "if one appears in PowerPoint it is this run's copy" in result.stderr
+    assert "No presentation named deck.pptx was open before this run" in result.stderr
+    assert "This run opened its own copy" not in result.stderr
     assert not out.exists()
 
 
@@ -237,7 +255,10 @@ def test_raw_powerpoint_error_gets_a_stage_specific_repair(tmp_path, stage, repa
     result, out = _run(tmp_path, _deck(tmp_path, 3), {"1": "x"})
     assert result.returncode == 1
     assert "Parameter error. (-50)" in result.stderr
-    assert "If that message gives a repair, follow it." in result.stderr
+    assert (
+        "If that message gives a repair, follow it: it takes precedence over this "
+        "stage guess." in result.stderr
+    )
     assert repair in result.stderr
     assert "re-run" in result.stderr
     assert not out.exists()
@@ -299,19 +320,51 @@ def _unlock(record):
 
 
 @ROOT_IGNORES_PERMISSIONS
-def test_move_failure_is_actionable_and_leaves_no_notes(tmp_path):
+def test_unwritable_destination_is_actionable_and_leaves_no_notes(tmp_path):
     _fake_osascript(tmp_path, succeed=True)
     out_dir = tmp_path / "out"
     out_dir.mkdir()
-    out_dir.chmod(0o500)  # the folder exists but refuses the move
+    out_dir.chmod(0o500)  # the folder exists but refuses new files
     try:
         result, out = _run(tmp_path, _deck(tmp_path, 1), {"0": "x"})
     finally:
         out_dir.chmod(0o700)
     assert result.returncode == 1
-    assert f"moving it to {out} failed, so nothing was delivered" in result.stderr
+    assert "no temporary file can be created in" in result.stderr
+    assert f"{out} is unchanged" in result.stderr
     assert not list((tmp_path / ".deckops-staging").glob("notes-run.*"))
     assert not out.exists()
+
+
+def test_mid_copy_failure_keeps_the_previous_output_and_no_partial(tmp_path):
+    _fake_osascript(tmp_path, succeed=True)
+    # A cp that writes half a file and fails, like a full Drive volume.
+    fake_cp = tmp_path / "cp"
+    fake_cp.write_text(
+        '#!/bin/bash\nfor last; do :; done\nprintf partial > "$last"\nexit 1\n'
+    )
+    fake_cp.chmod(0o755)
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    previous = out_dir / "deck-with-notes.pptx"
+    previous.write_text("the previous good deck")
+    result, out = _run(tmp_path, _deck(tmp_path, 1), {"0": "x"})
+    assert result.returncode == 1
+    assert "copying it to" in result.stderr
+    assert f"so nothing was delivered and {out} is unchanged" in result.stderr
+    assert out.read_text() == "the previous good deck"
+    assert [p.name for p in out_dir.iterdir()] == ["deck-with-notes.pptx"]
+
+
+def test_success_replaces_the_previous_output_with_the_complete_copy(tmp_path):
+    _fake_osascript(tmp_path, succeed=True)
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    (out_dir / "deck-with-notes.pptx").write_text("the previous deck")
+    result, out = _run(tmp_path, _deck(tmp_path, 1), {"0": "x"})
+    assert result.returncode == 0, result.stderr
+    assert out.read_text() == ""  # the fake save's empty file, not the old one
+    assert [p.name for p in out_dir.iterdir()] == ["deck-with-notes.pptx"]
 
 
 @ROOT_IGNORES_PERMISSIONS

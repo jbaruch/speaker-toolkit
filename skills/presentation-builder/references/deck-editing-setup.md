@@ -234,6 +234,21 @@ not record that` and the close-without-saving repair, osascript reports the
 original File Manager error number (`-43`, folder not found), and
 `notes-check-base.pptx` is open in PowerPoint. Close it without saving.
 
+Then force a stage write to fail by passing a stage path in a folder that
+does not exist:
+
+```bash
+osascript "{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.applescript" \
+  "{check_dir}/notes-check-base.pptx" "{check_dir}/stage-check-out.pptx" \
+  notes-check-base.pptx stage-check-out.pptx \
+  "{check_dir}/opened" "{check_dir}/missing/stage" "note"
+```
+
+It passes when the run exits non-zero with `inject-notes failed at [open]:
+could not record that stage at {check_dir}/missing/stage`, the
+free-space-or-writable repair, and the shell's original status (`1`), and no
+copy of `notes-check-base.pptx` is open in PowerPoint.
+
 ## Step 6 — Every build (recurring)
 
 Steps 1–4 are one-time per machine; this is what happens on EVERY real deck build:
