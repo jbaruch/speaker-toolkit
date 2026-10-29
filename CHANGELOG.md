@@ -13,7 +13,9 @@ AppleScript driver as plain arguments, so the driver parses nothing; it writes e
 PowerPoint's AppleScript object model, which carries Unicode intact. The
 wrapper's arguments and output file stay the same; the driver prints
 `Notes applied: N`, and the notes pass no longer needs `DeckOps.pptm` open. The notes' plaintext
-arguments live only in a per-run directory that the wrapper removes. The
+arguments live only in a per-run directory that the wrapper removes on every
+exit. `container-stage.sh`'s shared cleanup now warns instead of letting a
+failed removal change any deck wrapper's exit status. The
 driver logs each stage (open, slide N, save, close) before running it. Errors it
 raises itself name the stage and repair; any other error propagates unchanged,
 and the wrapper adds that stage's repair from a fixed token the driver writes

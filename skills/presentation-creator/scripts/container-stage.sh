@@ -37,10 +37,15 @@ fi
 mkdir -p "$OUT_STAGE_DIR"
 
 _container_stage_cleanup() {
-  [[ -n "${CONTAINER_STAGE:-}" && -d "${CONTAINER_STAGE:-}" ]] && rm -rf "$CONTAINER_STAGE"
-  return 0   # never let the trap's exit status override the script's (an EXIT
-             # trap's last status becomes the script's: a false [[ ]] would make a
-             # successful run exit non-zero on the no-container fallback path)
+  # Best-effort: a removal failure warns and never replaces the run's outcome.
+  # Explicit ifs, not `[[ ]] && rm`: under the caller's `set -e` a failing rm in
+  # an && list inside this function would exit before reaching `return 0`.
+  if [[ -n "${CONTAINER_STAGE:-}" && -d "${CONTAINER_STAGE:-}" ]]; then
+    if ! rm -rf "$CONTAINER_STAGE"; then
+      echo "WARNING: could not remove the PowerPoint staging folder $CONTAINER_STAGE; delete it by hand." >&2
+    fi
+  fi
+  return 0   # never let the trap's exit status override the script's
 }
 trap _container_stage_cleanup EXIT
 

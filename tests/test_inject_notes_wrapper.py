@@ -345,6 +345,33 @@ def test_cleanup_failure_after_driver_failure_keeps_the_diagnostic(tmp_path):
     assert not out.exists()
 
 
+@ROOT_IGNORES_PERMISSIONS
+def test_container_stage_cleanup_failure_keeps_a_successful_delivery(tmp_path):
+    # A PowerPoint container makes container-stage.sh stage into
+    # .deckops-stage/<pid>/; the fake plants a read-only folder there so the
+    # EXIT trap's container cleanup really fails.
+    (tmp_path / "Library/Containers/com.microsoft.Powerpoint/Data").mkdir(parents=True)
+    record = tmp_path / "argv.bin"
+    p = tmp_path / "osascript"
+    p.write_text(
+        "#!/bin/bash\n"
+        f"printf '%s\\0' \"$@\" > '{record}'\n"
+        'locked="$(dirname "$(dirname "$3")")/locked"\n'
+        'mkdir "$locked"\ntouch "$locked/pinned"\nchmod 500 "$locked"\n'
+        'touch "$6"\ntouch "$3"\necho "Notes applied: 1"\n'
+    )
+    p.chmod(0o755)
+    try:
+        result, out = _run(tmp_path, _deck(tmp_path, 1), {"0": "x"})
+    finally:
+        stage_root = Path(_argv(record)[2]).parent.parent
+        (stage_root / "locked").chmod(0o700)
+    assert result.returncode == 0, result.stderr
+    assert out.exists()
+    assert f"done -> {out}" in result.stdout
+    assert "WARNING: could not remove the PowerPoint staging folder" in result.stderr
+
+
 def test_missing_notes_json_fails_with_actionable_error(tmp_path):
     _fake_osascript(tmp_path, succeed=True)
     env = dict(os.environ, PATH=f"{tmp_path}:{os.environ['PATH']}", HOME=str(tmp_path))
