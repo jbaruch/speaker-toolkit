@@ -209,45 +209,76 @@ It passes when all five hold:
 5. The output opens in **Keynote** with no "Repair" prompt, and its presenter
    notes show the sentinel intact.
 
-Then check the failure paths. Each must exit non-zero, write no output file, and
-leave no copy open (`name of every presentation` lists only what was open before):
-- `{"9": "x"}`, saved as `{check_dir}/notes-bad.json`, fails before PowerPoint
-  is touched, with `notes for 0-based slide 9 target slide 10, but the deck has
-  3 slides`.
-- With the base copy already open in PowerPoint, the run fails at `[open]`,
-  names the file, leaves that open copy alone, and the wrapper says this run
-  recorded no copy of its own.
+Then check the failure paths. Run each case on its own fresh copy of the
+smoke-test output, so no earlier case's open presentation or output can affect
+it, and start each with only the presentations you had open before the check.
+Every case must exit non-zero and must not create its own output file.
 
-Last, force the marker write to fail after PowerPoint has opened the copy. Run
-the driver directly with a marker path in a folder that does not exist:
+**Case A — note past the deck.**
+1. Copy the smoke-test output to `{check_dir}/case-a-base.pptx`.
+2. Save `{"9": "x"}` as `{check_dir}/case-a.json`.
+3. Run:
 
-```bash
-osascript "{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.applescript" \
-  "{check_dir}/notes-check-base.pptx" "{check_dir}/marker-check-out.pptx" \
-  notes-check-base.pptx marker-check-out.pptx \
-  "{check_dir}/missing/opened" "{check_dir}/stage" "note" "" "note"
-```
+   ```bash
+   bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.sh" \
+     "{check_dir}/case-a-base.pptx" "{check_dir}/case-a-out.pptx" \
+     "{check_dir}/case-a.json"
+   ```
 
-It passes when the run exits non-zero with
-`inject-notes failed at [open]: this run opened notes-check-base.pptx but could
-not record that` and the close-without-saving repair, osascript reports the
-original File Manager error number (`-43`, folder not found), and
-`notes-check-base.pptx` is open in PowerPoint. Close it without saving.
+It passes when it fails before PowerPoint is touched, with `notes for 0-based
+slide 9 target slide 10, but the deck has 3 slides`, and
+`{check_dir}/case-a-out.pptx` does not exist.
 
-Then force a stage write to fail by passing a stage path in a folder that
-does not exist:
+**Case B — base already open.**
+1. Copy the smoke-test output to `{check_dir}/case-b-base.pptx` and open it in
+   PowerPoint.
+2. Run:
 
-```bash
-osascript "{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.applescript" \
-  "{check_dir}/notes-check-base.pptx" "{check_dir}/stage-check-out.pptx" \
-  notes-check-base.pptx stage-check-out.pptx \
-  "{check_dir}/opened" "{check_dir}/missing/stage" "note"
-```
+   ```bash
+   bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.sh" \
+     "{check_dir}/case-b-base.pptx" "{check_dir}/case-b-out.pptx" \
+     "{check_dir}/notes.json"
+   ```
 
-It passes when the run exits non-zero with `inject-notes failed at [open]:
-could not record that stage at {check_dir}/missing/stage`, the
-free-space-or-writable repair, and the shell's original status (`1`), and no
-copy of `notes-check-base.pptx` is open in PowerPoint.
+It passes when it fails at `[open]` naming `case-b-base.pptx`, the wrapper says
+this run recorded no copy of its own, `case-b-base.pptx` is still open, and
+`{check_dir}/case-b-out.pptx` does not exist. Then close `case-b-base.pptx`
+without saving.
+
+**Case C — marker write fails after the copy opens.**
+1. Copy the smoke-test output to `{check_dir}/case-c-base.pptx`. Confirm no
+   presentation named `case-c-base.pptx` is open.
+2. Run the driver directly with a marker path in a folder that does not exist:
+
+   ```bash
+   osascript "{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.applescript" \
+     "{check_dir}/case-c-base.pptx" "{check_dir}/case-c-out.pptx" \
+     case-c-base.pptx case-c-out.pptx \
+     "{check_dir}/missing/opened" "{check_dir}/case-c-stage" "note" "" "note"
+   ```
+
+It passes when it exits non-zero with `inject-notes failed at [open]: this run
+opened case-c-base.pptx but could not record that`, the close-without-saving
+repair and osascript's original File Manager error (`-43`, folder not found),
+`case-c-base.pptx` is open in PowerPoint, and `{check_dir}/case-c-out.pptx`
+does not exist. Then close `case-c-base.pptx` without saving.
+
+**Case D — stage write fails.**
+1. Copy the smoke-test output to `{check_dir}/case-d-base.pptx`. Confirm no
+   presentation named `case-d-base.pptx` is open.
+2. Run the driver directly with a stage path in a folder that does not exist:
+
+   ```bash
+   osascript "{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.applescript" \
+     "{check_dir}/case-d-base.pptx" "{check_dir}/case-d-out.pptx" \
+     case-d-base.pptx case-d-out.pptx \
+     "{check_dir}/case-d-opened" "{check_dir}/missing/stage" "note"
+   ```
+
+It passes when it exits non-zero with `inject-notes failed at [open]: could not
+record that stage at {check_dir}/missing/stage`, the free-space-or-writable
+repair and the shell's original status (`1`), no presentation named
+`case-d-base.pptx` is open, and `{check_dir}/case-d-out.pptx` does not exist.
 
 ## Step 6 — Every build (recurring)
 

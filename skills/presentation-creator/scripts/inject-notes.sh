@@ -28,6 +28,10 @@ source "$HERE/ensure-drivers.sh"   # restore .applescript/.bas drivers tessl ins
 source "$HERE/container-stage.sh"  # stage Google-Drive inputs into the container (no Powerbox prompts)
 DRIVER="$HERE/inject-notes.applescript"
 
+if [[ -d "$OUT" ]]; then
+  echo "ERROR: the output path $OUT is a directory — pass the path of the deck file to write, for example $OUT/$(basename "$BASE")." >&2
+  exit 1
+fi
 [[ -f "$BASE" ]]   || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the built deck." >&2; exit 1; }
 [[ -f "$NOTES" ]]  || { echo "ERROR: notes JSON not found: $NOTES — a {\"<0-based slide #>\": \"text\"} map." >&2; exit 1; }
 [[ -f "$DRIVER" ]] || { echo "ERROR: driver not found: $DRIVER — reinstall the plugin; inject-notes.applescript must sit next to this script." >&2; exit 1; }
@@ -54,9 +58,17 @@ remove_run_dir() {
   fi
   return 0
 }
-# Every exit from here on, planned or not, removes the notes text, then the
-# container staging that container-stage.sh's own EXIT trap used to remove.
+# Set while a delivery copy sits beside OUT, cleared once it is renamed into place.
+DELIVERY_TMP=""
+# Every exit from here on, planned, failed or signalled, removes an unfinished
+# delivery copy and the notes text, then the container staging that
+# container-stage.sh's own EXIT trap used to remove.
 _inject_notes_cleanup() {
+  if [[ -n "$DELIVERY_TMP" && -e "$DELIVERY_TMP" ]]; then
+    if ! rm -f "$DELIVERY_TMP"; then
+      echo "WARNING: could not remove the unfinished copy $DELIVERY_TMP; delete it by hand." >&2
+    fi
+  fi
   remove_run_dir
   _container_stage_cleanup
   return 0   # never let cleanup rewrite the script's exit status
@@ -136,19 +148,14 @@ if [[ -f "$STAGE" ]]; then
     exit 1
   fi
   if ! cp -p "$STAGE" "$DELIVERY_TMP"; then
-    if ! rm -f "$DELIVERY_TMP"; then
-      echo "WARNING: could not remove the partial copy $DELIVERY_TMP; delete it by hand." >&2
-    fi
     echo "ERROR: PowerPoint saved the deck, but copying it to $OUT_DIR failed, so nothing was delivered and $OUT is unchanged — free disk space in that folder and re-run." >&2
     exit 1
   fi
   if ! mv -f "$DELIVERY_TMP" "$OUT"; then
-    if ! rm -f "$DELIVERY_TMP"; then
-      echo "WARNING: could not remove the temporary copy $DELIVERY_TMP; delete it by hand." >&2
-    fi
     echo "ERROR: PowerPoint saved the deck, but renaming the complete copy to $OUT failed, so $OUT is unchanged — make $OUT_DIR writable and re-run." >&2
     exit 1
   fi
+  DELIVERY_TMP=""
   echo "done -> $OUT"
 else
   echo "ERROR: the notes driver reported success but wrote no file at $STAGE, so PowerPoint saved somewhere else. Confirm PowerPoint can write to $OUT_STAGE_DIR and re-run — see skills/presentation-builder/references/deck-editing-setup.md." >&2

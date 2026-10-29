@@ -18,7 +18,9 @@ exit. `container-stage.sh`'s shared cleanup now warns instead of letting a
 failed removal change any deck wrapper's exit status. Delivery to the destination
 copies to a temporary file beside it and renames that into place, so a failed
 copy across filesystems (the container to Google Drive) never leaves a partial
-deck and keeps the previous output. An open that times out records an
+deck and keeps the previous output; the unfinished copy is removed on every
+exit, a signal included, and an output path that is a directory is refused
+before PowerPoint runs. An open that times out records an
 `opening` stage, so the wrapper can say a uniquely named copy may still appear. The
 driver logs each stage (open, slide N, save, close) before running it. Errors it
 raises itself name the stage and repair; any other error propagates unchanged,

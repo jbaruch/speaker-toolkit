@@ -356,6 +356,51 @@ def test_mid_copy_failure_keeps_the_previous_output_and_no_partial(tmp_path):
     assert [p.name for p in out_dir.iterdir()] == ["deck-with-notes.pptx"]
 
 
+def test_interrupted_delivery_leaves_no_partial_copy(tmp_path):
+    _fake_osascript(tmp_path, succeed=True)
+    # A cp that writes half a file, then the wrapper is sent SIGTERM mid-copy.
+    fake_cp = tmp_path / "cp"
+    fake_cp.write_text(
+        '#!/bin/bash\nfor last; do :; done\nprintf partial > "$last"\n'
+        "kill -TERM $PPID\nsleep 1\nexit 1\n"
+    )
+    fake_cp.chmod(0o755)
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    (out_dir / "deck-with-notes.pptx").write_text("the previous good deck")
+    result, out = _run(tmp_path, _deck(tmp_path, 1), {"0": "x"})
+    assert result.returncode != 0
+    assert "done ->" not in result.stdout
+    assert out.read_text() == "the previous good deck"
+    assert [p.name for p in out_dir.iterdir()] == ["deck-with-notes.pptx"]
+    assert not list((tmp_path / ".deckops-staging").glob("notes-run.*"))
+
+
+@pytest.mark.parametrize("as_symlink", [False, True])
+def test_directory_destination_is_rejected_before_powerpoint_runs(tmp_path, as_symlink):
+    record = _fake_osascript(tmp_path, succeed=True)
+    real_dir = tmp_path / "decks"
+    real_dir.mkdir()
+    out = real_dir
+    if as_symlink:
+        out = tmp_path / "decks-link"
+        out.symlink_to(real_dir, target_is_directory=True)
+    notes = tmp_path / "notes.json"
+    notes.write_text(json.dumps({"0": "x"}), encoding="utf-8")
+    env = dict(os.environ, PATH=f"{tmp_path}:{os.environ['PATH']}", HOME=str(tmp_path))
+    result = subprocess.run(
+        ["bash", str(WRAPPER), str(_deck(tmp_path, 1)), str(out), str(notes)],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode == 1
+    assert f"the output path {out} is a directory" in result.stderr
+    assert "pass the path of the deck file to write" in result.stderr
+    assert not record.exists()  # osascript never ran
+    assert list(real_dir.iterdir()) == []
+
+
 def test_success_replaces_the_previous_output_with_the_complete_copy(tmp_path):
     _fake_osascript(tmp_path, succeed=True)
     out_dir = tmp_path / "out"
