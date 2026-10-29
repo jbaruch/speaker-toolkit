@@ -22,7 +22,9 @@ deck and keeps the previous output; the unfinished copy is removed on every
 exit, a signal included, and an output path that is a directory is refused
 before PowerPoint runs. The final rename goes through `atomic-replace.py`, which
 refuses a directory even if one appears while PowerPoint runs, and the staged
-deck is removed after delivery in the no-container fallback too.
+deck lives in a folder the run alone owns and removes as a whole, so concurrent
+runs never share it and a save that finishes after a timeout has nowhere to
+land. An output path that is the base deck itself is refused.
 `container-stage.sh` gains `container_stage_on_exit` so a wrapper can add
 cleanup to its single EXIT trap instead of replacing it. An open that times out records an
 `opening` stage, so the wrapper can say a uniquely named copy may still appear. The
@@ -40,7 +42,9 @@ chained runs that each fit), and an unwritable output, with exit 1 and a repair 
 placeholder: a notes page without one fails instead of writing the note into a
 footer, date or header placeholder. `SetSpeakerNotes` stays in `RunDeckOps.bas`,
 so an imported DeckOps container needs no re-import. The setup guide's Step 5
-adds a Notes driver check with a Unicode sentinel and the failure paths.
+adds a Notes driver check with a Unicode sentinel and the failure paths, and
+`rules/deck-editing-rules.md` now names each exempt AppleScript driver with its
+validation procedure instead of exempting them by glob.
 
 `BuildDeck` text ops, `RunDeckOps` replacements and `ExpandBuilds` notes still
 cross the same bridge.

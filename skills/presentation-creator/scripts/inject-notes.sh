@@ -32,18 +32,23 @@ if [[ -d "$OUT" ]]; then
   echo "ERROR: the output path $OUT is a directory — pass the path of the deck file to write, for example $OUT/$(basename "$BASE")." >&2
   exit 1
 fi
-# The fallback staged deck is $HOME/.deckops-staging/<OUT name>, which cleanup
-# removes; an OUT in that folder would be that file. A missing folder on either
-# side cannot collide, so only compare when both exist.
-if [[ -d "$(dirname "$OUT")" && -d "$HOME/.deckops-staging" ]]; then
-  if [[ "$(cd "$(dirname "$OUT")" && pwd -P)" == "$(cd "$HOME/.deckops-staging" && pwd -P)" ]]; then
-    echo "ERROR: the output path $OUT is inside the staging folder $HOME/.deckops-staging, which this script empties — pass an output path in another folder." >&2
-    exit 1
-  fi
-fi
 [[ -f "$BASE" ]]   || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the built deck." >&2; exit 1; }
 [[ -f "$NOTES" ]]  || { echo "ERROR: notes JSON not found: $NOTES — a {\"<0-based slide #>\": \"text\"} map." >&2; exit 1; }
 [[ -f "$DRIVER" ]] || { echo "ERROR: driver not found: $DRIVER — reinstall the plugin; inject-notes.applescript must sit next to this script." >&2; exit 1; }
+# The base is never modified, so OUT must not be the base itself: not the same
+# file (a hard link or symlink to it included), nor the same path.
+SAME_AS_BASE=no
+if [[ -e "$OUT" && "$OUT" -ef "$BASE" ]]; then
+  SAME_AS_BASE=yes
+elif [[ -d "$(dirname "$OUT")" ]]; then
+  if [[ "$(cd "$(dirname "$OUT")" && pwd -P)/$(basename "$OUT")" == "$(cd "$(dirname "$BASE")" && pwd -P)/$(basename "$BASE")" ]]; then
+    SAME_AS_BASE=yes
+  fi
+fi
+if [[ "$SAME_AS_BASE" == yes ]]; then
+  echo "ERROR: the output path $OUT is the base deck itself — pass a different output path; this script never modifies the base." >&2
+  exit 1
+fi
 
 # Validate the 0-based notes JSON against the deck's slide count and turn it into
 # one NUL-terminated item per slide (that slide's note, or empty to leave it
@@ -69,26 +74,34 @@ remove_run_dir() {
 }
 # Set while a delivery copy sits beside OUT, cleared once it is renamed into place.
 DELIVERY_TMP=""
-# The deck PowerPoint saves. Inside the container, container-stage.sh removes
-# it with the staging dir; in the no-container fallback it sits in the
-# persistent ~/.deckops-staging, so this run removes it itself.
-STAGE="$OUT_STAGE_DIR/$(basename "$OUT")"
 # On every exit, planned, failed or signalled, remove an unfinished delivery
-# copy, the staged deck and the notes text. container-stage.sh's single EXIT
-# trap runs this before removing its own staging dir.
+# copy and the run directory with the notes text (and, without a container,
+# the staged deck). container-stage.sh's single EXIT trap runs this before
+# removing its own staging dir.
 _inject_notes_cleanup() {
-  local leftover
-  for leftover in "$DELIVERY_TMP" "$STAGE"; do
-    if [[ -n "$leftover" && -e "$leftover" ]]; then
-      if ! rm -f "$leftover"; then
-        echo "WARNING: could not remove $leftover, a copy of the deck with its notes; delete it by hand." >&2
-      fi
+  if [[ -n "$DELIVERY_TMP" && -e "$DELIVERY_TMP" ]]; then
+    if ! rm -f "$DELIVERY_TMP"; then
+      echo "WARNING: could not remove the unfinished copy $DELIVERY_TMP; delete it by hand." >&2
     fi
-  done
+  fi
   remove_run_dir
   return 0   # never let cleanup rewrite the script's exit status
 }
 container_stage_on_exit _inject_notes_cleanup
+# The deck PowerPoint saves, always in a folder this run alone owns and removes
+# as a whole: the container's per-run staging dir, or, without a container,
+# RUN_DIR. No other run or input shares the path, and a save that finishes
+# after a timeout has no folder left to land in.
+if [[ -n "$CONTAINER_STAGE" ]]; then
+  STAGE="$OUT_STAGE_DIR/$(basename "$OUT")"
+else
+  # A subfolder, so no output name can clash with the run's own files.
+  if ! mkdir "$RUN_DIR/out"; then
+    echo "ERROR: cannot create $RUN_DIR/out — make $STAGE_DIR writable, or free disk space, and re-run." >&2
+    exit 1
+  fi
+  STAGE="$RUN_DIR/out/$(basename "$OUT")"
+fi
 
 ARGS_FILE="$RUN_DIR/notes.args"
 if ! python3 "$HERE/notes-to-packed.py" --driver-args --deck "$BASE" "$NOTES" "$ARGS_FILE"; then
@@ -130,7 +143,7 @@ if ! osascript "$DRIVER" "$STAGED_BASE" "$STAGE" "$(basename "$STAGED_BASE")" "$
   elif [[ "$LAST_STAGE" =~ ^slide\ ([0-9]+)$ ]]; then
     STAGE_ADVICE="It stopped writing the note for slide ${BASH_REMATCH[1]}: open the source deck, check that slide's notes page (View > Notes Page) and its note text in notes.json, and re-run."
   elif [[ "$LAST_STAGE" == "save" ]]; then
-    STAGE_ADVICE="It stopped saving to $STAGE: free disk space, confirm PowerPoint can write to $OUT_STAGE_DIR, and re-run."
+    STAGE_ADVICE="It stopped saving to $STAGE, and PowerPoint may still be finishing that save: wait until PowerPoint is idle, free disk space, and re-run. This run's staging folder is removed, so a late save has nowhere to land."
   elif [[ "$LAST_STAGE" == "close" ]]; then
     STAGE_ADVICE="It stopped after saving, while closing the copy: close $(basename "$STAGE") in PowerPoint without saving, then re-run."
   else

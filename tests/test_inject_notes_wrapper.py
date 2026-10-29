@@ -528,28 +528,96 @@ def test_destination_that_becomes_a_directory_during_the_run_is_refused(tmp_path
     assert [p.name for p in out.parent.iterdir()] == ["deck-with-notes.pptx"]
 
 
-def test_output_inside_the_staging_folder_is_refused(tmp_path):
-    record = _fake_osascript(tmp_path, succeed=True)
-    staging = tmp_path / ".deckops-staging"
-    staging.mkdir()
+@pytest.mark.parametrize("via_symlink", [False, True])
+def test_output_that_is_the_base_itself_is_refused(tmp_path, via_symlink):
+    record = _fake_osascript(tmp_path, succeed=True, saved="new")
+    base = _deck(tmp_path, 1)
+    before = base.read_bytes()
+    out = base
+    if via_symlink:
+        out = tmp_path / "same-deck.pptx"
+        out.symlink_to(base)
     notes = tmp_path / "notes.json"
     notes.write_text(json.dumps({"0": "x"}), encoding="utf-8")
     env = dict(os.environ, PATH=f"{tmp_path}:{os.environ['PATH']}", HOME=str(tmp_path))
     result = subprocess.run(
-        [
-            "bash",
-            str(WRAPPER),
-            str(_deck(tmp_path, 1)),
-            str(staging / "o.pptx"),
-            str(notes),
-        ],
+        ["bash", str(WRAPPER), str(base), str(out), str(notes)],
         capture_output=True,
         text=True,
         env=env,
     )
     assert result.returncode == 1
-    assert "inside the staging folder" in result.stderr
+    assert "is the base deck itself" in result.stderr
     assert not record.exists()
+    assert base.read_bytes() == before
+
+
+def test_base_at_the_old_shared_staging_path_is_preserved(tmp_path):
+    # Before stages were run-owned, ~/.deckops-staging/<output name> was the
+    # staged deck; a base living there must survive the run untouched.
+    _fake_osascript(tmp_path, succeed=True, saved="new deck")
+    staging = tmp_path / ".deckops-staging"
+    staging.mkdir()
+    base = _deck(staging, 1, name="deck-with-notes.pptx")
+    before = base.read_bytes()
+    result, out = _run(tmp_path, base, {"0": "x"})
+    assert result.returncode == 0, result.stderr
+    assert base.read_bytes() == before
+    assert out.read_text() == "new deck"
+
+
+def test_concurrent_runs_with_the_same_output_name_never_share_a_stage(tmp_path):
+    # Each fake save sleeps, then writes the run's own content; shared stage
+    # paths would let one run deliver or delete the other's deck.
+    p = tmp_path / "osascript"
+    p.write_text(
+        "#!/bin/bash\n"
+        'touch "$6"\nsleep 1\n'
+        'printf \'%s\' "$(basename "$(dirname "$(dirname "$3")")")" > "$3"\n'
+        'echo "Notes applied: 1"\n'
+    )
+    p.chmod(0o755)
+    base = _deck(tmp_path, 1)
+    notes = tmp_path / "notes.json"
+    notes.write_text(json.dumps({"0": "x"}), encoding="utf-8")
+    env = dict(os.environ, PATH=f"{tmp_path}:{os.environ['PATH']}", HOME=str(tmp_path))
+    outs = [tmp_path / f"run{i}" / "deck-with-notes.pptx" for i in (1, 2)]
+    procs = [
+        subprocess.Popen(
+            ["bash", str(WRAPPER), str(base), str(out), str(notes)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+        )
+        for out in outs
+    ]
+    results = [proc.communicate() + (proc.returncode,) for proc in procs]
+    assert all(rc == 0 for _, _, rc in results), results
+    contents = [out.read_text() for out in outs]
+    assert all(c.startswith("notes-run.") for c in contents)
+    assert contents[0] != contents[1]  # each run delivered its own stage
+    assert not list((tmp_path / ".deckops-staging").glob("notes-run.*"))
+
+
+def test_save_that_finishes_after_cleanup_has_nowhere_to_land(tmp_path):
+    # A timed-out save can complete later; the run-owned stage folder is gone.
+    p = tmp_path / "osascript"
+    p.write_text(
+        "#!/bin/bash\n"
+        'printf \'save\\n\' > "$7"\ntouch "$6"\n'
+        "(sleep 1; printf 'LATE NOTES-BEARING DECK' > \"$3\") &\n"
+        'echo "Microsoft PowerPoint got an error: AppleEvent timed out. (-1712)" >&2\n'
+        "exit 1\n"
+    )
+    p.chmod(0o755)
+    result, out = _run(tmp_path, _deck(tmp_path, 1), {"0": "x"})
+    assert result.returncode == 1
+    assert "PowerPoint may still be finishing that save" in result.stderr
+    assert "a late save has nowhere to land" in result.stderr
+    assert not out.exists()
+    assert not _staging_holds(tmp_path, "LATE NOTES-BEARING DECK")
+    assert not list((tmp_path / ".deckops-staging").glob("notes-run.*"))
 
 
 @pytest.mark.parametrize("hook_fails", [False, True])
