@@ -52,23 +52,22 @@ STAGED_BASE="$(stage_base "$BASE")"
 echo "staging -> $STAGE"
 # ${arr[@]+...} keeps an empty deck from tripping `set -u` on bash 3.2.
 # PowerPoint keys open decks by file name, so the driver gets both names too.
-# Its stderr is kept so a failure can tell whether this run opened a copy.
-DRIVER_LOG="$STAGE_DIR/$(basename "$OUT").driver.log"
-if osascript "$DRIVER" "$STAGED_BASE" "$STAGE" "$(basename "$STAGED_BASE")" "$(basename "$STAGE")" ${NOTE_ARGS[@]+"${NOTE_ARGS[@]}"} 2> "$DRIVER_LOG"; then
-  cat "$DRIVER_LOG" >&2
-else
-  cat "$DRIVER_LOG" >&2
-  # grep: 0 = the driver logged [opened], 1 = it never opened a copy, 2 = log unreadable.
-  if grep -q '^\[opened\] ' "$DRIVER_LOG"; then
-    CLOSE_ADVICE="This run opened a copy: close the presentation named $(basename "$STAGED_BASE") (or $(basename "$STAGE"), if it was saved) in PowerPoint without saving."
-  elif [[ $? -eq 1 ]]; then
-    CLOSE_ADVICE="This run opened no copy: leave every presentation that was already open as it is."
+# The driver creates OPENED_MARKER only after confirming no same-named deck was
+# open, right before opening its own copy; log text cannot fake a file. A fresh
+# per-run directory means no earlier marker can be mistaken for this run's.
+RUN_DIR="$(mktemp -d "$STAGE_DIR/notes-run.XXXXXX")"
+OPENED_MARKER="$RUN_DIR/opened"
+if ! osascript "$DRIVER" "$STAGED_BASE" "$STAGE" "$(basename "$STAGED_BASE")" "$(basename "$STAGE")" "$OPENED_MARKER" ${NOTE_ARGS[@]+"${NOTE_ARGS[@]}"}; then
+  if [[ -e "$OPENED_MARKER" ]]; then
+    CLOSE_ADVICE="This run opened its own copy (no presentation with that name was open before): close the presentation named $(basename "$STAGED_BASE") (or $(basename "$STAGE"), if it was saved) in PowerPoint without saving."
   else
-    CLOSE_ADVICE="The driver log $DRIVER_LOG could not be read, so it is unknown whether this run opened a copy: close $(basename "$STAGED_BASE") only if you did not have it open before this run."
+    CLOSE_ADVICE="This run opened no copy: leave every presentation that was already open as it is."
   fi
+  rm -rf -- "${RUN_DIR:?}"
   echo "ERROR: the notes driver stopped at the last stage it logged above ([open], [slide N], [save] or [close]). $CLOSE_ADVICE Then fix the cause it reported and re-run. For a denied Automation consent see skills/presentation-builder/references/deck-editing-setup.md Step 4." >&2
   exit 1
 fi
+rm -rf -- "${RUN_DIR:?}"
 
 if [[ -f "$STAGE" ]]; then
   mkdir -p "$(dirname "$OUT")"

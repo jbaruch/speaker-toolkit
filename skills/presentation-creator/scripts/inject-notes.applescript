@@ -3,26 +3,29 @@
 -- AppleScript object model (`set content`), which carries Unicode text intact.
 -- Never `run VB macro`. The driver parses nothing: inject-notes.sh validates the
 -- notes against the deck with notes-to-packed.py --driver-args and passes the
--- two deck file names plus one argument per slide, in slide order. An empty
--- argument leaves that slide's notes unchanged.
+-- two deck file names, a marker path, and one argument per slide, in slide
+-- order. An empty argument leaves that slide's notes unchanged. The driver
+-- creates the marker file right before it opens its own copy, so the wrapper
+-- can tell that copy from a presentation that was already open.
 -- Opens basePath, saves the result to outPath, and closes it; basePath is not
 -- modified. Each stage ([open], [slide N], [save], [close]) is logged to stderr
 -- before it runs. Errors this driver raises name their stage and repair; any other
 -- error propagates unchanged after the last logged stage, and inject-notes.sh adds
 -- the repair.
---   osascript inject-notes.applescript <basePath> <outPath> <baseName> <outName> [<note for slide 1>]...
+--   osascript inject-notes.applescript <basePath> <outPath> <baseName> <outName> <markerPath> [<note for slide 1>]...
 
 property errAlreadyOpen : 1002
 property errNoNotesBody : 1003
 property errNotAuthorized : -1743
 
 on run argv
-	if (count of argv) < 4 then error "Expected: basePath outPath baseName outName [note for slide 1]... — run the driver through inject-notes.sh."
+	if (count of argv) < 5 then error "Expected: basePath outPath baseName outName markerPath [note for slide 1]... — run the driver through inject-notes.sh."
 	set basePath to item 1 of argv
 	set outPath to item 2 of argv
 	-- PowerPoint keys open decks by file name; the wrapper derives both names.
 	set baseName to item 3 of argv
 	set outName to item 4 of argv
+	set markerPath to item 5 of argv
 
 	log "[open] " & basePath
 	-- AppleScript has no typed catch: this handler adds the repair for a denied
@@ -40,22 +43,22 @@ on run argv
 	-- returned instead of the file at basePath, or collide with the output.
 	if openNames contains baseName then error "ERROR: inject-notes failed at [open]: a presentation named " & baseName & " is already open — pass a uniquely-named copy." number errAlreadyOpen
 	if openNames contains outName then error "ERROR: inject-notes failed at [open]: a presentation named " & outName & " is already open — close it or choose another output name." number errAlreadyOpen
+	-- No presentation named baseName was open, so from here on one by that name
+	-- is this run's copy. The marker tells inject-notes.sh so on failure.
+	close access (open for access (POSIX file markerPath) with write permission)
 	tell application "Microsoft PowerPoint"
 		with timeout of 1800 seconds
 			open POSIX file basePath
 		end timeout
 		set p to presentation baseName
 	end tell
-	-- inject-notes.sh reads this line to tell a copy this run opened from a
-	-- presentation that was already open.
-	log "[opened] " & baseName
 
 	set applied to 0
-	repeat with argIndex from 5 to (count of argv)
+	repeat with argIndex from 6 to (count of argv)
 		set noteText to item argIndex of argv
 		if noteText is not "" then
-			log "[slide " & (argIndex - 4) & "]"
-			my setNotesBody(p, argIndex - 4, noteText, baseName)
+			log "[slide " & (argIndex - 5) & "]"
+			my setNotesBody(p, argIndex - 5, noteText, baseName)
 			set applied to applied + 1
 		end if
 	end repeat
