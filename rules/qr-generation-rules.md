@@ -121,7 +121,8 @@ second QR beside it.
 A tracked QR encodes a `short_url` or `target_url` from `qr_codes`, or this run's
 own URLs. Every other QR stays untouched: an organizer's required survey QR, a
 sponsor's registration QR, a code from another generator. The run warns with its
-slide number. If it's stale, delete it by hand.
+slide number. If it's stale, delete it by hand. A new QR never lands on one: a target
+slide whose bottom-right corner it occupies stops the run before any provider call.
 
 Finding a candidate is by CONTENT, not size: an inherited QR can be any size (the
 same QR may appear at 1.8" and 2.8"), so a size band misses it. A candidate is a

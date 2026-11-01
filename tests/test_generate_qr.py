@@ -796,16 +796,69 @@ def test_deck_run_replaces_only_the_tracked_qr_and_warns_about_the_rest(
     assert "slide 6 keeps 1 QR(s) that encode no tracked" in captured.err
 
 
-def test_deck_run_keeps_a_foreign_qr_on_a_targeted_slide(
+def test_deck_run_keeps_a_foreign_qr_clear_of_the_new_one(
     generate_qr, monkeypatch, tmp_path, capsys
 ):
     prs = make_deck(2)
-    _place_qr(generate_qr, prs, 1, tmp_path, FOREIGN_QR_URL)
+    _place_qr(generate_qr, prs, 1, tmp_path, FOREIGN_QR_URL, left=1.0)
 
     targets = _qr_deck_run(generate_qr, monkeypatch, tmp_path, prs)
 
     assert targets == {2: []}
     assert "slide 2 keeps 1 QR(s) that encode no tracked" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("extra", [(), ("--slides", "1")], ids=["detected", "explicit"])
+def test_a_new_qr_that_would_cover_a_foreign_one_stops_before_any_provider_call(
+    generate_qr, monkeypatch, tmp_path, capsys, extra
+):
+    """A survey QR in the corner the macro uses: leaving it there and adding ours on
+    top hides it as surely as replacing it."""
+    prs = make_deck(1)
+    # The macro's corner on this deck starts at 7.7in, 5.2in.
+    _place_qr(generate_qr, prs, 0, tmp_path, FOREIGN_QR_URL, left=8.0)
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("the run went on after finding the overlap")
+
+    monkeypatch.setattr(generate_qr, "resolve_short_url", forbidden)
+    monkeypatch.setattr(generate_qr, "generate_qr_png", forbidden)
+
+    with pytest.raises(SystemExit) as exc_info:
+        _qr_deck_run(generate_qr, monkeypatch, tmp_path, prs, *extra)
+
+    assert exc_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "would cover a QR this vault didn't issue on slide(s) [1]" in err
+    assert "No QR PNG, deck, or tracking-database change was made" in err
+
+
+def test_a_tracked_qr_in_the_corner_is_replaced_not_refused(
+    generate_qr, monkeypatch, tmp_path, capsys
+):
+    prs = make_deck(1)
+    _place_qr(generate_qr, prs, 0, tmp_path, TRACKED_QR_URL, left=8.0)
+
+    targets = _qr_deck_run(generate_qr, monkeypatch, tmp_path, prs)
+
+    assert [round(rect[0]) for rect in targets[1]] == [576]
+    assert "WARNING" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "expected"),
+    [
+        ((0, 0, 10, 10), (5, 5, 10, 10), True),
+        ((0, 0, 10, 10), (10, 0, 10, 10), False),
+        ((0, 0, 10, 10), (0, 10, 10, 10), False),
+        ((0, 0, 10, 10), (20, 20, 5, 5), False),
+        ((0, 0, 10, 10), (2, 2, 2, 2), True),
+    ],
+    ids=["corner", "touching-right", "touching-below", "apart", "contained"],
+)
+def test_rects_overlap(generate_qr, first, second, expected):
+    assert generate_qr._rects_overlap(first, second) is expected
+    assert generate_qr._rects_overlap(second, first) is expected
 
 
 def test_repeat_run_replaces_this_talks_own_qr_before_its_record_exists(

@@ -16,7 +16,8 @@ those and requires the picture's module grid to match exactly, which needs no QR
 decoder or new dependency, and works for every QR the script has ever produced since
 its encoder settings have never changed. An exact match is deliberate. A false match
 deletes someone else's QR; a miss leaves one in place and warns with its slide
-number.
+number. Hiding one is as bad as replacing it, so a new QR that would land on a foreign
+one stops the run before any shortener call and names the slide.
 
 `closing` and `both` now target the last visible slide. `--slides N[,N...]` names the
 slides explicitly when detection is wrong, and a bad value stops the run before any

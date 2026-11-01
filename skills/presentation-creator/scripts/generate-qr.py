@@ -1210,6 +1210,45 @@ def split_qr_rects(slide, grids):
     return tracked, foreign
 
 
+def _new_qr_rect(prs):
+    """Where InsertQR puts a QR replacing nothing: bottom-right, in POINTS."""
+    side = QR_WIDTH_INCHES * 72
+    margin = QR_MARGIN_INCHES * 72
+    return (
+        prs.slide_width.pt - side - margin,
+        prs.slide_height.pt - side - margin,
+        side,
+        side,
+    )
+
+
+def _rects_overlap(first, second):
+    left_a, top_a, width_a, height_a = first
+    left_b, top_b, width_b, height_b = second
+    return (
+        left_a < left_b + width_b
+        and left_b < left_a + width_a
+        and top_a < top_b + height_b
+        and top_b < top_a + height_a
+    )
+
+
+def slides_covering_a_foreign_qr(prs, slide_indices, grids):
+    """1-based target slides where the new QR would land on someone else's QR.
+
+    A foreign QR is left in place, so a new one placed over it hides it from the
+    audience just as surely as replacing it. The corner the macro uses is where such a
+    QR usually sits. A slide with a tracked QR is safe: the new QR takes that QR's rect.
+    """
+    placement = _new_qr_rect(prs)
+    covering = []
+    for idx in slide_indices:
+        tracked, foreign = split_qr_rects(prs.slides[idx], grids)
+        if not tracked and any(_rects_overlap(placement, rect) for rect in foreign):
+            covering.append(idx + 1)
+    return covering
+
+
 def _last_visible_slide_index(prs):
     """The last slide the audience sees; a hidden slide can't be the close.
 
@@ -1660,6 +1699,31 @@ def _publish(
     prior_record,
     explicit_slides,
 ):
+    # Before any provider call, so refusing here leaves no short link behind.
+    if not args.png_only:
+        prs = Presentation(args.deck)
+        known_grids = qr_module_grids(
+            tracked_qr_payloads(tracking_db, args.short_url, args.shownotes_url)
+        )
+        covering = slides_covering_a_foreign_qr(
+            prs,
+            explicit_slides
+            if explicit_slides is not None
+            else resolve_target_slide_indices(
+                prs, qr_config, args.shownotes_url, known_grids
+            ),
+            known_grids,
+        )
+        if covering:
+            print(
+                f"ERROR: the new QR would cover a QR this vault didn't issue on slide(s) "
+                f"{covering}, such as an organizer's survey code. Pick other slides with "
+                "--slides, or move that QR, and re-run. No QR PNG, deck, or "
+                "tracking-database change was made.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
     # Determine the URL to encode in the QR
     if args.short_url:
         # MCP-preresolved mode
