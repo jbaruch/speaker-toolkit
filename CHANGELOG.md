@@ -1,5 +1,27 @@
 # Changelog
 
+### Keep transcript evidence fresh through a symlinked vault root
+
+`bootstrap-and-preflight.md` lets the canonical vault locator be the configured
+symlink, and `persist-results.py` and `preflight-vault.py` always accepted one.
+The persisted-evidence freshness check didn't: for transcript, timing and quality
+artifacts it resolved the artifact path through the symlink, then required the
+result to sit under the unresolved root. It never did, so every one of those
+identities came back `*_path_invalid`.
+
+Every reader of that check inherited the failure. `write-analysis.py` refused the
+talk `persist-results.py` had just accepted. `load-vault.py` moved the talk to the
+excluded list and still exited 0; on the live vault it reported 0 scored talks
+through the symlink and 1 through the real path. `validate-profile.py` rejected a
+correct profile, `section15_pattern_history.py replace` refused to write, and
+`queue-state.py normalize` read the talk as stale. The older symlink tests missed
+it by using empty cohorts or stubbing freshness; the new ones run a real scored
+talk through each entrypoint.
+
+The check now maps the trusted root to storage once, the way the bounded PDF and
+video lanes already do. Symlinks below the root are still rejected with the same
+reasons either path reports. A symlink above the root is covered the same way.
+
 ## 0.21.4 — 2026-10-29
 
 ### Check image-model freshness every 30 days
