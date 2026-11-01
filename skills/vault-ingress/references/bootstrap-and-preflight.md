@@ -276,6 +276,21 @@ A matched record also carries `identity_assessment`: the assessment produced by
 the database's talks, serialized whole. Obtain it by assessing the deck BEFORE
 deciding the binding — the assessment is what decides it, not a confirmation of a
 decision already made. An unmatched record carries `identity_assessment: null`.
+
+For a deck not yet in the catalog, one command does all of that from the saved
+extraction output, and never writes the database:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/catalog-pptx-deck.py" \
+  "{vault_root}" --extraction extraction.json [--deck <pptx_path>]...
+```
+
+Apply its `mutation_plan` through `mutate-tracking-database.py`'s usual dry-run and
+apply. Read `decks[]` first. A `review_required` deck is in no plan and goes to owner
+review; the dispositions and their reason codes are in the script's module docstring.
+A new talk's folder often holds several revisions, and each one proves the same talk,
+so name the delivered one with `--deck`. Rows already in the catalog belong to the
+sweep below.
 The writer rejects an assessment that does not authorize the binding; the
 predicate is `binding_refusal` in
 `skills/vault-ingress/scripts/pptx_talk_identity.py`, shared with preflight. Route a rejected deck to owner review
