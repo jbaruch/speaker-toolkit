@@ -1,5 +1,18 @@
 # Changelog
 
+### Stop import decks hanging PowerPoint
+
+`run-deck-ops.sh` staged the base deck and the output into PowerPoint's container but
+passed `importSpec` paths through unchanged. An import deck anywhere else, such as a
+fragment built in a scratch directory, made sandboxed PowerPoint show **Grant File
+Access** when `InsertFromFile` reached it. The macro blocked on the dialog, and the
+wrapper hung with no output until someone clicked: over 5 minutes on Oct 29, against
+seconds once the same deck was in the container.
+
+Each import deck is now copied into the container first, in its own directory so two
+imports sharing a filename can't overwrite each other. A missing deck, a malformed
+entry or a failed copy stops the run with a message instead of risking the hang.
+
 ## 0.21.4 — 2026-10-29
 
 ### Check image-model freshness every 30 days
