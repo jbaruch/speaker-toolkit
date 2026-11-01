@@ -592,3 +592,113 @@ def test_the_documented_example_agrees_with_the_derivation(
 
     assert list(agreeing) == candidate["agreeing"]
     assert list(conflicting) == candidate["conflicting"]
+
+
+SPEAKER = "Baruch Sadogursky"
+TALK_NAMING_THE_SPEAKER = {
+    "filename": "playlist-speaker-on-something.md",
+    "title": "Baruch Sadogursky on JFrog Xray",
+    "conference": "",
+    "date": "",
+}
+THE_REAL_TALK = {
+    "filename": "github-universe-2026-prototype-policy.md",
+    "title": "When a prototype becomes critical, does your GitHub policy know?",
+    "conference": "GitHub Universe 2026",
+    "date": "2026-10-29",
+}
+UNIVERSE_DECK_FACTS = {
+    "pptx_path": (
+        "GitHub Universe/2026/When a prototype becomes critical/"
+        "github-universe-2026-prototype-policy-v3.pptx"
+    ),
+    "rendered_title": THE_REAL_TALK["title"],
+    "rendered_footers": [SPEAKER, "Context Sommelier", "Port"],
+}
+
+
+def test_a_speaker_name_footer_doesnt_make_a_rival_of_a_talk_naming_the_speaker():
+    """The live failure: an undated record with the speaker in its title made the
+    true match ambiguous, purely through the name in the deck's footer."""
+    without = pptx_talk_identity.assess_pptx_talk_identity(
+        UNIVERSE_DECK_FACTS, [THE_REAL_TALK, TALK_NAMING_THE_SPEAKER]
+    )
+    assert without.verdict == "review_required"
+    assert "identity_ambiguous_candidates" in without.reason_codes
+
+    named = pptx_talk_identity.assess_pptx_talk_identity(
+        UNIVERSE_DECK_FACTS,
+        [THE_REAL_TALK, TALK_NAMING_THE_SPEAKER],
+        speaker_name=SPEAKER,
+    )
+
+    assert named.verdict == "matched"
+    assert named.selected_talk_filename == THE_REAL_TALK["filename"]
+
+
+def test_a_talk_title_keeps_agreeing_once_the_speaker_name_is_set_aside():
+    deck = {
+        "pptx_path": "Decks/talk.pptx",
+        "rendered_title": "DevOps for Developers",
+    }
+    talk = {
+        "filename": "talk.md",
+        "title": "Baruch Sadogursky: DevOps for Developers (or Maybe Against Them?!)",
+        "conference": "",
+        "date": "",
+    }
+
+    assessment = pptx_talk_identity.assess_pptx_talk_identity(
+        deck, [talk], speaker_name=SPEAKER
+    )
+
+    assert assessment.verdict == "matched"
+
+
+def test_a_title_slide_naming_only_the_speaker_proves_nothing():
+    deck = {"pptx_path": "Decks/talk.pptx", "rendered_title": SPEAKER}
+
+    assessment = pptx_talk_identity.assess_pptx_talk_identity(
+        deck, [TALK_NAMING_THE_SPEAKER], speaker_name=SPEAKER
+    )
+
+    assert assessment.verdict == "unmatched"
+
+
+def test_a_talk_titled_only_with_the_speaker_name_proves_nothing():
+    talk = {"filename": "name.md", "title": SPEAKER, "conference": "", "date": ""}
+    deck = {"pptx_path": "Decks/talk.pptx", "rendered_title": f"Talks by {SPEAKER}"}
+
+    assessment = pptx_talk_identity.assess_pptx_talk_identity(
+        deck, [talk], speaker_name=SPEAKER
+    )
+
+    assert assessment.verdict == "unmatched"
+
+
+def test_only_whole_words_of_the_name_are_set_aside():
+    """A speaker named Art must not eat "Artifactory" out of a title."""
+    deck = {"pptx_path": "Decks/talk.pptx", "rendered_title": "Mastering Artifactory"}
+    talk = {
+        "filename": "talk.md",
+        "title": "Mastering Artifactory",
+        "conference": "",
+        "date": "",
+    }
+
+    assessment = pptx_talk_identity.assess_pptx_talk_identity(
+        deck, [talk], speaker_name="Art Vandelay"
+    )
+
+    assert assessment.verdict == "matched"
+
+
+@pytest.mark.parametrize("speaker_name", [None, "", "   ", 7])
+def test_a_vault_with_no_usable_speaker_name_compares_as_before(speaker_name):
+    assessment = pptx_talk_identity.assess_pptx_talk_identity(
+        UNIVERSE_DECK_FACTS,
+        [THE_REAL_TALK, TALK_NAMING_THE_SPEAKER],
+        speaker_name=speaker_name,
+    )
+
+    assert "identity_ambiguous_candidates" in assessment.reason_codes
