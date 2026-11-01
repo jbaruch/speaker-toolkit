@@ -29,6 +29,7 @@ BASE="$1"; OUT="$2"; MANIFEST="$3"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/ensure-drivers.sh"   # restore .applescript/.bas drivers tessl install strips
 source "$HERE/container-stage.sh"  # stage Google-Drive inputs into the container (no Powerbox prompts)
+source "$HERE/deck-text-bridge.sh"  # keep non-ASCII text intact across `run VB macro`
 DRIVER="$HERE/expand-builds.applescript"
 
 [[ -f "$BASE" ]]     || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the built deck." >&2; exit 1; }
@@ -60,6 +61,7 @@ fi
 # parent; deterministic, unit-tested in tests/test_build_expansion_to_packed.py).
 PACKED="$STAGE_DIR/$(basename "$OUT").builds.packed"
 python3 "$HERE/build-expansion-to-packed.py" "$EFFECTIVE_MANIFEST" "$PACKED"
+PACKED="$(bridge_file "$PACKED")"
 
 # Write the OUTPUT into the container (SaveCopyAs there neither prompts nor
 # E_FAILs), then shell-move it to the destination.
