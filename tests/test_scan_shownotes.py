@@ -7,7 +7,9 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
+from typing import Any
 
 import pytest
 
@@ -1199,3 +1201,303 @@ def test_an_approved_repair_makes_the_scan_report_the_entry_unchanged(
     entry = second["entries"][0]
     assert entry["disposition"] == "unchanged"
     assert entry["issues"] == []
+
+
+# --- which tree of a site checkout gets scanned -------------------------------
+
+
+def _git(cwd: Path, *arguments: str) -> str:
+    environment = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "Fixture",
+        "GIT_AUTHOR_EMAIL": "fixture@example.test",
+        "GIT_COMMITTER_NAME": "Fixture",
+        "GIT_COMMITTER_EMAIL": "fixture@example.test",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull,
+    }
+    result = subprocess.run(
+        ["git", *arguments],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        env=environment,
+        check=False,
+    )
+    assert result.returncode == 0, (arguments, result.stderr)
+    return result.stdout.strip()
+
+
+PUBLISHED_TALK = "2026-08-01-published.md"
+LATER_TALK = "2026-09-01-published-later.md"
+DRAFT_TALK = "2026-10-01-branch-only-draft.md"
+
+
+def _published_site(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """A site checkout cloned from an origin whose main holds one talk.
+
+    Returns (checkout, a second clone that publishes to origin, origin).
+    """
+    origin = tmp_path / "origin.git"
+    origin.mkdir()
+    _git(origin, "init", "--bare", "--initial-branch=main")
+    publisher = tmp_path / "publisher"
+    _git(tmp_path, "clone", str(origin), str(publisher))
+    _git(publisher, "checkout", "-b", "main")
+    (publisher / "_talks").mkdir()
+    _write_jekyll_talk(publisher / "_talks", filename=PUBLISHED_TALK)
+    _git(publisher, "add", ".")
+    _git(publisher, "commit", "-m", "Publish a talk")
+    _git(publisher, "push", "origin", "main")
+    checkout = tmp_path / "shownotes"
+    _git(tmp_path, "clone", str(origin), str(checkout))
+    return checkout, publisher, origin
+
+
+def _publish_later_talk(publisher: Path) -> None:
+    _write_jekyll_talk(publisher / "_talks", filename=LATER_TALK)
+    _git(publisher, "add", ".")
+    _git(publisher, "commit", "-m", "Publish another talk")
+    _git(publisher, "push", "origin", "main")
+
+
+def _scanned_filenames(report: dict[str, Any]) -> list[str]:
+    return [entry["filename"] for entry in report["entries"]]
+
+
+def _scan(tmp_path: Path, site: Path, *, apply_requested: bool = False):
+    database_path = _database_path(tmp_path, _local_config(site))
+    return scan_shownotes.execute(database_path, apply_requested=apply_requested)
+
+
+def test_a_feature_branch_checkout_still_sees_what_main_published(tmp_path):
+    """The reported failure: a talk live on main scanned as absent."""
+    checkout, publisher, _origin = _published_site(tmp_path)
+    _git(checkout, "checkout", "-b", "feature")
+    _write_jekyll_talk(checkout / "_talks", filename=DRAFT_TALK)
+    _git(checkout, "add", ".")
+    _git(checkout, "commit", "-m", "Draft on a branch")
+    _publish_later_talk(publisher)
+
+    report = _scan(tmp_path, checkout)
+
+    assert _scanned_filenames(report) == [PUBLISHED_TALK, LATER_TALK]
+    assert report["scanned_file_count"] == 2
+    assert report["source_checkout"] == {
+        "state": "published_snapshot",
+        "branch": "feature",
+        "default_branch": "main",
+        "scanned_commit": _git(publisher, "rev-parse", "HEAD"),
+        "fetch": "ok",
+    }
+    assert report["warnings"] == []
+
+
+def test_the_snapshot_leaves_the_speakers_checkout_alone(tmp_path):
+    checkout, _publisher, _origin = _published_site(tmp_path)
+    _git(checkout, "checkout", "-b", "feature")
+    edited = checkout / "_talks" / PUBLISHED_TALK
+    edited.write_text("uncommitted edit\n", encoding="utf-8")
+    untracked = checkout / "_talks" / DRAFT_TALK
+    untracked.write_text("untracked draft\n", encoding="utf-8")
+    head = _git(checkout, "rev-parse", "HEAD")
+    status = _git(checkout, "status", "--porcelain")
+
+    report = _scan(tmp_path, checkout)
+
+    assert _scanned_filenames(report) == [PUBLISHED_TALK]
+    assert report["entries"][0]["proposal"]["title"] == "Deterministic Ingress"
+    assert _git(checkout, "rev-parse", "HEAD") == head
+    assert _git(checkout, "rev-parse", "--abbrev-ref", "HEAD") == "feature"
+    assert _git(checkout, "status", "--porcelain") == status
+    assert edited.read_text(encoding="utf-8") == "uncommitted edit\n"
+
+
+def test_the_report_still_names_the_configured_location(tmp_path):
+    checkout, _publisher, _origin = _published_site(tmp_path)
+    _git(checkout, "checkout", "-b", "feature")
+
+    shownotes = _scan(tmp_path, checkout)["shownotes"]
+
+    assert shownotes["root"] == str(checkout.resolve())
+    assert shownotes["talks_directory"] == str((checkout / "_talks").resolve())
+
+
+def test_a_detached_checkout_reads_the_snapshot(tmp_path):
+    checkout, publisher, _origin = _published_site(tmp_path)
+    _git(checkout, "checkout", "--detach")
+    _publish_later_talk(publisher)
+
+    report = _scan(tmp_path, checkout)
+
+    assert _scanned_filenames(report) == [PUBLISHED_TALK, LATER_TALK]
+    assert report["source_checkout"]["state"] == "published_snapshot"
+    assert report["source_checkout"]["branch"] is None
+
+
+def test_a_default_branch_checkout_that_hasnt_pulled_reads_the_snapshot(tmp_path):
+    checkout, publisher, _origin = _published_site(tmp_path)
+    _publish_later_talk(publisher)
+
+    report = _scan(tmp_path, checkout)
+
+    assert _scanned_filenames(report) == [PUBLISHED_TALK, LATER_TALK]
+    assert report["source_checkout"]["state"] == "published_snapshot"
+    assert report["source_checkout"]["branch"] == "main"
+    assert not (checkout / "_talks" / LATER_TALK).exists()
+
+
+def test_a_current_default_branch_keeps_reading_its_working_tree(tmp_path):
+    checkout, _publisher, _origin = _published_site(tmp_path)
+    _write_jekyll_talk(checkout / "_talks", filename=DRAFT_TALK)
+
+    report = _scan(tmp_path, checkout)
+
+    assert _scanned_filenames(report) == [PUBLISHED_TALK, DRAFT_TALK]
+    assert report["source_checkout"] == {
+        "state": "default_branch",
+        "branch": "main",
+        "default_branch": "main",
+        "scanned_commit": None,
+        "fetch": "ok",
+    }
+
+
+def test_a_default_branch_ahead_of_origin_keeps_reading_its_working_tree(tmp_path):
+    checkout, _publisher, _origin = _published_site(tmp_path)
+    _write_jekyll_talk(checkout / "_talks", filename=DRAFT_TALK)
+    _git(checkout, "add", ".")
+    _git(checkout, "commit", "-m", "Local commit")
+
+    report = _scan(tmp_path, checkout)
+
+    assert report["source_checkout"]["state"] == "default_branch"
+    assert _scanned_filenames(report) == [PUBLISHED_TALK, DRAFT_TALK]
+
+
+def test_apply_adds_what_main_published_and_not_the_branch_draft(tmp_path):
+    checkout, _publisher, _origin = _published_site(tmp_path)
+    _git(checkout, "checkout", "-b", "feature")
+    _write_jekyll_talk(checkout / "_talks", filename=DRAFT_TALK)
+
+    database_path = _database_path(tmp_path, _local_config(checkout))
+    report = scan_shownotes.execute(database_path, apply_requested=True)
+
+    assert report["database_written"] is True
+    stored = json.loads(database_path.read_text(encoding="utf-8"))
+    assert [talk["filename"] for talk in stored["talks"]] == [PUBLISHED_TALK]
+
+
+def test_a_failed_fetch_warns_and_scans_the_last_fetched_commit(tmp_path, capsys):
+    checkout, _publisher, origin = _published_site(tmp_path)
+    _git(checkout, "checkout", "-b", "feature")
+    origin.rename(tmp_path / "origin-moved.git")
+    database_path = _database_path(tmp_path, _local_config(checkout))
+
+    assert scan_shownotes.main([str(database_path)]) == 0
+
+    captured = capsys.readouterr()
+    report = json.loads(captured.out)
+    assert _scanned_filenames(report) == [PUBLISHED_TALK]
+    assert report["source_checkout"]["fetch"] == "failed"
+    assert len(report["warnings"]) == 1
+    assert "could not fetch origin/main" in report["warnings"][0]
+    assert "could not fetch origin/main" in captured.err
+
+
+def test_no_remote_head_warns_and_reads_the_working_tree(tmp_path, capsys):
+    checkout, _publisher, _origin = _published_site(tmp_path)
+    _git(checkout, "remote", "set-head", "origin", "--delete")
+    database_path = _database_path(tmp_path, _local_config(checkout))
+
+    assert scan_shownotes.main([str(database_path)]) == 0
+
+    captured = capsys.readouterr()
+    report = json.loads(captured.out)
+    assert report["source_checkout"]["state"] == "no_default_branch"
+    assert _scanned_filenames(report) == [PUBLISHED_TALK]
+    assert "git remote set-head origin --auto" in report["warnings"][0]
+    assert "git remote set-head origin --auto" in captured.err
+
+
+def test_a_site_that_isnt_a_git_checkout_reads_its_files(tmp_path):
+    site, talks_directory = _shownotes_site(tmp_path)
+    _write_jekyll_talk(talks_directory, filename=PUBLISHED_TALK)
+
+    report = _scan(tmp_path, site)
+
+    assert report["source_checkout"]["state"] == "not_git"
+    assert report["warnings"] == []
+    assert _scanned_filenames(report) == [PUBLISHED_TALK]
+
+
+def test_git_being_absent_reads_the_files_as_not_git(tmp_path, monkeypatch):
+    site, talks_directory = _shownotes_site(tmp_path)
+    _write_jekyll_talk(talks_directory, filename=PUBLISHED_TALK)
+    monkeypatch.setenv("PATH", str(tmp_path / "no-tools-here"))
+
+    report = _scan(tmp_path, site)
+
+    assert report["source_checkout"]["state"] == "not_git"
+    assert _scanned_filenames(report) == [PUBLISHED_TALK]
+
+
+def test_a_talks_directory_missing_from_main_is_an_error_not_an_empty_scan(tmp_path):
+    checkout, _publisher, _origin = _published_site(tmp_path)
+    _git(checkout, "checkout", "-b", "feature")
+    (checkout / "_branch_talks").mkdir()
+    database_path = _database_path(
+        tmp_path, _local_config(checkout, talks_subdir="_branch_talks")
+    )
+
+    with pytest.raises(scan_shownotes.ShownotesScanError, match="doesn't exist"):
+        scan_shownotes.execute(database_path, apply_requested=False)
+
+
+def test_a_symlinked_talk_on_main_is_refused_like_one_in_a_working_tree(tmp_path):
+    checkout, publisher, _origin = _published_site(tmp_path)
+    (publisher / "_talks" / LATER_TALK).symlink_to(PUBLISHED_TALK)
+    _git(publisher, "add", ".")
+    _git(publisher, "commit", "-m", "Symlink a talk")
+    _git(publisher, "push", "origin", "main")
+    _git(checkout, "checkout", "-b", "feature")
+
+    report = _scan(tmp_path, checkout)
+
+    entry = {item["filename"]: item for item in report["entries"]}[LATER_TALK]
+    assert entry["disposition"] == "review_required"
+    assert any("non-symlink" in issue["message"] for issue in entry["issues"])
+
+
+def test_a_subdirectory_site_root_reads_the_right_tree_path(tmp_path):
+    origin = tmp_path / "origin.git"
+    origin.mkdir()
+    _git(origin, "init", "--bare", "--initial-branch=main")
+    publisher = tmp_path / "publisher"
+    _git(tmp_path, "clone", str(origin), str(publisher))
+    _git(publisher, "checkout", "-b", "main")
+    (publisher / "site" / "_talks").mkdir(parents=True)
+    _write_jekyll_talk(publisher / "site" / "_talks", filename=PUBLISHED_TALK)
+    _git(publisher, "add", ".")
+    _git(publisher, "commit", "-m", "Publish")
+    _git(publisher, "push", "origin", "main")
+    checkout = tmp_path / "shownotes"
+    _git(tmp_path, "clone", str(origin), str(checkout))
+    _git(checkout, "checkout", "-b", "feature")
+
+    report = _scan(tmp_path, checkout / "site")
+
+    assert report["source_checkout"]["state"] == "published_snapshot"
+    assert _scanned_filenames(report) == [PUBLISHED_TALK]
+
+
+def test_a_nonlocal_source_records_no_checkout(tmp_path):
+    database_path = _database_path(
+        tmp_path,
+        {"shownotes": {"enabled": True, "source": {"type": "none"}}},
+    )
+
+    report = scan_shownotes.execute(database_path, apply_requested=False)
+
+    assert report["operation"] == "skipped_nonlocal"
+    assert report["source_checkout"] is None

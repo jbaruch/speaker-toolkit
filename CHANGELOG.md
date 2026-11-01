@@ -1,5 +1,22 @@
 # Changelog
 
+### Scan the published shownotes, wherever the site checkout sits
+
+`scan-shownotes.py` read `_talks/` from the configured checkout's working tree,
+whichever branch that happened to be on. With `~/Projects/shownotes` on a feature
+branch, a talk live on `main` scanned as nothing at all: 96 files instead of 98, no
+warning, and a report that read as "no new talks". The workaround was a hash-bound
+`set_config` pointing at a clean `origin/main` worktree, a scan, and a hash-bound
+restore. A checkout on `main` that simply hadn't pulled yet had the same problem.
+
+The scanner now fetches and reads a snapshot of `origin/<default>` unless the
+checkout is on the default branch and holds everything published. The speaker's
+branch, edits and config stay untouched. A checkout on the default branch keeps
+reading its working tree, uncommitted edits included. Report schema v4 adds
+`source_checkout`, which names the tree that was read, and a failed fetch or a
+missing `origin/HEAD` lands in `warnings` and on stderr, since that scan may be
+short. `audit-source-identities.py --candidates-from` now reads v4.
+
 ## 0.21.4 — 2026-10-29
 
 ### Check image-model freshness every 30 days
