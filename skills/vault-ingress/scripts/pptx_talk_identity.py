@@ -463,7 +463,7 @@ def _title_signal(
     if not isinstance(talk_title, str) or not talk_title.strip():
         return SIGNAL_UNKNOWN
     # A footer saying "Baruch Sadogursky" shares two significant words with every
-    # title that names him, so it reads as agreement with a talk it says nothing
+    # title naming the speaker, so it reads as agreement with a talk it says nothing
     # about, and an undated rival then has nothing to contradict it.
     talk_title = _without_speaker_name(talk_title, facts.speaker_name_pattern)
     if not talk_title:

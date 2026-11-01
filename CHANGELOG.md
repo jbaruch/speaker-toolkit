@@ -23,7 +23,7 @@ digest, since a receipt has to name something that exists.
 Running it on the real deck exposed why it wouldn't have bound anyway. The title signal
 compares a talk's title with the deck's title-slide text, footers included, on
 significant-word overlap. The deck's footer says "Baruch Sadogursky", which shares two
-words with any title naming him, so it agreed with `playlist-_0J4B7lfi9k.md`, "Baruch
+words with any title naming the speaker, so it agreed with `playlist-_0J4B7lfi9k.md`, "Baruch
 Sadogursky on JFrog Xray". That record has no date or conference to contradict anything,
 so the true match was reported as ambiguous. The assessment now takes
 `config.speaker_name` and ignores those words on both sides.
