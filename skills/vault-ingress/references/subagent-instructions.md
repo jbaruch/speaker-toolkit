@@ -272,7 +272,8 @@ ran, so provenance is unknown — leave the recorded value alone, and leave the
 field absent when it was already absent. `manual` asserts a human produced the
 transcript; writing it on an unknown file is a false claim that makes a
 downstream reader trust ASR more than it should. Absent is honest; invented is
-not.
+not. If the talk's YouTube fetcher receipt is on disk, persistence fills the field
+from that receipt, so a fresh talk with no captions needs no pre-claim registration.
 
 ## B. Analyze for Rhetoric & Style (NOT content)
 

@@ -38,6 +38,7 @@ from pdf_evidence import PdfArtifactProbe, PdfEvidenceError, probe_pdf_artifact
 from transcript_quality import validate_transcript
 from transcript_timing import (
     load_verified_quality_receipt,
+    derive_youtube_transcript_source,
     load_verified_segments,
     load_verified_transcript_source,
     quality_sidecar_path,
@@ -1756,7 +1757,7 @@ def build_evidence_context(
         "manual",
     }:
         canonical_transcript_source = cast(str, recorded_transcript_source)
-    timing_owner_source = canonical_transcript_source or "unknown"
+    transcript_source_derived = False
     # Transcript and timing receipts bind to local media: the predeclared video,
     # or failing that the owner-declared audio (#485). The audio never reaches
     # `predeclared_video_probe`, which alone carries `delivery_video` evidence.
@@ -1776,6 +1777,14 @@ def build_evidence_context(
     transcript_bundle: _TranscriptBundleSnapshot | None = None
     transcript_path, transcript_reason = resolve_transcript_artifact(vault_root, talk)
     if transcript_path is not None:
+        if canonical_transcript_source is None:
+            canonical_transcript_source = derive_youtube_transcript_source(
+                transcript_path,
+                owner_video_id=bound_youtube_id,
+                owner_duration_seconds=timing_owner_duration,
+            )
+            transcript_source_derived = canonical_transcript_source is not None
+        timing_owner_source = canonical_transcript_source or "unknown"
         verified_transcript = _load_verified_transcript_snapshot(
             transcript_path,
             talk,
@@ -2265,6 +2274,7 @@ def build_evidence_context(
         "transcript_text": transcript_text,
         "transcript_reason": transcript_reason,
         "canonical_transcript_source": canonical_transcript_source,
+        "transcript_source_derived": transcript_source_derived,
         "timed_segments": timed_segments,
         "timing_reason": timing_reason,
         "slide_counts": slide_counts,
@@ -3551,6 +3561,10 @@ def canonicalize_return_evidence(
                 "validated transcript has no machine receipt or pre-registered "
                 "transcript_source provenance"
             )
+        # A worker told `method: existing` honestly leaves the field out. The
+        # receipt that proved the provenance fills it in here.
+        if context.get("transcript_source_derived"):
+            canonical.setdefault("transcript_source", canonical_transcript_source)
         if canonical.get("transcript_source") != canonical_transcript_source:
             raise PatternEvidenceError(
                 "return transcript_source is not bound to acquisition provenance; "
