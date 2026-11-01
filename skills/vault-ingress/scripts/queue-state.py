@@ -805,6 +805,7 @@ def command_claim(
                 "idempotent_replay": True,
                 "normalizations": [],
                 "claimed": latest,
+                "confirmed_intents": _confirmed_intents(database),
                 "remaining_eligible": None,
                 **write_result_fields(write_result),
             }
@@ -945,10 +946,16 @@ def command_claim(
         "idempotent_replay": False,
         "normalizations": normalizations,
         "claimed": claimed,
+        "confirmed_intents": _confirmed_intents(database),
         "remaining_eligible": remaining,
         "cloud_artifacts": cloud_report,
         **write_result_fields(write_result),
     }
+
+
+def _confirmed_intents(database):
+    """The speaker's rulings, for the claim's workers to score under."""
+    return copy.deepcopy(database.get("confirmed_intents") or [])
 
 
 def command_recover(database, path, args, *, expected_snapshot):

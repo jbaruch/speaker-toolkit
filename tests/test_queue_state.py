@@ -2392,8 +2392,89 @@ def test_deliberate_reprocess_reasons_extend_the_legacy_set():
         | {
             queue_claim_contract.SOURCE_ADDED_REPROCESS_REASON,
             queue_claim_contract.PERSISTED_OBSERVATION_REPROCESS_REASON,
+            queue_claim_contract.SPEAKER_CORRECTION_REPROCESS_REASON,
         }
     )
     assert queue_claim_contract.is_deliberate_reprocess_reason(
         queue_claim_contract.SOURCE_ADDED_REPROCESS_REASON
     )
+
+
+MANDATED_TEMPLATE_INTENT = {
+    "schema_version": 1,
+    "pattern": "organizer_mandated_template_not_scored",
+    "intent": "deliberate",
+    "rule": "Slide design under a mandated template is not scored.",
+    "note": "Speaker ruling on an organizer template.",
+    "confirmed_date": "2026-10-29",
+    "source_talk": "ruled.md",
+}
+
+
+def _database_with_intent(tmp_path):
+    path = _write_db(tmp_path, [_talk("abcdefghijk", filename="ruled.md")])
+    database = _read_db(path)
+    database["confirmed_intents"] = [MANDATED_TEMPLATE_INTENT]
+    path.write_text(json.dumps(database), encoding="utf-8")
+    return path
+
+
+def test_a_claim_hands_workers_the_confirmed_intents(tmp_path):
+    path = _database_with_intent(tmp_path)
+
+    result = _claim(path)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert [talk["filename"] for talk in payload["claimed"]] == ["ruled.md"]
+    assert payload["confirmed_intents"] == [MANDATED_TEMPLATE_INTENT]
+
+
+def test_a_replayed_claim_hands_workers_the_same_intents(tmp_path):
+    path = _database_with_intent(tmp_path)
+    assert _claim(path).returncode == 0
+
+    replay = _claim(path)
+
+    assert replay.returncode == 0, replay.stderr
+    payload = json.loads(replay.stdout)
+    assert payload["idempotent_replay"] is True
+    assert payload["confirmed_intents"] == [MANDATED_TEMPLATE_INTENT]
+
+
+def test_a_claim_with_no_intents_hands_workers_an_empty_list(tmp_path):
+    path = _write_db(tmp_path, [_talk("abcdefghijk", filename="plain.md")])
+
+    payload = json.loads(_claim(path).stdout)
+
+    assert payload["confirmed_intents"] == []
+
+
+def test_a_speaker_correction_requeues_a_talk_whose_claim_completed(tmp_path):
+    """The whole path: analyzed, ruled on, requeued, left alone, claimed again."""
+    path = _write_db(tmp_path, [_talk("abcdefghijk", filename="ruled.md")])
+    first = json.loads(_claim(path).stdout)["claimed"][0]
+    database = _read_db(path)
+    talk = database["talks"][0]
+    talk["_queue_claim"].update(
+        {
+            "state": "completed",
+            "released_at": first["claimed_at"],
+            "release_reason": "return_persisted",
+            "result_status": "processed",
+            "result_payload_sha256": "a" * 64,
+        }
+    )
+    talk["status"] = "needs-reprocessing"
+    talk["reprocess_reason"] = queue_claim_contract.SPEAKER_CORRECTION_REPROCESS_REASON
+    path.write_text(json.dumps(database), encoding="utf-8")
+
+    normalized = _run(path, "normalize")
+
+    assert normalized.returncode == 0, normalized.stderr
+    assert json.loads(normalized.stdout)["normalizations"] == []
+    reclaimed = _claim(path, run_id="run-2", batch_id="batch-2")
+    assert reclaimed.returncode == 0, reclaimed.stderr
+    assert [t["filename"] for t in json.loads(reclaimed.stdout)["claimed"]] == [
+        "ruled.md"
+    ]
