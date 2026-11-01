@@ -2158,6 +2158,104 @@ def test_external_static_pdf_symlink_parent_stays_fresh(tmp_path: Path) -> None:
     )
 
 
+def _directory_alias(link: Path, target: Path) -> None:
+    target.mkdir(parents=True, exist_ok=True)
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except OSError as exc:  # pragma: no cover - unusual restricted platform
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+
+@pytest.mark.parametrize(
+    "alias_at",
+    ["vault-root", "vault-ancestor"],
+)
+def test_transcript_evidence_stays_fresh_through_a_symlinked_root(
+    tmp_path: Path,
+    alias_at: str,
+) -> None:
+    if alias_at == "vault-root":
+        fixture_parent = tmp_path
+        _directory_alias(tmp_path / "vault", tmp_path / "vault-storage")
+        storage = tmp_path / "vault-storage"
+    else:
+        fixture_parent = tmp_path / "parent-alias"
+        _directory_alias(fixture_parent, tmp_path / "parent-storage")
+        storage = tmp_path / "parent-storage" / "vault"
+
+    vault, _, persisted = _canonical_transcript_talk(fixture_parent)
+
+    inspection = persisted["pattern_observations"]["source_inspection"][0]
+    assert inspection["artifact_root"] == "vault"
+    assert inspection["artifact_path"] == f"transcripts/{SYNTHETIC_VIDEO_ID}.txt"
+    citation = persisted["pattern_observations"]["patterns_detected"][0][
+        "evidence_citations"
+    ][0]
+    assert citation["source"] == "transcript"
+    for root in (vault, storage):
+        assert (
+            pattern_evidence.assess_persisted_pattern_evidence_freshness(
+                persisted,
+                vault_root=root,
+            )
+            == ()
+        )
+
+
+@pytest.mark.parametrize(
+    ("planted", "expected_reason"),
+    [
+        ("transcript-inside-root", "artifact_symlink_rejected"),
+        ("transcript-outside-root", "artifact_path_invalid"),
+        ("timing-inside-root", "timing_artifact_symlink_rejected"),
+        ("quality-inside-root", "quality_artifact_symlink_rejected"),
+        ("directory-outside-root", "artifact_path_invalid"),
+    ],
+)
+def test_symlinked_root_does_not_admit_a_symlink_below_it(
+    tmp_path: Path,
+    planted: str,
+    expected_reason: str,
+) -> None:
+    storage = tmp_path / "vault-storage"
+    _directory_alias(tmp_path / "vault", storage)
+    vault, _, persisted = _canonical_transcript_talk(tmp_path)
+    transcripts = storage / "transcripts"
+    suffix = {"timing": ".segments.json", "quality": ".quality.json"}.get(
+        planted.split("-", 1)[0],
+        ".txt",
+    )
+    artifact = transcripts / f"{SYNTHETIC_VIDEO_ID}{suffix}"
+
+    if planted == "directory-outside-root":
+        relocated = tmp_path / "relocated-transcripts"
+        transcripts.rename(relocated)
+        _directory_alias(transcripts, relocated)
+    else:
+        # The moved bytes keep their digest, so only the symlink can fail this.
+        relocated = (
+            tmp_path / "outside" / artifact.name
+            if planted.endswith("outside-root")
+            else transcripts / f"moved-{artifact.name}"
+        )
+        relocated.parent.mkdir(parents=True, exist_ok=True)
+        artifact.rename(relocated)
+        artifact.symlink_to(relocated)
+
+    through_alias = pattern_evidence.assess_persisted_pattern_evidence_freshness(
+        persisted,
+        vault_root=vault,
+    )
+
+    assert any(reason.endswith(f":{expected_reason}") for reason in through_alias)
+    assert through_alias == (
+        pattern_evidence.assess_persisted_pattern_evidence_freshness(
+            persisted,
+            vault_root=storage,
+        )
+    )
+
+
 def test_freshness_detects_artifact_digest_drift(tmp_path: Path) -> None:
     vault, _, persisted = _canonical_transcript_talk(tmp_path)
     assert (

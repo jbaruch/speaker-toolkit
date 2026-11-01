@@ -145,8 +145,8 @@ preflight, persistence, queue, or profile work will inspect a local recording
 declared by `structured_data.video_extraction.source_video_path`,
 `video_local_path`, or `video_path`.
 The canonical vault locator may be the configured symlink; the PDF
-boundary maps that trusted root to storage while still rejecting every
-descendant symlink/reparse redirect. Trusted-root bindings retain the directory
+boundary and the persisted-evidence freshness check map that trusted root to
+storage while still rejecting every descendant symlink/reparse redirect. Trusted-root bindings retain the directory
 object's stable identity and policy attributes, not mutable child-content size or
 timestamps; PDF and PPTX leaf generations remain exact. The checker emits report
 schema v3 and records exact Python pins under each lane's
