@@ -111,18 +111,31 @@ A `null` is a recorded decision, not an absent value; never re-ask once saved. O
 the Direct API path `generate-qr.py` STOPS when the key is absent; on the MCP path
 the agent makes the same check before resolving the link.
 
-## 9. Replace Existing QRs In Place
+## 9. Replace Only Tracked QRs, In Place
 
 A deck adapted (trimmed) from another talk carries that talk's QR images. The QR
-step detects every existing QR — the closing slide AND any earlier shownotes
+step finds every tracked QR — on the closing slide AND any earlier shownotes
 slide — and replaces it in place at the same position and size, never adding a
 second QR beside it.
 
-Detection is by CONTENT, not size: an inherited QR can be any size (the same QR
-may appear at 1.8" and 2.8"), so a size band misses it. A QR is a square picture
-that is both ~2-color and roughly balanced between those colors — which excludes
-colored diagrams (many colors) and mostly-one-color text screenshots (unbalanced).
-This runs in `generate-qr.py` (`find_qr_rects`), which can read pixels; it hands
-the matched geometry to the `InsertQR` macro (`RunDeckOps.bas`), which can't run
-image libraries and just removes those exact shapes and places the QR there. The
-thresholds are named in `generate-qr.py`.
+A tracked QR encodes a `short_url` or `target_url` from `qr_codes`, or this run's
+own URLs. Every other QR stays untouched: an organizer's required survey QR, a
+sponsor's registration QR, a code from another generator. The run warns with its
+slide number. If it's stale, delete it by hand.
+
+Finding a candidate is by CONTENT, not size: an inherited QR can be any size (the
+same QR may appear at 1.8" and 2.8"), so a size band misses it. A candidate is a
+square picture that is both ~2-color and roughly balanced between those colors —
+which excludes colored diagrams (many colors) and mostly-one-color text screenshots
+(unbalanced). Tracking is by PAYLOAD: `generate-qr.py` re-encodes each tracked URL
+and requires its module grid to equal the picture's exactly (`split_qr_rects`). It
+hands the tracked geometry to the `InsertQR` macro (`RunDeckOps.bas`), which can't
+run image libraries and just removes those exact shapes and places the QR there.
+The thresholds are named in `generate-qr.py`.
+
+## 10. The Closing Slide Is the Last Visible One
+
+`closing` and `both` target the last slide the audience sees. Hidden slides after
+the close, such as fallback screenshots, don't count. When detection picks the wrong
+slides, pass `--slides N[,N...]`: the listed 1-based slides replace detection. A
+tracked QR elsewhere stays in place, and the run names its slide.

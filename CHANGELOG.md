@@ -1,5 +1,28 @@
 # Changelog
 
+### Stop overwriting other people's QR codes
+
+`generate-qr.py` treated any square, two-color picture as a stale QR inherited from
+another talk, targeted its slide and replaced it. On the GitHub Universe 2026 deck
+that meant the organizer's required survey QR and a sponsor event's registration QR
+would both have become the talk's shownotes QR, with no warning. The same run would
+have put the closing QR on a hidden fallback slide, since `closing` and `both` always
+meant the last slide in the file. The deck shipped by hand through `--png-only` and
+`insert-qr.sh`.
+
+A QR is now replaced only when it encodes a URL this vault issued: a `short_url` or
+`target_url` from `qr_codes`, or this run's own URLs. The script re-encodes each of
+those and requires the picture's module grid to match exactly, which needs no QR
+decoder or new dependency, and works for every QR the script has ever produced since
+its encoder settings have never changed. An exact match is deliberate. A false match
+deletes someone else's QR; a miss leaves one in place and warns with its slide
+number.
+
+`closing` and `both` now target the last visible slide. `--slides N[,N...]` names the
+slides explicitly when detection is wrong, and a bad value stops the run before any
+shortener call. Against the real Universe deck, a dry run replaces the two tracked
+QRs in place and targets the true closing slide.
+
 ## 0.21.4 — 2026-10-29
 
 ### Check image-model freshness every 30 days

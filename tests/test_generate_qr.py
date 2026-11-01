@@ -6,6 +6,7 @@ from email.message import Message
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -370,51 +371,51 @@ def test_resolve_slide_bg_rgb_none_for_plain_deck(generate_qr, tmp_path):
     assert result is None or isinstance(result, tuple)
 
 
-def test_slide_has_existing_qr_detects_square_qr_sized_picture(generate_qr, tmp_path):
+def test_find_qr_rects_detects_square_qr_sized_picture(generate_qr, tmp_path):
     prs = make_deck(1)
     prs.slides[0].shapes.add_picture(
         _square_png(tmp_path), Inches(8), Inches(5), Inches(2.0), Inches(2.0)
     )
-    assert generate_qr.slide_has_existing_qr(prs.slides[0]) is True
+    assert generate_qr.find_qr_rects(prs.slides[0]) != []
 
 
-def test_slide_has_existing_qr_ignores_non_square_picture(generate_qr, tmp_path):
+def test_find_qr_rects_ignores_non_square_picture(generate_qr, tmp_path):
     prs = make_deck(1)
     prs.slides[0].shapes.add_picture(
         _square_png(tmp_path), Inches(1), Inches(1), Inches(6.0), Inches(2.0)
     )
-    assert generate_qr.slide_has_existing_qr(prs.slides[0]) is False
+    assert generate_qr.find_qr_rects(prs.slides[0]) == []
 
 
-def test_slide_has_existing_qr_detects_large_square_qr(generate_qr, tmp_path):
+def test_find_qr_rects_detects_large_square_qr(generate_qr, tmp_path):
     # Size-independent: a 2.8in two-color square is still a QR (the inherited
     # shownotes QR in the #56 repro deck was 2.78in — outside the old 1.5-2.5 band).
     prs = make_deck(1)
     prs.slides[0].shapes.add_picture(
         _square_png(tmp_path), Inches(1), Inches(1), Inches(2.8), Inches(2.8)
     )
-    assert generate_qr.slide_has_existing_qr(prs.slides[0]) is True
+    assert generate_qr.find_qr_rects(prs.slides[0]) != []
 
 
-def test_slide_has_existing_qr_ignores_multicolor_square(generate_qr, tmp_path):
+def test_find_qr_rects_ignores_multicolor_square(generate_qr, tmp_path):
     # Square and in size range, but many colors (e.g. a Venn diagram) → not a QR.
     prs = make_deck(1)
     prs.slides[0].shapes.add_picture(
         _multicolor_png(tmp_path), Inches(2), Inches(2), Inches(2.0), Inches(2.0)
     )
-    assert generate_qr.slide_has_existing_qr(prs.slides[0]) is False
+    assert generate_qr.find_qr_rects(prs.slides[0]) == []
 
 
-def test_slide_has_existing_qr_ignores_small_two_color_icon(generate_qr, tmp_path):
+def test_find_qr_rects_ignores_small_two_color_icon(generate_qr, tmp_path):
     # Two-color but below the 1.5in floor → a small icon, not a QR.
     prs = make_deck(1)
     prs.slides[0].shapes.add_picture(
         _square_png(tmp_path), Inches(1), Inches(1), Inches(1.0), Inches(1.0)
     )
-    assert generate_qr.slide_has_existing_qr(prs.slides[0]) is False
+    assert generate_qr.find_qr_rects(prs.slides[0]) == []
 
 
-def test_slide_has_existing_qr_ignores_text_screenshot(generate_qr, tmp_path):
+def test_find_qr_rects_ignores_text_screenshot(generate_qr, tmp_path):
     # Near-square, in size range, ~2-color — but mostly-white with sparse text
     # (unbalanced) → not a QR. Regression: a martinfowler.com screenshot (slide 28
     # of the #56 repro deck) that the recon-error-only test wrongly accepted.
@@ -422,12 +423,12 @@ def test_slide_has_existing_qr_ignores_text_screenshot(generate_qr, tmp_path):
     prs.slides[0].shapes.add_picture(
         _sparse_text_png(tmp_path), Inches(2), Inches(1), Inches(4.0), Inches(4.0)
     )
-    assert generate_qr.slide_has_existing_qr(prs.slides[0]) is False
+    assert generate_qr.find_qr_rects(prs.slides[0]) == []
 
 
-def test_slide_has_existing_qr_false_for_plain_slide(generate_qr):
+def test_find_qr_rects_false_for_plain_slide(generate_qr):
     prs = make_deck(1)
-    assert generate_qr.slide_has_existing_qr(prs.slides[0]) is False
+    assert generate_qr.find_qr_rects(prs.slides[0]) == []
 
 
 def test_two_color_metrics_separate_qr_screenshot_photo(generate_qr, tmp_path):
@@ -458,18 +459,445 @@ def test_find_qr_rects_returns_points_geometry(generate_qr, tmp_path):
     assert abs(W - 144) < 0.5 and abs(H - 144) < 0.5
 
 
-def test_resolve_target_includes_inherited_qr_slides(generate_qr, tmp_path):
+TRACKED_QR_URL = "https://jbaru.ch/adapted-from-talk"
+FOREIGN_QR_URL = "https://events.example.test/survey/2026"
+
+
+def _qr_png(generate_qr, tmp_path, url, *, fg=(0, 0, 0), bg=(255, 255, 255)):
+    path = tmp_path / f"qr-{abs(hash((url, fg, bg)))}.png"
+    generate_qr.generate_qr_png(url, fg, bg, str(path))
+    return str(path)
+
+
+def _place_qr(generate_qr, prs, slide_index, tmp_path, url, *, left=8.0, **colors):
+    """Place a real QR on a slide, at 2 inches square."""
+    prs.slides[slide_index].shapes.add_picture(
+        _qr_png(generate_qr, tmp_path, url, **colors),
+        Inches(left),
+        Inches(5),
+        Inches(2.0),
+        Inches(2.0),
+    )
+
+
+def _hide_slides(prs, *indices, value="0"):
+    for index in indices:
+        prs.slides[index]._element.set("show", value)
+
+
+def test_resolve_target_includes_a_tracked_qr_inherited_on_another_slide(
+    generate_qr, tmp_path
+):
     """A deck adapted from another talk: config targets only the closing slide,
-    but an earlier slide carries an inherited QR — it must also be targeted."""
+    but an earlier slide carries that talk's QR, so it's targeted as well."""
     prs = make_deck(4)
-    prs.slides[1].shapes.add_picture(
+    _place_qr(generate_qr, prs, 1, tmp_path, TRACKED_QR_URL)
+
+    indices = generate_qr.resolve_target_slide_indices(
+        prs,
+        {"slide_position": "closing"},
+        "https://example.com/notes",
+        generate_qr.qr_module_grids({TRACKED_QR_URL}),
+    )
+
+    assert indices == [1, 3]
+
+
+def test_resolve_target_leaves_an_organizer_qr_slide_alone(generate_qr, tmp_path):
+    """A survey QR the organizer requires isn't a stale QR of ours to replace."""
+    prs = make_deck(4)
+    _place_qr(generate_qr, prs, 1, tmp_path, FOREIGN_QR_URL)
+
+    indices = generate_qr.resolve_target_slide_indices(
+        prs,
+        {"slide_position": "closing"},
+        "https://example.com/notes",
+        generate_qr.qr_module_grids({TRACKED_QR_URL}),
+    )
+
+    assert indices == [3]
+
+
+@pytest.mark.parametrize("hidden_value", ["0", "false"])
+def test_closing_slide_is_the_last_one_the_audience_sees(generate_qr, hidden_value):
+    """Hidden fallback screenshots after the close aren't the closing slide."""
+    prs = make_deck(5)
+    _hide_slides(prs, 3, 4, value=hidden_value)
+
+    indices = generate_qr.resolve_target_slide_indices(
+        prs, {"slide_position": "closing"}, "https://example.com/notes", []
+    )
+
+    assert indices == [2]
+
+
+def test_closing_falls_back_to_the_last_slide_when_all_are_hidden(generate_qr):
+    prs = make_deck(3)
+    _hide_slides(prs, 0, 1, 2)
+
+    indices = generate_qr.resolve_target_slide_indices(
+        prs, {"slide_position": "closing"}, "https://example.com/notes", []
+    )
+
+    assert indices == [2]
+
+
+def test_both_position_targets_the_shownotes_slide_and_the_visible_close(generate_qr):
+    prs = make_deck(6)
+    prs.slides[1].shapes.add_textbox(
+        Inches(1), Inches(1), Inches(4), Inches(1)
+    ).text_frame.text = "Slides: https://example.com/notes"
+    _hide_slides(prs, 5)
+
+    indices = generate_qr.resolve_target_slide_indices(
+        prs, {"slide_position": "both"}, "https://example.com/notes", []
+    )
+
+    assert indices == [1, 4]
+
+
+def test_split_qr_rects_separates_tracked_from_foreign_by_payload(
+    generate_qr, tmp_path
+):
+    prs = make_deck(1)
+    _place_qr(generate_qr, prs, 0, tmp_path, FOREIGN_QR_URL, left=1.0)
+    _place_qr(generate_qr, prs, 0, tmp_path, TRACKED_QR_URL, left=8.0)
+
+    tracked, foreign = generate_qr.split_qr_rects(
+        prs.slides[0], generate_qr.qr_module_grids({TRACKED_QR_URL})
+    )
+
+    assert [round(rect[0]) for rect in tracked] == [576]
+    assert [round(rect[0]) for rect in foreign] == [72]
+
+
+def test_split_qr_rects_treats_a_two_color_square_as_foreign(generate_qr, tmp_path):
+    """Looking like a QR is enough to report it, never enough to replace it."""
+    prs = make_deck(1)
+    prs.slides[0].shapes.add_picture(
         _square_png(tmp_path), Inches(8), Inches(5), Inches(2.0), Inches(2.0)
     )
-    indices = generate_qr.resolve_target_slide_indices(
-        prs, {"slide_position": "closing"}, "https://example.com/notes"
+
+    tracked, foreign = generate_qr.split_qr_rects(
+        prs.slides[0], generate_qr.qr_module_grids({TRACKED_QR_URL})
     )
-    assert 1 in indices  # inherited-QR slide
-    assert 3 in indices  # closing slide
+
+    assert tracked == []
+    assert len(foreign) == 1
+
+
+def test_a_near_identical_url_is_not_the_same_payload(generate_qr, tmp_path):
+    prs = make_deck(1)
+    _place_qr(generate_qr, prs, 0, tmp_path, TRACKED_QR_URL + "2")
+
+    tracked, foreign = generate_qr.split_qr_rects(
+        prs.slides[0], generate_qr.qr_module_grids({TRACKED_QR_URL})
+    )
+
+    assert tracked == []
+    assert len(foreign) == 1
+
+
+@pytest.mark.parametrize(
+    ("fg", "bg"),
+    [
+        ((0, 0, 0), (255, 255, 255)),
+        ((255, 255, 255), (20, 20, 80)),
+        ((0, 0, 0), (250, 200, 60)),
+    ],
+    ids=["black-on-white", "white-on-navy", "black-on-amber"],
+)
+def test_a_tracked_qr_is_identified_in_any_slide_color(generate_qr, tmp_path, fg, bg):
+    prs = make_deck(1)
+    _place_qr(generate_qr, prs, 0, tmp_path, TRACKED_QR_URL, fg=fg, bg=bg)
+
+    tracked, foreign = generate_qr.split_qr_rects(
+        prs.slides[0], generate_qr.qr_module_grids({TRACKED_QR_URL})
+    )
+
+    assert len(tracked) == 1
+    assert foreign == []
+
+
+@pytest.mark.parametrize(
+    "resample",
+    [Image.Resampling.NEAREST, Image.Resampling.LANCZOS],
+    ids=["nearest", "lanczos"],
+)
+def test_a_tracked_qr_is_identified_after_presentation_software_rescales_it(
+    generate_qr, tmp_path, resample
+):
+    original = Path(_qr_png(generate_qr, tmp_path, TRACKED_QR_URL))
+    with Image.open(original) as image:
+        rescaled = image.convert("RGB").resize(
+            (int(image.width * 0.7), int(image.height * 0.7)), resample
+        )
+    path = tmp_path / "rescaled.png"
+    rescaled.save(path)
+    grids = generate_qr.qr_module_grids({TRACKED_QR_URL})
+
+    assert generate_qr._picture_encodes_any(path.read_bytes(), grids) is True
+    assert (
+        generate_qr._picture_encodes_any(
+            path.read_bytes(),
+            generate_qr.qr_module_grids({FOREIGN_QR_URL}),
+        )
+        is False
+    )
+
+
+def test_tracked_qr_payloads_reads_the_catalog_and_this_run(generate_qr):
+    database = {
+        "qr_codes": [
+            {"short_url": "https://jbaru.ch/a", "target_url": "https://site.test/a"},
+            {"short_url": None, "target_url": "https://site.test/raw"},
+            "not-a-record",
+        ]
+    }
+
+    assert generate_qr.tracked_qr_payloads(
+        database, "https://jbaru.ch/now", "https://site.test/now", None
+    ) == {
+        "https://jbaru.ch/a",
+        "https://site.test/a",
+        "https://site.test/raw",
+        "https://jbaru.ch/now",
+        "https://site.test/now",
+    }
+
+
+@pytest.mark.parametrize("database", [{}, {"qr_codes": "corrupt"}, None])
+def test_tracked_qr_payloads_tolerates_no_catalog(generate_qr, database):
+    assert generate_qr.tracked_qr_payloads(database, "https://jbaru.ch/now") == {
+        "https://jbaru.ch/now"
+    }
+
+
+def test_qr_module_grids_skips_a_payload_no_qr_can_hold(generate_qr):
+    grids = generate_qr.qr_module_grids(
+        {TRACKED_QR_URL, "https://site.test/" + "a" * 4000}
+    )
+
+    assert len(grids) == 1
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("3", [2]), ("3,1", [0, 2]), (" 1 , 3 ,1", [0, 2])],
+)
+def test_parse_slide_numbers(generate_qr, raw, expected):
+    assert generate_qr.parse_slide_numbers(raw, 3) == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "message"),
+    [
+        ("", "comma-separated slide numbers"),
+        ("1,", "comma-separated slide numbers"),
+        ("one", "comma-separated slide numbers"),
+        ("-1", "comma-separated slide numbers"),
+        ("0", "slide 0, but the deck has slides 1-3"),
+        ("4", "slide 4, but the deck has slides 1-3"),
+    ],
+)
+def test_parse_slide_numbers_refuses_a_bad_value(generate_qr, raw, message):
+    with pytest.raises(ValueError, match=message):
+        generate_qr.parse_slide_numbers(raw, 3)
+
+
+def _qr_deck_run(generate_qr, monkeypatch, tmp_path, prs, *extra):
+    """Run the deck flow against a saved deck and a tracked catalog, capturing the
+    insertion jobs instead of driving PowerPoint."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    database = _current_tracking_database()
+    database["qr_codes"] = [
+        {
+            "schema_version": 2,
+            "talk_slug": "adapted-from-talk",
+            "target_url": "https://site.test/adapted-from-talk",
+            "shortener": "bitly",
+            "short_path": "adapted-from-talk",
+            "short_url": TRACKED_QR_URL,
+            "shortener_link_id": "bit.ly/adapted",
+            "qr_png_rel_path": "adapted-from-talk-qr.png",
+            "created_at": "2026-01-01",
+            "updated_at": "2026-01-01",
+            "artifacts": [_receipt("adapted-from-talk-qr.png")],
+        }
+    ]
+    (vault / "tracking-database.json").write_text(
+        json.dumps(database), encoding="utf-8"
+    )
+    (vault / "speaker-profile.json").write_text(
+        json.dumps({"publishing_process": {"qr_code": {"slide_position": "closing"}}}),
+        encoding="utf-8",
+    )
+    deck = tmp_path / "deck.pptx"
+    prs.save(str(deck))
+    jobs = []
+    monkeypatch.setattr(
+        generate_qr,
+        "insert_qr_via_powerpoint",
+        lambda _deck, insert_jobs, _scripts_dir: jobs.extend(insert_jobs),
+    )
+    monkeypatch.setattr(
+        generate_qr,
+        "commit_qr_record",
+        lambda *_args: SimpleNamespace(
+            installed=False,
+            input_sha256="a" * 64,
+            output_sha256="a" * 64,
+            durability_state="durable",
+            warnings=(),
+        ),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "generate-qr.py",
+            str(deck),
+            "--talk-slug",
+            "this-talk",
+            "--shownotes-url",
+            "https://site.test/this-talk",
+            "--short-url",
+            "https://jbaru.ch/this-talk",
+            "--vault",
+            str(vault),
+            *extra,
+        ],
+    )
+    generate_qr.main()
+    return {
+        slide_number: rects for _path, slides in jobs for slide_number, rects in slides
+    }
+
+
+def test_deck_run_replaces_only_the_tracked_qr_and_warns_about_the_rest(
+    generate_qr, monkeypatch, tmp_path, capsys
+):
+    """The GitHub Universe deck's shape: a shownotes QR inherited on an early slide,
+    a visible close, and hidden fallback slides carrying the survey and sponsor QRs."""
+    prs = make_deck(6)
+    _place_qr(generate_qr, prs, 1, tmp_path, TRACKED_QR_URL)
+    _place_qr(generate_qr, prs, 4, tmp_path, FOREIGN_QR_URL)
+    _place_qr(generate_qr, prs, 5, tmp_path, "https://portcon.example.test/register")
+    _hide_slides(prs, 4, 5)
+
+    targets = _qr_deck_run(generate_qr, monkeypatch, tmp_path, prs)
+    captured = capsys.readouterr()
+
+    assert sorted(targets) == [2, 4]
+    assert [round(rect[0]) for rect in targets[2]] == [576]
+    assert targets[4] == []
+    assert "slide 5 keeps 1 QR(s) that encode no tracked" in captured.err
+    assert "slide 6 keeps 1 QR(s) that encode no tracked" in captured.err
+
+
+def test_deck_run_keeps_a_foreign_qr_on_a_targeted_slide(
+    generate_qr, monkeypatch, tmp_path, capsys
+):
+    prs = make_deck(2)
+    _place_qr(generate_qr, prs, 1, tmp_path, FOREIGN_QR_URL)
+
+    targets = _qr_deck_run(generate_qr, monkeypatch, tmp_path, prs)
+
+    assert targets == {2: []}
+    assert "slide 2 keeps 1 QR(s) that encode no tracked" in capsys.readouterr().err
+
+
+def test_repeat_run_replaces_this_talks_own_qr_before_its_record_exists(
+    generate_qr, monkeypatch, tmp_path, capsys
+):
+    prs = make_deck(2)
+    _place_qr(generate_qr, prs, 1, tmp_path, "https://jbaru.ch/this-talk")
+
+    targets = _qr_deck_run(generate_qr, monkeypatch, tmp_path, prs)
+
+    assert len(targets[2]) == 1
+    assert capsys.readouterr().err.count("WARNING") == 0
+
+
+def test_slides_override_replaces_detection_and_names_a_tracked_qr_it_skips(
+    generate_qr, monkeypatch, tmp_path, capsys
+):
+    prs = make_deck(5)
+    _place_qr(generate_qr, prs, 1, tmp_path, TRACKED_QR_URL)
+
+    targets = _qr_deck_run(generate_qr, monkeypatch, tmp_path, prs, "--slides", "3,4")
+
+    assert targets == {3: [], 4: []}
+    assert "slide 2 keeps 1 tracked QR(s) outside --slides" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        ("nine", "comma-separated slide numbers"),
+        ("9", "slide 9, but the deck has slides 1-2"),
+    ],
+)
+def test_slides_override_is_refused_before_any_external_effect(
+    generate_qr, monkeypatch, tmp_path, capsys, value, message
+):
+    deck = tmp_path / "deck.pptx"
+    make_deck(2).save(str(deck))
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("URL resolution ran before local validation")
+
+    monkeypatch.setattr(generate_qr, "resolve_short_url", forbidden)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "generate-qr.py",
+            str(deck),
+            "--talk-slug",
+            "talk",
+            "--shownotes-url",
+            "https://site.test/talk",
+            "--slides",
+            value,
+            "--vault",
+            str(tmp_path / "missing-vault"),
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        generate_qr.main()
+
+    assert exc_info.value.code == 1
+    assert message in capsys.readouterr().err
+
+
+def test_slides_override_is_refused_without_a_deck(
+    generate_qr, monkeypatch, tmp_path, capsys
+):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "generate-qr.py",
+            "--png-only",
+            "--talk-slug",
+            "talk",
+            "--shownotes-url",
+            "https://site.test/talk",
+            "--slides",
+            "1",
+            "--vault",
+            str(tmp_path / "missing-vault"),
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        generate_qr.main()
+
+    assert exc_info.value.code == 2
+    assert "--slides needs a deck" in capsys.readouterr().err
 
 
 def test_back_half_is_always_slug_ignoring_preferred_short_path(

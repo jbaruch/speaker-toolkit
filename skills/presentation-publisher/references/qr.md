@@ -74,6 +74,10 @@ path make the check before resolving the link.
    "{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/generate-qr.py" deck.pptx \
      --talk-slug SLUG --shownotes-url SHOWNOTES_URL
 
+   # Explicit 1-based slides, when detection picks the wrong ones:
+   "{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/generate-qr.py" deck.pptx \
+     --talk-slug SLUG --shownotes-url SHOWNOTES_URL --slides 4,17
+
    # PNG-only (no deck — for presenterm, PDF, or standalone use):
    "{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/generate-qr.py" --png-only \
      --talk-slug SLUG --shownotes-url SHOWNOTES_URL \
@@ -92,7 +96,9 @@ path make the check before resolving the link.
      for solid fill; falls back to white with a warning for theme-colored fills)
    - Auto-select foreground color (black on light backgrounds, white on dark) using
      WCAG relative luminance
-   - Insert the QR as a 2" square in the bottom-right corner
+   - Replace each tracked QR in place, and leave every other QR with a warning
+     naming its slide, per §9 of the QR generation rules
+   - Otherwise insert the QR as a 2" square in the bottom-right corner
    - Serialize concurrent publication of the same talk and hold that
      serialization across the external effects — see
      `skills/presentation-creator/scripts/generate-qr.py` (`qr_publication_lock`
