@@ -1558,3 +1558,45 @@ def test_default_as_of_uses_injected_time_and_canonical_whole_seconds(load_vault
     now = datetime(2026, 7, 31, 18, 30, 45, 987654, tzinfo=timezone.utc)
 
     assert load_vault.default_as_of(now) == "2026-07-31T18:30:45+00:00"
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    ["Generated before delivery, pointing to predicted URL", None, ["bitly"]],
+    ids=["prose", "null", "list"],
+)
+def test_a_flattened_qr_code_config_fails_validation(
+    validate_profile, tmp_path, capsys, bad_value
+):
+    profile = _minimal_profile(validate_profile)
+    profile["publishing_process"] = {"qr_code": bad_value}
+
+    rc = _run(validate_profile, profile, tmp_path)
+    report = json.loads(capsys.readouterr().out)
+
+    assert rc == 1
+    assert any(
+        "publishing_process.qr_code must be an object" in error
+        for error in report["errors"]
+    )
+
+
+@pytest.mark.parametrize(
+    "publishing_process",
+    [
+        {"qr_code": {"enabled": True, "shortener": "bitly", "description": "Prose."}},
+        {"export_format": "pdf"},
+        [],
+    ],
+    ids=["object", "absent", "no-section-object"],
+)
+def test_a_qr_code_object_or_no_qr_code_at_all_validates(
+    validate_profile, tmp_path, capsys, publishing_process
+):
+    profile = _minimal_profile(validate_profile)
+    profile["publishing_process"] = publishing_process
+
+    rc = _run(validate_profile, profile, tmp_path)
+    report = json.loads(capsys.readouterr().out)
+
+    assert rc == 0, report
