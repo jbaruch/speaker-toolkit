@@ -118,6 +118,7 @@ QR_DETECT_MIN_INCHES = 1.5  # side floor — excludes small 2-color icons
 QR_SQUARE_TOL_INCHES = 0.1  # |width − height| tolerance
 QR_RECON_ERR_MAX = 5.0  # max mean 2-color reconstruction error
 QR_MIN_MINORITY = 0.25  # min minority-color fraction (QRs are balanced)
+QR_MODULE_MIN_DELTA = 64  # min grayscale distance from the quiet zone for a module
 
 
 # --- Vault / Config Loading ---
@@ -996,17 +997,22 @@ def generate_qr_png(url, fg_rgb, bg_rgb, out_path):
     if bg_rgb is None:
         bg_rgb = (255, 255, 255)
 
-    qr = qrcode.QRCode(
-        error_correction=QR_ERROR_CORRECTION,
-        box_size=QR_BOX_SIZE,
-        border=QR_BORDER,
-    )
-    qr.add_data(url)
-    qr.make(fit=True)
-
+    qr = _encode_qr(url, box_size=QR_BOX_SIZE, border=QR_BORDER)
     img = qr.make_image(fill_color=fg_rgb, back_color=bg_rgb)
     img.save(out_path)
     return out_path
+
+
+def _encode_qr(url, *, box_size, border):
+    """The one encoding of a URL, shared by the PNG writer and the identifier."""
+    qr = qrcode.QRCode(
+        error_correction=QR_ERROR_CORRECTION,
+        box_size=box_size,
+        border=border,
+    )
+    qr.add_data(url)
+    qr.make(fit=True)
+    return qr
 
 
 # --- Slide Detection ---
@@ -1085,6 +1091,19 @@ def _picture_is_qr(shape):
     return err < QR_RECON_ERR_MAX and minority >= QR_MIN_MINORITY
 
 
+def _qr_pictures(slide):
+    """The QR-looking pictures on a slide, in z-order (first = lowest-index)."""
+    return [
+        shape
+        for shape in slide.shapes
+        if _picture_is_qr(shape) and shape.left is not None and shape.top is not None
+    ]
+
+
+def _points_rect(shape):
+    return (shape.left.pt, shape.top.pt, shape.width.pt, shape.height.pt)
+
+
 def find_qr_rects(slide):
     """QR pictures on the slide as (left, top, width, height) tuples in POINTS,
     in slide z-order (first = lowest-index shape).
@@ -1092,31 +1111,190 @@ def find_qr_rects(slide):
     The VBA writer can't run PIL, so QR identification happens here and the
     geometry is handed to InsertQR for exact in-place replacement.
     """
-    rects = []
-    for shape in slide.shapes:
-        if _picture_is_qr(shape) and shape.left is not None and shape.top is not None:
-            rects.append((shape.left.pt, shape.top.pt, shape.width.pt, shape.height.pt))
-    return rects
+    return [_points_rect(shape) for shape in _qr_pictures(slide)]
 
 
-def slide_has_existing_qr(slide):
-    """True if the slide carries an (inherited) QR picture (see find_qr_rects)."""
-    return bool(find_qr_rects(slide))
+def tracked_qr_payloads(tracking_db, *current_urls):
+    """Every URL a QR issued for this vault can encode.
+
+    A record's short link is what its QR encodes; its target is what a
+    `shortener: none` QR encodes. This run's own URLs count even before their
+    record exists, so a repeat run replaces its own QR instead of stacking.
+    """
+    payloads = {url for url in current_urls if url}
+    records = tracking_db.get("qr_codes") if isinstance(tracking_db, dict) else None
+    for record in records if isinstance(records, list) else []:
+        if not isinstance(record, dict):
+            continue
+        for field in ("short_url", "target_url"):
+            value = record.get(field)
+            if isinstance(value, str) and value:
+                payloads.add(value)
+    return payloads
 
 
-def resolve_target_slide_indices(prs, config, shownotes_url):
+def qr_module_grids(payloads):
+    """The module grid this script encodes for each payload.
+
+    A payload too long for any QR version can't be on a slide, so it has no grid.
+    """
+    grids = []
+    for payload in sorted(payloads):
+        try:
+            grids.append(_encode_qr(payload, box_size=1, border=0).get_matrix())
+        # qrcode 8.2 reports a payload past version 40 as "Invalid version".
+        except ValueError:
+            continue
+    return grids
+
+
+def _picture_encodes_any(blob, grids):
+    """True when a picture's modules exactly equal one of the grids.
+
+    Re-encoding each tracked URL needs no QR decoder, and it can only answer yes
+    for a payload this vault issued. Exact equality is deliberate: a false match
+    deletes an organizer's or a sponsor's QR, while a miss only leaves a QR in
+    place with a warning. The quiet zone sets the background, and each module is
+    sampled at its center, so a recolored or rescaled copy still compares.
+    """
+    try:
+        image = Image.open(io.BytesIO(blob)).convert("L")
+    # Same unreadable-picture classes as _two_color_metrics.
+    except (OSError, ValueError):
+        return False
+    background = image.getpixel((0, 0))
+    if not isinstance(background, int):  # pragma: no cover - mode "L" is one band
+        return False
+    modules = image.point(
+        [
+            255 if abs(value - background) > QR_MODULE_MIN_DELTA else 0
+            for value in range(256)
+        ]
+    )
+    box = modules.getbbox()
+    if box is None:
+        return False
+    left, top, right, bottom = box
+    width, height = right - left, bottom - top
+    for grid in grids:
+        size = len(grid)
+        if all(
+            bool(
+                modules.getpixel(
+                    (
+                        left + int((column + 0.5) * width / size),
+                        top + int((row + 0.5) * height / size),
+                    )
+                )
+            )
+            == bool(grid[row][column])
+            for row in range(size)
+            for column in range(size)
+        ):
+            return True
+    return False
+
+
+def split_qr_rects(slide, grids):
+    """(tracked, foreign) QR rects in POINTS, in slide z-order.
+
+    Only a tracked QR may be replaced. Anything else that looks like a QR belongs
+    to someone else: an organizer's survey, a sponsor's registration, or a code
+    from another generator.
+    """
+    tracked, foreign = [], []
+    for shape in _qr_pictures(slide):
+        # _picture_is_qr already refused a picture with no readable image.
+        owner = tracked if _picture_encodes_any(shape.image.blob, grids) else foreign
+        owner.append(_points_rect(shape))
+    return tracked, foreign
+
+
+def _new_qr_rect(prs):
+    """Where InsertQR puts a QR replacing nothing: bottom-right, in POINTS."""
+    side = QR_WIDTH_INCHES * 72
+    margin = QR_MARGIN_INCHES * 72
+    return (
+        prs.slide_width.pt - side - margin,
+        prs.slide_height.pt - side - margin,
+        side,
+        side,
+    )
+
+
+def _rects_overlap(first, second):
+    left_a, top_a, width_a, height_a = first
+    left_b, top_b, width_b, height_b = second
+    return (
+        left_a < left_b + width_b
+        and left_b < left_a + width_a
+        and top_a < top_b + height_b
+        and top_b < top_a + height_a
+    )
+
+
+def slides_covering_a_foreign_qr(prs, slide_indices, grids):
+    """1-based target slides where the new QR would land on someone else's QR.
+
+    A foreign QR is left in place, so a new one placed over it hides it from the
+    audience just as surely as replacing it. The corner the macro uses is where such a
+    QR usually sits. A slide with a tracked QR is safe: the new QR takes that QR's rect.
+    """
+    placement = _new_qr_rect(prs)
+    covering = []
+    for idx in slide_indices:
+        tracked, foreign = split_qr_rects(prs.slides[idx], grids)
+        if not tracked and any(_rects_overlap(placement, rect) for rect in foreign):
+            covering.append(idx + 1)
+    return covering
+
+
+def _last_visible_slide_index(prs):
+    """The last slide the audience sees; a hidden slide can't be the close.
+
+    Falls back to the last slide of a deck with no visible slide at all.
+    """
+    slide_count = len(prs.slides)
+    for idx in range(slide_count - 1, -1, -1):
+        if prs.slides[idx]._element.get("show") not in ("0", "false"):
+            return idx
+    return slide_count - 1
+
+
+def parse_slide_numbers(raw, slide_count):
+    """0-based indices for a --slides value of 1-based, comma-separated numbers."""
+    numbers = set()
+    for part in raw.split(","):
+        text = part.strip()
+        if not text.isascii() or not text.isdigit():
+            raise ValueError(
+                f"--slides must be comma-separated slide numbers (got: {raw!r})"
+            )
+        number = int(text)
+        if not 1 <= number <= slide_count:
+            raise ValueError(
+                f"--slides names slide {number}, but the deck has slides "
+                f"1-{slide_count}"
+            )
+        numbers.add(number)
+    return sorted(number - 1 for number in numbers)
+
+
+def resolve_target_slide_indices(prs, config, shownotes_url, grids):
     """Determine which slides should receive the QR code.
 
     Args:
         prs: Presentation object
         config: QR config from speaker profile
         shownotes_url: The shownotes URL (for content detection)
+        grids: Module grids of the tracked payloads (see qr_module_grids)
 
     Returns:
         list of 0-based slide indices
     """
     position = config.get("slide_position", "closing")
     slide_count = len(prs.slides)
+    closing_idx = _last_visible_slide_index(prs)
 
     indices = []
 
@@ -1133,20 +1311,19 @@ def resolve_target_slide_indices(prs, config, shownotes_url):
             indices.append(fallback)
 
     if position in ("closing", "both"):
-        closing_idx = slide_count - 1
         if closing_idx not in indices:
             indices.append(closing_idx)
 
-    # Always target every slide that already carries a QR — a deck adapted from
-    # another talk inherits stale QRs (e.g. an early shownotes slide + closing)
-    # that must be replaced in place, not left beside a freshly-added one.
+    # Always target every slide that already carries a tracked QR — a deck adapted
+    # from another talk inherits stale QRs (e.g. an early shownotes slide +
+    # closing) that must be replaced in place, not left beside a freshly-added one.
     for idx, slide in enumerate(prs.slides):
-        if idx not in indices and slide_has_existing_qr(slide):
+        if idx not in indices and split_qr_rects(slide, grids)[0]:
             indices.append(idx)
 
     if not indices:
-        # Default: last slide
-        indices.append(slide_count - 1)
+        # Default: the closing slide
+        indices.append(closing_idx)
 
     return sorted(indices)
 
@@ -1361,6 +1538,12 @@ def main():
         help="QR background color as R,G,B (e.g., 128,0,128). Default: detected from deck, or white with --png-only",
     )
     parser.add_argument(
+        "--slides",
+        metavar="N[,N...]",
+        help="1-based slides that receive the QR, instead of detecting them from "
+        "slide_position and tracked QRs. Not valid with --png-only",
+    )
+    parser.add_argument(
         "--profile",
         help="Path to speaker-profile.json (default: {vault}/speaker-profile.json)",
     )
@@ -1373,6 +1556,8 @@ def main():
 
     if not args.png_only and not args.deck:
         parser.error("deck is required unless --png-only is specified")
+    if args.png_only and args.slides is not None:
+        parser.error("--slides needs a deck; --png-only opens none")
 
     # Provider identity describes an agent-preresolved link. Accepting it
     # without --short-url would silently drop it, and half of it would catalog
@@ -1408,6 +1593,16 @@ def main():
                 "ERROR: --bg-color must be R,G,B with values 0-255 "
                 f"(got: {args.bg_color})"
             )
+            sys.exit(1)
+
+    explicit_slides = None
+    if args.slides is not None:
+        try:
+            explicit_slides = parse_slide_numbers(
+                args.slides, len(Presentation(args.deck).slides)
+            )
+        except ValueError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
             sys.exit(1)
 
     # Determine vault path
@@ -1483,6 +1678,7 @@ def main():
                 qr_config,
                 explicit_bg,
                 prior_record,
+                explicit_slides,
             )
     except ValueError as exc:
         # Lock acquisition failures are a CLI error path, not a traceback.
@@ -1501,7 +1697,33 @@ def _publish(
     qr_config,
     explicit_bg,
     prior_record,
+    explicit_slides,
 ):
+    # Before any provider call, so refusing here leaves no short link behind.
+    if not args.png_only:
+        prs = Presentation(args.deck)
+        known_grids = qr_module_grids(
+            tracked_qr_payloads(tracking_db, args.short_url, args.shownotes_url)
+        )
+        covering = slides_covering_a_foreign_qr(
+            prs,
+            explicit_slides
+            if explicit_slides is not None
+            else resolve_target_slide_indices(
+                prs, qr_config, args.shownotes_url, known_grids
+            ),
+            known_grids,
+        )
+        if covering:
+            print(
+                f"ERROR: the new QR would cover a QR this vault didn't issue on slide(s) "
+                f"{covering}, such as an organizer's survey code. Pick other slides with "
+                "--slides, or move that QR, and re-run. No QR PNG, deck, or "
+                "tracking-database change was made.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
     # Determine the URL to encode in the QR
     if args.short_url:
         # MCP-preresolved mode
@@ -1589,10 +1811,30 @@ def _publish(
 
         # Determine target slides
         target_url_for_detection = shownotes_url if args.shownotes_url else qr_url
-        slide_indices = resolve_target_slide_indices(
-            prs, qr_config, target_url_for_detection
+        grids = qr_module_grids(tracked_qr_payloads(tracking_db, qr_url, shownotes_url))
+        slide_indices = (
+            explicit_slides
+            if explicit_slides is not None
+            else resolve_target_slide_indices(
+                prs, qr_config, target_url_for_detection, grids
+            )
         )
         print(f"Target slides: {[i + 1 for i in slide_indices]}")
+        for idx, slide in enumerate(prs.slides):
+            tracked, foreign = split_qr_rects(slide, grids)
+            if foreign:
+                print(
+                    f"WARNING: slide {idx + 1} keeps {len(foreign)} QR(s) that encode "
+                    "no tracked short or shownotes URL. If one is stale, delete it "
+                    "by hand; this run won't replace it.",
+                    file=sys.stderr,
+                )
+            if tracked and idx not in slide_indices:
+                print(
+                    f"WARNING: slide {idx + 1} keeps {len(tracked)} tracked QR(s) "
+                    "outside --slides.",
+                    file=sys.stderr,
+                )
 
         bg_match = qr_config.get("bg_color_match", True)
         deck_dir = os.path.dirname(os.path.abspath(args.deck))
@@ -1619,7 +1861,7 @@ def _publish(
             qr_bg = bg_rgb if bg_match else (255, 255, 255)
             qr_fg = choose_fg_color(qr_bg)
             slide_colors[idx] = (qr_bg, qr_fg)
-            qr_rects_by_idx[idx] = find_qr_rects(prs.slides[idx])
+            qr_rects_by_idx[idx] = split_qr_rects(prs.slides[idx], grids)[0]
             placement = (
                 "replace in place" if qr_rects_by_idx[idx] else "new (bottom-right)"
             )
