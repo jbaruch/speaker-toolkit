@@ -1,5 +1,26 @@
 # Changelog
 
+### Let a fresh YouTube talk persist its own transcript provenance
+
+For a talk whose transcript was first fetched during the run, the worker and
+persistence disagreed about where `transcript_source` comes from. `subagent-instructions.md`
+tells the worker to map the fetcher's `method` onto it, but canonicalization read only
+the talk's pre-registered value and refused with "validated transcript has no machine
+receipt or pre-registered transcript_source provenance". It never looked at the machine
+receipt, even though `{id}.segments.json` held `provenance.kind: youtube_whisper`, bound
+to the transcript's bytes and the video id. A rerun of the fetch reported `method:
+existing`, told the worker to leave the field absent, and failed the same check. So a
+new YouTube talk with no captions couldn't persist through the documented path. On
+`github-universe-2026-prototype-policy` the way through was to recover the claim, run a
+source repair documented for non-YouTube talks only, re-preflight and re-claim.
+
+With no recorded provenance, a receipt now proves it: `youtube_captions` means
+`youtube_auto` and `youtube_whisper` means `whisper`, when the receipt names the talk's
+own video and its bytes match. A known duration can still veto it. A return that omits
+the field gets the proven value, and one that claims a different source is still refused.
+Local-media and VTT receipts prove nothing here, since those sources are declared before
+the claim.
+
 ## 0.21.4 — 2026-10-29
 
 ### Check image-model freshness every 30 days

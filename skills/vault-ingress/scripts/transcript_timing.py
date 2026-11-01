@@ -73,6 +73,10 @@ TIMING_RECEIPT_FIELDS = frozenset(
 TIMING_PROVENANCE_KINDS = frozenset(
     {"youtube_captions", "youtube_whisper", "local_media_whisper", "vtt_artifact"}
 )
+YOUTUBE_RECEIPT_TRANSCRIPT_SOURCES = {
+    "youtube_captions": "youtube_auto",
+    "youtube_whisper": "whisper",
+}
 TIMING_OWNER_SOURCES = frozenset(
     {"youtube_auto", "provider_auto", "whisper", "manual", "unknown", "vtt"}
 )
@@ -1062,6 +1066,45 @@ def load_verified_transcript_source(
     if not owner_ok:
         return None, owner_reason
     return str(payload["source"]), "verified owner-bound transcript provenance"
+
+
+def derive_youtube_transcript_source(
+    transcript_path: str | os.PathLike[str],
+    *,
+    owner_video_id: str | None,
+    owner_duration_seconds: int | float | None,
+) -> str | None:
+    """The provenance a fetcher's receipt proves for a talk that recorded none.
+
+    A receipt written by the YouTube fetcher is bound to the transcript's exact bytes
+    and names the video it came from, so it can stand in for a pre-registered
+    `transcript_source` once that video is the talk's own. A fresh talk may have no
+    trusted duration yet, so duration only ever vetoes. Local-media and VTT receipts
+    prove nothing here: those sources are declared before the claim.
+    """
+    if owner_video_id is None:
+        return None
+    payload, _reason = _load_verified_timing_receipt(transcript_path)
+    if payload is None:
+        return None
+    provenance = payload["provenance"]
+    if not isinstance(provenance, dict):  # pragma: no cover - loader owns shape
+        return None
+    kind = provenance.get("kind")
+    derived = YOUTUBE_RECEIPT_TRANSCRIPT_SOURCES.get(
+        kind if isinstance(kind, str) else ""
+    )
+    if derived is None or provenance.get("video_id") != owner_video_id:
+        return None
+    if owner_duration_seconds is not None:
+        recorded = provenance.get("duration_seconds")
+        if (
+            not isinstance(recorded, (int, float))
+            or isinstance(recorded, bool)
+            or abs(float(recorded) - float(owner_duration_seconds)) > 1.0
+        ):
+            return None
+    return derived
 
 
 def load_verified_segments(
