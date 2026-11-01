@@ -14,7 +14,9 @@ since talks published before it are still worth scanning.
 
 Decisions, in the report's `state` field:
 
-- `not_git`: the root isn't in a git work tree, so its files are all there is.
+- `not_git`: git says the root isn't in a work tree, so its files are all there is.
+- `git_unavailable`: git didn't answer, so this may be a checkout on any branch;
+  working tree, with a warning.
 - `no_default_branch`: `origin/HEAD` isn't set; working tree, with a warning.
 - `default_branch`: on the default branch and holding everything published; working
   tree, uncommitted edits included.
@@ -35,6 +37,7 @@ from typing import Generator
 GIT_TIMEOUT_SECONDS = 60
 SYMLINK_MODE = "120000"
 REGULAR_MODES = frozenset({"100644", "100755"})
+NOT_A_REPOSITORY = b"not a git repository"
 
 
 class ShownotesCheckoutError(ValueError):
@@ -67,7 +70,8 @@ def _git(root: Path, *arguments: str) -> subprocess.CompletedProcess[bytes] | No
             ["git", "-C", str(root), *arguments],
             capture_output=True,
             timeout=GIT_TIMEOUT_SECONDS,
-            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+            # LC_ALL pins the one message this module reads, in decide_checkout.
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"},
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -83,7 +87,26 @@ def _git_output(root: Path, *arguments: str) -> str | None:
 
 
 def decide_checkout(root: Path) -> CheckoutDecision:
-    if _git_output(root, "rev-parse", "--is-inside-work-tree") != "true":
+    probe = _git(root, "rev-parse", "--is-inside-work-tree")
+    if probe is None or (
+        probe.returncode != 0 and NOT_A_REPOSITORY not in probe.stderr
+    ):
+        # Missing git, a timeout or a refusal such as "dubious ownership". This may be
+        # a real checkout on any branch, so it can't read as "not a checkout".
+        detail = (
+            "git is missing or timed out"
+            if probe is None
+            else probe.stderr.decode("utf-8", errors="replace").strip()
+        )
+        return CheckoutDecision(
+            state="git_unavailable",
+            warnings=(
+                f"could not ask git about {root} ({detail}), so the scan read the "
+                "working tree; if that's a checkout off the default branch, talks "
+                "published there are invisible. Fix git access and rescan.",
+            ),
+        )
+    if probe.returncode != 0 or probe.stdout.strip() != b"true":
         return CheckoutDecision(state="not_git")
 
     remote_head = _git_output(

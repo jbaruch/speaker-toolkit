@@ -13,9 +13,9 @@ The scanner now fetches and reads a snapshot of `origin/<default>` unless the
 checkout is on the default branch and holds everything published. The speaker's
 branch, edits and config stay untouched. A checkout on the default branch keeps
 reading its working tree, uncommitted edits included. Report schema v4 adds
-`source_checkout`, which names the tree that was read, and a failed fetch or a
-missing `origin/HEAD` lands in `warnings` and on stderr, since that scan may be
-short. `audit-source-identities.py --candidates-from` now reads v4.
+`source_checkout`, which names the tree that was read, and a failed fetch, a
+missing `origin/HEAD` or git not answering lands in `warnings` and on stderr, since
+that scan may be short. `audit-source-identities.py --candidates-from` now reads v4.
 
 ## 0.21.4 — 2026-10-29
 

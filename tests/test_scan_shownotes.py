@@ -1431,15 +1431,40 @@ def test_a_site_that_isnt_a_git_checkout_reads_its_files(tmp_path):
     assert _scanned_filenames(report) == [PUBLISHED_TALK]
 
 
-def test_git_being_absent_reads_the_files_as_not_git(tmp_path, monkeypatch):
+def test_git_being_absent_warns_instead_of_claiming_not_a_checkout(
+    tmp_path, monkeypatch
+):
     site, talks_directory = _shownotes_site(tmp_path)
     _write_jekyll_talk(talks_directory, filename=PUBLISHED_TALK)
     monkeypatch.setenv("PATH", str(tmp_path / "no-tools-here"))
 
     report = _scan(tmp_path, site)
 
-    assert report["source_checkout"]["state"] == "not_git"
+    assert report["source_checkout"]["state"] == "git_unavailable"
     assert _scanned_filenames(report) == [PUBLISHED_TALK]
+    assert len(report["warnings"]) == 1
+    assert "git is missing or timed out" in report["warnings"][0]
+
+
+def test_git_refusing_a_real_checkout_warns_with_its_reason(tmp_path, monkeypatch):
+    """A feature-branch checkout git won't touch must not pass for a plain folder."""
+    site, talks_directory = _shownotes_site(tmp_path)
+    _write_jekyll_talk(talks_directory, filename=PUBLISHED_TALK)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake_git = bin_dir / "git"
+    fake_git.write_text(
+        "#!/bin/sh\necho 'fatal: detected dubious ownership in repository' >&2\nexit 128\n",
+        encoding="utf-8",
+    )
+    fake_git.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
+    report = _scan(tmp_path, site)
+
+    assert report["source_checkout"]["state"] == "git_unavailable"
+    assert "dubious ownership" in report["warnings"][0]
+    assert "invisible" in report["warnings"][0]
 
 
 def test_a_talks_directory_missing_from_main_is_an_error_not_an_empty_scan(tmp_path):
