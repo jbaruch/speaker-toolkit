@@ -1,5 +1,23 @@
 # Changelog
 
+### Keep the QR config an object
+
+The Oct 19 profile regeneration replaced `publishing_process.qr_code`, a config object
+holding `shortener: bitly` and `bitly_domain: jbaru.ch`, with one sentence of prose. The
+source was the tracking database's own `config.publishing_process.qr_code`, which held
+that string, so anything copying config into the profile flattened it again. Nothing
+complained. The next `generate-qr.py` run had no shortener to read, and QR rules §6 made
+it re-ask a decision the speaker had already recorded on every 2026 record. Both values
+were restored by hand on Oct 29.
+
+Now it can't happen silently. `set_config` refuses a write that leaves
+`config.publishing_process.qr_code` anything but an object, `validate-profile.py`
+rejects a flattened profile, and `generate-qr.py` stops with instructions before any
+provider call instead of dying on `str.get`. The profile construction rules say to carry
+the object over field by field, with prose in its `description`. The writer guard
+deliberately isn't a read check: a database already holding a string stays readable, so
+`set_config` can repair it.
+
 ## 0.21.4 — 2026-10-29
 
 ### Check image-model freshness every 30 days

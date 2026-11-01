@@ -1983,3 +1983,60 @@ def test_lock_guidance_never_advises_deleting_the_lock_file(generate_qr, tmp_pat
     assert "Do not delete the lock file" in message
     assert "remove the stale lock" not in message
     assert "flock" in message
+
+
+@pytest.mark.parametrize(
+    ("profile", "expected"),
+    [
+        ({}, {}),
+        ({"publishing_process": {}}, {}),
+        ({"publishing_process": []}, {}),
+        (
+            {"publishing_process": {"qr_code": {"shortener": "bitly"}}},
+            {"shortener": "bitly"},
+        ),
+    ],
+    ids=["no-section", "no-qr-code", "section-not-an-object", "object"],
+)
+def test_read_qr_config_returns_the_recorded_decisions(generate_qr, profile, expected):
+    assert generate_qr.read_qr_config(profile) == expected
+
+
+def test_a_flattened_qr_config_stops_before_any_provider_call(
+    generate_qr, monkeypatch, tmp_path, capsys
+):
+    """A sentence here used to reach `str.get` as an AttributeError."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "speaker-profile.json").write_text(
+        json.dumps({"publishing_process": {"qr_code": "Generated before delivery."}}),
+        encoding="utf-8",
+    )
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("URL resolution ran with an unreadable QR config")
+
+    monkeypatch.setattr(generate_qr, "resolve_short_url", forbidden)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "generate-qr.py",
+            "--png-only",
+            "--talk-slug",
+            "talk",
+            "--shownotes-url",
+            "https://site.test/talk",
+            "--vault",
+            str(vault),
+            "--dry-run",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        generate_qr.main()
+
+    assert exc_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "publishing_process.qr_code must be an object, got str" in err
+    assert "Nothing was changed" in err

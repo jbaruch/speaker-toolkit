@@ -640,6 +640,10 @@ Every plan is strict JSON with exactly `schema_version` and a non-empty
 `mutations` array. Every expectation is either the exact decoded value/record
 seen by the owner reader or the exact missing marker `{"$missing": true}`. JSON
 `null` is a present value and is never interchangeable with that marker.
+A `set_config` that would leave `config.publishing_process.qr_code` anything but an
+object is refused. A database already holding a string stays readable, so this
+mutation can repair it.
+
 The exact missing marker is reserved and invalid as a `set_config` value. A
 legacy writer may already have persisted that marker literally. A deletion with
 the missing-marker expectation is idempotent across both recoverable states: an
