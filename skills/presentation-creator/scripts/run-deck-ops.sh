@@ -41,6 +41,8 @@ mkdir -p "$STAGE_DIR"
 STAGE="$OUT_STAGE_DIR/$(basename "$OUT")"
 rm -f "$STAGE"
 
+IMPORT="$(stage_import_spec "$IMPORT")"
+
 echo "staging -> $STAGE"
 osascript "$DRIVER" "$(stage_base "$BASE")" "$STAGE" "$IMPORT" "$ORDER" "$REPLACE"
 
