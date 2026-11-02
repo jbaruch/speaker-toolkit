@@ -1,5 +1,25 @@
 # Changelog
 
+### Rescore a talk after a speaker correction
+
+A worker scored `floodmarks` against the GitHub Universe 2026 footer, a template the
+organizers mandated. The speaker ruled that out, and the ruling landed as the confirmed
+intent `organizer_mandated_template_not_scored`. The persisted score of 3.75 kept its
+−0.5 regardless, since nothing connected the two. No deliberate reprocess reason fit
+"the speaker ruled this out", and workers never saw intent records at all, only the
+rhetoric summary, so a reparse would have repeated the finding.
+
+`speaker_correction` is now a deliberate reprocess reason, settable through
+`apply-source-repairs.py` and accepted by normalize and claim. `queue-state.py claim`
+returns `confirmed_intents`, and workers are told to score under them, leaving out of
+`patterns_detected` and `antipatterns_detected` what a ruling excludes.
+
+Such an entry persists as undetected rather than not applicable, on purpose. The score is
+the same either way, and only the profile's pattern rates differ. Recording not applicable
+would take an applicability contract on catalog entries, an assessment row on every talk,
+and a new rule for evidence that isn't on the slides. Forced templates are rare, so it
+isn't worth that.
+
 ## 0.21.4 — 2026-10-29
 
 ### Check image-model freshness every 30 days

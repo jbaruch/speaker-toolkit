@@ -618,3 +618,36 @@ def test_backfilling_youtube_id_is_not_a_source_registration(
 
     assert repaired["talks"][0]["youtube_id"] == "AbCdEfGhI_1"
     assert repaired["talks"][0]["status"] == "processed"
+
+
+def test_the_documented_speaker_correction_requeue_applies(
+    apply_source_repairs,
+) -> None:
+    """The recipe in references/bootstrap-and-preflight.md, with nothing to register."""
+    database = base_database()
+    database["talks"][0]["status"] = "processed"
+    plan = {
+        "schema_version": 1,
+        "repairs": [
+            {
+                "filename": "talk.md",
+                "reason": "Speaker ruled the mandated template out of slide scoring",
+                "expect": {
+                    "status": "processed",
+                    "reprocess_reason": {"$missing": True},
+                },
+                "set": {
+                    "status": "needs-reprocessing",
+                    "reprocess_reason": "speaker_correction",
+                },
+            }
+        ],
+    }
+
+    repaired, changes = apply_source_repairs.build_repaired_database(
+        database, apply_source_repairs.validate_plan(plan)
+    )
+
+    assert repaired["talks"][0]["status"] == "needs-reprocessing"
+    assert repaired["talks"][0]["reprocess_reason"] == "speaker_correction"
+    assert changes

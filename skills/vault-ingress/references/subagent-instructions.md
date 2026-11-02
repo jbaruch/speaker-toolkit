@@ -1,8 +1,9 @@
 # Per-Talk Subagent Instructions — Detail
 
 The Step 3 procedure each parallel subagent runs. The orchestrator passes the
-talk's DB entry plus the current `rhetoric-style-summary.md`; the subagent
-returns the JSON shape in [schemas-db.md](schemas-db.md). The summary supports
+talk's DB entry, the current `rhetoric-style-summary.md` and the claim output's
+`confirmed_intents`; the subagent returns the JSON shape in
+[schemas-db.md](schemas-db.md). The summary supports
 qualitative rhetoric analysis, but Section 15 is human narrative and MUST NOT be
 parsed for numeric adherence. The active claim's immutable
 `adherence_baseline` is the sole numeric authority.
@@ -259,6 +260,18 @@ text.
 - **`none`** — transcript-only, status `processed_partial`.
 - **Fallback** — if primary slides fail but `video_url` exists, fall back to
   video extraction. A talk can still reach `processed` status this way.
+
+### Score under the speaker's confirmed intents
+
+Each record in `confirmed_intents` is a ruling the speaker made, and its `rule` binds
+your scoring when its `source_talk`, `talk` or `source_talks` names this talk, or when
+it names none and the rule's condition visibly holds. Never report as a finding what a
+ruling rules out. Leave that entry out of `patterns_detected` and
+`antipatterns_detected`, and say in `rhetoric_notes` which intent you applied and why.
+
+`organizer_mandated_template_not_scored` is the common case. Where it applies, slide
+design under the organizer's template isn't the speaker's choice, so no slide-design
+entry may be detected against the template itself.
 
 ### `transcript_source` records known provenance
 
