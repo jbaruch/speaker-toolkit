@@ -14,9 +14,11 @@ rhetoric summary, so a reparse would have repeated the finding.
 returns `confirmed_intents`, and workers are told to score under them, leaving out of
 `patterns_detected` and `antipatterns_detected` what a ruling excludes.
 
-Such an entry still persists as undetected rather than not applicable. That needs an
-applicability contract on catalog entries, which changes the catalog fingerprint and
-adds an assessment row to every talk, so it's left for its own decision.
+Such an entry persists as undetected rather than not applicable, on purpose. The score is
+the same either way, and only the profile's pattern rates differ. Recording not applicable
+would take an applicability contract on catalog entries, an assessment row on every talk,
+and a new rule for evidence that isn't on the slides. Forced templates are rare, so it
+isn't worth that.
 
 ## 0.21.4 — 2026-10-29
 
