@@ -124,7 +124,9 @@ can read VBA source back out of a saved `.pptm`. Two statuses cover this, and th
 are not interchangeable:
 
 - `macro_stale` — the macro ANSWERED with an old stamp. Macros are provably on,
-  so the re-import below is the whole fix.
+  so the re-import below is the whole fix. Until then, any deck wrapper handed
+  non-ASCII text stops before touching a deck and names this step; ASCII text keeps
+  working.
 - `macro_stale_inferred` — the open container READS as holding a module with no
   version macro, which is what a container imported before the stamp existed looks
   like. Disabled macros silence the probe identically, so this one is an inference:
@@ -167,7 +169,9 @@ and exits non-zero when no deck was produced. `DeckOps.pptm` must be open
 (Step 6).
 
 It passes when all four hold:
-1. The script exits 0 and prints `{"ok":true,...}`.
+1. The script exits 0 and prints `{"ok":true,...}`. Its `verify-deck-text.py` step
+   confirms that the arrow, bolt and rocket on slide 2 arrived intact, which also
+   proves `DecodeBridgeText` runs in this PowerPoint.
 2. The output has exactly 3 slides, titled "DeckOps smoke test", "Slide 2 of 3",
    "Slide 3 of 3".
 3. It opens in **PowerPoint** with no "Repair" prompt.

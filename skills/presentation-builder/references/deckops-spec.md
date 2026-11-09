@@ -24,6 +24,8 @@ with line/op context instead of part-building a deck inside PowerPoint.
   prose, so field text needs no escaping.
 - Emit the literal U+001F byte between fields. Blank lines are ignored; a
   trailing `\r` is tolerated.
+- Write text as plain UTF-8. `build-deck.sh` escapes it for the trip into
+  PowerPoint, and the macro restores it, so arrows and emoji need nothing special.
 - Geometry (`left`/`top`/`width`/`height`) is in **points** (72 pt = 1 inch).
 - A field's text must not contain a newline or U+001F. For multi-paragraph body
   copy, emit several `BULLET` ops, not one `BODY` with embedded newlines.
