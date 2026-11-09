@@ -634,6 +634,11 @@ def build_expansion_manifest():
 
 
 @pytest.fixture(scope="session")
+def build_notes():
+    return _import_script(os.path.join(SCRIPTS_ILL, "build_notes.py"), "build_notes")
+
+
+@pytest.fixture(scope="session")
 def build_expansion_to_packed():
     return _import_script(
         os.path.join(SCRIPTS_PC, "build-expansion-to-packed.py"),
