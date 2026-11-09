@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.15 — 2026-11-09
+
 ### Add an owner command that catalogs a new deck
 
 `vault-ingress` Step 1 says to persist each reviewed extraction with a `record_pptx`
