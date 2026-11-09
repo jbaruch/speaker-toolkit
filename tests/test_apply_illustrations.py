@@ -13,7 +13,7 @@ import yaml
 from pptx import Presentation
 from pptx.util import Inches
 
-from conftest import make_deck, slide_title
+from conftest import CURRENT_OUTLINE_SCHEMA_VERSION, make_deck, slide_title
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "outline-example.yaml"
@@ -40,7 +40,11 @@ def _write_outline(
     title are filled in so the partial schema validates.
     """
     norm = _fill_numbering([{"chapter": "c", "title": "S", **s} for s in slides])
-    data = {"schema_version": 2, "talk": copy.deepcopy(_TALK), "slides": norm}
+    data = {
+        "schema_version": CURRENT_OUTLINE_SCHEMA_VERSION,
+        "talk": copy.deepcopy(_TALK),
+        "slides": norm,
+    }
     if composition is not None or embedded_footer is not None:
         anchor = {"model": "imagen-4", "full": "F", "imgtxt": "I", "conventions": "C"}
         if composition is not None:
@@ -589,7 +593,7 @@ def _poster_outline_with_footer_style(tmp_path, footer, footer_style):
         embedded_footer=footer,
     )
     data = yaml.safe_load(outline.read_text(encoding="utf-8"))
-    data["schema_version"] = 2
+    data["schema_version"] = CURRENT_OUTLINE_SCHEMA_VERSION
     data["style_anchor"]["footer_style"] = footer_style
     outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     return outline
@@ -718,7 +722,7 @@ def test_poster_slides_of_mixed_size_are_refused_before_any_stamp(
         embedded_footer="@jbaruch",
     )
     data = yaml.safe_load(outline.read_text(encoding="utf-8"))
-    data["schema_version"] = 2
+    data["schema_version"] = CURRENT_OUTLINE_SCHEMA_VERSION
     data["style_anchor"]["footer_style"] = {}
     outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     monkeypatch.setattr(
@@ -992,7 +996,7 @@ def test_a_build_frame_of_another_size_is_refused_before_apply_stamps(
         embedded_footer="@jbaruch",
     )
     data = yaml.safe_load(outline.read_text(encoding="utf-8"))
-    data["schema_version"] = 2
+    data["schema_version"] = CURRENT_OUTLINE_SCHEMA_VERSION
     data["style_anchor"]["footer_style"] = {}
     outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     _cli(monkeypatch, str(deck), str(illust_dir), str(outline))

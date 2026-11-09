@@ -13,6 +13,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from conftest import CURRENT_OUTLINE_SCHEMA_VERSION
+
 FIXTURE = Path(__file__).parent / "fixtures" / "outline-example.yaml"
 _FIXTURE_DATA = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
 
@@ -35,7 +37,7 @@ def _write_outline(
     load_outline_partial, so full-deck invariants are not required.
     """
     data = {
-        "schema_version": 2,
+        "schema_version": CURRENT_OUTLINE_SCHEMA_VERSION,
         "talk": copy.deepcopy(_FIXTURE_DATA["talk"]),
         "slides": slides,
     }
@@ -1987,7 +1989,7 @@ def test_parse_outline_carries_the_footer_style(generate_illustrations, tmp_path
 
     outline = _write_poster_outline(tmp_path)
     data = yaml.safe_load(outline.read_text(encoding="utf-8"))
-    data["schema_version"] = 2
+    data["schema_version"] = CURRENT_OUTLINE_SCHEMA_VERSION
     data["style_anchor"]["footer_style"] = {"target_width_pct": 70}
     outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     parsed = generate_illustrations.parse_outline(str(outline))
@@ -2058,3 +2060,338 @@ def test_a_model_rendered_footer_is_directed_verbatim(generate_illustrations):
     )
     assert json.dumps(footer, ensure_ascii=False) in prompt
     assert "'Shift Left'" not in prompt
+
+
+# ── Likeness reference images (slides[].reference_images) ────────────
+#
+# Driven at the HTTP boundary: urlopen is faked and the captured request is
+# what the vendor would receive.
+
+
+def _photo_bytes(fmt="JPEG", color=(180, 120, 90)):
+    from PIL import Image
+
+    stream = io.BytesIO()
+    Image.new("RGB", (12, 9), color).save(stream, format=fmt)
+    return stream.getvalue()
+
+
+_PHOTOS = {
+    "photos/speaker.jpg": _photo_bytes("JPEG", (180, 120, 90)),
+    "photos/speaker-side.png": _photo_bytes("PNG", (60, 90, 140)),
+}
+
+
+def _write_reference_outline(
+    tmp_path, model, references=("photos/speaker.jpg",), *, poster=None
+):
+    """One bio-plate slide with likeness photos written beside the outline.
+
+    `poster` is None for a standard deck, or "model-footer" / "stamped" for a
+    poster-theatrical deck with an embedded footer.
+    """
+    for rel in references:
+        photo = tmp_path / rel
+        photo.parent.mkdir(parents=True, exist_ok=True)
+        photo.write_bytes(_PHOTOS[rel])
+    slide = {
+        "n": 1,
+        "chapter": "c",
+        "title": "Bio",
+        "format": "FULL",
+        "image_prompt": "[STYLE ANCHOR] a field-guide engraving of the speaker in his hat",
+        "reference_images": list(references),
+    }
+    poster_args = {}
+    if poster:
+        slide["text_overlay"] = "Meet Your Guide"
+        poster_args = {
+            "composition": "poster-theatrical",
+            "embedded_footer": "@jbaruch • speaking.jbaru.ch",
+            "footer_style": {} if poster == "stamped" else None,
+        }
+    return _write_outline(tmp_path, model=model, slides=[slide], **poster_args)
+
+
+class _FakeResponse:
+    def __init__(self, payload):
+        self._raw = json.dumps(payload).encode("utf-8")
+
+    def read(self):
+        return self._raw
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+_RENDERED = _photo_bytes("PNG", (10, 10, 10))
+_B64_RENDERED = __import__("base64").b64encode(_RENDERED).decode("ascii")
+
+
+def _render_with_fake_http(gi, monkeypatch, tmp_path, outline, model, response):
+    """Run fresh generation of slide 1 and return the one captured request."""
+    _write_manifest(tmp_path, [model])
+    monkeypatch.setattr(
+        gi,
+        "load_secrets",
+        lambda *a: ({"openai": "fixture-key", "gemini": "fixture-key"}, "/x.json"),
+    )
+    requests = []
+
+    def fake_urlopen(req, timeout=None):
+        requests.append(req)
+        return _FakeResponse(response)
+
+    monkeypatch.setattr(gi.urllib.request, "urlopen", fake_urlopen)
+    gi.run_generate(str(outline), ["1"], lane_options=gi.ImageProviderOptions())
+    assert len(requests) == 1
+    assert (tmp_path / "illustrations" / "slide-01.png").read_bytes() == _RENDERED
+    return requests[0]
+
+
+def _multipart_parts(req):
+    """(name, filename, content_type, content) for each multipart form part."""
+    content_type = req.get_header("Content-type")
+    boundary = content_type.split("boundary=", 1)[1].encode("ascii")
+    parts = []
+    for chunk in req.data.split(b"--" + boundary)[1:-1]:
+        head, _, content = chunk.strip(b"\r\n").partition(b"\r\n\r\n")
+        headers = head.decode("utf-8")
+        name = headers.split('name="', 1)[1].split('"', 1)[0]
+        filename = (
+            headers.split('filename="', 1)[1].split('"', 1)[0]
+            if 'filename="' in headers
+            else None
+        )
+        ctype = (
+            headers.split("Content-Type: ", 1)[1].strip()
+            if "Content-Type: " in headers
+            else None
+        )
+        parts.append((name, filename, ctype, content))
+    return parts
+
+
+_OPENAI_RESPONSE = {"data": [{"b64_json": _B64_RENDERED}]}
+_GEMINI_RESPONSE = {
+    "candidates": [
+        {
+            "content": {
+                "parts": [
+                    {"inlineData": {"mimeType": "image/png", "data": _B64_RENDERED}}
+                ]
+            }
+        }
+    ]
+}
+
+
+def test_parse_outline_resolves_reference_images_to_absolute_paths(
+    generate_illustrations, tmp_path
+):
+    outline = _write_reference_outline(
+        tmp_path, "gemini-3-pro-image", ("photos/speaker.jpg",)
+    )
+    slide = generate_illustrations.parse_outline(str(outline))["slides"][0]
+    assert slide["reference_images"] == [str(tmp_path / "photos" / "speaker.jpg")]
+
+
+def test_a_slide_without_reference_images_carries_none(generate_illustrations):
+    slides = generate_illustrations.parse_outline(FIXTURE)["slides"]
+    assert all("reference_images" not in s for s in slides)
+
+
+@pytest.mark.parametrize(
+    "references,field",
+    [
+        (("photos/speaker.jpg",), "image"),
+        (("photos/speaker.jpg", "photos/speaker-side.png"), "image[]"),
+    ],
+    ids=["one-photo", "two-photos"],
+)
+def test_openai_generation_sends_the_reference_photos_to_images_edits(
+    generate_illustrations, monkeypatch, tmp_path, references, field
+):
+    gi = generate_illustrations
+    model = "gpt-image-2.6-flare"
+    outline = _write_reference_outline(tmp_path, model, references)
+
+    req = _render_with_fake_http(
+        gi, monkeypatch, tmp_path, outline, model, _OPENAI_RESPONSE
+    )
+
+    assert req.full_url == f"{gi.OPENAI_API_BASE}/images/edits"
+    parts = _multipart_parts(req)
+    images = [(n, f, c, body) for n, f, c, body in parts if f is not None]
+    expected_types = {".jpg": "image/jpeg", ".png": "image/png"}
+    assert images == [
+        (
+            field,
+            os.path.basename(rel),
+            expected_types[os.path.splitext(rel)[1]],
+            _PHOTOS[rel],
+        )
+        for rel in references
+    ]
+    fields = {n: body.decode("utf-8") for n, f, _, body in parts if f is None}
+    assert fields["model"] == model
+    assert fields["size"] == "2048x1152"
+    assert "mask" not in fields
+    prompt = fields["prompt"]
+    assert "field-guide engraving of the speaker" in prompt
+    assert gi.LIKENESS_REFERENCE_DIRECTIVE in prompt
+    assert prompt.endswith(gi.COMPOSE_ONLY_DIRECTIVE)
+
+
+def test_gemini_generation_sends_the_reference_photos_as_inline_parts(
+    generate_illustrations, monkeypatch, tmp_path
+):
+    gi = generate_illustrations
+    model = "gemini-3-pro-image"
+    references = ("photos/speaker.jpg", "photos/speaker-side.png")
+    outline = _write_reference_outline(tmp_path, model, references)
+
+    req = _render_with_fake_http(
+        gi, monkeypatch, tmp_path, outline, model, _GEMINI_RESPONSE
+    )
+
+    assert f"/{model}:generateContent" in req.full_url
+    parts = json.loads(req.data)["contents"][0]["parts"]
+    b64 = __import__("base64").b64encode
+    assert parts[:-1] == [
+        {
+            "inlineData": {
+                "mimeType": mime,
+                "data": b64(_PHOTOS[rel]).decode("ascii"),
+            }
+        }
+        for rel, mime in zip(references, ["image/jpeg", "image/png"])
+    ]
+    assert gi.LIKENESS_REFERENCE_DIRECTIVE in parts[-1]["text"]
+
+
+def test_likeness_directive_frames_composition_not_face_preservation(
+    generate_illustrations,
+):
+    """thumbnail-generation-rules §6: no assertive preservation language."""
+    directive = generate_illustrations.LIKENESS_REFERENCE_DIRECTIVE.lower()
+    assert "only as a guide to that person's facial likeness" in directive
+    assert "illustration style and medium" in directive
+    assert "do not paste in" in directive
+    for assertive in ("exact", "preserve", "maintain", "bone structure", "skin"):
+        assert assertive not in directive
+
+
+def test_apply_likeness_directive_is_idempotent(generate_illustrations):
+    gi = generate_illustrations
+    once = gi.apply_likeness_directive("a scene")
+    assert gi.apply_likeness_directive(once) == once
+
+
+@pytest.mark.parametrize("poster", ["model-footer", "stamped"])
+def test_poster_generation_keeps_its_text_directives_with_references(
+    generate_illustrations, monkeypatch, tmp_path, poster
+):
+    gi = generate_illustrations
+    model = "gemini-3-pro-image"
+    outline = _write_reference_outline(tmp_path, model, poster=poster)
+
+    req = _render_with_fake_http(
+        gi, monkeypatch, tmp_path, outline, model, _GEMINI_RESPONSE
+    )
+
+    parts = json.loads(req.data)["contents"][0]["parts"]
+    assert "inlineData" in parts[0]
+    prompt = parts[-1]["text"]
+    assert (
+        'EMBEDDED TEXT -- CRITICAL COMPOSITION RULE: Render the title "Meet Your Guide"'
+        in prompt
+    )
+    if poster == "stamped":
+        assert "FOOTER STRIP" in prompt
+        assert "@jbaruch" not in prompt
+    else:
+        assert (
+            gi.POSTER_FOOTER_BLOCK_TEMPLATE.format(
+                footer=json.dumps("@jbaruch • speaking.jbaru.ch", ensure_ascii=False)
+            )
+            in prompt
+        )
+    assert gi.POSTER_NO_INVENTED_TEXT in prompt
+    assert "TITLE SAFE ZONE" not in prompt
+    assert prompt.endswith(
+        gi.POSTER_NO_INVENTED_TEXT
+        + gi.LIKENESS_REFERENCE_DIRECTIVE
+        + gi.COMPOSE_ONLY_DIRECTIVE
+    )
+
+
+def test_imagen_refuses_reference_images_without_calling_any_api(
+    generate_illustrations, monkeypatch
+):
+    gi = generate_illustrations
+    monkeypatch.setattr(
+        gi.urllib.request, "urlopen", lambda *a, **k: pytest.fail("called an API")
+    )
+    render = gi.generate_image(
+        "a scene",
+        "imagen-4.0-generate-001",
+        gi.ImageKeys(),
+        "FULL",
+        reference_images=["/photos/speaker.jpg"],
+    )
+    assert render.data is None and render.lane is None
+    assert "Reference images are not supported for Imagen" in render.detail
+    assert "remove the slide's reference_images" in render.detail
+
+
+def test_compare_sends_the_slide_references_to_every_model(
+    generate_illustrations, monkeypatch, tmp_path
+):
+    gi = generate_illustrations
+    outline = _write_reference_outline(tmp_path, "gemini-3-pro-image")
+    calls = []
+    monkeypatch.setattr(gi.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        gi,
+        "generate_image",
+        lambda prompt, model, *a, **k: (
+            calls.append((model, prompt, k.get("reference_images"))),
+            (b"x", "image/png"),
+        )[1],
+    )
+    gi.run_compare(str(outline), 1)
+    expected = [str(tmp_path / "photos" / "speaker.jpg")]
+    assert calls and all(refs == expected for _, _, refs in calls)
+    assert all(gi.LIKENESS_REFERENCE_DIRECTIVE in prompt for _, prompt, _ in calls)
+
+
+def test_style_explore_renders_without_references_and_says_so(
+    generate_illustrations, monkeypatch, tmp_path, capsys
+):
+    gi = generate_illustrations
+    outline = _write_reference_outline(tmp_path, "gemini-3-pro-image")
+    cand = _candidates(
+        slides={"FULL": 1},
+        models=["gemini-3-pro-image"],
+        styles=[{"name": "Engraving", "anchors": {"FULL": "copperplate engraving"}}],
+    )
+    calls = []
+    monkeypatch.setattr(gi.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        gi,
+        "generate_image",
+        lambda prompt, *a, **k: (
+            calls.append((prompt, k.get("reference_images"))),
+            (b"x", "image/png"),
+        )[1],
+    )
+    gi.run_style_explore(str(outline), _write_candidates(tmp_path, cand))
+    assert len(calls) == 1
+    prompt, references = calls[0]
+    assert references is None
+    assert gi.LIKENESS_REFERENCE_DIRECTIVE not in prompt
+    assert "declares reference_images" in capsys.readouterr().err

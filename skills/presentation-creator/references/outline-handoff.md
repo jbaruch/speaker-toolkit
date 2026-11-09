@@ -9,7 +9,7 @@ summary, design spec, pattern history, or secrets are required to migrate a file
 ```
 
 Input: the caller's exact outline path. Exit 0 emits `{ok, path, migrated, ...}`;
-a schema-1 partial outline can migrate before slides exist. Exit 1 names the
+a schema-1 or schema-2 partial outline can migrate before slides exist. Exit 1 names the
 required source repair; fix only the reported problem and re-run. Unsupported or
 unparseable input is not permission to invent talk content.
 For a version-only handoff, return the migrated path; the caller retries its

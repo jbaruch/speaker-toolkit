@@ -8,12 +8,14 @@ regenerate deterministically — never hand-edit them.
 
 A complete worked example lives at `tests/fixtures/outline-example.yaml`.
 
-New outlines declare root `schema_version: 2`; v2 adds the optional
-`style_anchor.footer_style`, which a v1 outline may not carry. Every outline carries the root stamp: no reader defaults a missing one.
+New outlines declare root `schema_version: 3`; v2 adds the optional
+`style_anchor.footer_style`, which a v1 outline may not carry, and v3 adds the
+optional `slides[].reference_images`, which a v1 or v2 outline may not carry.
+Every outline carries the root stamp: no reader defaults a missing one.
 presentation-creator owns the file and migrates an older one before consuming
 it: the validation command above, its first read of any outline, restamps an
-exact `schema_version: 1` to 2 in place (changing nothing else, and saying so
-on stderr) before it validates. `--migrate outline.yaml` runs that restamp
+exact `schema_version: 1` or `2` to 3 in place (changing nothing else, and
+saying so on stderr) before it validates. `--migrate outline.yaml` runs that restamp
 alone. An outline written before versioning has the schema 1 shape: add
 `schema_version: 1` as its first root key, then validate. Other skills' readers
 never run the migration or edit the file: every refusal of the file itself
@@ -119,6 +121,8 @@ Slides are the deck-facing units; interludes are between-slide events
   text_overlay: "Five pillars. Most teams have one."   # what's literally on screen; "none" for image-only
   image_prompt: |           # only when style_anchor is set + format != EXCEPTION
     [STYLE ANCHOR]. Five classical pillars, all labeled, soft morning light.
+  reference_images:         # optional, schema 3: likeness photos of a person the scene depicts
+    - photos/speaker.jpg    # relative to the talk directory (inside it) or absolute
   builds:                   # progressive reveals; each step expands to one deck slide
     - { step: 0, desc: "Empty frame" }
     - { step: 1, desc: "First pillar reveal" }
@@ -177,6 +181,15 @@ style_anchor:
 The `[STYLE ANCHOR]` token in each slide's `image_prompt` is replaced by the
 illustrations pipeline with the format-appropriate anchor text at generation
 time. Slides with no illustration (text-only or EXCEPTION) omit `image_prompt`.
+
+`reference_images` lists up to four real photos of a person the slide's scene
+depicts, such as the speaker on a bio plate. Fresh generation sends them to the
+model as likeness references; the scene and the style anchor still decide what
+is drawn and how. Each entry is a path relative to the talk directory, staying
+inside it, or an absolute path. The file must exist, carry a `.jpg`, `.jpeg`,
+`.png` or `.webp` extension, and decode as that format. The slide must have an
+`image_prompt`. For anything else, validation refuses and names the fix.
+Generation details: `skills/illustrations/references/generation.md`.
 
 ## Script (`script:` items)
 

@@ -12,6 +12,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from conftest import CURRENT_OUTLINE_SCHEMA_VERSION
+
 FIXTURE = Path(__file__).parent / "fixtures" / "outline-example.yaml"
 _TALK = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))["talk"]
 
@@ -63,7 +65,7 @@ def _fill_numbering(slides):
 
 def _make_outline(tmp_path, slides=None):
     data = {
-        "schema_version": 2,
+        "schema_version": CURRENT_OUTLINE_SCHEMA_VERSION,
         "talk": copy.deepcopy(_TALK),
         "slides": _fill_numbering(slides or DEFAULT_SLIDES),
     }
@@ -225,7 +227,7 @@ FOOTER = "@jbaruch    speaking.jbaru.ch"
 
 def _stamping_outline(tmp_path, slides):
     data = {
-        "schema_version": 2,
+        "schema_version": CURRENT_OUTLINE_SCHEMA_VERSION,
         "talk": copy.deepcopy(_TALK),
         "style_anchor": {
             "model": "imagen-4",
