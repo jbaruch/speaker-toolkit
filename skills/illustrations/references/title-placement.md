@@ -37,7 +37,8 @@ Slides without a `safe_zone` field generate and apply exactly as today.
 
 Poster-theatrical decks (`style_anchor.composition: poster-theatrical`) use no
 `safe_zone` fields at all — the title and footer are baked into the image and
-only the QR code is inserted afterward. See `rules/title-overlay-rules.md` §0.
+only the QR code is inserted afterward. `text_overlay: "none"` bakes the footer
+and no title. See `rules/title-overlay-rules.md` §0.
 
 ## Scripts
 

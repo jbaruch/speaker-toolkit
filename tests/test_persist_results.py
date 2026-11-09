@@ -1739,6 +1739,74 @@ def test_cli_compares_symlinked_vault_roots_by_lexical_identity_before_persisten
         assert db.read_bytes() == before
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="directory symlink setup is privileged",
+)
+def test_transcript_citation_persists_and_renders_through_a_symlinked_root(
+    persist_results,
+    write_analysis,
+    return_validation,
+    tmp_path,
+):
+    physical_root = tmp_path / "physical-vault"
+    physical_root.mkdir()
+    alias_root = tmp_path / "alias-vault"
+    alias_root.symlink_to(physical_root, target_is_directory=True)
+    talk, ret = _v4_transcript_batch(return_validation, physical_root)
+    talk["schema_version"] = persist_results.TALK_SCHEMA_VERSION
+    db = physical_root / "tracking-database.json"
+    alias_db = alias_root / db.name
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(
+        _db_json(
+            {
+                "talks": [talk],
+                "config": {"vault_storage_path": str(alias_root)},
+            }
+        )
+    )
+    batch.write_text(json.dumps([ret]))
+
+    persisted = subprocess.run(
+        [
+            sys.executable,
+            persist_results.__file__,
+            str(alias_db),
+            str(batch),
+            "--run-date",
+            "2026-07-31T18:05:00+00:00",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert persisted.returncode == 0, persisted.stderr
+    stored = json.loads(db.read_text())["talks"][0]
+    citation = stored["pattern_observations"]["patterns_detected"][0][
+        "evidence_citations"
+    ][0]
+    assert citation["artifact_root"] == "vault"
+    assert citation["artifact_path"] == "transcripts/manual-talk.txt"
+
+    analyses = alias_root / "analyses"
+    rendered = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(analyses),
+            "--talks",
+            str(alias_db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert rendered.returncode == 0, rendered.stderr
+    assert (physical_root / "analyses" / "talk.md").is_file()
+
+
 FOREIGN_ABSOLUTE_VAULT_ROOT = (
     "/foreign/vault" if sys.platform == "win32" else r"C:\foreign\vault"
 )

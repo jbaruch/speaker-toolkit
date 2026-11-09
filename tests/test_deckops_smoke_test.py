@@ -11,7 +11,9 @@ import os
 import shutil
 import stat
 import subprocess
+import zipfile
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 import pytest
 
@@ -30,6 +32,7 @@ def _stage(tmp_path: Path, build_stub: str) -> Path:
     d.mkdir()
     shutil.copyfile(SCRIPTS_PC / WRAPPER, d / WRAPPER)
     shutil.copyfile(SCRIPTS_PC / "smoke-test-ops.txt", d / "smoke-test-ops.txt")
+    shutil.copyfile(SCRIPTS_PC / "verify-deck-text.py", d / "verify-deck-text.py")
     stub = d / "build-deck.sh"
     stub.write_text(build_stub, encoding="utf-8")
     for f in (d / WRAPPER, stub):
@@ -52,11 +55,35 @@ def _run(scripts: Path, *args) -> subprocess.CompletedProcess:
     )
 
 
+def _deck_holding_the_smoke_text(path: Path, *, lose_arrow: bool = False) -> Path:
+    """A deck showing each smoke-test op's text, as a clean build leaves it.
+
+    The stub builder copies its base, so the template fixture carries this text.
+    """
+    drawing = "http://schemas.openxmlformats.org/drawingml/2006/main"
+    slides: list[list[str]] = []
+    ops = (SCRIPTS_PC / "smoke-test-ops.txt").read_text(encoding="utf-8")
+    for line in ops.splitlines():
+        fields = line.split("\x1f")
+        if fields[0] == "SLIDE":
+            slides.append([])
+        elif fields[0] in {"TITLE", "TEXT"}:
+            slides[-1].append(
+                fields[-1].replace("→", "?") if lose_arrow else fields[-1]
+            )
+    with zipfile.ZipFile(path, "w") as archive:
+        for number, runs in enumerate(slides, start=1):
+            body = "".join(f"<a:t>{escape(run)}</a:t>" for run in runs)
+            archive.writestr(
+                f"ppt/slides/slide{number}.xml",
+                f'<root xmlns:a="{drawing}">{body}</root>',
+            )
+    return path
+
+
 @pytest.fixture
 def template(tmp_path) -> Path:
-    p = tmp_path / "template.pptx"
-    p.write_bytes(b"PK\x03\x04 pretend pptx")
-    return p
+    return _deck_holding_the_smoke_text(tmp_path / "template.pptx")
 
 
 def test_no_arguments_is_a_usage_error(tmp_path):
@@ -94,6 +121,17 @@ def test_a_successful_build_reports_the_output_as_json(tmp_path, template):
     assert report["slides"] == 3
     assert Path(report["output"]).is_file()
     assert Path(report["base"]).is_file()
+
+
+def test_a_character_lost_on_the_way_in_fails_the_smoke_test(tmp_path):
+    """The silent failure this exists to catch: a valid deck showing `?`."""
+    lossy = _deck_holding_the_smoke_text(tmp_path / "lossy.pptx", lose_arrow=True)
+
+    r = _run(_stage(tmp_path, BUILD_OK), str(lossy), str(tmp_path / "out"))
+
+    assert r.returncode == 1
+    assert "slide 2 is missing" in r.stderr
+    assert '"ok"' not in r.stdout
 
 
 def test_the_template_is_copied_never_touched(tmp_path, template):

@@ -4497,13 +4497,19 @@ def assess_persisted_pattern_evidence_freshness(
                 reasons.add(f"{label}:{prefix}_path_invalid")
                 return None
         else:
-            resolved = lexical.resolve(strict=False)
+            # The root is trusted configuration and may itself be a symlink, so
+            # it is mapped to storage exactly once, the way the bounded lanes map
+            # it. Everything below the root still has to resolve to itself.
+            mapped, canonical_root = canonicalize_trusted_artifact_locator(
+                lexical, root
+            )
+            resolved = mapped.resolve(strict=False)
             try:
-                resolved.relative_to(root)
+                resolved.relative_to(canonical_root or root)
             except ValueError:
                 reasons.add(f"{label}:{prefix}_path_invalid")
                 return None
-            if lexical != resolved:
+            if mapped != resolved:
                 reasons.add(f"{label}:{prefix}_symlink_rejected")
                 return None
             if not resolved.is_file():
@@ -4700,7 +4706,11 @@ def assess_persisted_pattern_evidence_freshness(
         )
         for value in values:
             try:
-                supplied = materialize_artifact_locator(value, trusted_root=vault)
+                # check_identity reports these lanes under the mapped root, so
+                # the owner's locator has to be spelled the same way to compare.
+                supplied = materialize_artifact_locator(
+                    value, trusted_root=bounded_vault
+                )
             except ArtifactLocatorError:
                 continue
             if supplied.suffix.casefold() in allowed_suffixes:

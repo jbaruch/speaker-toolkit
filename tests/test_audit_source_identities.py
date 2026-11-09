@@ -589,7 +589,7 @@ CANDIDATE_ID = "QqWwEeRrT_3"
 
 def scan_report(*entries, **overrides):
     """A scan-shownotes.py report envelope at the version the auditor accepts."""
-    report = {"schema_version": 3, "ok": True, "entries": list(entries)}
+    report = {"schema_version": 4, "ok": True, "entries": list(entries)}
     report.update(overrides)
     return report
 
@@ -874,7 +874,8 @@ def test_a_candidate_matching_another_talks_active_source_names_both_lanes(
     "overrides",
     [
         {"schema_version": 2},
-        {"schema_version": 4},
+        {"schema_version": 3},
+        {"schema_version": 5},
         {"schema_version": None},
         {"ok": False},
         {"ok": None},

@@ -249,10 +249,12 @@ leave titles/footers off the slide (QR only). Standard-overlay decks omit all th
 The anchor owns everything that must stay consistent: the per-format style, the
 `text_treatment`, and the full `embedded_footer`. The per-slide `image_prompt`
 carries only the scene; `text_overlay` carries only that slide's literal title
-string — never the text styling. Putting the treatment in the anchor is what
-keeps every baked title consistent across the deck. A model-rendered footer
-uses one fixed editorial style instead, and a stamped footer takes its styling
-from `footer_style`.
+string — never the text styling. `text_overlay: "none"` bakes no title (a
+title-free plate such as a speaker bio) while the footer is still applied,
+model-rendered or stamped; an absent `text_overlay` bakes the slide's `title`.
+Putting the treatment in the anchor is what keeps every baked title consistent
+across the deck. A model-rendered footer uses one fixed editorial style instead,
+and a stamped footer takes its styling from `footer_style`.
 
 An image model rendering the same literal footer still varies its font, size,
 spacing and baseline from slide to slide. To take the footer out of its hands
