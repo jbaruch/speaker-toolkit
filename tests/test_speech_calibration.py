@@ -116,7 +116,7 @@ def test_all_metrics_intervals_and_mode_coverage_are_retained():
     assert summary["modes"] == ["demo", "lecture"]
     assert summary["confidence"] == {
         "schema_version": 1,
-        "level": "conditional",
+        "level": "sufficient",
         "reasons": [],
     }
     assert set(summary["metrics"]) == {

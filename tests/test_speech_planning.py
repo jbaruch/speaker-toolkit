@@ -92,7 +92,8 @@ def test_family_profile_wins_over_assumption_but_low_confidence_never_falls_back
     "field,value",
     [
         ("schema_version", True),
-        ("schema_version", 3),
+        ("schema_version", 2),
+        ("schema_version", 4),
         ("metric", "articulation"),
         ("basis", "assumption"),
         ("mean_confidence_interval_95", None),
@@ -149,7 +150,7 @@ def test_homogeneous_rates_with_broad_coverage_are_representable(families):
     assert rate["conservative_planning_wpm"] == rate["value"]
 
 
-def test_v2_rate_survives_outline_and_script_without_becoming_a_duration_guarantee(
+def test_v3_rate_survives_outline_and_script_without_becoming_a_duration_guarantee(
     profile, outline_schema, extract_script
 ):
     outline = outline_schema.load_outline(
@@ -164,7 +165,7 @@ def test_v2_rate_survives_outline_and_script_without_becoming_a_duration_guarant
     assert "measured family-balanced mean" in rendered
     assert "conservative planning" in rendered
     assert "8 recordings, 8 families" in rendered
-    assert "conditional mean 95% interval" in rendered
+    assert "selected-family mean 95% interval" in rendered
     assert "not a prediction interval" in rendered
     assert "actual word timestamps and actual duration" in rendered
     assert "observed sample range" not in rendered
@@ -215,3 +216,56 @@ def test_real_cli_dispatch_preserves_typed_errors_and_never_writes_input(
     else:
         assert report["data"]["schema_version"] == 2
     assert source.read_bytes() == original
+
+
+def test_a_passing_profile_is_labeled_sufficient(profile):
+    assert profile["schema_version"] == 3
+    assert profile["summary"]["confidence"]["level"] == "sufficient"
+    assert pace.narration_rate(profile)["provenance"]["confidence_level"] == (
+        "sufficient"
+    )
+
+
+def _retired_v2(profile):
+    retired = copy.deepcopy(profile)
+    retired["schema_version"] = 2
+    retired["summary"]["confidence"]["level"] = "conditional"
+    return retired
+
+
+def test_a_retired_v2_profile_is_refused_with_how_to_regenerate_it(profile):
+    retired = _retired_v2(profile)
+
+    for read in (
+        rates.validate_profile,
+        pace.validate_profile,
+        lambda value: rates.plan_duration(
+            120, intended_metric="narration", profile=value
+        ),
+    ):
+        with pytest.raises(rates.SpeechRateError) as refused:
+            read(retired)
+        assert refused.value.code == "pace_profile_retired"
+        assert "speech_rates.py calibrate" in str(refused.value)
+
+
+def test_the_owner_regenerates_a_v2_profile_from_its_retained_request(profile):
+    """The migration path: the request a v2 profile retains rebuilds it as v3."""
+    retired = _retired_v2(profile)
+
+    regenerated = rates.calibrate(retired["calibration"])
+
+    assert rates.validate_profile(regenerated) == profile
+    assert regenerated["summary"]["confidence"]["level"] == "sufficient"
+
+
+def test_a_retired_v2_rate_is_refused_with_how_to_replace_it(profile):
+    rate = pace.narration_rate(profile)
+    rate["schema_version"] = 2
+    rate["provenance"]["schema_version"] = 2
+    rate["provenance"]["confidence_level"] = "conditional"
+
+    with pytest.raises(rates.SpeechRateError) as refused:
+        rates.validate_rate(rate)
+
+    assert refused.value.code == "speech_rate_retired"

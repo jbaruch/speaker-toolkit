@@ -1,5 +1,22 @@
 # Changelog
 
+### Call a speech profile that passes every check `sufficient`
+
+A family-balanced speech profile that passed every confidence check was labeled
+`conditional`, the top of a two-level scale whose other level is `low`. It read like a
+profile that barely scraped by. The label described the caveat, that the rates hold
+for the catalog-selected talks and not as a random sample, rather than the grade.
+The passing level is now `sufficient`. The caveat stays in the profile's `scope` and
+interval fields, and `extract-script.py` now calls the interval a selected-family mean
+interval.
+
+The label is persisted, so the profile moves to schema v3 and the narration rate it
+selects, including the copy embedded in an outline, moves to schema v3 as well. The
+calibration request stays v2. A v2 profile or rate is retired and refused with
+`pace_profile_retired` or `speech_rate_retired`. The owner migration is regeneration:
+pass the v2 profile's retained `calibration` object to `speech_rates.py calibrate`,
+validate the output and replace the file. Nothing is downloaded again.
+
 ## 0.21.4 — 2026-10-29
 
 ### Check image-model freshness every 30 days
