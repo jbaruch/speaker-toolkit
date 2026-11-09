@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.13 — 2026-11-09
+
 ### Keep the QR config an object
 
 The Oct 19 profile regeneration replaced `publishing_process.qr_code`, a config object
