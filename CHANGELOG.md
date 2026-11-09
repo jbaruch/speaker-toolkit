@@ -29,6 +29,57 @@ slides explicitly when detection is wrong, and a bad value stops the run before 
 shortener call. Against the real Universe deck, a dry run replaces the two tracked
 QRs in place and targets the true closing slide.
 
+## 0.21.8 — 2026-11-09
+
+### Keep transcript evidence fresh through a symlinked vault root
+
+`bootstrap-and-preflight.md` lets the canonical vault locator be the configured
+symlink, and `persist-results.py` and `preflight-vault.py` always accepted one.
+The persisted-evidence freshness check didn't: for transcript, timing and quality
+artifacts it resolved the artifact path through the symlink, then required the
+result to sit under the unresolved root. It never did, so every one of those
+identities came back `*_path_invalid`.
+
+Every reader of that check inherited the failure. `write-analysis.py` refused the
+talk `persist-results.py` had just accepted. `load-vault.py` moved the talk to the
+excluded list and still exited 0; on the live vault it reported 0 scored talks
+through the symlink and 1 through the real path. `validate-profile.py` rejected a
+correct profile, `section15_pattern_history.py replace` refused to write, and
+`queue-state.py normalize` read the talk as stale. The older symlink tests missed
+it by using empty cohorts or stubbing freshness; the new ones run a real scored
+talk through each entrypoint.
+
+The check now maps the trusted root to storage once, the way the bounded PDF and
+video lanes already do. Symlinks below the root are still rejected with the same
+reasons either path reports. A symlink above the root is covered the same way.
+
+## 0.21.6 — 2026-11-09
+
+### Refresh the image-model registry (reviewed 2026-11-08)
+
+Reconcile `model_registry.py` against Google's and OpenAI's model and
+deprecation pages. The roster is now `gemini-3-pro-image`,
+`gemini-nano-banana-2.1` (Nano Banana 2.1, GA 2026-10-06, alias
+`nano-banana-2.1`), `gpt-image-2.6-flare` and `gpt-image-2.6-sunburst` (GPT
+Image 2.6, 2026-11-04). OpenAI publishes no dated 2.6 snapshot, so the
+canonical ids are the rolling ones.
+
+Superseded models leave the roster and move to `LEGACY_MODEL_ALIASES`, the
+mechanism `gpt-image-2` already uses: `gpt-image-2.5-flare` and
+`gpt-image-2.5-sunburst` stay pinned to their 2026-09-08 snapshots, and
+`nano-banana`, `gemini-flash-image` and `gemini-3.1-flash-image-preview` resolve
+to `gemini-3.1-flash-image` (deprecated 2026-10-06, no shutdown date). A baked
+outline keeps rendering on the model it was baked against, and nothing ranks or
+`--compare`s a superseded model. `imagen-4.0-ultra-generate-001` is removed:
+Google shut down Imagen 4 on 2026-08-17. The `imagen-*` family still
+dispatches.
+
+Both GPT Image 2.6 models enter at edit tier `stable`, not `precise`, until a
+chained build holds on one. The build-editability shortlist now leads with
+them, and the roster carries no `precise` model. `REGISTRY_LAST_REVIEWED` moves
+to 2026-11-08. The freshness refresh no longer asks for Imagen flagships, and
+the outline-schema example bakes `gemini-3-pro-image` instead of `imagen-4`.
+
 ## 0.21.5 — 2026-11-09
 
 ### Move the CI test job to Ubuntu 26.04
