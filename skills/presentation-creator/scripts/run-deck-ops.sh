@@ -42,6 +42,7 @@ mkdir -p "$STAGE_DIR"
 STAGE="$OUT_STAGE_DIR/$(basename "$OUT")"
 rm -f "$STAGE"
 
+IMPORT="$(stage_import_spec "$IMPORT")"
 REPLACE="$(bridge_text "$REPLACE")"
 
 echo "staging -> $STAGE"
