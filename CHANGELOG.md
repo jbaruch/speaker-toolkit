@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.18 — 2026-11-09
+
 ### Rescore a talk after a speaker correction
 
 A worker scored `floodmarks` against the GitHub Universe 2026 footer, a template the
