@@ -37,6 +37,22 @@ a symlinked component refuses the write instead of escaping the vault. The ingre
 reference states the exit codes and the artifact side effect, and says to stop without
 applying anything after exit 2.
 
+## 0.21.5 — 2026-11-09
+
+### Move the CI test job to Ubuntu 26.04
+
+GitHub moved `ubuntu-latest` to Ubuntu 26.04. The apt pins in
+`scripts/install_system_deps.py` were 24.04 versions, so every `test` job
+failed at the system-dependency install before a single test ran. The job now
+runs on `ubuntu-26.04` by name, and the pins are the 26.04 versions read from
+madison: `ffmpeg` 8.0.1, `libreoffice-impress` 26.2.6.3 and `tesseract-ocr`
+5.5.0. The runner image and the pins now move together, so a future default
+change can't break them silently.
+
+`playwright-chromium` moves from 1.58.1 to 1.64.1 in the CI deck-renderer
+manifest. 1.58.1 refuses to install a browser on Ubuntu 26.04, and 1.61.0 is
+the first release that supports it.
+
 ## 0.21.4 — 2026-10-29
 
 ### Check image-model freshness every 30 days
