@@ -37,6 +37,45 @@ rest of the notes by hand on the post-expansion order. `--notes` now requires
 `--notes-out`, so no build frame's words depend on the agent getting that arithmetic
 right.
 
+## 0.21.15 — 2026-11-09
+
+### Add an owner command that catalogs a new deck
+
+`vault-ingress` Step 1 says to persist each reviewed extraction with a `record_pptx`
+mutation, and a matched record must carry an assessment made before the binding was
+decided. No shipped command produced that for a deck not yet in `pptx_catalog`.
+`sweep-pptx-talk-identity.py --emit-mutations` only re-proves existing rows, the
+assessor and the deck-facts reader are library functions with no CLI, and
+`pptx-extraction.py --directory` emits neither. Ingesting
+`github-universe-2026-prototype-policy.md`, the extraction returned the delivered deck
+with current evidence and there was no supported way to bind it, so the run fell back to
+`slide_source: pdf`.
+
+`catalog-pptx-deck.py` takes the extraction output and emits the plan: catalog record,
+visual-evidence receipt and identity assessment. It refuses what `binding_refusal`
+refuses. It also holds back what each deck's own assessment can't see: two selected decks
+proving one talk, or a talk that already has a deck, since replacing a binding is an owner
+decision. A deck whose bytes changed after the extraction read them is reported, not
+planned. The database is never written. Each receipt's artifact is written, named by its
+digest, since a receipt has to name something that exists.
+
+Running it on the real deck exposed why it wouldn't have bound anyway. The title signal
+compares a talk's title with the deck's title-slide text, footers included, on
+significant-word overlap. The deck's footer says "Baruch Sadogursky", which shares two
+words with any title naming the speaker, so it agreed with `playlist-_0J4B7lfi9k.md`, "Baruch
+Sadogursky on JFrog Xray". That record has no date or conference to contradict anything,
+so the true match was reported as ambiguous. The assessment now takes
+`config.speaker_name` and ignores those words on both sides.
+
+The command reads only a schema-v1 `--directory` envelope, through the same strict
+decoder the discovery owner uses, and only results at the current extraction schema and
+pipeline, so an old or future result can't become a current receipt. `--artifact-dir`
+must be a canonical vault-relative locator on every host, Windows drive and UNC paths
+included, and each directory below the vault root is opened without following links, so
+a symlinked component refuses the write instead of escaping the vault. The ingress
+reference states the exit codes and the artifact side effect, and says to stop without
+applying anything after exit 2.
+
 ## 0.21.14 — 2026-11-09
 
 ### Let a fresh YouTube talk persist its own transcript provenance
