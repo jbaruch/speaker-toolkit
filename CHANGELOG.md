@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.8 — 2026-11-09
+
 ### Keep transcript evidence fresh through a symlinked vault root
 
 `bootstrap-and-preflight.md` lets the canonical vault locator be the configured
