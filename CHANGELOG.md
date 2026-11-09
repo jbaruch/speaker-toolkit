@@ -14,7 +14,9 @@ outline's working title baked into the art.
 `poster_title_text` turns that into no title at all. The footer is directed
 exactly as before: the canonical model-rendered block, or, with
 `style_anchor.footer_style`, the reserved quiet strip and the post-generation
-stamp. The no-invented-text instruction still closes the prompt. A slide whose
+stamp. As before, the no-invented-text instruction closes any prompt that
+directs a title or a footer; a title-free slide in a deck with no
+`embedded_footer` directs neither and gets the scene prompt alone. A slide whose
 `text_overlay` is absent or empty keeps the old fallback to `title`, so existing
 outlines render unchanged.
 

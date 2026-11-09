@@ -1525,6 +1525,22 @@ def test_run_generate_poster_none_overlay_embeds_no_title_keeps_footer(
         assert "FOOTER STRIP" not in prompt
 
 
+def test_run_generate_poster_none_overlay_without_footer_embeds_nothing(
+    generate_illustrations, monkeypatch, tmp_path
+):
+    # No footer to direct and no title to embed: the scene goes out without any
+    # poster text directive, and the slide's `title` is still never painted.
+    gi = generate_illustrations
+    outline = _write_poster_outline(tmp_path, footer=None, text="none")
+    prompt = _poster_generation_prompt(gi, monkeypatch, tmp_path, outline)
+
+    assert "one team at a shared workbench" in prompt
+    assert "EMBEDDED TEXT" not in prompt
+    assert "FOOTER" not in prompt
+    assert "The Coordination Tax" not in prompt
+    assert prompt.endswith(gi.COMPOSE_ONLY_DIRECTIVE)
+
+
 @pytest.mark.parametrize("text", [None, "", "   "], ids=["absent", "empty", "blank"])
 def test_run_generate_poster_without_overlay_falls_back_to_title(
     generate_illustrations, monkeypatch, tmp_path, text
