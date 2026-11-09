@@ -97,10 +97,3 @@ def test_missing_binary_has_a_typed_failure(monkeypatch, tmp_path: Path) -> None
         ytdlp_runtime.resolve_ytdlp()
 
     assert excinfo.value.code == "ytdlp_not_found"
-
-
-def test_calendar_versions_ignore_zero_padding_only() -> None:
-    assert ytdlp_runtime.normalized_ytdlp_version("2026.08.19") == (2026, 8, 19)
-    assert ytdlp_runtime.normalized_ytdlp_version("2026.8.19") == (2026, 8, 19)
-    assert ytdlp_runtime.normalized_ytdlp_version("latest") is None
-    assert ytdlp_runtime.normalized_ytdlp_version("2026.8.19.1") is None

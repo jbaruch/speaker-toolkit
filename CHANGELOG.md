@@ -1,5 +1,21 @@
 # Changelog
 
+### Stop requiring exact dependency versions at runtime
+
+`check-runtime.py`, the artifact supervisor and the yt-dlp resolver each carried
+their own copy of seven pinned versions (psutil, filelock, ImageHash, numpy,
+Pillow, pydantic, yt-dlp) and refused any other installed version. Every weekly
+Dependabot bump therefore broke CI until three to five files were hand-synced,
+and then broke the vault until its venv was reinstalled. Tests guarded the
+copies against `pyproject.toml`, which caught the drift and fixed none of it.
+
+The runtime check now reports whether each module imports and each command
+resolves. `pyproject.toml` is the only place a version is pinned. The import
+probe is also a plain child `import` judged by its exit status, replacing a
+private JSON result-file protocol. The report keeps schema v3 and drops the
+`required_module_versions` and `required_command_versions` fields, which nothing
+read.
+
 ## 0.21.20 — 2026-11-09
 
 ### Call a speech profile that passes every check `sufficient`

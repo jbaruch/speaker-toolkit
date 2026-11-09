@@ -2301,28 +2301,6 @@ def test_monitor_fails_closed_only_when_optional_psutil_is_needed(monkeypatch):
     assert caught.value.details == {"dependency": "psutil"}
 
 
-@pytest.mark.parametrize("actual_version", ["7.2.1", "7.2.3", None, (7, 2, 2)])
-def test_monitor_fails_closed_on_unsupported_psutil_version(
-    monkeypatch,
-    actual_version,
-):
-    monkeypatch.setattr(
-        artifact_supervisor,
-        "psutil",
-        SimpleNamespace(__version__=actual_version),
-    )
-
-    with pytest.raises(artifact_supervisor.SupervisorError) as caught:
-        artifact_supervisor._load_psutil()
-
-    assert caught.value.reason_code == "worker_monitor_unavailable"
-    assert caught.value.details == {
-        "dependency": "psutil",
-        "required_version": "7.2.2",
-        "actual_version": actual_version if isinstance(actual_version, str) else None,
-    }
-
-
 def test_null_is_a_valid_authenticated_success_payload():
     request = artifact_supervisor.build_worker_request(
         "probe",

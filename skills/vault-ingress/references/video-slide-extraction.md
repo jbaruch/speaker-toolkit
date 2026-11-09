@@ -14,13 +14,8 @@ This is the fourth slide acquisition path — used when a talk has `video_url` b
 
 Install Python dependencies:
 ```bash
-"{python_path}" -m pip install "ImageHash==4.3.2" "numpy==2.2.6" \
-  "Pillow==12.3.0" "filelock==4.1.0"
+"{python_path}" -m pip install ImageHash numpy Pillow filelock
 ```
-
-These direct dependency pins are renewed by the repository's weekly Dependabot
-configuration. NumPy 2.2.6 is the newest release line that retains the
-toolkit's Python 3.10 compatibility.
 
 ## When to Use
 

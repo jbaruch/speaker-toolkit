@@ -36,7 +36,6 @@ from typing import Any, BinaryIO, Final, TypeAlias, cast
 
 
 PROTOCOL_VERSION: Final = "artifact-worker-v1"
-PSUTIL_REQUIRED_VERSION: Final = "7.2.2"
 _FRAME_HEADER_BYTES: Final = 4
 _REQUEST_ID_BYTES: Final = 32
 _AUTH_KEY_BYTES: Final = 32
@@ -2282,30 +2281,13 @@ def _load_psutil() -> Any:
     global psutil
     if psutil is None:
         try:
-            loaded = importlib.import_module("psutil")
+            psutil = importlib.import_module("psutil")
         except (ImportError, OSError, RuntimeError) as exc:
             raise SupervisorError(
                 "worker_monitor_unavailable",
                 {"dependency": "psutil"},
             ) from exc
-        psutil = loaded
-    else:
-        loaded = psutil
-    actual_version = getattr(loaded, "__version__", None)
-    if actual_version != PSUTIL_REQUIRED_VERSION:
-        raise SupervisorError(
-            "worker_monitor_unavailable",
-            {
-                "dependency": "psutil",
-                "required_version": PSUTIL_REQUIRED_VERSION,
-                "actual_version": (
-                    actual_version
-                    if isinstance(actual_version, str) and len(actual_version) <= 64
-                    else None
-                ),
-            },
-        )
-    return loaded
+    return psutil
 
 
 def _same_process_is_alive(process: Any, psutil_module: Any) -> bool:
@@ -2325,7 +2307,6 @@ __all__ = [
     "FileGeneration",
     "DiagnosticReceipt",
     "PROTOCOL_VERSION",
-    "PSUTIL_REQUIRED_VERSION",
     "SupervisorError",
     "SupervisorLimits",
     "WorkerCredentials",

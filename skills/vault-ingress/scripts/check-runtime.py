@@ -1,41 +1,30 @@
 #!/usr/bin/env python3
 """Check imports and commands in the configured vault-ingress runtime.
 
-The installed plugin does not ship ``pyproject.toml``. This stdlib-only probe is
-the executable dependency contract for the interpreter recorded in
-``config.python_path``. Core failures block ingress. Recognized missing or
-incompatible optional dependencies are reported as degradation unless the
-caller explicitly requires that lane. Isolated import faults remain lane-local.
+The installed plugin does not ship ``pyproject.toml``. This stdlib-only probe
+reports whether the interpreter recorded in ``config.python_path`` can import
+each lane's modules and find its commands. Versions are pinned in
+``pyproject.toml`` and nowhere else. Core failures block ingress. Missing
+optional dependencies are reported as degradation unless the caller explicitly
+requires that lane. Isolated import faults remain lane-local.
 """
 
 from __future__ import annotations
 
 import argparse
-import contextlib
-import importlib
 import json
-import os
 import signal
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
-from typing import Any, BinaryIO, Callable, Mapping, TypedDict
+from typing import Any, Callable, Mapping, TypedDict
 
-from ytdlp_runtime import (
-    YTDLP_REQUIRED_VERSION,
-    YtDlpResolutionError,
-    normalized_ytdlp_version,
-    resolve_ytdlp,
-)
+from ytdlp_runtime import YtDlpResolutionError, resolve_ytdlp
 
 
 REPORT_SCHEMA_VERSION = 3
-MODULE_PROBE_SCHEMA_VERSION = 1
 MODULE_PROBE_TIMEOUT_SECONDS = 30
-MODULE_PROBE_MAX_OUTPUT_BYTES = 4096
-MODULE_PROBE_CHILD_FLAG = "--module-probe-child"
 # Probe outcomes that leave the module's presence UNKNOWN rather than answered.
 # A timeout is the ordinary one: the configured interpreter can live on a
 # network filesystem, where a cold import reads its dependencies over the
@@ -43,20 +32,6 @@ MODULE_PROBE_CHILD_FLAG = "--module-probe-child"
 # venv, `import mlx_whisper` took 568s cold and 1s warm, almost all of it scipy.
 UNRESOLVED_PROBE_REASONS = frozenset({"timeout", "probe_start_failure"})
 MINIMUM_PYTHON = (3, 10)
-PSUTIL_REQUIRED_VERSION = "7.2.2"
-FILELOCK_REQUIRED_VERSION = "4.1.0"
-IMAGEHASH_REQUIRED_VERSION = "4.3.2"
-NUMPY_REQUIRED_VERSION = "2.2.6"
-PILLOW_REQUIRED_VERSION = "12.3.0"
-PYDANTIC_REQUIRED_VERSION = "2.13.5"
-REQUIRED_MODULE_VERSIONS = {
-    "PIL": PILLOW_REQUIRED_VERSION,
-    "filelock": FILELOCK_REQUIRED_VERSION,
-    "imagehash": IMAGEHASH_REQUIRED_VERSION,
-    "numpy": NUMPY_REQUIRED_VERSION,
-    "psutil": PSUTIL_REQUIRED_VERSION,
-    "pydantic": PYDANTIC_REQUIRED_VERSION,
-}
 LANE_REQUIREMENTS: dict[str, dict[str, dict[str, str]]] = {
     "core": {
         "modules": {"PyYAML": "yaml"},
@@ -170,166 +145,18 @@ def _failed_module_probe(reason: str, **details: object) -> ModuleProbeResult:
     return {"available": False, "failure": failure}
 
 
-def _write_module_probe_result(
-    result_file: BinaryIO,
-    payload: dict[str, object],
-) -> None:
-    """Replace the pre-created child result through its retained descriptor."""
-    rendered = (json.dumps(payload, sort_keys=True) + "\n").encode("utf-8")
-    result_file.seek(0)
-    result_file.truncate()
-    remaining = memoryview(rendered)
-    while remaining:
-        written = result_file.write(remaining)
-        if written is None or written <= 0:
-            raise OSError("module probe result write made no progress")
-        remaining = remaining[written:]
-    result_file.flush()
-
-
-def _module_probe_child(import_name: str) -> dict[str, object]:
-    """Import one module and return the private child-process payload."""
-    try:
-        module = importlib.import_module(import_name)
-    except ImportError as exc:
-        return {
-            "schema_version": MODULE_PROBE_SCHEMA_VERSION,
-            "available": False,
-            "failure_reason": "unavailable_import",
-            "exception_type": type(exc).__name__,
-        }
-    required_version = REQUIRED_MODULE_VERSIONS.get(import_name)
-    if required_version is not None:
-        actual_version = getattr(module, "__version__", None)
-        if actual_version != required_version:
-            return {
-                "schema_version": MODULE_PROBE_SCHEMA_VERSION,
-                "available": False,
-                "failure_reason": "incompatible_version",
-                "required_version": required_version,
-                "actual_version": (
-                    actual_version
-                    if isinstance(actual_version, str) and len(actual_version) <= 64
-                    else None
-                ),
-            }
-    return {
-        "schema_version": MODULE_PROBE_SCHEMA_VERSION,
-        "available": True,
-    }
-
-
-def _malformed_child_output(malformation: str) -> ModuleProbeResult:
-    return _failed_module_probe(
-        "malformed_child_output",
-        malformation=malformation,
-    )
-
-
-def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("duplicate JSON object key")
-        result[key] = value
-    return result
-
-
-def _reject_nonstandard_json_constant(_value: str) -> object:
-    raise ValueError("non-standard JSON number")
-
-
-def _decode_module_probe_child(raw: bytes) -> ModuleProbeResult:
-    if len(raw) > MODULE_PROBE_MAX_OUTPUT_BYTES:
-        return _malformed_child_output("oversized")
-    if not raw.strip():
-        return _malformed_child_output("empty")
-    try:
-        decoded = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        return _malformed_child_output("invalid_utf8")
-    lines = decoded.splitlines()
-    if len(lines) != 1:
-        return _malformed_child_output("multiple_lines")
-    try:
-        payload = json.loads(
-            lines[0],
-            object_pairs_hook=_unique_json_object,
-            parse_constant=_reject_nonstandard_json_constant,
-        )
-    except (json.JSONDecodeError, RecursionError, ValueError):
-        return _malformed_child_output("invalid_json")
-    if not isinstance(payload, dict):
-        return _malformed_child_output("invalid_payload")
-    schema_version = payload.get("schema_version")
-    if type(schema_version) is not int or schema_version != MODULE_PROBE_SCHEMA_VERSION:
-        return _malformed_child_output("invalid_payload")
-    available = payload.get("available")
-    if available is True and set(payload) == {"schema_version", "available"}:
-        return {"available": True, "failure": None}
-    expected_failure_keys = {
-        "schema_version",
-        "available",
-        "failure_reason",
-        "exception_type",
-    }
-    failure_reason = payload.get("failure_reason")
-    exception_type = payload.get("exception_type")
-    if (
-        available is False
-        and set(payload) == expected_failure_keys
-        and isinstance(failure_reason, str)
-        and failure_reason in {"unavailable_import", "initializer_exception"}
-        and isinstance(exception_type, str)
-        and bool(exception_type)
-    ):
-        return _failed_module_probe(
-            str(failure_reason),
-            exception_type=exception_type,
-        )
-    expected_version_failure_keys = {
-        "schema_version",
-        "available",
-        "failure_reason",
-        "required_version",
-        "actual_version",
-    }
-    required_version = payload.get("required_version")
-    actual_version = payload.get("actual_version")
-    if (
-        available is False
-        and set(payload) == expected_version_failure_keys
-        and failure_reason == "incompatible_version"
-        and required_version in REQUIRED_MODULE_VERSIONS.values()
-        and (
-            actual_version is None
-            or (isinstance(actual_version, str) and len(actual_version) <= 64)
-        )
-    ):
-        return _failed_module_probe(
-            "incompatible_version",
-            required_version=required_version,
-            actual_version=actual_version,
-        )
-    return _malformed_child_output("invalid_payload")
-
-
-def _read_module_probe_child_result(result_file: BinaryIO) -> ModuleProbeResult:
-    """Read one bounded result through the parent's retained descriptor."""
-    try:
-        result_file.seek(0)
-        remaining = MODULE_PROBE_MAX_OUTPUT_BYTES + 1
-        chunks: list[bytes] = []
-        while remaining:
-            chunk = result_file.read(remaining)
-            if not chunk:
-                break
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        raw = b"".join(chunks)
-    except OSError:
-        return _malformed_child_output("unreadable")
-    return _decode_module_probe_child(raw)
+# The child's exit status is the whole protocol. Python itself exits 1 on an
+# uncaught exception, so a dependency whose initializer raises reads as 1; a
+# missing module is caught and reported as 3 instead.
+_IMPORT_PROBE_SOURCE = (
+    "import importlib, sys\n"
+    "try:\n"
+    "    importlib.import_module(sys.argv[1])\n"
+    "except ImportError:\n"
+    "    sys.exit(3)\n"
+)
+_INITIALIZER_EXCEPTION_EXIT = 1
+_UNAVAILABLE_IMPORT_EXIT = 3
 
 
 def _signal_name(signal_number: int) -> str:
@@ -344,56 +171,49 @@ def _probe_module(
     *,
     runner: Callable[..., subprocess.CompletedProcess[object]] | None = None,
 ) -> ModuleProbeResult:
-    """Probe one import in a bounded child of this exact interpreter."""
+    """Import one module in a bounded child of this exact interpreter.
+
+    A child rather than an in-process import, because a native extension can
+    crash the interpreter and a cold network filesystem can stall an import for
+    minutes; either must stay local to its lane.
+    """
     run = subprocess.run if runner is None else runner
-    with tempfile.TemporaryDirectory(prefix="speaker-toolkit-module-probe-") as temp:
-        result_path = Path(temp) / "result.json"
-        with result_path.open("x+b", buffering=0) as result_file:
-            command = [
-                sys.executable,
-                str(Path(__file__).resolve()),
-                MODULE_PROBE_CHILD_FLAG,
-                import_name,
-                str(result_path),
-            ]
-            try:
-                completed = run(
-                    command,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=False,
-                    timeout=MODULE_PROBE_TIMEOUT_SECONDS,
-                )
-            except subprocess.TimeoutExpired:
-                return _failed_module_probe(
-                    "timeout",
-                    timeout_seconds=MODULE_PROBE_TIMEOUT_SECONDS,
-                )
-            except OSError as exc:
-                return _failed_module_probe(
-                    "probe_start_failure",
-                    exception_type=type(exc).__name__,
-                )
-            if completed.returncode != 0:
-                if completed.returncode < 0:
-                    signal_number = -completed.returncode
-                    return _failed_module_probe(
-                        "native_crash",
-                        termination="signal",
-                        signal_number=signal_number,
-                        signal_name=_signal_name(signal_number),
-                    )
-                return _failed_module_probe(
-                    "native_crash",
-                    termination="exit",
-                    exit_code=completed.returncode,
-                )
-            return _read_module_probe_child_result(result_file)
-
-
-def _module_available(import_name: str) -> bool:
-    """Return the legacy boolean view of an isolated module probe."""
-    return _probe_module(import_name)["available"]
+    try:
+        completed = run(
+            [sys.executable, "-c", _IMPORT_PROBE_SOURCE, import_name],
+            # `-c` puts the working directory on sys.path; pin it so a stray
+            # module in the caller's directory cannot shadow the dependency.
+            cwd=str(Path(__file__).resolve().parent),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=MODULE_PROBE_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return _failed_module_probe(
+            "timeout",
+            timeout_seconds=MODULE_PROBE_TIMEOUT_SECONDS,
+        )
+    except OSError as exc:
+        return _failed_module_probe(
+            "probe_start_failure",
+            exception_type=type(exc).__name__,
+        )
+    code = completed.returncode
+    if code == 0:
+        return {"available": True, "failure": None}
+    if code == _UNAVAILABLE_IMPORT_EXIT:
+        return _failed_module_probe("unavailable_import")
+    if code == _INITIALIZER_EXCEPTION_EXIT:
+        return _failed_module_probe("initializer_exception")
+    if code < 0:
+        return _failed_module_probe(
+            "native_crash",
+            termination="signal",
+            signal_number=-code,
+            signal_name=_signal_name(-code),
+        )
+    return _failed_module_probe("native_crash", termination="exit", exit_code=code)
 
 
 def _command_available(command: str) -> bool:
@@ -435,75 +255,18 @@ def _unresolved_advice(report: Mapping[str, Any]) -> str:
     )
 
 
-def _probe_command(
-    label: str,
-    command: str,
-    *,
-    runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
-) -> CommandProbeResult:
-    """Probe presence, plus the pinned version for versioned commands."""
+def _probe_command(label: str, command: str) -> CommandProbeResult:
+    """Probe presence; yt-dlp resolves through the toolkit's own order first."""
     if label != "yt-dlp":
         available = _command_available(command)
         return {
             "available": available,
             "failure": None if available else {"reason": "not_found"},
         }
-
     try:
-        executable = resolve_ytdlp()
+        resolve_ytdlp()
     except YtDlpResolutionError as exc:
-        return {
-            "available": False,
-            "failure": {"reason": exc.code},
-        }
-
-    run = subprocess.run if runner is None else runner
-    try:
-        completed = run(
-            [str(executable), "--version"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=MODULE_PROBE_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired:
-        return {
-            "available": False,
-            "failure": {
-                "reason": "timeout",
-                "timeout_seconds": MODULE_PROBE_TIMEOUT_SECONDS,
-            },
-        }
-    except OSError as exc:
-        return {
-            "available": False,
-            "failure": {
-                "reason": "probe_start_failure",
-                "exception_type": type(exc).__name__,
-            },
-        }
-
-    raw_version = completed.stdout.strip()
-    actual_version = raw_version if raw_version and len(raw_version) <= 64 else None
-    if completed.returncode != 0 or actual_version is None:
-        return {
-            "available": False,
-            "failure": {
-                "reason": "version_unavailable",
-                "exit_code": completed.returncode,
-            },
-        }
-    if normalized_ytdlp_version(actual_version) != normalized_ytdlp_version(
-        YTDLP_REQUIRED_VERSION
-    ):
-        return {
-            "available": False,
-            "failure": {
-                "reason": "incompatible_version",
-                "required_version": YTDLP_REQUIRED_VERSION,
-                "actual_version": actual_version,
-            },
-        }
+        return {"available": False, "failure": {"reason": exc.code}}
     return {"available": True, "failure": None}
 
 
@@ -583,18 +346,8 @@ def build_report(
             "required": lane in required,
             "modules": modules,
             "module_failures": module_failures,
-            "required_module_versions": {
-                distribution: REQUIRED_MODULE_VERSIONS[import_name]
-                for distribution, import_name in requirements["modules"].items()
-                if import_name in REQUIRED_MODULE_VERSIONS
-            },
             "commands": commands,
             "command_failures": command_failures,
-            "required_command_versions": (
-                {"yt-dlp": YTDLP_REQUIRED_VERSION}
-                if "yt-dlp" in requirements["commands"]
-                else {}
-            ),
             "missing_modules": missing_modules,
             "unresolved_modules": unresolved_modules,
             "missing_commands": missing_commands,
@@ -642,8 +395,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "vault-ingress runtime is unavailable for required lanes "
             f"{blocking}; use Python {MINIMUM_PYTHON[0]}.{MINIMUM_PYTHON[1]}+ "
-            "and install the missing modules or commands at their required "
-            "versions, or repair failed "
+            "and install the missing modules or commands, or repair failed "
             f"dependency initialization, listed in the JSON in {sys.executable}, "
             "then rerun this check" + _unresolved_advice(report),
             file=sys.stderr,
@@ -652,8 +404,7 @@ def main(argv: list[str] | None = None) -> int:
         degraded = ", ".join(report["degraded_lanes"])
         print(
             "vault-ingress runtime is degraded for optional lanes "
-            f"{degraded}; install the missing modules or commands at their "
-            "required versions, or repair "
+            f"{degraded}; install the missing modules or commands, or repair "
             "failed dependency initialization, listed in the JSON in "
             f"{sys.executable}, then rerun this check" + _unresolved_advice(report),
             file=sys.stderr,
@@ -662,28 +413,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    child_probe = len(sys.argv) == 4 and sys.argv[1] == MODULE_PROBE_CHILD_FLAG
-    if child_probe:
-        with Path(sys.argv[3]).open("r+b", buffering=0) as child_result_file:
-            with (
-                open(os.devnull, "w", encoding="utf-8") as dependency_output,
-                contextlib.redirect_stdout(dependency_output),
-                contextlib.redirect_stderr(dependency_output),
-            ):
-                try:
-                    child_payload = _module_probe_child(sys.argv[2])
-                # The parent silently collapses a non-zero exit without a result into
-                # native_crash; emit initializer_exception because propagation would
-                # erase the actionable Python initializer-failure classification.
-                except Exception as exc:  # noqa: BLE001 - outer-boundary-process-contract
-                    child_payload = {
-                        "schema_version": MODULE_PROBE_SCHEMA_VERSION,
-                        "available": False,
-                        "failure_reason": "initializer_exception",
-                        "exception_type": type(exc).__name__,
-                    }
-            _write_module_probe_result(child_result_file, child_payload)
-        raise SystemExit(0)
     try:
         raise SystemExit(main())
     # Callers treat a non-zero exit without report JSON as a silent precheck

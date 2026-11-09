@@ -72,9 +72,7 @@ PIPELINE_VERSION = "0.14.0"
 # See skills/vault-ingress/references/schemas-db.md ("Video Extraction Output Schema").
 SCHEMA_VERSION = VIDEO_EXTRACTION_SCHEMA_VERSION
 
-VIDEO_DEPENDENCY_INSTALL = (
-    'pip install "ImageHash==4.3.2" "numpy==2.2.6" "Pillow==12.3.0" "filelock==4.1.0"'
-)
+VIDEO_DEPENDENCY_INSTALL = "pip install ImageHash numpy Pillow filelock"
 
 # Heavy deps are only needed for the extraction pipeline itself. Import them
 # without exiting on failure so the module stays importable (and --version /

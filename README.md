@@ -422,12 +422,11 @@ notes which named patterns and antipatterns are detected per talk.
 ### Prerequisites
 
 - Python 3.10+ at the vault's configured `python_path`, with core `PyYAML`;
-  `pypdf` + exactly `psutil==7.2.2` for supervised PDF evidence; and
-  `python-pptx` + the same exact psutil version for resource-supervised
-  native-deck evidence. Preserved source-video evidence uses the separate
-  `source-video` runtime lane with exactly `psutil==7.2.2` plus `ffprobe`
+  `pypdf` + `psutil` for supervised PDF evidence; and `python-pptx` + `psutil`
+  for resource-supervised native-deck evidence. Preserved source-video evidence
+  uses the separate `source-video` runtime lane with `psutil` plus `ffprobe`
 - Lane-specific runtime: importable `gdown` for Google Drive acquisition,
-  `youtube-transcript-api` for captions, exactly `yt-dlp==2026.8.19` for
+  `youtube-transcript-api` for captions, `yt-dlp` for
   provider probing/audio download, `pdftoppm` for rendered-PDF inspection,
   Pillow + `imagehash` +
   `ffmpeg`/`ffprobe` for video extraction, and optional `mlx-whisper` for local
@@ -442,14 +441,11 @@ vault-ingress skill are the runtime authority. After `python_path` is
 bootstrapped, run its stdlib-only `check-runtime.py` probe. Optional lane
 dependency absence is isolated: missing pypdf cannot erase transcript/PPTX
 capability, and missing python-pptx cannot erase transcript/PDF capability.
-Dependency initializer exceptions, native crashes, timeouts, and invalid child
-results remain lane-local and carry machine-readable failure reasons.
-The checker emits report schema v3; each lane's `required_module_versions`
-declares exact Python pins, while `required_command_versions` declares the
-`youtube-download` lane's yt-dlp pin. An incompatible installed version is
-unavailable rather than silently accepted. The yt-dlp probe and every ingress
-caller resolve the configured interpreter's console script before falling back
-to PATH.
+Dependency initializer exceptions, native crashes, and timeouts remain
+lane-local and carry machine-readable failure reasons. The checker emits report
+schema v3. It checks that modules import and commands resolve, not which
+versions are installed. The yt-dlp probe and every ingress caller resolve the
+configured interpreter's console script before falling back to PATH.
 
 ## Generation & Publishing Skills Details
 
@@ -567,8 +563,7 @@ If the speaker profile doesn't exist yet (fewer than 10 talks parsed), the creat
 
 ### For the Vault Skills (vault-ingress, vault-clarification, vault-profile)
 - Configured Python 3.10+ environment with PyYAML; add pypdf, python-pptx,
-  exactly `psutil==7.2.2`, gdown, and youtube-transcript-api for the source lanes
-  actually used
+  psutil, gdown, and youtube-transcript-api for the source lanes actually used
 - `yt-dlp`, `pdftoppm`, `ffmpeg`, and `ffprobe` for the provider/download,
   rendered-PDF, and video lanes that require them; optional `mlx-whisper` for
   local Whisper fallback

@@ -137,10 +137,10 @@ readable legacy roots to the current schema; its hash precondition binds replace
 bytes as documented above.
 
 Core requires Python 3.10+ and PyYAML and is blocking. The PDF lane requires
-pypdf plus exactly `psutil==7.2.2`; the PPTX lane requires python-pptx plus the
-same exact psutil version. Both parser lanes run behind bounded worker
-supervision. Preserved source-video evidence has its own narrow `source-video`
-lane requiring exactly `psutil==7.2.2` plus `ffprobe`; require that lane before
+pypdf plus psutil; the PPTX lane requires python-pptx plus psutil. Both parser
+lanes run behind bounded worker supervision. Preserved source-video evidence has
+its own narrow `source-video` lane requiring psutil plus `ffprobe`; require that
+lane before
 preflight, persistence, queue, or profile work will inspect a local recording
 declared by `structured_data.video_extraction.source_video_path`,
 `video_local_path`, or `video_path`.
@@ -149,21 +149,19 @@ boundary and the persisted-evidence freshness check map that trusted root to
 storage while still rejecting every descendant symlink/reparse redirect. Trusted-root bindings retain the directory
 object's stable identity and policy attributes, not mutable child-content size or
 timestamps; PDF and PPTX leaf generations remain exact. The checker emits report
-schema v3 and records exact Python pins under each lane's
-`required_module_versions`. Generic audio/video acquisition uses `source-media`;
+schema v3. It checks that each module imports and each command resolves, not
+which version is installed; `pyproject.toml` is the only place versions are
+pinned. Generic audio/video acquisition uses `source-media`;
 its runtime and owner boundaries are documented in
 [Bounded Local-Media Acquisition](local-media-acquisition.md).
 The `youtube-download` lane also requires psutil and resolves `yt-dlp`
-from the configured interpreter before PATH, records its exact pin under
-`required_command_versions`, and makes a mismatched version unavailable. A
-missing optional lane is reported as degraded and must not erase a healthy
+from the configured interpreter before PATH. A missing optional lane is reported as degraded and must not erase a healthy
 transcript or alternate slide lane.
 Require a lane before using it, for example `--require-lanes core,pdf`. Remote
 Drive acquisition additionally needs the `gdown` module; captions need
 `youtube-transcript-api`; audio download fallback needs `yt-dlp`; rendered PDF
-inspection needs `pdftoppm`; video extraction needs exactly `Pillow==12.3.0`,
-`ImageHash==4.3.2`, `numpy==2.2.6`, and `filelock==4.1.0`, plus `ffmpeg` and
-`ffprobe`; local Whisper needs `mlx-whisper`, psutil, `ffmpeg`, and `ffprobe`; rendering a
+inspection needs `pdftoppm`; video extraction needs Pillow, ImageHash, numpy,
+and filelock, plus `ffmpeg` and `ffprobe`; local Whisper needs `mlx-whisper`, psutil, `ffmpeg`, and `ffprobe`; rendering a
 markdown-authored deck needs that deck's own tool, one lane per flavor (see
 [markdown-decks.md](markdown-decks.md)).
 Inspect those with the checker's `google-drive`, `captions`,
@@ -173,8 +171,8 @@ require; use `source-video` for evidence over an already-preserved recording and
 `video` for frame extraction. Each lane is independent: a failed optional
 import/tool disables only that lane. Import failure details appear under the
 lane's `module_failures`;
-dependency absence, initializer exceptions, native crashes, timeouts, and
-invalid child results degrade an optional lane or block a required lane without
+dependency absence, initializer exceptions, native crashes, and timeouts
+degrade an optional lane or block a required lane without
 breaking the one-JSON contract. The checker writes a recovery instruction to
 stderr whenever a lane is unavailable.
 
