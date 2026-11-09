@@ -202,7 +202,10 @@ Proceed immediately to Step 7.
 ## Step 7 — Structured Intent Capture
 
 Persist each confirmed intent with `upsert_confirmed_intent`, expecting either the
-exact existing record for that pattern or `{"$missing": true}`.
+exact existing record for that pattern or `{"$missing": true}`. If the ruling
+invalidates a talk's persisted finding, requeue that talk with
+`reprocess_reason: "speaker_correction"`; see vault-ingress
+`references/bootstrap-and-preflight.md`.
 Example:
 ```json
 {

@@ -666,7 +666,7 @@ exact-type rule. The supported mutation kinds are:
 | `initialize_database` | Sole mutation for a missing database; carries initial `config` |
 | `set_config` | Set or delete one nested config path against its exact prior value |
 | `record_pptx` | Replace/add one complete schema-v3 PPTX catalog record — generation binding included, plus the identity assessment proving the deck belongs to the talk it names — and, when matched, bind the talk's expected `pptx_path` |
-| `upsert_confirmed_intent` | Replace/add one complete schema-v1 record identified by `pattern` |
+| `upsert_confirmed_intent` | Replace/add one complete schema-v1 record identified by `pattern`; refuses any change while a queue claim is active, since claim replays reread the collection |
 | `upsert_improvement_goal` | Replace/add one complete record identified by `id` |
 | `patch_improvement_goal_verification` | Set only verification fields, with `expect` covering exactly the same fields |
 | `retire_improvement_goal` | Expect one complete current goal record and change only its `status` to `retired`, preserving legacy fields |

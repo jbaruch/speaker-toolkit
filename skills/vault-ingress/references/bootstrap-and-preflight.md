@@ -488,6 +488,14 @@ the talk status are named in
 `skills/vault-ingress/scripts/queue_claim_contract.py`
 (`DELIBERATE_REPROCESS_REASONS`).
 
+A speaker correction is the same requeue with nothing to register. When
+`vault-clarification` records a ruling that invalidates a persisted finding, one
+repair sets `status: "needs-reprocessing"` and
+`reprocess_reason: "speaker_correction"`, with `expect` holding their current values.
+Normalization won't do this either, since nothing drifted. The next claim hands
+workers the ruling through `confirmed_intents`, and the reparse replaces the analysis
+through the normal claim, validate, persist and render path.
+
 The summary's status block is owner-generated, never hand-edited. Refresh it at
 safe checkpoints — after migration or recovery, after normalization, and after a
 batch persists — with:

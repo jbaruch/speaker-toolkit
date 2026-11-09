@@ -7,6 +7,7 @@ network or reads subagent returns.
 import copy
 import hashlib
 import importlib
+import importlib.util
 import json
 from typing import Any
 import os
@@ -2392,8 +2393,172 @@ def test_deliberate_reprocess_reasons_extend_the_legacy_set():
         | {
             queue_claim_contract.SOURCE_ADDED_REPROCESS_REASON,
             queue_claim_contract.PERSISTED_OBSERVATION_REPROCESS_REASON,
+            queue_claim_contract.SPEAKER_CORRECTION_REPROCESS_REASON,
         }
     )
     assert queue_claim_contract.is_deliberate_reprocess_reason(
         queue_claim_contract.SOURCE_ADDED_REPROCESS_REASON
     )
+
+
+MANDATED_TEMPLATE_INTENT = {
+    "schema_version": 1,
+    "pattern": "organizer_mandated_template_not_scored",
+    "intent": "deliberate",
+    "rule": "Slide design under a mandated template is not scored.",
+    "note": "Speaker ruling on an organizer template.",
+    "confirmed_date": "2026-10-29",
+    "source_talk": "ruled.md",
+}
+
+
+def _database_with_intent(tmp_path):
+    path = _write_db(tmp_path, [_talk("abcdefghijk", filename="ruled.md")])
+    database = _read_db(path)
+    database["confirmed_intents"] = [MANDATED_TEMPLATE_INTENT]
+    path.write_text(json.dumps(database), encoding="utf-8")
+    return path
+
+
+def test_a_claim_hands_workers_the_confirmed_intents(tmp_path):
+    path = _database_with_intent(tmp_path)
+
+    result = _claim(path)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert [talk["filename"] for talk in payload["claimed"]] == ["ruled.md"]
+    assert payload["confirmed_intents"] == [MANDATED_TEMPLATE_INTENT]
+
+
+def test_a_replayed_claim_hands_workers_the_same_intents(tmp_path):
+    path = _database_with_intent(tmp_path)
+    assert _claim(path).returncode == 0
+
+    replay = _claim(path)
+
+    assert replay.returncode == 0, replay.stderr
+    payload = json.loads(replay.stdout)
+    assert payload["idempotent_replay"] is True
+    assert payload["confirmed_intents"] == [MANDATED_TEMPLATE_INTENT]
+
+
+def test_a_claim_with_no_intents_hands_workers_an_empty_list(tmp_path):
+    path = _write_db(tmp_path, [_talk("abcdefghijk", filename="plain.md")])
+
+    payload = json.loads(_claim(path).stdout)
+
+    assert payload["confirmed_intents"] == []
+
+
+def test_a_speaker_correction_requeues_a_talk_whose_claim_completed(tmp_path):
+    """The whole path: analyzed, ruled on, requeued, left alone, claimed again."""
+    path = _write_db(tmp_path, [_talk("abcdefghijk", filename="ruled.md")])
+    first = json.loads(_claim(path).stdout)["claimed"][0]
+    database = _read_db(path)
+    talk = database["talks"][0]
+    talk["_queue_claim"].update(
+        {
+            "state": "completed",
+            "released_at": first["claimed_at"],
+            "release_reason": "return_persisted",
+            "result_status": "processed",
+            "result_payload_sha256": "a" * 64,
+        }
+    )
+    talk["status"] = "needs-reprocessing"
+    talk["reprocess_reason"] = queue_claim_contract.SPEAKER_CORRECTION_REPROCESS_REASON
+    path.write_text(json.dumps(database), encoding="utf-8")
+
+    normalized = _run(path, "normalize")
+
+    assert normalized.returncode == 0, normalized.stderr
+    assert json.loads(normalized.stdout)["normalizations"] == []
+    reclaimed = _claim(path, run_id="run-2", batch_id="batch-2")
+    assert reclaimed.returncode == 0, reclaimed.stderr
+    assert [t["filename"] for t in json.loads(reclaimed.stdout)["claimed"]] == [
+        "ruled.md"
+    ]
+
+
+def _mutate_tracking_database():
+    spec = importlib.util.spec_from_file_location(
+        "mutate_tracking_database_for_queue_tests",
+        SCRIPT.parent / "mutate-tracking-database.py",
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+CHANGED_INTENT = {**MANDATED_TEMPLATE_INTENT, "rule": "A different ruling."}
+
+
+def test_intents_stay_frozen_while_a_claim_is_active_so_a_replay_matches(tmp_path):
+    """A replay rereads the live collection, so a ruling can't change under it."""
+    path = _database_with_intent(tmp_path)
+    fresh = json.loads(_claim(path).stdout)
+    mutate = _mutate_tracking_database()
+
+    with pytest.raises(
+        mutate.TrackingDatabaseMutationError,
+        match=r"while queue claims are active for \['ruled\.md'\]",
+    ):
+        mutate.build_candidate(
+            _read_db(path),
+            [
+                {
+                    "kind": "upsert_confirmed_intent",
+                    "expect": MANDATED_TEMPLATE_INTENT,
+                    "record": CHANGED_INTENT,
+                }
+            ],
+        )
+    unchanged, changes = mutate.build_candidate(
+        _read_db(path),
+        [
+            {
+                "kind": "upsert_confirmed_intent",
+                "expect": MANDATED_TEMPLATE_INTENT,
+                "record": MANDATED_TEMPLATE_INTENT,
+            }
+        ],
+    )
+    replay = json.loads(_claim(path).stdout)
+
+    assert changes == []
+    assert unchanged["confirmed_intents"] == [MANDATED_TEMPLATE_INTENT]
+    assert replay["idempotent_replay"] is True
+    assert replay["confirmed_intents"] == fresh["confirmed_intents"]
+
+
+def test_intents_can_change_once_the_claim_completes(tmp_path):
+    path = _database_with_intent(tmp_path)
+    first = json.loads(_claim(path).stdout)["claimed"][0]
+    database = _read_db(path)
+    talk = database["talks"][0]
+    talk["_queue_claim"].update(
+        {
+            "state": "completed",
+            "released_at": first["claimed_at"],
+            "release_reason": "return_persisted",
+            "result_status": "processed",
+            "result_payload_sha256": "a" * 64,
+        }
+    )
+    talk["status"] = "needs-reprocessing"
+    talk["reprocess_reason"] = queue_claim_contract.SPEAKER_CORRECTION_REPROCESS_REASON
+
+    candidate, _ = _mutate_tracking_database().build_candidate(
+        database,
+        [
+            {
+                "kind": "upsert_confirmed_intent",
+                "expect": MANDATED_TEMPLATE_INTENT,
+                "record": CHANGED_INTENT,
+            }
+        ],
+    )
+
+    assert candidate["confirmed_intents"] == [CHANGED_INTENT]
