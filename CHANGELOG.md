@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.11 — 2026-11-09
+
 ### Scan the published shownotes, wherever the site checkout sits
 
 `scan-shownotes.py` read `_talks/` from the configured checkout's working tree,
