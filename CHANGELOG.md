@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.19 — 2026-11-09
+
 ### Stop import decks hanging PowerPoint
 
 `run-deck-ops.sh` staged the base deck and the output into PowerPoint's container but
