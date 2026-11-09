@@ -1990,16 +1990,38 @@ def test_lock_guidance_never_advises_deleting_the_lock_file(generate_qr, tmp_pat
     [
         ({}, {}),
         ({"publishing_process": {}}, {}),
-        ({"publishing_process": []}, {}),
         (
             {"publishing_process": {"qr_code": {"shortener": "bitly"}}},
             {"shortener": "bitly"},
         ),
     ],
-    ids=["no-section", "no-qr-code", "section-not-an-object", "object"],
+    ids=["no-section", "no-qr-code", "object"],
 )
 def test_read_qr_config_returns_the_recorded_decisions(generate_qr, profile, expected):
     assert generate_qr.read_qr_config(profile) == expected
+
+
+@pytest.mark.parametrize(
+    ("profile", "message"),
+    [
+        ({"publishing_process": []}, "publishing_process must be an object, got list"),
+        (
+            {"publishing_process": "Bitly on jbaru.ch."},
+            "publishing_process must be an object, got str",
+        ),
+        (
+            {"publishing_process": {"qr_code": "Generated before delivery."}},
+            "publishing_process.qr_code must be an object, got str",
+        ),
+    ],
+    ids=["section-list", "section-string", "qr-code-string"],
+)
+def test_read_qr_config_refuses_a_present_section_that_isnt_an_object(
+    generate_qr, profile, message
+):
+    """Reading it as absent would re-ask decisions the speaker already recorded."""
+    with pytest.raises(ValueError, match=message):
+        generate_qr.read_qr_config(profile)
 
 
 def test_a_flattened_qr_config_stops_before_any_provider_call(

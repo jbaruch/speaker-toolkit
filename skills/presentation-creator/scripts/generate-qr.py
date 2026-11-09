@@ -160,19 +160,26 @@ def load_vault_config(vault_path, profile_path=None):
 
 
 def read_qr_config(speaker_profile):
-    """The profile's QR decisions; an absent section means none were recorded."""
+    """The profile's QR decisions; an absent section means none were recorded.
+
+    A present section that isn't an object is refused, never read as absent: that
+    would re-ask decisions the speaker already recorded.
+    """
     publishing_process = speaker_profile.get("publishing_process", {})
-    qr_config = (
-        publishing_process.get("qr_code", {})
-        if isinstance(publishing_process, dict)
-        else {}
-    )
+    if not isinstance(publishing_process, dict):
+        raise ValueError(
+            "speaker profile publishing_process must be an object, got "
+            f"{type(publishing_process).__name__}, so the recorded QR decisions "
+            "can't be read. Restore it from config.publishing_process and re-run. "
+            "Nothing was changed."
+        )
+    qr_config = publishing_process.get("qr_code", {})
     if not isinstance(qr_config, dict):
         raise ValueError(
             "speaker profile publishing_process.qr_code must be an object, got "
             f"{type(qr_config).__name__}, so the recorded shortener can't be read. "
-            "Restore it from config.publishing_process.qr_code, keep any prose in its "
-            "description field, and re-run. Nothing was changed."
+            "Restore it from config.publishing_process.qr_code and re-run. Nothing "
+            "was changed."
         )
     return qr_config
 

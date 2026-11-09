@@ -103,11 +103,11 @@ The required top-level keys are `schema_version`, `generated_date`,
 `guardrail_sources`, `pacing`, `pattern_profile`, `visual_style_history`,
 `publishing_process`, `design_rules`, and `badges`.
 
-Carry `publishing_process.qr_code` over as the object in
+Carry `publishing_process` and its `qr_code` over as the objects in
 `speaker-profile-schema.md`, field by field, from the existing profile or
-`config.publishing_process.qr_code`. It holds decisions the speaker already made.
-Never replace it with a sentence; prose belongs in its `description` field.
-`validate-profile.py` rejects anything but an object.
+`config.publishing_process`. They hold decisions the speaker already made.
+Never replace either with a sentence. `validate-profile.py` rejects anything but an
+object.
 
 Keep `pattern_profile` as the only catalog-history storage lane. Never copy mastery,
 signatures, scores, usage, or another pattern aggregate into `rhetoric_defaults`.

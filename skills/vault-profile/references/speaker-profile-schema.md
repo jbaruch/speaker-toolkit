@@ -553,8 +553,7 @@ v5 shape, pattern provenance, or slide-budget `pacing.adherence` lane.
       "shortener": "bitly|rebrandly|none",
       "bitly_domain": "jbaru.ch | null",
       "rebrandly_domain": "jbaru.ch | null",
-      "bg_color_match": true,
-      "description": "optional prose about the speaker's QR habits"
+      "bg_color_match": true
     },
     "thumbnail": {
       "enabled": true,

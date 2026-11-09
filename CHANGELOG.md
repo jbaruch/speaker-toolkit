@@ -10,13 +10,14 @@ complained. The next `generate-qr.py` run had no shortener to read, and QR rules
 it re-ask a decision the speaker had already recorded on every 2026 record. Both values
 were restored by hand on Oct 29.
 
-Now it can't happen silently. `set_config` refuses a write that leaves
-`config.publishing_process.qr_code` anything but an object, `validate-profile.py`
-rejects a flattened profile, and `generate-qr.py` stops with instructions before any
-provider call instead of dying on `str.get`. The profile construction rules say to carry
-the object over field by field, with prose in its `description`. The writer guard
-deliberately isn't a read check: a database already holding a string stays readable, so
-`set_config` can repair it.
+Now it can't happen silently. At both levels, `publishing_process` and its `qr_code`,
+`set_config` refuses a write that leaves a present section anything but an object,
+`validate-profile.py` rejects a flattened profile, and `generate-qr.py` stops with
+instructions before any provider call instead of treating it as unconfigured or dying
+on `str.get`. An absent section stays allowed. The profile construction rules say to
+carry both objects over field by field. The writer guard deliberately isn't a read
+check: a database already holding a string stays readable, so `set_config` can repair
+the whole parent.
 
 ## 0.21.4 — 2026-10-29
 

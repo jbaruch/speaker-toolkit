@@ -383,10 +383,17 @@ def _validate_catalog_history_storage(profile: Mapping[object, object]) -> list[
 
 
 def _validate_qr_code_config(profile: Mapping[object, object]) -> list[str]:
-    """A regenerated profile keeps qr_code the object generate-qr.py reads."""
-    publishing_process = profile.get("publishing_process")
-    if not isinstance(publishing_process, Mapping):
+    """A regenerated profile keeps publishing_process and qr_code the objects
+    generate-qr.py reads. An absent section is someone else's error to report."""
+    if "publishing_process" not in profile:
         return []
+    publishing_process = profile["publishing_process"]
+    if not isinstance(publishing_process, Mapping):
+        return [
+            "publishing_process must be an object, got "
+            f"{type(publishing_process).__name__}; restore it from "
+            "config.publishing_process"
+        ]
     if "qr_code" not in publishing_process or isinstance(
         publishing_process["qr_code"], Mapping
     ):
@@ -394,8 +401,7 @@ def _validate_qr_code_config(profile: Mapping[object, object]) -> list[str]:
     return [
         "publishing_process.qr_code must be an object, got "
         f"{type(publishing_process['qr_code']).__name__}; restore it from "
-        "config.publishing_process.qr_code, and keep any prose in its description "
-        "field"
+        "config.publishing_process.qr_code"
     ]
 
 

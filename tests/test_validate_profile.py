@@ -149,6 +149,8 @@ def _minimal_profile(validate_profile) -> dict[str, Any]:
             "badges",
         )
     } | {"schema_version": 5}
+    # Documented as an object; validate-profile refuses any other present value.
+    profile["publishing_process"] = {}
     profile["pattern_profile"] = {
         "pattern_baseline": {
             "schema_version": 2,
@@ -1582,13 +1584,34 @@ def test_a_flattened_qr_code_config_fails_validation(
 
 
 @pytest.mark.parametrize(
+    "bad_value",
+    ["Bitly on jbaru.ch", [], None],
+    ids=["prose", "list", "null"],
+)
+def test_a_flattened_publishing_process_fails_validation(
+    validate_profile, tmp_path, capsys, bad_value
+):
+    """Reading a present non-object section as absent would lose the QR decisions."""
+    profile = _minimal_profile(validate_profile)
+    profile["publishing_process"] = bad_value
+
+    rc = _run(validate_profile, profile, tmp_path)
+    report = json.loads(capsys.readouterr().out)
+
+    assert rc == 1
+    assert any(
+        error.startswith("publishing_process must be an object")
+        for error in report["errors"]
+    )
+
+
+@pytest.mark.parametrize(
     "publishing_process",
     [
-        {"qr_code": {"enabled": True, "shortener": "bitly", "description": "Prose."}},
+        {"qr_code": {"enabled": True, "shortener": "bitly"}},
         {"export_format": "pdf"},
-        [],
     ],
-    ids=["object", "absent", "no-section-object"],
+    ids=["object", "absent"],
 )
 def test_a_qr_code_object_or_no_qr_code_at_all_validates(
     validate_profile, tmp_path, capsys, publishing_process
