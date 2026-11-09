@@ -1,5 +1,41 @@
 # Changelog
 
+### Keep Unicode in deck text
+
+**Re-import `RunDeckOps.bas` after this update**
+(`deck-editing-setup.md` Step 3). Until you do, a wrapper handed non-ASCII text
+stops before touching a deck and tells you so. ASCII text keeps working on the old
+macro.
+
+PowerPoint's `run VB macro` converts every string parameter to Mac Roman, so any
+character outside it reached VBA as `?`, with no error. #515 moved speaker notes off
+that bridge; these paths stayed on it: `BuildDeck` ops, `RunDeckOps` find/replace
+pairs, `ExpandBuilds` notes and the titles of `MakePlaceholderSlide` and
+`MakeBgImageSlide`. Building the GitHub Universe 2026 deck turned 21 arrows and one
+bolt in the notes into `?`, and a slide titled `Port → GitHub` would have built as
+`Port ? GitHub`. Em dashes survive the conversion, which is why it stayed hidden.
+
+Writing all of that through the AppleScript object model, as #515 did for notes,
+would have meant rebuilding `BuildDeck` outside VBA. Instead the wrappers now send
+only printable ASCII: `deck-text-bridge.py` turns every other UTF-16 code unit into
+U+001C plus four hex digits, and `DecodeBridgeText` restores it at the top of each
+macro. Escaping everything outside ASCII, em dashes included, means the result
+doesn't depend on any Mac Roman table. A macro imported before the decoder would put
+those escapes on the slide, so text that needed escaping requires the running macro
+to match the shipped stamp, and a stale import stops the wrapper before its macro
+runs.
+
+The setup smoke test now puts an arrow, a bolt and a rocket on slide 2, and
+`verify-deck-text.py` compares the built deck with the ops, since a lost character
+leaves a valid deck and an exit code of 0. A deck it can't read, including a slide
+part that is encrypted, uses an unsupported compression method or is damaged, exits
+1 with the part's name instead of a traceback.
+
+`deckops-doctor.py` also misread PowerPoint running with no presentation open as
+`probe_failed`, blaming Automation consent. With no presentation, `name of every
+presentation` answers `missing value` instead of an empty list, and the probe died
+counting it. It now reports `macro_unreachable`, which is what's actually wrong.
+
 ## 0.21.9 — 2026-11-09
 
 ### Stop overwriting other people's QR codes

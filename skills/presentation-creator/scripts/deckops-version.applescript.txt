@@ -33,6 +33,9 @@ on run argv
 		set openNames to name of every presentation
 		set openPaths to full name of every presentation
 	end tell
+	-- With no presentation open at all, the plural accessors answer `missing value`
+	-- rather than an empty list.
+	if openNames is missing value then set openNames to {}
 	repeat with i from 1 to (count of openNames)
 		if (item i of openNames) as string is "DeckOps.pptm" then
 			set containerPath to (item i of openPaths) as string
