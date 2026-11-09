@@ -48,20 +48,20 @@ from pathlib import Path
 #
 # Pinned exactly, per `dependency-management` Pinning. No scanner tracks an apt
 # version baked into a script, so the renewal mechanism is stated here rather
-# than delegated: ffmpeg and tesseract sit in the static `noble` pocket and move
+# than delegated: ffmpeg and tesseract sit in the static `resolute` pocket and move
 # only at a release rebuild, while libreoffice-impress ships from
-# `noble-updates` and is superseded on Ubuntu's security cadence — roughly
+# `resolute-updates` and is superseded on Ubuntu's security cadence — roughly
 # monthly. Ubuntu's archive serves only the current version of each, so a
 # superseded pin fails the install loudly rather than silently drifting. Renew by
 # reading the current versions and bumping the literals here:
 #
 #   https://people.canonical.com/~ubuntu-archive/madison.cgi
 #     ?package=ffmpeg+libreoffice-impress+tesseract-ocr
-#     &table=ubuntu&s=noble,noble-updates,noble-security&a=amd64&text=on
+#     &table=ubuntu&s=resolute,resolute-updates,resolute-security&a=amd64&text=on
 PACKAGES = (
-    "ffmpeg=7:6.1.1-3ubuntu5",
-    "libreoffice-impress=4:24.2.7-0ubuntu0.24.04.7",
-    "tesseract-ocr=5.3.4-1build5",
+    "ffmpeg=7:8.0.1-3ubuntu2",
+    "libreoffice-impress=4:26.2.6.3-0ubuntu0.26.04.2",
+    "tesseract-ocr=5.5.0-1build1",
 )
 
 # Ordered fastest-first, then genuinely independent. The first two are
