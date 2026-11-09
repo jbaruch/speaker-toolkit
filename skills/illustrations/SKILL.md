@@ -253,6 +253,7 @@ lives in the anchor; only the scene and the literal title vary per slide:
   keep every baked title/footer consistent.
 - **Per slide**: `image_prompt` carries only the scene; `text_overlay` carries
   only the literal title string for that slide — never the text styling.
+  `text_overlay: "none"` makes a title-free plate; the footer still applies.
 
 Then run the deterministic precheck and report its verdict in one line; never
 skip this step silently:
