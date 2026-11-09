@@ -669,6 +669,33 @@ def _apply_collection_upsert(
     )
 
 
+def _require_qr_code_config_object(config: dict[str, Any], *, index: int) -> None:
+    """Refuse a write that leaves `publishing_process` or its `qr_code` flattened.
+
+    generate-qr.py reads provider decisions from this object, and anything copying
+    config into the profile inherits its shape, so flattening either level to prose
+    makes the next QR run re-ask decisions the speaker already recorded. An absent
+    section is allowed. This guards the writer only: a database already holding a
+    string stays readable, so `set_config` can repair the whole parent.
+    """
+    if "publishing_process" not in config:
+        return
+    publishing_process = config["publishing_process"]
+    if not isinstance(publishing_process, dict):
+        raise TrackingDatabaseMutationError(
+            f"mutations[{index}] leaves config.publishing_process as "
+            f"{type(publishing_process).__name__}; it must be an object."
+        )
+    if "qr_code" in publishing_process and not isinstance(
+        publishing_process["qr_code"], dict
+    ):
+        raise TrackingDatabaseMutationError(
+            f"mutations[{index}] leaves config.publishing_process.qr_code as "
+            f"{type(publishing_process['qr_code']).__name__}; it must be an object "
+            "with enabled, target, slide_position and shortener."
+        )
+
+
 def _apply_set_config(
     database: dict[str, Any],
     mutation: dict[str, Any],
@@ -757,6 +784,8 @@ def _apply_set_config(
     else:
         after = copy.deepcopy(mutation["value"])
         parent[leaf] = after
+    if path[0] == "publishing_process":
+        _require_qr_code_config_object(config, index=index)
     if recovering_reserved_marker:
         changes.append(
             {

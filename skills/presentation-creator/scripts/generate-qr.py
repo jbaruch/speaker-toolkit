@@ -167,6 +167,31 @@ def load_vault_config(vault_path, profile_path=None):
     return speaker_profile, secrets, tracking_db, tracking_db_snapshot
 
 
+def read_qr_config(speaker_profile):
+    """The profile's QR decisions; an absent section means none were recorded.
+
+    A present section that isn't an object is refused, never read as absent: that
+    would re-ask decisions the speaker already recorded.
+    """
+    publishing_process = speaker_profile.get("publishing_process", {})
+    if not isinstance(publishing_process, dict):
+        raise ValueError(
+            "speaker profile publishing_process must be an object, got "
+            f"{type(publishing_process).__name__}, so the recorded QR decisions "
+            "can't be read. Restore it from config.publishing_process and re-run. "
+            "Nothing was changed."
+        )
+    qr_config = publishing_process.get("qr_code", {})
+    if not isinstance(qr_config, dict):
+        raise ValueError(
+            "speaker profile publishing_process.qr_code must be an object, got "
+            f"{type(qr_config).__name__}, so the recorded shortener can't be read. "
+            "Restore it from config.publishing_process.qr_code and re-run. Nothing "
+            "was changed."
+        )
+    return qr_config
+
+
 def _require_tracking_db_snapshot(
     tracking_db_snapshot: object,
 ) -> TrackingDatabaseSnapshot:
@@ -1693,7 +1718,11 @@ def main():
                 "ERROR: QR persistence requires the current tracking schema; run "
                 "vault-ingress migration before generating the short link"
             )
-    qr_config = speaker_profile.get("publishing_process", {}).get("qr_code", {})
+    try:
+        qr_config = read_qr_config(speaker_profile)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
     if not args.dry_run and vault_present_at_start:
         try:
             _require_tracking_db_snapshot(tracking_db_snapshot)
