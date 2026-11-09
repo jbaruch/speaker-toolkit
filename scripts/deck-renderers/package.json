@@ -5,7 +5,7 @@
   "dependencies": {
     "@marp-team/marp-cli": "4.5.0",
     "@slidev/cli": "52.19.1",
-    "playwright-chromium": "1.58.1",
+    "playwright-chromium": "1.64.1",
     "reveal-md": "6.1.4"
   }
 }
