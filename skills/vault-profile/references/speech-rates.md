@@ -212,15 +212,15 @@ JSON help envelope without reading stdin. Interrupts propagate.
 
 ## Creator and Legacy Compatibility
 
-New outlines carry root `schema_version: 2` and exactly one
+New outlines carry root `schema_version: 3` and exactly one
 `talk.pacing_rate`: the complete typed narration rate from planning output.
 Both complete and partial outline readers reject a missing, non-integer or
 unsupported root version and validate v1/v3 embedded rates without migration. The creator never recalculates or
 edits measured provenance. Use a fresh owner-validated measured profile when
 available. A stale or invalid present profile requires owner attention.
 
-Version 1 outlines belong to the owner, which migrates them before consuming
-them: its validation (`outline_schema.py outline.yaml`) restamps schema 2 in
+Older outlines belong to the owner, which migrates them before consuming
+them: its validation (`outline_schema.py outline.yaml`) restamps schema 3 in
 place first, `--migrate` runs that restamp alone, and other skills' readers
 refuse an older outline until it has run. An unstamped outline is stamped 1 by
 hand first.

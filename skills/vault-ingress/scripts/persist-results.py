@@ -224,6 +224,7 @@ SCALARS = [
     "slide_source",
     "slides_local_path",
 ]
+SOURCE_OWNED_SCALARS = frozenset({"transcript_source"})
 
 PROMOTED_BY_STRUCTURED_KEY = {
     path.removeprefix("structured_data."): field
@@ -715,11 +716,14 @@ def merge_talk(
     cleared = apply_clear_fields(candidate, ret.get("clear_fields"))
     candidate["schema_version"] = TALK_SCHEMA_VERSION
     for f in SCALARS:
-        if f in ret and (
+        # transcript_source is source-owned once canonicalized: a source-located
+        # return that omitted it carries the value its receipt established.
+        origin = evidence_ret if f in SOURCE_OWNED_SCALARS else ret
+        if f in origin and (
             return_schema_version in SNAPSHOT_RETURN_SCHEMA_VERSIONS
-            or not is_empty(ret[f])
+            or not is_empty(origin[f])
         ):
-            candidate[f] = copy.deepcopy(ret[f])
+            candidate[f] = copy.deepcopy(origin[f])
     if (
         return_schema_version in SOURCE_LOCATED_RETURN_SCHEMA_VERSIONS
         and "adherence_comparison" in ret

@@ -60,9 +60,9 @@ OPENAI_API_BASE = "https://api.openai.com/v1"
 #   quality  — relative fidelity tier: medium | high
 #   edit     — image-edit tier, best first (EDIT_RANKING):
 #                precise — chained edits hold, and the vendor positions the
-#                          model for edit precision (GPT Image 2.5 Sunburst)
+#                          model for edit precision (GPT Image 2.5 Sunburst, now legacy)
 #                stable  — chained edits hold across steps (GPT Image 2.5
-#                          Flare: edits follow instructions reliably across
+#                          Flare, now legacy: edits follow instructions reliably across
 #                          multiple turns, subjects preserved)
 #                strong  — edits well, but a CHAINED sequence drifts: every
 #                          step redraws the frame and small deviations
@@ -86,7 +86,7 @@ OPENAI_API_BASE = "https://api.openai.com/v1"
 # Tiers are coarse and drift with the market. The freshness check refreshes
 # both the roster and these tiers when new flagships ship — bump
 # REGISTRY_LAST_REVIEWED (ISO date) whenever this block is reconciled.
-REGISTRY_LAST_REVIEWED = "2026-09-08"
+REGISTRY_LAST_REVIEWED = "2026-11-08"
 REGISTRY_FRESHNESS_MAX_AGE_DAYS = 30
 
 MODEL_REGISTRY = [
@@ -105,59 +105,46 @@ MODEL_REGISTRY = [
         "edit": "strong",
     },
     {
-        "id": "gemini-3.1-flash-image",
-        "display": "Gemini 3.1 Flash Image (Nano Banana)",
+        # Nano Banana 2.1 — GA 2026-10-06, Google's stated migration target for
+        # Nano Banana 2 and the efficient companion to Gemini 3 Pro Image.
+        "id": "gemini-nano-banana-2.1",
+        "display": "Gemini Nano Banana 2.1",
         "family": "gemini",
-        "aliases": [
-            "gemini-3.1-flash-image-preview",
-            "nano-banana",
-            "gemini-flash-image",
-        ],
+        "aliases": ["nano-banana-2.1"],
         "cost": "low",
         "speed": "fast",
         "quality": "medium",
         "edit": "strong",
     },
+    # Imagen 4 (generate / ultra / fast) was deprecated 2026-06-15 and shut down
+    # 2026-08-17; Google points Imagen users to the Nano Banana line. Removed.
     {
-        "id": "imagen-4.0-ultra-generate-001",
-        "display": "Imagen 4 Ultra",
-        "family": "imagen",
-        "aliases": ["imagen-4-ultra"],
-        "cost": "medium",
-        "speed": "medium",
-        "quality": "high",
-        "edit": "none",
-    },
-    {
-        # Snapshot-pinned for reproducible illustration style; the rolling
-        # "gpt-image-2.5-flare" alias resolves here so baked outlines still
-        # dispatch. Flare is OpenAI's stated default of the two GPT Image 2.5
-        # models (2026-09-08); Sunburst, the edit-precision sibling, is the
-        # next entry. The retired "gpt-image-2" is deliberately NOT an alias
-        # here — it would
-        # remap baked outlines onto a different model — it lives in
-        # LEGACY_MODEL_ALIASES, pinned to the snapshot it was current on.
-        "id": "gpt-image-2.5-flare-2026-09-08",
-        "display": "GPT Image 2.5 Flare",
+        # GPT Image 2.6 (2026-11-04). OpenAI publishes no dated snapshot — the
+        # default snapshot is the alias itself — so a baked outline can drift if
+        # OpenAI moves it. Same token pricing as 2.5. Positioned for fast,
+        # interactive iteration. Edit tier stays "stable" (not promoted) until a
+        # chained build is observed to hold on it.
+        "id": "gpt-image-2.6-flare",
+        "display": "GPT Image 2.6 Flare",
         "family": "openai",
-        "aliases": ["gpt-image-2.5-flare"],
+        "aliases": [],
         "cost": "high",
-        "speed": "medium",
+        "speed": "fast",
         "quality": "high",
         "edit": "stable",
     },
     {
-        # OpenAI's pick "for workflows where editing precision matters most"
-        # (2026-09-08) — the build-chain model. Token rates match Flare. No
-        # latency claim is published for it, so speed keeps GPT Image 2's tier.
-        "id": "gpt-image-2.5-sunburst-2026-09-08",
-        "display": "GPT Image 2.5 Sunburst",
+        # GPT Image 2.6 Sunburst (2026-11-04): positioned for detailed
+        # compositions and editing. No dated snapshot (see Flare). Kept at
+        # "stable" rather than "precise" until a chained build proves it.
+        "id": "gpt-image-2.6-sunburst",
+        "display": "GPT Image 2.6 Sunburst",
         "family": "openai",
-        "aliases": ["gpt-image-2.5-sunburst"],
+        "aliases": [],
         "cost": "high",
         "speed": "slow",
         "quality": "high",
-        "edit": "precise",
+        "edit": "stable",
     },
 ]
 
@@ -175,6 +162,15 @@ COMPARE_MODELS = [m["id"] for m in MODEL_REGISTRY]
 LEGACY_MODEL_ALIASES = {
     # Superseded by gpt-image-2.5-flare on 2026-09-08.
     "gpt-image-2": "gpt-image-2-2026-04-21",
+    # GPT Image 2.5 superseded by GPT Image 2.6 (same pricing) on 2026-11-04.
+    "gpt-image-2.5-flare": "gpt-image-2.5-flare-2026-09-08",
+    "gpt-image-2.5-sunburst": "gpt-image-2.5-sunburst-2026-09-08",
+    # Nano Banana 2 deprecated 2026-10-06 in favour of gemini-nano-banana-2.1.
+    # Google GA ids carry no dated snapshot, so the legacy names pin to the GA id;
+    # the bare "gemini-3.1-flash-image" still dispatches by family unchanged.
+    "nano-banana": "gemini-3.1-flash-image",
+    "gemini-flash-image": "gemini-3.1-flash-image",
+    "gemini-3.1-flash-image-preview": "gemini-3.1-flash-image",
 }
 
 # Soft ranking priorities: attribute + tier ordering (best first).
@@ -232,6 +228,7 @@ def resolve_image_lane(
     requested_size: tuple[int, int] | None = None,
     reference_count: int = 0,
     masked: bool = False,
+    likeness: bool = False,
     allow_native_model: bool = False,
     allow_native_geometry: bool = False,
 ) -> ImageLane:
@@ -265,6 +262,7 @@ def resolve_image_lane(
             requested_size=requested_size,
             reference_count=reference_count,
             masked=masked,
+            likeness=likeness,
             allow_native_model=allow_native_model,
             allow_native_geometry=allow_native_geometry,
         ),
@@ -303,8 +301,8 @@ def shortlist_models(priorities, registry=None, extra_models=None):
       injected models whose edit field is missing or blank. It is
       also the PRIMARY sort key over the survivors (EDIT_RANKING, best first):
       an edit-stable model outranks a drifting one whatever the soft signals
-      say, so a talk with builds lands on GPT Image 2.5 before cost, speed, or
-      quality is weighed.
+      say, so a talk with builds lands on an edit-stable model (GPT Image 2.6)
+      before cost, speed, or quality is weighed.
     - cost / speed / quality are SOFT signals: candidates are ranked by the
       summed tier-position across the requested signals (lower is better), with
       registry order as a stable tie-break.

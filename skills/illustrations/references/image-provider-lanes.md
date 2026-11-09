@@ -45,7 +45,11 @@ Slide extraction does not invoke an image provider.
 
 Codex image-model pinning, exact dimensions, masks, and multiple references are
 not proven by the installed probe. Masked builds stay on API in auto mode and
-refuse forced CLI. Unmasked native builds preserve the existing backward edit
+refuse forced CLI. Likeness references (a slide's `reference_images`) stay on
+API in auto mode with reason `cli_likeness_reference_unverified` and refuse
+forced CLI with that reason, whatever native opt-ins are given: the adapter
+tells Codex to edit its one reference, which would return the photo instead of
+a new scene. Unmasked native builds preserve the existing backward edit
 chain; inspect native dimensions and visual continuity before applying a deck.
 
 ## Authentication and failures

@@ -114,13 +114,20 @@ SOURCE_ADDED_REPROCESS_REASON = "source_added"
 # The full migration found a corrupt persisted observation block. Keep the
 # completed claim as evidence of its prior outcome while the talk awaits repair.
 PERSISTED_OBSERVATION_REPROCESS_REASON = "persisted_observation_invalid"
+# The speaker ruled on a persisted finding, so the stored analysis has to be
+# redone under that ruling. The source evidence and its identity didn't change.
+SPEAKER_CORRECTION_REPROCESS_REASON = "speaker_correction"
 # Reasons an owner sets to move a talk with a completed claim back to
 # `needs-reprocessing`. `is_deliberate_reprocess_reason` accepts these plus the
 # structured `pattern_scoring_generation:` form the normalizer writes; a claim's
 # `result_status` may disagree with the talk status under any of them, and every
 # other disagreement is drift.
 DELIBERATE_REPROCESS_REASONS = LEGACY_REPROCESS_REASONS | frozenset(
-    {SOURCE_ADDED_REPROCESS_REASON, PERSISTED_OBSERVATION_REPROCESS_REASON}
+    {
+        SOURCE_ADDED_REPROCESS_REASON,
+        PERSISTED_OBSERVATION_REPROCESS_REASON,
+        SPEAKER_CORRECTION_REPROCESS_REASON,
+    }
 )
 
 QUEUE_CLAIM_SCHEMA_UNSUPPORTED_REASON = "queue_claim_schema_version_unsupported"

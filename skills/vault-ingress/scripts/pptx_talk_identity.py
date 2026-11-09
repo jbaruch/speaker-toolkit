@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import posixpath
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Iterable, Mapping, Sequence, TypeGuard
 
 from source_identity_matching import (
@@ -197,6 +197,9 @@ class DeckIdentityFacts:
     rendered_footers: tuple[str, ...] = ()
     hashtags: tuple[str, ...] = ()
     published_pdf_talk_filename: str | None = None
+    # The speaker's own name, which every deck and many titles carry. Set by the
+    # assessment, never observed on the deck.
+    speaker_name_pattern: re.Pattern[str] | None = None
 
     @property
     def path_tokens(self) -> tuple[str, ...]:
@@ -434,6 +437,23 @@ def _deck_venue_aliases(
     return aliases
 
 
+def _speaker_name_pattern(speaker_name: object) -> re.Pattern[str] | None:
+    """Match each word of the speaker's name; None when the vault records none."""
+    if not isinstance(speaker_name, str):
+        return None
+    words = _TOKEN_RE.findall(speaker_name)
+    if not words:
+        return None
+    alternatives = "|".join(re.escape(word) for word in words)
+    return re.compile(rf"(?<![^\W_])(?:{alternatives})(?![^\W_])", re.IGNORECASE)
+
+
+def _without_speaker_name(text: str, pattern: re.Pattern[str] | None) -> str:
+    if pattern is None:
+        return text
+    return " ".join(pattern.sub(" ", text).split()).strip(" :,|-\u2013\u2014")
+
+
 def _title_signal(
     facts: DeckIdentityFacts,
     talk: Mapping[str, Any],
@@ -442,12 +462,22 @@ def _title_signal(
     talk_title = talk.get("title")
     if not isinstance(talk_title, str) or not talk_title.strip():
         return SIGNAL_UNKNOWN
+    # A footer saying "Baruch Sadogursky" shares two significant words with every
+    # title naming the speaker, so it reads as agreement with a talk it says nothing
+    # about, and an undated rival then has nothing to contradict it.
+    talk_title = _without_speaker_name(talk_title, facts.speaker_name_pattern)
+    if not talk_title:
+        return SIGNAL_UNKNOWN
     observed = [
         text
         for text in (
-            facts.document_title,
-            facts.rendered_title,
-            *facts.rendered_footers,
+            _without_speaker_name(candidate, facts.speaker_name_pattern)
+            for candidate in (
+                facts.document_title,
+                facts.rendered_title,
+                *facts.rendered_footers,
+            )
+            if candidate
         )
         if text
     ]
@@ -602,6 +632,7 @@ def assess_pptx_talk_identity(
     candidates: Iterable[Mapping[str, Any]],
     *,
     source_identity: Mapping[str, Any] | None = None,
+    speaker_name: object = None,
 ) -> TalkIdentityAssessment:
     """Decide which talk a deck belongs to, or refuse to decide.
 
@@ -609,8 +640,12 @@ def assess_pptx_talk_identity(
     a signal filename similarity cannot fake and contradicted by none. Every
     other outcome is `review_required` or `unmatched`; neither authorizes
     catalog persistence or extraction.
+
+    `speaker_name` is `config.speaker_name`: the name as it appears on slides, which
+    identifies the speaker and never the talk.
     """
     facts = deck if isinstance(deck, DeckIdentityFacts) else deck_identity_facts(deck)
+    facts = replace(facts, speaker_name_pattern=_speaker_name_pattern(speaker_name))
     artifact_role = classify_artifact_role(facts)
     talks = list(candidates)
     # The candidate set is the vault's event vocabulary. A directory naming an

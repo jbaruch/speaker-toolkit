@@ -125,6 +125,7 @@ def test_forced_api_needs_no_cli_or_native_substitution(lanes, native_request):
     [
         ({"masked": True}, "cli_mask_not_supported"),
         ({"reference_count": 2}, "cli_multiple_references_unverified"),
+        ({"likeness": True}, "cli_likeness_reference_unverified"),
     ],
 )
 def test_unproven_build_or_composition_capabilities_refuse_cli(
@@ -135,6 +136,31 @@ def test_unproven_build_or_composition_capabilities_refuse_cli(
     assert lanes.resolve_image_lane(image_request, ready).lane == "api"
     with pytest.raises(lanes.ImageLaneError, match=reason):
         lanes.resolve_image_lane(image_request, ready, forced_lane="cli")
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_likeness_references_stay_on_api_and_name_their_own_blocker(
+    lanes, image_request, ready, native
+):
+    """The CLI adapter can only edit its one reference, so a likeness photo is
+    API-only whatever native opt-ins are given; forcing CLI names that blocker."""
+    image_request = replace(
+        image_request,
+        operation="edit",
+        reference_count=1,
+        likeness=True,
+        allow_native_model=native,
+        allow_native_geometry=native,
+    )
+    result = lanes.resolve_image_lane(image_request, ready)
+    assert (result.lane, result.served_model, result.reason_code) == (
+        "api",
+        image_request.model,
+        "cli_likeness_reference_unverified",
+    )
+    with pytest.raises(lanes.ImageLaneError) as caught:
+        lanes.resolve_image_lane(image_request, ready, forced_lane="cli")
+    assert caught.value.reason_code == "cli_likeness_reference_unverified"
 
 
 @pytest.mark.parametrize("forced", ["auto", "api", "cli"])
@@ -167,6 +193,9 @@ def test_imagen_edit_never_routes_to_an_unsupported_endpoint(
         {"operation": "edit"},
         {"masked": True},
         {"masked": 1},
+        {"likeness": 1},
+        {"likeness": True},
+        {"likeness": True, "operation": "edit", "reference_count": 1, "masked": True},
         {"allow_native_model": 1},
         {"allow_native_geometry": "yes"},
         {"requested_size": [2048, 1152]},

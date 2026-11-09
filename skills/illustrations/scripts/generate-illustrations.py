@@ -19,6 +19,13 @@ Usage:
     python3 generate-illustrations.py <outline.yaml> --fix 5 "Make the road wider"
     python3 generate-illustrations.py <outline.yaml> -v 2 5 9
 
+Likeness references:
+    A slide's `reference_images` photos go to the model as image inputs on
+    fresh generation and --compare (OpenAI /images/edits, Gemini inline parts;
+    Imagen refuses). They are API-only: auto stays on API, --image-lane cli
+    refuses. --style-explore renders without them and says so on stderr.
+    --edit, --fix and --build edit the rendered image and never send them.
+
 Lane options:
     --image-lane auto|api|cli (default: auto)
     --allow-cli-native permits unpinned OpenAI native output and observed geometry.
@@ -286,7 +293,9 @@ def parse_outline(path):
             conventions: str | None — the raw deck-wide convention rules
             slides: list[dict] — prompt-bearing slides only, each with
                 slide_num, title, format, prompt, and optional safe_zone /
-                text / builds
+                text / title_free / builds / reference_images (`title_free`
+                marks an explicit `text_overlay: "none"`; see
+                poster_title_text; `reference_images` holds absolute paths)
             composition: str | None — "poster-theatrical" or None (standard)
             embedded_footer: str | None — poster-theatrical baked footer
             text_treatment: str | None — anchor's baked-text rendering style
@@ -354,8 +363,19 @@ def parse_outline(path):
                 "surface": slide.safe_zone.surface,
             }
         text = (slide.text_overlay or "").strip()
-        if text and text.lower() != "none":
+        if text.lower() == "none":
+            # The explicit image-only sentinel, kept distinct from an absent
+            # overlay: only an absent one falls back to the slide's title.
+            slide_data["title_free"] = True
+        elif text:
             slide_data["text"] = text
+        if slide.reference_images:
+            # The loader already proved each one exists and decodes.
+            talk_dir = os.path.dirname(os.path.abspath(path))
+            slide_data["reference_images"] = [
+                str(outline_schema.reference_image_path(entry, talk_dir))
+                for entry in slide.reference_images
+            ]
         if slide.builds:
             max_step = max(b.step for b in slide.builds)
             steps = [
@@ -422,6 +442,18 @@ def apply_safe_zone_directive(prompt, safe_zone):
         surface=surface,
     )
     return prompt + directive
+
+
+def poster_title_text(slide):
+    """The title a poster-theatrical slide embeds, or None for a title-free plate.
+
+    `text_overlay: "none"` (any case) embeds no title; the footer is still
+    directed by apply_poster_embed_directive. An absent or empty text_overlay
+    keeps the compatibility fallback to the slide's `title`.
+    """
+    if slide.get("title_free"):
+        return None
+    return slide.get("text") or slide["title"]
 
 
 def apply_poster_embed_directive(
@@ -512,6 +544,35 @@ def apply_compose_only_directive(prompt):
     if COMPOSE_ONLY_DIRECTIVE in prompt:
         return prompt
     return prompt + COMPOSE_ONLY_DIRECTIVE
+
+
+# A slide's `reference_images` are photos of a real person the scene depicts.
+# Framed as graphic composition, never as face-preservation demands: assertive
+# preservation wording on a real-person photo trips vendor safety filters
+# (rules/thumbnail-generation-rules.md §6). The photo guides likeness only; the
+# scene and the style anchor decide what is drawn and how.
+LIKENESS_REFERENCE_DIRECTIVE = (
+    " LIKENESS REFERENCE -- COMPOSITION NOTE: The attached reference photo(s) "
+    "show the person this scene depicts. Use them only as a guide to that "
+    "person's facial likeness, so the illustrated person is recognizable by the "
+    "face, hair, beard and glasses the photos show. The scene description above "
+    "decides their pose, clothing, props and setting. Render the person and the "
+    "whole scene in this slide's illustration style and medium described above. "
+    "This is a new illustration, not a photo composite: do not paste in, trace "
+    "or reproduce the photos, their background, lighting, framing or "
+    "photographic texture."
+)
+
+
+def apply_likeness_directive(prompt):
+    """Append the likeness-reference note for a slide that sends photos.
+
+    Fresh generation only, before the COMPOSE ONLY guard. Idempotent: the exact
+    directive is tested, so caller text is never truncated.
+    """
+    if LIKENESS_REFERENCE_DIRECTIVE in prompt:
+        return prompt
+    return prompt + LIKENESS_REFERENCE_DIRECTIVE
 
 
 def effective_slide_format(slide_format, safe_zone):
@@ -1109,21 +1170,24 @@ def _call_openai_generate(prompt, model, api_key, size=OPENAI_DEFAULT_SIZE):
 
 
 def _call_openai_edit(
-    input_path, prompt, model, api_key, size=OPENAI_DEFAULT_SIZE, mask_png=None
+    input_paths, prompt, model, api_key, size=OPENAI_DEFAULT_SIZE, mask_png=None
 ):
-    """Call OpenAI /images/edits to edit an existing image.
+    """Call OpenAI /images/edits with one or more input images.
 
-    When `mask_png` is given (a PNG matching the image dimensions), only its
-    fully-transparent region is regenerated and the rest is preserved — the
-    build static-background fix (#90).
+    One image goes in the `image` field, the edit shape the builds use; two or
+    more repeat the `image[]` array field. When `mask_png` is given (a PNG
+    matching the image dimensions), only its fully-transparent region is
+    regenerated and the rest is preserved — the build static-background fix (#90).
     """
-    with open(input_path, "rb") as f:
-        image_bytes = f.read()
-    ext = os.path.splitext(input_path)[1].lower()
-    mime = ext_to_mime(ext)
-    filename = os.path.basename(input_path)
-
-    files = [("image", filename, mime, image_bytes)]
+    field = "image" if len(input_paths) == 1 else "image[]"
+    files = []
+    for input_path in input_paths:
+        with open(input_path, "rb") as f:
+            image_bytes = f.read()
+        ext = os.path.splitext(input_path)[1].lower()
+        files.append(
+            (field, os.path.basename(input_path), ext_to_mime(ext), image_bytes)
+        )
     if mask_png is not None:
         files.append(("mask", "mask.png", "image/png", mask_png))
     body, boundary = _multipart_body(
@@ -1161,7 +1225,15 @@ def _call_openai_edit(
 # --- Vendor-Agnostic Dispatchers ---
 
 
-def generate_image(prompt, model, keys, slide_format=None):
+def _inline_image_part(path):
+    """One Gemini generateContent part carrying a local image as inline data."""
+    with open(path, "rb") as f:
+        data = base64.b64encode(f.read()).decode("utf-8")
+    mime = ext_to_mime(os.path.splitext(path)[1].lower())
+    return {"inlineData": {"mimeType": mime, "data": data}}
+
+
+def generate_image(prompt, model, keys, slide_format=None, reference_images=()):
     """Generate a fresh image via the appropriate vendor endpoint.
 
     Args:
@@ -1171,12 +1243,25 @@ def generate_image(prompt, model, keys, slide_format=None):
         slide_format: outline format name (e.g. "FULL", "IMG+TXT") used to
             pick the per-vendor size / aspect-ratio param. Falls back to
             FULL (16:9 landscape) when None or unknown.
+        reference_images: absolute paths of likeness photos the model takes as
+            image inputs: OpenAI through /images/edits, Gemini as inline parts
+            ahead of the prompt. Imagen has no image input and is refused. The
+            render stays on the API lane (cli_likeness_reference_unverified).
 
     Returns:
         tuple (image_bytes, mime_type) on success, or (None, error_message) on failure.
     """
     model = resolve_model_id(model)
     family = model_family(model)
+    references = list(reference_images)
+    if references and family == "imagen":
+        return ImageRender(
+            None,
+            f"Reference images are not supported for Imagen models ({model}). "
+            "Imagen has no image-input endpoint — bake a Gemini or OpenAI model, "
+            "or remove the slide's reference_images.",
+            None,
+        )
     sizing = sizing_for(slide_format)
     width, height = sizing["openai_size"].split("x")
     size = (int(width), int(height))
@@ -1184,7 +1269,10 @@ def generate_image(prompt, model, keys, slide_format=None):
         lane = select_image_lane(
             model,
             getattr(keys, "options", None),
+            operation="edit" if references else "generate",
             requested_size=size if family == "openai" else None,
+            reference_count=len(references),
+            likeness=bool(references),
         )
     except ImageLaneError as error:
         print(f"ERROR: {error}", file=sys.stderr)
@@ -1197,7 +1285,11 @@ def generate_image(prompt, model, keys, slide_format=None):
         except ImageLaneError as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return ImageRender(None, str(error), lane)
-    if family == "openai":
+    if family == "openai" and references:
+        data, detail = _call_openai_edit(
+            references, prompt, model, keys["openai"], size=sizing["openai_size"]
+        )
+    elif family == "openai":
         data, detail = _call_openai_generate(
             prompt, model, keys["openai"], size=sizing["openai_size"]
         )
@@ -1206,7 +1298,8 @@ def generate_image(prompt, model, keys, slide_format=None):
             prompt, model, keys["gemini"], aspect_ratio=sizing["imagen_aspect"]
         )
     else:
-        data, detail = _call_gemini([{"text": prompt}], model, keys["gemini"])
+        parts = [_inline_image_part(path) for path in references]
+        data, detail = _call_gemini(parts + [{"text": prompt}], model, keys["gemini"])
     return ImageRender(data, detail, lane)
 
 
@@ -1283,7 +1376,7 @@ def edit_image(
             build_edit_mask_png(input_path, erase_region) if erase_region else None
         )
         image_bytes, result = _call_openai_edit(
-            input_path,
+            [input_path],
             edit_prompt,
             model,
             keys["openai"],
@@ -1294,14 +1387,7 @@ def edit_image(
         # Gemini path: send image as base64 inline data on generateContent.
         # Gemini has no mask param, so it always regenerates the whole frame;
         # the composite below is what keeps its static background stable.
-        with open(input_path, "rb") as f:
-            image_data = base64.b64encode(f.read()).decode("utf-8")
-        ext = os.path.splitext(input_path)[1].lower()
-        input_mime = ext_to_mime(ext)
-        parts = [
-            {"inlineData": {"mimeType": input_mime, "data": image_data}},
-            {"text": edit_prompt},
-        ]
+        parts = [_inline_image_part(input_path), {"text": edit_prompt}]
         image_bytes, result = _call_gemini(parts, model, keys["gemini"])
 
     # Confine the change to the erase box: paste the edited region back over the
@@ -1617,7 +1703,7 @@ def run_generate(outline_path, slide_args, versioned=False, *, lane_options=None
             prompt = resolve_prompt(slide["prompt"], eff_format, outline["anchors"])
             prompt = apply_poster_embed_directive(
                 prompt,
-                slide.get("text") or slide["title"],
+                poster_title_text(slide),
                 outline.get("embedded_footer"),
                 outline.get("text_treatment"),
                 outline.get("footer_style"),
@@ -1631,13 +1717,22 @@ def run_generate(outline_path, slide_args, versioned=False, *, lane_options=None
             prompt = resolve_prompt(slide["prompt"], eff_format, outline["anchors"])
             prompt = apply_safe_zone_directive(prompt, slide.get("safe_zone"))
 
+        references = slide.get("reference_images", [])
+        if references:
+            prompt = apply_likeness_directive(prompt)
+
         # Style-only guard: the anchor renders on every slide, so pin the model
         # to this slide's scene and keep deck-wide page-furniture from leaking (#87).
         prompt = apply_compose_only_directive(prompt)
 
         print(f"[{i + 1}/{len(to_generate)}] Slide {num}: {slide['title']}")
+        if references:
+            names = ", ".join(os.path.basename(p) for p in references)
+            print(f"  Likeness references: {names}")
 
-        image_bytes, result = generate_image(prompt, model, keys, eff_format)
+        image_bytes, result = generate_image(
+            prompt, model, keys, eff_format, reference_images=references
+        )
 
         if image_bytes is None:
             print(f"  FAILED: {result}")
@@ -1686,6 +1781,9 @@ def run_compare(outline_path, slide_num, *, lane_options=None):
     eff_format = effective_slide_format(slide["format"], slide.get("safe_zone"))
     prompt = resolve_prompt(slide["prompt"], eff_format, outline["anchors"])
     prompt = apply_safe_zone_directive(prompt, slide.get("safe_zone"))
+    references = slide.get("reference_images", [])
+    if references:
+        prompt = apply_likeness_directive(prompt)
     prompt = apply_compose_only_directive(prompt)
 
     output_dir = os.path.join(
@@ -1711,7 +1809,9 @@ def run_compare(outline_path, slide_num, *, lane_options=None):
     for i, model in enumerate(models):
         print(f"[{i + 1}/{len(models)}] {model}...", end=" ", flush=True)
 
-        render = generate_image(prompt, model, keys, eff_format)
+        render = generate_image(
+            prompt, model, keys, eff_format, reference_images=references
+        )
         image_bytes, result = render
         selected = render.lane if isinstance(render, ImageRender) else None
         label = f"{selected.served_model} [{selected.lane}]" if selected else model
@@ -1947,6 +2047,22 @@ def run_style_explore(outline_path, candidates_path, *, lane_options=None):
             )
             continue
         safe_zone = slide.get("safe_zone")
+        if slide.get("reference_images"):
+            print(
+                f"WARNING: slide {slide_num} (for {fmt}) declares reference_images; "
+                "style exploration renders its scene without them. Likeness "
+                "references apply to deck generation only.",
+                file=sys.stderr,
+            )
+        if poster and slide.get("title_free"):
+            print(
+                f"ERROR: poster catalog exploration slide {slide_num} has "
+                'text_overlay: "none" (a title-free plate), so it cannot show the '
+                "candidate's text treatment. Point the candidates file at a FULL "
+                "slide with a real text_overlay and retry.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         if poster and (safe_zone or not slide.get("text")):
             print(
                 f"ERROR: poster catalog exploration slide {slide_num} requires a FULL representative "

@@ -74,19 +74,29 @@ The passes below renumber or overwrite each other, so run them in exactly this
 order:
 
 1. **Expand builds** — if any slide has progressive-reveal builds, expand them
-   FIRST with
-   `"{speaker_toolkit_root}/skills/presentation-creator/scripts/expand-builds.sh"`
-   (manifest from `build-expansion-manifest.py`): it replaces each parent slide
-   with its build frames as full-bleed slides. Pass the speaker-notes JSON to
-   `build-expansion-manifest.py --notes` so each build parent's note rides onto
-   its FINAL frame during expansion (per
-   `skills/illustrations/references/builds.md`); do not re-target those parent
-   indices in any later notes pass. Expansion renumbers later slides, so notes,
-   backgrounds, and QR must key on the POST-expansion deck.
-2. **Inject remaining speaker notes** — Inject Speaker Notes below. When the deck was
-   expanded, drop the build-parent entries already carried by `--notes` and key
-   the remaining notes on the post-expansion slide order. With no builds, the
-   original indices apply directly.
+   FIRST. Emit the manifest and the expanded notes map in one call, passing the
+   pre-expansion notes JSON (see Inject Speaker Notes below for its format):
+
+   ```bash
+   "{python_path}" "{speaker_toolkit_root}/skills/illustrations/scripts/build-expansion-manifest.py" \
+       outline.yaml illustrations/builds/ --out builds-manifest.json \
+       --notes notes.json --notes-out notes-expanded.json
+   bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/expand-builds.sh" \
+       '{deck_copy_pptx}' '{expanded_pptx}' builds-manifest.json
+   ```
+
+   Expansion replaces each parent slide with its build frames as full-bleed
+   slides and renumbers every later slide, so notes, backgrounds, and QR key on
+   the POST-expansion deck. `notes-expanded.json` is already keyed that way:
+   each parent's note is split at its `[BUILD NN]` cue lines, one segment per
+   frame (per `skills/illustrations/references/builds.md`), and every other note
+   is moved past the inserted frames. A refusal names the slide and the cue to
+   fix; a `WARN` on stderr means a build slide's whole note went on its first
+   frame because it has no cue.
+2. **Inject speaker notes** — Inject Speaker Notes below. When the deck was
+   expanded, inject `notes-expanded.json` into the expanded deck exactly as
+   written; never edit or re-key it by hand. With no builds, inject `notes.json`
+   directly.
 3. **Apply backgrounds** — set the FULL-slide backgrounds via
    `"{speaker_toolkit_root}/skills/presentation-creator/scripts/apply-backgrounds.sh"`
    using the manifest from the apply pass. It must run LAST; any later
@@ -203,13 +213,19 @@ Template placeholders have fixed sizes. To avoid overflow:
 slides exist — never inline during slide creation.
 
 Save the notes map as JSON (`{"0": "", "1": "Brief intro.", ...}`, 0-based slide
-indices), then inject via the real PowerPoint app — it writes valid notes OOXML,
+indices on the deck as built from the outline), one line per `script` item. A
+`cue: "BUILD NN"` item becomes its own line `[BUILD NN]`, exactly: the build
+expansion splits a build slide's note at those lines. Then inject via the real
+PowerPoint app — it writes valid notes OOXML,
 so the `<p:notesMasterIdLst>` Keynote patch the old python-pptx pass needed is no
 longer required (see `rules/deck-editing-rules.md`):
 
 ```bash
 bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.sh" <uniquely-named deck copy> <out.pptx> notes.json
 ```
+
+On an expanded deck, pass the expanded deck copy and `notes-expanded.json` from
+the Post-build pass order instead of `notes.json`.
 
 Run this AFTER slide generation, and BEFORE the final `apply-backgrounds.sh`
 pass (the VBA background pass must be the last write). macOS + PowerPoint only.

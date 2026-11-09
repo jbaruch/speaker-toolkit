@@ -1214,6 +1214,96 @@ def test_transcript_quote_is_verified_and_locations_are_engine_owned(
     )
 
 
+FRESH_VIDEO_ID = "abcdefghijk"
+FRESH_DURATION = 1800.0
+
+
+def _fresh_youtube_batch(return_validation, tmp_path, *, with_identity=True):
+    """A talk first fetched during the run: a Whisper receipt for its own video,
+    no recorded transcript_source, and a return that honestly omits it."""
+    talk, ret = _v4_transcript_batch(return_validation, tmp_path)
+    manual = tmp_path / "transcripts" / "manual-talk.txt"
+    text = manual.read_text(encoding="utf-8")
+    transcript_timing = importlib.import_module("transcript_timing")
+    transcript_timing.write_transcript_bundle(
+        tmp_path / "transcripts" / f"{FRESH_VIDEO_ID}.txt",
+        text,
+        [{"text": text, "start": 2.0, "end": 6.0}],
+        source="whisper",
+        timing_provenance=transcript_timing.youtube_timing_provenance(
+            "whisper", FRESH_VIDEO_ID, FRESH_DURATION
+        ),
+        quality_policy=transcript_timing.build_quality_policy(400),
+        quality_policy_provenance={"kind": "fixed_default"},
+    )
+    talk["transcript_path"] = f"transcripts/{FRESH_VIDEO_ID}.txt"
+    talk["youtube_id"] = FRESH_VIDEO_ID
+    if with_identity:
+        talk["source_identity"] = {
+            "schema_version": 1,
+            "provider": "youtube",
+            "video_id": FRESH_VIDEO_ID,
+            "duration_seconds": FRESH_DURATION,
+        }
+    del talk["transcript_source"]
+    del ret["transcript_source"]
+    return talk, ret
+
+
+def _persist_cli(persist_results, tmp_path, talk, ret):
+    talk["schema_version"] = persist_results.TALK_SCHEMA_VERSION
+    db = tmp_path / "tracking-database.json"
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(_db_json({"talks": [talk]}))
+    batch.write_text(json.dumps([ret]))
+    result = subprocess.run(
+        [
+            sys.executable,
+            persist_results.__file__,
+            str(db),
+            str(batch),
+            "--run-date",
+            "2026-07-31T18:05:00+00:00",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    return result, db
+
+
+def test_a_fresh_youtube_talk_persists_the_provenance_its_receipt_establishes(
+    persist_results, return_validation, tmp_path
+):
+    """`method: existing` leaves transcript_source out; persistence stores the
+    value the fetcher's receipt establishes, and the record reads as fresh."""
+    talk, ret = _fresh_youtube_batch(return_validation, tmp_path)
+
+    result, db = _persist_cli(persist_results, tmp_path, talk, ret)
+
+    assert result.returncode == 0, result.stderr
+    stored = json.loads(db.read_text())["talks"][0]
+    assert stored["transcript_source"] == "whisper"
+    pattern_evidence = importlib.import_module("pattern_evidence")
+    assert (
+        pattern_evidence.assess_persisted_pattern_evidence_freshness(
+            stored, vault_root=tmp_path
+        )
+        == ()
+    )
+
+
+def test_a_fresh_youtube_talk_without_a_trusted_duration_is_refused(
+    persist_results, return_validation, tmp_path
+):
+    talk, ret = _fresh_youtube_batch(return_validation, tmp_path, with_identity=False)
+
+    result, db = _persist_cli(persist_results, tmp_path, talk, ret)
+
+    assert result.returncode == 1
+    assert "records source_identity with its provider duration" in result.stderr
+    assert "transcript_source" not in json.loads(db.read_text())["talks"][0]
+
+
 @pytest.mark.parametrize("version", [1, 2])
 def test_legacy_single_comparison_pair_is_inferred_but_remains_historical(
     persist_results, return_validation, version
@@ -1647,6 +1737,74 @@ def test_cli_compares_symlinked_vault_roots_by_lexical_identity_before_persisten
             "ERROR: vault_root_authority_mismatch:database_path:config_root\n"
         )
         assert db.read_bytes() == before
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="directory symlink setup is privileged",
+)
+def test_transcript_citation_persists_and_renders_through_a_symlinked_root(
+    persist_results,
+    write_analysis,
+    return_validation,
+    tmp_path,
+):
+    physical_root = tmp_path / "physical-vault"
+    physical_root.mkdir()
+    alias_root = tmp_path / "alias-vault"
+    alias_root.symlink_to(physical_root, target_is_directory=True)
+    talk, ret = _v4_transcript_batch(return_validation, physical_root)
+    talk["schema_version"] = persist_results.TALK_SCHEMA_VERSION
+    db = physical_root / "tracking-database.json"
+    alias_db = alias_root / db.name
+    batch = tmp_path / "batch-returns.json"
+    db.write_text(
+        _db_json(
+            {
+                "talks": [talk],
+                "config": {"vault_storage_path": str(alias_root)},
+            }
+        )
+    )
+    batch.write_text(json.dumps([ret]))
+
+    persisted = subprocess.run(
+        [
+            sys.executable,
+            persist_results.__file__,
+            str(alias_db),
+            str(batch),
+            "--run-date",
+            "2026-07-31T18:05:00+00:00",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert persisted.returncode == 0, persisted.stderr
+    stored = json.loads(db.read_text())["talks"][0]
+    citation = stored["pattern_observations"]["patterns_detected"][0][
+        "evidence_citations"
+    ][0]
+    assert citation["artifact_root"] == "vault"
+    assert citation["artifact_path"] == "transcripts/manual-talk.txt"
+
+    analyses = alias_root / "analyses"
+    rendered = subprocess.run(
+        [
+            sys.executable,
+            write_analysis.__file__,
+            str(batch),
+            str(analyses),
+            "--talks",
+            str(alias_db),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert rendered.returncode == 0, rendered.stderr
+    assert (physical_root / "analyses" / "talk.md").is_file()
 
 
 FOREIGN_ABSOLUTE_VAULT_ROOT = (

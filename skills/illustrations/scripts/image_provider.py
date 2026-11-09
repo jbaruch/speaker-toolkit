@@ -61,7 +61,8 @@ def add_image_lane_arguments(parser: argparse.ArgumentParser) -> None:
         "--allow-cli-native",
         action="store_true",
         help="Opt into an unpinned native image model and observed dimensions. "
-        "Does not enable unverified masks or multi-reference composition.",
+        "Does not enable unverified masks, multi-reference composition, or "
+        "likeness references.",
     )
 
 
@@ -78,6 +79,7 @@ def select_image_lane(
     requested_size: tuple[int, int] | None = None,
     reference_count: int = 0,
     masked: bool = False,
+    likeness: bool = False,
     report: bool = True,
 ) -> ImageLane:
     """Select before reading API credentials; only absence permits API fallback."""
@@ -94,6 +96,7 @@ def select_image_lane(
             requested_size=requested_size,
             reference_count=reference_count,
             masked=masked,
+            likeness=likeness,
             allow_native_model=options.allow_cli_native,
             allow_native_geometry=options.allow_cli_native,
         )

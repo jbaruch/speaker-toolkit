@@ -53,13 +53,20 @@ from pathlib import Path
 import sys
 from typing import Any, Mapping, Sequence
 
+from pptx_catalog_assessment import (
+    candidate_talks,
+    configured_speaker_name,
+    material_assessment,
+    resolve_input,
+    resolve_pptx_source_dir,
+    stored_proof,
+)
 from pptx_deck_facts import (
     DECK_FACTS_SCHEMA_VERSION,
     read_deck_identity_facts,
 )
 from pptx_talk_identity import (
     PPTX_TALK_IDENTITY_SCHEMA_VERSION,
-    SIGNAL_UNKNOWN,
     VERDICT_MATCHED,
     VERDICT_REVIEW_REQUIRED,
     PptxTalkIdentityError,
@@ -79,7 +86,6 @@ from tracking_database_io import (
 )
 
 REPORT_SCHEMA_VERSION = 1
-DATABASE_BASENAME = "tracking-database.json"
 MUTATION_PLAN_SCHEMA_VERSION = 1
 # The owner writer's missing-value sentinel, restated here because the plan
 # is JSON handed to that writer rather than a Python call into it.
@@ -106,89 +112,6 @@ DISPOSITIONS = (
 # bindings that must be resolved before a reparse re-derives evidence through
 # them, not the number of rows.
 RESOLVED_DISPOSITIONS = frozenset({DISPOSITION_CONFIRMED, DISPOSITION_UNBOUND})
-
-
-def resolve_input(value: str | Path) -> tuple[Path, Path]:
-    """Bind a vault root to its canonical database, as preflight does."""
-    path = Path(value).expanduser().absolute()
-    if path.name.lower() == DATABASE_BASENAME:
-        return path.parent, path
-    return path, path / DATABASE_BASENAME
-
-
-def resolve_pptx_source_dir(
-    database: Mapping[str, Any],
-    *,
-    vault_root: Path,
-) -> object:
-    """Resolve where catalog decks live, falling back to the vault root.
-
-    `config.pptx_source_dir` is optional, and `schemas-db.md` documents that a
-    null or absent value falls back to the vault root. Passing the absent value
-    straight through would report every deck in such a vault unreadable —
-    a configuration default read as universal damage, and one that would put
-    every binding into `binding_unproven` on evidence nobody looked for.
-    """
-    config = database.get("config")
-    configured = config.get("pptx_source_dir") if isinstance(config, Mapping) else None
-    if isinstance(configured, str) and configured.strip():
-        return configured
-    return vault_root
-
-
-def _candidate_talks(database: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """Every talk carrying a filename, in stored order.
-
-    The whole vault is the candidate set on purpose. Narrowing it first — to
-    the same year, or the same conference — would decide the question the
-    assessment exists to answer, and would hide exactly the cross-talk
-    assignment this sweep looks for.
-    """
-    talks = database.get("talks")
-    if not isinstance(talks, list):
-        return []
-    candidates: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for talk in talks:
-        if not isinstance(talk, Mapping):
-            continue
-        filename = talk.get("filename")
-        if not isinstance(filename, str) or not filename or filename in seen:
-            continue
-        seen.add(filename)
-        candidates.append(dict(talk))
-    return candidates
-
-
-def _material_assessment(assessment: Any) -> dict[str, Any]:
-    """Serialize the assessment with only its material candidates.
-
-    The candidate set is every talk in the vault — 215 of them against 82 rows
-    — and a talk sharing no signal with the deck reads as six `unknown`
-    verdicts. Emitting those is not evidence, it is 215 rows of noise per deck
-    hiding the handful that decided the verdict.
-
-    A candidate is material when any signal reads something. That keeps
-    everything a reader needs to re-derive the verdict: the selected candidate
-    is material because it agrees, and so is every rival that could have
-    contested it, since contesting requires agreement.
-    """
-    serialized = assessment.as_json()
-    candidates = serialized.get("candidates")
-    if not isinstance(candidates, list):
-        return serialized
-    material = [
-        candidate
-        for candidate in candidates
-        if isinstance(candidate, Mapping)
-        and any(
-            verdict != SIGNAL_UNKNOWN
-            for verdict in (candidate.get("signals") or {}).values()
-        )
-    ]
-    serialized["candidates"] = material
-    serialized["candidates_assessed"] = len(candidates)
-    return serialized
 
 
 def _disposition(
@@ -222,7 +145,8 @@ def sweep_catalog(
     catalog = database.get("pptx_catalog")
     if not isinstance(catalog, list):
         return []
-    candidates = _candidate_talks(database)
+    candidates = candidate_talks(database)
+    speaker_name = configured_speaker_name(database)
     rows: list[dict[str, Any]] = []
     for index, record in enumerate(catalog):
         if not isinstance(record, Mapping):
@@ -247,7 +171,10 @@ def sweep_catalog(
         observed_identity = reading.source_identity
         try:
             assessment = assess_pptx_talk_identity(
-                reading.facts, candidates, source_identity=observed_identity
+                reading.facts,
+                candidates,
+                source_identity=observed_identity,
+                speaker_name=speaker_name,
             )
         except PptxTalkIdentityError as exc:
             # The prose names the rejected value, which came out of the
@@ -286,7 +213,7 @@ def sweep_catalog(
                 ),
                 # The candidate table, not a summary. It is what makes the
                 # verdict checkable by someone who was not here when it ran.
-                "assessment": _material_assessment(assessment),
+                "assessment": material_assessment(assessment),
             }
         )
     return rows
@@ -493,13 +420,7 @@ def proof_mutations(
             continue
         pptx_path = record["pptx_path"]
         talk = talks.get(talk_filename)
-        # `candidates_assessed` is this report's own reading aid. The owner gate
-        # validates a closed key set, so carrying it would fail the write.
-        proof = {
-            key: value
-            for key, value in assessment.items()
-            if key != "candidates_assessed"
-        }
+        proof = stored_proof(assessment)
         mutations.append(
             {
                 "kind": "record_pptx",

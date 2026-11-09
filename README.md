@@ -64,9 +64,9 @@ argument can be reviewed before any slide exists.
 
 **Progressive-reveal build expansion** — the toolkit now assembles generated
 build frames into the deck: a new `ExpandBuilds` PowerPoint pass replaces each
-progressive-reveal parent slide with its frames as full-bleed slides (notes on
-the final frame), so a build sequence becomes the sequential slides you advance
-through. Pairs with poster-theatrical for pure full-bleed, builds-and-all decks.
+progressive-reveal parent slide with its frames as full-bleed slides, so a
+build sequence becomes the sequential slides you advance through. Each frame now
+carries the notes spoken over it, split at the slide's `BUILD NN` cues. Pairs with poster-theatrical for pure full-bleed, builds-and-all decks.
 
 **Deck tooling works on installed plugins** — `tessl install` strips `.bas`/`.applescript`
 files, which had left the PowerPoint deck layer dead on any installed copy. The

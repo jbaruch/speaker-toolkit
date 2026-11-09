@@ -5,11 +5,14 @@ The default mode is read-only. ``--apply`` atomically adds complete new talks an
 fills empty fields on exact-filename matches. Conflicts, incomplete metadata,
 case-folded filename collisions, and rejected source identities remain explicit
 review proposals. Remote or disabled shownotes sources produce a structured no-op.
+A site checkout that isn't holding its published default branch is read from a
+snapshot of that branch instead of its working tree; see shownotes_checkout.py.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import copy
 import importlib
 import json
@@ -18,7 +21,7 @@ import re
 import stat
 import sys
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, NoReturn
@@ -35,6 +38,13 @@ from ingress_contract import (
     parse_google_drive_id,
     parse_youtube_id,
     validate_talk_record_schemas,
+)
+from shownotes_checkout import (
+    filename_identity,
+    CheckoutDecision,
+    ShownotesCheckoutError,
+    decide_checkout,
+    published_talks_directory,
 )
 from source_identity_matching import shownotes_titles_agree
 from source_alias_contract import matched_alias
@@ -62,7 +72,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10 only
         tomllib = None
 
 
-REPORT_SCHEMA_VERSION = 3
+REPORT_SCHEMA_VERSION = 4
 LOCAL_SOURCE_TYPES = frozenset(
     {"local_jekyll", "local_hugo", "local_eleventy", "local_astro"}
 )
@@ -134,7 +144,7 @@ def _nonempty(value: object) -> str | None:
 
 
 def _normalized_filename(value: str) -> str:
-    return unicodedata.normalize("NFC", value).casefold()
+    return filename_identity(value)
 
 
 def _normalized_conference_for_comparison(value: str) -> str:
@@ -255,30 +265,50 @@ def _safe_local_location(
         raise ShownotesScanError(
             f"shownotes talks_subdir {subdir_text!r} must be a safe relative path"
         )
-    talks_candidate = root_candidate / subdir
     _reject_symlink_components(root_candidate, subject="shownotes root")
-    _reject_symlink_components(talks_candidate, subject="shownotes talks directory")
     try:
         root = root_candidate.resolve(strict=True)
-        talks_directory = talks_candidate.resolve(strict=True)
-        talks_directory.relative_to(root)
-    except (FileNotFoundError, OSError, ValueError) as exc:
+    except OSError as exc:
         raise ShownotesScanError(
-            "cannot resolve the configured shownotes talks directory inside its root: "
-            f"{exc}; repair path_or_url/talks_subdir and retry"
+            f"cannot resolve the configured shownotes root: {exc}; repair "
+            "path_or_url and retry"
         ) from exc
-    if not root.is_dir() or not talks_directory.is_dir():
+    if not root.is_dir():
         raise ShownotesScanError(
-            f"shownotes talks path {talks_directory} is not a directory; repair config"
+            f"shownotes root {root} is not a directory; repair config"
         )
+    # The talks directory is checked only in the tree the scan reads. A checkout
+    # off the default branch reads a snapshot, so its own _talks/ may be gone.
     return ShownotesLocation(
         enabled=True,
         source_type=source_type,
         config_origin=config_origin,
         root=root,
         talks_subdir=subdir.as_posix(),
-        talks_directory=talks_directory,
+        talks_directory=root / subdir,
     )
+
+
+def _working_tree_location(location: ShownotesLocation) -> ShownotesLocation:
+    """The location with its talks directory proven inside the root's working tree."""
+    if location.root is None or location.talks_directory is None:
+        raise ShownotesScanError("local shownotes location has no talks directory")
+    _reject_symlink_components(
+        location.talks_directory, subject="shownotes talks directory"
+    )
+    try:
+        talks_directory = location.talks_directory.resolve(strict=True)
+        talks_directory.relative_to(location.root)
+    except (OSError, ValueError) as exc:
+        raise ShownotesScanError(
+            "cannot resolve the configured shownotes talks directory inside its root: "
+            f"{exc}; repair path_or_url/talks_subdir and retry"
+        ) from exc
+    if not talks_directory.is_dir():
+        raise ShownotesScanError(
+            f"shownotes talks path {talks_directory} is not a directory; repair config"
+        )
+    return replace(location, talks_directory=talks_directory)
 
 
 def resolve_shownotes_location(config: dict[str, Any]) -> ShownotesLocation:
@@ -862,8 +892,15 @@ def build_scan_report(
     location: ShownotesLocation,
     *,
     apply_requested: bool,
+    checkout: CheckoutDecision | None = None,
+    scan_directory: Path | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Build a stable report and the candidate post-scan database."""
+    """Build a stable report and the candidate post-scan database.
+
+    `scan_directory` replaces the configured talks directory as the source of files
+    when the checkout decision chose a published snapshot. The report keeps naming
+    the configured location, and `source_checkout` says which tree was read.
+    """
     talks = database["talks"]
     exact: dict[str, tuple[int, dict[str, Any]]] = {}
     folded: dict[str, list[str]] = {}
@@ -901,6 +938,7 @@ def build_scan_report(
                 str(location.talks_directory) if location.talks_directory else None
             ),
         },
+        "source_checkout": checkout.as_report() if checkout else None,
         "operation": "scan",
         "apply_requested": apply_requested,
         "database_written": False,
@@ -925,11 +963,12 @@ def build_scan_report(
     if location.talks_directory is None:
         raise ShownotesScanError("local shownotes location has no talks directory")
 
+    talks_directory = scan_directory or location.talks_directory
     _reject_symlink_components(
-        location.talks_directory,
+        talks_directory,
         subject="shownotes talks directory",
     )
-    paths = sorted(location.talks_directory.glob("*.md"), key=lambda item: item.name)
+    paths = sorted(talks_directory.glob("*.md"), key=lambda item: item.name)
     scanned_folded: dict[str, list[str]] = {}
     for path in paths:
         scanned_folded.setdefault(_normalized_filename(path.name), []).append(path.name)
@@ -1045,12 +1084,34 @@ def execute(database_path: Path, *, apply_requested: bool) -> dict[str, Any]:
         except TrackingDatabaseError as exc:
             raise ShownotesScanError(str(exc)) from exc
     location = resolve_shownotes_location(database["config"])
-    report, candidate = build_scan_report(
-        database_path,
-        database,
-        location,
-        apply_requested=apply_requested,
-    )
+    checkout = None
+    scan_root = location.root
+    scan_subdir = location.talks_subdir
+    try:
+        if location.enabled and location.source_type not in NONLOCAL_SOURCE_TYPES:
+            if scan_root is None or scan_subdir is None:
+                raise ShownotesScanError("local shownotes location has no root")
+            checkout = decide_checkout(scan_root)
+            if checkout.state != "published_snapshot":
+                location = _working_tree_location(location)
+        with (
+            published_talks_directory(scan_root, scan_subdir, checkout)
+            if checkout is not None
+            and scan_root is not None
+            and scan_subdir is not None
+            else contextlib.nullcontext()
+        ) as scan_directory:
+            report, candidate = build_scan_report(
+                database_path,
+                database,
+                location,
+                apply_requested=apply_requested,
+                checkout=checkout,
+                scan_directory=scan_directory,
+            )
+    except ShownotesCheckoutError as exc:
+        raise ShownotesScanError(str(exc)) from exc
+    checkout_warnings = list(checkout.warnings) if checkout else []
     if apply_requested:
         try:
             require_current_tracking_database(candidate)
@@ -1082,6 +1143,7 @@ def execute(database_path: Path, *, apply_requested: bool) -> dict[str, Any]:
             "warnings": [],
         }
     report.update(write_fields)
+    report["warnings"] = checkout_warnings + report["warnings"]
     return report
 
 
@@ -1110,6 +1172,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"shownotes scan failed: {message}", file=sys.stderr)
         return 2
     print(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False))
+    for warning in report["warnings"]:
+        print(f"WARNING: {warning}", file=sys.stderr)
     return 0
 
 
