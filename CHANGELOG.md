@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.14 — 2026-11-09
+
 ### Let a fresh YouTube talk persist its own transcript provenance
 
 For a talk whose transcript was first fetched during the run, the worker and
