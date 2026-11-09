@@ -18,6 +18,7 @@ from test_generate_illustrations import (
     _write_candidates,
     _write_gate_outline,
     _write_manifest,
+    _write_reference_outline,
 )
 
 
@@ -700,3 +701,76 @@ def test_main_forwards_lane_options_to_every_render_mode(
     )
     gi.main()
     assert seen == [provider.ImageProviderOptions("cli", True)]
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_forced_cli_refuses_likeness_references_and_renders_nothing(
+    provider,
+    cli,
+    generate_illustrations,
+    no_credentials,
+    monkeypatch,
+    tmp_path,
+    capsys,
+    native,
+):
+    """No CLI flag lifts the refusal, and the photo is never silently dropped."""
+    gi = generate_illustrations
+    monkeypatch.setattr(cli, "probe_codex", lambda: pytest.fail("probed CLI"))
+    monkeypatch.setattr(
+        cli, "render_codex", lambda *a, **kw: pytest.fail("rendered on CLI")
+    )
+    outline = _write_reference_outline(tmp_path, "gpt-image-2.6-flare")
+    _write_manifest(tmp_path, ["gpt-image-2.6-flare"])
+
+    with pytest.raises(SystemExit) as exc:
+        gi.run_generate(
+            str(outline),
+            ["1"],
+            lane_options=provider.ImageProviderOptions("cli", native),
+        )
+
+    assert exc.value.code == 1
+    assert "cli_likeness_reference_unverified" in capsys.readouterr().err
+    assert list((tmp_path / "illustrations").glob("slide-01.*")) == []
+
+
+def test_auto_lane_keeps_likeness_references_on_the_api(
+    provider, cli, generate_illustrations, monkeypatch, tmp_path, png, capsys
+):
+    gi = generate_illustrations
+    monkeypatch.setattr(cli, "probe_codex", lambda: pytest.fail("probed CLI"))
+    monkeypatch.setattr(
+        gi, "load_secrets", lambda *a: ({"openai": "fixture-key"}, "/fake/secrets.json")
+    )
+    calls = []
+    monkeypatch.setattr(
+        gi,
+        "_call_openai_edit",
+        lambda paths, prompt, model, key, **kw: (
+            calls.append((paths, model)),
+            (png, "image/png"),
+        )[1],
+    )
+    outline = _write_reference_outline(tmp_path, "gpt-image-2.6-flare")
+    _write_manifest(tmp_path, ["gpt-image-2.6-flare"])
+
+    gi.run_generate(
+        str(outline), ["1"], lane_options=provider.ImageProviderOptions("auto", True)
+    )
+
+    assert calls == [
+        ([str(tmp_path / "photos" / "speaker.jpg")], "gpt-image-2.6-flare")
+    ]
+    lane = json.loads(
+        next(
+            line
+            for line in capsys.readouterr().err.splitlines()
+            if line.startswith("IMAGE_LANE ")
+        ).removeprefix("IMAGE_LANE ")
+    )
+    assert (lane["lane"], lane["operation"], lane["reason_code"]) == (
+        "api",
+        "edit",
+        "cli_likeness_reference_unverified",
+    )

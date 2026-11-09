@@ -6,8 +6,9 @@ preserves the requested model/geometry unless the caller explicitly permits
 native output. This module describes a proposed render, not an output receipt.
 
 Codex's recorded generate/edit probe in issue #385 establishes native output,
-not an exact image-model snapshot, typed size control, masks, or multi-reference
-composition. Unsupported CLI requirements remain on their API adapter in auto
+not an exact image-model snapshot, typed size control, masks, multi-reference
+composition, or likeness references (photos guiding a fresh scene; the adapter
+can only edit its one reference). Unsupported CLI requirements remain on their API adapter in auto
 mode; forcing CLI makes the incompatibility an error instead of weakening it.
 """
 
@@ -53,6 +54,8 @@ class ImageRequest:
     requested_size: tuple[int, int] | None = None
     reference_count: int = 0
     masked: bool = False
+    # The references guide a fresh scene's likeness instead of being edited.
+    likeness: bool = False
     allow_native_model: bool = False
     allow_native_geometry: bool = False
 
@@ -109,6 +112,7 @@ def _validate_request(request: ImageRequest, forced_lane: str) -> None:
         type(value) is not bool
         for value in (
             request.masked,
+            request.likeness,
             request.allow_native_model,
             request.allow_native_geometry,
         )
@@ -127,6 +131,10 @@ def _validate_request(request: ImageRequest, forced_lane: str) -> None:
         )
     if request.operation == "edit" and request.reference_count == 0:
         raise ImageLaneError("invalid_image_references", "supply the image to edit")
+    if request.likeness and (request.operation != "edit" or request.masked):
+        raise ImageLaneError(
+            "invalid_image_references", "send likeness references as an unmasked edit"
+        )
     if request.requested_size is not None and (
         not isinstance(request.requested_size, tuple)
         or len(request.requested_size) != 2
@@ -190,6 +198,8 @@ def _validate_probe(probe: CliProbe) -> None:
 def _cli_incompatibility(request: ImageRequest) -> str | None:
     if request.family != "openai":
         return "family_api_only"
+    if request.likeness:
+        return "cli_likeness_reference_unverified"
     if not request.allow_native_model:
         return "cli_cannot_pin_image_model"
     if request.requested_size is not None and not request.allow_native_geometry:
