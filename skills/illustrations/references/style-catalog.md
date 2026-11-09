@@ -58,10 +58,11 @@ emits candidate schema v2 with complete style entries and layer/digest receipts.
 The generator reads v1 and v2 without rewriting either. Its v2 path applies each
 style's conventions and, for posters, text treatment to the representative
 slide's actual `text_overlay` and the outline's footer. A poster representative
-must have text and no safe zone. Follow Step 8's normal render and Step 9's
-human-choice/render-before-bake gates; copy the selected entry's anchor,
-conventions, composition, and text treatment when baking. Receipts identify the
-snapshot used, not a promise that a later catalog read is unchanged.
+must have text and no safe zone; a `text_overlay: "none"` plate cannot be one.
+Follow Step 8's normal render and Step 9's human-choice/render-before-bake
+gates; copy the selected entry's anchor, conventions, composition, and text
+treatment when baking. Receipts identify the snapshot used, not a promise that a
+later catalog read is unchanged.
 
 ## Catalog schema v1
 
