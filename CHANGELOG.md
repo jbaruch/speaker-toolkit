@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.10 — 2026-11-09
+
 ### Keep Unicode in deck text
 
 **Re-import `RunDeckOps.bas` after this update**
