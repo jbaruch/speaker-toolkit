@@ -145,8 +145,8 @@ preflight, persistence, queue, or profile work will inspect a local recording
 declared by `structured_data.video_extraction.source_video_path`,
 `video_local_path`, or `video_path`.
 The canonical vault locator may be the configured symlink; the PDF
-boundary maps that trusted root to storage while still rejecting every
-descendant symlink/reparse redirect. Trusted-root bindings retain the directory
+boundary and the persisted-evidence freshness check map that trusted root to
+storage while still rejecting every descendant symlink/reparse redirect. Trusted-root bindings retain the directory
 object's stable identity and policy attributes, not mutable child-content size or
 timestamps; PDF and PPTX leaf generations remain exact. The checker emits report
 schema v3 and records exact Python pins under each lane's
@@ -276,6 +276,35 @@ A matched record also carries `identity_assessment`: the assessment produced by
 the database's talks, serialized whole. Obtain it by assessing the deck BEFORE
 deciding the binding — the assessment is what decides it, not a confirmation of a
 decision already made. An unmatched record carries `identity_assessment: null`.
+
+For a deck not yet in the catalog, one command plans all of that from the saved
+extraction output:
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/catalog-pptx-deck.py" \
+  "{vault_root}" --extraction extraction.json [--deck <pptx_path>]... \
+  [--artifact-dir <vault-relative>] [--dry-run]
+```
+
+- Input: a schema-v1 `--directory` envelope or one deck's result, every result at
+  the current extraction schema and pipeline. Anything else is refused.
+- Side effect: unless `--dry-run`, each planned deck's extraction result is written
+  to `<artifact-dir>/<sha256>.json` under the vault (default `pptx-extractions`).
+  Content addressing makes a rerun write nothing new. A symlinked component below the
+  vault root refuses the write. The database is never written.
+- Exit 0: stdout is one JSON report with `decks[]`, `artifacts_planned`,
+  `artifacts_written` and `mutation_plan`. A `review_required` deck is a finding, not
+  a failure.
+- Exit 2: the database, the extraction result, `--artifact-dir` or an artifact write
+  is unusable. Stdout is `{ok: false, code, error}` and stderr one line. Stop there,
+  consume no `mutation_plan`, and fix the input it names.
+
+After exit 0, apply its `mutation_plan` through `mutate-tracking-database.py`'s usual
+dry-run and apply. Read `decks[]` first. A `review_required` deck is in no plan and goes to owner
+review; the dispositions and their reason codes are in the script's module docstring.
+A new talk's folder often holds several revisions, and each one proves the same talk,
+so name the delivered one with `--deck`. Rows already in the catalog belong to the
+sweep below.
 The writer rejects an assessment that does not authorize the binding; the
 predicate is `binding_refusal` in
 `skills/vault-ingress/scripts/pptx_talk_identity.py`, shared with preflight. Route a rejected deck to owner review

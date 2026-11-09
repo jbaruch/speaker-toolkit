@@ -382,6 +382,29 @@ def _validate_catalog_history_storage(profile: Mapping[object, object]) -> list[
     return errors
 
 
+def _validate_qr_code_config(profile: Mapping[object, object]) -> list[str]:
+    """A regenerated profile keeps publishing_process and qr_code the objects
+    generate-qr.py reads. An absent section is someone else's error to report."""
+    if "publishing_process" not in profile:
+        return []
+    publishing_process = profile["publishing_process"]
+    if not isinstance(publishing_process, Mapping):
+        return [
+            "publishing_process must be an object, got "
+            f"{type(publishing_process).__name__}; restore it from "
+            "config.publishing_process"
+        ]
+    if "qr_code" not in publishing_process or isinstance(
+        publishing_process["qr_code"], Mapping
+    ):
+        return []
+    return [
+        "publishing_process.qr_code must be an object, got "
+        f"{type(publishing_process['qr_code']).__name__}; restore it from "
+        "config.publishing_process.qr_code"
+    ]
+
+
 def validate_profile(
     profile: object,
     *,
@@ -422,6 +445,7 @@ def validate_profile(
         if not assessment.current_contract:
             errors.extend(assessment.errors)
         errors.extend(_validate_catalog_history_storage(profile))
+        errors.extend(_validate_qr_code_config(profile))
         if live_pattern_snapshot is not None:
             errors.extend(_validate_live_pattern_source(profile, live_pattern_snapshot))
         elif live_source_recompute_failed:

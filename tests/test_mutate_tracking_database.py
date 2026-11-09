@@ -2758,3 +2758,186 @@ def test_set_config_cannot_fabricate_a_counted_run(mutate_tracking_database) -> 
                 }
             ],
         )
+
+
+QR_CODE_OBJECT = {
+    "enabled": True,
+    "target": "shownotes_url",
+    "slide_position": "both",
+    "shortener": "bitly",
+    "bitly_domain": "jbaru.ch",
+}
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    ["Generated before delivery, pointing to predicted URL", None, ["bitly"], 1],
+    ids=["prose", "null", "list", "number"],
+)
+@pytest.mark.parametrize(
+    ("path", "wrap"),
+    [
+        (["publishing_process", "qr_code"], lambda value: value),
+        (["publishing_process"], lambda value: {"qr_code": value}),
+    ],
+    ids=["the-field", "its-parent"],
+)
+def test_set_config_refuses_to_flatten_the_qr_code_object(
+    mutate_tracking_database, bad_value, path, wrap
+) -> None:
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match="publishing_process.qr_code as .*must be an object",
+    ):
+        mutate_tracking_database.build_candidate(
+            _base_database(),
+            [
+                {
+                    "kind": "set_config",
+                    "path": path,
+                    "expect": MISSING,
+                    "value": wrap(bad_value),
+                }
+            ],
+        )
+
+
+def test_set_config_accepts_the_qr_code_object_and_a_field_inside_it(
+    mutate_tracking_database,
+) -> None:
+    candidate, _ = mutate_tracking_database.build_candidate(
+        _base_database(),
+        [
+            {
+                "kind": "set_config",
+                "path": ["publishing_process", "qr_code"],
+                "expect": MISSING,
+                "value": QR_CODE_OBJECT,
+            },
+            {
+                "kind": "set_config",
+                "path": ["publishing_process", "qr_code", "shortener"],
+                "expect": "bitly",
+                "value": "none",
+            },
+        ],
+    )
+
+    assert candidate["config"]["publishing_process"]["qr_code"] == {
+        **QR_CODE_OBJECT,
+        "shortener": "none",
+    }
+
+
+def test_set_config_can_repair_a_qr_code_already_flattened(
+    mutate_tracking_database,
+) -> None:
+    """The refusal guards writes. A flattened database has to stay repairable."""
+    database = _base_database()
+    database["config"]["publishing_process"] = {"qr_code": "prose"}
+
+    repaired, _ = mutate_tracking_database.build_candidate(
+        database,
+        [
+            {
+                "kind": "set_config",
+                "path": ["publishing_process", "qr_code"],
+                "expect": "prose",
+                "value": QR_CODE_OBJECT,
+            }
+        ],
+    )
+    removed, _ = mutate_tracking_database.build_candidate(
+        database,
+        [
+            {
+                "kind": "set_config",
+                "path": ["publishing_process", "qr_code"],
+                "expect": "prose",
+                "delete": True,
+            }
+        ],
+    )
+
+    assert repaired["config"]["publishing_process"]["qr_code"] == QR_CODE_OBJECT
+    assert "qr_code" not in removed["config"]["publishing_process"]
+
+
+def test_an_unrelated_set_config_isnt_blocked_by_an_already_flattened_qr_code(
+    mutate_tracking_database,
+) -> None:
+    database = _base_database()
+    database["config"]["publishing_process"] = {"qr_code": "prose"}
+
+    candidate, _ = mutate_tracking_database.build_candidate(
+        database,
+        [
+            {
+                "kind": "set_config",
+                "path": ["speaker_name"],
+                "expect": MISSING,
+                "value": "Someone",
+            }
+        ],
+    )
+
+    assert candidate["config"]["speaker_name"] == "Someone"
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    ["Bitly on jbaru.ch", None, ["bitly"], 1],
+    ids=["prose", "null", "list", "number"],
+)
+def test_set_config_refuses_to_flatten_the_publishing_process_section(
+    mutate_tracking_database, bad_value
+) -> None:
+    with pytest.raises(
+        mutate_tracking_database.TrackingDatabaseMutationError,
+        match=r"config\.publishing_process as .*; it must be an object\.",
+    ):
+        mutate_tracking_database.build_candidate(
+            _base_database(),
+            [
+                {
+                    "kind": "set_config",
+                    "path": ["publishing_process"],
+                    "expect": MISSING,
+                    "value": bad_value,
+                }
+            ],
+        )
+
+
+def test_set_config_can_repair_or_remove_a_flattened_publishing_process(
+    mutate_tracking_database,
+) -> None:
+    """A whole-parent repair and removing the section both stay possible."""
+    database = _base_database()
+    database["config"]["publishing_process"] = "prose"
+
+    repaired, _ = mutate_tracking_database.build_candidate(
+        database,
+        [
+            {
+                "kind": "set_config",
+                "path": ["publishing_process"],
+                "expect": "prose",
+                "value": {"qr_code": QR_CODE_OBJECT},
+            }
+        ],
+    )
+    removed, _ = mutate_tracking_database.build_candidate(
+        database,
+        [
+            {
+                "kind": "set_config",
+                "path": ["publishing_process"],
+                "expect": "prose",
+                "delete": True,
+            }
+        ],
+    )
+
+    assert repaired["config"]["publishing_process"] == {"qr_code": QR_CODE_OBJECT}
+    assert "publishing_process" not in removed["config"]

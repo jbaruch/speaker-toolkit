@@ -68,7 +68,7 @@ Option Explicit
 ' the RUNNING PowerPoint for DeckOpsVersion() and compares the answer to the stamp
 ' in the shipped module; a mismatch means the container holds a stale import and
 ' the user must re-import (see references/deck-editing-setup.md Step 3).
-Public Const DECKOPS_STAMP As String = "8817d0943105a0bf"
+Public Const DECKOPS_STAMP As String = "e8874b9a01514ec2"
 
 Public Function DeckOpsVersion() As Variant
     DeckOpsVersion = DECKOPS_STAMP
@@ -83,6 +83,9 @@ Public Function RunDeckOps(ByVal basePath As String, _
     Dim base As Presentation
     ' outer-boundary-process-contract — see the module-header error-handling contract.
     On Error GoTo Fail
+
+    curTok = "decode-text"
+    replaceStr = DecodeBridgeText(replaceStr)
 
     ' GUARD: PowerPoint keys open presentations by filename and would
     ' silently hand back an already-open same-named deck. Fail loud.
@@ -195,6 +198,9 @@ Public Function MakeBgImageSlide(ByVal basePath As String, _
     Dim base As Presentation
     ' outer-boundary-process-contract — see the module-header error-handling contract.
     On Error GoTo Fail2
+
+    curTok = "decode-text"
+    titleText = DecodeBridgeText(titleText)
 
     curTok = "guard:base"
     AssertNotOpen BaseName(basePath)
@@ -352,6 +358,9 @@ Public Function ExpandBuilds(ByVal basePath As String, _
     Dim base As Presentation
     ' outer-boundary-process-contract — see the module-header error-handling contract.
     On Error GoTo FailEB
+
+    curTok = "decode-text"
+    packedSpec = DecodeBridgeText(packedSpec)
 
     curTok = "guard:base"
     AssertNotOpen BaseName(basePath)
@@ -518,6 +527,10 @@ Public Function MakePlaceholderSlide(ByVal basePath As String, _
     Dim base As Presentation
     ' outer-boundary-process-contract — see the module-header error-handling contract.
     On Error GoTo Fail6
+
+    curTok = "decode-text"
+    titleText = DecodeBridgeText(titleText)
+    subtitleText = DecodeBridgeText(subtitleText)
 
     curTok = "guard:base"
     AssertNotOpen BaseName(basePath)
@@ -742,6 +755,9 @@ Public Function BuildDeck(ByVal basePath As String, _
     Dim base As Presentation
     ' outer-boundary-process-contract — see the module-header error-handling contract.
     On Error GoTo Fail8
+
+    curTok = "decode-text"
+    opsText = DecodeBridgeText(opsText)
 
     curTok = "guard:base"
     AssertNotOpen BaseName(basePath)
@@ -1009,6 +1025,26 @@ Private Function MaxL(ByVal a As Long, ByVal b As Long) As Long
 End Function
 
 ' Filename portion of a POSIX path.
+' Undo deck-text-bridge.py. `run VB macro` converts every string parameter to Mac
+' Roman, so the wrappers send only ASCII: each other UTF-16 code unit arrives as
+' Chr(28) plus four hex digits. ChrW takes a surrogate half as readily as any other
+' code unit, so an emoji's two escapes rebuild the pair.
+Private Function DecodeBridgeText(ByVal s As String) As String
+    Dim marker As Long, pos As Long, out As String
+    marker = InStr(s, Chr(28))
+    If marker = 0 Then
+        DecodeBridgeText = s
+        Exit Function
+    End If
+    pos = 1
+    Do While marker > 0
+        out = out & Mid(s, pos, marker - pos) & ChrW(CLng("&H" & Mid(s, marker + 1, 4)))
+        pos = marker + 5
+        marker = InStr(pos, s, Chr(28))
+    Loop
+    DecodeBridgeText = out & Mid(s, pos)
+End Function
+
 Private Function BaseName(ByVal p As String) As String
     Dim k As Long
     k = InStrRev(p, "/")

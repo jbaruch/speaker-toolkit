@@ -640,6 +640,10 @@ Every plan is strict JSON with exactly `schema_version` and a non-empty
 `mutations` array. Every expectation is either the exact decoded value/record
 seen by the owner reader or the exact missing marker `{"$missing": true}`. JSON
 `null` is a present value and is never interchangeable with that marker.
+A `set_config` that would leave a present `config.publishing_process` or its
+`qr_code` anything but an object is refused. An absent section is allowed. A database
+already holding a string stays readable, so this mutation can repair the whole parent.
+
 The exact missing marker is reserved and invalid as a `set_config` value. A
 legacy writer may already have persisted that marker literally. A deletion with
 the missing-marker expectation is idempotent across both recoverable states: an
@@ -956,11 +960,20 @@ emits `existing_title_conflict` and leaves the entry `review_required`. An exact
 title can still fill empty non-title metadata through the existing update
 contract.
 
-The command emits report schema v3:
+The site checkout may sit anywhere, so the scanner decides which tree to read
+(`skills/vault-ingress/scripts/shownotes_checkout.py`). It reads the working tree
+only when the checkout is on the default branch and holds everything published on
+`origin`. On a feature branch, detached, or behind, it fetches and reads a snapshot
+of `origin/<default>`, leaving the speaker's checkout alone, and never needs
+`path_or_url` repointed. `source_checkout.state` says which happened. A root git
+reports isn't a work tree is read as it stands. No `origin/HEAD`, a fetch that failed,
+or git not answering at all adds an entry to `warnings`, since that scan may be short.
+
+The command emits report schema v4:
 
 ```json
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "ok": true,
   "mode": "dry-run|apply",
   "operation": "scan|skipped_disabled|skipped_nonlocal",
@@ -986,6 +999,13 @@ The command emits report schema v3:
     "root": "/absolute/shownotes/root",
     "talks_subdir": "_talks",
     "talks_directory": "/absolute/shownotes/root/_talks"
+  },
+  "source_checkout": {
+    "state": "not_git|git_unavailable|no_default_branch|default_branch|published_snapshot",
+    "branch": "feature-branch|null when detached",
+    "default_branch": "main",
+    "scanned_commit": "the published_snapshot's commit, else null",
+    "fetch": "ok|failed|not_run"
   },
   "entries": [{
     "filename": "2026-08-01-talk.md",

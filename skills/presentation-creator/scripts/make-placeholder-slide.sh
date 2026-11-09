@@ -30,6 +30,7 @@ BASE="$1"; OUT="$2"; TITLE="$3"; SUBTITLE="$4"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/ensure-drivers.sh"   # restore .applescript/.bas drivers tessl install strips
 source "$HERE/container-stage.sh"  # stage Google-Drive inputs into the container (no Powerbox prompts)
+source "$HERE/deck-text-bridge.sh"  # keep non-ASCII text intact across `run VB macro`
 DRIVER="$HERE/make-placeholder-slide.applescript"
 
 [[ -f "$BASE" ]]   || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy whose slide size the placeholder should match." >&2; exit 1; }
@@ -41,6 +42,9 @@ STAGE_DIR="$HOME/.deckops-staging"
 mkdir -p "$STAGE_DIR"
 STAGE="$OUT_STAGE_DIR/$(basename "$OUT")"
 rm -f "$STAGE"
+
+TITLE="$(bridge_text "$TITLE")"
+SUBTITLE="$(bridge_text "$SUBTITLE")"
 
 osascript "$DRIVER" "$(stage_base "$BASE")" "$STAGE" "$TITLE" "$SUBTITLE"
 
