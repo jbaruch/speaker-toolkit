@@ -1074,13 +1074,14 @@ def derive_youtube_transcript_source(
     owner_video_id: str | None,
     owner_duration_seconds: int | float | None,
 ) -> str | None:
-    """The provenance a fetcher's receipt proves for a talk that recorded none.
+    """The provenance a fetcher's receipt establishes for a talk that recorded none.
 
-    A receipt written by the YouTube fetcher is bound to the transcript's exact bytes
-    and names the video it came from, so it can stand in for a pre-registered
-    `transcript_source` once that video is the talk's own. A fresh talk may have no
-    trusted duration yet, so duration only ever vetoes. Local-media and VTT receipts
-    prove nothing here: those sources are declared before the claim.
+    Absent-only, per `rules/transcript-fetch-authority.md`: a YouTube caption or
+    Whisper receipt bound to the transcript's exact bytes establishes the source it
+    names when it passes the same owner check that confirms recorded provenance,
+    so the talk's own video ID and its trusted provider duration are both required.
+    Local-media and VTT receipts establish nothing: those sources are declared
+    before the claim.
     """
     if owner_video_id is None:
         return None
@@ -1094,17 +1095,16 @@ def derive_youtube_transcript_source(
     derived = YOUTUBE_RECEIPT_TRANSCRIPT_SOURCES.get(
         kind if isinstance(kind, str) else ""
     )
-    if derived is None or provenance.get("video_id") != owner_video_id:
+    if derived is None:
         return None
-    if owner_duration_seconds is not None:
-        recorded = provenance.get("duration_seconds")
-        if (
-            not isinstance(recorded, (int, float))
-            or isinstance(recorded, bool)
-            or abs(float(recorded) - float(owner_duration_seconds)) > 1.0
-        ):
-            return None
-    return derived
+    owner_ok, _owner_reason = _timing_owner_matches(
+        payload,
+        owner_source=derived,
+        owner_video_id=owner_video_id,
+        owner_media_sha256=None,
+        owner_duration_seconds=owner_duration_seconds,
+    )
+    return derived if owner_ok else None
 
 
 def load_verified_segments(

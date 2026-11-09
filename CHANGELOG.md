@@ -14,12 +14,16 @@ new YouTube talk with no captions couldn't persist through the documented path. 
 `github-universe-2026-prototype-policy` the way through was to recover the claim, run a
 source repair documented for non-YouTube talks only, re-preflight and re-claim.
 
-With no recorded provenance, a receipt now proves it: `youtube_captions` means
-`youtube_auto` and `youtube_whisper` means `whisper`, when the receipt names the talk's
-own video and its bytes match. A known duration can still veto it. A return that omits
-the field gets the proven value, and one that claims a different source is still refused.
-Local-media and VTT receipts prove nothing here, since those sources are declared before
-the claim.
+With no recorded provenance, a receipt now establishes it: `youtube_captions` means
+`youtube_auto` and `youtube_whisper` means `whisper`. It has to pass the same owner check
+that confirms recorded provenance: the transcript's exact bytes, the talk's own video
+ID, and the trusted provider duration in `source_identity`. A talk without that duration
+is refused with instructions, as before. The receipt is read inside the same stable
+bundle snapshot as the text, so a refetch mid-read can't pair new text with old
+provenance. A return that omits the field gets the established value, persistence
+stores it, and a return claiming a different source is still refused. Local-media and
+VTT receipts establish nothing, since those sources are declared before the claim.
+`rules/transcript-fetch-authority.md` records this absent-only exception.
 
 ## 0.21.4 — 2026-10-29
 

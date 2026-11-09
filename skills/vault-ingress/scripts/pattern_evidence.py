@@ -252,6 +252,9 @@ class _VerifiedTranscriptSnapshot:
     timed_segments: tuple[dict[str, object], ...]
     timing_reason: str
     bundle: _TranscriptBundleSnapshot | None
+    # The source a YouTube receipt established inside this same stable generation,
+    # when the talk recorded none and derivation was requested.
+    derived_source: str | None = None
 
 
 def _nonempty(value: object) -> bool:
@@ -1562,8 +1565,13 @@ def _load_verified_transcript_snapshot(
     owner_duration_seconds: float | None,
     local_media: Sequence[_LocalMedium],
     local_media_note: str | None = None,
+    derive_youtube_source: bool = False,
 ) -> _VerifiedTranscriptSnapshot:
     """Load text and both receipts from one stable bundle generation.
+
+    With `derive_youtube_source`, a talk that recorded no provenance lets its
+    YouTube receipt establish it, read between the same before/after captures as
+    everything else, so a refreshed bundle can't pair new text with old provenance.
 
     Multi-file replacement is transactional on caught errors but cannot be one
     portable atomic rename. A reader can therefore encounter the brief rename
@@ -1637,6 +1645,16 @@ def _load_verified_transcript_snapshot(
         provenance_reason = "timing provenance was not inspected"
         timed_segments: list[dict[str, object]] = []
         timing_reason = "timed transcript is unavailable"
+        derived_source: str | None = None
+        attempt_owner_source = owner_source
+        if transcript_ok and derive_youtube_source:
+            derived_source = derive_youtube_transcript_source(
+                transcript_path,
+                owner_video_id=owner_video_id,
+                owner_duration_seconds=owner_duration_seconds,
+            )
+            if derived_source is not None:
+                attempt_owner_source = derived_source
         if transcript_ok:
             # Timing binds the medium its own receipt names, with that medium's
             # duration; provider timing keeps the provider's. The quality
@@ -1656,7 +1674,7 @@ def _load_verified_transcript_snapshot(
             _provenance_source, provenance_reason = load_verified_transcript_source(
                 transcript_path,
                 transcript_text,
-                owner_source=owner_source,
+                owner_source=attempt_owner_source,
                 owner_video_id=owner_video_id,
                 owner_media_sha256=owner_media_sha256,
                 owner_duration_seconds=timing_duration,
@@ -1664,7 +1682,7 @@ def _load_verified_transcript_snapshot(
             timed_segments, timing_reason = load_verified_segments(
                 transcript_path,
                 transcript_text,
-                owner_source=owner_source,
+                owner_source=attempt_owner_source,
                 owner_video_id=owner_video_id,
                 owner_media_sha256=owner_media_sha256,
                 owner_duration_seconds=timing_duration,
@@ -1698,6 +1716,7 @@ def _load_verified_transcript_snapshot(
             timed_segments=tuple(timed_segments),
             timing_reason=timing_reason,
             bundle=before,
+            derived_source=derived_source,
         )
 
     return _VerifiedTranscriptSnapshot(
@@ -1777,23 +1796,19 @@ def build_evidence_context(
     transcript_bundle: _TranscriptBundleSnapshot | None = None
     transcript_path, transcript_reason = resolve_transcript_artifact(vault_root, talk)
     if transcript_path is not None:
-        if canonical_transcript_source is None:
-            canonical_transcript_source = derive_youtube_transcript_source(
-                transcript_path,
-                owner_video_id=bound_youtube_id,
-                owner_duration_seconds=timing_owner_duration,
-            )
-            transcript_source_derived = canonical_transcript_source is not None
-        timing_owner_source = canonical_transcript_source or "unknown"
         verified_transcript = _load_verified_transcript_snapshot(
             transcript_path,
             talk,
-            owner_source=timing_owner_source,
+            owner_source=canonical_transcript_source or "unknown",
             owner_video_id=bound_youtube_id,
             owner_duration_seconds=timing_owner_duration,
             local_media=transcript_media.media,
             local_media_note=transcript_media.audio_reason,
+            derive_youtube_source=canonical_transcript_source is None,
         )
+        if verified_transcript.derived_source is not None:
+            canonical_transcript_source = verified_transcript.derived_source
+            transcript_source_derived = True
         transcript_text = verified_transcript.text
         transcript_reason = verified_transcript.transcript_reason
         transcript_policy_bound = verified_transcript.policy_bound
@@ -3559,7 +3574,10 @@ def canonicalize_return_evidence(
         }:
             raise PatternEvidenceError(
                 "validated transcript has no machine receipt or pre-registered "
-                "transcript_source provenance"
+                "transcript_source provenance; a YouTube fetcher receipt establishes "
+                "it only when the talk records source_identity with its provider "
+                "duration (run the source-identity audit and repair), otherwise "
+                "register transcript_source before the claim"
             )
         # A worker told `method: existing` honestly leaves the field out. The
         # receipt that proved the provenance fills it in here.
@@ -5071,6 +5089,10 @@ def return_evidence_claim(ret: Mapping[str, object]) -> dict[str, object]:
     the evidence schema marker.
     """
     claim = copy.deepcopy(dict(ret))
+    # Canonicalization binds transcript_source to acquisition provenance and
+    # refuses any return value that disagrees, so it is source-owned here. A
+    # return that honestly omitted it gets the value its receipt established.
+    claim.pop("transcript_source", None)
     structured = claim.get("structured_data")
     if isinstance(structured, dict):
         # Canonical slide_count is mechanically derived from the selected local

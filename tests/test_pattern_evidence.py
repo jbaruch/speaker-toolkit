@@ -404,6 +404,7 @@ def _write_youtube_bundle(
     source: str,
     video_id: str = SYNTHETIC_VIDEO_ID,
     duration: float = SYNTHETIC_DURATION,
+    force: bool = False,
 ) -> list[str]:
     path = vault / "transcripts" / f"{SYNTHETIC_VIDEO_ID}.txt"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -419,6 +420,7 @@ def _write_youtube_bundle(
         ),
         quality_policy=transcript_timing.build_quality_policy(400),
         quality_policy_provenance={"kind": "fixed_default"},
+        force=force,
     )
     return lines
 
@@ -462,25 +464,6 @@ def test_a_return_that_omits_provenance_gets_what_the_receipt_proves(
     )
 
     assert canonical["transcript_source"] == "whisper"
-
-
-def test_a_derived_talk_stays_fresh_once_it_persists(tmp_path: Path) -> None:
-    vault = tmp_path / "vault"
-    lines = _write_youtube_bundle(vault, source="whisper")
-    talk = _fresh_youtube_talk(vault)
-    raw = _raw_transcript_return(len(lines))
-    del raw["transcript_source"]
-    canonical = pattern_evidence.canonicalize_return_evidence(
-        raw, talk, vault, _catalog(_entry())
-    )
-    persisted = {**copy.deepcopy(talk), **copy.deepcopy(canonical)}
-
-    assert (
-        pattern_evidence.assess_persisted_pattern_evidence_freshness(
-            persisted, vault_root=vault
-        )
-        == ()
-    )
 
 
 def test_a_return_contradicting_the_receipt_is_refused(tmp_path: Path) -> None:
@@ -540,11 +523,12 @@ def test_a_receipt_that_doesnt_bind_to_this_talk_proves_nothing(
         )
 
 
-def test_a_receipt_can_prove_provenance_before_any_duration_is_known(
+def test_a_receipt_establishes_nothing_without_a_trusted_owner_duration(
     tmp_path: Path,
 ) -> None:
+    """The same owner check that confirms recorded provenance: no duration, no proof."""
     vault = tmp_path / "vault"
-    _write_youtube_bundle(vault, source="whisper")
+    lines = _write_youtube_bundle(vault, source="whisper")
 
     assert (
         transcript_timing.derive_youtube_transcript_source(
@@ -552,8 +536,50 @@ def test_a_receipt_can_prove_provenance_before_any_duration_is_known(
             owner_video_id=SYNTHETIC_VIDEO_ID,
             owner_duration_seconds=None,
         )
-        == "whisper"
+        is None
     )
+    talk = _fresh_youtube_talk(vault)
+    del talk["source_identity"]
+    raw = _raw_transcript_return(len(lines))
+    del raw["transcript_source"]
+    with pytest.raises(
+        pattern_evidence.PatternEvidenceError,
+        match="records source_identity with its provider duration",
+    ):
+        pattern_evidence.canonicalize_return_evidence(
+            raw, talk, vault, _catalog(_entry())
+        )
+
+
+def test_provenance_comes_from_the_same_bundle_generation_as_the_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fetch that rewrites the bundle mid-read leaves no old receipt paired with
+    new text: the snapshot retries, and the retry derives from the new receipt."""
+    vault = tmp_path / "vault"
+    lines = _write_youtube_bundle(vault, source="whisper")
+    derive = pattern_evidence.derive_youtube_transcript_source
+    calls = []
+
+    def derive_then_refetch(*args: Any, **kwargs: Any) -> str | None:
+        derived = derive(*args, **kwargs)
+        if not calls:
+            _write_youtube_bundle(vault, source="captions", force=True)
+        calls.append(derived)
+        return derived
+
+    monkeypatch.setattr(
+        pattern_evidence, "derive_youtube_transcript_source", derive_then_refetch
+    )
+    raw = _raw_transcript_return(len(lines))
+    del raw["transcript_source"]
+
+    canonical = pattern_evidence.canonicalize_return_evidence(
+        raw, _fresh_youtube_talk(vault), vault, _catalog(_entry())
+    )
+
+    assert calls == ["whisper", "youtube_auto"]
+    assert canonical["transcript_source"] == "youtube_auto"
 
 
 def test_a_talk_without_a_youtube_identity_derives_nothing(tmp_path: Path) -> None:

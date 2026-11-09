@@ -93,6 +93,16 @@ description: Authority of record for the Whisper transcription layer's Platform-
 - The talk's recorded `transcript_source` is canonical. A sidecar may confirm
   matching owner-bound timing, but captions cannot promote manual, Whisper, or
   unknown text, and a timing source never rewrites the talk's provenance.
+- Absent-only exception: when the talk records no `transcript_source`, a YouTube
+  caption or Whisper timing receipt establishes `youtube_auto` or `whisper`.
+- It applies only when the receipt passes the owner check that confirms recorded
+  provenance: exact transcript bytes, the talk's own video ID, and a trusted owner
+  duration from `source_identity` within one second.
+- No trusted owner duration means no established provenance; register
+  `transcript_source` before the claim instead.
+- Local-media and VTT receipts never establish provenance.
+- Evidence canonicalization reads the receipt inside the same stable transcript
+  bundle snapshot as the text, and persistence stores the established value.
 - Existing transcript bytes are never replaced without explicit `--force`.
   Invalid existing text fails closed and asks for that authorization. A caught
   bundle-write failure restores the prior transcript and both receipts exactly.
