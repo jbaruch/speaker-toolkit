@@ -2,7 +2,7 @@
 
 `presentation-creator` owns `outline.yaml` shape and migrations. The talk block
 starts in Phase 1, chapters in Phase 2, and slides/interludes in Phase 3. Keep all
-of them in the same `schema_version: 2` outline. Fields and compatibility live in
+of them in the same `schema_version: 3` outline. Fields and compatibility live in
 [phase3-content.md](phase3-content.md) and `scripts/outline_schema.py`.
 
 | File | Contract |

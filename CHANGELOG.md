@@ -1,5 +1,76 @@
 # Changelog
 
+### Draw a real person from their photo on deck plates
+
+Deck illustrations of a real person came out as strangers. The case was a
+keynote bio plate: a field-guide engraving of the speaker in his signature hat.
+`generate-illustrations.py` rendered every plate from a text prompt alone, so
+the hat was right and the face belonged to someone else, and no prompt wording
+can carry a face. Only `generate-thumbnail.py` took a real photo
+(`--speaker-photo`, with `--portrait-style`); deck plates had nothing like it.
+
+A slide can now name likeness photos in `outline.yaml`:
+
+```yaml
+reference_images: ["photos/speaker.jpg"]
+```
+
+Each entry is relative to the talk directory, staying inside it, or absolute.
+Up to four per slide; each must be a `.jpg`, `.jpeg`, `.png` or `.webp` file
+that decodes as that format, on a slide with an `image_prompt`. The extension
+has to match the decoded format so the MIME type sent to the vendor is true.
+A phone portrait, depth or HDR photo is a JPEG with a multi-picture header that
+Pillow reports as MPO; it counts as JPEG, so a headshot straight off an iPhone
+loads without re-encoding.
+Every outline load checks the files and names the fix. The loaders pass the
+talk directory as validation context; validating a slide with references
+without it is refused rather than skipped. Pillow is imported only when a slide
+carries references, so outlines without them still load with PyYAML and
+Pydantic alone.
+
+The field changes the outline's shape, so outline schema moves to 3, the way
+`footer_style` moved it to 2 after a review flagged that addition for skipping
+the bump. The owner's migration restamps an exact 1 or 2 to 3 and changes
+nothing else. Non-owner readers refuse an older outline with the usual
+handoff, so an existing talk needs one run of
+`outline_schema.py outline.yaml` (or `--migrate`) before the illustration
+scripts read it again; adding the field to a v2 outline and running that
+validation migrates and checks it in one step. Test fixtures that write an
+outline for a reader now take the stamp from `CURRENT_OUTLINE_SCHEMA_VERSION`
+in `tests/conftest.py`, pinned to the module constant, instead of literals
+hunted down on every bump.
+
+Fresh generation (`all`, `remaining`, explicit slides, `-v`) and `--compare`
+send the photos as image inputs. OpenAI `gpt-image-*` goes through
+`/images/edits` instead of `/images/generations`: one photo in the `image`
+field, the shape builds already use, and several as repeated `image[]` fields.
+Gemini gets them as inline parts ahead of the prompt, the shape `--edit` and the
+thumbnail composer already use. Imagen has no image input and refuses with the
+fix named. `input_fidelity` is not sent: its support on the 2.6 models is
+unverified, and an unknown parameter fails the whole request.
+
+The prompt gains a `LIKENESS REFERENCE` note after the poster or safe-zone
+directives and before `COMPOSE ONLY`. It says to use the photos only as a guide
+to facial likeness, lets the scene decide pose, clothing and props, renders
+everything in the slide's style medium, and forbids pasting in the photo. The
+wording follows `thumbnail-generation-rules` §6: graphic-composition framing,
+no "exact", "preserve" or "bone structure", since assertive preservation
+language on a real-person photo is what trips the vendors' safety filters.
+Poster-theatrical slides keep their embedded title, footer block or stamped
+footer strip, and no-invented-text directives.
+
+Likeness references are API-only. The Codex adapter's one reference is always
+an image to edit; it tells the CLI to "edit the supplied reference image", which
+would hand back the photo retouched instead of an engraving. The lane request
+carries a new `likeness` flag: auto mode stays on API with reason
+`cli_likeness_reference_unverified`, and `--image-lane cli` refuses with that
+reason ahead of the native-model opt-ins, since no flag can lift it.
+
+`--style-explore` renders a reference slide without its photos and warns on
+stderr; the grid picks a style and a model, not a likeness. `--edit`, `--fix`
+and `--build` edit the rendered image, which already carries the likeness, and
+never send the photos.
+
 ## 0.21.15 — 2026-11-09
 
 ### Add an owner command that catalogs a new deck

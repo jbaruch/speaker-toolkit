@@ -69,6 +69,60 @@ python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-illustrati
 Output lands in `illustrations/model-comparison/`. The roster, vendor aliases,
 and per-model attributes live in `skills/illustrations/scripts/model_registry.py`.
 
+## Likeness References
+
+A slide that depicts a real person, such as the speaker's bio plate, can name
+real photos of that person in `outline.yaml`:
+
+```yaml
+- n: 2
+  format: FULL
+  text_overlay: "none"
+  image_prompt: |
+    [STYLE ANCHOR]. A field-guide engraving of the speaker in his signature hat.
+  reference_images:
+    - photos/speaker.jpg        # relative to the talk directory, inside it
+    - /Users/me/photos/side.png # or absolute
+```
+
+Field contract (owned by presentation-creator's `outline_schema.py`): outline
+schema 3, up to four entries, each a `.jpg` / `.jpeg` / `.png` / `.webp` file
+that decodes as that format, on a slide with an `image_prompt`. Every outline
+load validates the files and names the fix for a missing, escaping, undecodable
+or misnamed photo.
+
+| Command | Reference photos |
+|---------|------------------|
+| `all` / `remaining` / `N` / `-v N` | Sent as image inputs |
+| `--compare N` | Sent to every compared model |
+| `--style-explore` | Not sent; a stderr warning names the slide |
+| `--edit` / `--fix` / `--build` | Not sent; they edit the rendered image, which already carries the likeness |
+
+Re-render one slide as a new version, leaving the current image in place:
+
+```bash
+python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-illustrations.py" outline.yaml -v 2
+```
+
+Providers and lanes:
+
+- OpenAI `gpt-image-*`: the photos go to `/images/edits` (`image` for one,
+  repeated `image[]` for several) with the slide's prompt and size.
+- Gemini / Nano Banana: the photos go to `generateContent` as inline image
+  parts ahead of the prompt.
+- Imagen: refused; it has no image input. Bake a Gemini or OpenAI model.
+- API lane only. `--image-lane auto` stays on API and reports
+  `cli_likeness_reference_unverified`; `--image-lane cli` refuses with that
+  reason. The Codex adapter can only edit its one reference.
+
+The prompt gains a `LIKENESS REFERENCE` note after the safe-zone or poster
+directives: the photos guide facial likeness only, the scene decides pose,
+clothing and props, everything renders in the slide's style anchor medium, and
+the photo is never pasted in. It is graphic-composition framing per
+`thumbnail-generation-rules` §6. Poster-theatrical slides keep their embedded
+title and footer directives. Put the hat, glasses and other signature items in
+the `image_prompt` too; the photo alone does not decide clothing.
+
 ## Edit / Fix / Versioned Generation
 
 | Command | When to use | Output |
