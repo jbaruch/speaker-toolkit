@@ -228,6 +228,7 @@ def resolve_image_lane(
     requested_size: tuple[int, int] | None = None,
     reference_count: int = 0,
     masked: bool = False,
+    likeness: bool = False,
     allow_native_model: bool = False,
     allow_native_geometry: bool = False,
 ) -> ImageLane:
@@ -261,6 +262,7 @@ def resolve_image_lane(
             requested_size=requested_size,
             reference_count=reference_count,
             masked=masked,
+            likeness=likeness,
             allow_native_model=allow_native_model,
             allow_native_geometry=allow_native_geometry,
         ),
