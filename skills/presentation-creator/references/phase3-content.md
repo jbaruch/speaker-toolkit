@@ -165,7 +165,7 @@ this block use `visual:` + `text_overlay:` only; `image_prompt:` is omitted.
 
 ```yaml
 style_anchor:
-  model: "imagen-4"
+  model: "gemini-3-pro-image"
   full: |
     Full-bleed style anchor paragraph — describes the FULL (1920×1080) format.
   imgtxt: |
