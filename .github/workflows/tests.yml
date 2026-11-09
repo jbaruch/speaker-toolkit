@@ -61,7 +61,11 @@ jobs:
 
   test:
     needs: lint
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: scripts/install_system_deps.py pins apt
+    # versions that exist in one Ubuntu suite only. ubuntu-latest moved to 26.04
+    # under the 24.04 pins and every apt install failed. Move this image and
+    # those pins together.
+    runs-on: ubuntu-26.04
     # Backstop against the apt step hanging on flaky runner networking: fail
     # fast and re-runnable instead of consuming the 6h default job limit.
     # Raised from 25 when the markdown deck renderers landed: a cold cache pays
@@ -112,8 +116,8 @@ jobs:
         # stamp is the renewal cadence — a set nobody touches is still refetched
         # rather than pinned forever (`dependency-management` Freshness).
         #
-        # The suite name is in the key too. `ubuntu-latest` moves to the next
-        # LTS on GitHub's schedule, and an entry saved under the previous one
+        # The suite name is in the key too. When the runner image moves to the
+        # next LTS, an entry saved under the previous one
         # holds indices and archives the new suite's apt cannot install from —
         # and `actions/cache` does not save on an exact key hit, so the new
         # suite would go without an entry of its own until the week rolled.
