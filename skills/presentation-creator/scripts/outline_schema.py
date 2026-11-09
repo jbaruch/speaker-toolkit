@@ -631,7 +631,8 @@ class TalkMetadata(_StrictModel):
 # ── Likeness reference images (per slide, schema 3) ──────────────────
 
 # At most this many photos per slide. Both image vendors accept more; a few
-# angles carry a likeness, and the cap keeps each request body bounded.
+# angles carry a likeness. The cap bounds the count, not the bytes: an
+# oversized photo surfaces as the vendor's own HTTP refusal at generation.
 MAX_REFERENCE_IMAGES = 4
 
 # The photo formats both vendors' image-input APIs accept, keyed by the
