@@ -1364,10 +1364,10 @@ def test_run_generate_proceeds_when_gate_passes(
 def _write_poster_outline(
     tmp_path,
     model="gemini-3-pro-image",
-    footer="jbaruch • Devoxx 2026",
-    text="One team, one bench",
+    footer: str | None = "jbaruch • Devoxx 2026",
+    text: str | None = "One team, one bench",
     text_treatment="glowing hand-script neon on an in-scene surface",
-    footer_style=None,
+    footer_style: dict | None = None,
 ):
     """One poster slide; `text=None` omits its text_overlay key entirely."""
     slide = {
