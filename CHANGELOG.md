@@ -12,7 +12,11 @@ rhetoric summary, so a reparse would have repeated the finding.
 `speaker_correction` is now a deliberate reprocess reason, settable through
 `apply-source-repairs.py` and accepted by normalize and claim. `queue-state.py claim`
 returns `confirmed_intents`, and workers are told to score under them, leaving out of
-`patterns_detected` and `antipatterns_detected` what a ruling excludes.
+`patterns_detected` and `antipatterns_detected` what a ruling excludes. A ruling applies
+wherever the situation its `rule` describes holds; its `talk`, `source_talk` or
+`source_talks` records where the speaker confirmed it, not where it applies.
+`upsert_confirmed_intent` refuses any change while a queue claim is active, so a replayed
+claim hands its workers the same rulings the fresh claim did.
 
 Such an entry persists as undetected rather than not applicable, on purpose. The score is
 the same either way, and only the profile's pattern rates differ. Recording not applicable

@@ -618,6 +618,30 @@ def _validate_collection_record(kind: str, record: dict[str, Any]) -> None:
             raise TrackingDatabaseMutationError(f"{label}.approved must be boolean")
 
 
+def _refuse_intent_change_under_active_claims(
+    database: dict[str, Any], *, index: int
+) -> None:
+    """Freeze confirmed_intents while any queue claim is active.
+
+    A claim hands its workers the intents to score under, and an idempotent replay
+    rereads the live collection. Refusing a change until every claim is persisted or
+    recovered keeps a replay handing out the rulings the fresh claim did.
+    """
+    active = sorted(
+        str(talk.get("filename"))
+        for talk in database.get("talks", [])
+        if isinstance(talk, dict)
+        and isinstance(talk.get("_queue_claim"), dict)
+        and talk["_queue_claim"].get("state") == "claimed"
+    )
+    if active:
+        raise TrackingDatabaseMutationError(
+            f"mutations[{index}] changes confirmed_intents while queue claims are "
+            f"active for {active}; persist or recover that batch first, then record "
+            "the ruling and claim a new generation"
+        )
+
+
 def _apply_collection_upsert(
     database: dict[str, Any],
     mutation: dict[str, Any],
@@ -654,6 +678,8 @@ def _apply_collection_upsert(
         expected=mutation["expect"],
         label=f"{collection_name}[{identity!r}]",
     )
+    if kind == "upsert_confirmed_intent" and not json_values_equal(current, record):
+        _refuse_intent_change_under_active_claims(database, index=index)
     replacement = copy.deepcopy(record)
     before: object = current if current is not None else MISSING_MARKER
     if record_index is None:

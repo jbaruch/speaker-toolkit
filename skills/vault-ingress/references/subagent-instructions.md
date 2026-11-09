@@ -263,10 +263,11 @@ text.
 
 ### Score under the speaker's confirmed intents
 
-Each record in `confirmed_intents` is a ruling the speaker made, and its `rule` binds
-your scoring when its `source_talk`, `talk` or `source_talks` names this talk, or when
-it names none and the rule's condition visibly holds. Never report as a finding what a
-ruling rules out. Leave that entry out of `patterns_detected` and
+Read `confirmed_intents` from the claim output. Each record is a ruling the speaker
+made, and its `rule` binds your scoring on every talk where the situation it describes
+holds. Its `talk`, `source_talk` or `source_talks` records the talk the speaker confirmed
+it from: provenance, never a limit on where the rule applies. Never report as a finding
+what a ruling rules out. Leave that entry out of `patterns_detected` and
 `antipatterns_detected`, and say in `rhetoric_notes` which intent you applied and why.
 
 `organizer_mandated_template_not_scored` is the common case. Where it applies, slide

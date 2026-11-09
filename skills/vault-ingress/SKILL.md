@@ -153,8 +153,7 @@ an explicit filename/title argument as a one-talk selection.
 Launch up to five claimed talks in parallel, then complete Steps 4 and 5 before
 the next batch. Each worker must execute
 [Per-Talk Subagent Instructions](references/subagent-instructions.md), A → B →
-B2 → C, against its claim, current summary and the claim output's
-`confirmed_intents`.
+B2 → C, against its claim and current summary.
 
 The claim fixes the return schema and immutable numeric baseline. Workers must
 not parse Section 15 for numeric adherence or return engine-owned enrichment;

@@ -954,7 +954,11 @@ def command_claim(
 
 
 def _confirmed_intents(database):
-    """The speaker's rulings, for the claim's workers to score under."""
+    """The speaker's rulings, for the claim's workers to score under.
+
+    mutate-tracking-database refuses to change them while any claim is active, so a
+    replay reads the same rulings the fresh claim handed out.
+    """
     return copy.deepcopy(database.get("confirmed_intents") or [])
 
 
