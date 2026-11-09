@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.17 — 2026-11-09
+
 ### Put each build frame's notes on the frame they are spoken over
 
 A progressive-reveal slide's speaker notes all landed on its last frame. The
