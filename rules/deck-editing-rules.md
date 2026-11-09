@@ -87,14 +87,21 @@ generating slide structure (see `rules/slide-generation-rules.md`).
 ## Progressive-Reveal Build Expansion
 
 - `RunDeckOps.bas`'s `ExpandBuilds` replaces each progressive-reveal parent slide
-  with its build frames as full-bleed background-fill slides (notes on the final
-  frame only), via real PowerPoint slide insertion — never python-pptx. Invoke via
+  with its build frames as full-bleed background-fill slides, via real PowerPoint
+  slide insertion — never python-pptx. Invoke via
   `bash skills/presentation-creator/scripts/expand-builds.sh <baseCopy> <out> <builds-manifest.json>`
   (manifest from `build-expansion-manifest.py`).
 - Run `ExpandBuilds` BEFORE the by-index passes (notes, backgrounds, QR): it
   renumbers every slide after a build parent, so those passes must key on the
   POST-expansion deck. It processes parents descending so one parent's expansion
   can't shift another's index.
+- Each build frame carries the notes spoken while it is on screen.
+  `build-expansion-manifest.py --notes --notes-out` splits a parent's note at its
+  `[BUILD NN]` cue lines and writes the whole deck's notes keyed on the
+  POST-expansion deck; `inject-notes.sh` applies that map to every slide.
+- Never hand-compute post-expansion note keys.
+- `ExpandBuilds` writes only the manifest's `notes`, the final frame's segment,
+  which the notes pass rewrites unchanged. Moving notes needed no macro change.
 
 ## macOS-Only — VBA Layer Untestable in CI
 

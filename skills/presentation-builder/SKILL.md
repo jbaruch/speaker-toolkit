@@ -34,8 +34,9 @@ Read [deckops-spec.md](references/deckops-spec.md) when emitting operations.
 
 Use the real PowerPoint build scripts. If the outline has a style anchor,
 invoke `Skill(skill: "illustrations")` after deck structure exists; resume with
-approved images and manifests. Complete expansion, remaining notes, and final
-backgrounds in that order, keyed on post-expansion positions.
+approved images and manifests. Complete expansion, notes, and final
+backgrounds in that order, keyed on post-expansion positions; the manifest
+script writes the expanded notes map, never hand-keyed.
 
 Present the deck, build report, and unresolved author placeholders. Iterate
 through Step 3 only when the author requests edits. Finish here when slides are

@@ -321,8 +321,9 @@ If no slides specify builds, proceed silently to Step 12.
 ## Step 12 — Apply Illustrations to Deck
 
 Insert generated illustrations and build sequences into the .pptx. Build
-slides replace their parent slide rather than duplicating after it; speaker
-notes go on the final build step only.
+slides replace their parent slide rather than duplicating after it; each build
+frame carries the notes spoken over it, split at its `[BUILD NN]` cues
+([builds.md](references/builds.md)).
 
 The script contract is `DECK ILLUSTRATIONS_DIR OUTLINE_YAML` (positional, in
 that order), with optional `--out`, `--image-ext`, `--scrim-color`,

@@ -355,7 +355,10 @@ Conventions:
   during generation — not content authoring — see
   `skills/illustrations/references/builds.md`
 - Each build counts toward `slide_budget` (the validator expands `max(len(builds), 1)`)
-- Script cues mid-slide reference the build steps: `cue: "BUILD 01"`
+- Script cues mid-slide reference the build steps: `cue: "BUILD 01"`. Lines
+  before the first cue are spoken over frame 00; each cue moves the lines after
+  it onto that frame. Place every cue where its reveal is spoken — the build
+  expansion splits the slide's notes at those cues
 
 ## Voice Calibration
 

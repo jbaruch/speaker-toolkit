@@ -1,9 +1,11 @@
 #!/bin/bash
 # expand-builds.sh — expand progressive-reveal BUILD sequences in the deck via
 # the real PowerPoint app (ExpandBuilds VBA macro): each parent slide is replaced
-# by its build frames as full-bleed background-fill slides, speaker notes on the
-# final frame only. Structural slide insertion goes through PowerPoint, never
-# python-pptx. See rules/deck-editing-rules.md and
+# by its build frames as full-bleed background-fill slides. The macro writes only
+# the manifest's `notes` (the final frame's segment); every frame's notes come
+# from the notes-expanded.json that build-expansion-manifest.py --notes-out
+# writes, injected afterwards by inject-notes.sh. Structural slide insertion goes
+# through PowerPoint, never python-pptx. See rules/deck-editing-rules.md and
 # skills/illustrations/references/builds.md. macOS + Microsoft PowerPoint only.
 #
 # ORDERING: run this BEFORE the by-index passes (inject-notes.sh, apply-backgrounds.sh,
@@ -15,7 +17,8 @@
 #     basePath   the built deck to read (uniquely-named copy)
 #     outPath    where to write the COPY with builds expanded
 #     manifest   JSON from build-expansion-manifest.py:
-#                {"schema_version":1,"builds":[{"parent":N,"frames":[...],"notes":""}]}
+#                {"schema_version":1,"builds":[{"parent":N,"frames":[...],"notes":"",
+#                  "frame_notes":[...]}]}  (the packer ignores frame_notes)
 #
 # Prerequisites: RunDeckOps.bas (which defines ExpandBuilds) imported into an OPEN
 # macro-enabled deck (DeckOps.pptm), macros enabled, Automation consent granted.
