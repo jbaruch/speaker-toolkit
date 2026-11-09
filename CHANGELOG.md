@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.9 — 2026-11-09
+
 ### Stop overwriting other people's QR codes
 
 `generate-qr.py` treated any square, two-color picture as a stale QR inherited from
