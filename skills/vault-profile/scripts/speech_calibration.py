@@ -1,8 +1,9 @@
 """Family-balanced sampled-speech profiles; deterministic arithmetic, no I/O.
 
-Owner: vault-profile. Profile schema v2 is distinct from the v1 equal-sample
+Owner: vault-profile. Profile schema v3 is distinct from the v1 equal-sample
 profile; v1 data must never be relabeled as family-balanced evidence. Every
-derived field can be recomputed from the retained calibration request. Bootstrap
+derived field can be recomputed from the retained calibration request, which is
+how a retired v2 profile is regenerated as v3. Bootstrap
 intervals describe the mean conditional on the selected presentation families,
 not a prediction interval for an individual future recording.
 """
@@ -27,7 +28,12 @@ if str(INGRESS_SCRIPTS) not in sys.path:
 
 from local_media_words import LocalMediaError, validate_word_sample  # noqa: E402
 from speech_rates import (  # noqa: E402
+    FAMILY_PROFILE_SCHEMA_VERSION,
+    FAMILY_RATE_SCHEMA_VERSION,
+    FAMILY_REQUEST_SCHEMA_VERSION,
     MAX_SAMPLES,
+    RETIRED_FAMILY_SCHEMA_VERSIONS,
+    SUFFICIENT_CONFIDENCE,
     THRESHOLDS,
     SpeechRateError,
     encode,
@@ -253,7 +259,7 @@ def _confidence(recordings: list[dict], *, mode_subset: bool = False) -> dict:
             reasons.append(reason)
     return {
         "schema_version": 1,
-        "level": "low" if reasons else "conditional",
+        "level": "low" if reasons else SUFFICIENT_CONFIDENCE,
         "reasons": reasons,
     }
 
@@ -297,7 +303,7 @@ def _summarize(recordings: list[dict], *, mode_subset: bool = False) -> dict:
             else None,
             "mean_confidence_interval_95": interval,
             "conservative_planning_wpm": interval[0]
-            if interval is not None and confidence["level"] == "conditional"
+            if interval is not None and confidence["level"] == SUFFICIENT_CONFIDENCE
             else None,
         }
     return {
@@ -319,11 +325,11 @@ def _summarize(recordings: list[dict], *, mode_subset: bool = False) -> dict:
 
 
 def calibrate(request: Any) -> dict:
-    """Build v2 from owner word samples and explicit acquisition exclusions."""
+    """Build v3 from owner word samples and explicit acquisition exclusions."""
     encode(request)
     request = _closed(
         request,
-        2,
+        FAMILY_REQUEST_SCHEMA_VERSION,
         {
             "speaker",
             "language",
@@ -474,7 +480,7 @@ def calibrate(request: Any) -> dict:
     summary = _summarize(admitted)
     demo = [row for row in admitted if row["mode"] in demo_modes]
     result = {
-        "schema_version": 2,
+        "schema_version": FAMILY_PROFILE_SCHEMA_VERSION,
         "method_version": CALIBRATION_METHOD,
         "calibration": canonical,
         "calibration_sha256": hashlib.sha256(encode(canonical)).hexdigest(),
@@ -515,9 +521,18 @@ def calibrate(request: Any) -> dict:
 
 def validate_profile(value: Any) -> dict:
     if (
+        isinstance(value, dict)
+        and type(value.get("schema_version")) is int
+        and value["schema_version"] in RETIRED_FAMILY_SCHEMA_VERSIONS
+    ):
+        _fail(
+            "pace_profile_retired",
+            "Profile schema v2 predates the `sufficient` confidence label. Regenerate it: pass its retained `calibration` object to `speech_rates.py calibrate` and keep the output as a fresh candidate.",
+        )
+    if (
         not isinstance(value, dict)
         or type(value.get("schema_version")) is not int
-        or value.get("schema_version") != 2
+        or value.get("schema_version") != FAMILY_PROFILE_SCHEMA_VERSION
     ):
         _fail("pace_shape_invalid", "Use a current family-balanced owner profile.")
     if "calibration" not in value:
@@ -538,10 +553,10 @@ def validate_profile(value: Any) -> dict:
 
 
 def narration_rate(profile: Any) -> dict:
-    """Select an overall v2 narration rate only from validated, covered evidence."""
+    """Select an overall v3 narration rate only from validated, covered evidence."""
     profile = validate_profile(profile)
     summary = profile["summary"]
-    if summary["confidence"]["level"] != "conditional":
+    if summary["confidence"]["level"] != SUFFICIENT_CONFIDENCE:
         _fail(
             "pace_confidence_insufficient",
             "Acquire broader independent recording evidence through the owner; a low-confidence profile is not a planning default.",
@@ -549,7 +564,7 @@ def narration_rate(profile: Any) -> dict:
     metric = summary["metrics"]["narration"]
     return validate_rate(
         {
-            "schema_version": 2,
+            "schema_version": FAMILY_RATE_SCHEMA_VERSION,
             "metric": "narration",
             "unit": metric["unit"],
             "pause_threshold_seconds": metric["pause_threshold_seconds"],
@@ -561,7 +576,7 @@ def narration_rate(profile: Any) -> dict:
             ),
             "conservative_planning_wpm": metric["conservative_planning_wpm"],
             "provenance": {
-                "schema_version": 2,
+                "schema_version": FAMILY_RATE_SCHEMA_VERSION,
                 "sample_count": summary["recording_count"],
                 "presentation_family_count": summary["presentation_family_count"],
                 "analyzed_duration_seconds": summary["analyzed_duration_seconds"],
@@ -573,7 +588,7 @@ def narration_rate(profile: Any) -> dict:
                 ],
                 "calibration_sha256": profile["calibration_sha256"],
                 "range_kind": "observed_recording_range_not_prediction_interval",
-                "confidence_level": "conditional",
+                "confidence_level": SUFFICIENT_CONFIDENCE,
                 "interval_kind": MEAN_INTERVAL_KIND,
             },
         }

@@ -52,6 +52,14 @@ THRESHOLDS = {
     "articulation": 0.25,
 }
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+# Family-balanced profile and the narration rate it selects. v3 names the passing
+# confidence level `sufficient`; v2 called it `conditional`, so a v2 profile or rate
+# is retired, not relabeled. The calibration request itself stays schema v2.
+FAMILY_PROFILE_SCHEMA_VERSION = 3
+FAMILY_RATE_SCHEMA_VERSION = 3
+RETIRED_FAMILY_SCHEMA_VERSIONS = frozenset({2})
+FAMILY_REQUEST_SCHEMA_VERSION = 2
+SUFFICIENT_CONFIDENCE = "sufficient"
 
 
 class SpeechRateError(ValueError):
@@ -244,11 +252,23 @@ def measure(evidence: Any) -> dict:
     }
 
 
+def _family_version(value: Any) -> int | None:
+    """A family-balanced record's version, current or retired, else None."""
+    if not isinstance(value, dict) or type(value.get("schema_version")) is not int:
+        return None
+    version = value["schema_version"]
+    if version == FAMILY_PROFILE_SCHEMA_VERSION or version in (
+        RETIRED_FAMILY_SCHEMA_VERSIONS
+    ):
+        return version
+    return None
+
+
 def calibrate(request: Any) -> dict:
     if (
         isinstance(request, dict)
         and type(request.get("schema_version")) is int
-        and request["schema_version"] == 2
+        and request["schema_version"] == FAMILY_REQUEST_SCHEMA_VERSION
     ):
         from speech_calibration import calibrate as calibrate_families
 
@@ -322,11 +342,8 @@ def calibrate(request: Any) -> dict:
 
 
 def validate_profile(value: Any) -> dict:
-    if (
-        isinstance(value, dict)
-        and type(value.get("schema_version")) is int
-        and value["schema_version"] == 2
-    ):
+    if _family_version(value) is not None:
+        # The owner validates v3 and refuses retired v2 with how to regenerate it.
         from speech_calibration import validate_profile as validate_family_profile
 
         return validate_family_profile(value)
@@ -342,10 +359,19 @@ def validate_profile(value: Any) -> dict:
 
 
 def validate_rate(value: Any) -> dict:
+    if (
+        isinstance(value, dict)
+        and type(value.get("schema_version")) is int
+        and value["schema_version"] in RETIRED_FAMILY_SCHEMA_VERSIONS
+    ):
+        _fail(
+            "speech_rate_retired",
+            "A schema-v2 narration rate predates the `sufficient` confidence label; copy the rate again from the regenerated owner profile.",
+        )
     family_rate = (
         isinstance(value, dict)
         and type(value.get("schema_version")) is int
-        and value["schema_version"] == 2
+        and value["schema_version"] == FAMILY_RATE_SCHEMA_VERSION
     )
     extra = (
         {"mean_confidence_interval_95", "conservative_planning_wpm"}
@@ -364,7 +390,7 @@ def validate_rate(value: Any) -> dict:
             "provenance",
         }
         | extra,
-        version=2 if family_rate else 1,
+        version=FAMILY_RATE_SCHEMA_VERSION if family_rate else 1,
     )
     metric = _metric(rate["metric"])
     threshold = rate["pause_threshold_seconds"]
@@ -391,7 +417,7 @@ def validate_rate(value: Any) -> dict:
     if family_rate and (metric != "narration" or rate["basis"] != "measured"):
         _fail(
             "speech_definition_invalid",
-            "Use a measured family-balanced narration rate for schema v2.",
+            f"Use a measured family-balanced narration rate for schema v{FAMILY_RATE_SCHEMA_VERSION}.",
         )
     if rate["basis"] == "assumption":
         provenance = _record(rate["provenance"], {"reason"})
@@ -418,7 +444,7 @@ def validate_rate(value: Any) -> dict:
                 if family_rate
                 else set()
             ),
-            version=2 if family_rate else 1,
+            version=FAMILY_RATE_SCHEMA_VERSION if family_rate else 1,
         )
         count = provenance["sample_count"]
         if type(count) is not int or not 1 <= count <= MAX_SAMPLES:
@@ -500,7 +526,7 @@ def _validate_family_rate(rate: dict) -> None:
         or provenance["range_kind"]
         != "observed_recording_range_not_prediction_interval"
         or provenance["interval_kind"] != MEAN_INTERVAL_KIND
-        or provenance["confidence_level"] != "conditional"
+        or provenance["confidence_level"] != SUFFICIENT_CONFIDENCE
         or not isinstance(provenance["language"], str)
         or re.fullmatch(r"[a-z]{2,3}(?:-[a-z0-9]{2,8})*", provenance["language"])
         is None
@@ -546,11 +572,7 @@ def plan_duration(
             "Supply a positive script word count within 50,000 words.",
         )
     if profile is not None:
-        if (
-            isinstance(profile, dict)
-            and type(profile.get("schema_version")) is int
-            and profile["schema_version"] == 2
-        ):
+        if _family_version(profile) is not None:
             from speech_calibration import narration_rate
 
             rate = narration_rate(profile)
@@ -584,7 +606,7 @@ def plan_duration(
             _number(word_count * 60 / low, positive=True),
         ],
     }
-    if rate["schema_version"] == 2:
+    if rate["schema_version"] == FAMILY_RATE_SCHEMA_VERSION:
         result.update(
             schema_version=2,
             range_kind="observed_recording_range_not_prediction_interval",

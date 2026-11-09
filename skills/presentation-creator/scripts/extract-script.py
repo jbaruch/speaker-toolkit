@@ -21,6 +21,7 @@ import yaml  # noqa: E402
 from pydantic import ValidationError  # noqa: E402
 
 import outline_schema as _os  # noqa: E402
+from speech_rates import FAMILY_RATE_SCHEMA_VERSION  # noqa: E402
 
 
 def _strip_parens(s: str) -> str:
@@ -113,7 +114,7 @@ def render(outline: _os.Outline) -> str:
     rate = outline.talk.narration_rate
     low, high = rate["range"]
     provenance = rate["provenance"]
-    if rate["schema_version"] == 2:
+    if rate["schema_version"] == FAMILY_RATE_SCHEMA_VERSION:
         ci_low, ci_high = rate["mean_confidence_interval_95"]
         rate_source = (
             f"measured family-balanced mean {rate['value']:g} WPM; "
@@ -123,7 +124,7 @@ def render(outline: _os.Outline) -> str:
             f"{provenance['analyzed_duration_seconds']:g} s analyzed; "
             f"cohort {provenance['cohort']}; language {provenance['language']}; "
             f"{provenance['method_version']}; observed recording range; "
-            f"conditional mean 95% interval {ci_low:g}–{ci_high:g} WPM, "
+            f"selected-family mean 95% interval {ci_low:g}–{ci_high:g} WPM, "
             "not a prediction interval"
         )
     elif rate["basis"] == "measured":

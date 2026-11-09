@@ -49,7 +49,12 @@ from local_media_transcription import transcribe_local_words  # noqa: E402
 from local_media_words import WordSampleError  # noqa: E402
 from speech_calibration import calibrate  # noqa: E402
 from speech_cohort import plan_cohort, sample_window  # noqa: E402
-from speech_rates import SpeechRateError, encode  # noqa: E402
+from speech_rates import (  # noqa: E402
+    FAMILY_REQUEST_SCHEMA_VERSION,
+    SUFFICIENT_CONFIDENCE,
+    SpeechRateError,
+    encode,
+)
 from tracking_database_io import TrackingDatabaseIOError  # noqa: E402
 from vault_root_authority import (  # noqa: E402
     VaultRootAuthorityError,
@@ -129,7 +134,7 @@ def execute(args: argparse.Namespace) -> dict:
     generated_at = args.as_of or datetime.now(timezone.utc).isoformat()
     # Validate supplied time before acquiring any media, using the owner schema.
     calibration = {
-        "schema_version": 2,
+        "schema_version": FAMILY_REQUEST_SCHEMA_VERSION,
         "speaker": args.speaker,
         "language": args.language,
         "catalog_sha256": catalog["sha256"],
@@ -260,7 +265,7 @@ def execute(args: argparse.Namespace) -> dict:
         result["profile"] = profile
         result["status"] = (
             "calibrated"
-            if profile["summary"]["confidence"]["level"] == "conditional"
+            if profile["summary"]["confidence"]["level"] == SUFFICIENT_CONFIDENCE
             else "low_confidence"
         )
     _, current = _read_context(str(root))

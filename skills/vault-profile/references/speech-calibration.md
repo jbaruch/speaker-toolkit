@@ -1,7 +1,7 @@
 # Family-Balanced Speech Calibration
 
 Owner: `vault-profile`. `speech_cohort.py` selects catalog declarations;
-`speech_calibration.py` owns the separate schema-v2 calibration profile. It
+`speech_calibration.py` owns the separate schema-v3 calibration profile. It
 does not restamp schema-v1 equal-sample profiles, change `speaker-profile.json`
 schema v5, or reparse talks. Fresh sampled word evidence comes exclusively from
 the ingress media owner; captions and segment-only receipts are not inputs.
@@ -33,7 +33,7 @@ abort without a candidate; source-specific acquisition failures remain exclusion
 Stdout is one `{schema_version: 1, ok, data|error}` envelope. Successful `data`
 has `schema_version: 1`, `status`, `catalog_sha256`, `cohort`, `runtime`, and
 `profile`. Plan status is `plan_only` with null profile. A completed measured
-run has `calibrated` or `low_confidence` and a schema-v2 profile. `ok: true`
+run has `calibrated` or `low_confidence` and a schema-v3 profile. `ok: true`
 means the command completed, not that its evidence supports confident planning.
 Retain the complete private report, including cohort exclusions and source
 locators, alongside any profile candidate. Progress diagnostics identify counts
@@ -81,7 +81,7 @@ Unverified mixed-speaker samples must not be promoted to speaker-only evidence.
 Demo/tutorial subsets require explicit catalog mode IDs; no mode is guessed
 from a title or assumed to mean demo.
 
-## Schema-v2 Request and Profile
+## Schema-v2 Request and Schema-v3 Profile
 
 `speech_calibration.calibrate(request)` is pure arithmetic with no I/O. The
 closed request has exactly:
@@ -104,7 +104,7 @@ canonical ordering of samples, exclusions and demo IDs.
 The closed profile has exactly:
 
 ```text
-{schema_version: 2, method_version, calibration, calibration_sha256,
+{schema_version: 3, method_version, calibration, calibration_sha256,
  quality_policy, confidence_policy, bootstrap, recordings, exclusions,
  summary, by_mode, demo_subset, scope}
 ```
@@ -150,8 +150,11 @@ prediction interval. It does not account for alignment errors or selection bias.
 The versioned confidence policy checks independent recordings, families,
 analyzed duration, actual narration duration, years and modes. Unknown years
 remain explicit. A homogeneous per-mode subset does not require multiple modes.
-Empty/sparse evidence reports low confidence; missing point estimates or
-intervals are null. Conservative planning rates remain null under low confidence.
+Confidence has two levels: `sufficient` when every policy check passes, and
+`low` with the failed checks as reasons. `sufficient` is the top level. No sample
+is called representative, since the cohort is catalog-selected, so there is no
+level above it. Empty/sparse evidence reports `low`; missing point estimates or
+intervals are null. Conservative planning rates remain null under `low`.
 The result never substitutes research averages, articulation, or a generic WPM.
 
 ## Persistence and Reader Contract
@@ -165,7 +168,13 @@ The shared `speech_rates.py calibrate` command also accepts the explicit v2
 request above, enabling owner recomputation from retained word receipts. Supply
 the request, not an old profile with edited derived fields. This arithmetic-only
 command does not acquire media or establish freshness. Its output envelope has
-the v2 profile in `data`; keep any replacement as a fresh private candidate.
+the v3 profile in `data`; keep any replacement as a fresh private candidate.
+
+Profile schema v2 named the passing level `conditional`. It is retired: readers
+refuse a v2 profile or a v2 narration rate with `pace_profile_retired` or
+`speech_rate_retired`. The owner migration is regeneration. Pass the v2 profile's
+retained `calibration` object to `speech_rates.py calibrate`, validate the v3
+output, then replace the old file. No media is reacquired.
 Before acting on stored evidence, revalidate source and catalog freshness
 through their owners; a matching internal digest alone is insufficient.
 
@@ -173,7 +182,7 @@ Schema-v1 equal-sample profiles cannot be automatically upgraded: they lack
 family, speaker and quality evidence required by this method. Regenerate through
 the owner from fresh word samples. Non-owner readers never migrate or rewrite.
 The shared speech-rate reader, narration planner and creator outline/script
-readers support both v1 and v2 read-only. The v2 selector refuses low-confidence
+readers support v1 and v3 read-only. The v3 selector refuses low-confidence
 profiles and emits separate narration and conservative-planning fields; see
 [speech-rates.md](speech-rates.md) for the closed planning shapes. Deploy these
 readers before replacing a prior v1 profile. Recorder integration and human
