@@ -31,6 +31,7 @@ BASE="$1"; TEMPLATE="$2"; IMAGE="$3"; TITLE="$4"; OUT="$5"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/ensure-drivers.sh"   # restore .applescript/.bas drivers tessl install strips
 source "$HERE/container-stage.sh"  # stage Google-Drive inputs into the container (no Powerbox prompts)
+source "$HERE/deck-text-bridge.sh"  # keep non-ASCII text intact across `run VB macro`
 DRIVER="$HERE/make-bg-slide.applescript"
 
 [[ -f "$BASE" ]]   || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the comic-template deck as <basePath>." >&2; exit 1; }
@@ -43,6 +44,8 @@ STAGE_DIR="$HOME/.deckops-staging"
 mkdir -p "$STAGE_DIR"
 STAGE="$OUT_STAGE_DIR/$(basename "$OUT")"
 rm -f "$STAGE"
+
+TITLE="$(bridge_text "$TITLE")"
 
 osascript "$DRIVER" "$(stage_base "$BASE")" "$(stage_base "$TEMPLATE")" "$(stage_base "$IMAGE")" "$TITLE" "$STAGE"
 

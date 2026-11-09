@@ -22,7 +22,10 @@ only) when empty. The question column shows what to ask the speaker.
 | `presentation_file_convention` | "File organization? (default: `{conference}/{year}/{talk-slug}/`)" |
 | `publishing_process.export_format` | "How do you export final decks — PDF, keep .pptx only, or both?" |
 | `publishing_process.export_method` | "How do you produce the PDF? (e.g., PowerPoint AppleScript, LibreOffice CLI, manual)" |
-| `publishing_process.qr_code` | "Do you put QR codes in your decks? If yes, what do they link to?" |
+| `publishing_process.qr_code.enabled` | "Do you put QR codes in your decks? (`true` or `false`)" — `qr_code` is an object: write each answer to its own sub-field, never the parent as prose. |
+| `publishing_process.qr_code.target` | _(Only if enabled)_ "What should the QR link to: the talk's shownotes page (`shownotes_url`) or another URL (`custom_url`)?" |
+| `publishing_process.qr_code.custom_url` | _(Only if target=custom_url)_ "Which full https URL?" |
+| `publishing_process.qr_code.slide_position` | _(Only if enabled)_ "Which slides get it: `closing`, `shownotes_slide`, or `both`?" |
 | `publishing_process.qr_code.shortener` | "Do you use a URL shortener for QR links? Options: `bitly`, `rebrandly`, or `none`." |
 | `publishing_process.qr_code.bitly_domain` | _(Only if shortener=bitly)_ "Do you have a custom Bitly domain? (e.g., `jbaru.ch`) — save the domain, or `null` to record no custom domain (default `bit.ly`)." |
 | `publishing_process.qr_code.rebrandly_domain` | _(Only if shortener=rebrandly)_ "What custom domain do you use with Rebrandly? (e.g., `jbaru.ch`) — save the domain, or `null` to record no custom domain (default)." |

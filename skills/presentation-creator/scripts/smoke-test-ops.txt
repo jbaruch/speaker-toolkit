@@ -3,7 +3,7 @@ TITLEDeckOps smoke test
 TEXT1381If this opens in PowerPoint AND Keynote with no Repair prompt, setup works.
 SLIDE0
 TITLESlide 2 of 3
-TEXT1381The structural build reached slide two.
+TEXT1381Text check: Port → GitHub ⚡ 🚀 — the build reached slide two intact.
 SLIDE0
 TITLESlide 3 of 3
 TEXT1381Three slides, no Repair prompt: DeckOps is wired up correctly.

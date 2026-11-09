@@ -22,6 +22,9 @@ are not generated and keep their own treatment:
   directive instead (`generate-illustrations.py` `apply_poster_embed_directive`),
   folding the slide's `text_overlay` into the prompt, styled per
   `style_anchor.text_treatment`.
+- `text_overlay: "none"` (any case) embeds no title — a title-free poster
+  plate. Its footer is still applied, model-rendered or stamped.
+- An absent or empty `text_overlay` embeds the slide's `title`.
 - Without `style_anchor.footer_style`, the model renders `embedded_footer` from
   one canonical deck-wide footer block, appended verbatim to every slide.
 - With `style_anchor.footer_style`, generation reserves a quiet footer strip.

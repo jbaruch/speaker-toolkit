@@ -25,6 +25,7 @@ def _write_outline(
     composition=None,
     embedded_footer=None,
     text_treatment=None,
+    footer_style=None,
     name="outline.yaml",
 ):
     """Write a minimal valid outline.yaml (partial view) for parser tests.
@@ -51,6 +52,8 @@ def _write_outline(
             anchor["embedded_footer"] = embedded_footer
         if text_treatment is not None:
             anchor["text_treatment"] = text_treatment
+        if footer_style is not None:
+            anchor["footer_style"] = footer_style
         data["style_anchor"] = anchor
     p = tmp_path / name
     p.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
@@ -598,14 +601,14 @@ def test_family_key_name(generate_illustrations):
 
 def test_compare_models_curated_list(generate_illustrations):
     # COMPARE_MODELS is re-exported from model_registry.py — it must still
-    # carry at least one current-flagship entry per major vendor.
+    # carry at least one current-flagship entry per major vendor. Google's
+    # current line is Gemini image; Imagen 4 was shut down 2026-08-17.
     families = {
         generate_illustrations.model_family(m)
         for m in generate_illustrations.COMPARE_MODELS
     }
     assert "openai" in families, "COMPARE_MODELS missing OpenAI entry"
     assert "gemini" in families, "COMPARE_MODELS missing Gemini entry"
-    assert "imagen" in families, "COMPARE_MODELS missing Imagen entry"
 
 
 def test_resolve_model_id_reexported(generate_illustrations):
@@ -1361,26 +1364,29 @@ def test_run_generate_proceeds_when_gate_passes(
 def _write_poster_outline(
     tmp_path,
     model="gemini-3-pro-image",
-    footer="jbaruch • Devoxx 2026",
-    text="One team, one bench",
+    footer: str | None = "jbaruch • Devoxx 2026",
+    text: str | None = "One team, one bench",
     text_treatment="glowing hand-script neon on an in-scene surface",
+    footer_style: dict | None = None,
 ):
+    """One poster slide; `text=None` omits its text_overlay key entirely."""
+    slide = {
+        "n": 3,
+        "chapter": "c",
+        "title": "The Coordination Tax",
+        "format": "FULL",
+        "image_prompt": "[STYLE ANCHOR] one team at a shared workbench",
+    }
+    if text is not None:
+        slide["text_overlay"] = text
     return _write_outline(
         tmp_path,
         model=model,
         composition="poster-theatrical",
         embedded_footer=footer,
         text_treatment=text_treatment,
-        slides=[
-            {
-                "n": 3,
-                "chapter": "c",
-                "title": "The Coordination Tax",
-                "format": "FULL",
-                "text_overlay": text,
-                "image_prompt": "[STYLE ANCHOR] one team at a shared workbench",
-            },
-        ],
+        footer_style=footer_style,
+        slides=[slide],
     )
 
 
@@ -1469,6 +1475,85 @@ def test_run_generate_poster_embeds_text_and_skips_safe_zone(
     # The anchor's text_treatment rides through run_generate into the prompt.
     assert "glowing hand-script neon on an in-scene surface" in prompts[0]
     assert "TITLE SAFE ZONE" not in prompts[0]
+
+
+def _poster_generation_prompt(gi, monkeypatch, tmp_path, outline):
+    """The one prompt run_generate sends for a single-slide poster outline."""
+    outline_dict = gi.parse_outline(str(outline))
+    _write_manifest(tmp_path, ["gemini-3-pro-image"])  # satisfy the render gate
+    prompts = []
+    monkeypatch.setattr(
+        gi, "_load_context", lambda p, **kw: ({}, outline_dict, str(tmp_path))
+    )
+    monkeypatch.setattr(gi.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        gi,
+        "generate_image",
+        lambda prompt, *a, **k: (prompts.append(prompt), (b"x", "image/png"))[1],
+    )
+    gi.run_generate(str(outline), ["all"])
+    assert len(prompts) == 1
+    return prompts[0]
+
+
+@pytest.mark.parametrize("sentinel", ["none", " NONE "])
+@pytest.mark.parametrize("stamped", [False, True], ids=["model-footer", "stamped"])
+def test_run_generate_poster_none_overlay_embeds_no_title_keeps_footer(
+    generate_illustrations, monkeypatch, tmp_path, sentinel, stamped
+):
+    # A bio plate: `text_overlay: "none"` paints no title at all, never the
+    # slide's internal `title`, while the footer is directed exactly as today.
+    gi = generate_illustrations
+    footer = "jbaruch • Devoxx 2026"
+    outline = _write_poster_outline(
+        tmp_path, footer=footer, text=sentinel, footer_style={} if stamped else None
+    )
+    prompt = _poster_generation_prompt(gi, monkeypatch, tmp_path, outline)
+
+    assert "EMBEDDED TEXT" not in prompt
+    assert "The Coordination Tax" not in prompt
+    assert "glowing hand-script neon" not in prompt
+    assert prompt.endswith(gi.POSTER_NO_INVENTED_TEXT + gi.COMPOSE_ONLY_DIRECTIVE)
+    if stamped:
+        assert "FOOTER STRIP" in prompt
+        assert footer not in prompt
+    else:
+        block = gi.POSTER_FOOTER_BLOCK_TEMPLATE.format(
+            footer=json.dumps(footer, ensure_ascii=False)
+        )
+        assert block in prompt
+        assert "FOOTER STRIP" not in prompt
+
+
+def test_run_generate_poster_none_overlay_without_footer_embeds_nothing(
+    generate_illustrations, monkeypatch, tmp_path
+):
+    # No footer to direct and no title to embed: the scene goes out without any
+    # poster text directive, and the slide's `title` is still never painted.
+    gi = generate_illustrations
+    outline = _write_poster_outline(tmp_path, footer=None, text="none")
+    prompt = _poster_generation_prompt(gi, monkeypatch, tmp_path, outline)
+
+    assert "one team at a shared workbench" in prompt
+    assert "EMBEDDED TEXT" not in prompt
+    assert "FOOTER" not in prompt
+    assert "The Coordination Tax" not in prompt
+    assert prompt.endswith(gi.COMPOSE_ONLY_DIRECTIVE)
+
+
+@pytest.mark.parametrize("text", [None, "", "   "], ids=["absent", "empty", "blank"])
+def test_run_generate_poster_without_overlay_falls_back_to_title(
+    generate_illustrations, monkeypatch, tmp_path, text
+):
+    # Compatibility: only the explicit "none" sentinel suppresses the title. An
+    # absent or empty text_overlay still embeds the slide's `title`.
+    gi = generate_illustrations
+    outline = _write_poster_outline(tmp_path, text=text)
+    prompt = _poster_generation_prompt(gi, monkeypatch, tmp_path, outline)
+
+    assert "EMBEDDED TEXT" in prompt
+    assert 'the title "The Coordination Tax"' in prompt
+    assert "jbaruch • Devoxx 2026" in prompt
 
 
 # ── Gate manifest validation + poster invariants (review hardening) ──

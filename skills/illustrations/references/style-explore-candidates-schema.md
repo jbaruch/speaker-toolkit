@@ -61,10 +61,10 @@ during projection. The exact shape, bounds, and selection command are owned by
 
 The generator validates the v2 shape before loading credentials or rendering.
 One grid uses one composition; posters use FULL only, require an actual
-representative-slide `text_overlay`, and reject safe zones. Poster prompts use
-the candidate's text treatment, not a previously baked style's lettering. The
-normal compose-only guard and render-before-bake gate still apply. Reads of
-either version do not migrate or rewrite the input.
+representative-slide `text_overlay` (never `"none"`), and reject safe zones.
+Poster prompts use the candidate's text treatment, not a previously baked
+style's lettering. The normal compose-only guard and render-before-bake gate
+still apply. Reads of either version do not migrate or rewrite the input.
 
 ## rendered.json — output
 
