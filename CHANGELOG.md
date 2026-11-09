@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.12 — 2026-11-09
+
 ### Let a poster slide skip its painted title
 
 A poster-theatrical deck could not produce an illustrated slide without a title.
