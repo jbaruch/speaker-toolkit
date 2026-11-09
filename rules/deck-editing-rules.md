@@ -123,6 +123,10 @@ generating slide structure (see `rules/slide-generation-rules.md`).
 
 ## Mac PowerPoint VBA Landmines (all handled in RunDeckOps)
 
+- **`run VB macro` converts every string parameter to Mac Roman:** a character
+  outside it arrives in VBA as `?`, with no error. Text never crosses raw: the
+  wrappers send ASCII through `deck-text-bridge.py`, and `DecodeBridgeText` restores
+  it at the top of each macro. A new macro parameter carrying text does the same.
 - **Filename collision:** PowerPoint keys open decks by filename and silently
   returns an already-open same-named deck from `Presentations.Open`. Always
   operate on UNIQUELY-NAMED copies; the macro also guards and errors loudly.

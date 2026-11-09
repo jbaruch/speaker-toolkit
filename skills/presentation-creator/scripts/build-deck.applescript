@@ -1,6 +1,8 @@
 -- build-deck.applescript
 -- Reads the deck op-sequence file as UTF-8 and hands it to the BuildDeck VBA
--- macro, so VBA receives correct Unicode and never decodes UTF-8 from disk.
+-- macro, so VBA never decodes UTF-8 from disk. `run VB macro` converts its
+-- parameters to Mac Roman, so build-deck.sh passes an ASCII-escaped copy of the
+-- ops (deck-text-bridge.py) and the macro restores the Unicode.
 -- BuildDeck opens the template, strips its demo slides, and builds the deck.
 --   osascript build-deck.applescript <templatePath> <outPath> <opsFile>
 on run argv

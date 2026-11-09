@@ -10,7 +10,10 @@ import pytest
     [
         ("GPT-IMAGE-2.5-FLARE", "gpt-image-2.5-flare-2026-09-08", "openai"),
         ("Nano-Banana-Pro", "gemini-3-pro-image", "gemini"),
-        ("imagen-4-ultra", "imagen-4.0-ultra-generate-001", "imagen"),
+        ("nano-banana-2.1", "gemini-nano-banana-2.1", "gemini"),
+        ("gpt-image-2.6-flare", "gpt-image-2.6-flare", "openai"),
+        # The roster carries no Imagen model, but the family still dispatches.
+        ("imagen-9.9-future", "imagen-9.9-future", "imagen"),
         ("gpt-image-ad-hoc", "gpt-image-ad-hoc", "openai"),
     ],
 )
@@ -78,10 +81,11 @@ def test_registry_ids_unique(model_registry):
     assert len(ids) == len(set(ids))
 
 
-def test_imagen_has_no_edit_support(model_registry):
-    # Build-editability filter depends on this: Imagen has no edit endpoint.
-    imagen = next(m for m in model_registry.MODEL_REGISTRY if m["family"] == "imagen")
-    assert imagen["edit"] == "none"
+def test_shut_down_imagen_4_is_not_in_the_roster(model_registry):
+    # Imagen 4 was shut down 2026-08-17. Nothing may rank or --compare it, and
+    # its old alias no longer maps onto a roster entry.
+    assert not any(m.startswith("imagen-4") for m in model_registry.COMPARE_MODELS)
+    assert model_registry.model_attributes("imagen-4-ultra") is None
 
 
 # --- Alias resolution (the nano-banana fix) ---
@@ -95,62 +99,81 @@ def test_resolve_nano_banana_pro_alias(model_registry):
     assert model_registry.resolve_model_id("nano-banana-pro") == "gemini-3-pro-image"
 
 
-def test_resolve_deprecated_preview_ids_to_ga(model_registry):
-    # Google deprecates the "-preview" Gemini ids 2026-06-25; they're kept as
-    # aliases so a baked outline still resolves to the GA canonical id.
+def test_resolve_deprecated_preview_id_to_ga(model_registry):
+    # Google deprecates the "-preview" Gemini ids 2026-06-25; the Pro preview
+    # stays a roster alias so a baked outline still resolves to the GA id.
     assert (
         model_registry.resolve_model_id("gemini-3-pro-image-preview")
         == "gemini-3-pro-image"
     )
+
+
+def test_resolve_nano_banana_2_1_alias(model_registry):
     assert (
-        model_registry.resolve_model_id("gemini-3.1-flash-image-preview")
-        == "gemini-3.1-flash-image"
+        model_registry.resolve_model_id("nano-banana-2.1") == "gemini-nano-banana-2.1"
     )
 
 
-def test_resolve_rolling_openai_alias_to_snapshot(model_registry):
-    # The canonical id is snapshot-pinned; the rolling alias resolves to it.
-    assert (
-        model_registry.resolve_model_id("gpt-image-2.5-flare")
-        == "gpt-image-2.5-flare-2026-09-08"
-    )
+# Every superseded name and the id it stays pinned to. Retiring a model adds a
+# row here as well as in LEGACY_MODEL_ALIASES.
+LEGACY_CASES = [
+    ("gpt-image-2", "gpt-image-2-2026-04-21"),
+    ("gpt-image-2.5-flare", "gpt-image-2.5-flare-2026-09-08"),
+    ("gpt-image-2.5-sunburst", "gpt-image-2.5-sunburst-2026-09-08"),
+    ("nano-banana", "gemini-3.1-flash-image"),
+    ("gemini-flash-image", "gemini-3.1-flash-image"),
+    ("gemini-3.1-flash-image-preview", "gemini-3.1-flash-image"),
+]
 
 
-def test_retired_openai_alias_keeps_its_snapshot(model_registry):
-    # An outline baked against the retired rolling id must keep rendering on
-    # the snapshot it was pinned to — never drift to whatever the vendor serves
-    # for the rolling id today, and never be remapped onto the newer model.
-    # The retired model stays out of the roster so nothing ranks it.
-    assert model_registry.resolve_model_id("gpt-image-2") == "gpt-image-2-2026-04-21"
-    assert (
-        model_registry.resolve_model_id("  GPT-Image-2  ") == "gpt-image-2-2026-04-21"
-    )
-    assert model_registry.is_supported_model("gpt-image-2")
-    assert "gpt-image-2-2026-04-21" not in model_registry.COMPARE_MODELS
-    assert "gpt-image-2-2026-04-21" not in [
-        m["id"] for m in model_registry.shortlist_models([])
-    ]
+def test_legacy_cases_match_the_alias_table(model_registry):
+    assert dict(LEGACY_CASES) == model_registry.LEGACY_MODEL_ALIASES
+
+
+@pytest.mark.parametrize("legacy,pinned", LEGACY_CASES)
+def test_superseded_names_resolve_to_their_pinned_ids(model_registry, legacy, pinned):
+    # An outline baked against a superseded name must keep rendering on the id
+    # it was pinned to — never drift to whatever the vendor serves for a rolling
+    # name today, and never be remapped onto the successor. The superseded
+    # model stays out of the roster so nothing ranks or --compares it.
+    assert model_registry.resolve_model_id(legacy) == pinned
+    assert model_registry.resolve_model_id(f"  {legacy.upper()}  ") == pinned
+    assert model_registry.is_supported_model(legacy)
+    assert model_registry.model_attributes(legacy) is None
+    # An outline that baked the pinned id itself passes through unchanged and
+    # still dispatches by family.
+    assert model_registry.resolve_model_id(pinned) == pinned
+    assert model_registry.is_supported_model(pinned)
+    assert pinned not in model_registry.COMPARE_MODELS
+    assert pinned not in [m["id"] for m in model_registry.shortlist_models([])]
+
+
+def test_legacy_names_never_shadowed_by_the_roster(model_registry):
+    # resolve_model_id() consults the roster before LEGACY_MODEL_ALIASES, so a
+    # roster id or alias equal to a legacy name or pinned id would silently
+    # remap baked outlines onto the successor.
+    roster_names = {
+        name.lower()
+        for m in model_registry.MODEL_REGISTRY
+        for name in [m["id"], *m["aliases"]]
+    }
+    legacy = model_registry.LEGACY_MODEL_ALIASES
+    assert not roster_names & set(legacy)
+    assert not roster_names & {pinned.lower() for pinned in legacy.values()}
 
 
 def test_resolve_is_case_insensitive(model_registry):
     assert model_registry.resolve_model_id("Nano-Banana-Pro") == "gemini-3-pro-image"
     assert (
-        model_registry.resolve_model_id("  GPT-IMAGE-2.5-FLARE  ")
-        == "gpt-image-2.5-flare-2026-09-08"
-    )
-
-
-def test_resolve_sunburst_alias_to_snapshot(model_registry):
-    assert (
-        model_registry.resolve_model_id("gpt-image-2.5-sunburst")
-        == "gpt-image-2.5-sunburst-2026-09-08"
+        model_registry.resolve_model_id("  GPT-IMAGE-2.6-FLARE  ")
+        == "gpt-image-2.6-flare"
     )
 
 
 def test_resolve_canonical_id_unchanged(model_registry):
     assert (
-        model_registry.resolve_model_id("gpt-image-2.5-flare-2026-09-08")
-        == "gpt-image-2.5-flare-2026-09-08"
+        model_registry.resolve_model_id("gpt-image-2.6-sunburst")
+        == "gpt-image-2.6-sunburst"
     )
 
 
@@ -194,7 +217,19 @@ def test_model_attributes_via_alias(model_registry):
 
 
 def test_shortlist_build_editability_excludes_imagen(model_registry):
-    ranked = model_registry.shortlist_models(["build-editability"])
+    # No Imagen model is cached any more, but the family still renders and has
+    # no edit endpoint: an injected one must not reach a build shortlist.
+    imagen = {
+        "id": "imagen-9.9-future",
+        "family": "imagen",
+        "cost": "low",
+        "speed": "fast",
+        "quality": "high",
+        "edit": "none",
+    }
+    ranked = model_registry.shortlist_models(
+        ["build-editability"], extra_models=[imagen]
+    )
     families = {m["family"] for m in ranked}
     assert "imagen" not in families
     # every survivor is edit-capable (assert the property, not a fixed count)
@@ -208,36 +243,44 @@ def test_shortlist_cost_ranks_cheapest_first(model_registry):
     assert ranked[-1]["cost"] == "high"
 
 
+def test_gpt_image_2_6_enters_at_stable_not_precise(model_registry):
+    # Vendor positioning is not evidence that a chained build holds. Both 2.6
+    # models stay "stable" until a real chained build proves one of them, so
+    # the roster carries no "precise" model; promoting one edits this test.
+    for model_id in ("gpt-image-2.6-flare", "gpt-image-2.6-sunburst"):
+        attrs = model_registry.model_attributes(model_id)
+        assert attrs is not None
+        assert attrs["edit"] == "stable"
+    assert all(m["edit"] != "precise" for m in model_registry.MODEL_REGISTRY)
+
+
 def test_shortlist_build_editability_leads_with_edit_stable_models(model_registry):
-    # A talk with builds lands on GPT Image 2.5: the edit tier is the primary
-    # key, so both 2.5 models precede every pre-2.5 editor, Sunburst (the
-    # vendor's edit-precision pick) first.
+    # A talk with builds lands on GPT Image 2.6: the edit tier is the primary
+    # key, so both edit-stable 2.6 models precede every drifting (strong)
+    # editor.
     ranked = model_registry.shortlist_models(["build-editability"])
     ids = [m["id"] for m in ranked]
-    assert ids[:2] == [
-        "gpt-image-2.5-sunburst-2026-09-08",
-        "gpt-image-2.5-flare-2026-09-08",
-    ]
+    tiers = [m["edit"] for m in ranked]
+    assert tiers == sorted(tiers, key=model_registry.EDIT_RANKING.index)
+    assert set(ids[:2]) == {"gpt-image-2.6-flare", "gpt-image-2.6-sunburst"}
     assert all(m["edit"] == "strong" for m in ranked[2:])
 
 
 def test_shortlist_build_editability_outranks_soft_signals(model_registry):
     # The lean is heavy: the cheapest, fastest editor still ranks below every
-    # 2.5 model when builds are in play. Without builds, cost rules as before.
+    # GPT Image 2.6 model when builds are in play. Without builds, cost rules
+    # as before.
     with_builds = model_registry.shortlist_models(
         ["cost", "speed", "build-editability"]
     )
     ids = [m["id"] for m in with_builds]
-    flash = ids.index("gemini-3.1-flash-image")
-    assert flash > ids.index("gpt-image-2.5-flare-2026-09-08")
-    assert flash > ids.index("gpt-image-2.5-sunburst-2026-09-08")
-    # Tier beats the soft signals within 2.5 too: Flare is the faster model,
-    # Sunburst (precise) still leads.
-    assert ids.index("gpt-image-2.5-sunburst-2026-09-08") < ids.index(
-        "gpt-image-2.5-flare-2026-09-08"
-    )
+    nano = ids.index("gemini-nano-banana-2.1")
+    assert nano > ids.index("gpt-image-2.6-flare")
+    assert nano > ids.index("gpt-image-2.6-sunburst")
+    # Within one tier the soft signals decide: Flare is the faster 2.6 model.
+    assert ids[:2] == ["gpt-image-2.6-flare", "gpt-image-2.6-sunburst"]
     without_builds = model_registry.shortlist_models(["cost", "speed"])
-    assert without_builds[0]["id"] == "gemini-3.1-flash-image"
+    assert without_builds[0]["id"] == "gemini-nano-banana-2.1"
 
 
 def test_shortlist_injected_unknown_edit_tier_ranks_last(model_registry):
@@ -258,12 +301,10 @@ def test_shortlist_injected_unknown_edit_tier_ranks_last(model_registry):
 
 
 def test_shortlist_quality_then_editability(model_registry):
-    # build-editability drops Imagen; quality ranks the rest, high before medium.
+    # Edit tier leads; quality breaks ties within a tier, high before medium.
     ranked = model_registry.shortlist_models(["quality", "build-editability"])
-    ids = [m["id"] for m in ranked]
-    assert "imagen-4.0-ultra-generate-001" not in ids
-    # medium-quality flash model ranks last among the survivors
-    assert ranked[-1]["quality"] == "medium"
+    # the medium-quality Nano Banana 2.1 ranks last among the strong editors
+    assert ranked[-1]["id"] == "gemini-nano-banana-2.1"
 
 
 def test_shortlist_empty_returns_full_registry_in_order(model_registry):
@@ -305,9 +346,7 @@ def test_shortlist_injects_web_discovered_model(model_registry):
     ids = [m["id"] for m in ranked]
     assert "gemini-5-ultra-image" in ids
     # high quality + low cost ranks it ahead of the cached high-cost model
-    assert ids.index("gemini-5-ultra-image") < ids.index(
-        "gpt-image-2.5-flare-2026-09-08"
-    )
+    assert ids.index("gemini-5-ultra-image") < ids.index("gpt-image-2.6-flare")
 
 
 def test_shortlist_injected_model_respects_editability_filter(model_registry):

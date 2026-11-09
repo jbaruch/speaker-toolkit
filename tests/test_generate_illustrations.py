@@ -598,14 +598,14 @@ def test_family_key_name(generate_illustrations):
 
 def test_compare_models_curated_list(generate_illustrations):
     # COMPARE_MODELS is re-exported from model_registry.py — it must still
-    # carry at least one current-flagship entry per major vendor.
+    # carry at least one current-flagship entry per major vendor. Google's
+    # current line is Gemini image; Imagen 4 was shut down 2026-08-17.
     families = {
         generate_illustrations.model_family(m)
         for m in generate_illustrations.COMPARE_MODELS
     }
     assert "openai" in families, "COMPARE_MODELS missing OpenAI entry"
     assert "gemini" in families, "COMPARE_MODELS missing Gemini entry"
-    assert "imagen" in families, "COMPARE_MODELS missing Imagen entry"
 
 
 def test_resolve_model_id_reexported(generate_illustrations):

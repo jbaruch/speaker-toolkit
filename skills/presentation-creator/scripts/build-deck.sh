@@ -28,6 +28,7 @@ TEMPLATE="$1"; OUT="$2"; OPS="$3"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/ensure-drivers.sh"   # restore .applescript/.bas drivers tessl install strips
 source "$HERE/container-stage.sh"  # stage Google-Drive inputs into the container (no Powerbox prompts)
+source "$HERE/deck-text-bridge.sh"  # keep non-ASCII text intact across `run VB macro`
 DRIVER="$HERE/build-deck.applescript"
 
 [[ -f "$TEMPLATE" ]] || { echo "ERROR: template not found: $TEMPLATE — pass a uniquely-named copy of the .pptx template." >&2; exit 1; }
@@ -47,8 +48,10 @@ python3 "$HERE/validate-deckops.py" "$OPS" >/dev/null
 # another here, or it would override that one and leak the staged copies.
 STAGE="$OUT_STAGE_DIR/$(basename "$OUT")"
 
+BRIDGED_OPS="$(bridge_file "$OPS")"
+
 # osascript prints the macro's "BuildDeck returned: N" line — keep it off stdout.
-osascript "$DRIVER" "$(stage_base "$TEMPLATE")" "$STAGE" "$OPS" >&2
+osascript "$DRIVER" "$(stage_base "$TEMPLATE")" "$STAGE" "$BRIDGED_OPS" >&2
 
 if [[ -f "$STAGE" ]]; then
   mkdir -p "$(dirname "$OUT")"

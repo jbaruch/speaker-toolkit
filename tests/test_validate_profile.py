@@ -11,11 +11,15 @@ import json
 from typing import Any
 import os
 import pathlib
+import subprocess
+import sys
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
 from pptx import Presentation
+
+from conftest import CURRENT_ROOT_SCHEMA_VERSION, current_tracking_config
 
 
 CATALOG = "c" * 64
@@ -1220,6 +1224,36 @@ def test_load_vault_accepts_one_matching_lexical_symlink_authority(
     assert payload["vault_root"] == str(locator)
 
 
+def test_load_vault_keeps_a_scored_talk_in_the_cohort_through_a_symlinked_root(
+    load_vault,
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    storage = tmp_path / "storage"
+    storage.mkdir()
+    locator = tmp_path / "vault-alias"
+    _directory_symlink(locator, storage)
+    talk = _scored_talk(
+        "through-the-alias.md",
+        0,
+        scoring_schema=load_vault.PATTERN_SCORING_SCHEMA_VERSION,
+    )
+    _write_vault(storage, [talk], config={"vault_storage_path": str(locator)})
+
+    rc, payload, error = _load_vault_payload(
+        load_vault,
+        locator,
+        monkeypatch,
+        capsys,
+    )
+
+    assert rc == 0, error
+    assert payload["excluded_pattern_scoring_talks"] == []
+    assert payload["pattern_baseline"]["scored_talk_count"] == 1
+    assert payload["pattern_baseline"]["eligible_talk_count"] == 1
+
+
 def test_load_vault_rejects_symlink_target_and_locator_authority_mismatch(
     load_vault,
     tmp_path,
@@ -1471,6 +1505,123 @@ def test_validate_profile_accepts_matching_symlink_lexical_authority(
 
     assert rc == 0, captured.err
     assert json.loads(captured.out)["valid"] is True
+
+
+def test_validate_profile_accepts_a_correct_scored_profile_through_a_symlinked_root(
+    validate_profile,
+    tmp_path,
+    capsys,
+):
+    storage = tmp_path / "storage"
+    storage.mkdir()
+    locator = tmp_path / "vault-alias"
+    _directory_symlink(locator, storage)
+    catalog_fingerprint, scoring_schema = (
+        validate_profile.active_pattern_generation_identity()
+    )
+    talk = _scored_talk(
+        "through-the-alias.md",
+        0,
+        catalog=catalog_fingerprint,
+        scoring_schema=scoring_schema,
+    )
+    # No configured root, so the same database is readable through both paths.
+    _write_vault(storage, [talk])
+    profile = _minimal_profile(validate_profile)
+    # The storage-side snapshot is the answer a correct profile must carry. It
+    # is read before the alias runs, so the two paths can't agree by both
+    # dropping the talk.
+    snapshot = validate_profile._load_live_pattern_snapshot(storage, profile)
+    assert snapshot["pattern_baseline"]["scored_talk_count"] == 1
+    profile["pattern_profile"].update(
+        {
+            "pattern_baseline": snapshot["pattern_baseline"],
+            "baseline_talk_filenames": snapshot["baseline_talk_filenames"],
+            "eligible_talk_count": snapshot["pattern_opportunities"][
+                "eligible_cohort_count"
+            ],
+            "pattern_usage": snapshot["pattern_opportunities"]["pattern_usage"],
+            "antipattern_frequency": snapshot["pattern_opportunities"][
+                "antipattern_frequency"
+            ],
+            "talks_scored": snapshot["pattern_baseline"]["scored_talk_count"],
+            "average_pattern_score": snapshot["pattern_baseline"][
+                "average_pattern_score"
+            ],
+            **snapshot["pattern_classification"],
+        }
+    )
+    profile_path = storage / "profile.json"
+    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+
+    rc = validate_profile.main(
+        [
+            "validate-profile.py",
+            str(locator / "profile.json"),
+            "--vault-root",
+            str(locator),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert rc == 0, captured.out
+    assert json.loads(captured.out)["valid"] is True
+
+
+def test_queue_normalize_keeps_a_scored_talk_processed_through_a_symlinked_root(
+    validate_profile,
+    queue_state,
+    tmp_path,
+):
+    storage = tmp_path / "storage"
+    storage.mkdir()
+    locator = tmp_path / "vault-alias"
+    _directory_symlink(locator, storage)
+    catalog_fingerprint, scoring_schema = (
+        validate_profile.active_pattern_generation_identity()
+    )
+    talk = _scored_talk(
+        "through-the-alias.md",
+        0,
+        catalog=catalog_fingerprint,
+        scoring_schema=scoring_schema,
+    )
+    _write_vault(storage, [talk], config={"vault_storage_path": str(locator)})
+    database = storage / "tracking-database.json"
+    stored = json.loads(database.read_text(encoding="utf-8"))
+    stored.update(
+        {
+            "schema_version": CURRENT_ROOT_SCHEMA_VERSION,
+            "config": current_tracking_config(**stored["config"]),
+            "pptx_catalog": [],
+            "qr_codes": [],
+            "resources": [],
+            "thumbnails": [],
+            "improvement_goals": [],
+        }
+    )
+    talk_schema_version = importlib.import_module(
+        "tracking_database"
+    ).TALK_RECORD_SCHEMA_VERSION
+    for record in stored["talks"]:
+        record["schema_version"] = talk_schema_version
+    database.write_text(json.dumps(stored), encoding="utf-8")
+    before = database.read_bytes()
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            queue_state.__file__,
+            str(locator / database.name),
+            "normalize",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["normalizations"] == []
+    assert database.read_bytes() == before
 
 
 def test_validate_profile_rejects_symlink_target_locator_mismatch_without_paths(

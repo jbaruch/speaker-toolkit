@@ -19,6 +19,151 @@ carry both objects over field by field. The writer guard deliberately isn't a re
 check: a database already holding a string stays readable, so `set_config` can repair
 the whole parent.
 
+## 0.21.11 — 2026-11-09
+
+### Scan the published shownotes, wherever the site checkout sits
+
+`scan-shownotes.py` read `_talks/` from the configured checkout's working tree,
+whichever branch that happened to be on. With `~/Projects/shownotes` on a feature
+branch, a talk live on `main` scanned as nothing at all: 96 files instead of 98, no
+warning, and a report that read as "no new talks". The workaround was a hash-bound
+`set_config` pointing at a clean `origin/main` worktree, a scan, and a hash-bound
+restore. A checkout on `main` that simply hadn't pulled yet had the same problem.
+
+The scanner now fetches and reads a snapshot of `origin/<default>` unless the
+checkout is on the default branch and holds everything published. The speaker's
+branch, edits and config stay untouched. A checkout on the default branch keeps
+reading its working tree, uncommitted edits included. Report schema v4 adds
+`source_checkout`, which names the tree that was read, and a failed fetch, a
+missing `origin/HEAD` or git not answering lands in `warnings` and on stderr, since
+that scan may be short. `audit-source-identities.py --candidates-from` now reads v4.
+
+The talks directory is checked only in the tree the scan reads, so a branch that
+deleted or symlinked `_talks/` still scans what `main` published. The snapshot
+writes only the Markdown files the scanner reads, refuses names that differ only by
+case or Unicode normalization before writing any, since a macOS disk can hold only
+one of them, and creates each file exclusively without following a link.
+
+## 0.21.10 — 2026-11-09
+
+### Keep Unicode in deck text
+
+**Re-import `RunDeckOps.bas` after this update**
+(`deck-editing-setup.md` Step 3). Until you do, a wrapper handed non-ASCII text
+stops before touching a deck and tells you so. ASCII text keeps working on the old
+macro.
+
+PowerPoint's `run VB macro` converts every string parameter to Mac Roman, so any
+character outside it reached VBA as `?`, with no error. #515 moved speaker notes off
+that bridge; these paths stayed on it: `BuildDeck` ops, `RunDeckOps` find/replace
+pairs, `ExpandBuilds` notes and the titles of `MakePlaceholderSlide` and
+`MakeBgImageSlide`. Building the GitHub Universe 2026 deck turned 21 arrows and one
+bolt in the notes into `?`, and a slide titled `Port → GitHub` would have built as
+`Port ? GitHub`. Em dashes survive the conversion, which is why it stayed hidden.
+
+Writing all of that through the AppleScript object model, as #515 did for notes,
+would have meant rebuilding `BuildDeck` outside VBA. Instead the wrappers now send
+only printable ASCII: `deck-text-bridge.py` turns every other UTF-16 code unit into
+U+001C plus four hex digits, and `DecodeBridgeText` restores it at the top of each
+macro. Escaping everything outside ASCII, em dashes included, means the result
+doesn't depend on any Mac Roman table. A macro imported before the decoder would put
+those escapes on the slide, so text that needed escaping requires the running macro
+to match the shipped stamp, and a stale import stops the wrapper before its macro
+runs.
+
+The setup smoke test now puts an arrow, a bolt and a rocket on slide 2, and
+`verify-deck-text.py` compares the built deck with the ops, since a lost character
+leaves a valid deck and an exit code of 0. A deck it can't read, including a slide
+part that is encrypted, uses an unsupported compression method or is damaged, exits
+1 with the part's name instead of a traceback.
+
+`deckops-doctor.py` also misread PowerPoint running with no presentation open as
+`probe_failed`, blaming Automation consent. With no presentation, `name of every
+presentation` answers `missing value` instead of an empty list, and the probe died
+counting it. It now reports `macro_unreachable`, which is what's actually wrong.
+
+## 0.21.9 — 2026-11-09
+
+### Stop overwriting other people's QR codes
+
+`generate-qr.py` treated any square, two-color picture as a stale QR inherited from
+another talk, targeted its slide and replaced it. On the GitHub Universe 2026 deck
+that meant the organizer's required survey QR and a sponsor event's registration QR
+would both have become the talk's shownotes QR, with no warning. The same run would
+have put the closing QR on a hidden fallback slide, since `closing` and `both` always
+meant the last slide in the file. The deck shipped by hand through `--png-only` and
+`insert-qr.sh`.
+
+A QR is now replaced only when it encodes a URL this vault issued: a `short_url` or
+`target_url` from `qr_codes`, or this run's own URLs. The script re-encodes each of
+those and requires the picture's module grid to match exactly, which needs no QR
+decoder or new dependency, and works for every QR the script has ever produced since
+its encoder settings have never changed. An exact match is deliberate. A false match
+deletes someone else's QR; a miss leaves one in place and warns with its slide
+number. Hiding or deleting one is as bad as replacing it. The run replays the
+`InsertQR` macro's geometry before any shortener call: where the new QR lands, the
+first tracked QR's rectangle or the bottom-right corner, and which pictures it deletes,
+every picture within 2pt of a tracked QR's rectangle. It stops and names the slide when
+the new QR would overlap a foreign QR or a replacement would delete a picture this vault
+didn't issue, including on a slide that also carries a tracked QR. A deck that isn't a
+readable .pptx also stops the run before any shortener call, with how to re-save it.
+
+`closing` and `both` now target the last visible slide. `--slides N[,N...]` names the
+slides explicitly when detection is wrong, and a bad value stops the run before any
+shortener call. Against the real Universe deck, a dry run replaces the two tracked
+QRs in place and targets the true closing slide.
+
+## 0.21.8 — 2026-11-09
+
+### Keep transcript evidence fresh through a symlinked vault root
+
+`bootstrap-and-preflight.md` lets the canonical vault locator be the configured
+symlink, and `persist-results.py` and `preflight-vault.py` always accepted one.
+The persisted-evidence freshness check didn't: for transcript, timing and quality
+artifacts it resolved the artifact path through the symlink, then required the
+result to sit under the unresolved root. It never did, so every one of those
+identities came back `*_path_invalid`.
+
+Every reader of that check inherited the failure. `write-analysis.py` refused the
+talk `persist-results.py` had just accepted. `load-vault.py` moved the talk to the
+excluded list and still exited 0; on the live vault it reported 0 scored talks
+through the symlink and 1 through the real path. `validate-profile.py` rejected a
+correct profile, `section15_pattern_history.py replace` refused to write, and
+`queue-state.py normalize` read the talk as stale. The older symlink tests missed
+it by using empty cohorts or stubbing freshness; the new ones run a real scored
+talk through each entrypoint.
+
+The check now maps the trusted root to storage once, the way the bounded PDF and
+video lanes already do. Symlinks below the root are still rejected with the same
+reasons either path reports. A symlink above the root is covered the same way.
+
+## 0.21.6 — 2026-11-09
+
+### Refresh the image-model registry (reviewed 2026-11-08)
+
+Reconcile `model_registry.py` against Google's and OpenAI's model and
+deprecation pages. The roster is now `gemini-3-pro-image`,
+`gemini-nano-banana-2.1` (Nano Banana 2.1, GA 2026-10-06, alias
+`nano-banana-2.1`), `gpt-image-2.6-flare` and `gpt-image-2.6-sunburst` (GPT
+Image 2.6, 2026-11-04). OpenAI publishes no dated 2.6 snapshot, so the
+canonical ids are the rolling ones.
+
+Superseded models leave the roster and move to `LEGACY_MODEL_ALIASES`, the
+mechanism `gpt-image-2` already uses: `gpt-image-2.5-flare` and
+`gpt-image-2.5-sunburst` stay pinned to their 2026-09-08 snapshots, and
+`nano-banana`, `gemini-flash-image` and `gemini-3.1-flash-image-preview` resolve
+to `gemini-3.1-flash-image` (deprecated 2026-10-06, no shutdown date). A baked
+outline keeps rendering on the model it was baked against, and nothing ranks or
+`--compare`s a superseded model. `imagen-4.0-ultra-generate-001` is removed:
+Google shut down Imagen 4 on 2026-08-17. The `imagen-*` family still
+dispatches.
+
+Both GPT Image 2.6 models enter at edit tier `stable`, not `precise`, until a
+chained build holds on one. The build-editability shortlist now leads with
+them, and the roster carries no `precise` model. `REGISTRY_LAST_REVIEWED` moves
+to 2026-11-08. The freshness refresh no longer asks for Imagen flagships, and
+the outline-schema example bakes `gemini-3-pro-image` instead of `imagen-4`.
+
 ## 0.21.5 — 2026-11-09
 
 ### Move the CI test job to Ubuntu 26.04
