@@ -13,6 +13,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from conftest import CURRENT_OUTLINE_SCHEMA_VERSION
+
 FIXTURE = Path(__file__).parent / "fixtures" / "outline-example.yaml"
 _FIXTURE_DATA = yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
 
@@ -35,7 +37,7 @@ def _write_outline(
     load_outline_partial, so full-deck invariants are not required.
     """
     data = {
-        "schema_version": 2,
+        "schema_version": CURRENT_OUTLINE_SCHEMA_VERSION,
         "talk": copy.deepcopy(_FIXTURE_DATA["talk"]),
         "slides": slides,
     }
@@ -1987,7 +1989,7 @@ def test_parse_outline_carries_the_footer_style(generate_illustrations, tmp_path
 
     outline = _write_poster_outline(tmp_path)
     data = yaml.safe_load(outline.read_text(encoding="utf-8"))
-    data["schema_version"] = 2
+    data["schema_version"] = CURRENT_OUTLINE_SCHEMA_VERSION
     data["style_anchor"]["footer_style"] = {"target_width_pct": 70}
     outline.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     parsed = generate_illustrations.parse_outline(str(outline))

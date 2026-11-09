@@ -55,7 +55,7 @@ Do not restate them here — apply them.
 ## Step 1 — Route by Mode
 
 Determine which of three modes applies and execute only the matching steps.
-The illustration scripts read outline schema 2 only and never migrate or edit
+The illustration scripts read outline schema 3 only and never migrate or edit
 `outline.yaml`. When a refusal says to hand off, stop: invoke
 `Skill(skill: "presentation-creator")` for its outline handoff, then re-run the
 refused script. For any other refusal, apply the fix it names.
@@ -236,9 +236,8 @@ composition, also set `style_anchor.composition: poster-theatrical`,
 `style_anchor.embedded_footer: <text>`, and `style_anchor.text_treatment: <how
 the baked title is rendered>` (e.g. "glowing hand-script neon on an in-scene
 surface"). For the Step 5 stamped-footer choice, also set
-`style_anchor.footer_style` (`{}` takes the defaults) and, in the same edit, the
-root `schema_version: 2`, then read the footer passage of this step's strategy
-reference:
+`style_anchor.footer_style` (`{}` takes the defaults), then read the footer
+passage of this step's strategy reference:
 
 ```text
 skills/illustrations/references/strategy.md

@@ -1044,12 +1044,15 @@ def _v1_text(base_data, *, stamp: bool) -> str:
 _HANDOFF = "Hand off to presentation-creator"
 
 
+@pytest.mark.parametrize("older", [1, 2])
 def test_the_owner_migration_restamps_an_older_outline_in_place(
-    outline_schema, base_data, tmp_path
+    outline_schema, base_data, tmp_path, older
 ):
     """Only the root stamp changes; comments and layout survive."""
     path = tmp_path / "outline.yaml"
-    before = _v1_text(base_data, stamp=True)
+    before = _v1_text(base_data, stamp=True).replace(
+        "schema_version: 1\n", f"schema_version: {older}\n", 1
+    )
     path.write_text(before, encoding="utf-8")
 
     result = outline_schema.migrate_outline(path)
@@ -1059,12 +1062,14 @@ def test_the_owner_migration_restamps_an_older_outline_in_place(
         "ok": True,
         "path": str(path),
         "migrated": True,
-        "from": 1,
-        "to": 2,
+        "from": older,
+        "to": 3,
     }
     assert "# authored outline — keep this comment" in after
-    assert yaml.safe_load(after)["schema_version"] == 2
-    assert outline_schema.load_outline(path).schema_version == 2
+    assert after == before.replace(
+        f"schema_version: {older}\n", "schema_version: 3\n", 1
+    )
+    assert outline_schema.load_outline(path).schema_version == 3
     assert outline_schema.migrate_outline(path)["migrated"] is False
 
 
@@ -1090,12 +1095,12 @@ def _body(base_data) -> str:
     [
         (
             "schema_version: 1  # stamped by the creator\n",
-            "schema_version: 2  # stamped by the creator\n",
+            "schema_version: 3  # stamped by the creator\n",
         ),
-        ('"schema_version": 1\n', '"schema_version": 2\n'),
+        ('"schema_version": 1\n', '"schema_version": 3\n'),
         (
             "# preamble\n\n---\nschema_version: 1\n",
-            "# preamble\n\n---\nschema_version: 2\n",
+            "# preamble\n\n---\nschema_version: 3\n",
         ),
     ],
     ids=["inline-comment", "quoted-key", "preamble-before-marker"],
@@ -1108,7 +1113,7 @@ def test_the_migration_restamps_every_root_layout(
     outline_schema.migrate_outline(path)
     after = path.read_text(encoding="utf-8")
     assert after.startswith(expected_head)
-    assert yaml.safe_load(after)["schema_version"] == 2
+    assert yaml.safe_load(after)["schema_version"] == 3
 
 
 def test_the_migration_keeps_crlf_line_endings(outline_schema, base_data, tmp_path):
@@ -1117,12 +1122,12 @@ def test_the_migration_keeps_crlf_line_endings(outline_schema, base_data, tmp_pa
     path.write_bytes(crlf.encode("utf-8"))
     outline_schema.migrate_outline(path)
     after = path.read_bytes().decode("utf-8")
-    assert after == crlf.replace("schema_version: 1", "schema_version: 2", 1)
+    assert after == crlf.replace("schema_version: 1", "schema_version: 3", 1)
 
 
 @pytest.mark.parametrize(
     "version,detail",
-    [(3, "update speaker-toolkit"), ("two", "not an integer")],
+    [(4, "update speaker-toolkit"), ("two", "not an integer")],
     ids=["newer", "not-an-integer"],
 )
 def test_a_non_owner_reader_refuses_every_other_version(
@@ -1159,8 +1164,8 @@ def test_the_owner_validation_migrates_before_it_reads(
     path = tmp_path / "outline.yaml"
     path.write_text(_v1_text(base_data, stamp=True), encoding="utf-8")
     assert outline_schema.main(["outline_schema.py", str(path)]) == 0
-    assert "from outline schema 1 to 2" in capsys.readouterr().err
-    assert yaml.safe_load(path.read_text(encoding="utf-8"))["schema_version"] == 2
+    assert "from outline schema 1 to 3" in capsys.readouterr().err
+    assert yaml.safe_load(path.read_text(encoding="utf-8"))["schema_version"] == 3
 
 
 def test_emit_json_refuses_an_older_outline_without_rewriting_it(
@@ -1309,7 +1314,7 @@ def test_every_non_owner_refusal_hands_off_and_names_no_edit(
     "kind,fix",
     [
         ("missing-stamp", "add `schema_version: 1`"),
-        ("not-an-integer", "set it to 2"),
+        ("not-an-integer", "set it to 3"),
         ("not-utf8", "re-save it as UTF-8"),
         ("not-a-mapping", "restore the outline's root mapping"),
         ("invalid-yaml", "fix the YAML"),
@@ -1397,3 +1402,157 @@ def test_the_migration_stages_privately_and_keeps_the_file_mode(
         ".outline.yaml.migrating",
         "outline.yaml",
     ]
+
+
+# ── Likeness reference images (slides[].reference_images, schema 3) ──
+
+
+def test_the_conftest_outline_stamp_is_the_current_schema(outline_schema):
+    from conftest import CURRENT_OUTLINE_SCHEMA_VERSION
+
+    assert CURRENT_OUTLINE_SCHEMA_VERSION == outline_schema.OUTLINE_SCHEMA_VERSION
+
+
+def _photo(path: Path, fmt: str = "JPEG") -> Path:
+    from PIL import Image
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (12, 9), (180, 120, 90)).save(path, format=fmt)
+    return path
+
+
+def _referencing_outline(base_data, tmp_path, references, *, version=3, slide_n=1):
+    """The worked example with `references` on one illustrated slide."""
+    data = copy.deepcopy(base_data)
+    data["schema_version"] = version
+    slide = next(s for s in data["slides"] if s["n"] == slide_n)
+    slide["reference_images"] = references
+    path = tmp_path / "talk" / "outline.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return path
+
+
+def test_reference_images_load_relative_and_absolute(
+    outline_schema, base_data, tmp_path
+):
+    _photo(tmp_path / "talk" / "photos" / "speaker.jpg")
+    elsewhere = _photo(tmp_path / "library" / "speaker-side.png", "PNG")
+    path = _referencing_outline(
+        base_data, tmp_path, ["photos/speaker.jpg", str(elsewhere)]
+    )
+
+    for load in (outline_schema.load_outline, outline_schema.load_outline_partial):
+        slide = next(s for s in load(path).slides if s.n == 1)
+        assert slide.reference_images == ["photos/speaker.jpg", str(elsewhere)]
+    assert outline_schema.reference_image_path("photos/speaker.jpg", path.parent) == (
+        tmp_path / "talk" / "photos" / "speaker.jpg"
+    )
+
+
+def test_a_slide_without_reference_images_defaults_to_none(outline_schema):
+    outline = outline_schema.load_outline(FIXTURE)
+    assert all(s.reference_images == [] for s in outline.slides)
+
+
+@pytest.mark.parametrize(
+    "setup,entry,fix",
+    [
+        ("outside", "../outside.jpg", "move the photo into the talk directory"),
+        ("none", "photos/missing.jpg", "names no file at"),
+        ("none", "~/speaker.jpg", "spell ~ out as an absolute path"),
+        ("garbage", "photos/broken.jpg", "cannot be decoded as an image"),
+        ("gif", "photos/speaker.gif", "convert the photo to JPEG, PNG or WebP"),
+        ("mismatch", "photos/really-a-png.jpg", "holds PNG data under a .jpg name"),
+    ],
+    ids=["leaves-talk-dir", "missing", "tilde", "not-an-image", "gif", "mismatch"],
+)
+def test_an_unusable_reference_image_is_refused_with_its_fix(
+    outline_schema, base_data, tmp_path, setup, entry, fix
+):
+    talk = tmp_path / "talk"
+    if setup == "outside":
+        _photo(tmp_path / "outside.jpg")
+    elif setup == "garbage":
+        (talk / "photos").mkdir(parents=True)
+        (talk / "photos" / "broken.jpg").write_bytes(b"not a jpeg at all")
+    elif setup == "gif":
+        _photo(talk / "photos" / "speaker.gif", "GIF")
+    elif setup == "mismatch":
+        _photo(talk / "photos" / "really-a-png.jpg", "PNG")
+    path = _referencing_outline(base_data, tmp_path, [entry])
+
+    for load in (outline_schema.load_outline, outline_schema.load_outline_partial):
+        with pytest.raises(ValidationError) as exc:
+            load(path)
+        message = str(exc.value)
+        assert "slide 1: reference_images[0]" in message
+        assert fix in message
+
+
+def test_reference_images_belong_to_outline_schema_3(
+    outline_schema, base_data, tmp_path
+):
+    _photo(tmp_path / "talk" / "speaker.jpg")
+    path = _referencing_outline(base_data, tmp_path, ["speaker.jpg"], version=2)
+    with pytest.raises(ValidationError, match="set the root schema_version: 3"):
+        outline_schema.load_outline_partial(path)
+
+
+def test_the_owner_migrates_a_v2_outline_that_gained_reference_images(
+    outline_schema, base_data, tmp_path, capsys
+):
+    """The author's path: add the field, then run the owner's validation."""
+    _photo(tmp_path / "talk" / "speaker.jpg")
+    path = _referencing_outline(base_data, tmp_path, ["speaker.jpg"], version=2)
+    assert outline_schema.main(["outline_schema.py", str(path)]) == 0
+    assert "from outline schema 2 to 3" in capsys.readouterr().err
+    slide = next(s for s in outline_schema.load_outline(path).slides if s.n == 1)
+    assert slide.reference_images == ["speaker.jpg"]
+
+
+def test_the_migration_refuses_a_missing_reference_and_keeps_the_file(
+    outline_schema, base_data, tmp_path
+):
+    path = _referencing_outline(base_data, tmp_path, ["absent.jpg"], version=2)
+    original = path.read_bytes()
+    with pytest.raises(ValidationError, match="names no file"):
+        outline_schema.migrate_outline(path)
+    assert path.read_bytes() == original
+
+
+def test_reference_images_need_an_image_prompt(outline_schema, base_data, tmp_path):
+    _photo(tmp_path / "talk" / "speaker.jpg")
+    # Slide 7 is the EXCEPTION screenshot: no image_prompt to guide.
+    path = _referencing_outline(base_data, tmp_path, ["speaker.jpg"], slide_n=7)
+    with pytest.raises(ValidationError, match="add an image_prompt"):
+        outline_schema.load_outline(path)
+
+
+def test_reference_images_without_a_talk_directory_are_refused(
+    outline_schema, base_data
+):
+    """Validation never skips the file check; it needs the loaders' context."""
+    data = copy.deepcopy(base_data)
+    data["schema_version"] = 3
+    data["slides"][0]["reference_images"] = ["speaker.jpg"]
+    with pytest.raises(ValidationError, match="load the outline with"):
+        outline_schema.Outline.model_validate(data)
+
+
+@pytest.mark.parametrize(
+    "entries,fix",
+    [
+        (["speaker.jpg", "speaker.jpg"], "lists the same photo twice"),
+        ([" speaker.jpg"], "without surrounding whitespace"),
+        ([""], "without surrounding whitespace"),
+        ([f"p{i}.jpg" for i in range(5)], "at most 4 items"),
+    ],
+    ids=["duplicate", "padded", "empty", "too-many"],
+)
+def test_malformed_reference_entries_are_refused(
+    outline_schema, base_data, tmp_path, entries, fix
+):
+    path = _referencing_outline(base_data, tmp_path, entries)
+    with pytest.raises(ValidationError, match=fix):
+        outline_schema.load_outline(path)

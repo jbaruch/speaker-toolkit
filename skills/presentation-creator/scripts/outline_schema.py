@@ -33,6 +33,7 @@ from pydantic import (
     ConfigDict,
     Field,
     ValidationError,
+    ValidationInfo,
     field_validator,
     model_validator,
 )
@@ -627,6 +628,89 @@ class TalkMetadata(_StrictModel):
         return v
 
 
+# ── Likeness reference images (per slide, schema 3) ──────────────────
+
+# At most this many photos per slide. Both image vendors accept more; a few
+# angles carry a likeness, and the cap keeps each request body bounded.
+MAX_REFERENCE_IMAGES = 4
+
+# The photo formats both vendors' image-input APIs accept, keyed by the
+# extension the file must carry so the MIME type sent is the decoded format.
+REFERENCE_IMAGE_FORMATS = {
+    ".jpg": "JPEG",
+    ".jpeg": "JPEG",
+    ".png": "PNG",
+    ".webp": "WEBP",
+}
+
+
+def reference_image_path(entry: str, talk_dir: Path | str) -> Path:
+    """Where a slide's ``reference_images`` entry points.
+
+    An absolute entry is taken as written. A relative entry is joined to the
+    talk directory (the outline's own directory) and must stay inside it
+    lexically; a symlink inside the talk directory is followed when read.
+    """
+    path = Path(entry)
+    if path.is_absolute():
+        return path
+    base = Path(os.path.abspath(talk_dir))
+    target = Path(os.path.normpath(base / path))
+    if not target.is_relative_to(base):
+        raise ValueError(
+            f"{entry!r} leaves the talk directory {base}; move the photo into "
+            "the talk directory, or give its absolute path"
+        )
+    return target
+
+
+def unusable_reference_image(entry: str, talk_dir: Path | str) -> str | None:
+    """Why ``entry`` cannot serve as a likeness reference, or None when it can.
+
+    The file must exist, carry a JPEG, PNG or WebP extension, and fully decode
+    as that format. Pillow is imported only here, so outlines without
+    reference images load with PyYAML and Pydantic alone.
+    """
+    try:
+        path = reference_image_path(entry, talk_dir)
+    except ValueError as exc:
+        return str(exc)
+    expected = REFERENCE_IMAGE_FORMATS.get(path.suffix.lower())
+    if expected is None:
+        return (
+            f"{entry!r} is not a .jpg, .jpeg, .png or .webp file; convert the "
+            "photo to JPEG, PNG or WebP and point at the converted file"
+        )
+    if not path.is_file():
+        home = " (spell ~ out as an absolute path)" if entry.startswith("~") else ""
+        return (
+            f"{entry!r} names no file at {path}{home}; put the photo there, or "
+            "give a path relative to the talk directory or an absolute path"
+        )
+    try:
+        from PIL import Image
+    except ImportError:
+        return (
+            f"{entry!r} cannot be checked without Pillow; install the toolkit's "
+            "declared dependencies (pyproject.toml) into the configured interpreter"
+        )
+    try:
+        with Image.open(path) as image:
+            decoded = image.format
+            image.load()
+    except (OSError, SyntaxError, ValueError, Image.DecompressionBombError) as exc:
+        return (
+            f"{entry!r} cannot be decoded as an image ({type(exc).__name__}: "
+            f"{exc}); replace it with a readable JPEG, PNG or WebP photo"
+        )
+    if decoded != expected:
+        return (
+            f"{entry!r} holds {decoded} data under a {path.suffix} name; rename "
+            f"it to match its format, or re-save it as {expected}"
+        )
+    return None
+
+
 # ── Slide ────────────────────────────────────────────────────────────
 
 
@@ -660,6 +744,13 @@ class Slide(_StrictModel):
     text_overlay: str | None = None
     image_prompt: str | None = None
     safe_zone: SafeZone | None = None
+    # Likeness references (schema 3): real photos of a person this slide's
+    # illustration depicts, relative to the talk directory or absolute. Fresh
+    # generation sends them to the model as image inputs; builds, edits and
+    # style exploration do not.
+    reference_images: list[str] = Field(
+        default_factory=list, max_length=MAX_REFERENCE_IMAGES
+    )
     builds: list[Build] = Field(default_factory=list)
     script: list[ScriptItem] = Field(default_factory=list)
     applied_patterns: list[AppliedPattern] = Field(default_factory=list)
@@ -669,6 +760,49 @@ class Slide(_StrictModel):
     placeholders: list[str] = Field(default_factory=list)
     big_idea: bool = False
     thesis: Literal["preview", "payoff"] | None = None
+
+    @field_validator("reference_images")
+    @classmethod
+    def _reference_entries_are_paths(cls, value: list[str]) -> list[str]:
+        for index, entry in enumerate(value):
+            if not entry.strip() or entry != entry.strip() or "\0" in entry:
+                raise ValueError(
+                    f"reference_images[{index}] {entry!r} is not a usable path; "
+                    "write the photo's path without surrounding whitespace"
+                )
+        if len(set(value)) != len(value):
+            raise ValueError(
+                "reference_images lists the same photo twice; keep one entry each"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _reference_images_are_readable(self, info: ValidationInfo) -> "Slide":
+        """Each reference resolves against the talk directory and decodes.
+
+        The loaders pass that directory as validation context. Validating a
+        slide with reference images without it is refused, never skipped.
+        """
+        if not self.reference_images:
+            return self
+        if not self.image_prompt:
+            raise ValueError(
+                f"slide {self.n}: reference_images guide a generated "
+                "illustration; add an image_prompt or remove reference_images"
+            )
+        context = info.context if isinstance(info.context, dict) else {}
+        talk_dir = context.get("talk_dir")
+        if talk_dir is None:
+            raise ValueError(
+                f"slide {self.n}: reference_images resolve against the talk "
+                "directory; load the outline with outline_schema.load_outline or "
+                "load_outline_partial"
+            )
+        for index, entry in enumerate(self.reference_images):
+            problem = unusable_reference_image(entry, talk_dir)
+            if problem:
+                raise ValueError(f"slide {self.n}: reference_images[{index}] {problem}")
+        return self
 
     @model_validator(mode="after")
     def _exception_needs_justification(self) -> "Slide":
@@ -749,11 +883,13 @@ def deck_positions(slides: list["Slide"]) -> dict[int, int]:
     }
 
 
-# Outline root schema. v2 adds the optional `style_anchor.footer_style`. Every
-# outline carries its root stamp; a v1 outline loads read-only, and only the
-# owner's migration (`migrate_outline`) rewrites it.
-OUTLINE_SCHEMA_VERSION = 2
+# Outline root schema. v2 adds the optional `style_anchor.footer_style`; v3 adds
+# the optional `slides[].reference_images`. Every outline carries its root
+# stamp; an older outline loads read-only, and only the owner's migration
+# (`migrate_outline`) rewrites it.
+OUTLINE_SCHEMA_VERSION = 3
 FOOTER_STYLE_OUTLINE_SCHEMA_VERSION = 2
+REFERENCE_IMAGES_OUTLINE_SCHEMA_VERSION = 3
 
 _MISSING_STAMP_FIX = (
     f"a new outline starts with `schema_version: {OUTLINE_SCHEMA_VERSION}`, and "
@@ -785,6 +921,14 @@ def _check_outline_version_and_poster(
             "style_anchor.footer_style belongs to outline schema "
             f"{FOOTER_STYLE_OUTLINE_SCHEMA_VERSION}; set the root schema_version: "
             f"{FOOTER_STYLE_OUTLINE_SCHEMA_VERSION}"
+        )
+    carriers = [s.n for s in slides if s.reference_images]
+    if carriers and schema_version < REFERENCE_IMAGES_OUTLINE_SCHEMA_VERSION:
+        raise ValueError(
+            f"slides[].reference_images (slide(s) {', '.join(map(str, carriers))}) "
+            f"belongs to outline schema {REFERENCE_IMAGES_OUTLINE_SCHEMA_VERSION}; "
+            "set the root schema_version: "
+            f"{REFERENCE_IMAGES_OUTLINE_SCHEMA_VERSION}"
         )
     if (
         style_anchor is not None
@@ -1008,16 +1152,21 @@ class PartialOutline(_StrictModel):
 # ── Loader + CLI guard ───────────────────────────────────────────────
 
 
+def _validation_context(path: Path | str) -> dict[str, Path]:
+    """What path-bearing fields resolve against: the outline's own directory."""
+    return {"talk_dir": Path(os.path.abspath(path)).parent}
+
+
 def load_outline(path: Path | str) -> Outline:
     text = Path(path).read_text(encoding="utf-8")
     data = yaml.safe_load(text)
-    return Outline.model_validate(data)
+    return Outline.model_validate(data, context=_validation_context(path))
 
 
 def load_outline_partial(path: Path | str) -> PartialOutline:
     text = Path(path).read_text(encoding="utf-8")
     data = yaml.safe_load(text)
-    return PartialOutline.model_validate(data)
+    return PartialOutline.model_validate(data, context=_validation_context(path))
 
 
 class OutlineVersionError(ValueError):
@@ -1176,11 +1325,11 @@ def require_current_outline(path: Path | str) -> None:
 def migrate_outline(path: Path | str) -> dict[str, object]:
     """Restamp an older outline at the current schema, as its owner, in place.
 
-    v2 only adds an optional field, so the migration is the root stamp: only an
-    exact integer 1 migrates, its value is rewritten, and nothing else changes,
-    comments, quoting and line endings included. The result must load at the
-    current version before it replaces the file atomically; a missing stamp or
-    a layout this cannot restamp is refused.
+    v2 and v3 each only add an optional field, so the migration is the root
+    stamp: only an exact integer 1 or 2 migrates, its value is rewritten, and
+    nothing else changes, comments, quoting and line endings included. The
+    result must load at the current version before it replaces the file
+    atomically; a missing stamp or a layout this cannot restamp is refused.
     """
     target = Path(path)
     # Bytes in, bytes out: universal-newline reads would rewrite CRLF files.
@@ -1188,10 +1337,11 @@ def migrate_outline(path: Path | str) -> dict[str, object]:
     version = _root_version(target, text, handoff=False)
     if version == OUTLINE_SCHEMA_VERSION:
         return {"ok": True, "path": str(target), "migrated": False, "to": version}
-    if version != 1:
+    if version not in range(1, OUTLINE_SCHEMA_VERSION):
         raise OutlineVersionError(
-            f"{target} has root schema_version {version!r}; only schema 1 "
-            f"migrates to {OUTLINE_SCHEMA_VERSION}"
+            f"{target} has root schema_version {version!r}; only schemas 1 "
+            f"through {OUTLINE_SCHEMA_VERSION - 1} migrate to "
+            f"{OUTLINE_SCHEMA_VERSION}"
         )
     existing = _ROOT_VERSION_LINE.search(text)
     migrated = (
@@ -1207,9 +1357,15 @@ def migrate_outline(path: Path | str) -> dict[str, object]:
             f"{target} keeps its root schema_version in a layout the migration "
             f"cannot restamp; set it to {OUTLINE_SCHEMA_VERSION} by hand"
         )
-    PartialOutline.model_validate(loaded)
+    PartialOutline.model_validate(loaded, context=_validation_context(target))
     _replace_in_place(target, migrated)
-    return {"ok": True, "path": str(target), "migrated": True, "from": 1, "to": 2}
+    return {
+        "ok": True,
+        "path": str(target),
+        "migrated": True,
+        "from": version,
+        "to": OUTLINE_SCHEMA_VERSION,
+    }
 
 
 def _os_failure(path: str, exc: OSError) -> str:
