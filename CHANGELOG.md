@@ -19,6 +19,8 @@ carry both objects over field by field. The writer guard deliberately isn't a re
 check: a database already holding a string stays readable, so `set_config` can repair
 the whole parent.
 
+The clarification field tables in `vault-clarification` and `vault-profile` asked for `publishing_process.qr_code` as one free-text answer, which is where the prose came from. They now ask for its sub-fields, `enabled`, `target`, `custom_url` and `slide_position`, each written to its own path.
+
 ## 0.21.11 — 2026-11-09
 
 ### Scan the published shownotes, wherever the site checkout sits
