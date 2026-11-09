@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.6 — 2026-11-09
+
 ### Refresh the image-model registry (reviewed 2026-11-08)
 
 Reconcile `model_registry.py` against Google's and OpenAI's model and
