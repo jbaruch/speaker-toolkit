@@ -550,15 +550,28 @@ def test_an_incomplete_scan_stays_visible(
         tmp_path,
         _result(source_root, relative),
         complete=False,
-        incomplete_reason_codes=["wall_budget_exhausted"],
+        incomplete_reason_codes=["pptx_artifact_unavailable"],
+        skipped=[{"path": "talks/other.pptx", "reason": "pptx_artifact_unavailable"}],
     )
 
     report = catalog_deck.execute(vault, extraction=extraction)
 
-    assert report["incomplete_reason_codes"] == ["wall_budget_exhausted"]
+    assert report["incomplete_reason_codes"] == ["pptx_artifact_unavailable"]
 
 
-@pytest.mark.parametrize("artifact_dir", ["", "/abs", "../outside", "a/../../b"])
+@pytest.mark.parametrize(
+    "artifact_dir",
+    [
+        "",
+        "/abs",
+        "../outside",
+        "a/../../b",
+        "C:/extractions",
+        r"C:\extractions",
+        r"\\server\share\extractions",
+        "//server/share/extractions",
+    ],
+)
 def test_an_artifact_dir_outside_the_vault_is_refused(
     tmp_path: Path, vault: Path, source_root: Path, artifact_dir: str
 ) -> None:
@@ -613,7 +626,7 @@ def test_cli_emits_a_report_a_writer_can_lift_the_plan_from(
         ("not json", "cannot read the extraction result"),
         ("[]", "not a JSON object"),
         ("{}", "neither a pptx-extraction.py"),
-        ('{"kind": "pptx_directory_batch"}', "no results array"),
+        ('{"kind": "pptx_directory_batch"}', "schema-v1 pptx-extraction.py"),
     ],
 )
 def test_cli_refuses_an_unusable_extraction_result(
@@ -642,3 +655,153 @@ def test_cli_refuses_an_unusable_database_without_echoing_it(
     assert result.returncode == 2
     assert json.loads(result.stdout)["ok"] is False
     assert "{not json" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"schema_version": 3},
+        {"schema_version": 5},
+        {"schema_version": "4"},
+        {"pipeline_version": "1.4.0"},
+        {"pipeline_version": "1.6.0"},
+    ],
+    ids=[
+        "old-schema",
+        "future-schema",
+        "string-schema",
+        "old-pipeline",
+        "future-pipeline",
+    ],
+)
+def test_a_result_from_another_extraction_generation_is_refused(
+    tmp_path: Path, vault: Path, source_root: Path, overrides: dict[str, Any]
+) -> None:
+    """A receipt binds the generation it was made with; an old or future one can't
+    become a current catalog record."""
+    relative = _deck(source_root)
+    _write_database(vault, source_root)
+    extraction = _write_extraction(
+        tmp_path, _result(source_root, relative, **overrides)
+    )
+
+    with pytest.raises(
+        catalog_deck.CatalogInputError, match="this command reads schema 4"
+    ):
+        catalog_deck.execute(vault, extraction=extraction)
+
+    assert not (vault / catalog_deck.DEFAULT_ARTIFACT_DIR).exists()
+
+
+@pytest.mark.parametrize(
+    "fingerprint",
+    [None, {"algorithm": "md5", "digest": "0" * 32, "size_bytes": 1}, {"digest": "x"}],
+    ids=["missing", "other-algorithm", "malformed"],
+)
+def test_a_result_without_a_valid_fingerprint_is_refused(
+    tmp_path: Path, vault: Path, source_root: Path, fingerprint: object
+) -> None:
+    relative = _deck(source_root)
+    _write_database(vault, source_root)
+    extraction = _write_extraction(
+        tmp_path, _result(source_root, relative, input_fingerprint=fingerprint)
+    )
+
+    with pytest.raises(catalog_deck.CatalogInputError, match="input_fingerprint"):
+        catalog_deck.execute(vault, extraction=extraction)
+
+
+@pytest.mark.parametrize(
+    "envelope",
+    [
+        {"schema_version": None},
+        {"complete": False},
+        {"incomplete_reason_codes": ["pptx_artifact_unavailable"]},
+        {"unexpected": True},
+    ],
+    ids=[
+        "unversioned",
+        "completeness-without-receipts",
+        "reasons-without-receipts",
+        "extra-field",
+    ],
+)
+def test_an_envelope_the_strict_decoder_rejects_is_refused(
+    tmp_path: Path, vault: Path, source_root: Path, envelope: dict[str, Any]
+) -> None:
+    relative = _deck(source_root)
+    _write_database(vault, source_root)
+    extraction = _write_extraction(tmp_path, _result(source_root, relative), **envelope)
+
+    with pytest.raises(catalog_deck.CatalogInputError, match="schema-v1"):
+        catalog_deck.execute(vault, extraction=extraction)
+
+
+def test_a_legacy_unversioned_batch_is_refused(
+    tmp_path: Path, vault: Path, source_root: Path
+) -> None:
+    relative = _deck(source_root)
+    _write_database(vault, source_root)
+    extraction = tmp_path / "legacy.json"
+    extraction.write_text(
+        json.dumps({"results": [_result(source_root, relative)], "skipped": []}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(catalog_deck.CatalogInputError, match="schema-v1"):
+        catalog_deck.execute(vault, extraction=extraction)
+
+
+def test_a_symlinked_artifact_directory_refuses_the_write(
+    tmp_path: Path, vault: Path, source_root: Path
+) -> None:
+    relative = _deck(source_root)
+    _write_database(vault, source_root)
+    extraction = _write_extraction(tmp_path, _result(source_root, relative))
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (vault / catalog_deck.DEFAULT_ARTIFACT_DIR).symlink_to(
+        outside, target_is_directory=True
+    )
+
+    with pytest.raises(catalog_deck.ArtifactWriteRefused, match="symbolic link"):
+        catalog_deck.execute(vault, extraction=extraction)
+
+    assert list(outside.iterdir()) == []
+
+
+def test_a_symlinked_artifact_file_refuses_the_write(
+    tmp_path: Path, vault: Path, source_root: Path
+) -> None:
+    relative = _deck(source_root)
+    _write_database(vault, source_root)
+    extraction = _write_extraction(tmp_path, _result(source_root, relative))
+    planned = catalog_deck.execute(vault, extraction=extraction, dry_run=True)[
+        "artifacts_planned"
+    ][0]
+    outside = tmp_path / "outside.json"
+    outside.write_text("untouched", encoding="utf-8")
+    (vault / planned).parent.mkdir(parents=True)
+    (vault / planned).symlink_to(outside)
+
+    with pytest.raises(catalog_deck.ArtifactWriteRefused, match="symbolic link"):
+        catalog_deck.execute(vault, extraction=extraction)
+
+    assert outside.read_text(encoding="utf-8") == "untouched"
+
+
+def test_a_vault_root_reached_through_a_symlink_still_takes_the_artifact(
+    tmp_path: Path, vault: Path, source_root: Path
+) -> None:
+    """The root is trusted configuration; only components below it must be real."""
+    relative = _deck(source_root)
+    _write_database(vault, source_root)
+    extraction = _write_extraction(tmp_path, _result(source_root, relative))
+    linked_vault = tmp_path / "linked-vault"
+    linked_vault.symlink_to(vault, target_is_directory=True)
+
+    report = catalog_deck.execute(linked_vault, extraction=extraction)
+
+    written = report["artifacts_written"]
+    assert len(written) == 1
+    assert (vault / written[0]).is_file()

@@ -28,6 +28,15 @@ Sadogursky on JFrog Xray". That record has no date or conference to contradict a
 so the true match was reported as ambiguous. The assessment now takes
 `config.speaker_name` and ignores those words on both sides.
 
+The command reads only a schema-v1 `--directory` envelope, through the same strict
+decoder the discovery owner uses, and only results at the current extraction schema and
+pipeline, so an old or future result can't become a current receipt. `--artifact-dir`
+must be a canonical vault-relative locator on every host, Windows drive and UNC paths
+included, and each directory below the vault root is opened without following links, so
+a symlinked component refuses the write instead of escaping the vault. The ingress
+reference states the exit codes and the artifact side effect, and says to stop without
+applying anything after exit 2.
+
 ## 0.21.4 — 2026-10-29
 
 ### Check image-model freshness every 30 days

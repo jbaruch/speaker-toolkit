@@ -27,9 +27,10 @@ Usage:
                          [--deck <pptx_path>]... [--artifact-dir <vault-relative>]
                          [--dry-run]
 
-    --extraction    pptx-extraction.py output: a `--directory` envelope or one deck's
-                    result. Without --deck, every deck in it that isn't cataloged yet
-                    is selected.
+    --extraction    pptx-extraction.py output: a schema-v1 `--directory` envelope or
+                    one deck's result, each result at the current extraction schema
+                    and pipeline. Without --deck, every deck in it that isn't
+                    cataloged yet is selected.
     --deck          a root-relative `pptx_path` to select; repeatable.
     --artifact-dir  where the extraction artifacts go, relative to the vault root.
     --dry-run       write no artifact; the plan still names what would be written.
@@ -37,13 +38,17 @@ Usage:
 Side effect, stated plainly: each `bind` or `catalog_unbound` deck's extraction result
 is written to `<artifact-dir>/<sha256>.json` under the vault, since a receipt has to
 name an artifact that exists. The name is the content's digest, so a rerun writes
-nothing new. The database is never written; the plan is for the owner writer to apply.
+nothing new. Every directory below the vault root is opened without following links,
+so a symlinked component refuses the write instead of escaping the vault. The database
+is never written; the plan is for the owner writer to apply.
 
 Stdout: one JSON object. `mutation_plan` is exactly the `{schema_version, mutations}`
 envelope `mutate-tracking-database.py` accepts, and `decks[]` sits beside it.
 Stderr: one actionable line when the inputs can't be used.
 Exit 0 when the decks were assessed, a `review_required` included, since that's a
-finding to act on. Exit 2 when the database or extraction result is unusable.
+finding to act on. Exit 2 when the database, the extraction result, `--artifact-dir`
+or an artifact write is unusable; stdout is then `{ok: false, code, error}`, and no
+plan exists to apply.
 """
 
 from __future__ import annotations
@@ -55,9 +60,12 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import sys
-import tempfile
+import re
+import secrets
+import stat
 from typing import Any, Mapping, Sequence
 
+from artifact_locator import ArtifactLocatorError, classify_artifact_locator
 from pptx_catalog_assessment import (
     candidate_talks,
     configured_speaker_name,
@@ -67,6 +75,15 @@ from pptx_catalog_assessment import (
     stored_proof,
 )
 from pptx_deck_facts import read_deck_identity_facts
+from pptx_discovery_contract import (
+    PPTX_DIRECTORY_BATCH_KIND,
+    PptxDiscoveryContractError,
+    decode_pptx_directory_batch,
+)
+from pptx_evidence import (
+    PPTX_EXTRACTION_PIPELINE_VERSION,
+    PPTX_EXTRACTION_SCHEMA_VERSION,
+)
 from pptx_talk_identity import (
     VERDICT_MATCHED,
     VERDICT_UNMATCHED,
@@ -89,7 +106,6 @@ from tracking_database_io import (
 
 REPORT_SCHEMA_VERSION = 1
 MUTATION_PLAN_SCHEMA_VERSION = 1
-DIRECTORY_BATCH_KIND = "pptx_directory_batch"
 DEFAULT_ARTIFACT_DIR = "pptx-extractions"
 # The owner writer's missing-value sentinel, restated here because the plan is JSON
 # handed to that writer rather than a Python call into it.
@@ -111,6 +127,58 @@ class CatalogInputError(Exception):
     """The extraction result or an argument can't be used; the message says why."""
 
 
+class ArtifactWriteRefused(Exception):
+    """An artifact can't be written inside the vault; the message says why."""
+
+
+_SHA256_HEX = re.compile(r"[0-9a-f]{64}")
+
+
+def _require_current_result(result: object, *, label: str) -> dict[str, Any]:
+    """One extraction result at the current generation, or a refusal naming why.
+
+    A receipt binds the extractor schema and pipeline version it was made with, so
+    an older or a future result can't become a current catalog record.
+    """
+    if not isinstance(result, dict):
+        raise CatalogInputError(f"{label} is not an object")
+    schema_version = result.get("schema_version")
+    if (
+        type(schema_version) is not int
+        or schema_version != PPTX_EXTRACTION_SCHEMA_VERSION
+        or result.get("pipeline_version") != PPTX_EXTRACTION_PIPELINE_VERSION
+    ):
+        raise CatalogInputError(
+            f"{label} is extraction schema {schema_version!r}, pipeline "
+            f"{result.get('pipeline_version')!r}; this command reads schema "
+            f"{PPTX_EXTRACTION_SCHEMA_VERSION}, pipeline "
+            f"{PPTX_EXTRACTION_PIPELINE_VERSION}. Re-run pptx-extraction.py and pass "
+            "its output"
+        )
+    fingerprint = result.get("input_fingerprint")
+    if not (
+        isinstance(fingerprint, dict)
+        and set(fingerprint) == {"algorithm", "digest", "size_bytes"}
+        and fingerprint["algorithm"] == "sha256"
+        and isinstance(fingerprint["digest"], str)
+        and _SHA256_HEX.fullmatch(fingerprint["digest"])
+        and type(fingerprint["size_bytes"]) is int
+        and fingerprint["size_bytes"] >= 0
+    ):
+        raise CatalogInputError(
+            f"{label} has no valid input_fingerprint; re-run pptx-extraction.py"
+        )
+    pptx_path = result.get("pptx_path")
+    slide_count = result.get("slide_count")
+    if not isinstance(pptx_path, str) or not pptx_path:
+        raise CatalogInputError(f"{label} has no pptx_path; re-run pptx-extraction.py")
+    if type(slide_count) is not int or slide_count < 0:
+        raise CatalogInputError(
+            f"{label} has no valid slide_count; re-run pptx-extraction.py"
+        )
+    return result
+
+
 def _load_extraction_results(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
     """Return the extraction's per-deck results and any incomplete-scan reasons."""
     try:
@@ -122,23 +190,32 @@ def _load_extraction_results(path: Path) -> tuple[list[dict[str, Any]], list[str
         ) from exc
     if not isinstance(payload, dict):
         raise CatalogInputError(f"the extraction result {path} is not a JSON object")
-    if payload.get("kind") == DIRECTORY_BATCH_KIND:
-        results = payload.get("results")
-        incomplete = payload.get("incomplete_reason_codes")
-        if not isinstance(results, list):
-            raise CatalogInputError(f"{path} has no results array")
-        reasons = (
-            [str(code) for code in incomplete] if isinstance(incomplete, list) else []
-        )
+    if payload.get("kind") == PPTX_DIRECTORY_BATCH_KIND or set(payload) == {
+        "results",
+        "skipped",
+    }:
+        try:
+            batch = decode_pptx_directory_batch(payload)
+        except PptxDiscoveryContractError as exc:
+            raise CatalogInputError(
+                f"{path} is not a schema-v1 pptx-extraction.py --directory envelope "
+                f"({exc}); re-run pptx-extraction.py --directory and pass its output"
+            ) from exc
+        raw_results = batch["results"]
+        incomplete = batch["incomplete_reason_codes"]
+        assert isinstance(raw_results, list) and isinstance(incomplete, list)
+        results = [
+            _require_current_result(result, label=f"{path} results[{index}]")
+            for index, result in enumerate(raw_results)
+        ]
+        reasons = [str(code) for code in incomplete]
     elif "pptx_path" in payload:
-        results, reasons = [payload], []
+        results, reasons = [_require_current_result(payload, label=str(path))], []
     else:
         raise CatalogInputError(
             f"{path} is neither a pptx-extraction.py --directory envelope nor one deck's "
             "result"
         )
-    if not all(isinstance(result, dict) for result in results):
-        raise CatalogInputError(f"{path} holds a result that isn't an object")
     return results, reasons
 
 
@@ -160,31 +237,130 @@ def _root_relative(pptx_path: object, source_root: object) -> str | None:
 
 
 def _safe_artifact_dir(value: str) -> PurePosixPath:
-    relative = PurePosixPath(value)
-    if not value or relative.is_absolute() or ".." in relative.parts:
+    """The artifact directory as a canonical vault-relative locator.
+
+    Classified lexically by the shared locator owner, so a Windows drive or UNC path
+    is refused on every host, not only on Windows.
+    """
+    try:
+        kind = classify_artifact_locator(value)
+    except ArtifactLocatorError as exc:
         raise CatalogInputError(
-            f"--artifact-dir {value!r} must be a path relative to the vault root, with "
-            "no `..`"
+            f"--artifact-dir {value!r} must be a canonical path relative to the vault "
+            f"root ({exc}), such as {DEFAULT_ARTIFACT_DIR}"
+        ) from exc
+    if kind != "relative":
+        raise CatalogInputError(
+            f"--artifact-dir {value!r} is a {kind.replace('_', ' ')} path; give a "
+            f"path relative to the vault root, such as {DEFAULT_ARTIFACT_DIR}"
         )
-    return relative
+    return PurePosixPath(value)
+
+
+# Contained writes depend on these, so a platform without them refuses rather than
+# falling back to path-based writes that a symlink could redirect.
+_REQUIRED_OPEN_FLAGS = ("O_NOFOLLOW", "O_DIRECTORY")
+
+
+def _open_contained_directory(vault_root: Path, parts: tuple[str, ...]) -> int:
+    """A descriptor for the directory `parts` names under the vault root.
+
+    The root is opened by name and may itself be a symlink: it's trusted
+    configuration. Each component below it is opened relative to its parent with
+    O_NOFOLLOW and created when missing, so a symlinked component refuses the walk.
+    """
+    if (
+        os.open not in os.supports_dir_fd
+        or os.mkdir not in os.supports_dir_fd
+        or os.rename not in os.supports_dir_fd
+        or os.unlink not in os.supports_dir_fd
+        or any(not hasattr(os, name) for name in _REQUIRED_OPEN_FLAGS)
+    ):
+        raise ArtifactWriteRefused(
+            "this platform can't open paths relative to a directory without following "
+            "links, so the artifact can't be written safely"
+        )
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | os.O_DIRECTORY
+    current = os.open(os.fspath(vault_root), flags)
+    try:
+        for part in parts:
+            try:
+                nested = os.open(part, flags | os.O_NOFOLLOW, dir_fd=current)
+            except FileNotFoundError:
+                os.mkdir(part, 0o755, dir_fd=current)
+                nested = os.open(part, flags | os.O_NOFOLLOW, dir_fd=current)
+            except OSError as exc:
+                raise ArtifactWriteRefused(
+                    f"{part!r} under the artifact directory is a symbolic link or not "
+                    f"a directory ({exc.strerror}); replace it with a real directory "
+                    "and re-run"
+                ) from exc
+            os.close(current)
+            current = nested
+    except BaseException:
+        os.close(current)
+        raise
+    return current
 
 
 def _write_artifact(vault_root: Path, relative: str, content: bytes) -> bool:
-    """Write one content-addressed artifact atomically; False when already there."""
-    destination = vault_root / relative
-    if destination.is_file() and destination.read_bytes() == content:
-        return False
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(
-        dir=destination.parent, prefix=f".{destination.name}."
-    )
+    """Write one content-addressed artifact inside the vault; False when already there.
+
+    Every component below the vault root is opened without following links, the
+    content is staged under a unique exclusive name, and the rename stays anchored
+    to the same directory descriptor.
+    """
+    locator = PurePosixPath(relative)
+    directory = _open_contained_directory(vault_root, locator.parts[:-1])
+    name = locator.name
     try:
-        with os.fdopen(descriptor, "wb") as stream:
-            stream.write(content)
-        os.replace(temporary, destination)
-    except OSError:
-        Path(temporary).unlink(missing_ok=True)
-        raise
+        try:
+            existing = os.open(
+                name,
+                os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | os.O_NOFOLLOW,
+                dir_fd=directory,
+            )
+        except FileNotFoundError:
+            existing = None
+        except OSError as exc:
+            raise ArtifactWriteRefused(
+                f"the artifact {relative} is a symbolic link or unreadable "
+                f"({exc.strerror}); remove it and re-run"
+            ) from exc
+        if existing is not None:
+            with os.fdopen(existing, "rb") as stream:
+                if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                    raise ArtifactWriteRefused(
+                        f"the artifact {relative} isn't a regular file; remove it and "
+                        "re-run"
+                    )
+                if stream.read() == content:
+                    return False
+        staged = f".{name}.{secrets.token_hex(8)}"
+        descriptor = os.open(
+            staged,
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | os.O_NOFOLLOW
+            | getattr(os, "O_CLOEXEC", 0),
+            0o644,
+            dir_fd=directory,
+        )
+        try:
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+            # POSIX rename replaces the destination atomically; platforms without
+            # dir_fd support were refused when the directory was opened.
+            os.rename(staged, name, src_dir_fd=directory, dst_dir_fd=directory)
+        except BaseException:
+            # Created exclusively above and not yet renamed, so the name is ours.
+            os.unlink(staged, dir_fd=directory)
+            raise
+    finally:
+        os.close(directory)
     return True
 
 
@@ -503,6 +679,8 @@ def main(argv: list[str] | None = None) -> int:
         )
     except CatalogInputError as exc:
         return _error("extraction_input_invalid", str(exc))
+    except ArtifactWriteRefused as exc:
+        return _error("artifact_write_refused", str(exc))
     except TrackingDatabaseIOError as exc:
         # Never echo the exception: decoder messages carry the host database path and
         # the rejected value. Route the typed reason through the closed vocabulary.
