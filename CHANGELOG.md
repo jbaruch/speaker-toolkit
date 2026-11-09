@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.5 — 2026-11-09
+
 ### Move the CI test job to Ubuntu 26.04
 
 GitHub moved `ubuntu-latest` to Ubuntu 26.04. The apt pins in
