@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.16 — 2026-11-09
+
 ### Draw a real person from their photo on deck plates
 
 Deck illustrations of a real person came out as strangers. The case was a
