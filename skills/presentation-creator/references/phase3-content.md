@@ -188,8 +188,8 @@ model as likeness references; the scene and the style anchor still decide what
 is drawn and how. Each entry is a path relative to the talk directory, staying
 inside it, or an absolute path. The file must exist, carry a `.jpg`, `.jpeg`,
 `.png` or `.webp` extension, and decode as that format. The slide must have an
-`image_prompt`. Validation refuses anything else with the fix named. Generation
-details: `skills/illustrations/references/generation.md`.
+`image_prompt`. For anything else, validation refuses and names the fix.
+Generation details: `skills/illustrations/references/generation.md`.
 
 ## Script (`script:` items)
 
