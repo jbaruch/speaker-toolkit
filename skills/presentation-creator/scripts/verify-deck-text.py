@@ -23,7 +23,9 @@ import re
 import sys
 import xml.etree.ElementTree as ElementTree
 import zipfile
+from lzma import LZMAError
 from pathlib import Path
+from zlib import error as ZlibError
 
 DRAWING_TEXT = "{http://schemas.openxmlformats.org/drawingml/2006/main}t"
 SLIDE_PART = re.compile(r"ppt/slides/slide(\d+)\.xml")
@@ -45,6 +47,29 @@ def expected_text_by_slide(ops: str) -> list[list[str]]:
     return slides
 
 
+class UnreadableDeckPart(Exception):
+    """A slide part the deck's ZIP container can't hand back."""
+
+
+def _read_part(archive: zipfile.ZipFile, name: str) -> bytes:
+    try:
+        return archive.read(name)
+    # zipfile reports an encrypted member as RuntimeError and an unsupported
+    # compression method as NotImplementedError. A damaged member surfaces as
+    # BadZipFile (bad CRC or header), a zlib or LZMA error, EOFError when it is
+    # truncated, and OSError from the bz2 decompressor.
+    except (
+        RuntimeError,
+        NotImplementedError,
+        zipfile.BadZipFile,
+        ZlibError,
+        LZMAError,
+        EOFError,
+        OSError,
+    ) as exc:
+        raise UnreadableDeckPart(f"{name}: {exc}") from exc
+
+
 def deck_text_by_slide(deck: Path) -> list[str]:
     """Each slide's joined text, ordered by slide part number.
 
@@ -60,7 +85,7 @@ def deck_text_by_slide(deck: Path) -> list[str]:
         return [
             "".join(
                 element.text or ""
-                for element in ElementTree.fromstring(archive.read(name)).iter(
+                for element in ElementTree.fromstring(_read_part(archive, name)).iter(
                     DRAWING_TEXT
                 )
             )
@@ -97,6 +122,7 @@ def main(argv: list[str] | None = None) -> int:
         OSError,
         UnicodeDecodeError,
         zipfile.BadZipFile,
+        UnreadableDeckPart,
         ElementTree.ParseError,
     ) as exc:
         print(

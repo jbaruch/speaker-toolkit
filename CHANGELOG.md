@@ -27,7 +27,9 @@ runs.
 
 The setup smoke test now puts an arrow, a bolt and a rocket on slide 2, and
 `verify-deck-text.py` compares the built deck with the ops, since a lost character
-leaves a valid deck and an exit code of 0.
+leaves a valid deck and an exit code of 0. A deck it can't read, including a slide
+part that is encrypted, uses an unsupported compression method or is damaged, exits
+1 with the part's name instead of a traceback.
 
 `deckops-doctor.py` also misread PowerPoint running with no presentation open as
 `probe_failed`, blaming Automation consent. With no presentation, `name of every

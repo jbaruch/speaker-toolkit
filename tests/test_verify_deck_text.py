@@ -132,6 +132,60 @@ def test_a_file_that_isnt_a_deck_is_refused(tmp_path):
     assert "cannot compare" in result.stderr
 
 
+SLIDE_ONE = "ppt/slides/slide1.xml"
+
+
+def _central_entry(data: bytearray, name: str) -> int:
+    """Offset of the central-directory header naming `name`."""
+    encoded = name.encode("ascii")
+    offset = data.find(b"PK\x01\x02")
+    while offset != -1:
+        length = int.from_bytes(data[offset + 28 : offset + 30], "little")
+        if bytes(data[offset + 46 : offset + 46 + length]) == encoded:
+            return offset
+        offset = data.find(b"PK\x01\x02", offset + 4)
+    raise AssertionError(f"{name} has no central-directory entry")
+
+
+def _mark_encrypted(data: bytearray) -> None:
+    entry = _central_entry(data, SLIDE_ONE)
+    flags = int.from_bytes(data[entry + 8 : entry + 10], "little") | 0x1
+    data[entry + 8 : entry + 10] = flags.to_bytes(2, "little")
+
+
+def _unsupported_method(data: bytearray) -> None:
+    entry = _central_entry(data, SLIDE_ONE)
+    data[entry + 10 : entry + 12] = (99).to_bytes(2, "little")
+
+
+def _corrupt_stream(data: bytearray) -> None:
+    entry = _central_entry(data, SLIDE_ONE)
+    local = int.from_bytes(data[entry + 42 : entry + 46], "little")
+    name_length = int.from_bytes(data[local + 26 : local + 28], "little")
+    extra_length = int.from_bytes(data[local + 28 : local + 30], "little")
+    start = local + 30 + name_length + extra_length
+    data[start : start + 8] = b"\xff" * 8
+
+
+def test_a_slide_part_zipfile_cant_read_is_refused(tmp_path):
+    for damage in (_mark_encrypted, _unsupported_method, _corrupt_stream):
+        deck = tmp_path / f"{damage.__name__}.pptx"
+        with zipfile.ZipFile(deck, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr(
+                SLIDE_ONE, f'<root xmlns:a="{DRAWING}"><a:t>{"x" * 200}</a:t></root>'
+            )
+        data = bytearray(deck.read_bytes())
+        damage(data)
+        deck.write_bytes(bytes(data))
+
+        result = _run(deck, _ops(tmp_path / "ops.txt", f"SLIDE{US}0\n"))
+
+        assert result.returncode == 1, damage.__name__
+        assert "cannot compare" in result.stderr, damage.__name__
+        assert SLIDE_ONE in result.stderr, damage.__name__
+        assert "Traceback" not in result.stderr, damage.__name__
+
+
 def test_the_shipped_smoke_ops_exercise_text_mac_roman_cant_hold():
     """The check is only worth running while its own ops would catch the loss."""
     text = SMOKE_OPS.read_text(encoding="utf-8")
