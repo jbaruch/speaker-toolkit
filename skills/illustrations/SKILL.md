@@ -96,7 +96,7 @@ The script emits JSON: `last_reviewed`, `age_days`, `stale`, and the full
 proceeding (e.g. "Registry reviewed 2026-06-02, 0 days old — fresh").
 
 - **`stale: true`** — use `WebSearch` to identify the current flagship image
-  models from Google (Gemini image, Imagen) and OpenAI (`gpt-image-*`), plus
+  models from Google (Gemini image) and OpenAI (`gpt-image-*`), plus
   any other vendor with a public image API. Reconcile the registry in
   `{speaker_toolkit_root}/skills/illustrations/scripts/model_registry.py`: add new flagships, drop
   discontinued ones, refresh the attribute tiers, bump `REGISTRY_LAST_REVIEWED`.
