@@ -286,7 +286,8 @@ def parse_outline(path):
             conventions: str | None — the raw deck-wide convention rules
             slides: list[dict] — prompt-bearing slides only, each with
                 slide_num, title, format, prompt, and optional safe_zone /
-                text / builds
+                text / title_free / builds (`title_free` marks an explicit
+                `text_overlay: "none"`; see poster_title_text)
             composition: str | None — "poster-theatrical" or None (standard)
             embedded_footer: str | None — poster-theatrical baked footer
             text_treatment: str | None — anchor's baked-text rendering style
@@ -354,7 +355,11 @@ def parse_outline(path):
                 "surface": slide.safe_zone.surface,
             }
         text = (slide.text_overlay or "").strip()
-        if text and text.lower() != "none":
+        if text.lower() == "none":
+            # The explicit image-only sentinel, kept distinct from an absent
+            # overlay: only an absent one falls back to the slide's title.
+            slide_data["title_free"] = True
+        elif text:
             slide_data["text"] = text
         if slide.builds:
             max_step = max(b.step for b in slide.builds)
@@ -422,6 +427,18 @@ def apply_safe_zone_directive(prompt, safe_zone):
         surface=surface,
     )
     return prompt + directive
+
+
+def poster_title_text(slide):
+    """The title a poster-theatrical slide embeds, or None for a title-free plate.
+
+    `text_overlay: "none"` (any case) embeds no title; the footer is still
+    directed by apply_poster_embed_directive. An absent or empty text_overlay
+    keeps the compatibility fallback to the slide's `title`.
+    """
+    if slide.get("title_free"):
+        return None
+    return slide.get("text") or slide["title"]
 
 
 def apply_poster_embed_directive(
@@ -1617,7 +1634,7 @@ def run_generate(outline_path, slide_args, versioned=False, *, lane_options=None
             prompt = resolve_prompt(slide["prompt"], eff_format, outline["anchors"])
             prompt = apply_poster_embed_directive(
                 prompt,
-                slide.get("text") or slide["title"],
+                poster_title_text(slide),
                 outline.get("embedded_footer"),
                 outline.get("text_treatment"),
                 outline.get("footer_style"),
@@ -1947,6 +1964,15 @@ def run_style_explore(outline_path, candidates_path, *, lane_options=None):
             )
             continue
         safe_zone = slide.get("safe_zone")
+        if poster and slide.get("title_free"):
+            print(
+                f"ERROR: poster catalog exploration slide {slide_num} has "
+                'text_overlay: "none" (a title-free plate), so it cannot show the '
+                "candidate's text treatment. Point the candidates file at a FULL "
+                "slide with a real text_overlay and retry.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         if poster and (safe_zone or not slide.get("text")):
             print(
                 f"ERROR: poster catalog exploration slide {slide_num} requires a FULL representative "

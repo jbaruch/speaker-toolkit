@@ -1,5 +1,30 @@
 # Changelog
 
+### Let a poster slide skip its painted title
+
+A poster-theatrical deck could not produce an illustrated slide without a title.
+`phase3-content.md` documents `text_overlay: "none"` as image-only, and
+`parse_outline` did drop the sentinel, but it dropped it into the same empty
+state as an absent overlay. Generation then fell back to the slide's internal
+`title` field and painted that instead. The case that surfaced it was a speaker
+bio plate: the speaker wanted the deck footer and nothing else, and got the
+outline's working title baked into the art.
+
+`parse_outline` now marks an explicit `"none"` (any case) as `title_free`, and
+`poster_title_text` turns that into no title at all. The footer is directed
+exactly as before: the canonical model-rendered block, or, with
+`style_anchor.footer_style`, the reserved quiet strip and the post-generation
+stamp. The no-invented-text instruction still closes the prompt. A slide whose
+`text_overlay` is absent or empty keeps the old fallback to `title`, so existing
+outlines render unchanged.
+
+The other readers already agreed. `--edit`, `--fix` and `--build` work from the
+existing image and never read the overlay, `build-expansion-manifest.py` stamps
+footers by slide eligibility alone, and the apply step gives poster FULL slides
+a background fill and nothing else. `--style-explore` still requires a poster
+representative with real text; a `"none"` plate now gets its own error naming
+the sentinel instead of the generic missing-text one.
+
 ## 0.21.9 — 2026-11-09
 
 ### Stop overwriting other people's QR codes
