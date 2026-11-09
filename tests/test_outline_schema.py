@@ -1556,3 +1556,27 @@ def test_malformed_reference_entries_are_refused(
     path = _referencing_outline(base_data, tmp_path, entries)
     with pytest.raises(ValidationError, match=fix):
         outline_schema.load_outline(path)
+
+
+def test_a_multi_picture_phone_jpeg_is_a_usable_reference(
+    outline_schema, base_data, tmp_path
+):
+    """A portrait/depth phone photo is a JPEG with an MPF header; Pillow calls it
+    MPO. It must load like any JPEG, not be refused as a format mismatch."""
+    from PIL import Image
+
+    photo = tmp_path / "talk" / "photos" / "portrait.jpg"
+    photo.parent.mkdir(parents=True)
+    first = Image.new("RGB", (12, 9), (180, 120, 90))
+    first.save(
+        photo,
+        format="MPO",
+        save_all=True,
+        append_images=[Image.new("RGB", (12, 9), (20, 20, 20))],
+    )
+    with Image.open(photo) as reopened:
+        assert reopened.format == "MPO"
+    path = _referencing_outline(base_data, tmp_path, ["photos/portrait.jpg"])
+
+    slide = next(s for s in outline_schema.load_outline(path).slides if s.n == 1)
+    assert slide.reference_images == ["photos/portrait.jpg"]

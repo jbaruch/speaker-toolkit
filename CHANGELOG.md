@@ -19,6 +19,9 @@ Each entry is relative to the talk directory, staying inside it, or absolute.
 Up to four per slide; each must be a `.jpg`, `.jpeg`, `.png` or `.webp` file
 that decodes as that format, on a slide with an `image_prompt`. The extension
 has to match the decoded format so the MIME type sent to the vendor is true.
+A phone portrait, depth or HDR photo is a JPEG with a multi-picture header that
+Pillow reports as MPO; it counts as JPEG, so a headshot straight off an iPhone
+loads without re-encoding.
 Every outline load checks the files and names the fix. The loaders pass the
 talk directory as validation context; validating a slide with references
 without it is refused rather than skipped. Pillow is imported only when a slide

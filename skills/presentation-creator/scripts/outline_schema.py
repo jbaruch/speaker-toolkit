@@ -643,6 +643,11 @@ REFERENCE_IMAGE_FORMATS = {
     ".webp": "WEBP",
 }
 
+# Pillow reports a JPEG whose multi-picture (MPF) header declares more than one
+# frame as MPO. Phone portrait, depth and HDR photos are saved that way; the
+# file is a JPEG and goes to the vendor as image/jpeg.
+_DECODED_FORMAT_ALIASES = {"MPO": "JPEG"}
+
 
 def reference_image_path(entry: str, talk_dir: Path | str) -> Path:
     """Where a slide's ``reference_images`` entry points.
@@ -696,7 +701,8 @@ def unusable_reference_image(entry: str, talk_dir: Path | str) -> str | None:
         )
     try:
         with Image.open(path) as image:
-            decoded = image.format
+            decoded = image.format or "unknown"
+            decoded = _DECODED_FORMAT_ALIASES.get(decoded, decoded)
             image.load()
     except (OSError, SyntaxError, ValueError, Image.DecompressionBombError) as exc:
         return (
