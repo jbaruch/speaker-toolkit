@@ -845,6 +845,145 @@ def test_a_tracked_qr_in_the_corner_is_replaced_not_refused(
     assert "WARNING" not in capsys.readouterr().err
 
 
+def _forbid_provider_and_png(generate_qr, monkeypatch):
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("the run went on after finding the collision")
+
+    monkeypatch.setattr(generate_qr, "resolve_short_url", forbidden)
+    monkeypatch.setattr(generate_qr, "generate_qr_png", forbidden)
+
+
+def test_a_foreign_qr_stacked_on_a_tracked_one_stops_before_any_provider_call(
+    generate_qr, monkeypatch, tmp_path, capsys
+):
+    """Away from the corner, so only the tracked QR's own rect is in play: the
+    macro would place the new QR over the survey code and then delete it."""
+    prs = make_deck(1)
+    _place_qr(generate_qr, prs, 0, tmp_path, TRACKED_QR_URL, left=1.0)
+    _place_qr(generate_qr, prs, 0, tmp_path, FOREIGN_QR_URL, left=1.0)
+    _forbid_provider_and_png(generate_qr, monkeypatch)
+
+    with pytest.raises(SystemExit) as exc_info:
+        _qr_deck_run(generate_qr, monkeypatch, tmp_path, prs)
+
+    assert exc_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "would cover a QR this vault didn't issue on slide(s) [1]" in err
+    assert "would delete a picture this vault didn't issue on slide(s) [1]" in err
+    assert "No QR PNG, deck, or tracking-database change was made" in err
+
+
+def test_a_foreign_qr_overlapping_a_tracked_one_stops_before_any_provider_call(
+    generate_qr, monkeypatch, tmp_path, capsys
+):
+    prs = make_deck(1)
+    _place_qr(generate_qr, prs, 0, tmp_path, TRACKED_QR_URL, left=1.0)
+    _place_qr(generate_qr, prs, 0, tmp_path, FOREIGN_QR_URL, left=2.5)
+    _forbid_provider_and_png(generate_qr, monkeypatch)
+
+    with pytest.raises(SystemExit) as exc_info:
+        _qr_deck_run(generate_qr, monkeypatch, tmp_path, prs)
+
+    assert exc_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "would cover a QR this vault didn't issue on slide(s) [1]" in err
+    assert "would delete a picture" not in err
+
+
+def test_a_picture_under_a_tracked_qr_stops_before_any_provider_call(
+    generate_qr, monkeypatch, tmp_path, capsys
+):
+    """The macro deletes every picture at a removal rect, not just QRs."""
+    prs = make_deck(1)
+    prs.slides[0].shapes.add_picture(
+        _multicolor_png(tmp_path), Inches(1.0), Inches(5), Inches(2.0), Inches(2.0)
+    )
+    _place_qr(generate_qr, prs, 0, tmp_path, TRACKED_QR_URL, left=1.0)
+    _forbid_provider_and_png(generate_qr, monkeypatch)
+
+    with pytest.raises(SystemExit) as exc_info:
+        _qr_deck_run(generate_qr, monkeypatch, tmp_path, prs)
+
+    assert exc_info.value.code == 1
+    err = capsys.readouterr().err
+    assert "would delete a picture this vault didn't issue on slide(s) [1]" in err
+    assert "would cover" not in err
+
+
+def test_a_mixed_slide_with_the_foreign_qr_clear_replaces_only_the_tracked_one(
+    generate_qr, monkeypatch, tmp_path, capsys
+):
+    """The survey QR sits in the corner, but the new QR takes the tracked rect."""
+    prs = make_deck(1)
+    _place_qr(generate_qr, prs, 0, tmp_path, TRACKED_QR_URL, left=1.0)
+    _place_qr(generate_qr, prs, 0, tmp_path, FOREIGN_QR_URL, left=8.0)
+
+    targets = _qr_deck_run(generate_qr, monkeypatch, tmp_path, prs)
+
+    assert [round(rect[0]) for rect in targets[1]] == [72]
+    assert "slide 1 keeps 1 QR(s) that encode no tracked" in capsys.readouterr().err
+
+
+def test_removal_tolerance_matches_the_insertqr_macro(generate_qr):
+    scripts = Path(generate_qr.__file__).parent
+    for name in ("RunDeckOps.bas", "RunDeckOps.bas.txt"):
+        source = (scripts / name).read_text(encoding="utf-8")
+        assert "Const RECT_TOL As Single = 2#" in source, name
+    assert generate_qr.QR_REMOVAL_TOL_POINTS == 2.0
+
+
+def _not_a_pptx(tmp_path, kind):
+    deck = tmp_path / "deck.pptx"
+    if kind == "not-a-zip":
+        deck.write_bytes(b"this was never a deck")
+    else:
+        import zipfile
+
+        with zipfile.ZipFile(deck, "w") as archive:
+            archive.writestr("readme.txt", "a zip with no presentation part")
+    return deck
+
+
+@pytest.mark.parametrize("kind", ["not-a-zip", "zip-without-ooxml"])
+@pytest.mark.parametrize("extra", [(), ("--slides", "1")], ids=["detected", "explicit"])
+def test_an_unreadable_deck_stops_with_a_repair_message(
+    generate_qr, monkeypatch, tmp_path, capsys, kind, extra
+):
+    deck = _not_a_pptx(tmp_path, kind)
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "tracking-database.json").write_text(
+        json.dumps(_current_tracking_database()), encoding="utf-8"
+    )
+    _forbid_provider_and_png(generate_qr, monkeypatch)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "generate-qr.py",
+            str(deck),
+            "--talk-slug",
+            "this-talk",
+            "--shownotes-url",
+            "https://site.test/this-talk",
+            "--short-url",
+            "https://jbaru.ch/this-talk",
+            "--vault",
+            str(vault),
+            *extra,
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        generate_qr.main()
+
+    assert exc_info.value.code == 1
+    err = capsys.readouterr().err
+    assert f"cannot read {deck} as a .pptx deck" in err
+    assert "save or export it as .pptx" in err
+    assert "Traceback" not in err
+
+
 @pytest.mark.parametrize(
     ("first", "second", "expected"),
     [

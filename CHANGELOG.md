@@ -16,8 +16,13 @@ those and requires the picture's module grid to match exactly, which needs no QR
 decoder or new dependency, and works for every QR the script has ever produced since
 its encoder settings have never changed. An exact match is deliberate. A false match
 deletes someone else's QR; a miss leaves one in place and warns with its slide
-number. Hiding one is as bad as replacing it, so a new QR that would land on a foreign
-one stops the run before any shortener call and names the slide.
+number. Hiding or deleting one is as bad as replacing it. The run replays the
+`InsertQR` macro's geometry before any shortener call: where the new QR lands, the
+first tracked QR's rectangle or the bottom-right corner, and which pictures it deletes,
+every picture within 2pt of a tracked QR's rectangle. It stops and names the slide when
+the new QR would overlap a foreign QR or a replacement would delete a picture this vault
+didn't issue, including on a slide that also carries a tracked QR. A deck that isn't a
+readable .pptx also stops the run before any shortener call, with how to re-save it.
 
 `closing` and `both` now target the last visible slide. `--slides N[,N...]` names the
 slides explicitly when detection is wrong, and a bad value stops the run before any

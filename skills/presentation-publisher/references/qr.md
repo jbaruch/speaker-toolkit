@@ -98,6 +98,11 @@ path make the check before resolving the link.
      WCAG relative luminance
    - Replace each tracked QR in place, and leave every other QR with a warning
      naming its slide, per §9 of the QR generation rules
+   - Exit 1 before any shortener call, naming the slides, when the new QR would
+     overlap a QR it doesn't track or a replacement would delete another picture
+     at the tracked QR's position and size; nothing is written
+   - Exit 1 before any shortener call when the deck can't be read as a .pptx;
+     re-save or re-export it from PowerPoint
    - Otherwise insert the QR as a 2" square in the bottom-right corner
    - Serialize concurrent publication of the same talk and hold that
      serialization across the external effects — see

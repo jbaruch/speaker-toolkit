@@ -113,30 +113,18 @@ the agent makes the same check before resolving the link.
 
 ## 9. Replace Only Tracked QRs, In Place
 
-A deck adapted (trimmed) from another talk carries that talk's QR images. The QR
-step finds every tracked QR — on the closing slide AND any earlier shownotes
-slide — and replaces it in place at the same position and size, never adding a
-second QR beside it.
-
-A tracked QR encodes a `short_url` or `target_url` from `qr_codes`, or this run's
-own URLs. Every other QR stays untouched: an organizer's required survey QR, a
-sponsor's registration QR, a code from another generator. The run warns with its
-slide number. If it's stale, delete it by hand. A new QR never lands on one: a target
-slide whose bottom-right corner it occupies stops the run before any provider call.
-
-Finding a candidate is by CONTENT, not size: an inherited QR can be any size (the
-same QR may appear at 1.8" and 2.8"), so a size band misses it. A candidate is a
-square picture that is both ~2-color and roughly balanced between those colors —
-which excludes colored diagrams (many colors) and mostly-one-color text screenshots
-(unbalanced). Tracking is by PAYLOAD: `generate-qr.py` re-encodes each tracked URL
-and requires its module grid to equal the picture's exactly (`split_qr_rects`). It
-hands the tracked geometry to the `InsertQR` macro (`RunDeckOps.bas`), which can't
-run image libraries and just removes those exact shapes and places the QR there.
-The thresholds are named in `generate-qr.py`.
+- Replace every tracked QR at its own position and size, on the closing slide and on any earlier slide.
+- Never add a second QR beside a tracked one.
+- A tracked QR encodes a `short_url` or `target_url` from `qr_codes`, or one of this run's own URLs.
+- Leave every other QR untouched: an organizer's survey QR, a sponsor's registration QR, a code from another generator.
+- Delete a stale untouched QR by hand; the run names its slide.
+- The run stops before any provider call when the new QR would overlap an untouched QR.
+- The run stops before any provider call when replacing a tracked QR would delete another picture at that QR's position and size.
+- `generate-qr.py` owns QR identification and its thresholds.
 
 ## 10. The Closing Slide Is the Last Visible One
 
-`closing` and `both` target the last slide the audience sees. Hidden slides after
-the close, such as fallback screenshots, don't count. When detection picks the wrong
-slides, pass `--slides N[,N...]`: the listed 1-based slides replace detection. A
-tracked QR elsewhere stays in place, and the run names its slide.
+- `closing` and `both` target the last slide the audience sees.
+- Hidden slides after the close don't count.
+- When detection picks the wrong slides, pass `--slides N[,N...]`: the listed 1-based slides replace detection.
+- A tracked QR outside `--slides` stays in place, and the run names its slide.

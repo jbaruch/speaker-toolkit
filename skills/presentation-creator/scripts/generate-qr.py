@@ -50,6 +50,8 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
+from zlib import error as ZlibError
 
 try:
     import qrcode
@@ -64,8 +66,10 @@ except ImportError:
     print("ERROR: 'Pillow' package not installed. Run: pip install Pillow")
     sys.exit(1)
 
+from lxml.etree import XMLSyntaxError
 from pptx import Presentation  # read-only: background-color match + slide-finding
 from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.exc import PackageNotFoundError
 from pptx.util import Inches
 
 VAULT_INGRESS_SCRIPTS = (
@@ -119,6 +123,9 @@ QR_SQUARE_TOL_INCHES = 0.1  # |width − height| tolerance
 QR_RECON_ERR_MAX = 5.0  # max mean 2-color reconstruction error
 QR_MIN_MINORITY = 0.25  # min minority-color fraction (QRs are balanced)
 QR_MODULE_MIN_DELTA = 64  # min grayscale distance from the quiet zone for a module
+# InsertQR deletes every picture within this many points of a removal rect on all
+# four edges. Mirrors RECT_TOL in RunDeckOps.bas; a test holds the two equal.
+QR_REMOVAL_TOL_POINTS = 2.0
 
 
 # --- Vault / Config Loading ---
@@ -1195,6 +1202,16 @@ def _picture_encodes_any(blob, grids):
     return False
 
 
+def _split_qr_shapes(slide, grids):
+    """(tracked, foreign) QR pictures, in slide z-order."""
+    tracked, foreign = [], []
+    for shape in _qr_pictures(slide):
+        # _picture_is_qr already refused a picture with no readable image.
+        owner = tracked if _picture_encodes_any(shape.image.blob, grids) else foreign
+        owner.append(shape)
+    return tracked, foreign
+
+
 def split_qr_rects(slide, grids):
     """(tracked, foreign) QR rects in POINTS, in slide z-order.
 
@@ -1202,12 +1219,10 @@ def split_qr_rects(slide, grids):
     to someone else: an organizer's survey, a sponsor's registration, or a code
     from another generator.
     """
-    tracked, foreign = [], []
-    for shape in _qr_pictures(slide):
-        # _picture_is_qr already refused a picture with no readable image.
-        owner = tracked if _picture_encodes_any(shape.image.blob, grids) else foreign
-        owner.append(_points_rect(shape))
-    return tracked, foreign
+    tracked, foreign = _split_qr_shapes(slide, grids)
+    return [_points_rect(shape) for shape in tracked], [
+        _points_rect(shape) for shape in foreign
+    ]
 
 
 def _new_qr_rect(prs):
@@ -1233,20 +1248,65 @@ def _rects_overlap(first, second):
     )
 
 
-def slides_covering_a_foreign_qr(prs, slide_indices, grids):
-    """1-based target slides where the new QR would land on someone else's QR.
+def _rects_match(first, second):
+    """True when InsertQR treats a picture at `first` as the shape at `second`."""
+    return all(abs(a - b) < QR_REMOVAL_TOL_POINTS for a, b in zip(first, second))
 
-    A foreign QR is left in place, so a new one placed over it hides it from the
-    audience just as surely as replacing it. The corner the macro uses is where such a
-    QR usually sits. A slide with a tracked QR is safe: the new QR takes that QR's rect.
+
+def qr_insertion_collisions(prs, slide_indices, grids):
+    """1-based target slides where InsertQR would hide or delete someone else's picture.
+
+    Replays the macro's geometry for each slide. It places the new QR at the first
+    tracked rect, or in the bottom-right corner when the slide has none, so a foreign
+    QR that overlaps that placement is covered. It deletes every picture within
+    QR_REMOVAL_TOL_POINTS of any tracked rect, so a picture this vault didn't issue
+    at a tracked QR's geometry is deleted. Returns (covered, deleted).
     """
-    placement = _new_qr_rect(prs)
-    covering = []
+    corner = _new_qr_rect(prs)
+    covered, deleted = [], []
     for idx in slide_indices:
-        tracked, foreign = split_qr_rects(prs.slides[idx], grids)
-        if not tracked and any(_rects_overlap(placement, rect) for rect in foreign):
-            covering.append(idx + 1)
-    return covering
+        slide = prs.slides[idx]
+        tracked, foreign = _split_qr_shapes(slide, grids)
+        removal = [_points_rect(shape) for shape in tracked]
+        placement = removal[0] if removal else corner
+        if any(_rects_overlap(placement, _points_rect(shape)) for shape in foreign):
+            covered.append(idx + 1)
+        tracked_elements = {id(shape._element) for shape in tracked}
+        if any(
+            shape.shape_type == MSO_SHAPE_TYPE.PICTURE
+            and shape.left is not None
+            and shape.top is not None
+            and id(shape._element) not in tracked_elements
+            and any(_rects_match(_points_rect(shape), rect) for rect in removal)
+            for shape in slide.shapes
+        ):
+            deleted.append(idx + 1)
+    return covered, deleted
+
+
+def open_deck(path):
+    """The deck, opened read-only, or exit 1 naming how to repair it."""
+    try:
+        return Presentation(path)
+    # Same classes as pptx_evidence: a non-OOXML file is PackageNotFoundError, a
+    # damaged ZIP is BadZipFile or a zlib error, a missing part is KeyError, and
+    # malformed part XML is XMLSyntaxError.
+    except (
+        zipfile.BadZipFile,
+        ZlibError,
+        PackageNotFoundError,
+        XMLSyntaxError,
+        OSError,
+        ValueError,
+        KeyError,
+    ) as exc:
+        print(
+            f"ERROR: cannot read {path} as a .pptx deck ({type(exc).__name__}). "
+            "Open it in PowerPoint, save or export it as .pptx, and re-run. No QR "
+            "PNG, deck, or tracking-database change was made.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 def _last_visible_slide_index(prs):
@@ -1599,7 +1659,7 @@ def main():
     if args.slides is not None:
         try:
             explicit_slides = parse_slide_numbers(
-                args.slides, len(Presentation(args.deck).slides)
+                args.slides, len(open_deck(args.deck).slides)
             )
         except ValueError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
@@ -1700,12 +1760,13 @@ def _publish(
     explicit_slides,
 ):
     # Before any provider call, so refusing here leaves no short link behind.
+    prs = None
     if not args.png_only:
-        prs = Presentation(args.deck)
+        prs = open_deck(args.deck)
         known_grids = qr_module_grids(
             tracked_qr_payloads(tracking_db, args.short_url, args.shownotes_url)
         )
-        covering = slides_covering_a_foreign_qr(
+        covered, deleted = qr_insertion_collisions(
             prs,
             explicit_slides
             if explicit_slides is not None
@@ -1714,14 +1775,24 @@ def _publish(
             ),
             known_grids,
         )
-        if covering:
+        if covered:
             print(
                 f"ERROR: the new QR would cover a QR this vault didn't issue on slide(s) "
-                f"{covering}, such as an organizer's survey code. Pick other slides with "
+                f"{covered}, such as an organizer's survey code. Pick other slides with "
                 "--slides, or move that QR, and re-run. No QR PNG, deck, or "
                 "tracking-database change was made.",
                 file=sys.stderr,
             )
+        if deleted:
+            print(
+                "ERROR: replacing a tracked QR would delete a picture this vault "
+                f"didn't issue on slide(s) {deleted}: it sits at the tracked QR's "
+                "position and size. Move one of the two, or pick other slides with "
+                "--slides, and re-run. No QR PNG, deck, or tracking-database change "
+                "was made.",
+                file=sys.stderr,
+            )
+        if covered or deleted:
             sys.exit(1)
 
     # Determine the URL to encode in the QR
@@ -1805,9 +1876,9 @@ def _publish(
             print(f"DRY RUN: would save QR to {qr_path}")
             artifacts = None
 
-    # --- Deck mode: open deck, detect colors, insert ---
+    # --- Deck mode: detect colors, insert into the deck read before the provider ---
     else:
-        prs = Presentation(args.deck)
+        assert prs is not None  # opened by the pre-provider check above
 
         # Determine target slides
         target_url_for_detection = shownotes_url if args.shownotes_url else qr_url
