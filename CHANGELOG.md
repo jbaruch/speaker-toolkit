@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.20 — 2026-11-09
+
 ### Call a speech profile that passes every check `sufficient`
 
 A family-balanced speech profile that passed every confidence check was labeled
