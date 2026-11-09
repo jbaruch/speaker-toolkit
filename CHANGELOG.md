@@ -24,6 +24,45 @@ would take an applicability contract on catalog entries, an assessment row on ev
 and a new rule for evidence that isn't on the slides. Forced templates are rare, so it
 isn't worth that.
 
+## 0.21.17 — 2026-11-09
+
+### Put each build frame's notes on the frame they are spoken over
+
+A progressive-reveal slide's speaker notes all landed on its last frame. The
+infinite-monkeys slide shows it best: the whole setup, from "Now those two
+differences start to matter" through "What we have with LLMs are monkeys.", sat on
+the GPU reveal it leads up to, and the first frame had no notes at all. This wasn't
+a slip. `build-expansion-manifest.py --notes` attached the whole note to the parent,
+`ExpandBuilds` wrote it onto the final frame, and three docs said that was the plan.
+
+Now the note is split at its cue lines. A `cue: "BUILD 01"` script item is the notes
+line `[BUILD 01]`, and that exact marker is the only thing split on. Text before
+the first cue goes on frame 00, the text after `[BUILD NN]` goes on frame NN, and
+the marker lines are dropped, since the frame change is the cue. `build_notes.py`
+does the split, and the manifest's new `frame_notes` lists the result. The run
+refuses, naming the slide and the fix, on any of these:
+
+- a cue past the last frame;
+- cues out of order or repeated;
+- an unpadded `[BUILD 1]`;
+- a note whose cues differ from the outline script's.
+
+The last check catches a notes map rendered without its markers, which would
+otherwise drop the whole note on frame 00 without a word. A build slide with no
+cue anywhere keeps its whole note on frame 00 and warns.
+
+The fix needed no VBA change. `RunDeckOps.bas` and its stamp are untouched, so there
+is no macro re-import. The new `--notes-out notes-expanded.json` writes every slide's
+note re-keyed for the expanded deck, each frame's segment included, and
+`inject-notes.sh` applies it through PowerPoint's AppleScript object model.
+`ExpandBuilds` still writes the manifest's `notes` onto the final frame, but that
+field now holds only the final segment, which the notes pass rewrites unchanged.
+The same file also retires the one hand-computed step in the pass order.
+`powerpoint.md` used to tell the agent to drop the parent entries and re-key the
+rest of the notes by hand on the post-expansion order. `--notes` now requires
+`--notes-out`, so no build frame's words depend on the agent getting that arithmetic
+right.
+
 ## 0.21.16 — 2026-11-09
 
 ### Draw a real person from their photo on deck plates
