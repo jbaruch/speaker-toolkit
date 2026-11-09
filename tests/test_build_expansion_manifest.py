@@ -175,9 +175,11 @@ def test_cli_writes_out_file(build_expansion_manifest, tmp_path, capsys):
     assert json.loads(capsys.readouterr().out)["schema_version"] == 1
 
 
-def test_carries_parent_notes_to_final_frame(build_expansion_manifest, tmp_path):
-    # The parent's notes (0-based key N-1) ride onto its build record so
-    # expansion doesn't drop them.
+def test_a_cueless_parent_note_lands_on_frame_00_with_a_warning(
+    build_expansion_manifest, tmp_path, capsys
+):
+    # The parent's note (0-based key N-1) has no [BUILD NN] cue, so the speaker
+    # says all of it over the first frame shown, never the last.
     outline = _make_outline(tmp_path)
     builds = tmp_path / "builds"
     _make_frames(builds, 7, 4)
@@ -185,7 +187,10 @@ def test_carries_parent_notes_to_final_frame(build_expansion_manifest, tmp_path)
     notes_map = {"6": "notes for slide 7", "8": "notes for slide 9"}  # 0-based
     m = build_expansion_manifest.build_manifest(outline, builds, notes_map)
     b7 = next(b for b in m["builds"] if b["parent"] == 7)
-    assert b7["notes"] == "notes for slide 7"
+    assert b7["frame_notes"] == ["notes for slide 7", "", "", ""]
+    assert b7["notes"] == ""
+    err = capsys.readouterr().err
+    assert "WARN: slide 7" in err and "frame 00" in err
 
 
 def test_notes_default_empty_when_no_map(build_expansion_manifest, tmp_path):
@@ -443,7 +448,7 @@ def test_a_zero_based_outline_keys_the_deck_by_position(
     )
 
     assert manifest["builds"][0]["parent"] == 2
-    assert manifest["builds"][0]["notes"] == "notes for the reveal"
+    assert manifest["builds"][0]["frame_notes"] == ["notes for the reveal", ""]
 
 
 def test_the_manifest_refuses_an_outline_its_owner_has_not_migrated(
@@ -466,3 +471,124 @@ def test_a_missing_outline_is_named_not_a_traceback(build_expansion_manifest, tm
             [str(tmp_path / "absent.yaml"), str(tmp_path / "builds")]
         )
     assert "outline not found" in str(exc.value)
+
+
+# The owner's slide 6, as outline script items and as the rendered notes line
+# per item; the cue item renders as [BUILD 01].
+MONKEY_SCRIPT = [
+    {"line": "Now those two differences start to matter."},
+    {"parenthetical": "(beat)"},
+    {"line": "This one I WILL explain. Infinite monkeys ... Shakespeare."},
+    {"line": "What we have with LLMs are monkeys."},
+    {"cue": "BUILD 01"},
+    {
+        "line": "We just gave them GPUs, and the randomness is skewed towards Shakespeare."
+    },
+]
+MONKEY_NOTE = "\n".join(
+    f"[{text}]" if kind == "cue" else text
+    for item in MONKEY_SCRIPT
+    for kind, text in item.items()
+)
+MONKEY_SLIDES = [
+    {
+        "n": 6,
+        "chapter": "c",
+        "title": "The Infinite Monkey Theorem",
+        "format": "FULL",
+        "image_prompt": "[STYLE ANCHOR] monkeys at typewriters",
+        "builds": [{"step": 0, "desc": "No GPUs"}, {"step": 1, "desc": "GPUs"}],
+        "script": MONKEY_SCRIPT,
+    },
+    {"n": 7, "chapter": "c", "title": "Simia Developeris", "format": "FULL"},
+]
+
+
+def _monkey_run(build_expansion_manifest, tmp_path, notes):
+    outline = _make_outline(tmp_path, MONKEY_SLIDES)
+    builds = tmp_path / "builds"
+    _make_frames(builds, 6, 2)
+    notes_path = tmp_path / "notes.json"
+    notes_path.write_text(json.dumps(notes), encoding="utf-8")
+    manifest_out = tmp_path / "builds-manifest.json"
+    notes_out = tmp_path / "notes-expanded.json"
+    rc = build_expansion_manifest.main(
+        [
+            str(outline),
+            str(builds),
+            "--out",
+            str(manifest_out),
+            "--notes",
+            str(notes_path),
+            "--notes-out",
+            str(notes_out),
+        ]
+    )
+    return rc, manifest_out, notes_out
+
+
+def test_the_monkey_note_is_split_across_its_frames(build_expansion_manifest, tmp_path):
+    notes = {"4": "Judgment was free.", "5": MONKEY_NOTE, "6": "Never hire this."}
+    rc, manifest_out, notes_out = _monkey_run(build_expansion_manifest, tmp_path, notes)
+    assert rc == 0
+    (build,) = json.loads(manifest_out.read_text(encoding="utf-8"))["builds"]
+    frame_00, frame_01 = build["frame_notes"]
+    assert frame_00.startswith("Now those two differences")
+    assert frame_00.endswith("What we have with LLMs are monkeys.")
+    assert frame_01 == MONKEY_SCRIPT[-1]["line"]
+    # ExpandBuilds writes `notes` onto the final frame: only the GPU line now.
+    assert build["notes"] == frame_01
+    assert json.loads(notes_out.read_text(encoding="utf-8")) == {
+        "4": "Judgment was free.",
+        "5": frame_00,
+        "6": frame_01,
+        "7": "Never hire this.",
+    }
+
+
+def test_a_monkey_note_that_lost_its_cue_line_is_refused(
+    build_expansion_manifest, tmp_path
+):
+    notes = {"5": MONKEY_NOTE.replace("[BUILD 01]\n", "")}
+    with pytest.raises(SystemExit) as exc:
+        _monkey_run(build_expansion_manifest, tmp_path, notes)
+    assert "slide 6" in str(exc.value)
+    assert "outline script cues [BUILD 01]" in str(exc.value)
+
+
+def test_a_cue_past_the_last_frame_stops_the_manifest(
+    build_expansion_manifest, tmp_path
+):
+    notes = {"5": MONKEY_NOTE + "\n[BUILD 02]\nOne frame too many."}
+    with pytest.raises(SystemExit) as exc:
+        _monkey_run(build_expansion_manifest, tmp_path, notes)
+    assert "slide 6" in str(exc.value) and "[BUILD 02]" in str(exc.value)
+
+
+@pytest.mark.parametrize("given", ["--notes", "--notes-out"])
+def test_notes_and_notes_out_go_together(
+    build_expansion_manifest, tmp_path, capsys, given
+):
+    outline = _make_outline(tmp_path, MONKEY_SLIDES)
+    builds = tmp_path / "builds"
+    _make_frames(builds, 6, 2)
+    with pytest.raises(SystemExit) as exc:
+        build_expansion_manifest.main(
+            [str(outline), str(builds), given, str(tmp_path / "notes.json")]
+        )
+    assert exc.value.code == 2
+    assert "--notes and --notes-out go together" in capsys.readouterr().err
+
+
+def test_the_split_manifest_still_packs_for_expand_builds(
+    build_expansion_manifest, build_expansion_to_packed, tmp_path
+):
+    notes = {"5": MONKEY_NOTE}
+    rc, manifest_out, _ = _monkey_run(build_expansion_manifest, tmp_path, notes)
+    assert rc == 0
+    packed = build_expansion_to_packed.manifest_to_packed(
+        json.loads(manifest_out.read_text(encoding="utf-8"))
+    )
+    parent, note, _frames = packed.split(chr(31))
+    assert parent == "6"
+    assert note == MONKEY_SCRIPT[-1]["line"]
