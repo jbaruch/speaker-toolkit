@@ -17,6 +17,12 @@ reading its working tree, uncommitted edits included. Report schema v4 adds
 missing `origin/HEAD` or git not answering lands in `warnings` and on stderr, since
 that scan may be short. `audit-source-identities.py --candidates-from` now reads v4.
 
+The talks directory is checked only in the tree the scan reads, so a branch that
+deleted or symlinked `_talks/` still scans what `main` published. The snapshot
+writes only the Markdown files the scanner reads, refuses names that differ only by
+case or Unicode normalization before writing any, since a macOS disk can hold only
+one of them, and creates each file exclusively without following a link.
+
 ## 0.21.4 — 2026-10-29
 
 ### Check image-model freshness every 30 days

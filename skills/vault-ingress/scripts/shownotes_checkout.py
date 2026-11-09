@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import unicodedata
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,6 +43,15 @@ NOT_A_REPOSITORY = b"not a git repository"
 
 class ShownotesCheckoutError(ValueError):
     """The published tree can't be read; the message says what to do."""
+
+
+def filename_identity(name: str) -> str:
+    """The name a case- and normalization-insensitive disk such as macOS's sees.
+
+    The scanner compares talk filenames by this identity, and the snapshot refuses
+    two published names that share one, since only one of them could be written.
+    """
+    return unicodedata.normalize("NFC", name).casefold()
 
 
 @dataclass(frozen=True)
@@ -159,10 +169,13 @@ def decide_checkout(root: Path) -> CheckoutDecision:
 
 
 def _write_snapshot(root: Path, commit: str, talks_subdir: str, target: Path) -> None:
-    """Write the top level of `talks_subdir` at `commit` into `target`.
+    """Write the top-level Markdown files of `talks_subdir` at `commit` into `target`.
 
-    A symlink is recreated rather than followed, so the scanner refuses it exactly as
-    it refuses one in a working tree.
+    Only `*.md` is written, since that's all the scanner reads. A symlink is recreated
+    rather than followed, so the scanner refuses it exactly as it refuses one in a
+    working tree. Every name is checked before anything is written: two names that
+    share a filename identity can't both land on a case-insensitive disk. Files are
+    created exclusively and never through an existing link.
     """
     # ls-tree reads this relative to `root`, which may be a repository subdirectory.
     tree_path = f"{talks_subdir}/"
@@ -177,6 +190,8 @@ def _write_snapshot(root: Path, commit: str, talks_subdir: str, target: Path) ->
             f"{tree_path} doesn't exist at the default branch's commit {commit}; "
             "correct talks_subdir, or publish the talks, and rescan"
         )
+    entries: list[tuple[str, str, str]] = []
+    identities: dict[str, list[str]] = {}
     for item in listing.stdout.split(b"\0"):
         if not item:
             continue
@@ -185,6 +200,18 @@ def _write_snapshot(root: Path, commit: str, talks_subdir: str, target: Path) ->
         name = raw_path.decode("utf-8", errors="surrogateescape").rsplit("/", 1)[-1]
         if mode not in REGULAR_MODES and mode != SYMLINK_MODE:
             continue
+        if not name.endswith(".md"):
+            continue
+        entries.append((mode, blob, name))
+        identities.setdefault(filename_identity(name), []).append(name)
+    collisions = sorted(names for names in identities.values() if len(names) > 1)
+    if collisions:
+        raise ShownotesCheckoutError(
+            f"{tree_path} at {commit} holds filenames that differ only by case or "
+            f"Unicode normalization: {collisions}; rename one of each on the default "
+            "branch and rescan"
+        )
+    for mode, blob, name in entries:
         content = _git(root, "cat-file", "blob", blob)
         if content is None or content.returncode != 0:
             raise ShownotesCheckoutError(
@@ -192,10 +219,22 @@ def _write_snapshot(root: Path, commit: str, talks_subdir: str, target: Path) ->
                 "is healthy with `git status` and rescan"
             )
         destination = target / name
-        if mode == SYMLINK_MODE:
-            destination.symlink_to(os.fsdecode(content.stdout))
-        else:
-            destination.write_bytes(content.stdout)
+        try:
+            if mode == SYMLINK_MODE:
+                destination.symlink_to(os.fsdecode(content.stdout))
+            else:
+                descriptor = os.open(
+                    destination,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                    0o600,
+                )
+                with os.fdopen(descriptor, "wb") as handle:
+                    handle.write(content.stdout)
+        except OSError as exc:
+            raise ShownotesCheckoutError(
+                f"cannot write {name} from {commit} into the snapshot: {exc}; rename "
+                "it on the default branch if it clashes with another file, and rescan"
+            ) from exc
 
 
 @contextmanager

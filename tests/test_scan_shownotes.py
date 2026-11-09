@@ -1526,3 +1526,100 @@ def test_a_nonlocal_source_records_no_checkout(tmp_path):
 
     assert report["operation"] == "skipped_nonlocal"
     assert report["source_checkout"] is None
+
+
+@pytest.mark.parametrize("change", ["deleted", "symlinked"])
+def test_a_branch_without_a_real_talks_directory_still_reads_main(tmp_path, change):
+    """The working tree's _talks/ is irrelevant when the scan reads the snapshot."""
+    checkout, _publisher, _origin = _published_site(tmp_path)
+    _git(checkout, "checkout", "-b", "feature")
+    _git(checkout, "rm", "-r", "--quiet", "_talks")
+    if change == "symlinked":
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        (checkout / "_talks").symlink_to(elsewhere, target_is_directory=True)
+    _git(checkout, "commit", "-m", f"Branch with _talks {change}")
+
+    report = _scan(tmp_path, checkout)
+
+    assert report["source_checkout"]["state"] == "published_snapshot"
+    assert _scanned_filenames(report) == [PUBLISHED_TALK]
+
+
+def test_a_working_tree_scan_still_refuses_a_symlinked_talks_directory(tmp_path):
+    checkout, _publisher, _origin = _published_site(tmp_path)
+    _git(checkout, "rm", "-r", "--quiet", "_talks")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (checkout / "_talks").symlink_to(elsewhere, target_is_directory=True)
+    _git(checkout, "commit", "-m", "Symlink _talks on main")
+    _git(checkout, "push", "origin", "main")
+
+    with pytest.raises(
+        scan_shownotes.ShownotesScanError,
+        match="shownotes talks directory.*symbolic link",
+    ):
+        _scan(tmp_path, checkout)
+
+
+def _publish_index_entries(
+    tmp_path: Path, publisher: Path, entries: list[tuple[str, str, str]]
+) -> None:
+    """Commit (mode, name, content) under _talks/ through the index alone, so names
+    a case-insensitive disk can't hold side by side still reach the tree."""
+    for number, (mode, name, content) in enumerate(entries):
+        source = tmp_path / f"blob-{number}"
+        source.write_text(content, encoding="utf-8")
+        blob = _git(publisher, "hash-object", "-w", str(source))
+        # macOS git precomposes path arguments to NFC by default, which would merge
+        # the two normalization variants before they reach the index.
+        _git(
+            publisher,
+            "-c",
+            "core.precomposeunicode=false",
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            f"{mode},{blob},_talks/{name}",
+        )
+    _git(publisher, "commit", "-m", "Publish colliding names")
+    _git(publisher, "push", "origin", "main")
+
+
+@pytest.mark.parametrize(
+    "entries",
+    [
+        [("120000", "Talk.md", "../../escape.md"), ("100644", "talk.md", "x\n")],
+        [("100644", "café.md", "x\n"), ("100644", "café.md", "y\n")],
+    ],
+    ids=["case-with-symlink", "unicode-normalization"],
+)
+def test_published_names_one_disk_cant_hold_apart_are_refused(tmp_path, entries):
+    checkout, publisher, _origin = _published_site(tmp_path)
+    _git(checkout, "checkout", "-b", "feature")
+    _publish_index_entries(tmp_path, publisher, entries)
+
+    with pytest.raises(
+        scan_shownotes.ShownotesScanError,
+        match="differ only by case or Unicode normalization",
+    ):
+        _scan(tmp_path, checkout)
+
+    assert not (tmp_path / "escape.md").exists()
+
+
+def test_the_snapshot_never_writes_through_an_existing_link(tmp_path):
+    import shownotes_checkout
+
+    checkout, _publisher, _origin = _published_site(tmp_path)
+    commit = _git(checkout, "rev-parse", "origin/main")
+    target = tmp_path / "snapshot"
+    target.mkdir()
+    outside = tmp_path / "outside.md"
+    outside.write_text("untouched\n", encoding="utf-8")
+    (target / PUBLISHED_TALK).symlink_to(outside)
+
+    with pytest.raises(shownotes_checkout.ShownotesCheckoutError, match="cannot write"):
+        shownotes_checkout._write_snapshot(checkout, commit, "_talks", target)
+
+    assert outside.read_text(encoding="utf-8") == "untouched\n"
