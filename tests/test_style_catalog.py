@@ -596,6 +596,43 @@ def test_poster_missing_title_refuses_before_render(
     assert "text_overlay" in diagnostic and "slide 3" in diagnostic
 
 
+def test_poster_title_free_plate_cannot_be_the_representative(
+    catalog, generate_illustrations, tmp_path, monkeypatch, capsys
+):
+    # A `text_overlay: "none"` plate renders no title, so it cannot show the
+    # candidate's text treatment; its own `title` must not stand in for one.
+    candidate = write_json(
+        tmp_path / "candidates.json",
+        catalog.seed_candidates(catalog.load_merged(), selection()),
+    )
+    outline = _write_outline(
+        tmp_path,
+        model="gemini-3-pro-image",
+        slides=[
+            {
+                "n": 3,
+                "chapter": "c",
+                "title": "Speaker bio",
+                "format": "FULL",
+                "text_overlay": "none",
+                "image_prompt": "[STYLE ANCHOR] Ladder.",
+            }
+        ],
+    )
+    monkeypatch.setenv("GEMINI_API_KEY", "synthetic-key")
+
+    def forbidden(*args):
+        pytest.fail("a title-free plate was rendered as the poster representative")
+
+    monkeypatch.setattr(generate_illustrations, "generate_image", forbidden)
+    with pytest.raises(SystemExit) as error:
+        generate_illustrations.run_style_explore(str(outline), str(candidate))
+    assert error.value.code == 1
+    diagnostic = capsys.readouterr().err
+    assert "slide 3" in diagnostic
+    assert 'text_overlay: "none"' in diagnostic and "title-free" in diagnostic
+
+
 def test_cli_candidates_round_trip_and_preserves_changed_output(catalog, tmp_path):
     source = write_json(tmp_path / "selection.json", selection())
     output = tmp_path / "candidates.json"

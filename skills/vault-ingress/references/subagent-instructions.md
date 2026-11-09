@@ -1,8 +1,9 @@
 # Per-Talk Subagent Instructions — Detail
 
 The Step 3 procedure each parallel subagent runs. The orchestrator passes the
-talk's DB entry plus the current `rhetoric-style-summary.md`; the subagent
-returns the JSON shape in [schemas-db.md](schemas-db.md). The summary supports
+talk's DB entry, the current `rhetoric-style-summary.md` and the claim output's
+`confirmed_intents`; the subagent returns the JSON shape in
+[schemas-db.md](schemas-db.md). The summary supports
 qualitative rhetoric analysis, but Section 15 is human narrative and MUST NOT be
 parsed for numeric adherence. The active claim's immutable
 `adherence_baseline` is the sole numeric authority.
@@ -260,6 +261,19 @@ text.
 - **Fallback** — if primary slides fail but `video_url` exists, fall back to
   video extraction. A talk can still reach `processed` status this way.
 
+### Score under the speaker's confirmed intents
+
+Read `confirmed_intents` from the claim output. Each record is a ruling the speaker
+made, and its `rule` binds your scoring on every talk where the situation it describes
+holds. Its `talk`, `source_talk` or `source_talks` records the talk the speaker confirmed
+it from: provenance, never a limit on where the rule applies. Never report as a finding
+what a ruling rules out. Leave that entry out of `patterns_detected` and
+`antipatterns_detected`, and say in `rhetoric_notes` which intent you applied and why.
+
+`organizer_mandated_template_not_scored` is the common case. Where it applies, slide
+design under the organizer's template isn't the speaker's choice, so no slide-design
+entry may be detected against the template itself.
+
 ### `transcript_source` records known provenance
 
 Set `transcript_source` on the talk entry: `youtube_auto` (YouTube caption
@@ -272,7 +286,10 @@ ran, so provenance is unknown — leave the recorded value alone, and leave the
 field absent when it was already absent. `manual` asserts a human produced the
 transcript; writing it on an unknown file is a false claim that makes a
 downstream reader trust ASR more than it should. Absent is honest; invented is
-not.
+not. When the talk records `source_identity` with its provider duration and its
+YouTube fetcher receipt is on disk, persistence fills the field from that receipt,
+so a fresh talk needs no pre-claim registration. Without that duration, persistence
+refuses until `transcript_source` is registered.
 
 ## B. Analyze for Rhetoric & Style (NOT content)
 

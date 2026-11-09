@@ -13,6 +13,407 @@ Each import deck is now copied into the container first, in its own directory so
 imports sharing a filename can't overwrite each other. A missing deck, a malformed
 entry or a failed copy stops the run with a message instead of risking the hang.
 
+## 0.21.18 — 2026-11-09
+
+### Rescore a talk after a speaker correction
+
+A worker scored `floodmarks` against the GitHub Universe 2026 footer, a template the
+organizers mandated. The speaker ruled that out, and the ruling landed as the confirmed
+intent `organizer_mandated_template_not_scored`. The persisted score of 3.75 kept its
+−0.5 regardless, since nothing connected the two. No deliberate reprocess reason fit
+"the speaker ruled this out", and workers never saw intent records at all, only the
+rhetoric summary, so a reparse would have repeated the finding.
+
+`speaker_correction` is now a deliberate reprocess reason, settable through
+`apply-source-repairs.py` and accepted by normalize and claim. `queue-state.py claim`
+returns `confirmed_intents`, and workers are told to score under them, leaving out of
+`patterns_detected` and `antipatterns_detected` what a ruling excludes. A ruling applies
+wherever the situation its `rule` describes holds; its `talk`, `source_talk` or
+`source_talks` records where the speaker confirmed it, not where it applies.
+`upsert_confirmed_intent` refuses any change while a queue claim is active, so a replayed
+claim hands its workers the same rulings the fresh claim did.
+
+Such an entry persists as undetected rather than not applicable, on purpose. The score is
+the same either way, and only the profile's pattern rates differ. Recording not applicable
+would take an applicability contract on catalog entries, an assessment row on every talk,
+and a new rule for evidence that isn't on the slides. Forced templates are rare, so it
+isn't worth that.
+
+## 0.21.17 — 2026-11-09
+
+### Put each build frame's notes on the frame they are spoken over
+
+A progressive-reveal slide's speaker notes all landed on its last frame. The
+infinite-monkeys slide shows it best: the whole setup, from "Now those two
+differences start to matter" through "What we have with LLMs are monkeys.", sat on
+the GPU reveal it leads up to, and the first frame had no notes at all. This wasn't
+a slip. `build-expansion-manifest.py --notes` attached the whole note to the parent,
+`ExpandBuilds` wrote it onto the final frame, and three docs said that was the plan.
+
+Now the note is split at its cue lines. A `cue: "BUILD 01"` script item is the notes
+line `[BUILD 01]`, and that exact marker is the only thing split on. Text before
+the first cue goes on frame 00, the text after `[BUILD NN]` goes on frame NN, and
+the marker lines are dropped, since the frame change is the cue. `build_notes.py`
+does the split, and the manifest's new `frame_notes` lists the result. The run
+refuses, naming the slide and the fix, on any of these:
+
+- a cue past the last frame;
+- cues out of order or repeated;
+- an unpadded `[BUILD 1]`;
+- a note whose cues differ from the outline script's.
+
+The last check catches a notes map rendered without its markers, which would
+otherwise drop the whole note on frame 00 without a word. A build slide with no
+cue anywhere keeps its whole note on frame 00 and warns.
+
+The fix needed no VBA change. `RunDeckOps.bas` and its stamp are untouched, so there
+is no macro re-import. The new `--notes-out notes-expanded.json` writes every slide's
+note re-keyed for the expanded deck, each frame's segment included, and
+`inject-notes.sh` applies it through PowerPoint's AppleScript object model.
+`ExpandBuilds` still writes the manifest's `notes` onto the final frame, but that
+field now holds only the final segment, which the notes pass rewrites unchanged.
+The same file also retires the one hand-computed step in the pass order.
+`powerpoint.md` used to tell the agent to drop the parent entries and re-key the
+rest of the notes by hand on the post-expansion order. `--notes` now requires
+`--notes-out`, so no build frame's words depend on the agent getting that arithmetic
+right.
+
+## 0.21.16 — 2026-11-09
+
+### Draw a real person from their photo on deck plates
+
+Deck illustrations of a real person came out as strangers. The case was a
+keynote bio plate: a field-guide engraving of the speaker in his signature hat.
+`generate-illustrations.py` rendered every plate from a text prompt alone, so
+the hat was right and the face belonged to someone else, and no prompt wording
+can carry a face. Only `generate-thumbnail.py` took a real photo
+(`--speaker-photo`, with `--portrait-style`); deck plates had nothing like it.
+
+A slide can now name likeness photos in `outline.yaml`:
+
+```yaml
+reference_images: ["photos/speaker.jpg"]
+```
+
+Each entry is relative to the talk directory, staying inside it, or absolute.
+Up to four per slide; each must be a `.jpg`, `.jpeg`, `.png` or `.webp` file
+that decodes as that format, on a slide with an `image_prompt`. The extension
+has to match the decoded format so the MIME type sent to the vendor is true.
+A phone portrait, depth or HDR photo is a JPEG with a multi-picture header that
+Pillow reports as MPO; it counts as JPEG, so a headshot straight off an iPhone
+loads without re-encoding.
+Every outline load checks the files and names the fix. The loaders pass the
+talk directory as validation context; validating a slide with references
+without it is refused rather than skipped. Pillow is imported only when a slide
+carries references, so outlines without them still load with PyYAML and
+Pydantic alone.
+
+The field changes the outline's shape, so outline schema moves to 3, the way
+`footer_style` moved it to 2 after a review flagged that addition for skipping
+the bump. The owner's migration restamps an exact 1 or 2 to 3 and changes
+nothing else. Non-owner readers refuse an older outline with the usual
+handoff, so an existing talk needs one run of
+`outline_schema.py outline.yaml` (or `--migrate`) before the illustration
+scripts read it again; adding the field to a v2 outline and running that
+validation migrates and checks it in one step. Test fixtures that write an
+outline for a reader now take the stamp from `CURRENT_OUTLINE_SCHEMA_VERSION`
+in `tests/conftest.py`, pinned to the module constant, instead of literals
+hunted down on every bump.
+
+Fresh generation (`all`, `remaining`, explicit slides, `-v`) and `--compare`
+send the photos as image inputs. OpenAI `gpt-image-*` goes through
+`/images/edits` instead of `/images/generations`: one photo in the `image`
+field, the shape builds already use, and several as repeated `image[]` fields.
+Gemini gets them as inline parts ahead of the prompt, the shape `--edit` and the
+thumbnail composer already use. Imagen has no image input and refuses with the
+fix named. `input_fidelity` is not sent: its support on the 2.6 models is
+unverified, and an unknown parameter fails the whole request.
+
+The prompt gains a `LIKENESS REFERENCE` note after the poster or safe-zone
+directives and before `COMPOSE ONLY`. It says to use the photos only as a guide
+to facial likeness, lets the scene decide pose, clothing and props, renders
+everything in the slide's style medium, and forbids pasting in the photo. The
+wording follows `thumbnail-generation-rules` §6: graphic-composition framing,
+no "exact", "preserve" or "bone structure", since assertive preservation
+language on a real-person photo is what trips the vendors' safety filters.
+Poster-theatrical slides keep their embedded title, footer block or stamped
+footer strip, and no-invented-text directives.
+
+Likeness references are API-only. The Codex adapter's one reference is always
+an image to edit; it tells the CLI to "edit the supplied reference image", which
+would hand back the photo retouched instead of an engraving. The lane request
+carries a new `likeness` flag: auto mode stays on API with reason
+`cli_likeness_reference_unverified`, and `--image-lane cli` refuses with that
+reason ahead of the native-model opt-ins, since no flag can lift it.
+
+`--style-explore` renders a reference slide without its photos and warns on
+stderr; the grid picks a style and a model, not a likeness. `--edit`, `--fix`
+and `--build` edit the rendered image, which already carries the likeness, and
+never send the photos.
+
+## 0.21.15 — 2026-11-09
+
+### Add an owner command that catalogs a new deck
+
+`vault-ingress` Step 1 says to persist each reviewed extraction with a `record_pptx`
+mutation, and a matched record must carry an assessment made before the binding was
+decided. No shipped command produced that for a deck not yet in `pptx_catalog`.
+`sweep-pptx-talk-identity.py --emit-mutations` only re-proves existing rows, the
+assessor and the deck-facts reader are library functions with no CLI, and
+`pptx-extraction.py --directory` emits neither. Ingesting
+`github-universe-2026-prototype-policy.md`, the extraction returned the delivered deck
+with current evidence and there was no supported way to bind it, so the run fell back to
+`slide_source: pdf`.
+
+`catalog-pptx-deck.py` takes the extraction output and emits the plan: catalog record,
+visual-evidence receipt and identity assessment. It refuses what `binding_refusal`
+refuses. It also holds back what each deck's own assessment can't see: two selected decks
+proving one talk, or a talk that already has a deck, since replacing a binding is an owner
+decision. A deck whose bytes changed after the extraction read them is reported, not
+planned. The database is never written. Each receipt's artifact is written, named by its
+digest, since a receipt has to name something that exists.
+
+Running it on the real deck exposed why it wouldn't have bound anyway. The title signal
+compares a talk's title with the deck's title-slide text, footers included, on
+significant-word overlap. The deck's footer says "Baruch Sadogursky", which shares two
+words with any title naming the speaker, so it agreed with `playlist-_0J4B7lfi9k.md`, "Baruch
+Sadogursky on JFrog Xray". That record has no date or conference to contradict anything,
+so the true match was reported as ambiguous. The assessment now takes
+`config.speaker_name` and ignores those words on both sides.
+
+The command reads only a schema-v1 `--directory` envelope, through the same strict
+decoder the discovery owner uses, and only results at the current extraction schema and
+pipeline, so an old or future result can't become a current receipt. `--artifact-dir`
+must be a canonical vault-relative locator on every host, Windows drive and UNC paths
+included, and each directory below the vault root is opened without following links, so
+a symlinked component refuses the write instead of escaping the vault. The ingress
+reference states the exit codes and the artifact side effect, and says to stop without
+applying anything after exit 2.
+
+## 0.21.14 — 2026-11-09
+
+### Let a fresh YouTube talk persist its own transcript provenance
+
+For a talk whose transcript was first fetched during the run, the worker and
+persistence disagreed about where `transcript_source` comes from. `subagent-instructions.md`
+tells the worker to map the fetcher's `method` onto it, but canonicalization read only
+the talk's pre-registered value and refused with "validated transcript has no machine
+receipt or pre-registered transcript_source provenance". It never looked at the machine
+receipt, even though `{id}.segments.json` held `provenance.kind: youtube_whisper`, bound
+to the transcript's bytes and the video id. A rerun of the fetch reported `method:
+existing`, told the worker to leave the field absent, and failed the same check. So a
+new YouTube talk with no captions couldn't persist through the documented path. On
+`github-universe-2026-prototype-policy` the way through was to recover the claim, run a
+source repair documented for non-YouTube talks only, re-preflight and re-claim.
+
+With no recorded provenance, a receipt now establishes it: `youtube_captions` means
+`youtube_auto` and `youtube_whisper` means `whisper`. It has to pass the same owner check
+that confirms recorded provenance: the transcript's exact bytes, the talk's own video
+ID, and the trusted provider duration in `source_identity`. A talk without that duration
+is refused with instructions, as before. The receipt is read inside the same stable
+bundle snapshot as the text, so a refetch mid-read can't pair new text with old
+provenance. A return that omits the field gets the established value, persistence
+stores it, and a return claiming a different source is still refused. Local-media and
+VTT receipts establish nothing, since those sources are declared before the claim.
+`rules/transcript-fetch-authority.md` records this absent-only exception.
+
+## 0.21.13 — 2026-11-09
+
+### Keep the QR config an object
+
+The Oct 19 profile regeneration replaced `publishing_process.qr_code`, a config object
+holding `shortener: bitly` and `bitly_domain: jbaru.ch`, with one sentence of prose. The
+source was the tracking database's own `config.publishing_process.qr_code`, which held
+that string, so anything copying config into the profile flattened it again. Nothing
+complained. The next `generate-qr.py` run had no shortener to read, and QR rules §6 made
+it re-ask a decision the speaker had already recorded on every 2026 record. Both values
+were restored by hand on Oct 29.
+
+Now it can't happen silently. At both levels, `publishing_process` and its `qr_code`,
+`set_config` refuses a write that leaves a present section anything but an object,
+`validate-profile.py` rejects a flattened profile, and `generate-qr.py` stops with
+instructions before any provider call instead of treating it as unconfigured or dying
+on `str.get`. An absent section stays allowed. The profile construction rules say to
+carry both objects over field by field. The writer guard deliberately isn't a read
+check: a database already holding a string stays readable, so `set_config` can repair
+the whole parent.
+
+The clarification field tables in `vault-clarification` and `vault-profile` asked for `publishing_process.qr_code` as one free-text answer, which is where the prose came from. They now ask for its sub-fields, `enabled`, `target`, `custom_url` and `slide_position`, each written to its own path.
+
+## 0.21.12 — 2026-11-09
+
+### Let a poster slide skip its painted title
+
+A poster-theatrical deck could not produce an illustrated slide without a title.
+`phase3-content.md` documents `text_overlay: "none"` as image-only, and
+`parse_outline` did drop the sentinel, but it dropped it into the same empty
+state as an absent overlay. Generation then fell back to the slide's internal
+`title` field and painted that instead. The case that surfaced it was a speaker
+bio plate: the speaker wanted the deck footer and nothing else, and got the
+outline's working title baked into the art.
+
+`parse_outline` now marks an explicit `"none"` (any case) as `title_free`, and
+`poster_title_text` turns that into no title at all. The footer is directed
+exactly as before: the canonical model-rendered block, or, with
+`style_anchor.footer_style`, the reserved quiet strip and the post-generation
+stamp. As before, the no-invented-text instruction closes any prompt that
+directs a title or a footer; a title-free slide in a deck with no
+`embedded_footer` directs neither and gets the scene prompt alone. A slide whose
+`text_overlay` is absent or empty keeps the old fallback to `title`, so existing
+outlines render unchanged.
+
+The other readers already agreed. `--edit`, `--fix` and `--build` work from the
+existing image and never read the overlay, `build-expansion-manifest.py` stamps
+footers by slide eligibility alone, and the apply step gives poster FULL slides
+a background fill and nothing else. `--style-explore` still requires a poster
+representative with real text; a `"none"` plate now gets its own error naming
+the sentinel instead of the generic missing-text one.
+
+## 0.21.11 — 2026-11-09
+
+### Scan the published shownotes, wherever the site checkout sits
+
+`scan-shownotes.py` read `_talks/` from the configured checkout's working tree,
+whichever branch that happened to be on. With `~/Projects/shownotes` on a feature
+branch, a talk live on `main` scanned as nothing at all: 96 files instead of 98, no
+warning, and a report that read as "no new talks". The workaround was a hash-bound
+`set_config` pointing at a clean `origin/main` worktree, a scan, and a hash-bound
+restore. A checkout on `main` that simply hadn't pulled yet had the same problem.
+
+The scanner now fetches and reads a snapshot of `origin/<default>` unless the
+checkout is on the default branch and holds everything published. The speaker's
+branch, edits and config stay untouched. A checkout on the default branch keeps
+reading its working tree, uncommitted edits included. Report schema v4 adds
+`source_checkout`, which names the tree that was read, and a failed fetch, a
+missing `origin/HEAD` or git not answering lands in `warnings` and on stderr, since
+that scan may be short. `audit-source-identities.py --candidates-from` now reads v4.
+
+The talks directory is checked only in the tree the scan reads, so a branch that
+deleted or symlinked `_talks/` still scans what `main` published. The snapshot
+writes only the Markdown files the scanner reads, refuses names that differ only by
+case or Unicode normalization before writing any, since a macOS disk can hold only
+one of them, and creates each file exclusively without following a link.
+
+## 0.21.10 — 2026-11-09
+
+### Keep Unicode in deck text
+
+**Re-import `RunDeckOps.bas` after this update**
+(`deck-editing-setup.md` Step 3). Until you do, a wrapper handed non-ASCII text
+stops before touching a deck and tells you so. ASCII text keeps working on the old
+macro.
+
+PowerPoint's `run VB macro` converts every string parameter to Mac Roman, so any
+character outside it reached VBA as `?`, with no error. #515 moved speaker notes off
+that bridge; these paths stayed on it: `BuildDeck` ops, `RunDeckOps` find/replace
+pairs, `ExpandBuilds` notes and the titles of `MakePlaceholderSlide` and
+`MakeBgImageSlide`. Building the GitHub Universe 2026 deck turned 21 arrows and one
+bolt in the notes into `?`, and a slide titled `Port → GitHub` would have built as
+`Port ? GitHub`. Em dashes survive the conversion, which is why it stayed hidden.
+
+Writing all of that through the AppleScript object model, as #515 did for notes,
+would have meant rebuilding `BuildDeck` outside VBA. Instead the wrappers now send
+only printable ASCII: `deck-text-bridge.py` turns every other UTF-16 code unit into
+U+001C plus four hex digits, and `DecodeBridgeText` restores it at the top of each
+macro. Escaping everything outside ASCII, em dashes included, means the result
+doesn't depend on any Mac Roman table. A macro imported before the decoder would put
+those escapes on the slide, so text that needed escaping requires the running macro
+to match the shipped stamp, and a stale import stops the wrapper before its macro
+runs.
+
+The setup smoke test now puts an arrow, a bolt and a rocket on slide 2, and
+`verify-deck-text.py` compares the built deck with the ops, since a lost character
+leaves a valid deck and an exit code of 0. A deck it can't read, including a slide
+part that is encrypted, uses an unsupported compression method or is damaged, exits
+1 with the part's name instead of a traceback.
+
+`deckops-doctor.py` also misread PowerPoint running with no presentation open as
+`probe_failed`, blaming Automation consent. With no presentation, `name of every
+presentation` answers `missing value` instead of an empty list, and the probe died
+counting it. It now reports `macro_unreachable`, which is what's actually wrong.
+
+## 0.21.9 — 2026-11-09
+
+### Stop overwriting other people's QR codes
+
+`generate-qr.py` treated any square, two-color picture as a stale QR inherited from
+another talk, targeted its slide and replaced it. On the GitHub Universe 2026 deck
+that meant the organizer's required survey QR and a sponsor event's registration QR
+would both have become the talk's shownotes QR, with no warning. The same run would
+have put the closing QR on a hidden fallback slide, since `closing` and `both` always
+meant the last slide in the file. The deck shipped by hand through `--png-only` and
+`insert-qr.sh`.
+
+A QR is now replaced only when it encodes a URL this vault issued: a `short_url` or
+`target_url` from `qr_codes`, or this run's own URLs. The script re-encodes each of
+those and requires the picture's module grid to match exactly, which needs no QR
+decoder or new dependency, and works for every QR the script has ever produced since
+its encoder settings have never changed. An exact match is deliberate. A false match
+deletes someone else's QR; a miss leaves one in place and warns with its slide
+number. Hiding or deleting one is as bad as replacing it. The run replays the
+`InsertQR` macro's geometry before any shortener call: where the new QR lands, the
+first tracked QR's rectangle or the bottom-right corner, and which pictures it deletes,
+every picture within 2pt of a tracked QR's rectangle. It stops and names the slide when
+the new QR would overlap a foreign QR or a replacement would delete a picture this vault
+didn't issue, including on a slide that also carries a tracked QR. A deck that isn't a
+readable .pptx also stops the run before any shortener call, with how to re-save it.
+
+`closing` and `both` now target the last visible slide. `--slides N[,N...]` names the
+slides explicitly when detection is wrong, and a bad value stops the run before any
+shortener call. Against the real Universe deck, a dry run replaces the two tracked
+QRs in place and targets the true closing slide.
+
+## 0.21.8 — 2026-11-09
+
+### Keep transcript evidence fresh through a symlinked vault root
+
+`bootstrap-and-preflight.md` lets the canonical vault locator be the configured
+symlink, and `persist-results.py` and `preflight-vault.py` always accepted one.
+The persisted-evidence freshness check didn't: for transcript, timing and quality
+artifacts it resolved the artifact path through the symlink, then required the
+result to sit under the unresolved root. It never did, so every one of those
+identities came back `*_path_invalid`.
+
+Every reader of that check inherited the failure. `write-analysis.py` refused the
+talk `persist-results.py` had just accepted. `load-vault.py` moved the talk to the
+excluded list and still exited 0; on the live vault it reported 0 scored talks
+through the symlink and 1 through the real path. `validate-profile.py` rejected a
+correct profile, `section15_pattern_history.py replace` refused to write, and
+`queue-state.py normalize` read the talk as stale. The older symlink tests missed
+it by using empty cohorts or stubbing freshness; the new ones run a real scored
+talk through each entrypoint.
+
+The check now maps the trusted root to storage once, the way the bounded PDF and
+video lanes already do. Symlinks below the root are still rejected with the same
+reasons either path reports. A symlink above the root is covered the same way.
+
+## 0.21.6 — 2026-11-09
+
+### Refresh the image-model registry (reviewed 2026-11-08)
+
+Reconcile `model_registry.py` against Google's and OpenAI's model and
+deprecation pages. The roster is now `gemini-3-pro-image`,
+`gemini-nano-banana-2.1` (Nano Banana 2.1, GA 2026-10-06, alias
+`nano-banana-2.1`), `gpt-image-2.6-flare` and `gpt-image-2.6-sunburst` (GPT
+Image 2.6, 2026-11-04). OpenAI publishes no dated 2.6 snapshot, so the
+canonical ids are the rolling ones.
+
+Superseded models leave the roster and move to `LEGACY_MODEL_ALIASES`, the
+mechanism `gpt-image-2` already uses: `gpt-image-2.5-flare` and
+`gpt-image-2.5-sunburst` stay pinned to their 2026-09-08 snapshots, and
+`nano-banana`, `gemini-flash-image` and `gemini-3.1-flash-image-preview` resolve
+to `gemini-3.1-flash-image` (deprecated 2026-10-06, no shutdown date). A baked
+outline keeps rendering on the model it was baked against, and nothing ranks or
+`--compare`s a superseded model. `imagen-4.0-ultra-generate-001` is removed:
+Google shut down Imagen 4 on 2026-08-17. The `imagen-*` family still
+dispatches.
+
+Both GPT Image 2.6 models enter at edit tier `stable`, not `precise`, until a
+chained build holds on one. The build-editability shortlist now leads with
+them, and the roster carries no `precise` model. `REGISTRY_LAST_REVIEWED` moves
+to 2026-11-08. The freshness refresh no longer asks for Imagen flagships, and
+the outline-schema example bakes `gemini-3-pro-image` instead of `imagen-4`.
+
 ## 0.21.5 — 2026-11-09
 
 ### Move the CI test job to Ubuntu 26.04

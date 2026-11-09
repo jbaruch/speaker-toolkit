@@ -1054,6 +1054,42 @@ def test_replace_cli_accepts_matching_symlink_lexical_authority(
     }
 
 
+def test_replace_cli_binds_real_freshness_through_a_symlinked_root(
+    tmp_path,
+    capsys,
+):
+    storage = tmp_path / "storage"
+    storage.mkdir()
+    locator = tmp_path / "vault-alias"
+    _section15_directory_symlink(locator, storage)
+    profile = _pattern_profile()
+    database = _tracking_database(profile)
+    database["config"] = {"vault_storage_path": str(locator)}
+    _add_fresh_transcript_evidence(database, storage)
+    summary_path = storage / "rhetoric-style-summary.md"
+    summary_path.write_text(_summary(), encoding="utf-8")
+    profile_path = storage / "pattern-profile.json"
+    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+    (storage / "tracking-database.json").write_text(
+        json.dumps(database),
+        encoding="utf-8",
+    )
+
+    return_code = section15.main(
+        [
+            "replace",
+            str(locator / "rhetoric-style-summary.md"),
+            str(locator / "pattern-profile.json"),
+            str(locator / "tracking-database.json"),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert return_code == 0, captured.err
+    assert json.loads(captured.out)["changed"] is True
+    assert section15.BLOCK_START in summary_path.read_text(encoding="utf-8")
+
+
 def test_replace_cli_rejects_symlink_target_locator_mismatch_without_paths(
     tmp_path,
     monkeypatch,

@@ -58,7 +58,7 @@ CANDIDATE_LANES = frozenset({"video_url"})
 # The exact scan-shownotes.py report generation this reader accepts. A newer
 # report may move a field this parser reads, and an older one may not carry it
 # at all, so an unexpected version is refused rather than parsed hopefully.
-CANDIDATE_REPORT_SCHEMA_VERSION = 3
+CANDIDATE_REPORT_SCHEMA_VERSION = 4
 # The closed disposition set scan-shownotes.py emits. An entry outside it is a
 # malformed report, not a row to pass over: skipping an unrecognized value
 # would let a typo hide a conflict behind an apparently clean audit.

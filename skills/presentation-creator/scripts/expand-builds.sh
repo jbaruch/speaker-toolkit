@@ -1,9 +1,11 @@
 #!/bin/bash
 # expand-builds.sh — expand progressive-reveal BUILD sequences in the deck via
 # the real PowerPoint app (ExpandBuilds VBA macro): each parent slide is replaced
-# by its build frames as full-bleed background-fill slides, speaker notes on the
-# final frame only. Structural slide insertion goes through PowerPoint, never
-# python-pptx. See rules/deck-editing-rules.md and
+# by its build frames as full-bleed background-fill slides. The macro writes only
+# the manifest's `notes` (the final frame's segment); every frame's notes come
+# from the notes-expanded.json that build-expansion-manifest.py --notes-out
+# writes, injected afterwards by inject-notes.sh. Structural slide insertion goes
+# through PowerPoint, never python-pptx. See rules/deck-editing-rules.md and
 # skills/illustrations/references/builds.md. macOS + Microsoft PowerPoint only.
 #
 # ORDERING: run this BEFORE the by-index passes (inject-notes.sh, apply-backgrounds.sh,
@@ -15,7 +17,8 @@
 #     basePath   the built deck to read (uniquely-named copy)
 #     outPath    where to write the COPY with builds expanded
 #     manifest   JSON from build-expansion-manifest.py:
-#                {"schema_version":1,"builds":[{"parent":N,"frames":[...],"notes":""}]}
+#                {"schema_version":1,"builds":[{"parent":N,"frames":[...],"notes":"",
+#                  "frame_notes":[...]}]}  (the packer ignores frame_notes)
 #
 # Prerequisites: RunDeckOps.bas (which defines ExpandBuilds) imported into an OPEN
 # macro-enabled deck (DeckOps.pptm), macros enabled, Automation consent granted.
@@ -29,6 +32,7 @@ BASE="$1"; OUT="$2"; MANIFEST="$3"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/ensure-drivers.sh"   # restore .applescript/.bas drivers tessl install strips
 source "$HERE/container-stage.sh"  # stage Google-Drive inputs into the container (no Powerbox prompts)
+source "$HERE/deck-text-bridge.sh"  # keep non-ASCII text intact across `run VB macro`
 DRIVER="$HERE/expand-builds.applescript"
 
 [[ -f "$BASE" ]]     || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the built deck." >&2; exit 1; }
@@ -60,6 +64,7 @@ fi
 # parent; deterministic, unit-tested in tests/test_build_expansion_to_packed.py).
 PACKED="$STAGE_DIR/$(basename "$OUT").builds.packed"
 python3 "$HERE/build-expansion-to-packed.py" "$EFFECTIVE_MANIFEST" "$PACKED"
+PACKED="$(bridge_file "$PACKED")"
 
 # Write the OUTPUT into the container (SaveCopyAs there neither prompts nor
 # E_FAILs), then shell-move it to the destination.

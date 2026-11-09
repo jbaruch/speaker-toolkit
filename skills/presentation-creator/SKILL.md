@@ -47,7 +47,7 @@ Proceed immediately to Step 1.
 
 Read [phase1-intent.md](references/phase1-intent.md). Ask about missing context,
 one question at a time. Author the `talk:` metadata in `outline.yaml`, with
-root `schema_version: 2`; metadata fields live in
+root `schema_version: 3`; metadata fields live in
 [phase3-content.md](references/phase3-content.md#the-talk-block).
 
 Use the profile's presentation-directory and live slug conventions. The outline

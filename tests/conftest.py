@@ -37,6 +37,12 @@ DEFAULT_PPTX_DIRECTORY_EXCLUSIONS = [
 # missed failed as "assert 2 == 1" with nothing naming the generation.
 CURRENT_ROOT_SCHEMA_VERSION = 5
 
+# The outline root generation every non-owner reader requires
+# (`OUTLINE_SCHEMA_VERSION` in presentation-creator's outline_schema.py). Fixtures
+# that write an outline for such a reader take it from here;
+# test_outline_schema pins it to the module constant.
+CURRENT_OUTLINE_SCHEMA_VERSION = 3
+
 
 def current_tracking_config(**updates: object) -> dict[str, object]:
     """Return the owner-current config generation for writer fixtures."""
@@ -625,6 +631,11 @@ def build_expansion_manifest():
         os.path.join(SCRIPTS_ILL, "build-expansion-manifest.py"),
         "build_expansion_manifest",
     )
+
+
+@pytest.fixture(scope="session")
+def build_notes():
+    return _import_script(os.path.join(SCRIPTS_ILL, "build_notes.py"), "build_notes")
 
 
 @pytest.fixture(scope="session")

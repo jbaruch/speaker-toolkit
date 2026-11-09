@@ -35,7 +35,7 @@ Do not restate them here — apply them.
 
 | File / Reference | Purpose |
 |------------------|---------|
-| `outline.yaml` | Source of truth — `style_anchor` (model, per-format anchors, composition, embedded_footer, text_treatment) + per-slide `format` / `image_prompt` / `text_overlay` / `safe_zone` / `builds` |
+| `outline.yaml` | Source of truth — `style_anchor` (model, per-format anchors, composition, embedded_footer, text_treatment) + per-slide `format` / `image_prompt` / `text_overlay` / `safe_zone` / `reference_images` / `builds` |
 | `speaker-profile.json` → `visual_style_history` | Default style, departures, mode profiles, confirmed visual intents |
 | `speaker-profile.json` → `publishing_process.thumbnail` | Speaker photo path + aesthetic preference |
 | `illustrations/` (alongside outline) | Generated images, builds, model-comparison output |
@@ -55,7 +55,7 @@ Do not restate them here — apply them.
 ## Step 1 — Route by Mode
 
 Determine which of three modes applies and execute only the matching steps.
-The illustration scripts read outline schema 2 only and never migrate or edit
+The illustration scripts read outline schema 3 only and never migrate or edit
 `outline.yaml`. When a refusal says to hand off, stop: invoke
 `Skill(skill: "presentation-creator")` for its outline handoff, then re-run the
 refused script. For any other refusal, apply the fix it names.
@@ -96,7 +96,7 @@ The script emits JSON: `last_reviewed`, `age_days`, `stale`, and the full
 proceeding (e.g. "Registry reviewed 2026-06-02, 0 days old — fresh").
 
 - **`stale: true`** — use `WebSearch` to identify the current flagship image
-  models from Google (Gemini image, Imagen) and OpenAI (`gpt-image-*`), plus
+  models from Google (Gemini image) and OpenAI (`gpt-image-*`), plus
   any other vendor with a public image API. Reconcile the registry in
   `{speaker_toolkit_root}/skills/illustrations/scripts/model_registry.py`: add new flagships, drop
   discontinued ones, refresh the attribute tiers, bump `REGISTRY_LAST_REVIEWED`.
@@ -120,8 +120,8 @@ script change.
 Both generators default to `--image-lane auto`: prefer a compatible subscription
 CLI; preserve pinned models and exact geometry on API. Use `--image-lane api`
 to force HTTP. Use `--image-lane cli --allow-cli-native` for OpenAI native,
-unpinned output at observed dimensions. Gemini, Imagen, masked edits, and
-multi-reference thumbnails remain API-only. Report the emitted lane and any
+unpinned output at observed dimensions. Gemini, Imagen, masked edits,
+likeness references, and multi-reference thumbnails remain API-only. Report the emitted lane and any
 failure; never retry a failing CLI through API without an explicit API choice.
 Read [skills/illustrations/references/image-provider-lanes.md](references/image-provider-lanes.md)
 before selecting native output. Native previews are not dated-model bake evidence.
@@ -236,9 +236,8 @@ composition, also set `style_anchor.composition: poster-theatrical`,
 `style_anchor.embedded_footer: <text>`, and `style_anchor.text_treatment: <how
 the baked title is rendered>` (e.g. "glowing hand-script neon on an in-scene
 surface"). For the Step 5 stamped-footer choice, also set
-`style_anchor.footer_style` (`{}` takes the defaults) and, in the same edit, the
-root `schema_version: 2`, then read the footer passage of this step's strategy
-reference:
+`style_anchor.footer_style` (`{}` takes the defaults), then read the footer
+passage of this step's strategy reference:
 
 ```text
 skills/illustrations/references/strategy.md
@@ -253,6 +252,7 @@ lives in the anchor; only the scene and the literal title vary per slide:
   keep every baked title/footer consistent.
 - **Per slide**: `image_prompt` carries only the scene; `text_overlay` carries
   only the literal title string for that slide — never the text styling.
+  `text_overlay: "none"` makes a title-free plate; the footer still applies.
 
 Then run the deterministic precheck and report its verdict in one line; never
 skip this step silently:
@@ -283,6 +283,11 @@ Batch-generate every missing slide illustration from the outline:
 python3 "{speaker_toolkit_root}/skills/illustrations/scripts/generate-illustrations.py" \
   outline.yaml remaining
 ```
+
+A slide with `reference_images` sends those photos as likeness references
+(OpenAI or Gemini models, API lane only). Re-render one such slide with
+`outline.yaml -v N`. Contract and limits:
+[skills/illustrations/references/generation.md](references/generation.md).
 
 Review with the author. For targeted corrections use `--fix` (preserves the
 near-good output); for additions use full regeneration; for removals use
@@ -320,8 +325,9 @@ If no slides specify builds, proceed silently to Step 12.
 ## Step 12 — Apply Illustrations to Deck
 
 Insert generated illustrations and build sequences into the .pptx. Build
-slides replace their parent slide rather than duplicating after it; speaker
-notes go on the final build step only.
+slides replace their parent slide rather than duplicating after it; each build
+frame carries the notes spoken over it, split at its `[BUILD NN]` cues
+([builds.md](references/builds.md)).
 
 The script contract is `DECK ILLUSTRATIONS_DIR OUTLINE_YAML` (positional, in
 that order), with optional `--out`, `--image-ext`, `--scrim-color`,

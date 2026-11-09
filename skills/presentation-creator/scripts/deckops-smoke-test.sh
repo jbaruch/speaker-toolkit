@@ -62,6 +62,9 @@ if [[ ! -f "$OUT" ]]; then
   exit 1
 fi
 
+# A lost character leaves a valid deck and a `?` nobody reads, so compare the text.
+python3 "$HERE/verify-deck-text.py" "$OUT" "$OPS" >&2
+
 # Serialize with a JSON encoder, never printf: a path may contain a double quote
 # or a backslash, and interpolating one produces invalid JSON behind exit 0.
 python3 -c 'import json,sys; print(json.dumps({"ok":True,"output":sys.argv[1],"slides":int(sys.argv[2]),"base":sys.argv[3]}))' \

@@ -27,6 +27,7 @@ BASE="$1"; OUT="$2"; IMPORT="$3"; ORDER="$4"; REPLACE="$5"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/ensure-drivers.sh"   # restore .applescript/.bas drivers tessl install strips
 source "$HERE/container-stage.sh"  # stage Google-Drive inputs into the container (no Powerbox prompts)
+source "$HERE/deck-text-bridge.sh"  # keep non-ASCII text intact across `run VB macro`
 DRIVER="$HERE/run-deck-ops.applescript"
 
 [[ -f "$BASE" ]]   || { echo "ERROR: base deck not found: $BASE — pass a uniquely-named copy of the source .pptx as <basePath>." >&2; exit 1; }
@@ -42,6 +43,7 @@ STAGE="$OUT_STAGE_DIR/$(basename "$OUT")"
 rm -f "$STAGE"
 
 IMPORT="$(stage_import_spec "$IMPORT")"
+REPLACE="$(bridge_text "$REPLACE")"
 
 echo "staging -> $STAGE"
 osascript "$DRIVER" "$(stage_base "$BASE")" "$STAGE" "$IMPORT" "$ORDER" "$REPLACE"

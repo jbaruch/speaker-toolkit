@@ -124,16 +124,20 @@ Build slides are inserted via the `ExpandBuilds` VBA pass (real PowerPoint —
 structural slide insertion never uses python-pptx, per `rules/deck-editing-rules.md`):
 
 ```bash
-# 1. Emit the build-expansion manifest from the outline + generated frames.
-#    Pass --notes <notes.json> so each parent's speaker notes ride onto its
-#    FINAL frame (expansion drops the parent slide, so notes must be carried).
+# 1. Emit the build-expansion manifest from the outline + generated frames, and
+#    the whole deck's notes keyed on the expanded deck. notes.json is keyed on
+#    the deck before expansion; each parent's note is split across its frames.
 python3 "{speaker_toolkit_root}/skills/illustrations/scripts/build-expansion-manifest.py" \
-    outline.yaml illustrations/builds/ \
-    --notes notes.json --out builds-manifest.json
+    outline.yaml illustrations/builds/ --out builds-manifest.json \
+    --notes notes.json --notes-out notes-expanded.json
 
 # 2. Expand: replace each parent slide with its frames as full-bleed bg-fill slides
 bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/expand-builds.sh" \
     <deck-copy.pptx> <deck-expanded.pptx> builds-manifest.json
+
+# 3. Notes: every slide's note on the expanded deck, each build frame included
+bash "{speaker_toolkit_root}/skills/presentation-creator/scripts/inject-notes.sh" \
+    <deck-expanded.pptx> <deck-notes.pptx> notes-expanded.json
 ```
 
 With `style_anchor.footer_style` set, the manifest lists footer-stamped PNG
@@ -145,9 +149,10 @@ raw frames stay footer-free for editing.
 doesn't shift lower-numbered parents. **Ordering**: run it BEFORE the by-index
 passes (`inject-notes.sh`, `apply-backgrounds.sh`, `insert-qr.sh`) — expansion
 renumbers every slide after a build parent, so those passes must key on the
-POST-expansion deck. Build parents' notes are applied to the final frame by
-`ExpandBuilds` itself (from `--notes`), so the later `inject-notes.sh` pass must
-NOT also target those original parent indices.
+POST-expansion deck. `notes-expanded.json` already is: inject it as written,
+never re-keyed by hand. `ExpandBuilds` writes only the manifest's `notes`, the
+final frame's segment, and the notes pass rewrites that frame with the same
+text.
 
 Build slides are inserted as separate slides in the deck (not PowerPoint
 animations). Each step is a full-bleed image:
@@ -164,11 +169,43 @@ Insertion rules:
 - Insert in order: `build-00`, `build-01`, ..., `build-N`.
 - All build slides use the BLANK layout, full-bleed image positioning at 16:9
   slide dimensions (`left=0, top=0, width=13.333", height=7.5"`).
-- Speaker notes go ONLY on the final build step. Earlier steps get empty
-  notes — the speaker advances through them silently or with ad-lib
-  narration.
+- Each build step carries its own segment of the parent's notes (Notes per
+  frame below). A step with no segment is a silent advance.
 - Build slides count toward the slide budget — factor them in during
   presentation-creator's Phase 4 guardrails.
 - The final build step (`build-N`) is visually identical to the parent
   slide. In the deck, the parent slide is **replaced** by its build sequence
   — not duplicated after it.
+
+### Notes per frame
+
+A build slide's note is split at its cue lines, so each frame carries the words
+spoken while it is on screen. The marker is canonical: a `cue: "BUILD 01"`
+script item is the notes line `[BUILD 01]`, step zero-padded.
+
+- Text before the first cue goes on frame 00, the first frame shown.
+- Text after `[BUILD NN]` goes on frame NN, up to the next cue; the last
+  segment goes on the final frame.
+- The cue lines themselves are dropped. The frame change is the cue.
+- A frame with no text between its cue and the next is a silent advance.
+
+For the infinite-monkeys slide below, frame 00 gets everything up to "What we
+have with LLMs are monkeys." and frame 01 gets only the GPU line:
+
+```text
+Infinite monkeys, with infinite typewriters, ... Shakespeare.
+What we have with LLMs are monkeys.
+[BUILD 01]
+We just gave them GPUs, and the randomness is skewed towards Shakespeare.
+```
+
+`build-expansion-manifest.py` refuses, naming the slide and the fix:
+
+- a cue past the slide's last frame;
+- cues out of increasing order, or repeated;
+- an unpadded `[BUILD 1]`;
+- a note whose cues differ from the outline script's bare `cue: "BUILD NN"` items.
+
+A build slide with no cue in its note or its script keeps the whole note on
+frame 00 and prints a `WARN` on stderr. A bracketed line naming a step without
+being a bare cue (`[SLIDE 2 UP — BUILD 00]`) stays in the text with a `WARN`.
