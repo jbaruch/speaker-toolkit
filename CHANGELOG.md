@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.29 — 2026-11-10
+
 ### Stop leaving per-run files in `~/.deckops-staging`
 
 `apply-backgrounds.sh` and `expand-builds.sh` wrote their staged manifest, and
