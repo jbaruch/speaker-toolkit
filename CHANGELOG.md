@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.22 — 2026-11-10
+
 ### Place a deck slide as the shownotes thumbnail until the video exists
 
 A pre-delivery shownotes publish with no thumbnail handed off to the full
