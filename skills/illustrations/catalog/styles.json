@@ -389,6 +389,38 @@
         "reference": "https://www.youtube.com/watch?v=1yndLHw9mbo",
         "note": "Derived from 'Mission Possible: The 45-Minute Path to Bullet-Proof Java Container Images', Devoxx Belgium, 2026-10-07. The flooded-room scenes, hatch, ladder and corridor are talk content, not part of the reusable anchor."
       }
+    },
+    {
+      "schema_version": 1,
+      "slug": "workplace-mockumentary-photographic",
+      "name": "Workplace Mockumentary Photography",
+      "anchors": {
+        "FULL": "A photographic frame from a single-camera workplace mockumentary. Flat, slightly greenish fluorescent light; muted beige, grey, dusty plum, mustard and teal; natural skin tones and mild documentary video grain. Candid, slightly off-centre handheld framing, with foreground occlusion only when the scene provides it. Ordinary business-casual styling and restrained, deadpan performance: awkward pauses, side-glances and knowing looks toward the camera when the scene calls for them. Everyday materials have believable texture and perspective. Any specified paper or whiteboard lettering is crisp, legible and physically integrated. Realistic anatomy; no glossy advertising finish, cinematic colour grade, logos, watermarks or recognisable television actors or characters.",
+        "IMG+TXT": "Use the same photographic workplace-mockumentary treatment within the illustration region: flat, slightly greenish fluorescent light, muted everyday colours, natural skin tones, mild video grain and candid documentary framing. Keep expressions understated and scene-dependent. Render any specified physical materials and lettering realistically. Respect the layout's designated text area. No glossy advertising finish, cinematic colour grade, logos, watermarks or recognisable television actors or characters."
+      },
+      "text_treatment": "For scene-integrated titles, use plausible printed or marker lettering on a surface explicitly specified by the scene. For dialogue captions, use one or two lines of bold white sans-serif with a thin black outline near the bottom of the picture. Render the supplied title exactly once; do not invent additional text or mandatory title furniture.",
+      "conventions": "Preserve appearance and wardrobe when a character recurs, and maintain location continuity when a location recurs. Use only the people, expressions, props and surfaces specified by each scene. Marker drawings, paper, screens and other specified materials retain believable physical perspective. No fixed cast, mandatory robot, room inventory, footer or repeated diagram structure is required by this style.",
+      "composition": "poster-theatrical",
+      "tags": [
+        "photographic",
+        "mockumentary",
+        "workplace",
+        "deadpan",
+        "organizational-change",
+        "satire"
+      ],
+      "sample": {
+        "schema_version": 1,
+        "kind": "reference",
+        "location": "https://drive.google.com/file/d/1rKR028s_0XAZvmK2LJK5cL3pk795Obh7/preview",
+        "description": "Unbundled public slide-deck reference. Logical slide 8, the folded-arms committee scene captioned 'BILL: Brent is managing. Why can't you?', demonstrates fluorescent office light, a muted palette, documentary framing, deadpan reactions and physical paper props. The original delivered deck uses full-bleed compositions; the IMG+TXT anchor is a proposed adaptation rather than a separately rendered sample."
+      },
+      "provenance": {
+        "schema_version": 1,
+        "kind": "delivered-talk",
+        "reference": "https://speaking.jbaru.ch/talks/aidevcon-nyc-2026-factory-of-factories/",
+        "note": "Derived from Baruch Sadogursky's The Software Factory of Factories, delivered at AI DevCon NYC on November 4, 2026. The reusable entry abstracts the photographic treatment and continuity conventions; the talk's named cast, claims, scene instructions, branding and footer are not required. The source slide image was inspected."
+      }
     }
   ]
 }

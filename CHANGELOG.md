@@ -1,5 +1,18 @@
 # Changelog
 
+### Add the workplace-mockumentary-photographic style to the public catalog
+
+Admitted from the style-contribution issue form with the contributor's payload
+unchanged: a single-camera office mockumentary look (flat fluorescent light,
+muted palette, documentary framing, deadpan reactions) from *The Software Factory
+of Factories*, AI DevCon NYC, 2026-11-04. Its provenance page and its public deck
+sample both resolve.
+
+Two catalog tests asserted that every sample description contained the phrase
+"not bundled". This entry says "Unbundled", which failed a check on wording
+rather than on the property. The tests now assert the property itself: the
+sample is a remote `https://` reference.
+
 ## 0.21.29 — 2026-11-10
 
 ### Stop leaving per-run files in `~/.deckops-staging`

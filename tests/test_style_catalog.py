@@ -28,7 +28,10 @@ DELIVERED_SLUGS = {
 }
 # Admitted from the style-contribution issue form (#481): another speaker's
 # delivered talk, so provenance is a public recording, not speaking.jbaru.ch.
-CONTRIBUTED_SLUGS = {"spy-thriller-photographic"}
+CONTRIBUTED_SLUGS = {
+    "spy-thriller-photographic",
+    "workplace-mockumentary-photographic",
+}
 
 
 @pytest.fixture
@@ -70,7 +73,7 @@ def test_packaged_seeds_are_closed_versioned_references(catalog):
         catalog.validate_candidate_style(style)
         assert style["catalog_source"]["layer"] == "public"
         assert style["sample"]["kind"] == "reference"
-        assert "not bundled" in style["sample"]["description"]
+        assert style["sample"]["location"].startswith("https://")
         assert "EMBEDDED TITLE" not in style["anchors"]["FULL"]
     assert merged["personal_sha256"] == "missing"
 
@@ -103,7 +106,6 @@ def test_contributed_seed_survives_real_candidate_reader(
     source = next(style for style in merged["styles"] if style["slug"] == slug)
     assert source["provenance"]["reference"].startswith("https://")
     assert source["sample"]["location"].startswith("https://")
-    assert "not bundled" in source["sample"]["description"]
     formats = {"FULL": 3}
     if source["composition"] == "overlay":
         formats["IMG+TXT"] = 4
