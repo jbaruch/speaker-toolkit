@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.21 — 2026-11-10
+
 ### Stop requiring exact dependency versions at runtime
 
 `check-runtime.py`, the artifact supervisor and the yt-dlp resolver each carried
