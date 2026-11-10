@@ -556,6 +556,18 @@ def test_both_position_targets_the_shownotes_slide_and_the_visible_close(generat
     assert indices == [1, 4]
 
 
+def test_an_undetectable_shownotes_slide_stops_instead_of_guessing(generate_qr):
+    """A poster deck paints its URL into the image, so no text frame matches."""
+    prs = make_deck(13)
+
+    with pytest.raises(SystemExit) as caught:
+        generate_qr.resolve_target_slide_indices(
+            prs, {"slide_position": "both"}, "https://example.com/notes", []
+        )
+
+    assert "--slides" in str(caught.value.code)
+
+
 def test_split_qr_rects_separates_tracked_from_foreign_by_payload(
     generate_qr, tmp_path
 ):
