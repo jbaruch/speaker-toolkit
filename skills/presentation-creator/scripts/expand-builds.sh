@@ -39,9 +39,6 @@ DRIVER="$HERE/expand-builds.applescript"
 [[ -f "$MANIFEST" ]] || { echo "ERROR: builds manifest not found: $MANIFEST — generate it with build-expansion-manifest.py." >&2; exit 1; }
 [[ -f "$DRIVER" ]]   || { echo "ERROR: driver not found: $DRIVER — reinstall the plugin; expand-builds.applescript must sit next to this script." >&2; exit 1; }
 
-STAGE_DIR="$HOME/.deckops-staging"
-mkdir -p "$STAGE_DIR"
-
 # Open the base deck from the container so the macro doesn't trigger a Powerbox
 # prompt on the Google-Drive path.
 BASE="$(stage_base "$BASE")"
@@ -53,7 +50,7 @@ BASE="$(stage_base "$BASE")"
 # if the container is absent.
 EFFECTIVE_MANIFEST="$MANIFEST"
 if [[ -n "$CONTAINER_STAGE" ]]; then
-  STAGED_MANIFEST="$STAGE_DIR/$(basename "$OUT").builds.staged.json"
+  STAGED_MANIFEST="$CONTAINER_STAGE/builds.staged.json"
   python3 "$HERE/stage-images-into-container.py" "$MANIFEST" --stage-dir "$CONTAINER_STAGE/img" --out "$STAGED_MANIFEST" >/dev/null
   EFFECTIVE_MANIFEST="$STAGED_MANIFEST"
 else
@@ -62,7 +59,7 @@ fi
 
 # Pack the (staged) manifest into the ExpandBuilds wire format (descending by
 # parent; deterministic, unit-tested in tests/test_build_expansion_to_packed.py).
-PACKED="$STAGE_DIR/$(basename "$OUT").builds.packed"
+PACKED="$OUT_STAGE_DIR/$(basename "$OUT").builds.packed"
 python3 "$HERE/build-expansion-to-packed.py" "$EFFECTIVE_MANIFEST" "$PACKED"
 PACKED="$(bridge_file "$PACKED")"
 
