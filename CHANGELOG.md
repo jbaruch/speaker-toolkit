@@ -1,5 +1,21 @@
 # Changelog
 
+### Place a deck slide as the shownotes thumbnail until the video exists
+
+A pre-delivery shownotes publish with no thumbnail handed off to the full
+illustrations composite (speaker photo, hook text, aesthetic choice, face
+compositing) before the talk had happened. For KubeCon NA 2026 the owner turned
+that down and asked for slide 2. Once a thumbnail existed it was kept forever, so
+the YouTube thumbnail generated after the recording never reached the page
+unless someone swapped it by hand.
+
+The shownotes thumbnail reference now has two phases. With no `**Video:**` line,
+the speaker picks one of 3–5 ranked deck slides and it is placed as-is, with no
+generation. The run that adds the `**Video:**` line generates the YouTube
+thumbnail and places it over the slide. Any later run keeps the existing image,
+so a re-run cannot clobber the YouTube thumbnail. That trigger is why the issue's
+proposed source-kind field in the tracking record isn't needed.
+
 ## 0.21.21 — 2026-11-10
 
 ### Stop requiring exact dependency versions at runtime
