@@ -405,6 +405,36 @@ def test_each_wrapper_stops_before_its_macro_on_a_stale_import(name, tmp_path, h
     assert not (tmp_path / "out" / "deck.pptx").exists()
 
 
+@pytest.mark.parametrize("wrapper", ["apply-backgrounds.sh", "expand-builds.sh"])
+def test_image_wrappers_leave_no_staging_files_behind(wrapper, tmp_path, harness):
+    """Per-run manifests live in the container stage the EXIT trap removes."""
+    environment, _calls = harness
+    home = Path(environment["HOME"])
+    container = home / "Library/Containers/com.microsoft.Powerpoint/Data"
+    container.mkdir(parents=True)
+    base = tmp_path / "base.pptx"
+    base.write_bytes(b"pptx")
+    image = tmp_path / "image.png"
+    image.write_bytes(b"png")
+    manifest = tmp_path / "manifest.json"
+    if wrapper == "apply-backgrounds.sh":
+        manifest.write_text(json.dumps({"backgrounds": {"2": str(image)}}))
+    else:
+        manifest.write_text(
+            json.dumps(
+                {"schema_version": 1, "builds": [{"parent": 2, "frames": [str(image)]}]}
+            )
+        )
+    out = tmp_path / "out" / "deck.pptx"
+
+    result = _run_wrapper(environment, wrapper, base, out, manifest)
+
+    assert result.returncode == 0, result.stderr
+    assert out.exists()
+    assert not (home / ".deckops-staging").exists()
+    assert list((container / ".deckops-stage").iterdir()) == []
+
+
 def test_a_wrapper_with_ascii_text_works_on_an_old_macro(tmp_path, harness):
     """Plain decks keep building until the user gets round to the re-import."""
     environment, calls = harness

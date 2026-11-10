@@ -1,5 +1,19 @@
 # Changelog
 
+### Stop leaving per-run files in `~/.deckops-staging`
+
+`apply-backgrounds.sh` and `expand-builds.sh` wrote their staged manifest, and
+`expand-builds.sh` its packed spec, into `~/.deckops-staging` and never deleted
+them. After the KubeCon NA 2026 keynote build, the owner found 73 files there
+from about a dozen talks and cleaned them up by hand. The files were useless the
+moment a run ended: they point at images in the per-run container stage, which
+the EXIT trap already removes.
+
+Both wrappers now write those files into that same per-run stage, so the
+existing trap removes them too. The issue suggested a one-time sweep of files
+left by older `inject-notes.sh` versions. That was declined: those files were
+already cleaned up by hand, and nothing creates them any more.
+
 ## 0.21.28 — 2026-11-10
 
 ### Stop guessing the shownotes slide for the QR

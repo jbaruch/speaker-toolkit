@@ -34,9 +34,6 @@ DRIVER="$HERE/apply-backgrounds.applescript"
 [[ -f "$MANIFEST" ]] || { echo "ERROR: backgrounds manifest not found: $MANIFEST — generate it with apply-illustrations-to-deck.py --backgrounds-out." >&2; exit 1; }
 [[ -f "$DRIVER" ]]   || { echo "ERROR: driver not found: $DRIVER — reinstall the plugin; apply-backgrounds.applescript must sit next to this script." >&2; exit 1; }
 
-STAGE_DIR="$HOME/.deckops-staging"
-mkdir -p "$STAGE_DIR"
-
 # Open the base deck from the container so the macro doesn't trigger a Powerbox
 # prompt on the Google-Drive path.
 BASE="$(stage_base "$BASE")"
@@ -48,7 +45,7 @@ BASE="$(stage_base "$BASE")"
 # if the container is absent.
 EFFECTIVE_MANIFEST="$MANIFEST"
 if [[ -n "$CONTAINER_STAGE" ]]; then
-  STAGED_MANIFEST="$STAGE_DIR/$(basename "$OUT").bg.staged.json"
+  STAGED_MANIFEST="$CONTAINER_STAGE/bg.staged.json"
   python3 "$HERE/stage-images-into-container.py" "$MANIFEST" --stage-dir "$CONTAINER_STAGE/img" --out "$STAGED_MANIFEST" >/dev/null
   EFFECTIVE_MANIFEST="$STAGED_MANIFEST"
 else
