@@ -1179,10 +1179,7 @@ def test_cli_reports_missing_video_dependencies_as_one_json_error(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert json.loads(captured.err) == {
-        "error": (
-            'Install dependencies: pip install "ImageHash==4.3.2" '
-            '"numpy==2.2.6" "Pillow==12.3.0" "filelock==4.1.0"'
-        )
+        "error": "Install dependencies: pip install ImageHash numpy Pillow filelock"
     }
 
 

@@ -15,11 +15,6 @@ import shutil
 import sys
 
 
-# Dependabot renews the pyproject.toml pin weekly. Every such manifest update
-# must renew this runtime mirror in the same PR;
-# tests/test_check_runtime.py::test_ytdlp_version_authority_is_synchronized
-# enforces that the two pins stay identical.
-YTDLP_REQUIRED_VERSION = "2026.8.19"
 YTDLP_RESOLUTION_FAILURE_CODES = frozenset(
     {
         "ytdlp_override_invalid",
@@ -75,12 +70,3 @@ def resolve_ytdlp() -> Path:
         "cannot find yt-dlp — install the pinned version with `pip install .` "
         "into the toolkit environment, or set YT_DLP to its path",
     )
-
-
-def normalized_ytdlp_version(value: str) -> tuple[int, int, int] | None:
-    """Normalize yt-dlp's calendar version without an external parser."""
-    parts = value.strip().split(".")
-    if len(parts) != 3 or any(not part.isdecimal() for part in parts):
-        return None
-    year, month, day = (int(part) for part in parts)
-    return year, month, day

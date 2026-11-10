@@ -2484,7 +2484,7 @@ profile, and extractor schema/pipeline. POSIX process groups and Windows Job
 Objects provide process-tree cleanup for the trusted worker boundary; on POSIX,
 cleanup covers the worker process group plus sampled descendants and is not an
 adversarial session-containment claim. Sampled aggregate RSS monitoring requires
-exactly `psutil==7.2.2` and is fail-closed, but is not described as a kernel
+psutil and is fail-closed, but is not described as a kernel
 hard-allocation limit on macOS.
 Raw worker diagnostics are discarded after producing a bounded count/hash/
 truncation receipt. Source-artifact and operation resource limits are script-owned;

@@ -15,8 +15,8 @@ Require the database-configured interpreter's lanes before using them:
 
 For the YouTube download fallback, include `youtube-download` in both lists.
 For probe-only library work, require `core,source-media` without Whisper.
-`check-runtime.py`'s `LANE_REQUIREMENTS` and version maps own dependencies and
-pins. A failed optional lane does not invalidate independent captions or slides.
+`check-runtime.py`'s `LANE_REQUIREMENTS` owns the lane dependencies;
+`pyproject.toml` owns their versions. A failed optional lane does not invalidate independent captions or slides.
 
 ## Acquisition Ownership
 
