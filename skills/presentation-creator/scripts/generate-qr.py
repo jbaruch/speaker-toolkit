@@ -1378,22 +1378,22 @@ def resolve_target_slide_indices(prs, config, shownotes_url, grids):
         list of 0-based slide indices
     """
     position = config.get("slide_position", "closing")
-    slide_count = len(prs.slides)
     closing_idx = _last_visible_slide_index(prs)
 
     indices = []
 
     if position in ("shownotes_slide", "both"):
         sn_idx = find_shownotes_slide(prs, shownotes_url)
-        if sn_idx is not None:
-            indices.append(sn_idx)
-        else:
-            # Fallback: slide index 3 (common shownotes position)
-            fallback = min(3, slide_count - 1)
-            print(
-                f"  WARNING: Shownotes URL not found in slide text, falling back to slide {fallback + 1}"
+        if sn_idx is None:
+            # A guessed slide puts the QR on the wrong plate; the caller knows the
+            # deck, so stop and ask for it. This runs before any provider call.
+            raise SystemExit(
+                f"ERROR: no slide's text contains {shownotes_url}, so the shownotes "
+                "slide can't be detected (a poster deck paints its URL into the "
+                "image). Pass --slides with the 1-based shownotes and closing slides "
+                "and re-run. No QR PNG, deck, or tracking-database change was made."
             )
-            indices.append(fallback)
+        indices.append(sn_idx)
 
     if position in ("closing", "both"):
         if closing_idx not in indices:

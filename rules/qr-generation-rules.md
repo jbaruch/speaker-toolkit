@@ -127,4 +127,7 @@ the agent makes the same check before resolving the link.
 - `closing` and `both` target the last slide the audience sees.
 - Hidden slides after the close don't count.
 - When detection picks the wrong slides, pass `--slides N[,N...]`: the listed 1-based slides replace detection.
+- `shownotes_slide` and `both` find the shownotes slide by the URL in slide text.
+- No slide-text match stops the run before any provider call.
+- Poster-theatrical deck: pass `--slides` with the shownotes plate and the closing slide from the outline.
 - A tracked QR outside `--slides` stays in place, and the run names its slide.

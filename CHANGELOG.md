@@ -1,5 +1,19 @@
 # Changelog
 
+### Stop guessing the shownotes slide for the QR
+
+With `slide_position: shownotes_slide` or `both`, `generate-qr.py` finds the
+shownotes slide by the URL in slide text. When nothing matched, it printed a
+warning and put the QR on slide 4. On a poster-theatrical deck every plate is a
+full-bleed image with the URL painted in, so detection always missed and the QR
+landed on whatever slide 4 was. A 13-slide poster deck put it on the wrong plate.
+
+No match now stops the run before any shortener call, and the error points at
+`--slides`, which already lets the caller name the exact slides. QR rule 10 says
+to pass it on poster decks. The issue also suggested OCR, outline parsing and
+painted-label detection. All three were declined: the agent already knows which
+plate carries the shownotes, and one flag that already exists covers it.
+
 ## 0.21.22 — 2026-11-10
 
 ### Place a deck slide as the shownotes thumbnail until the video exists
