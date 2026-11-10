@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.30 — 2026-11-10
+
 ### Add the workplace-mockumentary-photographic style to the public catalog
 
 Admitted from the style-contribution issue form with the contributor's payload
