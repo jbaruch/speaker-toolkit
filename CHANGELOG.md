@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.28 — 2026-11-10
+
 ### Stop guessing the shownotes slide for the QR
 
 With `slide_position: shownotes_slide` or `both`, `generate-qr.py` finds the
