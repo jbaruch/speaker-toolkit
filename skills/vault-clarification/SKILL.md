@@ -69,7 +69,7 @@ nothing. The canonical command and operation contract is in
 | File / Reference | Purpose |
 |------------------|---------|
 | `tracking-database.json` | Source of truth — config, confirmed intents |
-| `rhetoric-style-summary.md` | Running rhetoric & style narrative |
+| `rhetoric-style-summary.md` | Rhetoric & style guidance |
 | `analyses/{talk_filename}.md` | Per-talk analysis files |
 | `ingress-obligations.json` | Run obligations ledger, owned by vault-ingress — the session's seed agenda; read and closed only through `run-obligations.py` |
 | [../vault-ingress/references/schemas-obligations.md](../vault-ingress/references/schemas-obligations.md) | Ledger schema, states, and the `session-agenda` reader contract |
@@ -158,9 +158,9 @@ moves on, never dropped silently. Then, or
 from the start of a standalone session, ask about each surprising,
 contradictory, or ambiguous
 observation, one topic at a time: intentional vs accidental patterns, invisible
-context, conflicting signals, and flagged improvement areas. Update summary and
-DB after each answer. Use the typed mutation protocol above for the DB portion;
-do not batch answers into one unreviewed write at the end.
+context, conflicting signals, and flagged improvement areas. Update the DB, and
+the summary per Step 7, after each answer. Use the typed mutation protocol above
+for the DB portion; do not batch answers into one unreviewed write at the end.
 
 Example clarification question:
 ```
@@ -210,6 +210,10 @@ exact existing record for that pattern or `{"$missing": true}`. If the ruling
 invalidates a talk's persisted finding, requeue that talk with
 `reprocess_reason: "speaker_correction"`; see vault-ingress
 `references/bootstrap-and-preflight.md`.
+Write each ruling to the summary's Speaker-Confirmed Intent section as one line
+naming its `pattern`; update that pattern's existing line instead of adding
+another. Per-delivery grades and observations (Steps 4–5) stay in the DB; the
+summary changes only when they change guidance.
 Example:
 ```json
 {
@@ -360,7 +364,7 @@ Finish here.
 - One topic at a time — don't dump all questions at once.
 - The seed agenda is the ledger's: never invent a recorded topic, never drop one,
   and never touch `ingress-obligations.json` except through `run-obligations.py`.
-- Update the summary and apply one reviewed typed DB plan after each answer, not in
-  a batch at the end.
+- Apply one reviewed typed DB plan, plus any Step 7 summary line, after each
+  answer, not in a batch at the end.
 - After completing a session, suggest running the **vault-profile** skill if 10+ talks
   are processed and the profile hasn't been generated yet.

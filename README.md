@@ -314,7 +314,7 @@ rhetoric-knowledge-vault/
 +-- slides/                     # Downloaded slide PDFs
 ```
 
-**rhetoric-style-summary.md** is the constitution — rich prose covering presentation modes, opening patterns, humor techniques, audience interaction styles, closing patterns, verbal signatures, persuasion techniques, and more. It grows every time you parse new talks.
+**rhetoric-style-summary.md** is the constitution — current guidance covering presentation modes, opening patterns, humor techniques, audience interaction styles, closing patterns, verbal signatures, persuasion techniques, and more. A parsed talk changes it only when it changes the guidance (a new technique, a habit fixed, a new recurring problem with its fix); per-talk evidence stays in `analyses/` and the tracking database. Sections are addressed by heading, not number.
 
 **speaker-profile.json** is the structured specification that the creator reads at runtime. It contains presentation modes with quantitative thresholds, instrument catalogs, guardrail rules, pacing data, design rules, the publishing workflow, and a `pattern_profile` with exact positive/negative occurrence rows, per-pattern denominators, source cohort provenance, exhaustive classifications, and independent availability by domain. Schema v5 uses the bundled `speaker-toolkit-default@1` policy automatically and embeds the full policy plus its semantic digest. An optional `pattern-classification-policy.json` overrides it only when the file passes strict validation. Schema-v4 profiles remain readable as occurrence-only history.
 
@@ -430,7 +430,7 @@ notes which named patterns and antipatterns are detected per talk.
   independently verified transcript, PDF, and PPTX evidence remains
 - Each talk is scored against the taxonomy's 83 observable entries (64 patterns + 19 antipatterns),
   with source-located evidence restricted to the artifact channels each entry permits
-- Each batch updates the summary, per-talk analysis files, and triggers profile regeneration
+- Each batch writes per-talk analysis files, updates the summary only where its guidance changed, and triggers profile regeneration
 - An interactive clarification session resolves ambiguities and captures confirmed intent
 
 ### Prerequisites

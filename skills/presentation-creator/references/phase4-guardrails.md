@@ -36,7 +36,8 @@ how it's wired to schema fields, and how results are reported.
 - Profanity rules → `speaker-profile.json` → `rhetoric_defaults`
 - Confirmed intents → `speaker-profile.json` → `confirmed_intents[]`
 
-If the speaker profile is not available, Section 16 remains usable for confirmed
+If the speaker profile is not available, the summary's Speaker-Confirmed Intent
+section remains usable for confirmed
 intent. Do not resolve Section 15 catalog history manually. Use the guardrail report's
 emitted `history_source`, `available_classification_domains`, and reasons. When the
 report selects no catalog-history source, use Section 15 only as narrative/audit

@@ -5,7 +5,7 @@ description: >
   pacing, transitions, audience interaction, slide design, and verbal signatures.
   Downloads YouTube transcripts and analyzes slides (from PPTX, Google Drive PDFs, or
   video extraction), examining HOW the speaker presents. Processes talks in parallel
-  batches and updates the running rhetoric summary.
+  batches and updates the rhetoric summary.
   Triggers: "parse my talks", "run the rhetoric analyzer", "analyze my presentation style",
   "how many talks have been processed", "update the rhetoric knowledge base",
   "check rhetoric vault status", "process remaining talks for style patterns".
@@ -28,10 +28,10 @@ In an ACR install this skill's directory is named
 `{speaker_toolkit_root}/skills/<name>/` path and every relative link into
 another skill's `<name>/` as sibling `acr__jbaruch__speaker-toolkit__<name>/`.
 
-Build a rhetoric and style knowledge base by analyzing presentation talks. Each run
-processes **unprocessed** talks, extracts rhetoric/style observations, and updates the
-running summary. The vault lives at `~/.claude/rhetoric-knowledge-vault/` (may be a
-symlink to a custom location). All paths are relative to this **vault root**.
+Each run processes **unprocessed** talks, extracts rhetoric/style observations,
+and refines the summary guidance. The vault lives at
+`~/.claude/rhetoric-knowledge-vault/` (may be a symlink to a custom location).
+All paths are relative to this **vault root**.
 
 ## Quick Reference
 
@@ -54,7 +54,7 @@ symlink to a custom location). All paths are relative to this **vault root**.
 | File / Reference | Purpose |
 |------------------|---------|
 | `tracking-database.json` | Source of truth — talks, status, config, confirmed intents |
-| `rhetoric-style-summary.md` | Running rhetoric & style narrative |
+| `rhetoric-style-summary.md` | Rhetoric & style guidance |
 | `slide-design-spec.md` | Visual design rules from PDF + PPTX analysis |
 | [references/schemas-db.md](references/schemas-db.md) | DB + subagent schemas; extraction output schemas |
 | [references/bootstrap-and-preflight.md](references/bootstrap-and-preflight.md) | Step 1 vault bootstrap, runtime, discovery, and preflight workflow |
@@ -184,8 +184,9 @@ reference's obligations bullet). Proceed immediately to Step 5.
 
 ## Step 5 — Update Rhetoric Summary
 
-Present `summary_updates` and `new_patterns` as a section-by-section diff and
-apply only speaker-approved changes (unless this batch was pre-authorized).
+Present `summary_updates` and `new_patterns` as a per-heading diff against the
+statements they change, and apply only speaker-approved changes (unless this
+batch was pre-authorized).
 Follow the [Rhetoric Summary contract](references/processing-rules.md): rebuild
 Section 15 only after the complete batch persists, never from a date cohort or
 partial merge, and recount the database rather than incrementing totals. Its reader
@@ -331,7 +332,8 @@ artifact; stale or unreadable local declarations are not capabilities;
 
 - Create `transcripts/`, `slides/`, `analyses/` dirs if missing.
 - Re-read tracking DB before writing (single source of truth).
-- Preserve all summary content — add/refine, never delete.
+- Merge summary changes into existing statements and retire superseded ones;
+  never append a dated per-talk paragraph.
 - Auto-score only source-located observations for `observable: true` catalog entries.
   Hidden preparation/provenance belongs in clarification, not pattern inference.
 - Raw-score, breadth, and adherence comparisons are permitted only across an

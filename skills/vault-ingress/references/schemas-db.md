@@ -1273,7 +1273,7 @@ Each subagent returns this JSON after processing one talk:
   },
   "adherence_assessment": "",
   "new_patterns": "100-300 words on NEW patterns not in summary, or ''",
-  "summary_updates": "50-200 words: additions for rhetoric-style-summary.md by section #, or ''",
+  "summary_updates": "only when this talk changes current guidance: each revised rhetoric-style-summary.md statement, named by section heading; otherwise ''",
   "pattern_observations": {
     "evidence_sources": [
       "every source actually inspected: static_slides|native_deck|delivery_video|transcript|source_comparison"

@@ -91,7 +91,7 @@ an empty layout list.
 | `pacing` | `current_instrumentation_talks` |
 | `guardrail_sources` | Aggregated non-pattern data |
 | `pattern_profile` | `pattern_baseline`, `pattern_opportunities`, and `pattern_classification` |
-| `visual_style_history` | Summary dimension 13f observations |
+| `visual_style_history` | Summary Slide Design & Visual Rhetoric section (dimension 13f observations) |
 
 Use every top-level key required by `speaker-profile-schema.md`. Set
 `schema_version` to `5`, `generated_date` to today's `YYYY-MM-DD` date, and

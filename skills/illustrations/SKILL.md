@@ -203,9 +203,10 @@ Use its reusable entries across the checked sources; personal styles shadow
 public styles by slug. Surface unavailable catalog layers before proposing.
 
 Propose 3-4 style options spanning the Step 3 sources, grounded in concept fit +
-vault context (the speaker's `visual_style_history`, `rhetoric-style-summary.md`
-Section 13). These are candidates for the render, not a commitment — the speaker
-picks from rendered pixels, not prose. Option template:
+vault context (the speaker's `visual_style_history`, the Slide Design & Visual
+Rhetoric section of `rhetoric-style-summary.md`). These are candidates for the
+render, not a commitment — the speaker picks from rendered pixels, not prose.
+Option template:
 [skills/illustrations/references/strategy.md](references/strategy.md).
 
 Proceed immediately to Step 8.

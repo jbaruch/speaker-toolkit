@@ -298,6 +298,18 @@ Apply all 14 dimensions from
 (Areas for Improvement). Follow language policy and verbatim-quote rules in
 [processing-rules.md](processing-rules.md).
 
+**Summary updates:** return `summary_updates` only when this talk changes current
+guidance: a new technique, a habit fixed, or a new recurring problem with its
+fix. Write each change as the revised statement and name its target section by
+heading ([processing-rules.md](processing-rules.md#section-headings) maps
+dimensions to headings). Another instance of a known habit is evidence, which
+`analyses/` and the database already hold: return `""`.
+
+**Script departures:** delivered wording that departs from the planned script,
+slide text, or speaker notes is not a finding. Speakers do not deliver scripts
+verbatim, and a departure is usually a content decision. Never propose a summary
+entry or an area for improvement from a departure alone.
+
 **Quote rule:** human-readable verbatim examples must be English-first —
 `"English translation" (original text)`. The `evidence_citations[].quote` field
 is the deliberate exception: return only the exact source-language span there so

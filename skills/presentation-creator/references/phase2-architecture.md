@@ -24,9 +24,9 @@ a single message — see the `interaction-rules` steering rule.
 
 For each decision:
 
-1. **Extract the options** from the vault summary (sections 2-13) and speaker profile
-   (`instrument_catalog`). The vault is the living source — new instruments appear
-   as more talks are parsed.
+1. **Extract the options** from the matching vault summary section, named by its
+   heading, and the speaker profile (`instrument_catalog`). The vault is the living
+   source — new instruments appear as more talks are parsed.
 2. **Present the options** via `AskUserQuestion` with brief descriptions
 3. **Recommend** based on the spec — put the recommended option first with "(Recommended)"
 4. **Wait for the author's choice** before moving to the next decision

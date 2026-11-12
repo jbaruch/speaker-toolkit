@@ -1,5 +1,60 @@
 # Changelog
 
+### Keep the rhetoric summary as guidance, addressed by heading
+
+`rhetoric-style-summary.md` is the guidance presentation-creator, vault-profile,
+cfp-writer and illustrations read, but the contract made it a per-talk log.
+Step 5 applied every talk's `summary_updates` ("50-200 words: additions ... by
+section #"), the Important Notes forbade deleting anything, and clarification
+appended per-delivery humor grades and blind-spot notes. After ~230 talks the
+speaker's file held stacks of dated per-talk paragraphs, the same poll or
+overrun repeated per delivery, and a 135-line per-talk appendix. On the
+2026-11-11 KubeCon NA intake the worker proposed paragraphs for six sections,
+none of which changed any guidance. A one-off hand restructure cut the file from
+~273 KB to ~104 KB of prose without losing a ruling; without a contract change it
+would regrow.
+
+A worker now returns `summary_updates` only when the talk changes current
+guidance: a new technique, a habit fixed, or a new recurring problem with its
+fix. Another instance of a known habit is evidence, which `analyses/` and the
+database already hold, so the field stays empty. Workers also never propose a
+summary entry or an area for improvement from a departure between the planned
+script and the delivery: speakers don't deliver scripts verbatim, and a
+departure is usually a content decision. Step 5 presents changes as a diff
+against the statements they change; the summary merges a change into the
+statement it refines and retires superseded statements instead of appending a
+dated paragraph. Clarification writes one line per ruling, naming the intent's
+`pattern`, to the Speaker-Confirmed Intent section, and keeps humor grades and
+blind-spot observations in the tracking database unless they change guidance.
+The README no longer says the summary grows with every parsed talk.
+
+processing-rules claimed the summary's Sections 1–14 mirror the 14 analysis
+dimensions. They don't (dimension 3 Humor is `## 4. Humor & Wit`; dimension 13
+Slide Design is `## 5.`, and `## 13.` is Cultural & Pop-Culture References), so
+illustrations read pop-culture references as visual history, the humor
+post-mortem wrote grades into Storytelling, and workers keyed updates by
+dimension number. processing-rules now carries a table mapping each dimension
+to the summary heading that carries it, and every reader and writer names
+sections by heading: `summary_updates`, illustrations' visual-history read, the
+humor post-mortem, presentation-creator's option extraction and confirmed-intent
+fallback, and vault-profile's `visual_style_history` source. The repository has
+no summary skeleton, so the table follows the speaker's real file and new
+summaries use its heading names.
+
+Declined:
+- Renumbering the summary to match the dimensions, with a one-time migration of
+  existing summaries. Heading addressing makes the numbers irrelevant, and
+  `section15_pattern_history.py` locates `## 15.`.
+- A structured `summary_updates` shape (section key plus content) and a
+  validator for it. The field stays a prose string the agent applies with the
+  speaker's approval; no consumer needs the structure.
+- A summary template file or a bootstrap step that writes one. Nothing creates
+  a summary from a template today; the table names the headings.
+- A script that detects or prunes per-talk paragraphs. The contract change
+  stops the regrowth, and the existing file was already restructured by hand.
+- Section 15 references and `section15_pattern_history.py` stay as they are; a
+  separate change is moving that block.
+
 ## 0.22.2 — 2026-11-12
 
 ### Refresh stale receipts on cataloged PPTX rows
