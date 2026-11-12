@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.22.2 — 2026-11-12
+
 ### Refresh stale receipts on cataloged PPTX rows
 
 `vault-ingress` Step 6 says to persist a new receipt for exactly the records
