@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.22.1 — 2026-11-12
+
 ### Resolve toolkit paths in ACR installs
 
 ACR realizes each skill as `.claude/skills/acr__jbaruch__speaker-toolkit__<name>/`
