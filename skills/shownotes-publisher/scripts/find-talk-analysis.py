@@ -58,8 +58,13 @@ import stat
 import sys
 from typing import Any
 
-TOOLKIT_ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(TOOLKIT_ROOT / "skills/vault-ingress/scripts"))
+# A sibling skill shares this skill directory's naming under Tessl and ACR alike.
+_SKILL = Path(__file__).resolve().parents[1]
+INGRESS_SCRIPTS = (
+    _SKILL.with_name(_SKILL.name.replace("shownotes-publisher", "vault-ingress"))
+    / "scripts"
+)
+sys.path.insert(0, str(INGRESS_SCRIPTS))
 # E402: these resolve only after the insert above puts the co-shipped
 # vault-ingress scripts directory on sys.path.
 from tracking_database import (  # noqa: E402

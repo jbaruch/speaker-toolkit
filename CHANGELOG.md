@@ -1,5 +1,49 @@
 # Changelog
 
+### Resolve toolkit paths in ACR installs
+
+ACR realizes each skill as `.claude/skills/acr__jbaruch__speaker-toolkit__<name>/`
+and rewrites nothing in the files, so an ACR install of 0.21.33 has no
+`skills/<name>/` tree. Every toolkit script command, which reads
+`{speaker_toolkit_root}/skills/<name>/...`, pointed at a missing directory, and
+every script that imports from or reads another skill failed at import or on
+first use: 25 of them reached their sibling through `parents[2] / "vault-ingress"`
+or an equivalent join. The 50 relative links between skills' Markdown files broke
+the same way.
+
+`rules/toolkit-root-lookup.md` now covers both layouts. In a clone and a Tessl
+mount, skill `<name>` lives at `{speaker_toolkit_root}/skills/<name>/`; in an ACR
+install, that path, and any relative link into another skill, means the sibling directory
+`acr__jbaruch__speaker-toolkit__<name>/` beside the loaded skill. Every SKILL.md
+preamble carries the same sentence, and the commands and links are unchanged.
+Scripts derive a sibling skill from their own directory name (`vault-profile`
+becomes `vault-ingress`, `acr__jbaruch__speaker-toolkit__vault-profile` becomes
+`acr__jbaruch__speaker-toolkit__vault-ingress`), which works in both layouts with
+no fallback. The three scripts that reached vault-ingress through a `parents[3]`
+toolkit root (`pattern-menu.py`, `find-talk-analysis.py`, `resolve-runtime.py`)
+now do the same. `ytdlp_runtime.py` keeps its `parents[3]` probe: it only looks
+for a clone's `.venv/bin/yt-dlp`, and in either install that candidate is absent
+and resolution moves on to `PATH`.
+
+`tests/test_acr_layout.py` copies the shipped skills into the ACR layout, checks
+every rooted command target through the ACR reading, runs each of the 25
+cross-skill scripts from the copy (an import probe that also rejects any module
+loaded from the repository, plus `--help` for the CLIs), and fails on any script
+that joins a fixed skill name to the parent of its own skill directory. It also
+resolves every relative link into another skill through the ACR reading. The
+vault-profile SKILL.md line budget in `tests/test_installed_plugin_paths.py` moves
+from 250 to 254 lines to fit the shared sentence.
+
+Cursor is the one adapter this leaves short. ACR anchors a path-scoped rule's
+globs to the consumer project, where `skills/<name>/...` never matches, so
+Cursor never switches those rules on. Claude Code and Codex get the rule bodies
+in their instruction block with the globs alongside, as Tessl does.
+
+`prepare-clip.py` now refuses, naming Vision's first error, when Apple Vision
+fails on most frames. Before, a broken Vision runtime surfaced later as "no
+face inside speaker_region", which sent the agent off to widen the region
+(advisory from the #560 review).
+
 ## 0.22.0 — 2026-11-12
 
 ### Add the shorts-producer skill: vertical shorts from a processed talk

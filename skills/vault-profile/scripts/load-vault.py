@@ -52,8 +52,10 @@ import sys
 from datetime import datetime, timezone
 
 
+# A sibling skill shares this skill directory's naming under Tessl and ACR alike.
+_SKILL = pathlib.Path(__file__).resolve().parents[1]
 INGRESS_SCRIPTS = (
-    pathlib.Path(__file__).resolve().parents[2] / "vault-ingress" / "scripts"
+    _SKILL.with_name(_SKILL.name.replace("vault-profile", "vault-ingress")) / "scripts"
 )
 if str(INGRESS_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(INGRESS_SCRIPTS))

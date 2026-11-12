@@ -20,6 +20,10 @@ Resolve the absolute path of this loaded `SKILL.md`, then set
 containing this file. Never derive it from the consumer working directory.
 Treat `{speaker_toolkit_root}` as absolute in every toolkit-owned command;
 vault, recording, and output paths remain consumer-owned.
+In an ACR install this skill's directory is named
+`acr__jbaruch__speaker-toolkit__<skill>`; there, read every
+`{speaker_toolkit_root}/skills/<name>/` path and every relative link into
+another skill's `<name>/` as sibling `acr__jbaruch__speaker-toolkit__<name>/`.
 
 This skill runs on macOS: it needs ffmpeg, pdftoppm, swift (Apple Vision) and
 the vault venv's mlx-whisper. Every script prints diagnostics on stderr, exits

@@ -28,7 +28,12 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 
-_PROFILE_SCRIPTS = Path(__file__).resolve().parents[2] / "vault-profile" / "scripts"
+# A sibling skill shares this skill directory's naming under Tessl and ACR alike.
+_SKILL = Path(__file__).resolve().parents[1]
+_PROFILE_SCRIPTS = (
+    _SKILL.with_name(_SKILL.name.replace("presentation-creator", "vault-profile"))
+    / "scripts"
+)
 if str(_PROFILE_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_PROFILE_SCRIPTS))
 

@@ -72,8 +72,11 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.exc import PackageNotFoundError
 from pptx.util import Inches
 
+# A sibling skill shares this skill directory's naming under Tessl and ACR alike.
+_SKILL = Path(__file__).resolve().parents[1]
 VAULT_INGRESS_SCRIPTS = (
-    Path(__file__).resolve().parents[2] / "vault-ingress" / "scripts"
+    _SKILL.with_name(_SKILL.name.replace("presentation-creator", "vault-ingress"))
+    / "scripts"
 )
 if str(VAULT_INGRESS_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(VAULT_INGRESS_SCRIPTS))

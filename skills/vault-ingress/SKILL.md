@@ -23,6 +23,10 @@ Resolve the absolute path of this loaded `SKILL.md`, then set
 containing this file. Never derive it from the consumer working directory.
 Treat `{speaker_toolkit_root}` as absolute in every toolkit-owned command;
 vault and source-artifact paths remain consumer-owned.
+In an ACR install this skill's directory is named
+`acr__jbaruch__speaker-toolkit__<skill>`; there, read every
+`{speaker_toolkit_root}/skills/<name>/` path and every relative link into
+another skill's `<name>/` as sibling `acr__jbaruch__speaker-toolkit__<name>/`.
 
 Build a rhetoric and style knowledge base by analyzing presentation talks. Each run
 processes **unprocessed** talks, extracts rhetoric/style observations, and updates the

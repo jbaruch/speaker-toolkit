@@ -20,7 +20,12 @@ import json
 from pathlib import Path
 import sys
 
-TOOLKIT_ROOT = Path(__file__).resolve().parents[3]
+# A sibling skill shares this skill directory's naming under Tessl and ACR alike.
+_SKILL = Path(__file__).resolve().parents[1]
+INGRESS_SCRIPTS = (
+    _SKILL.with_name(_SKILL.name.replace("presentation-creator", "vault-ingress"))
+    / "scripts"
+)
 CATALOG_ROOT = Path(__file__).resolve().parent.parent / "references" / "patterns"
 PHASE_WORKFLOWS = {
     "intake": {"skill": "presentation-creator", "action": "author", "step": 0},
@@ -42,7 +47,7 @@ LEGACY_PHASE_ALIASES = {
     "phase 6: publishing": "publishing",
     "creator phase 6 (publishing / go-live)": "publishing",
 }
-sys.path.insert(0, str(TOOLKIT_ROOT / "skills/vault-ingress/scripts"))
+sys.path.insert(0, str(INGRESS_SCRIPTS))
 from catalog_io import catalog_entry_paths, load_catalog_yaml  # noqa: E402
 import yaml  # noqa: E402
 

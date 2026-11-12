@@ -23,9 +23,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+# A sibling skill shares this skill directory's naming under Tessl and ACR alike.
+_SKILL = Path(__file__).resolve().parents[1]
 GENERATOR = (
-    Path(__file__).resolve().parents[2]
-    / "illustrations"
+    _SKILL.with_name(_SKILL.name.replace("screencast-editor", "illustrations"))
     / "scripts"
     / "generate-thumbnail.py"
 )
