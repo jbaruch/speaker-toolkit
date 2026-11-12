@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.22.4 — 2026-11-12
+
 ### Move Section 15 pattern history into a sidecar file
 
 The Section 15 current block was about 86 KB of JSON in a ~190 KB
