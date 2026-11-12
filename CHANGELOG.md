@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.33 — 2026-11-12
+
 ### Let the ACR publish job see a clean checkout
 
 The first ACR publish, for 0.21.32, failed before creating any tag. The `acr`
