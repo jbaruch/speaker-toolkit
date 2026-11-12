@@ -392,7 +392,10 @@ selection, arithmetic, or unavailable-state rules in Section 15 prose.
 The Section 15 current block is owned by
 `skills/vault-profile/scripts/section15_pattern_history.py`. Do not reproduce its
 cohort filter, policy resolution, classification, availability, or compatibility
-rules in this reference. To inspect a summary, run:
+rules in this reference. The block is a short stub: the machine-readable history
+lives in `rhetoric-pattern-history.json` beside the summary, bound by the sha256
+the stub names. Never edit that file by hand; the owner script's docstring holds
+its schema. To inspect a summary, run:
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/section15_pattern_history.py" assess \
@@ -404,8 +407,10 @@ classification_fields_available, available_classification_domains,
 block_schema_version, policy_semantic_sha256, scored_talk_count,
 eligible_talk_count, reason_codes, errors}`. Exit `0` authorizes only the fields and
 domains named by that output. Exit `1` means the block cannot authorize current
-catalog history. Use it only as narrative context. Never derive a classification or
-availability decision from Section 15 prose or raw occurrence counts.
+catalog history, including a missing sidecar or one that no longer matches the
+stub's sha256; rerun `replace` below. Use it only as narrative context. Never derive
+a classification or availability decision from Section 15 prose or raw occurrence
+counts.
 
 Old recurring/signature/underuse/resolved prose may remain outside the delimited
 block only when explicitly labeled historical or manually curated. It is
@@ -431,9 +436,14 @@ with the summary, candidate, and live `tracking-database.json`:
 
 `replace` is the only supported current-block writer. On exit `0`, it emits
 `{path, changed, scored_talk_count, eligible_talk_count,
-catalog_fields_available}` and writes the validated block atomically when `changed` is
-true. On exit `1`, it emits a diagnostic to stderr and makes no write. Pass the complete
-candidate copied from the profile pipeline. Do not hand-filter, classify, or repair it.
+catalog_fields_available}` and, when `changed` is true, atomically writes the validated
+sidecar and the Section 15 stub. A summary that still carries an older inline JSON
+block is migrated by the same run.
+On exit `1`, it emits a diagnostic to stderr and makes no write, except that a
+failure between its two renames can leave the new sidecar beside the old summary.
+If that summary already had a stub, `assess` refuses it until `replace` runs again.
+Pass the complete candidate copied from the profile pipeline. Do not hand-filter,
+classify, or repair it.
 The command re-analyzes persisted data without reparsing talks or mutating tracking or
 raw opportunity rows. All prose outside the block remains historical/non-baseline.
 
@@ -480,7 +490,9 @@ Section 15 prose as its baseline.
 
 For each comparable goal with `status` not in (`achieved`, `retired`):
 - Compute `current_value` for the goal's `metric` from the current Section 15
-  cohort data — and, for `pacing` and mode-specific goals, from the freshly regenerated
+  cohort data — the `pattern_profile` in `rhetoric-pattern-history.json`, read only
+  after `section15_pattern_history.py assess` exits `0` for the summary — and, for
+  `pacing` and mode-specific goals, from the freshly regenerated
   speaker profile. For a policy-derived metric, consume only the projection and
   availability state emitted by the validated classifier payload. Never reconstruct
   either from raw rows. If that payload does not authorize the requested metric, the

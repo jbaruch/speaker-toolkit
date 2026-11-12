@@ -177,9 +177,11 @@ the result complements, rather than replaces, Dimension 14's transcript-evident
 
 Use Section 15 of `rhetoric-style-summary.md` only for narrative consistency review.
 It cannot override or fill the current pattern cohort. The Section 15 reader accepts
-the occurrence-only v2 current block for compatibility, but the writer always replaces
-it with a policy-bound v3 block copied from the validated schema-v5 `pattern_profile`.
-Regenerating that block needs no talk reparse and never changes persisted raw rows.
+an older inline current block (occurrence-only v2 included) for compatibility, but the
+writer always replaces it with a short stub binding, by sha256, the policy-bound v3
+payload copied from the validated schema-v5 `pattern_profile` into
+`rhetoric-pattern-history.json` beside the summary. Regenerating that payload needs no
+talk reparse and never changes persisted raw rows.
 
 ## Existing-Profile Diff
 

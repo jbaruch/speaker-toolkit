@@ -76,10 +76,12 @@ If no profile exists, run in summary-only mode: default guardrail thresholds
 interactively.
 
 Section 15 v3 classifications are usable only when its uniquely delimited current
-block passes:
+block, a stub binding `rhetoric-pattern-history.json` beside the summary by sha256,
+passes:
 
 ```bash
-"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/section15_pattern_history.py"
+"{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/section15_pattern_history.py" assess \
+  path/to/rhetoric-style-summary.md
 ```
 
 plus the same strict pattern-profile assessment. Require the relevant domain just

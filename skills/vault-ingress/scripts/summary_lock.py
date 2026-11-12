@@ -2,11 +2,12 @@
 """The one writer lock for ``rhetoric-style-summary.md``.
 
 Two toolkit writers replace parts of this file: the owner status block
-(``render-vault-status.py``) and the Section 15 pattern-history block
-(``section15_pattern_history.py``). Both read the whole file, splice their own
-block, and rename the result over the target — so two writers that do not
-exclude each other silently drop one of the two updates, whichever renamed
-first.
+(``render-vault-status.py``) and the Section 15 pattern-history stub
+(``section15_pattern_history.py``, which also writes the stub's
+``rhetoric-pattern-history.json`` sidecar under this lock). Both read the whole
+file, splice their own block, and rename the result over the target — so two
+writers that do not exclude each other silently drop one of the two updates,
+whichever renamed first.
 
 They exclude each other through this seam rather than each naming the lock
 itself. A label is diagnostics; agreement on the lock is the contract, and a

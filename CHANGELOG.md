@@ -1,5 +1,55 @@
 # Changelog
 
+### Move Section 15 pattern history into a sidecar file
+
+The Section 15 current block was about 86 KB of JSON in a ~190 KB
+`rhetoric-style-summary.md` (2,900 of its 3,500 lines). Every consumer that
+loads the summary as context paid for it, and none of them reads it as prose.
+`section15_pattern_history.py replace` now writes that payload to
+`rhetoric-pattern-history.json` beside the summary and leaves a short Section 15
+stub that names the file and binds it by the sha256 of its exact bytes. On the
+live vault that takes the summary from 190,804 to 105,232 bytes and from 3,565
+to 647 lines.
+
+The payload is unchanged: the same schema-v3 object, encoded canonically. The
+script stays its sole owner. Its module docstring is the schema of record and
+states the reader and writer contract. `assess` follows the stub. It refuses a
+missing sidecar, or one whose bytes no longer hash to the stub's sha256, with
+`section15_current_block_invalid` and a message to rerun `replace`. Older inline
+blocks (v2 and v3) still read, and the next `replace` migrates them: it writes the
+sidecar and swaps the inline block for the stub, with no separate migration step.
+`replace` installs the sidecar first, then the summary, each by atomic rename
+under the summary writer lock after rechecking the summary bytes. An interruption
+between the two renames leaves either the old inline block, which still reads, or
+a stub that no longer matches the sidecar. Readers refuse that stub until the next
+`replace`.
+
+Readers go through the owner. `assess_section15_pattern_history()` now takes the
+summary path instead of its text. `pattern_history_status.py`'s
+`resolve_creator_pattern_history()` and `assess_creator_pattern_history()` take a
+summary path too, and `guardrail-check.py` passes it, so the creator fallback
+reads the sidecar. `render_section15_current_block()` is replaced by
+`render_pattern_history_sidecar()` and `render_section15_stub()`. Vault-ingress
+Step 5 and Step 8, the processing rules, the vault-profile construction rules and
+profile schema, the creator's pattern-history authorization, and the README vault
+directory now describe the sidecar. The authorization reference's summary-only
+command also gains its missing `assess` subcommand and summary argument.
+
+Declined, to keep it small:
+
+- A separate migration command. The next `replace` migrates an inline block, and
+  nothing needs the move sooner.
+- Rolling the sidecar back when the summary rename fails. The sha256 binding
+  already makes that pair fail closed with an actionable message, and the next
+  `replace` repairs it.
+- A new reason code for a missing or mismatched sidecar. No consumer tells it
+  apart from `section15_current_block_invalid`; the error text carries the fix.
+- A schema-version bump. The payload shape did not change, only where it lives.
+- A configurable sidecar location or a `sidecar_path` result field. The file
+  always sits beside the summary, and no caller asked for either.
+- Counts or other figures in the stub. Section 15's narrative is the human
+  summary, and a second copy of the numbers could drift from the sidecar.
+
 ## 0.22.3 — 2026-11-12
 
 ### Keep the rhetoric summary as guidance, addressed by heading

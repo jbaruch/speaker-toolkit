@@ -717,6 +717,10 @@ talk/opportunity rows.
 `current_instrumentation_talks` cohort and never borrows the pattern denominator.
 
 `pattern_profile` is the only v5 storage lane for catalog history.
+The rhetoric summary's Section 15 mirror of it lives in
+`rhetoric-pattern-history.json` beside the summary, bound by sha256 from a short
+Section 15 stub. `section15_pattern_history.py` owns that file: its module docstring
+holds the schema and reader/writer contract, and only its `replace` writes it.
 `rhetoric_defaults` must not duplicate mastery, signatures, usage, scores, or other
 pattern-history fields. `guardrail_sources.recurring_issues[]` and `badges[]` are
 non-pattern-only lanes: every entry carries `source_lane: "non_pattern"` and must not
