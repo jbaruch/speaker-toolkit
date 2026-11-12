@@ -26,6 +26,7 @@ EXPECTED_SKILLS = {
     "vault-clarification",
     "vault-ingress",
     "vault-profile",
+    "shorts-producer",
 }
 ROOT_TOKEN = "{speaker_toolkit_root}"
 SHELL_LANGUAGES = {"bash", "sh", "shell", "zsh"}

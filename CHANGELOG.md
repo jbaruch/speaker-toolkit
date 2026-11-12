@@ -1,5 +1,39 @@
 # Changelog
 
+### Add the shorts-producer skill: vertical shorts from a processed talk
+
+A new skill cuts a processed talk into 1080x1920 shorts. The agent picks the
+takes from the finished vault analysis: speaker-confirmed laughs, timed pattern
+citations, signature phrases and hot-take slides. Three scripts then do the
+work:
+- `prepare-clip.py` measures word timings with the vault's pinned whisper
+  model, samples frames, finds faces with Apple Vision, and builds contact
+  sheets of the clip and the deck.
+- `render-short.py` composes the short. It stacks the hook headline, the deck
+  page timed to the talk, a face-tracked crop of the speaker inside the region
+  the agent marked, a shownotes QR card, and captions that highlight each
+  spoken word. Loudness is normalized in two passes to -14 LUFS.
+- `verify-short.py` checks the streams, a clean decode, loudness, that the
+  highlight moves, that each slide is on screen, and that the QR decodes to the
+  planned link. It also builds a review sheet.
+
+Captions may fix grammar slips, stutters, false starts, fillers and misheard
+names. The renderer aligns them back onto the speech and refuses a correction
+that drops too much of what was said or puts in a long run of new words. Every
+edit is listed in its result.
+
+The look follows the hand-built AI DevCon NYC shorts, which this skill turns
+into toolkit code, with one layout change. Their QR footer sat in the bottom
+band where YouTube Shorts draws the channel name and title. Now the QR rides on
+a card beside the speaker's face. The hook, captions and QR card stay clear of
+the top and bottom overlay bands and the right button rail, and a test holds
+them there. Apple Vision runs only on macOS, so
+`rules/shorts-vision-validation-authority.md` claims the platform-bound
+carve-out for the Vision helper alone, with a manual validation procedure.
+Everything that consumes its output is tested, including an end-to-end render
+of a synthetic talk. The Swift helper ships with a `.txt` install mirror,
+because `tessl install` drops `.swift` files.
+
 ## 0.21.33 — 2026-11-12
 
 ### Let the ACR publish job see a clean checkout
