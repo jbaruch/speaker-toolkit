@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.22.3 — 2026-11-12
+
 ### Keep the rhetoric summary as guidance, addressed by heading
 
 `rhetoric-style-summary.md` is the guidance presentation-creator, vault-profile,
