@@ -334,12 +334,52 @@ as archival `legacy-unverified` text. It is never a verified numeric comparison,
 never enters a current baseline or Section 15 aggregate, and is never profile
 input.
 
-## Rhetoric Summary — Improvement & Adherence Sections (15–16)
+## Rhetoric Summary
 
-`rhetoric-style-summary.md` Sections 1–14 mirror the 14 analysis dimensions.
-Sections 15–16 are cross-talk narratives. Rebuild Section 15 in Step 5 only
+`rhetoric-style-summary.md` is the guidance the next talk build reads, not a
+per-talk log. Per-talk evidence lives in `analyses/` and the tracking database.
+Rebuild Section 15 in Step 5 only
 after the entire batch has persisted successfully; never update it after an
 individual member merge.
+
+### Section Headings
+
+Readers and writers name a summary section by its heading, never by its number.
+Heading numbers are display order and do not match the dimension numbers in
+[rhetoric-dimensions.md](rhetoric-dimensions.md). Never renumber an existing
+summary: `section15_pattern_history.py` locates `## 15.`.
+
+| Analysis dimension | Summary heading |
+|---|---|
+| 1 Opening Pattern | Opening Patterns |
+| 2 Narrative Structure | Storytelling & Narrative Structure |
+| 3 Humor & Wit | Humor & Wit |
+| 4 Audience Interaction | Audience Interaction |
+| 5 Transition Techniques | Transition Techniques |
+| 6 Closing Pattern | Closing Patterns |
+| 7 Verbal Signatures | Recurring Phrases & Verbal Signatures |
+| 8 Slide-to-Speech Relationship | Slide-to-Speech Relationship |
+| 9 Persuasion Techniques | Persuasion & Argumentation Techniques |
+| 10 Cultural & Pop-Culture References | Cultural & Pop-Culture References |
+| 11 Technical Content Delivery | Technical Content Delivery |
+| 12 Pacing Clues | Pacing & Timing |
+| 13 Slide Design Patterns | Slide Design & Visual Rhetoric |
+| 14 Reflection: Areas for Improvement | Reflection: Recurring Areas for Improvement |
+
+Two headings carry no single dimension: Overall Presentation Philosophy
+(cross-dimension guidance) and Speaker-Confirmed Intent (clarification rulings).
+A new summary uses these heading names.
+
+### Guidance Updates
+
+- Step 5 applies a `summary_updates` change only when the talk changes current
+  guidance: a new technique, a habit fixed, or a new recurring problem with its fix.
+- Another instance of a known habit is evidence, not guidance. It leaves the
+  summary unchanged.
+- Merge each change into the statement it refines and retire statements it
+  supersedes.
+- Never append a dated per-talk paragraph or a per-talk appendix entry.
+- The status block and the Section 15 current block stay owner-generated.
 
 ### Section 15 — Improvement & Adherence Baseline
 
@@ -397,11 +437,12 @@ candidate copied from the profile pipeline. Do not hand-filter, classify, or rep
 The command re-analyzes persisted data without reparsing talks or mutating tracking or
 raw opportunity rows. All prose outside the block remains historical/non-baseline.
 
-### Section 16 — Speaker-Confirmed Intent
+### Speaker-Confirmed Intent
 
 Patterns the speaker confirmed as deliberate or accidental during a clarification
-session (see vault-clarification). Read-only during ingress — populated by
-clarification, consumed here as the intent-adherence input for Section 15.
+session (see vault-clarification), one line per ruling naming the intent's
+`pattern`. Read-only during ingress — populated by clarification, consumed here
+as the intent-adherence input for Section 15.
 
 ## Improvement Goal Verification
 

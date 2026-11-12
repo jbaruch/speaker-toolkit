@@ -22,10 +22,12 @@ humor beats detected in dimension 3 and walk through them with the speaker:
 This is particularly important for recent talks where memory is fresh. For older talks
 (2+ years), compress to: "Any jokes you remember landing particularly well or badly?"
 
-Store results in `humor_postmortem` on the talk's DB entry and update the rhetoric
-summary Section 3 (Humor & Wit) with confirmed effectiveness data. Persist the DB
-value only through the ingress owner's `update_talk_clarification` mutation: name
-the exact talk filename, set `humor_postmortem` to one complete JSON object or array,
-and expect that field's exact current object/array or `{"$missing": true}`. Dry-run,
-review, hash-bind apply, and re-read through the owner contract; never edit the
-tracking database directly.
+Store results in `humor_postmortem` on the talk's DB entry; per-delivery grades
+stay there and are never appended to the rhetoric summary. Change the summary's
+Humor & Wit section only when the grades change humor guidance, merging into the
+existing statement. Persist the DB value only through the ingress owner's
+`update_talk_clarification` mutation: name the exact talk filename, set
+`humor_postmortem` to one complete JSON object or array, and expect that field's
+exact current object/array or `{"$missing": true}`. Dry-run, review, hash-bind
+apply, and re-read through the owner contract; never edit the tracking database
+directly.

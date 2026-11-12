@@ -161,8 +161,8 @@ inputs**:
    reinforce the thesis, not be decorative wallpaper.
 2. **The vault's visual history** — `speaker-profile.json → visual_style_history`:
    `default_illustration_style`, `style_departures[]`, `mode_visual_profiles[]`,
-   `confirmed_visual_intents[]`. Also `rhetoric-style-summary.md` Section 13,
-   `slide-design-spec.md`, and `design_rules`.
+   `confirmed_visual_intents[]`. Also the Slide Design & Visual Rhetoric section
+   of `rhetoric-style-summary.md`, `slide-design-spec.md`, and `design_rules`.
 3. **Historical precedent for this mode/context** — `mode_visual_profiles` for the
    matching mode ID. If the vault shows the speaker uses a particular aesthetic
    for this talk type, surface that. If this talk's mode/context has no precedent
