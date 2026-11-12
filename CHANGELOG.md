@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.31 — 2026-11-12
+
 ### Read Google Drive recordings in `extract-local-audio.py`
 
 The extractor handed ffmpeg the held recording as `/dev/fd/N`. On macOS, ffmpeg
