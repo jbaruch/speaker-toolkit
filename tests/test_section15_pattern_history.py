@@ -432,14 +432,20 @@ def _payload(pattern_profile: dict[str, Any]) -> dict[str, Any]:
 
 
 def _block_from_json(payload_json: str) -> str:
+    """A legacy inline v3 block: the payload JSON inside Section 15 itself."""
     return (
-        f"{section15.BLOCK_START}\n"
+        f"{section15.INLINE_BLOCK_START}\n"
         "```json\n"
         f"{payload_json}\n"
         "```\n\n"
         f"{section15.NON_BASELINE_NOTICE}\n"
-        f"{section15.BLOCK_END}"
+        f"{section15.INLINE_BLOCK_END}"
     )
+
+
+def _inline_block(pattern_profile: dict[str, Any]) -> str:
+    sidecar = section15.render_pattern_history_sidecar(pattern_profile)
+    return _block_from_json(sidecar.decode("utf-8").rstrip("\n"))
 
 
 def _legacy_block_from_json(payload_json: str) -> str:
@@ -467,17 +473,57 @@ def _summary(block: str = "") -> str:
     )
 
 
-def _summary_from_payload(payload: dict[str, Any]) -> str:
-    return _summary(
-        _block_from_json(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False))
+def _write_vault(directory: Path, summary: str, sidecar: bytes | None = None) -> Path:
+    """Write the summary, plus the sidecar beside it when given."""
+    directory.mkdir(parents=True, exist_ok=True)
+    summary_path = directory / "rhetoric-style-summary.md"
+    summary_path.write_text(summary, encoding="utf-8")
+    if sidecar is not None:
+        (directory / section15.SIDECAR_NAME).write_bytes(sidecar)
+    return summary_path
+
+
+def _bound_vault(directory: Path, sidecar: bytes) -> Path:
+    """A summary whose Section 15 stub binds exactly ``sidecar``."""
+    return _write_vault(
+        directory, _summary(section15.render_section15_stub(sidecar)), sidecar
     )
 
 
-def test_exact_current_block_accepts_complete_scoring_v5_cohort():
-    profile = _pattern_profile()
-    block = section15.render_section15_current_block(profile)
+def _current_vault(directory: Path, pattern_profile: dict[str, Any]) -> Path:
+    return _bound_vault(
+        directory, section15.render_pattern_history_sidecar(pattern_profile)
+    )
 
-    assessment = section15.assess_section15_pattern_history(_summary(block))
+
+def _assess_text(directory: Path, summary: str, sidecar: bytes | None = None):
+    return section15.assess_section15_pattern_history(
+        _write_vault(directory, summary, sidecar)
+    )
+
+
+def _assess_payload_json(directory: Path, payload_json: str):
+    return section15.assess_section15_pattern_history(
+        _bound_vault(directory, payload_json.encode("utf-8"))
+    )
+
+
+def _assess_payload(directory: Path, payload: dict[str, Any]):
+    return _assess_payload_json(
+        directory, json.dumps(payload, indent=2, sort_keys=True, allow_nan=False)
+    )
+
+
+def _sidecar(summary_path: Path) -> Path:
+    return summary_path.with_name(section15.SIDECAR_NAME)
+
+
+def test_exact_current_block_accepts_complete_scoring_v5_cohort(tmp_path):
+    profile = _pattern_profile()
+
+    assessment = section15.assess_section15_pattern_history(
+        _current_vault(tmp_path, profile)
+    )
 
     assert assessment.current_contract is True
     assert assessment.catalog_fields_available is True
@@ -499,7 +545,7 @@ def test_exact_current_block_accepts_complete_scoring_v5_cohort():
     )
 
 
-def test_v2_block_remains_readable_as_occurrence_only():
+def test_v2_block_remains_readable_as_occurrence_only(tmp_path):
     profile = _legacy_pattern_profile()
     baseline = profile["pattern_baseline"]
     payload = {
@@ -514,7 +560,7 @@ def test_v2_block_remains_readable_as_occurrence_only():
         json.dumps(payload, indent=2, sort_keys=True, allow_nan=False)
     )
 
-    assessment = section15.assess_section15_pattern_history(_summary(block))
+    assessment = _assess_text(tmp_path, _summary(block))
 
     assert assessment.current_contract is True
     assert assessment.block_schema_version == 2
@@ -525,7 +571,7 @@ def test_v2_block_remains_readable_as_occurrence_only():
     )
 
 
-def test_writer_replaces_v2_in_place_with_one_v3_block():
+def test_writer_replaces_v2_in_place_with_one_stub(tmp_path):
     legacy = _legacy_pattern_profile()
     baseline = legacy["pattern_baseline"]
     payload = {
@@ -542,20 +588,20 @@ def test_writer_replaces_v2_in_place_with_one_v3_block():
         )
     )
 
+    sidecar = section15.render_pattern_history_sidecar(_pattern_profile())
+
     candidate = section15._replace_block_text(
         original,
-        section15.render_section15_current_block(_pattern_profile()),
+        section15.render_section15_stub(sidecar),
     )
 
     assert section15.LEGACY_BLOCK_TOKEN not in candidate
-    assert candidate.count(section15.BLOCK_START) == 1
-    assert candidate.count(section15.BLOCK_END) == 1
-    assert (
-        section15.assess_section15_pattern_history(candidate).current_contract is True
-    )
+    assert candidate.count(section15.STUB_START) == 1
+    assert candidate.count(section15.STUB_END) == 1
+    assert _assess_text(tmp_path, candidate, sidecar).current_contract is True
 
 
-def test_mixed_v2_v3_markers_fail_closed():
+def test_mixed_v2_v3_markers_fail_closed(tmp_path):
     profile = _legacy_pattern_profile()
     baseline = profile["pattern_baseline"]
     payload = {
@@ -567,10 +613,10 @@ def test_mixed_v2_v3_markers_fail_closed():
         "pattern_profile": profile,
     }
     block = _legacy_block_from_json(json.dumps(payload)).replace(
-        section15.LEGACY_BLOCK_END, section15.BLOCK_END
+        section15.LEGACY_BLOCK_END, section15.INLINE_BLOCK_END
     )
 
-    assessment = section15.assess_section15_pattern_history(_summary(block))
+    assessment = _assess_text(tmp_path, _summary(block))
 
     assert assessment.current_contract is False
     assert assessment.reason_codes == (section15.REASON_BLOCK_INVALID,)
@@ -593,11 +639,10 @@ def test_all_unknown_cohort_stays_raw_score_unavailable_through_section15_and_cr
         database,
         evidence_freshness_assessor=_fresh_evidence,
     )
-    summary = summary_path.read_text(encoding="utf-8")
-    assessment = section15.assess_section15_pattern_history(summary)
+    assessment = section15.assess_section15_pattern_history(summary_path)
     creator_status = pattern_history_status.assess_creator_pattern_history(
         {"schema_version": 5, "pattern_profile": profile},
-        summary,
+        summary_path,
     )
 
     assert result.scored_talk_count == 0
@@ -635,15 +680,13 @@ def test_all_unknown_cohort_stays_raw_score_unavailable_through_section15_and_cr
         ),
     ],
 )
-def test_stale_generation_identity_fails_closed(field, value, reason):
+def test_stale_generation_identity_fails_closed(tmp_path, field, value, reason):
     profile = _pattern_profile()
     profile["pattern_baseline"][field] = value
     payload = _payload(profile)
     payload[field] = value
 
-    assessment = section15.assess_section15_pattern_history(
-        _summary_from_payload(payload)
-    )
+    assessment = _assess_payload(tmp_path, payload)
 
     assert assessment.current_contract is False
     assert assessment.catalog_fields_available is False
@@ -651,13 +694,11 @@ def test_stale_generation_identity_fails_closed(field, value, reason):
     assert assessment.pattern_profile is None
 
 
-def test_incomplete_pattern_history_payload_fails_shared_assessor():
+def test_incomplete_pattern_history_payload_fails_shared_assessor(tmp_path):
     profile = _pattern_profile()
     del profile["strengths"]
 
-    assessment = section15.assess_section15_pattern_history(
-        _summary_from_payload(_payload(profile))
-    )
+    assessment = _assess_payload(tmp_path, _payload(profile))
 
     assert assessment.current_contract is False
     assert provenance.REASON_INVALID_CONTRACT in assessment.reason_codes
@@ -666,14 +707,15 @@ def test_incomplete_pattern_history_payload_fails_shared_assessor():
     )
 
 
-def test_duplicate_block_and_torn_markers_fail_closed():
-    block = section15.render_section15_current_block(_pattern_profile())
+def test_duplicate_block_and_torn_markers_fail_closed(tmp_path):
+    sidecar = section15.render_pattern_history_sidecar(_pattern_profile())
+    block = section15.render_section15_stub(sidecar)
 
-    duplicate = section15.assess_section15_pattern_history(
-        _summary(block + "\n\n" + block)
+    duplicate = _assess_text(
+        tmp_path / "duplicate", _summary(block + "\n\n" + block), sidecar
     )
-    torn = section15.assess_section15_pattern_history(
-        _summary(section15.BLOCK_START + "\n```json\n{}")
+    torn = _assess_text(
+        tmp_path / "torn", _summary(section15.INLINE_BLOCK_START + "\n```json\n{}")
     )
 
     assert duplicate.reason_codes == (section15.REASON_BLOCK_DUPLICATE,)
@@ -682,7 +724,7 @@ def test_duplicate_block_and_torn_markers_fail_closed():
     assert torn.pattern_profile is None
 
 
-def test_duplicate_json_keys_fail_closed():
+def test_duplicate_json_keys_fail_closed(tmp_path):
     payload_json = json.dumps(_payload(_pattern_profile()), sort_keys=True)
     payload_json = payload_json.replace(
         '"schema_version": 2',
@@ -690,31 +732,28 @@ def test_duplicate_json_keys_fail_closed():
         1,
     )
 
-    assessment = section15.assess_section15_pattern_history(
-        _summary(_block_from_json(payload_json))
-    )
+    assessment = _assess_payload_json(tmp_path, payload_json)
 
     assert assessment.reason_codes == (section15.REASON_BLOCK_INVALID,)
     assert "duplicate JSON key" in assessment.errors[0]
 
 
-def test_nonfinite_json_number_fails_closed():
+def test_nonfinite_json_number_fails_closed(tmp_path):
     payload_json = json.dumps(_payload(_pattern_profile()), sort_keys=True)
     payload_json = payload_json.replace('"talks_scored": 2', '"talks_scored": NaN')
 
-    assessment = section15.assess_section15_pattern_history(
-        _summary(_block_from_json(payload_json))
-    )
+    assessment = _assess_payload_json(tmp_path, payload_json)
 
     assert assessment.reason_codes == (section15.REASON_BLOCK_INVALID,)
     assert "non-finite JSON number" in assessment.errors[0]
 
 
-def test_ordinary_section15_prose_never_restores_history():
-    assessment = section15.assess_section15_pattern_history(_summary())
+def test_ordinary_section15_prose_never_restores_history(tmp_path):
+    summary_path = _write_vault(tmp_path, _summary())
+    assessment = section15.assess_section15_pattern_history(summary_path)
     status = pattern_history_status.assess_creator_pattern_history(
         {"schema_version": 2},
-        _summary(),
+        summary_path,
     )
 
     assert assessment.reason_codes == (section15.REASON_BLOCK_MISSING,)
@@ -723,15 +762,14 @@ def test_ordinary_section15_prose_never_restores_history():
     assert section15.REASON_BLOCK_MISSING in status.reason_codes
 
 
-def test_policy_bound_profile_wins_without_merging_section15():
+def test_policy_bound_profile_wins_without_merging_section15(tmp_path):
     profile_history = _pattern_profile(note="Profile payload wins.")
     summary_history = _pattern_profile(note="Summary payload must be ignored.")
     profile = {"schema_version": 5, "pattern_profile": profile_history}
-    summary = _summary(section15.render_section15_current_block(summary_history))
 
     resolution = pattern_history_status.resolve_creator_pattern_history(
         profile,
-        summary,
+        _current_vault(tmp_path, summary_history),
     )
 
     assert resolution.status.history_enabled is True
@@ -742,13 +780,14 @@ def test_policy_bound_profile_wins_without_merging_section15():
     assert resolution.pattern_profile["note"] == "Profile payload wins."
 
 
-def test_policy_bound_section15_is_used_when_profile_history_is_unavailable():
+def test_policy_bound_section15_is_used_when_profile_history_is_unavailable(
+    tmp_path,
+):
     summary_history = _pattern_profile()
-    summary = _summary(section15.render_section15_current_block(summary_history))
 
     resolution = pattern_history_status.resolve_creator_pattern_history(
         {"schema_version": 2},
-        summary,
+        _current_vault(tmp_path, summary_history),
     )
 
     assert resolution.status.history_enabled is True
@@ -765,11 +804,7 @@ def test_status_cli_uses_valid_fallback_when_profile_file_is_malformed(
 ):
     profile_path = tmp_path / "speaker-profile.json"
     profile_path.write_text("{torn", encoding="utf-8")
-    summary_path = tmp_path / "rhetoric-style-summary.md"
-    summary_path.write_text(
-        _summary(section15.render_section15_current_block(_pattern_profile())),
-        encoding="utf-8",
-    )
+    summary_path = _current_vault(tmp_path, _pattern_profile())
 
     return_code = pattern_history_status.main(
         [
@@ -819,14 +854,10 @@ def test_status_cli_reports_current_rows_without_authorizing_classifications(
 
 
 def test_atomic_replacement_preserves_all_bytes_outside_unique_block(tmp_path):
-    old_block = section15.render_section15_current_block(
-        _pattern_profile(note="Old payload.")
-    )
-    summary_path = tmp_path / "rhetoric-style-summary.md"
-    summary_path.write_text(_summary(old_block), encoding="utf-8")
+    summary_path = _current_vault(tmp_path, _pattern_profile(note="Old payload."))
     original = summary_path.read_bytes()
-    before, remainder = original.split(section15.BLOCK_START.encode(), 1)
-    _, after = remainder.split(section15.BLOCK_END.encode(), 1)
+    before, remainder = original.split(section15.STUB_START.encode(), 1)
+    _, after = remainder.split(section15.STUB_END.encode(), 1)
 
     result = section15.replace_section15_current_block(
         summary_path,
@@ -835,14 +866,17 @@ def test_atomic_replacement_preserves_all_bytes_outside_unique_block(tmp_path):
         evidence_freshness_assessor=_fresh_evidence,
     )
     updated = summary_path.read_bytes()
-    updated_before, updated_remainder = updated.split(section15.BLOCK_START.encode(), 1)
-    _, updated_after = updated_remainder.split(section15.BLOCK_END.encode(), 1)
+    updated_before, updated_remainder = updated.split(section15.STUB_START.encode(), 1)
+    _, updated_after = updated_remainder.split(section15.STUB_END.encode(), 1)
+    sidecar = _sidecar(summary_path).read_bytes()
 
     assert result.changed is True
     assert before == updated_before
     assert after == updated_after
-    assert b"New payload." in updated
-    assert b"Old payload." not in updated
+    assert updated != original
+    assert b"New payload." in sidecar
+    assert b"Old payload." not in sidecar
+    assert b"payload." not in updated
 
 
 def test_section15_writer_cannot_omit_freshness_assessment(tmp_path):
@@ -887,7 +921,10 @@ def test_section15_replace_cli_binds_real_vault_freshness(
 
     assert return_code == 0
     assert payload["changed"] is True
-    assert section15.BLOCK_START in summary_path.read_text(encoding="utf-8")
+    assert section15.STUB_START in summary_path.read_text(encoding="utf-8")
+    assert section15.assess_section15_pattern_history(summary_path).pattern_profile == (
+        profile
+    )
 
 
 @pytest.mark.parametrize(
@@ -1087,7 +1124,8 @@ def test_replace_cli_binds_real_freshness_through_a_symlinked_root(
 
     assert return_code == 0, captured.err
     assert json.loads(captured.out)["changed"] is True
-    assert section15.BLOCK_START in summary_path.read_text(encoding="utf-8")
+    assert section15.STUB_START in summary_path.read_text(encoding="utf-8")
+    assert _sidecar(summary_path).is_file()
 
 
 def test_replace_cli_rejects_symlink_target_locator_mismatch_without_paths(
@@ -1242,6 +1280,7 @@ def test_atomic_helper_inserts_once_then_reports_noop(tmp_path):
         evidence_freshness_assessor=_fresh_evidence,
     )
     first_bytes = summary_path.read_bytes()
+    first_sidecar = _sidecar(summary_path).read_bytes()
     unchanged = section15.replace_section15_current_block(
         summary_path,
         profile,
@@ -1252,8 +1291,183 @@ def test_atomic_helper_inserts_once_then_reports_noop(tmp_path):
     assert inserted.changed is True
     assert unchanged.changed is False
     assert summary_path.read_bytes() == first_bytes
-    assert first_bytes.count(section15.BLOCK_START.encode()) == 1
-    assert first_bytes.count(section15.BLOCK_END.encode()) == 1
+    assert _sidecar(summary_path).read_bytes() == first_sidecar
+    assert first_bytes.count(section15.STUB_START.encode()) == 1
+    assert first_bytes.count(section15.STUB_END.encode()) == 1
+
+
+def test_replace_writes_sidecar_and_stub_that_assess_round_trips(tmp_path, capsys):
+    summary_path = _write_vault(tmp_path, _summary())
+    profile = _pattern_profile()
+
+    result = section15.replace_section15_current_block(
+        summary_path,
+        profile,
+        _tracking_database(profile),
+        evidence_freshness_assessor=_fresh_evidence,
+    )
+    sidecar = _sidecar(summary_path).read_bytes()
+    return_code = section15.main(["assess", str(summary_path)])
+    status = json.loads(capsys.readouterr().out)
+
+    assert result.changed is True
+    assert section15.render_section15_stub(sidecar) in summary_path.read_text(
+        encoding="utf-8"
+    )
+    assert json.loads(sidecar) == _payload(profile)
+    assert return_code == 0
+    assert status["current_contract"] is True
+    assert status["block_schema_version"] == section15.BLOCK_SCHEMA_VERSION
+    assert section15.assess_section15_pattern_history(summary_path).pattern_profile == (
+        profile
+    )
+
+
+def _legacy_v2_block() -> str:
+    profile = _legacy_pattern_profile()
+    baseline = profile["pattern_baseline"]
+    payload = {
+        "schema_version": 2,
+        "source_lane": section15.BLOCK_SOURCE_LANE,
+        "pattern_catalog_fingerprint": baseline["pattern_catalog_fingerprint"],
+        "pattern_scoring_schema_version": baseline["pattern_scoring_schema_version"],
+        "baseline_talk_filenames": profile["baseline_talk_filenames"],
+        "pattern_profile": profile,
+    }
+    return _legacy_block_from_json(
+        json.dumps(payload, indent=2, sort_keys=True, allow_nan=False)
+    )
+
+
+@pytest.mark.parametrize(
+    ("legacy_version", "make_block"),
+    [
+        (2, _legacy_v2_block),
+        (3, lambda: _inline_block(_pattern_profile(note="Inline payload."))),
+    ],
+)
+def test_legacy_inline_block_still_assesses_and_next_replace_migrates_it(
+    tmp_path,
+    legacy_version,
+    make_block,
+):
+    inline_block = make_block()
+    summary_path = _write_vault(tmp_path, _summary(inline_block))
+    original = summary_path.read_text(encoding="utf-8")
+    before = section15.assess_section15_pattern_history(summary_path)
+    profile = _pattern_profile()
+
+    result = section15.replace_section15_current_block(
+        summary_path,
+        profile,
+        _tracking_database(profile),
+        evidence_freshness_assessor=_fresh_evidence,
+    )
+    migrated = summary_path.read_text(encoding="utf-8")
+    sidecar = _sidecar(summary_path).read_bytes()
+    after = section15.assess_section15_pattern_history(summary_path)
+
+    assert before.current_contract is True
+    assert before.block_schema_version == legacy_version
+    assert result.changed is True
+    # Section 15 shrinks to the stub; every other byte of the summary stays.
+    assert migrated == original.replace(
+        inline_block, section15.render_section15_stub(sidecar)
+    )
+    assert len(migrated) < len(original)
+    assert after.current_contract is True
+    assert after.block_schema_version == section15.BLOCK_SCHEMA_VERSION
+    assert after.pattern_profile == profile
+
+
+@pytest.mark.parametrize("damage", ["edited", "missing"])
+def test_sidecar_that_no_longer_matches_the_stub_is_refused_until_replace(
+    tmp_path,
+    damage,
+):
+    profile = _pattern_profile()
+    summary_path = _current_vault(tmp_path, profile)
+    sidecar_path = _sidecar(summary_path)
+    if damage == "edited":
+        # Contract-valid on its own: only the sha256 binding can refuse it.
+        sidecar_path.write_bytes(
+            section15.render_pattern_history_sidecar(
+                _pattern_profile(note="Hand-edited payload.")
+            )
+        )
+    else:
+        sidecar_path.unlink()
+
+    refused = section15.assess_section15_pattern_history(summary_path)
+    creator = pattern_history_status.assess_creator_pattern_history(
+        {"schema_version": 2},
+        summary_path,
+    )
+    section15.replace_section15_current_block(
+        summary_path,
+        profile,
+        _tracking_database(profile),
+        evidence_freshness_assessor=_fresh_evidence,
+    )
+    repaired = section15.assess_section15_pattern_history(summary_path)
+
+    assert refused.current_contract is False
+    assert refused.reason_codes == (section15.REASON_BLOCK_INVALID,)
+    assert refused.pattern_profile is None
+    assert creator.history_enabled is False
+    assert section15.REASON_BLOCK_INVALID in creator.reason_codes
+    assert repaired.current_contract is True
+    assert repaired.pattern_profile == profile
+
+
+@pytest.mark.parametrize("starting_form", ["stub", "inline"])
+def test_replace_interrupted_between_renames_never_serves_a_mismatched_pair(
+    tmp_path,
+    monkeypatch,
+    starting_form,
+):
+    old_profile = _pattern_profile(note="Old payload.")
+    if starting_form == "stub":
+        summary_path = _current_vault(tmp_path, old_profile)
+    else:
+        summary_path = _write_vault(tmp_path, _summary(_inline_block(old_profile)))
+    real_replace = section15.os.replace
+    renames: list[object] = []
+
+    def crash_before_summary_rename(source, destination):
+        renames.append(destination)
+        if len(renames) == 2:
+            raise OSError("synthetic crash before the summary rename")
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(section15.os, "replace", crash_before_summary_rename)
+    new_profile = _pattern_profile(note="New payload.")
+    with pytest.raises(OSError, match="synthetic crash"):
+        section15.replace_section15_current_block(
+            summary_path,
+            new_profile,
+            _tracking_database(new_profile),
+            evidence_freshness_assessor=_fresh_evidence,
+        )
+    interrupted = section15.assess_section15_pattern_history(summary_path)
+    monkeypatch.setattr(section15.os, "replace", real_replace)
+    section15.replace_section15_current_block(
+        summary_path,
+        new_profile,
+        _tracking_database(new_profile),
+        evidence_freshness_assessor=_fresh_evidence,
+    )
+    recovered = section15.assess_section15_pattern_history(summary_path)
+
+    if starting_form == "stub":
+        assert interrupted.current_contract is False
+        assert interrupted.reason_codes == (section15.REASON_BLOCK_INVALID,)
+    else:
+        assert interrupted.current_contract is True
+        assert interrupted.pattern_profile == old_profile
+    assert recovered.current_contract is True
+    assert recovered.pattern_profile == new_profile
+    assert list(tmp_path.glob(".*.tmp")) == []
 
 
 def test_invalid_candidate_and_torn_summary_are_no_write_failures(tmp_path):
@@ -1275,7 +1489,7 @@ def test_invalid_candidate_and_torn_summary_are_no_write_failures(tmp_path):
         )
     assert summary_path.read_bytes() == original
 
-    torn = _summary(section15.BLOCK_START + "\n```json\n{}")
+    torn = _summary(section15.STUB_START + "\n```json\n{}")
     summary_path.write_text(torn, encoding="utf-8")
     with pytest.raises(section15.Section15PatternHistoryError):
         section15.replace_section15_current_block(
@@ -1285,6 +1499,7 @@ def test_invalid_candidate_and_torn_summary_are_no_write_failures(tmp_path):
             evidence_freshness_assessor=_fresh_evidence,
         )
     assert summary_path.read_text(encoding="utf-8") == torn
+    assert not _sidecar(summary_path).exists()
 
 
 def test_replace_rejects_duplicate_filenames_in_ineligible_rows(tmp_path):
@@ -1340,12 +1555,9 @@ def test_failed_atomic_swap_leaves_original_and_no_temp_file(
     tmp_path,
     monkeypatch,
 ):
-    old_block = section15.render_section15_current_block(
-        _pattern_profile(note="Original payload.")
-    )
-    summary_path = tmp_path / "rhetoric-style-summary.md"
-    summary_path.write_text(_summary(old_block), encoding="utf-8")
+    summary_path = _current_vault(tmp_path, _pattern_profile(note="Original payload."))
     original = summary_path.read_bytes()
+    original_sidecar = _sidecar(summary_path).read_bytes()
 
     def fail_swap(_source, _destination):
         raise OSError("synthetic atomic-swap failure")
@@ -1360,7 +1572,8 @@ def test_failed_atomic_swap_leaves_original_and_no_temp_file(
         )
 
     assert summary_path.read_bytes() == original
-    assert list(tmp_path.glob(f".{summary_path.name}.*.tmp")) == []
+    assert _sidecar(summary_path).read_bytes() == original_sidecar
+    assert list(tmp_path.glob(".*.tmp")) == []
 
 
 def test_replace_holds_the_shared_summary_writer_lock(tmp_path, monkeypatch):
@@ -1398,7 +1611,8 @@ def test_replace_holds_the_shared_summary_writer_lock(tmp_path, monkeypatch):
     )
 
     assert result.changed is True
-    assert observed == ["excluded"]
+    # One rename for the sidecar, one for the summary, both under the lock.
+    assert observed == ["excluded", "excluded"]
     # The same sibling lock the status-block writer takes, so the two exclude
     # each other rather than each locking a private name.
     assert lock_path == summary_path.parent / f".{summary_path.name}.lock"
@@ -1468,7 +1682,8 @@ def test_replace_refuses_a_summary_edited_while_the_block_was_staged(
         )
 
     assert summary_path.read_text(encoding="utf-8") == edited
-    assert list(tmp_path.glob(f".{summary_path.name}.*.tmp")) == []
+    assert not _sidecar(summary_path).exists()
+    assert list(tmp_path.glob(".*.tmp")) == []
 
 
 def test_replace_rejects_stale_same_generation_profile_cohort(tmp_path):
@@ -1615,11 +1830,7 @@ def test_guardrail_uses_policy_bound_section15_without_inventing_recurrence(
     tmp_path,
     capsys,
 ):
-    summary_path = tmp_path / "rhetoric-style-summary.md"
-    summary_path.write_text(
-        _summary(section15.render_section15_current_block(_pattern_profile())),
-        encoding="utf-8",
-    )
+    summary_path = _current_vault(tmp_path, _pattern_profile())
 
     return_code = guardrail_check.main(
         [

@@ -531,19 +531,18 @@ def main(argv: list[str]) -> int:
             )
 
     profile_only_resolution = resolve_creator_pattern_history(profile)
-    summary_text: str | None = None
+    summary_path: Path | None = None
     if not profile_only_resolution.status.history_enabled and len(argv) == 4:
         summary_path = Path(argv[3])
-        try:
-            summary_text = summary_path.read_text(encoding="utf-8")
-        except OSError as exc:
-            print(f"failed to load {summary_path}: {exc}", file=sys.stderr)
-            return 1
     elif profile_load_error is not None:
         print(profile_load_error, file=sys.stderr)
         return 1
 
-    history_resolution = resolve_creator_pattern_history(profile, summary_text)
+    try:
+        history_resolution = resolve_creator_pattern_history(profile, summary_path)
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"failed to load {summary_path}: {exc}", file=sys.stderr)
+        return 1
     history_status = history_resolution.status
     checks = [
         ("Pattern history", check_pattern_history(history_status)),

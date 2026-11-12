@@ -2,11 +2,36 @@
 """Validate and atomically replace Section 15 pattern-history provenance.
 
 The human narrative in ``rhetoric-style-summary.md`` is never a machine
-baseline. This module reads the occurrence-only v2 block and the policy-bound
-v3 block, while writing only v3. Exactly one uniquely delimited JSON block may
-exist inside Markdown Section 15. The block carries a complete
-``pattern_profile`` plus redundant generation/cohort identity.  The shared
+baseline. Exactly one uniquely delimited current block may exist inside
+Markdown Section 15. The payload it binds carries a complete
+``pattern_profile`` plus redundant generation/cohort identity. The shared
 ``profile_pattern_provenance`` assessor remains the authority for the payload.
+
+This module owns the payload's state artifact,
+``rhetoric-pattern-history.json`` (``SIDECAR_NAME``), which sits beside the
+summary in the vault root:
+
+- Schema: one JSON object with exactly ``schema_version`` (3),
+  ``source_lane`` (``current_pattern_history``),
+  ``pattern_catalog_fingerprint``, ``pattern_scoring_schema_version``,
+  ``baseline_talk_filenames`` and ``pattern_profile`` (speaker-profile
+  schema-v5 ``pattern_profile``), canonically encoded: sorted keys, two-space
+  indent, UTF-8, one trailing newline.
+- Binding: Section 15's current block is a short stub naming the sidecar and
+  the sha256 of its exact bytes. ``render_section15_stub`` owns that shape.
+- Writer: ``replace`` alone. Under the summary writer lock it installs the
+  sidecar, then the summary, each by atomic rename after rechecking that the
+  summary still holds the bytes it read. A crash between the two renames
+  leaves either an older inline block that still reads, or a stub whose
+  sha256 no longer matches the sidecar; ``assess`` refuses the latter until
+  ``replace`` runs again.
+- Readers: ``assess`` / ``assess_section15_pattern_history`` follow the stub,
+  refuse a missing sidecar or one whose bytes do not hash to the stub's
+  sha256, then validate the payload. Other components read pattern history
+  through these functions or after ``assess`` exits 0.
+- Legacy: an inline JSON block inside Section 15 (occurrence-only v2 or
+  policy-bound v3) still reads; only ``replace`` migrates it, by writing the
+  sidecar and swapping the inline block for the stub.
 
 Usage:
     section15_pattern_history.py assess <rhetoric-style-summary.md>
@@ -15,15 +40,16 @@ Usage:
 
 ``assess`` writes a status object to stdout and exits 0 only for a current
 contract (including the explicit empty-cohort form). ``replace`` validates the
-complete candidate before touching the summary, replaces only the delimited
-block with ``os.replace``, and writes a result object to stdout. Argument errors
-exit 2; file, JSON, contract, or write failures exit 1.
+complete candidate before touching either file, replaces only the delimited
+block, and writes a result object to stdout. Argument errors exit 2; file,
+JSON, contract, or write failures exit 1.
 """
 
 from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
 import os
 import re
@@ -110,16 +136,27 @@ from vault_root_authority import (  # noqa: E402  # pyright: ignore[reportMissin
 LEGACY_BLOCK_SCHEMA_VERSION = 2
 BLOCK_SCHEMA_VERSION = 3
 BLOCK_SOURCE_LANE = "current_pattern_history"
+SIDECAR_NAME = "rhetoric-pattern-history.json"
+# Read-only legacy forms: the JSON payload inline in Section 15.
 LEGACY_BLOCK_TOKEN = "speaker-toolkit:section15-current-pattern-history:v2"
-BLOCK_TOKEN = "speaker-toolkit:section15-current-pattern-history:v3"
+INLINE_BLOCK_TOKEN = "speaker-toolkit:section15-current-pattern-history:v3"
 LEGACY_BLOCK_START = f"<!-- {LEGACY_BLOCK_TOKEN}:start -->"
 LEGACY_BLOCK_END = f"<!-- {LEGACY_BLOCK_TOKEN}:end -->"
-BLOCK_START = f"<!-- {BLOCK_TOKEN}:start -->"
-BLOCK_END = f"<!-- {BLOCK_TOKEN}:end -->"
+INLINE_BLOCK_START = f"<!-- {INLINE_BLOCK_TOKEN}:start -->"
+INLINE_BLOCK_END = f"<!-- {INLINE_BLOCK_TOKEN}:end -->"
+# The written form: a stub binding the sidecar's v3 payload by sha256.
+STUB_TOKEN = "speaker-toolkit:section15-pattern-history-sidecar:v3"
+STUB_START = f"<!-- {STUB_TOKEN}:start -->"
+STUB_END = f"<!-- {STUB_TOKEN}:end -->"
 NON_BASELINE_NOTICE = (
     "_All other Section 15 prose is historical narrative and non-baseline; "
     "it cannot authorize catalog-derived claims._"
 )
+_STUB_BEFORE_DIGEST = (
+    f"Machine-readable current pattern history lives in `{SIDECAR_NAME}` "
+    "beside this file (sha256 `"
+)
+_STUB_AFTER_DIGEST = "`); only `section15_pattern_history.py replace` writes it."
 
 REASON_BLOCK_MISSING = "section15_current_block_missing"
 REASON_BLOCK_INVALID = "section15_current_block_invalid"
@@ -130,13 +167,15 @@ _SECTION_15_HEADING = re.compile(
     re.MULTILINE,
 )
 _NEXT_H2_HEADING = re.compile(r"^##[ \t]+", re.MULTILINE)
+# token -> (payload schema_version, start marker, end marker)
 _BLOCK_MARKERS = {
-    LEGACY_BLOCK_SCHEMA_VERSION: (
-        LEGACY_BLOCK_TOKEN,
+    LEGACY_BLOCK_TOKEN: (
+        LEGACY_BLOCK_SCHEMA_VERSION,
         LEGACY_BLOCK_START,
         LEGACY_BLOCK_END,
     ),
-    BLOCK_SCHEMA_VERSION: (BLOCK_TOKEN, BLOCK_START, BLOCK_END),
+    INLINE_BLOCK_TOKEN: (BLOCK_SCHEMA_VERSION, INLINE_BLOCK_START, INLINE_BLOCK_END),
+    STUB_TOKEN: (BLOCK_SCHEMA_VERSION, STUB_START, STUB_END),
 }
 
 
@@ -149,6 +188,13 @@ def _block_body_pattern(start: str, end: str) -> re.Pattern[str]:
         + re.escape(end),
         re.DOTALL,
     )
+
+
+_STUB_PATTERN = re.compile(
+    re.escape(STUB_START + "\n" + _STUB_BEFORE_DIGEST)
+    + r"(?P<sha256>[0-9a-f]{64})"
+    + re.escape(_STUB_AFTER_DIGEST + "\n\n" + NON_BASELINE_NOTICE + "\n" + STUB_END)
+)
 
 
 _REQUIRED_BLOCK_FIELDS = frozenset(
@@ -165,6 +211,14 @@ _REQUIRED_BLOCK_FIELDS = frozenset(
 
 class Section15PatternHistoryError(ValueError):
     """Raised when a Section 15 block cannot be safely read or replaced."""
+
+
+class _BlockLocationError(Section15PatternHistoryError):
+    """Raised when Section 15 holds no unambiguous place for the current block."""
+
+    def __init__(self, reason_code: str, message: str) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
 
 
 class _DuplicateJsonKeyError(ValueError):
@@ -274,91 +328,120 @@ def _section_15_bounds(summary: str) -> tuple[re.Match[str], int] | None:
     return heading, section_end
 
 
-def _extract_payload_text(
-    summary: str,
-) -> tuple[str | None, int | None, Section15PatternHistoryAssessment | None]:
+def _locate_block(summary: str) -> tuple[str | None, int, int]:
+    """Return ``(token, start, end)`` of the sole current block in Section 15.
+
+    A ``None`` token means Section 15 holds no current block; ``start == end``
+    then marks the end of the Section 15 heading, where ``replace`` inserts one.
+    """
     section = _section_15_bounds(summary)
     if section is None:
-        return (
-            None,
-            None,
-            _invalid_assessment(
-                REASON_BLOCK_INVALID,
-                "rhetoric summary must contain exactly one Markdown H2 Section 15",
-            ),
+        raise _BlockLocationError(
+            REASON_BLOCK_INVALID,
+            "rhetoric summary must contain exactly one Markdown H2 Section 15",
         )
     heading, section_end = section
 
     marker_counts = {
-        version: (
+        token: (
             summary.count(token),
             summary.count(start),
             summary.count(end),
         )
-        for version, (token, start, end) in _BLOCK_MARKERS.items()
+        for token, (_version, start, end) in _BLOCK_MARKERS.items()
     }
     if all(counts == (0, 0, 0) for counts in marker_counts.values()):
-        return (
-            None,
-            None,
-            _invalid_assessment(
-                REASON_BLOCK_MISSING,
-                "Section 15 has no machine-readable current pattern-history block",
-            ),
-        )
+        return None, heading.end(), heading.end()
     if (
         sum(counts[1] for counts in marker_counts.values()) > 1
         or sum(counts[2] for counts in marker_counts.values()) > 1
     ):
-        return (
-            None,
-            None,
-            _invalid_assessment(
-                REASON_BLOCK_DUPLICATE,
-                "Section 15 must contain exactly one v2 or v3 current block",
-            ),
+        raise _BlockLocationError(
+            REASON_BLOCK_DUPLICATE,
+            "Section 15 must contain exactly one current pattern-history block; "
+            "remove the duplicate markers",
         )
-    valid_versions = [
-        version for version, counts in marker_counts.items() if counts == (2, 1, 1)
+    valid_tokens = [
+        token for token, counts in marker_counts.items() if counts == (2, 1, 1)
     ]
-    if len(valid_versions) != 1 or any(
+    if len(valid_tokens) != 1 or any(
         counts != (0, 0, 0) and counts != (2, 1, 1) for counts in marker_counts.values()
     ):
-        return (
-            None,
-            None,
-            _invalid_assessment(
-                REASON_BLOCK_INVALID,
-                "Section 15 v2/v3 current-block markers are mixed, torn, or malformed",
-            ),
+        raise _BlockLocationError(
+            REASON_BLOCK_INVALID,
+            "Section 15 current-block markers are mixed, torn, or malformed; "
+            "repair them so exactly one start/end pair remains",
         )
-    block_version = valid_versions[0]
-    _, block_start, block_end = _BLOCK_MARKERS[block_version]
+    token = valid_tokens[0]
+    _, block_start, block_end = _BLOCK_MARKERS[token]
     start = summary.index(block_start)
     end_marker_start = summary.index(block_end)
     end = end_marker_start + len(block_end)
     if start < heading.end() or end > section_end or end_marker_start <= start:
-        return (
-            None,
-            None,
-            _invalid_assessment(
-                REASON_BLOCK_INVALID,
-                "the current pattern-history block must be wholly inside Section 15",
-            ),
+        raise _BlockLocationError(
+            REASON_BLOCK_INVALID,
+            "the current pattern-history block markers must be ordered wholly "
+            "inside Section 15",
         )
+    return token, start, end
 
+
+def _sidecar_path(summary_path: Path) -> Path:
+    return summary_path.with_name(SIDECAR_NAME)
+
+
+def _payload_text(
+    summary: str,
+    sidecar: bytes | None,
+) -> tuple[str, int] | Section15PatternHistoryAssessment:
+    """Return the bound payload text and its schema version, or a refusal."""
+    try:
+        token, start, end = _locate_block(summary)
+    except _BlockLocationError as exc:
+        return _invalid_assessment(exc.reason_code, str(exc))
+    if token is None:
+        return _invalid_assessment(
+            REASON_BLOCK_MISSING,
+            "Section 15 has no machine-readable current pattern-history block",
+        )
+    block_version, block_start, block_end = _BLOCK_MARKERS[token]
     block = summary[start:end].replace("\r\n", "\n")
-    match = _block_body_pattern(block_start, block_end).fullmatch(block)
-    if match is None:
-        return (
-            None,
-            None,
-            _invalid_assessment(
+    if token != STUB_TOKEN:
+        inline = _block_body_pattern(block_start, block_end).fullmatch(block)
+        if inline is None:
+            return _invalid_assessment(
                 REASON_BLOCK_INVALID,
                 "Section 15 current block has a torn fence, marker, or notice",
-            ),
+            )
+        return inline.group("payload"), block_version
+
+    stub = _STUB_PATTERN.fullmatch(block)
+    if stub is None:
+        return _invalid_assessment(
+            REASON_BLOCK_INVALID,
+            "Section 15 pattern-history stub is torn or malformed; rerun "
+            "`section15_pattern_history.py replace` to rewrite it",
         )
-    return match.group("payload"), block_version, None
+    if sidecar is None:
+        return _invalid_assessment(
+            REASON_BLOCK_INVALID,
+            f"{SIDECAR_NAME} is missing beside the rhetoric summary; rerun "
+            "`section15_pattern_history.py replace` to rewrite it",
+        )
+    if hashlib.sha256(sidecar).hexdigest() != stub.group("sha256"):
+        return _invalid_assessment(
+            REASON_BLOCK_INVALID,
+            f"{SIDECAR_NAME} does not match the sha256 Section 15 binds; it "
+            "changed outside `section15_pattern_history.py replace` or a "
+            "replace was interrupted. Rerun the replace to rewrite both files",
+        )
+    try:
+        return sidecar.decode("utf-8"), block_version
+    except UnicodeDecodeError as exc:
+        return _invalid_assessment(
+            REASON_BLOCK_INVALID,
+            f"{SIDECAR_NAME} is not UTF-8: {exc}",
+        )
 
 
 def _assess_payload(
@@ -474,17 +557,15 @@ def _assess_payload(
     )
 
 
-def assess_section15_pattern_history(
+def _assess_summary(
     summary: str,
+    sidecar: bytes | None,
 ) -> Section15PatternHistoryAssessment:
-    """Assess only the uniquely delimited Section 15 current block."""
-    payload_text, block_schema_version, structural_error = _extract_payload_text(
-        summary
-    )
-    if structural_error is not None:
-        return structural_error
-    assert payload_text is not None
-    assert block_schema_version is not None
+    """Assess Section 15's current block against the given sidecar bytes."""
+    located = _payload_text(summary, sidecar)
+    if isinstance(located, Section15PatternHistoryAssessment):
+        return located
+    payload_text, block_schema_version = located
     try:
         payload = _strict_json_loads(payload_text)
     except (
@@ -499,8 +580,25 @@ def assess_section15_pattern_history(
     return _assess_payload(payload, block_schema_version=block_schema_version)
 
 
-def render_section15_current_block(pattern_profile: object) -> str:
-    """Render a canonical block from a complete shared-assessor payload."""
+def assess_section15_pattern_history(
+    summary_path: Path,
+) -> Section15PatternHistoryAssessment:
+    """Assess the summary's current block, following its stub to the sidecar.
+
+    Raises ``OSError`` or ``UnicodeDecodeError`` when the summary, or a
+    sidecar that exists, cannot be read; every contract failure is a
+    fail-closed assessment instead.
+    """
+    summary = summary_path.read_text(encoding="utf-8")
+    try:
+        sidecar = _sidecar_path(summary_path).read_bytes()
+    except FileNotFoundError:
+        sidecar = None
+    return _assess_summary(summary, sidecar)
+
+
+def render_pattern_history_sidecar(pattern_profile: object) -> bytes:
+    """Render canonical sidecar bytes from a complete shared-assessor payload."""
     assessment = assess_pattern_profile(pattern_profile, expected_contract_version=5)
     if not assessment.current_contract:
         details = "; ".join(assessment.errors or assessment.reason_codes)
@@ -535,68 +633,26 @@ def render_section15_current_block(pattern_profile: object) -> str:
         raise Section15PatternHistoryError(
             f"pattern_profile cannot be encoded as canonical JSON: {exc}"
         ) from exc
+    return (encoded + "\n").encode("utf-8")
+
+
+def render_section15_stub(sidecar: bytes) -> str:
+    """Render the Section 15 stub that binds ``sidecar`` by its sha256."""
+    digest = hashlib.sha256(sidecar).hexdigest()
     return (
-        f"{BLOCK_START}\n```json\n{encoded}\n```\n\n{NON_BASELINE_NOTICE}\n{BLOCK_END}"
+        f"{STUB_START}\n{_STUB_BEFORE_DIGEST}{digest}{_STUB_AFTER_DIGEST}\n\n"
+        f"{NON_BASELINE_NOTICE}\n{STUB_END}"
     )
 
 
 def _replace_block_text(summary: str, rendered_block: str) -> str:
-    section = _section_15_bounds(summary)
-    if section is None:
-        raise Section15PatternHistoryError(
-            "rhetoric summary must contain exactly one Markdown H2 Section 15"
-        )
-    heading, section_end = section
-
-    marker_counts = {
-        version: (
-            summary.count(token),
-            summary.count(start),
-            summary.count(end),
-        )
-        for version, (token, start, end) in _BLOCK_MARKERS.items()
-    }
-    if all(counts == (0, 0, 0) for counts in marker_counts.values()):
+    token, start, end = _locate_block(summary)
+    if token is None:
         newline = "\r\n" if "\r\n" in summary else "\n"
         rendered = rendered_block.replace("\n", newline)
-        suffix = summary[heading.end() :]
+        suffix = summary[start:]
         after_block = "" if suffix.startswith(newline + newline) else newline
-        return (
-            summary[: heading.end()]
-            + newline
-            + newline
-            + rendered
-            + after_block
-            + suffix
-        )
-    if (
-        sum(counts[1] for counts in marker_counts.values()) > 1
-        or sum(counts[2] for counts in marker_counts.values()) > 1
-    ):
-        raise Section15PatternHistoryError(
-            "Section 15 has duplicate v2/v3 current-block markers; repair it before "
-            "replacement"
-        )
-    valid_versions = [
-        version for version, counts in marker_counts.items() if counts == (2, 1, 1)
-    ]
-    if len(valid_versions) != 1 or any(
-        counts != (0, 0, 0) and counts != (2, 1, 1) for counts in marker_counts.values()
-    ):
-        raise Section15PatternHistoryError(
-            "Section 15 v2/v3 current-block markers are mixed, torn, or malformed; "
-            "repair them before replacement"
-        )
-
-    existing_version = valid_versions[0]
-    _, existing_start, existing_end = _BLOCK_MARKERS[existing_version]
-    start = summary.index(existing_start)
-    end_marker_start = summary.index(existing_end)
-    end = end_marker_start + len(existing_end)
-    if start < heading.end() or end > section_end or end_marker_start <= start:
-        raise Section15PatternHistoryError(
-            "the sole current-block markers must be ordered wholly inside Section 15"
-        )
+        return summary[:start] + newline + newline + rendered + after_block + suffix
     newline = "\r\n" if "\r\n" in summary[start:end] else "\n"
     rendered = rendered_block.replace("\n", newline)
     return summary[:start] + rendered + summary[end:]
@@ -610,11 +666,11 @@ def replace_section15_current_block(
     evidence_freshness_assessor: EvidenceFreshnessAssessor,
     classification_policy_stamp: object | None = None,
 ) -> Section15WriteResult:
-    """Validate a complete candidate, then atomically replace only its block."""
+    """Validate a complete candidate, then atomically install sidecar and stub."""
     if not isinstance(pattern_profile, Mapping):
         raise Section15PatternHistoryError("pattern_profile must be an object")
     canonical_input = copy.deepcopy(dict(pattern_profile))
-    rendered = render_section15_current_block(pattern_profile)
+    sidecar = render_pattern_history_sidecar(pattern_profile)
     _validate_complete_tracking_cohort(
         canonical_input,
         tracking_database,
@@ -624,7 +680,8 @@ def replace_section15_current_block(
     # The status-block writer replaces its own delimited block in this same
     # file. Two writers that read, splice, and rename without excluding each
     # other drop whichever update renamed first, so both take the summary's
-    # shared writer lock for their whole read-splice-install section.
+    # shared writer lock for their whole read-splice-install section. The
+    # sidecar is written only here, under the same lock.
     stack = ExitStack()
     try:
         lock = stack.enter_context(rhetoric_summary_lock(summary_path))
@@ -639,7 +696,7 @@ def replace_section15_current_block(
         return _replace_under_summary_lock(
             summary_path,
             stack,
-            rendered=rendered,
+            sidecar=sidecar,
             canonical_input=canonical_input,
         )
     finally:
@@ -651,10 +708,10 @@ def _replace_under_summary_lock(
     summary_path: Path,
     stack: ExitStack,
     *,
-    rendered: str,
+    sidecar: bytes,
     canonical_input: dict[str, Any],
 ) -> Section15WriteResult:
-    """Read, validate, and install the block while the writer lock is held."""
+    """Read, validate, and install sidecar and stub while the lock is held."""
     with stack:
         try:
             original_bytes = summary_path.read_bytes()
@@ -663,9 +720,18 @@ def _replace_under_summary_lock(
             raise Section15PatternHistoryError(
                 f"cannot read UTF-8 rhetoric summary at {summary_path}: {exc}"
             ) from exc
+        sidecar_path = _sidecar_path(summary_path)
+        try:
+            existing_sidecar: bytes | None = sidecar_path.read_bytes()
+        except FileNotFoundError:
+            existing_sidecar = None
+        except OSError as exc:
+            raise Section15PatternHistoryError(
+                f"cannot read {SIDECAR_NAME} at {sidecar_path}: {exc}"
+            ) from exc
 
-        candidate = _replace_block_text(original, rendered)
-        candidate_assessment = assess_section15_pattern_history(candidate)
+        candidate = _replace_block_text(original, render_section15_stub(sidecar))
+        candidate_assessment = _assess_summary(candidate, sidecar)
         if not candidate_assessment.current_contract:
             details = "; ".join(
                 candidate_assessment.errors or candidate_assessment.reason_codes
@@ -683,7 +749,9 @@ def _replace_under_summary_lock(
         eligible_count = candidate_assessment.eligible_talk_count
         assert isinstance(count, int)  # shared-assessor postcondition
         assert isinstance(eligible_count, int)  # shared-assessor postcondition
-        if candidate == original:
+        summary_changed = candidate != original
+        sidecar_changed = existing_sidecar != sidecar
+        if not summary_changed and not sidecar_changed:
             return Section15WriteResult(
                 path=str(summary_path),
                 changed=False,
@@ -694,11 +762,23 @@ def _replace_under_summary_lock(
                 ),
             )
 
-        _install_summary_bytes(
-            summary_path,
-            candidate.encode("utf-8"),
-            expected=original_bytes,
-        )
+        # Sidecar first: interrupted before the summary rename, an older
+        # inline block still reads as it did, and an older stub no longer
+        # matches, which readers refuse until the next replace.
+        if sidecar_changed:
+            _install_bytes(
+                sidecar_path,
+                sidecar,
+                summary_path=summary_path,
+                expected_summary=original_bytes,
+            )
+        if summary_changed:
+            _install_bytes(
+                summary_path,
+                candidate.encode("utf-8"),
+                summary_path=summary_path,
+                expected_summary=original_bytes,
+            )
 
         return Section15WriteResult(
             path=str(summary_path),
@@ -709,26 +789,28 @@ def _replace_under_summary_lock(
         )
 
 
-def _install_summary_bytes(
-    summary_path: Path,
+def _install_bytes(
+    target: Path,
     payload: bytes,
     *,
-    expected: bytes,
+    summary_path: Path,
+    expected_summary: bytes,
 ) -> None:
-    """Rename ``payload`` over the summary, refusing a target that moved.
+    """Rename ``payload`` over ``target``, refusing when the summary moved.
 
     Called with the writer lock held, so no other toolkit writer sits between
     the recheck and the rename. The recheck is what covers the writer no lock
-    reaches — a human saving the file in an editor.
+    reaches — a human saving the summary in an editor. ``target`` takes the
+    summary's permission bits.
     """
     mode = stat.S_IMODE(summary_path.stat().st_mode)
     temporary_path: Path | None = None
     file_descriptor: int | None = None
     try:
         file_descriptor, temporary_name = tempfile.mkstemp(
-            prefix=f".{summary_path.name}.",
+            prefix=f".{target.name}.",
             suffix=".tmp",
-            dir=summary_path.parent,
+            dir=target.parent,
         )
         temporary_path = Path(temporary_name)
         os.fchmod(file_descriptor, mode)
@@ -743,14 +825,14 @@ def _install_summary_bytes(
         except OSError as exc:
             raise Section15PatternHistoryError(
                 f"cannot re-read rhetoric summary at {summary_path} before "
-                f"installing the Section 15 block: {exc}"
+                f"installing {target.name}: {exc}"
             ) from exc
-        if current != expected:
+        if current != expected_summary:
             raise Section15PatternHistoryError(
                 f"rhetoric summary at {summary_path} changed while the Section 15 "
                 "replacement was staged; re-run the replace against the current file"
             )
-        os.replace(temporary_path, summary_path)
+        os.replace(temporary_path, target)
     finally:
         if file_descriptor is not None:
             os.close(file_descriptor)
@@ -928,8 +1010,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "assess":
-            summary = args.summary.read_text(encoding="utf-8")
-            assessment = assess_section15_pattern_history(summary)
+            assessment = assess_section15_pattern_history(args.summary)
             print(json.dumps(assessment.as_status_dict(), sort_keys=True))
             return 0 if assessment.current_contract else 1
 

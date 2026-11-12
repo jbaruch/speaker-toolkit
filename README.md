@@ -306,6 +306,7 @@ The vault lives at `~/.claude/rhetoric-knowledge-vault/` (or a symlink to a cust
 rhetoric-knowledge-vault/
 +-- tracking-database.json      # Source of truth: all talks, status, config
 +-- rhetoric-style-summary.md   # Narrative analysis across all rhetoric dimensions
++-- rhetoric-pattern-history.json  # Section 15 pattern history (machine-readable)
 +-- slide-design-spec.md        # Visual design rules (fonts, colors, layout taxonomy)
 +-- speaker-profile.json        # Machine-readable bridge to the creator
 +-- sessions-catalog.md         # Submission-ready titles, abstracts, outlines
@@ -315,6 +316,8 @@ rhetoric-knowledge-vault/
 ```
 
 **rhetoric-style-summary.md** is the constitution — current guidance covering presentation modes, opening patterns, humor techniques, audience interaction styles, closing patterns, verbal signatures, persuasion techniques, and more. A parsed talk changes it only when it changes the guidance (a new technique, a habit fixed, a new recurring problem with its fix); per-talk evidence stays in `analyses/` and the tracking database. Sections are addressed by heading, not number.
+
+**rhetoric-pattern-history.json** holds the summary's Section 15 pattern history as JSON, so loading the summary as context no longer pays for it. Section 15 keeps a short stub that binds the file by sha256; `section15_pattern_history.py` owns it, and only its `replace` writes it. A summary that still carries the older inline JSON block keeps working until the next `replace` moves it out.
 
 **speaker-profile.json** is the structured specification that the creator reads at runtime. It contains presentation modes with quantitative thresholds, instrument catalogs, guardrail rules, pacing data, design rules, the publishing workflow, and a `pattern_profile` with exact positive/negative occurrence rows, per-pattern denominators, source cohort provenance, exhaustive classifications, and independent availability by domain. Schema v5 uses the bundled `speaker-toolkit-default@1` policy automatically and embeds the full policy plus its semantic digest. An optional `pattern-classification-policy.json` overrides it only when the file passes strict validation. Schema-v4 profiles remain readable as occurrence-only history.
 

@@ -12,6 +12,9 @@ Usage:
     pattern_history_status.py <speaker-profile.json|-> \
         [rhetoric-style-summary.md]
 
+The summary fallback goes through ``section15_pattern_history``, which follows
+the Section 15 stub to ``rhetoric-pattern-history.json`` beside the summary.
+
 Output:
     One JSON object on stdout.  A readable profile whose pattern history is
     disabled is a successful assessment and exits 0.  File/JSON failures exit 1;
@@ -229,13 +232,13 @@ def _fallback_status(
 
 def resolve_creator_pattern_history(
     profile: object,
-    summary_text: str | None = None,
+    summary_path: Path | None = None,
 ) -> CreatorPatternHistoryResolution:
     """Resolve one authorized history payload without merging source lanes.
 
     A policy-bound profile with any available domain wins. Section 15 is consulted
     only when the profile lane is disabled and only its explicit current block is
-    eligible.
+    eligible. Reading the summary may raise ``OSError`` or ``UnicodeDecodeError``.
     """
     profile_status = _assess_profile_pattern_history(profile)
     if profile_status.history_enabled:
@@ -246,13 +249,13 @@ def resolve_creator_pattern_history(
             status=profile_status,
             pattern_profile=copy.deepcopy(dict(pattern_profile)),
         )
-    if summary_text is None:
+    if summary_path is None:
         return CreatorPatternHistoryResolution(
             status=profile_status,
             pattern_profile=None,
         )
 
-    summary_assessment = assess_section15_pattern_history(summary_text)
+    summary_assessment = assess_section15_pattern_history(summary_path)
     status = _fallback_status(profile_status, summary_assessment)
     pattern_profile = (
         copy.deepcopy(summary_assessment.pattern_profile)
@@ -267,10 +270,10 @@ def resolve_creator_pattern_history(
 
 def assess_creator_pattern_history(
     profile: object,
-    summary_text: str | None = None,
+    summary_path: Path | None = None,
 ) -> CreatorPatternHistoryStatus:
     """Return the creator authorization status for profile then safe fallback."""
-    return resolve_creator_pattern_history(profile, summary_text).status
+    return resolve_creator_pattern_history(profile, summary_path).status
 
 
 def disabled_history_warning(status: CreatorPatternHistoryStatus) -> str:
@@ -322,20 +325,19 @@ def main(argv: list[str]) -> int:
             profile_load_error = (profile_path, exc)
 
     profile_only_status = assess_creator_pattern_history(profile)
-    summary_text: str | None = None
+    summary_path: Path | None = None
     if not profile_only_status.history_enabled and len(argv) == 3:
         summary_path = Path(argv[2])
-        try:
-            summary_text = summary_path.read_text(encoding="utf-8")
-        except OSError as exc:
-            print(f"failed to load {summary_path}: {exc}", file=sys.stderr)
-            return 1
     elif profile_load_error is not None:
         profile_path, exc = profile_load_error
         print(f"failed to load {profile_path}: {exc}", file=sys.stderr)
         return 1
 
-    status = assess_creator_pattern_history(profile, summary_text)
+    try:
+        status = assess_creator_pattern_history(profile, summary_path)
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"failed to load {summary_path}: {exc}", file=sys.stderr)
+        return 1
     payload = status.as_dict()
     payload["warning"] = disabled_history_warning(status)
     print(json.dumps(payload, sort_keys=True))

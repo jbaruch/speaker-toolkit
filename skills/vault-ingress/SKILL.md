@@ -190,8 +190,8 @@ batch was pre-authorized).
 Follow the [Rhetoric Summary contract](references/processing-rules.md): rebuild
 Section 15 only after the complete batch persists, never from a date cohort or
 partial merge, and recount the database rather than incrementing totals. Its reader
-accepts legacy occurrence-only v2 blocks, but every replacement writes v3 with the
-schema-v5 profile's self-contained policy stamp and deterministic classifications.
+accepts legacy inline blocks; every replacement writes v3 (schema-v5 policy stamp,
+deterministic classifications) to the `rhetoric-pattern-history.json` sidecar.
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-profile/scripts/section15_pattern_history.py" replace \

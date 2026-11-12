@@ -301,10 +301,15 @@ def test_v5_new_to_you_projection_contains_only_confirmed_never_tried(
     )
 
 
-def _section15_summary(pattern_profile: dict[str, Any], *, version: int) -> str:
+def _section15_summary(
+    directory: Path, pattern_profile: dict[str, Any], *, version: int
+) -> Path:
+    """Write a summary with a v3 stub plus sidecar, or a legacy inline v2 block."""
     section15 = importlib.import_module("section15_pattern_history")
     if version == 3:
-        block = section15.render_section15_current_block(pattern_profile)
+        sidecar = section15.render_pattern_history_sidecar(pattern_profile)
+        (directory / section15.SIDECAR_NAME).write_bytes(sidecar)
+        block = section15.render_section15_stub(sidecar)
     else:
         baseline = pattern_profile["pattern_baseline"]
         payload = {
@@ -322,12 +327,18 @@ def _section15_summary(pattern_profile: dict[str, Any], *, version: int) -> str:
             f"{section15.LEGACY_BLOCK_START}\n```json\n{encoded}\n```\n\n"
             f"{section15.NON_BASELINE_NOTICE}\n{section15.LEGACY_BLOCK_END}"
         )
-    return f"## 15. Presentation Pattern History\n\n{block}\n"
+    summary_path = directory / "rhetoric-style-summary.md"
+    summary_path.write_text(
+        f"## 15. Presentation Pattern History\n\n{block}\n", encoding="utf-8"
+    )
+    return summary_path
 
 
-def test_section15_v3_can_supply_policy_bound_fallback(pattern_history_status):
+def test_section15_v3_can_supply_policy_bound_fallback(
+    pattern_history_status, tmp_path
+):
     profile, _ = _v5_profile()
-    summary = _section15_summary(profile["pattern_profile"], version=3)
+    summary = _section15_summary(tmp_path, profile["pattern_profile"], version=3)
 
     status = pattern_history_status.assess_creator_pattern_history(
         _profile(schema_version=4), summary
@@ -339,8 +350,8 @@ def test_section15_v3_can_supply_policy_bound_fallback(pattern_history_status):
     assert status.domain_available("trends") is False
 
 
-def test_section15_v2_remains_occurrence_only(pattern_history_status):
-    summary = _section15_summary(_pattern_profile(), version=2)
+def test_section15_v2_remains_occurrence_only(pattern_history_status, tmp_path):
+    summary = _section15_summary(tmp_path, _pattern_profile(), version=2)
 
     status = pattern_history_status.assess_creator_pattern_history(
         {"schema_version": 3}, summary
