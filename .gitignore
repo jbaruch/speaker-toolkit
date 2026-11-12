@@ -64,3 +64,7 @@ illustration-workflow-knowledge.md
 .vscode/mcp.json
 .vscode/skills/tessl__*
 # === end Tessl-generated artifacts ===
+
+# The publish workflow's acr job checks the pinned ACR publisher out here;
+# publish-acr.sh refuses a working tree with untracked files.
+.test-dependencies/
