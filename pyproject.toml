@@ -136,6 +136,11 @@ venv = ".venv"
 include = ["scripts", "skills", "tests"]
 exclude = ["**/__pycache__", ".venv", ".tessl"]
 executionEnvironments = [
+    # shorts-producer reuses the vault-ingress word transcriber.
+    { root = "skills/shorts-producer/scripts", extraPaths = [
+        "skills/shorts-producer/scripts",
+        "skills/vault-ingress/scripts",
+    ] },
     # illustrations reads the outline schema and the shared artifact supervisor.
     { root = "skills/illustrations/scripts", extraPaths = [
         "skills/illustrations/scripts",

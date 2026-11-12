@@ -1,7 +1,7 @@
 schemaVersion: 1
 name: jbaruch/speaker-toolkit
-version: 0.21.33
-description: 'Eleven skills for conference speakers covering rhetoric analysis, talk authoring, deck building and export, CFP submissions, publishing, illustrations, shownotes, and screencast production, informed by a 113-entry Presentation Patterns taxonomy (83 observable: 64 patterns + 19 antipatterns; 30 unobservable: 21 patterns + 9 antipatterns).'
+version: 0.22.0
+description: 'Twelve skills for conference speakers covering rhetoric analysis, talk authoring, deck building and export, CFP submissions, publishing, illustrations, shownotes, screencast production, and vertical shorts, informed by a 113-entry Presentation Patterns taxonomy (83 observable: 64 patterns + 19 antipatterns; 30 unobservable: 21 patterns + 9 antipatterns).'
 source:
   repository: https://github.com/jbaruch/speaker-toolkit
   tesslIdentity: jbaruch/speaker-toolkit
@@ -46,6 +46,14 @@ artifacts:
         mode: paths
         paths:
           - skills/presentation-publisher/**
+    - id: shorts-vision-validation-authority
+      path: rules/shorts-vision-validation-authority.md
+      activation:
+        mode: paths
+        paths:
+          - skills/shorts-producer/scripts/vision.swift
+          - skills/shorts-producer/scripts/prepare-clip.py
+          - skills/shorts-producer/scripts/verify-short.py
     - id: shownotes-content-publish
       path: rules/shownotes-content-publish.md
       activation:
@@ -109,6 +117,8 @@ artifacts:
       path: skills/screencast-editor
     - id: screencast-recorder
       path: skills/screencast-recorder
+    - id: shorts-producer
+      path: skills/shorts-producer
     - id: shownotes-publisher
       path: skills/shownotes-publisher
     - id: vault-clarification
