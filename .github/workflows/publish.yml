@@ -29,3 +29,43 @@ jobs:
       # the package-contents check. Composed because this input takes one path.
       pre-publish-script: scripts/pre-publish-checks.sh
       skill-review-credit-outage: skip
+      # Explicit versions: every PR bumps .tessl-plugin/plugin.json and
+      # agent-plugin.yaml together, and both channels publish that version.
+      publish-mode: as-is
+
+  # Publishes the same explicit version to ACR, only after Tessl confirmed it.
+  # Copied from jbaruch/coding-policy's own publish workflow. A failed ACR job
+  # reruns alone (`gh run rerun <run-id> --failed`); never republish Tessl to
+  # retry it, and never move an existing v<version> tag.
+  acr:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/checkout@v7
+        with:
+          repository: jbaruch/agentic-context-registry
+          # Review monthly and after ACR release-contract changes; re-pin in a
+          # dedicated dependency PR, matching jbaruch/coding-policy's pin.
+          ref: f8dffcecc0eb98f13b2d7d90cd399f99208becf2
+          path: .test-dependencies/acr
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .test-dependencies/acr/go.mod
+          cache-dependency-path: .test-dependencies/acr/go.sum
+      - name: Build pinned ACR publisher
+        working-directory: .test-dependencies/acr
+        run: go build -o "$RUNNER_TEMP/acr" ./cmd/acr
+      - name: Publish immutable ACR release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        uses: jbaruch/coding-policy/.github/actions/publish-acr@afe96582f45b0fb6e8bd292ae7fe6907c48c6426
+        with:
+          bin-directory: ${{ runner.temp }}
+          source-commit: ${{ github.sha }}

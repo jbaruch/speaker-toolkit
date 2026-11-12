@@ -1,0 +1,119 @@
+schemaVersion: 1
+name: jbaruch/speaker-toolkit
+version: 0.21.32
+description: 'Eleven skills for conference speakers covering rhetoric analysis, talk authoring, deck building and export, CFP submissions, publishing, illustrations, shownotes, and screencast production, informed by a 113-entry Presentation Patterns taxonomy (83 observable: 64 patterns + 19 antipatterns; 30 unobservable: 21 patterns + 9 antipatterns).'
+source:
+  repository: https://github.com/jbaruch/speaker-toolkit
+  tesslIdentity: jbaruch/speaker-toolkit
+artifacts:
+  rules:
+    - id: camtasia-validation-authority
+      path: rules/camtasia-validation-authority.md
+      activation:
+        mode: paths
+        paths:
+          - skills/screencast-editor/scripts/build-project.py
+          - skills/screencast-editor/scripts/apply-captions.py
+          - skills/screencast-editor/scripts/camtasia_model.py
+          - skills/screencast-editor/scripts/camtasia-effects.json
+    - id: deck-editing-rules
+      path: rules/deck-editing-rules.md
+      activation:
+        mode: always
+    - id: guardrail-rules
+      path: rules/guardrail-rules.md
+      activation:
+        mode: paths
+        paths:
+          - skills/presentation-creator/**
+    - id: illustration-rules
+      path: rules/illustration-rules.md
+      activation:
+        mode: always
+    - id: interaction-rules
+      path: rules/interaction-rules.md
+      activation:
+        mode: always
+    - id: qr-generation-rules
+      path: rules/qr-generation-rules.md
+      activation:
+        mode: paths
+        paths:
+          - skills/presentation-publisher/**
+    - id: resources-gathering-rules
+      path: rules/resources-gathering-rules.md
+      activation:
+        mode: paths
+        paths:
+          - skills/presentation-publisher/**
+    - id: shownotes-content-publish
+      path: rules/shownotes-content-publish.md
+      activation:
+        mode: always
+    - id: slide-generation-rules
+      path: rules/slide-generation-rules.md
+      activation:
+        mode: paths
+        paths:
+          - skills/presentation-builder/**
+    - id: tessl-version-floating
+      path: rules/tessl-version-floating.md
+      activation:
+        mode: always
+    - id: thumbnail-generation-rules
+      path: rules/thumbnail-generation-rules.md
+      activation:
+        mode: paths
+        paths:
+          - skills/illustrations/**
+          - skills/presentation-creator/**
+          - skills/screencast-editor/**
+    - id: title-overlay-rules
+      path: rules/title-overlay-rules.md
+      activation:
+        mode: always
+    - id: toolkit-root-lookup
+      path: rules/toolkit-root-lookup.md
+      activation:
+        mode: paths
+        paths:
+          - skills/*/SKILL.md
+          - skills/*/references/**/*.md
+    - id: transcript-fetch-authority
+      path: rules/transcript-fetch-authority.md
+      activation:
+        mode: paths
+        paths:
+          - skills/vault-ingress/scripts/fetch-transcript.py
+          - skills/vault-ingress/scripts/local_media_*.py
+          - skills/vault-ingress/scripts/transcript_quality.py
+          - skills/vault-ingress/scripts/transcript_timing.py
+          - skills/vault-ingress/scripts/vtt-cleanup.py
+          - pyproject.toml
+    - id: vault-language-policy
+      path: rules/vault-language-policy.md
+      activation:
+        mode: always
+  skills:
+    - id: cfp-writer
+      path: skills/cfp-writer
+    - id: illustrations
+      path: skills/illustrations
+    - id: presentation-builder
+      path: skills/presentation-builder
+    - id: presentation-creator
+      path: skills/presentation-creator
+    - id: presentation-publisher
+      path: skills/presentation-publisher
+    - id: screencast-editor
+      path: skills/screencast-editor
+    - id: screencast-recorder
+      path: skills/screencast-recorder
+    - id: shownotes-publisher
+      path: skills/shownotes-publisher
+    - id: vault-clarification
+      path: skills/vault-clarification
+    - id: vault-ingress
+      path: skills/vault-ingress
+    - id: vault-profile
+      path: skills/vault-profile
