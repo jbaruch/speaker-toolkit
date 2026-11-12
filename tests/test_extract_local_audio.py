@@ -267,6 +267,32 @@ def test_ffmpeg_reads_the_held_recording_not_a_swapped_path(
     assert result["duration_seconds"] < 5
 
 
+def test_ffmpeg_reads_the_held_descriptor_without_reopening_it(
+    tmp_path, extract_local_audio, monkeypatch
+):
+    """A Drive for Desktop folder refuses re-opening a held file (#556)."""
+    recording = _recording(tmp_path / "videos", seconds=3)
+    output = tmp_path / "talk.m4a"
+    real_hold = extract_local_audio._hold_recording
+
+    def hold_then_lock(path):
+        held, _ = real_hold(path)
+        # Mode 000 refuses re-opening the file, as the File Provider does.
+        os.chmod(path, 0)
+        with pytest.raises(PermissionError):
+            os.close(os.open(f"/dev/fd/{held}", os.O_RDONLY))
+        return held, extract_local_audio.RecordingGeneration.of(os.fstat(held))
+
+    monkeypatch.setattr(extract_local_audio, "_hold_recording", hold_then_lock)
+    try:
+        result = extract_local_audio.extract(recording, output)
+    finally:
+        os.chmod(recording, 0o644)
+
+    assert result["ok"] is True
+    assert _audio_streams(output) == ["audio"]
+
+
 def test_a_recording_renamed_over_mid_run_is_refused(
     tmp_path, extract_local_audio, monkeypatch
 ):
@@ -523,6 +549,7 @@ def test_an_unexpected_failure_leaves_stdout_empty_and_exits_3(
             "free space",
         ),
         ("talk.m4a: Permission denied", "io_failed", "permissions"),
+        ("talk.m4a: Operation not permitted", "io_failed", "permissions"),
         (
             "Stream map '0:a:0' matches no streams.",
             "recording_has_no_audio",
@@ -536,7 +563,14 @@ def test_an_unexpected_failure_leaves_stdout_empty_and_exits_3(
         ),
         ("moov atom not found", "extraction_failed", "read ffmpeg's message"),
     ],
-    ids=["disk-full", "permission", "no-audio", "codec-container", "unknown"],
+    ids=[
+        "disk-full",
+        "permission",
+        "not-permitted",
+        "no-audio",
+        "codec-container",
+        "unknown",
+    ],
 )
 def test_an_ffmpeg_failure_names_the_repair_it_needs(
     extract_local_audio, stderr_tail, reason, advice
