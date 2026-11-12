@@ -275,8 +275,9 @@ the database's talks, serialized whole. Obtain it by assessing the deck BEFORE
 deciding the binding — the assessment is what decides it, not a confirmation of a
 decision already made. An unmatched record carries `identity_assessment: null`.
 
-For a deck not yet in the catalog, one command plans all of that from the saved
-extraction output:
+For a deck not yet in the catalog, and for a cataloged row whose evidence
+`classify-pptx-evidence.py` reports `needs_extraction`, one command plans all of
+that from the saved extraction output:
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/catalog-pptx-deck.py" \
@@ -286,6 +287,9 @@ extraction output:
 
 - Input: a schema-v1 `--directory` envelope or one deck's result, every result at
   the current extraction schema and pipeline. Anything else is refused.
+- Selection: without `--deck`, every uncataloged deck in the input and every
+  cataloged one the classifier reports `needs_extraction`. A `current` row is
+  selected only by `--deck`, and reports `already_cataloged` with nothing planned.
 - Side effect: unless `--dry-run`, each planned deck's extraction result is written
   to `<artifact-dir>/<sha256>.json` under the vault (default `pptx-extractions`).
   Content addressing makes a rerun write nothing new. A symlinked component below the
@@ -301,8 +305,10 @@ After exit 0, apply its `mutation_plan` through `mutate-tracking-database.py`'s 
 dry-run and apply. Read `decks[]` first. A `review_required` deck is in no plan and goes to owner
 review; the dispositions and their reason codes are in the script's module docstring.
 A new talk's folder often holds several revisions, and each one proves the same talk,
-so name the delivered one with `--deck`. Rows already in the catalog belong to the
-sweep below.
+so name the delivered one with `--deck`. A `refresh` replaces the stored row's
+receipt and the assessment behind the binding it already has, expecting that exact
+row; it never binds, rebinds or severs. Those decisions about rows already in the
+catalog belong to the sweep below.
 The writer rejects an assessment that does not authorize the binding; the
 predicate is `binding_refusal` in
 `skills/vault-ingress/scripts/pptx_talk_identity.py`, shared with preflight. Route a rejected deck to owner review

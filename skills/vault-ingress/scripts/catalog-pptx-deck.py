@@ -1,23 +1,31 @@
 #!/usr/bin/env python3
-"""Plan the catalog entry for a deck that isn't in `pptx_catalog` yet.
+"""Plan the catalog entry for a new deck, or a fresh receipt for a cataloged one.
 
-`vault-ingress` Step 1 persists each reviewed extraction with a `record_pptx`
-mutation, and a matched record must carry an assessment made before the binding was
-decided. `sweep-pptx-talk-identity.py` only reaches rows already in the catalog, so a
-newly delivered deck had no owner path in. This is that path. It takes an extraction
-result, assesses the deck against every talk, and emits the `record_pptx` plan with
-the catalog record, the visual-evidence receipt and the identity assessment, ready
-for `mutate-tracking-database.py`'s usual dry-run and apply.
+`vault-ingress` persists each reviewed extraction with a `record_pptx` mutation, and a
+matched record must carry an assessment made before the binding was decided. This is
+the owner path for both cases Step 6 meets: a deck that isn't in `pptx_catalog` yet,
+and a cataloged row whose visual evidence `classify-pptx-evidence.py` reports
+`needs_extraction`. It takes an extraction result, assesses the deck against every
+talk, and emits the `record_pptx` plan with the catalog record, the visual-evidence
+receipt and the identity assessment, ready for `mutate-tracking-database.py`'s usual
+dry-run and apply.
 
 The assessment decides the binding. One disposition per deck:
 
 * `bind`: the assessment proves one talk, and `binding_refusal` agrees.
 * `catalog_unbound`: no talk matched, so the deck joins the catalog bound to nothing.
+* `refresh`: the deck is cataloged and the classifier says its evidence needs
+  extraction. The plan replaces exactly the stored row with the fresh receipt and
+  keeps its binding: an unbound row stays unbound, and a bound row carries an
+  assessment re-derived from the bytes the new receipt describes.
 * `review_required`: nothing is planned, and `reason_codes` says why. Either the
   assessment was contested or refused, or binding it would displace another deck:
   the talk already has one, or two selected decks both prove it. Replacing a binding
   is an owner decision, so select one deck with `--deck` or resolve the other first.
-* `already_cataloged`: nothing is planned. `sweep-pptx-talk-identity.py` owns these.
+  A refresh is held the same way when the fresh assessment doesn't prove the talk
+  the row already names, or that talk is claimed by another deck too; changing a
+  stored binding belongs to `sweep-pptx-talk-identity.py`, never to a receipt refresh.
+* `already_cataloged`: the cataloged row's evidence is current, so nothing is planned.
 * `not_in_extraction`: `--deck` named a deck the extraction result doesn't hold.
 * `deck_unreadable`: the deck can't be read under the source root.
 * `extraction_stale`: the deck's bytes changed after the extraction read them.
@@ -30,17 +38,17 @@ Usage:
     --extraction    pptx-extraction.py output: a schema-v1 `--directory` envelope or
                     one deck's result, each result at the current extraction schema
                     and pipeline. Without --deck, every deck in it that isn't
-                    cataloged yet is selected.
+                    cataloged yet or needs extraction is selected.
     --deck          a root-relative `pptx_path` to select; repeatable.
     --artifact-dir  where the extraction artifacts go, relative to the vault root.
     --dry-run       write no artifact; the plan still names what would be written.
 
-Side effect, stated plainly: each `bind` or `catalog_unbound` deck's extraction result
-is written to `<artifact-dir>/<sha256>.json` under the vault, since a receipt has to
-name an artifact that exists. The name is the content's digest, so a rerun writes
-nothing new. Every directory below the vault root is opened without following links,
-so a symlinked component refuses the write instead of escaping the vault. The database
-is never written; the plan is for the owner writer to apply.
+Side effect, stated plainly: each planned deck's extraction result is written to
+`<artifact-dir>/<sha256>.json` under the vault, since a receipt has to name an
+artifact that exists. The name is the content's digest, so a rerun writes nothing
+new. Every directory below the vault root is opened without following links, so a
+symlinked component refuses the write instead of escaping the vault. The database is
+never written; the plan is for the owner writer to apply.
 
 Stdout: one JSON object. `mutation_plan` is exactly the `{schema_version, mutations}`
 envelope `mutate-tracking-database.py` accepts, and `decks[]` sits beside it.
@@ -63,7 +71,7 @@ import sys
 import re
 import secrets
 import stat
-from typing import Any, Mapping, Sequence
+from typing import Any, Collection, Mapping, Sequence
 
 from artifact_locator import ArtifactLocatorError, classify_artifact_locator
 from pptx_catalog_assessment import (
@@ -74,6 +82,7 @@ from pptx_catalog_assessment import (
     resolve_pptx_source_dir,
     stored_proof,
 )
+from pptx_catalog_selection import classify_catalog
 from pptx_deck_facts import read_deck_identity_facts
 from pptx_discovery_contract import (
     PPTX_DIRECTORY_BATCH_KIND,
@@ -113,6 +122,7 @@ MISSING_MARKER = {"$missing": True}
 
 DISPOSITION_BIND = "bind"
 DISPOSITION_UNBOUND = "catalog_unbound"
+DISPOSITION_REFRESH = "refresh"
 DISPOSITION_REVIEW = "review_required"
 DISPOSITION_CATALOGED = "already_cataloged"
 DISPOSITION_NOT_EXTRACTED = "not_in_extraction"
@@ -121,6 +131,7 @@ DISPOSITION_STALE = "extraction_stale"
 
 REASON_CONTESTED_IN_BATCH = "talk_contested_in_this_batch"
 REASON_TALK_ALREADY_BOUND = "talk_already_bound_to_another_deck"
+REASON_STORED_BINDING_UNPROVEN = "stored_binding_not_proven"
 
 
 class CatalogInputError(Exception):
@@ -396,7 +407,7 @@ def _assess_deck(
     candidates: list[dict[str, Any]],
     speaker_name: object,
 ) -> dict[str, Any]:
-    """Assess one uncataloged deck. The caller still applies the cross-deck rules."""
+    """Assess one deck. The caller still applies the cross-deck rules."""
     reading = read_deck_identity_facts(pptx_path, source_root)
     entry: dict[str, Any] = {
         "pptx_path": pptx_path,
@@ -459,6 +470,54 @@ def _assess_deck(
     return {**entry, "disposition": DISPOSITION_REVIEW}
 
 
+def _refresh_disposition(
+    entry: dict[str, Any],
+    stored: Mapping[str, Any],
+    *,
+    talks: Mapping[str, Mapping[str, Any]],
+    catalog: Sequence[Any],
+) -> dict[str, Any]:
+    """Turn a cataloged deck's fresh assessment into `refresh` or a hold.
+
+    A refresh replaces the receipt and keeps the binding. An unbound row needs only a
+    readable deck the extraction still describes. A bound row also needs the fresh
+    assessment to prove the talk it already names, since the writer refuses a binding
+    whose assessment read different bytes than the receipt names, and that talk must
+    not be claimed by another deck: the writer points the talk at this deck, which
+    would silently move a binding nobody decided to move.
+    """
+    if entry["disposition"] in {DISPOSITION_UNREADABLE, DISPOSITION_STALE}:
+        return entry
+    stored_talk = stored.get("talk_filename")
+    if stored_talk is None:
+        return {**entry, "disposition": DISPOSITION_REFRESH}
+    if entry["disposition"] == DISPOSITION_REVIEW:
+        return entry
+    if (
+        entry["disposition"] != DISPOSITION_BIND
+        or entry["selected_talk_filename"] != stored_talk
+    ):
+        return {
+            **entry,
+            "disposition": DISPOSITION_REVIEW,
+            "reason_codes": [REASON_STORED_BINDING_UNPROVEN],
+        }
+    pointer = talks.get(stored_talk, {}).get("pptx_path")
+    claimed_elsewhere = any(
+        isinstance(record, Mapping)
+        and record is not stored
+        and record.get("talk_filename") == stored_talk
+        for record in catalog
+    )
+    if (pointer and pointer != stored.get("pptx_path")) or claimed_elsewhere:
+        return {
+            **entry,
+            "disposition": DISPOSITION_REVIEW,
+            "reason_codes": [REASON_TALK_ALREADY_BOUND],
+        }
+    return {**entry, "disposition": DISPOSITION_REFRESH}
+
+
 def _hold_displacing_bindings(
     decks: list[dict[str, Any]],
     *,
@@ -503,25 +562,34 @@ def plan_decks(
     source_root: object,
     selected_decks: Sequence[str],
     artifact_dir: PurePosixPath,
+    needs_refresh: Collection[object],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, bytes]]:
-    """Return (decks report, record_pptx mutations, artifact path -> bytes)."""
+    """Return (decks report, record_pptx mutations, artifact path -> bytes).
+
+    `needs_refresh` is the `pptx_path` of every cataloged row the classifier reports
+    `needs_extraction`; every other cataloged row is current and is left alone.
+    """
     catalog = database.get("pptx_catalog")
     catalog = catalog if isinstance(catalog, list) else []
-    cataloged = {
-        record.get("pptx_path") for record in catalog if isinstance(record, Mapping)
+    cataloged: dict[object, Mapping[str, Any]] = {
+        record.get("pptx_path"): record
+        for record in catalog
+        if isinstance(record, Mapping)
     }
     by_path: dict[str, Mapping[str, Any]] = {}
     for result in results:
         relative = _root_relative(result.get("pptx_path"), source_root)
         if relative is not None:
             by_path[relative] = result
-    wanted = list(selected_decks) or [path for path in by_path if path not in cataloged]
+    wanted = list(selected_decks) or [
+        path for path in by_path if path not in cataloged or path in needs_refresh
+    ]
 
     candidates = candidate_talks(database)
     talks = {talk["filename"]: talk for talk in candidates}
     decks: list[dict[str, Any]] = []
     for pptx_path in wanted:
-        if pptx_path in cataloged:
+        if pptx_path in cataloged and pptx_path not in needs_refresh:
             decks.append(
                 {
                     "pptx_path": pptx_path,
@@ -538,31 +606,47 @@ def plan_decks(
                 }
             )
         else:
-            decks.append(
-                _assess_deck(
-                    pptx_path,
-                    by_path[pptx_path],
-                    source_root=source_root,
-                    candidates=candidates,
-                    speaker_name=configured_speaker_name(database),
-                )
+            entry = _assess_deck(
+                pptx_path,
+                by_path[pptx_path],
+                source_root=source_root,
+                candidates=candidates,
+                speaker_name=configured_speaker_name(database),
             )
+            if pptx_path in cataloged:
+                entry = _refresh_disposition(
+                    entry, cataloged[pptx_path], talks=talks, catalog=catalog
+                )
+            decks.append(entry)
     _hold_displacing_bindings(decks, talks=talks, catalog=catalog)
 
     mutations: list[dict[str, Any]] = []
     artifacts: dict[str, bytes] = {}
     for deck in decks:
         disposition = deck["disposition"]
-        if disposition not in {DISPOSITION_BIND, DISPOSITION_UNBOUND}:
+        if disposition not in {
+            DISPOSITION_BIND,
+            DISPOSITION_UNBOUND,
+            DISPOSITION_REFRESH,
+        }:
             continue
         result = by_path[deck["pptx_path"]]
         evidence, content = _visual_evidence(result, artifact_dir)
         artifacts[evidence["artifact"]["path"]] = content
-        bound = disposition == DISPOSITION_BIND
-        talk_filename = deck["selected_talk_filename"] if bound else None
+        stored = cataloged.get(deck["pptx_path"])
+        if disposition == DISPOSITION_REFRESH:
+            assert stored is not None  # only a cataloged deck is refreshed
+            talk_filename = stored.get("talk_filename")
+        elif disposition == DISPOSITION_BIND:
+            talk_filename = deck["selected_talk_filename"]
+        else:
+            talk_filename = None
+        bound = talk_filename is not None
         mutation: dict[str, Any] = {
             "kind": "record_pptx",
-            "expect": MISSING_MARKER,
+            # A refresh replaces exactly the row it was planned from, so the writer
+            # refuses it if that row changed in between; a new deck expects no row.
+            "expect": MISSING_MARKER if stored is None else dict(stored),
             "record": {
                 "schema_version": PPTX_CATALOG_RECORD_SCHEMA_VERSION,
                 "pptx_path": deck["pptx_path"],
@@ -611,12 +695,23 @@ def execute(
             "tracking database has no usable legacy/current owner state",
             reason_code="owner_state_unusable",
         )
+    source_root = resolve_pptx_source_dir(database, vault_root=vault_root)
+    # The classifier's own verdict, observed against the same source root the decks
+    # are read from, so this never re-derives which rows are stale.
+    needs_refresh = {
+        row["pptx_path"]
+        for row in classify_catalog(
+            database, vault_root=vault_root, pptx_source_dir=source_root
+        )
+        if row["needs_extraction"]
+    }
     decks, mutations, artifacts = plan_decks(
         database,
         results,
-        source_root=resolve_pptx_source_dir(database, vault_root=vault_root),
+        source_root=source_root,
         selected_decks=selected_decks,
         artifact_dir=relative_artifact_dir,
+        needs_refresh=needs_refresh,
     )
     written = (
         []
@@ -661,7 +756,10 @@ def _error(code: str, message: str) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Plan the catalog entry for a deck that isn't in pptx_catalog yet."
+        description=(
+            "Plan the catalog entry for a new deck, or a fresh receipt for a "
+            "cataloged one."
+        )
     )
     parser.add_argument("vault", type=Path)
     parser.add_argument("--extraction", type=Path, required=True)

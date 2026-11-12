@@ -29,6 +29,22 @@ remain usable, but only `complete: true` authorizes a full-catalog conclusion,
 a claim that a missing deck does not exist, or absence inferred from an empty
 result. Legacy unversioned batch output has unknown completeness and must be
 rerun before any such claim.
+
+One owner path persists that envelope, for new decks and cataloged rows alike:
+save it and run `catalog-pptx-deck.py` on it without `--deck` (command and
+output contract in [bootstrap-and-preflight.md](bootstrap-and-preflight.md)).
+It selects every deck not yet in `pptx_catalog` plus exactly the cataloged rows
+`classify-pptx-evidence.py` reports `needs_extraction`, through the same
+classifier, and leaves `current` rows unselected. A refreshed row's
+`record_pptx` expects the exact stored row, carries the new receipt, and keeps
+the row's binding with an assessment re-derived from the bytes that receipt
+names. A refresh it cannot support comes back `review_required`, and binding
+decisions about cataloged rows stay with `sweep-pptx-talk-identity.py`. Apply
+its `mutation_plan` through `mutate-tracking-database.py`'s dry-run and apply;
+a precondition refusal means a row changed after planning, so rerun the command
+against the current database. Never hand-build a `record_pptx` record or its
+artifact.
+
 Require schema v4 for current analysis. Regenerate v0-v3 output and stop on an
 unknown future schema rather than interpreting missing fields as zero. When
 rendered pages were inspected, rerun that selected deck as one supervised

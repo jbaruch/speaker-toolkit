@@ -1,5 +1,49 @@
 # Changelog
 
+### Refresh stale receipts on cataloged PPTX rows
+
+`vault-ingress` Step 6 says to persist a new receipt for exactly the records
+`classify-pptx-evidence.py` reports `needs_extraction`, but no owner writer could do
+that for a row already in `pptx_catalog`. `catalog-pptx-deck.py` returned
+`already_cataloged` with no artifact and an empty plan, and
+`sweep-pptx-talk-identity.py --emit-mutations` stores assessments without touching
+`visual_evidence`. The 2026-11-11 run had 15 `needs_extraction` records (3 pending,
+2 stale, 10 unknown_legacy); the 4 the directory extraction reached all came back
+`already_cataloged`, so the only way forward was hand-building `record_pptx` and its
+artifact, which the contracts forbid (#565).
+
+`catalog-pptx-deck.py` now plans a `refresh` for a cataloged deck whose evidence the
+classifier reports `needs_extraction`. It calls `classify_catalog` itself rather than
+re-deriving staleness, against the same source root it reads decks from, and without
+`--deck` selects those rows next to the uncataloged decks; a `current` row stays
+`already_cataloged`. The refresh writes the content-addressed artifact and plans a
+`record_pptx` whose `expect` is the exact stored row, so the writer refuses it if the
+row changed in between. It carries the fresh receipt and slide count and keeps the
+row's binding: an unbound row stays unbound, and a bound row carries an assessment
+re-derived from the bytes the new receipt names. A bound row is held as
+`review_required` when the fresh assessment doesn't prove the talk it names
+(`stored_binding_not_proven`) or that talk is claimed by another deck
+(`talk_already_bound_to_another_deck`), since the writer would point the talk at
+this deck. A new revision in the same batch proving a refreshed row's talk is still
+held, and the refresh goes ahead. Uncataloged decks behave as before. Step 6 in
+`pptx-followup.md` and the command contract in `bootstrap-and-preflight.md` now
+describe the one path for both.
+
+Declined, with reasons:
+
+- No `--refresh` flag. Step 6 is the only caller and wants exactly the classifier's
+  set, and the command only plans; the database changes through the owner writer's
+  compare-and-swap.
+- No sibling script. `catalog-pptx-deck.py` already reads the extraction, assesses
+  the deck and writes the artifact.
+- No owner change to `mutate-tracking-database.py` or `tracking_database.py`, and no
+  schema bump. `record_pptx` already takes the exact prior row as `expect`, and the
+  v3 record shape is unchanged.
+- No keep-the-stored-assessment branch. When the deck's bytes changed the writer
+  refuses an assessment of other bytes, and v1/v2 rows have none, so one path
+  re-derives for every row.
+- No binding, rebinding or severing during a refresh. Those stay with the sweep.
+
 ## 0.22.1 — 2026-11-12
 
 ### Resolve toolkit paths in ACR installs

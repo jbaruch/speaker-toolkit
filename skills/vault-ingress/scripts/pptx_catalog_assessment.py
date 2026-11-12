@@ -1,9 +1,9 @@
 """Assess decks against a vault's talks, for the owner scripts that do it.
 
 Shared by `sweep-pptx-talk-identity.py`, which assesses rows already in the catalog,
-and `catalog-pptx-deck.py`, which assesses decks about to join it. Both have to read
-the database, the source root and the candidate set the same way, or a deck could be
-proven by one and contradicted by the other.
+and `catalog-pptx-deck.py`, which assesses decks about to join it or whose receipt it
+refreshes. Both have to read the database, the source root and the candidate set the
+same way, or a deck could be proven by one and contradicted by the other.
 """
 
 from __future__ import annotations

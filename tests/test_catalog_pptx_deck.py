@@ -1,4 +1,5 @@
-"""Tests for catalog-pptx-deck.py, the owner path for a deck new to the catalog."""
+"""Tests for catalog-pptx-deck.py, the owner path for a deck new to the catalog and
+for a cataloged row's fresh receipt."""
 
 from __future__ import annotations
 
@@ -451,24 +452,115 @@ def test_a_talk_that_already_has_a_deck_isnt_silently_rebound(
     assert report["mutation_plan"]["mutations"] == []
 
 
-def test_a_cataloged_deck_is_left_to_the_sweep(
+def _store(vault: Path, database: dict[str, Any]) -> None:
+    (vault / "tracking-database.json").write_text(
+        json.dumps(database), encoding="utf-8"
+    )
+
+
+def _cataloged_current(
+    tmp_path: Path, vault: Path, source_root: Path, relative: str
+) -> dict[str, Any]:
+    """Catalog a deck through this command and the owner writer: a current row."""
+    database = _write_database(vault, source_root)
+    extraction = _write_extraction(tmp_path, _result(source_root, relative))
+    plan = catalog_deck.execute(vault, extraction=extraction)["mutation_plan"]
+    candidate, _changes = mutate.build_candidate(database, plan["mutations"])
+    _store(vault, candidate)
+    return candidate
+
+
+def _legacy_row(
+    relative: str = DECK,
+    *,
+    talk: dict[str, Any] | None = TALK,
+    visual_extracted: bool,
+) -> dict[str, Any]:
+    """A v1 catalog row, as rows bound before any receipt or assessment look."""
+    return {
+        "schema_version": 1,
+        "pptx_path": relative,
+        "talk_filename": talk["filename"] if talk is not None else None,
+        "matched": talk is not None,
+        "slide_count": 10,
+        "visual_extracted": visual_extracted,
+    }
+
+
+def _needs_extraction_fixture(
+    tmp_path: Path, vault: Path, source_root: Path, evidence: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """A bound row whose evidence the classifier reports `needs_extraction`.
+
+    Returns the stored database and the extraction result of the deck as it is now.
+    """
+    relative = _deck(source_root)
+    if evidence == "stale":
+        _cataloged_current(tmp_path, vault, source_root, relative)
+        write_deck(
+            source_root,
+            relative,
+            full_deck_members(
+                slide_titles=[TALK["title"]], runs=[TALK["title"]], slides=43
+            ),
+        )
+        database = json.loads(
+            (vault / "tracking-database.json").read_text(encoding="utf-8")
+        )
+        return database, _result(source_root, relative, slide_count=43)
+    database = _write_database(
+        vault,
+        source_root,
+        talks=[{**TALK, "pptx_path": relative}, OTHER_TALK],
+        catalog=[_legacy_row(relative, visual_extracted=evidence == "unknown_legacy")],
+    )
+    return database, _result(source_root, relative)
+
+
+@pytest.mark.parametrize("evidence", ["stale", "unknown_legacy", "pending"])
+def test_a_cataloged_row_needing_extraction_gets_a_fresh_receipt(
+    tmp_path: Path, vault: Path, source_root: Path, evidence: str
+) -> None:
+    database, result = _needs_extraction_fixture(tmp_path, vault, source_root, evidence)
+    extraction = _write_extraction(tmp_path, result)
+
+    report = catalog_deck.execute(vault, extraction=extraction)
+
+    assert _deck_entry(report)["disposition"] == "refresh"
+    mutations = report["mutation_plan"]["mutations"]
+    assert len(mutations) == 1
+    evidence_receipt = mutations[0]["record"]["visual_evidence"]
+    artifact = vault / evidence_receipt["artifact"]["path"]
+    assert json.loads(artifact.read_text(encoding="utf-8")) == result
+
+    candidate, _changes = mutate.build_candidate(database, mutations)
+
+    record = candidate["pptx_catalog"][0]
+    assert len(candidate["pptx_catalog"]) == 1
+    assert record["talk_filename"] == TALK["filename"]
+    assert record["slide_count"] == result["slide_count"]
+    assert record["visual_evidence"] == evidence_receipt
+    assert (
+        record["visual_evidence"]["source_fingerprint"] == result["input_fingerprint"]
+    )
+    assert record["identity_assessment"]["verdict"] == "matched"
+    assert (
+        record["identity_assessment"]["source_identity"] == result["input_fingerprint"]
+    )
+    bound = {talk["filename"]: talk for talk in candidate["talks"]}[TALK["filename"]]
+    assert bound["pptx_path"] == DECK
+
+    _store(vault, candidate)
+    rerun = catalog_deck.execute(vault, extraction=extraction, selected_decks=[DECK])
+    assert rerun["decks"][0]["disposition"] == "already_cataloged"
+    assert rerun["mutation_plan"]["mutations"] == []
+
+
+def test_a_current_cataloged_row_is_left_alone(
     tmp_path: Path, vault: Path, source_root: Path
 ) -> None:
     relative = _deck(source_root)
-    _write_database(
-        vault,
-        source_root,
-        catalog=[
-            {
-                "schema_version": 1,
-                "pptx_path": relative,
-                "talk_filename": None,
-                "matched": False,
-                "slide_count": 42,
-                "visual_extracted": False,
-            }
-        ],
-    )
+    _cataloged_current(tmp_path, vault, source_root, relative)
     extraction = _write_extraction(tmp_path, _result(source_root, relative))
 
     unselected = catalog_deck.execute(vault, extraction=extraction)
@@ -477,8 +569,126 @@ def test_a_cataloged_deck_is_left_to_the_sweep(
     )
 
     assert unselected["decks"] == []
+    assert unselected["mutation_plan"]["mutations"] == []
     assert selected["decks"][0]["disposition"] == "already_cataloged"
     assert selected["mutation_plan"]["mutations"] == []
+    assert selected["artifacts_planned"] == []
+
+
+@pytest.mark.parametrize(
+    "change",
+    ["slide_count", "binding_severed"],
+)
+def test_a_refresh_is_refused_when_the_row_changed_underneath_it(
+    tmp_path: Path, vault: Path, source_root: Path, change: str
+) -> None:
+    database, result = _needs_extraction_fixture(
+        tmp_path, vault, source_root, "unknown_legacy"
+    )
+    extraction = _write_extraction(tmp_path, result)
+    mutations = catalog_deck.execute(vault, extraction=extraction)["mutation_plan"][
+        "mutations"
+    ]
+    row = database["pptx_catalog"][0]
+    if change == "slide_count":
+        row["slide_count"] = 11
+    else:
+        row.update(talk_filename=None, matched=False)
+
+    with pytest.raises(mutate.TrackingDatabaseMutationError, match="precondition"):
+        mutate.build_candidate(database, mutations)
+
+
+def test_refreshing_an_unbound_row_never_binds_it(
+    tmp_path: Path, vault: Path, source_root: Path
+) -> None:
+    """The deck proves TALK, but binding a cataloged deck is not a receipt refresh."""
+    relative = _deck(source_root)
+    database = _write_database(
+        vault,
+        source_root,
+        catalog=[_legacy_row(relative, talk=None, visual_extracted=True)],
+    )
+    extraction = _write_extraction(tmp_path, _result(source_root, relative))
+
+    report = catalog_deck.execute(vault, extraction=extraction)
+
+    assert _deck_entry(report)["disposition"] == "refresh"
+    mutation = report["mutation_plan"]["mutations"][0]
+    assert "expect_talk_pptx_path" not in mutation
+    candidate, _changes = mutate.build_candidate(database, [mutation])
+    record = candidate["pptx_catalog"][0]
+    assert record["talk_filename"] is None
+    assert record["identity_assessment"] is None
+    assert record["visual_extracted"] is True
+    assert all("pptx_path" not in talk for talk in candidate["talks"])
+
+
+def test_a_refresh_the_fresh_assessment_contradicts_is_held(
+    tmp_path: Path, vault: Path, source_root: Path
+) -> None:
+    """The row binds OTHER_TALK, but the deck proves TALK: the sweep's call."""
+    relative = _deck(source_root)
+    _write_database(
+        vault,
+        source_root,
+        catalog=[_legacy_row(relative, talk=OTHER_TALK, visual_extracted=True)],
+    )
+    extraction = _write_extraction(tmp_path, _result(source_root, relative))
+
+    report = catalog_deck.execute(vault, extraction=extraction)
+
+    entry = _deck_entry(report)
+    assert entry["disposition"] == "review_required"
+    assert entry["reason_codes"] == ["stored_binding_not_proven"]
+    assert report["mutation_plan"]["mutations"] == []
+    assert report["artifacts_planned"] == []
+
+
+@pytest.mark.parametrize("claimed_by", ["talk-record", "catalog-row"])
+def test_a_refresh_wont_move_a_talk_another_deck_holds(
+    tmp_path: Path, vault: Path, source_root: Path, claimed_by: str
+) -> None:
+    relative = _deck(source_root)
+    talks = [{**TALK, "pptx_path": relative}, OTHER_TALK]
+    catalog = [_legacy_row(relative, visual_extracted=True)]
+    if claimed_by == "talk-record":
+        talks[0] = {**TALK, "pptx_path": "Elsewhere/older.pptx"}
+    else:
+        catalog.append(_legacy_row("Elsewhere/older.pptx", visual_extracted=False))
+    _write_database(vault, source_root, talks=talks, catalog=catalog)
+    extraction = _write_extraction(tmp_path, _result(source_root, relative))
+
+    report = catalog_deck.execute(vault, extraction=extraction)
+
+    entry = _deck_entry(report)
+    assert entry["disposition"] == "review_required"
+    assert entry["reason_codes"] == ["talk_already_bound_to_another_deck"]
+    assert report["mutation_plan"]["mutations"] == []
+
+
+def test_a_new_revision_beside_a_refreshed_row_is_held_and_the_refresh_isnt(
+    tmp_path: Path, vault: Path, source_root: Path
+) -> None:
+    """The Universe folder's shape: the bound deck's receipt is stale, and an
+    uncataloged revision in the same batch proves the same talk."""
+    database, result = _needs_extraction_fixture(
+        tmp_path, vault, source_root, "unknown_legacy"
+    )
+    revision = _deck(
+        source_root, "Voxxed Days Ticino/2025/DevOps for Developers v2.pptx"
+    )
+    extraction = _write_extraction(tmp_path, result, _result(source_root, revision))
+
+    report = catalog_deck.execute(vault, extraction=extraction)
+
+    assert _deck_entry(report)["disposition"] == "refresh"
+    assert _deck_entry(report, revision)["reason_codes"] == [
+        "talk_already_bound_to_another_deck"
+    ]
+    mutations = report["mutation_plan"]["mutations"]
+    assert [mutation["record"]["pptx_path"] for mutation in mutations] == [DECK]
+    mutate.build_candidate(database, mutations)
 
 
 def test_a_named_deck_the_extraction_doesnt_hold_is_reported(
