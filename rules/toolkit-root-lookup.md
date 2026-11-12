@@ -15,7 +15,10 @@ description: Named lookup rule for the {speaker_toolkit_root} path form toolkit 
 
 - Input: the absolute path of the loaded `SKILL.md`.
 - Output: `speaker_toolkit_root`, the plugin root two directories above that file's directory, used as an absolute path.
-- The same lookup serves a clone and an installed mount: it reads only the skill's own location.
+- In a clone and a Tessl mount, skill `<name>` lives at `{speaker_toolkit_root}/skills/<name>/`.
+- In an ACR install, the loaded skill's directory is named `acr__jbaruch__speaker-toolkit__<skill>`.
+- There, `{speaker_toolkit_root}/skills/<name>/`, and any relative link that climbs into another skill's `<name>/` directory, means the sibling directory `acr__jbaruch__speaker-toolkit__<name>/` beside the loaded skill's directory.
+- The same lookup serves a clone, a Tessl mount and an ACR install: it reads only the skill's own location.
 - Never derive it from the consumer working directory, `PATH`, an environment variable, or a git remote.
 - Every shipped `SKILL.md` carries this lookup.
 
@@ -43,3 +46,7 @@ description: Named lookup rule for the {speaker_toolkit_root} path form toolkit 
   - the declared lookup resolves the plugin root, from a clone and from an installed mount copy;
   - every rooted command path names a file or directory that exists and resolves inside that root;
   - no operational toolkit path is left unrooted.
+- `tests/test_acr_layout.py` verifies the ACR reading:
+  - the declared sibling of every rooted skill target exists in an ACR-layout copy;
+  - every script that reaches a sibling skill runs from that copy;
+  - no script joins a fixed sibling skill name to the parent of its own skill directory.

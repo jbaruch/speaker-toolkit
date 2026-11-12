@@ -87,17 +87,14 @@ from style_catalog import (
 
 # outline.yaml is the single source of truth; its pydantic schema + loader live
 # with the presentation-creator scripts. Add that dir to the path so this skill
-# parses the one schema rather than re-deriving an outline format.
+# parses the one schema rather than re-deriving an outline format. A sibling
+# skill shares this skill directory's naming under Tessl and ACR alike.
+_SKILL = Path(__file__).resolve().parents[1]
 sys.path.insert(
     0,
-    os.path.abspath(
-        os.path.join(
-            os.path.dirname(__file__),
-            os.pardir,
-            os.pardir,
-            "presentation-creator",
-            "scripts",
-        )
+    str(
+        _SKILL.with_name(_SKILL.name.replace("illustrations", "presentation-creator"))
+        / "scripts"
     ),
 )
 import outline_schema  # noqa: E402  (path appended above)

@@ -85,15 +85,14 @@ from footer_stamp import (
 )
 
 # outline.yaml is the single source of truth; its schema + loader live with the
-# presentation-creator scripts.
+# presentation-creator scripts. A sibling skill shares this skill directory's
+# naming under Tessl and ACR alike.
+_SKILL = Path(__file__).resolve().parents[1]
 sys.path.insert(
     0,
     str(
-        (
-            Path(__file__).resolve().parent.parent.parent
-            / "presentation-creator"
-            / "scripts"
-        )
+        _SKILL.with_name(_SKILL.name.replace("illustrations", "presentation-creator"))
+        / "scripts"
     ),
 )
 import outline_schema  # noqa: E402  (path appended above)

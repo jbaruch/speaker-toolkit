@@ -29,6 +29,12 @@ EXPECTED_SKILLS = {
     "shorts-producer",
 }
 ROOT_TOKEN = "{speaker_toolkit_root}"
+ACR_READING = (
+    "In an ACR install this skill's directory is named\n"
+    "`acr__jbaruch__speaker-toolkit__<skill>`; there, read every\n"
+    "`{speaker_toolkit_root}/skills/<name>/` path and every relative link into\n"
+    "another skill's `<name>/` as sibling `acr__jbaruch__speaker-toolkit__<name>/`."
+)
 SHELL_LANGUAGES = {"bash", "sh", "shell", "zsh"}
 FENCE_RE = re.compile(r"^\s*```(?P<language>[A-Za-z0-9_-]*)\s*$")
 INLINE_CODE_RE = re.compile(r"`(?P<code>[^`\n]+)`")
@@ -134,6 +140,7 @@ def test_every_shipped_skill_defines_an_installed_plugin_root() -> None:
         assert "two directories above the directory\ncontaining this file" in text, path
         assert "Never derive it from the consumer working directory" in text, path
         assert "Treat `{speaker_toolkit_root}` as absolute" in text, path
+        assert ACR_READING in text, path
 
 
 def _declared_lookup(skill_md: Path) -> Path:
@@ -347,7 +354,7 @@ def test_profile_construction_rules_are_linked_and_shipped() -> None:
     skill = skill_path.read_text(encoding="utf-8")
     rules = reference.read_text(encoding="utf-8")
 
-    assert len(skill.splitlines()) <= 250
+    assert len(skill.splitlines()) <= 254
     assert (
         "[profile-construction-rules.md]"
         "(references/profile-construction-rules.md)" in skill

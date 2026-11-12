@@ -37,7 +37,11 @@ from pathlib import Path
 from typing import Any
 
 
-INGRESS_SCRIPTS = Path(__file__).resolve().parents[2] / "vault-ingress" / "scripts"
+# A sibling skill shares this skill directory's naming under Tessl and ACR alike.
+_SKILL = Path(__file__).resolve().parents[1]
+INGRESS_SCRIPTS = (
+    _SKILL.with_name(_SKILL.name.replace("vault-profile", "vault-ingress")) / "scripts"
+)
 if str(INGRESS_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(INGRESS_SCRIPTS))
 

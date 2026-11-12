@@ -17,6 +17,10 @@ Resolve the absolute path of this loaded `SKILL.md`, then set
 containing this file. Never derive it from the consumer working directory.
 Treat `{speaker_toolkit_root}` as absolute in every toolkit-owned command;
 talk, vault, and output paths remain consumer-owned.
+In an ACR install this skill's directory is named
+`acr__jbaruch__speaker-toolkit__<skill>`; there, read every
+`{speaker_toolkit_root}/skills/<name>/` path and every relative link into
+another skill's `<name>/` as sibling `acr__jbaruch__speaker-toolkit__<name>/`.
 
 Read [runtime-and-context.md](../presentation-creator/references/runtime-and-context.md)
 for the CFP/catalog context. Load the speaker's voice/profile and the relevant

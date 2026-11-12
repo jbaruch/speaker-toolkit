@@ -39,7 +39,12 @@ from typing import Any
 from PIL import Image, ImageDraw, ImageFont
 
 SCRIPTS = Path(__file__).resolve().parent
-INGRESS = SCRIPTS.parents[1] / "vault-ingress" / "scripts"
+# A sibling skill shares this skill directory's naming under Tessl and ACR alike.
+_SKILL = SCRIPTS.parent
+INGRESS = (
+    _SKILL.with_name(_SKILL.name.replace("shorts-producer", "vault-ingress"))
+    / "scripts"
+)
 for _path in (SCRIPTS, INGRESS):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
@@ -57,6 +62,8 @@ CONTACT_COLUMNS = 5
 DECK_TILE_WIDTH = 240
 DECK_COLUMNS = 8
 TOOL_TIMEOUT_SECONDS = 15 * 60
+# Vision may fail on a stray frame; failing on most of them is a broken runtime.
+MAX_VISION_ERROR_SHARE = 0.5
 
 
 class PrepareError(RuntimeError):
@@ -228,6 +235,24 @@ def detect_faces(plan: dict[str, Any], frames: Path) -> list[dict[str, Any]]:
     ]
 
 
+def check_vision_rows(rows: list[dict[str, Any]]) -> None:
+    """Refuse when Vision failed on most frames, rather than report no faces."""
+    failed = [row for row in rows if "error" in row]
+    if not failed:
+        return
+    if len(failed) > MAX_VISION_ERROR_SHARE * len(rows):
+        raise PrepareError(
+            f"Apple Vision failed on {len(failed)} of {len(rows)} frames "
+            f"({failed[0]['error']}) — check that swift and the Vision framework "
+            "work on this Mac, then re-run"
+        )
+    print(
+        f"WARNING: Apple Vision failed on {len(failed)} of {len(rows)} frames; "
+        "the crop follows the rest",
+        file=sys.stderr,
+    )
+
+
 def _label_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     return ImageFont.load_default(size=size)
 
@@ -346,6 +371,7 @@ def prepare(plan_path: Path, clip_id: str) -> dict[str, Any]:
     )
     named = sample_frames(plan["source"], folder / "frames", start, end)
     faces = detect_faces(plan, folder / "frames")
+    check_vision_rows(faces)
     (folder / "faces.json").write_text(
         json.dumps({"schema_version": 1, "rows": faces}, indent=1) + "\n"
     )

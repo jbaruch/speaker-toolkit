@@ -499,6 +499,18 @@ def test_prepare_writes_word_timings_frames_and_both_contact_sheets(
     ]
 
 
+def test_vision_failing_on_most_frames_is_refused_with_its_error(capsys):
+    rows = [
+        {"t": 0.0, "error": "VNError 9"},
+        {"t": 0.5, "error": "VNError 9"},
+        {"t": 1.0, "faces": []},
+    ]
+    with pytest.raises(prepare_mod.PrepareError, match="2 of 3 frames.*VNError 9"):
+        prepare_mod.check_vision_rows(rows)
+    prepare_mod.check_vision_rows(rows[1:] + [{"t": 1.5, "faces": []}])
+    assert "failed on 1 of 3 frames" in capsys.readouterr().err
+
+
 def test_a_clip_past_the_end_of_the_recording_is_refused(tmp_path):
     plan_path = _prepared(tmp_path, _plan_dict(tmp_path, start=5.0, end=9.0))
     with pytest.raises(prepare_mod.PrepareError, match="recording is"):

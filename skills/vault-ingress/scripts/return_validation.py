@@ -713,9 +713,10 @@ def normalize_processing_stamp(value: object) -> str:
 
 def default_catalog_dir() -> Path:
     """Return the bundled Presentation Patterns catalog directory."""
+    # A sibling skill shares this skill directory's naming under Tessl and ACR.
+    skill = Path(__file__).resolve().parents[1]
     return (
-        Path(__file__).resolve().parents[2]
-        / "presentation-creator"
+        skill.with_name(skill.name.replace("vault-ingress", "presentation-creator"))
         / "references"
         / "patterns"
     )

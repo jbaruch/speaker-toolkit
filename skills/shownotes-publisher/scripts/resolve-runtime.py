@@ -57,9 +57,14 @@ import subprocess
 import sys
 
 DEFAULT_DATABASE = "~/.claude/rhetoric-knowledge-vault/tracking-database.json"
-TOOLKIT_ROOT = Path(__file__).resolve().parents[3]
-OWNER_READER = TOOLKIT_ROOT / "skills/vault-ingress/scripts/read-tracking-database.py"
-RUNTIME_CHECK = TOOLKIT_ROOT / "skills/vault-ingress/scripts/check-runtime.py"
+# A sibling skill shares this skill directory's naming under Tessl and ACR alike.
+_SKILL = Path(__file__).resolve().parents[1]
+INGRESS_SCRIPTS = (
+    _SKILL.with_name(_SKILL.name.replace("shownotes-publisher", "vault-ingress"))
+    / "scripts"
+)
+OWNER_READER = INGRESS_SCRIPTS / "read-tracking-database.py"
+RUNTIME_CHECK = INGRESS_SCRIPTS / "check-runtime.py"
 REQUIRED_LANE = "outline"
 # The check-runtime.py report generation this resolver reads.
 RUNTIME_REPORT_SCHEMA_VERSION = 3
@@ -70,7 +75,7 @@ TIMEOUT_SECONDS = 120
 COLD_IMPORT_REASON = "timeout"
 
 # The owner's generation check is stdlib-only, so the host interpreter can run it.
-sys.path.insert(0, str(TOOLKIT_ROOT / "skills/vault-ingress/scripts"))
+sys.path.insert(0, str(INGRESS_SCRIPTS))
 # E402: tracking_database resolves only after the insert above puts the
 # co-shipped vault-ingress scripts directory on sys.path.
 from tracking_database import (  # noqa: E402

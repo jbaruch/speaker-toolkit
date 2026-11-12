@@ -17,8 +17,14 @@ import time
 from typing import BinaryIO, cast
 
 
+# A sibling skill shares this skill directory's naming under Tessl and ACR alike.
+_SKILL = Path(__file__).resolve().parents[1]
 sys.path.insert(
-    0, str(Path(__file__).resolve().parents[2] / "vault-ingress" / "scripts")
+    0,
+    str(
+        _SKILL.with_name(_SKILL.name.replace("illustrations", "vault-ingress"))
+        / "scripts"
+    ),
 )
 from artifact_supervisor import _PipeDrainer, _PipeWriter  # noqa: E402
 from artifact_metadata import WINDOWS_REPARSE_POINT_ATTRIBUTE  # noqa: E402
