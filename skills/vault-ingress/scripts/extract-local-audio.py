@@ -24,7 +24,9 @@ Bounds and contract, all named constants below:
   extraction is always refused here. Any error-level diagnostic is a refusal,
   even when ffmpeg exits 0.
 - The recording is opened once and ffmpeg reads that held descriptor
-  (``/dev/fd/N``), never the path, so a path swapped mid-run is not read. The
+  (``-fd N -i fd:``), never the path, so a path swapped mid-run is not read.
+  ``/dev/fd/N`` would make ffmpeg re-open the file, which a Google Drive for
+  Desktop folder refuses (#556). The
   descriptor's size, mtime, ctime, inode and device are compared before and
   after the run; a rewrite in place, even one that restores the mtime, changes
   the ctime and is refused. This needs a POSIX system.
@@ -143,6 +145,7 @@ FFMPEG_IO_MARKERS = (
     "Permission denied",
     "Read-only file system",
     "Input/output error",
+    "Operation not permitted",
 )
 FFMPEG_NO_AUDIO_MARKERS = (
     "matches no streams",
@@ -476,8 +479,10 @@ def _extract_held(
         "-loglevel",
         "error",
         "-xerror",
+        "-fd",
+        str(held),
         "-i",
-        f"/dev/fd/{held}",
+        "fd:",
         "-map",
         "0:a:0",
         "-vn",
@@ -491,7 +496,7 @@ def _extract_held(
         str(staged),
     ]
     try:
-        # macOS shares this offset with the child's /dev/fd open.
+        # ffmpeg reads this same open file, so it starts at this offset.
         os.lseek(held, 0, os.SEEK_SET)
         completed = _run_ffmpeg(command, timeout_seconds, held=held)
         # Any error-level line counts: ffmpeg can log a decode error, drop the

@@ -1,5 +1,27 @@
 # Changelog
 
+### Read Google Drive recordings in `extract-local-audio.py`
+
+The extractor handed ffmpeg the held recording as `/dev/fd/N`. On macOS, ffmpeg
+opens that path, which re-opens the file, and a Google Drive for Desktop folder
+refuses the re-open with `Operation not permitted`. Every recording in a
+Drive-hosted vault failed, and the message blamed a damaged or still-syncing
+file. ffmpeg now reads the same descriptor through `-fd N -i fd:`, which uses the
+open file without re-opening it, so a path swapped mid-run is still never read.
+A new test locks the held file with mode 000 after it is opened, which refuses
+the re-open just as Drive does, and checks that extraction still succeeds.
+
+An ffmpeg `Operation not permitted` now maps to `io_failed` and its permissions
+advice, the same as `Permission denied`, instead of the damaged-recording
+advice.
+
+Declined from the issue:
+- A separate reason code for the refused re-open. The fix removes the re-open.
+- A longer import-probe timeout in `check-runtime.py`. A cold import from a
+  Drive venv has taken anywhere from 40 to 568 seconds, so no timeout covers
+  it. The probe already reports the timeout as unresolved and says to warm the
+  import and rerun, which is what fixed it.
+
 ## 0.21.30 — 2026-11-10
 
 ### Add the workplace-mockumentary-photographic style to the public catalog
