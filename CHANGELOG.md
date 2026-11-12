@@ -1,5 +1,13 @@
 # Changelog
 
+### Let the ACR publish job see a clean checkout
+
+The first ACR publish, for 0.21.32, failed before creating any tag. The `acr`
+job checks the pinned ACR publisher out into `.test-dependencies/` inside the
+repository, and `publish-acr.sh` refuses a working tree with untracked files.
+`.gitignore` now excludes that folder, as coding-policy's does, so 0.21.33 is the
+first version published to both Tessl and ACR. 0.21.32 is on Tessl only.
+
 ## 0.21.32 — 2026-11-12
 
 ### Publish to ACR alongside Tessl
