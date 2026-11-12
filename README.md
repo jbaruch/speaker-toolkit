@@ -204,6 +204,17 @@ The vault skills never run simultaneously with the creator skills. You build the
 tessl install jbaruch/speaker-toolkit
 ```
 
+Or through ACR (the Agentic Context Registry):
+
+```bash
+acr install github:jbaruch/speaker-toolkit@latest
+acr realize
+```
+
+Both channels carry the same version. Every PR sets it explicitly in
+`.tessl-plugin/plugin.json` and `agent-plugin.yaml`, and the publish workflow
+releases it to Tessl first, then to ACR as the immutable `v<version>` tag.
+
 ## Getting Started
 
 ### Phase 1: Build Your Vault
