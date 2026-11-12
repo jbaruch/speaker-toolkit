@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.21.32 — 2026-11-12
+
 ### Publish to ACR alongside Tessl
 
 The toolkit now also ships as an ACR package: `acr install
