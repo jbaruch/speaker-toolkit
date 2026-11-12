@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.22.0 — 2026-11-12
+
 ### Add the shorts-producer skill: vertical shorts from a processed talk
 
 A new skill cuts a processed talk into 1080x1920 shorts. The agent picks the
