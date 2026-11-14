@@ -40,7 +40,7 @@ dependencies = [
     # tracebacks into the vault's transcripts. Pin + Dependabot pip ecosystem
     # in .github/dependabot.yml (weekly), so the next break lands as a reviewed
     # bump rather than as corrupt data.
-    "youtube-transcript-api==1.2.4",
+    "youtube-transcript-api==1.2.5",
     "yt-dlp==2026.10.21",
 ]
 
