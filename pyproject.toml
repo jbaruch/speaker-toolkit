@@ -47,7 +47,7 @@ dependencies = [
 [project.optional-dependencies]
 test = [
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
-    "pytest==9.1.1",
+    "pytest==9.2.0",
     # tests/test_pyproject_pins.py parses this manifest's own requirements as
     # PEP 508 rather than pattern-matching their text.
     # Pin + Dependabot pip ecosystem in .github/dependabot.yml (weekly).
