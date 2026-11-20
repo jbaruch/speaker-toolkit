@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.22.7 — 2026-11-20
+
+- fix(shownotes): require Google Drive slide PDFs (#580)
+
 ## 0.22.6 — 2026-11-20
 
 - fix(powerpoint): Scope macro approval to DeckOps (#579)
