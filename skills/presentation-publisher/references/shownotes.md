@@ -24,6 +24,8 @@ assume Jekyll's `_skills/` convention works on another SSG.
   layout skeleton for the new page. Otherwise follow the convention observed
   in existing entries under the talks subdir.
 - Include: title, abstract, slide embed/download link, speaker bio.
+- Use the [editorial pass](../../presentation-creator/references/editorial-review.md)
+  on new or revised prose before publishing the page.
 - If `resources.json` exists and has `approved: true` items, include a
   "Resources" section with those links. Read from `resources.json` in the
   talk working directory (produced by resource curation) — do not re-scan the outline.

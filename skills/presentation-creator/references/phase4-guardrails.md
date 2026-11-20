@@ -414,29 +414,22 @@ SKIP for low-stakes talks (internal demos, small-group presentations, tutorial s
 
 ## 14. AI Writing Patterns
 
-Every prose surface this workflow produces — speaker notes, the abstract, section
-descriptions, the outline's connective text — was drafted with an LLM, and LLM
-prose has tells.
-
-**Delegate the scan; never reimplement it.** Call
-`Skill(skill: "blog-writer")`, which owns the AI-writing-pattern catalog and
-returns the flagged phrasings with whatever rewrite suggestion it offers for
-each. Carry those findings into the classification below and continue — this
-guardrail reports them, and never applies them.
-
-Scan prose only. Slide visual descriptions and image prompts are not prose and
-are covered by the illustration checks above.
+Use the scoped review in [editorial-review.md](editorial-review.md). For this
+guardrail, review the current outline prose in reading order. Include the title,
+thesis, TL;DR, chapter beats, slide copy, connective text, and spoken lines. Reuse
+findings only when the review covered the same text and surrounding context. Keep
+visual descriptions and image prompts in the illustration checks above.
 
 ### Check
 
 Order matters: suppress, then count, then classify. Counting first would produce
 a WARN or FAIL from findings this same contract says are not AI tells.
 
-1. Take blog-writer's findings.
-2. Drop every finding that matches the speaker's documented voice when the vault
-   is loaded — a speaker whose profile shows heavy em-dash use is writing in
-   their own register, not producing an AI tell.
-3. Count the retained findings by severity.
+1. Take the scoped review's findings for the current draft.
+2. Keep confirmed defects. Leave raw sweep matches, segmentation artifacts, and
+   intentional choices supported by passage-specific evidence out of the counts.
+   Preserve the reviewer's disposition for any retained wording.
+3. Count the confirmed defects by severity.
 4. Classify those counts:
 
 ```bash
@@ -452,21 +445,19 @@ the top of the file. Exit 0 covers every classified result, FAIL included.
 [PASS/WARN/FAIL/SKIP] AI writing patterns: {high} high, {medium} medium findings
 ```
 
-If WARN or FAIL, list the retained findings with their location and any rewrite
-suggestion blog-writer returned. Flag only — the author decides what to change,
-because a pattern the scan calls a tell may be this speaker's deliberate voice.
+If WARN or FAIL, list the confirmed defects with their location and any rewrite
+suggestion the review returned. Report them for the author’s decision.
 
-### When `blog-writer` is not installed
+### When the scoped review is unavailable
 
-Run the same script with `--unavailable`. It reports SKIP and carries the remedy
-the author needs:
+If there is no completed scoped review with counts, run the same script with
+`--unavailable`. It reports SKIP and the installation hint:
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/presentation-creator/scripts/classify-prose-scan.py" --unavailable
 ```
 
-Never approximate the scan inline. A partial reimplementation drifts from the
-catalog blog-writer maintains and reports confident findings from a stale copy.
+Continue the toolkit editorial pass and report the reason for the skipped scan.
 
 ## Guardrail Summary Template
 

@@ -14,6 +14,9 @@ On a resumed run whose `pending` entry says `deliver_end_report`, compose the
 report from the current database, summary, and profile state for that run's
 recorded talks.
 
+Review the findings and recommendations for specificity and supporting evidence
+using the [editorial pass](../../presentation-creator/references/editorial-review.md).
+
 ## Sections, in order
 
 1. **Scope.** Every talk the run recorded, by title and filename, with its
