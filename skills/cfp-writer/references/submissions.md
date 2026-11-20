@@ -19,6 +19,7 @@ does not write or migrate it. For talk development, invoke
 `Skill(skill: "presentation-creator")` only when requested and finish that
 submission action after returning its materials.
 
+Repeat the editorial pass on substantive revisions before presenting them.
 Iterate on author feedback. Once the materials are approved, use
 [catalog.md](catalog.md) to save the approved version. A full-talk handoff already
 carrying approved text proceeds directly to the catalog operation.

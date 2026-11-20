@@ -16,9 +16,9 @@ approved-outline handoff. Archive or remove an entry only when requested. Full
 history remains in the tracking database and analysis files; this Markdown edit
 does not authorize a tracking write.
 
-Before saving new prose, invoke `Skill(skill: "blog-writer")` with the abstract
-for an anti-pattern check; apply its flagged-phrasing corrections here. If that
-skill is unavailable, report the skipped check and the installation command
-`tessl install jbaruch/blog-writer`. Never approximate its scanner inline.
+When the catalog action drafts text, use the
+[editorial pass](../../presentation-creator/references/editorial-review.md) on
+every new field before presenting it for approval. Save approved wording verbatim.
+An approved handoff or a catalog read needs no additional prose review.
 Keep the catalog's `Last updated` date current. Return the saved entry and path
 to the caller without starting slide work or publication.

@@ -177,6 +177,9 @@ Proceed immediately to Step 4.
 
 ## Step 4 — Compose the Body
 
+Use the [editorial pass](../presentation-creator/references/editorial-review.md)
+on new or revised abstracts. Ground the paragraph in the talk’s claim and examples.
+
 Body structure is a strict sequence the parser expects. Every value
 in `{braces}` below is derived from `outline.yaml` or
 `resources.json` per Step 1 — not asked from the user (except the
@@ -280,6 +283,7 @@ demos are ready. This plugin authors the skill; the shownotes site serves it.
 
 Read [references/talk-skill.md](references/talk-skill.md) and follow its
 source selection, rhetoric-informed synthesis, update, and quality checks.
+Use the Step 4 editorial pass on new or revised teaching text before writing it.
 The result gives an audience agent the talk's substance for summaries,
 explanations, and questions. Include the thesis, argument, example roles,
 demo outcomes, and caveats directly in the downloadable file. Do not substitute

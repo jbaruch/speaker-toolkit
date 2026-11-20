@@ -64,7 +64,9 @@ Read [editing.md](references/editing.md) for PowerPoint; presenterm edits use
 
 Content changes to a deck backed by `outline.yaml` first invoke
 `Skill(skill: "presentation-creator")` for the source edit and regeneration;
-resume with the affected build-sheet. Preserve the original deck and template.
+resume with the affected build-sheet. For newly written copy in a standalone deck,
+use the [editorial pass](../presentation-creator/references/editorial-review.md)
+before applying it. Preserve the original deck and template.
 Finish here with the edited deck, or continue to Step 4 when export was requested.
 
 ## Step 4 — Export a Deck

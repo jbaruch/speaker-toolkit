@@ -298,6 +298,11 @@ Apply all 14 dimensions from
 (Areas for Improvement). Follow language policy and verbatim-quote rules in
 [processing-rules.md](processing-rules.md).
 
+Review the analysis prose using the evidence and production-language guidance in
+[editorial-review.md](../../presentation-creator/references/editorial-review.md).
+Name what the speaker did and what happened next. Describe the relevant moment
+before naming its pattern. Preserve quote and evidence fields as specified below.
+
 **Summary updates:** return `summary_updates` only when this talk changes current
 guidance: a new technique, a habit fixed, or a new recurring problem with its
 fix. Write each change as the revised statement and name its target section by
