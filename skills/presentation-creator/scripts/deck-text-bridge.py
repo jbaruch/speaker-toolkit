@@ -100,11 +100,14 @@ def require_decoding_macro(scripts_dir: Path) -> None:
             f"slide. Re-import RunDeckOps.bas ({SETUP_DOC} Step 3)"
         )
     elif state == "not_running":
-        problem = "PowerPoint isn't running. Open DeckOps.pptm with macros enabled"
+        problem = (
+            "PowerPoint isn't running. Open DeckOps.pptm and approve macros for "
+            f"that file if prompted ({SETUP_DOC} Step 3)"
+        )
     elif state == "macro_unreachable":
         problem = (
-            "PowerPoint can't reach the DeckOps macro. Open DeckOps.pptm with macros "
-            f"enabled ({SETUP_DOC} Step 1)"
+            "PowerPoint can't reach the DeckOps macro. Open DeckOps.pptm and check "
+            f"macro approval for that file ({SETUP_DOC} Step 3)"
         )
     else:
         problem = (
