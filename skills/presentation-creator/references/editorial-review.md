@@ -62,11 +62,14 @@ confirmed findings so they can be counted. Keep the scope to the supplied prose.
 Leave identifiers, syntax, raw quotes, transcripts, numerical results, and visual
 prompts out of the scan.
 
-Review suggestions in context and apply warranted edits to the authoring draft
-before approval. Keep intentional phrasing when a source passage or explicit
-direction supports it in this context. Check the revised passages for meaning,
-voice, and continuity. Run scoped review again on passages you substantially
-rewrite. Leave approval and persistence with the calling skill.
+When drafting or revising, review suggestions in context and apply warranted
+edits before approval. Keep intentional phrasing when a source passage or
+explicit direction supports it in this context. Check revised passages for
+meaning, voice, and continuity. Run scoped review again on passages you
+substantially rewrite. Leave approval and persistence with the calling skill.
+
+For a guardrail scan or other review-only task, report findings and suggestions.
+Leave the draft text untouched.
 
 If the scoped review is unavailable, fails, or requests a full blog workflow,
 continue the toolkit’s editorial pass and report the reason the scan was skipped.
