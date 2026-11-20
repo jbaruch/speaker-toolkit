@@ -224,7 +224,7 @@ def test_pure_ascii_never_asks_powerpoint_anything(tmp_path, harness):
     [
         ("state=ok|stamp=0123456789abcdef", "Re-import RunDeckOps.bas"),
         ("state=not_running", "PowerPoint isn't running"),
-        ("state=macro_unreachable|detail=no macro", "Open DeckOps.pptm"),
+        ("state=macro_unreachable|detail=no macro", "macro approval for that file"),
     ],
     ids=["stale", "not-running", "unreachable"],
 )

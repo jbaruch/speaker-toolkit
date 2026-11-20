@@ -32,9 +32,8 @@ generating slide structure (see `rules/slide-generation-rules.md`).
     <basePath> <outPath> <importSpec> <orderStr> <replaceStr>
   # orderStr: "BASE:1 BASE:2 voxxed:13 BASE:49"  (alias:1-based-slide-#)
   ```
-- One-time setup is a manual, GUI-bound sequence (enable VBA macros, create the
-  `DeckOps.pptm` macro container, import the `.bas`, grant Automation consent).
-  Walk the user through it interactively — see
+- Set up DeckOps in PowerPoint. Create the macro container, import the module,
+  approve macros for that file, and grant Automation consent. Follow
   `skills/presentation-builder/references/deck-editing-setup.md`.
 - Never assume whether setup has been done — run `deckops-doctor.py --vault-root <path>`
   and act on its `status`. Statuses and their routing live in Step 0 of the setup doc.

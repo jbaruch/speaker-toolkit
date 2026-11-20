@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.22.6 — 2026-11-20
+
+- fix(powerpoint): Scope macro approval to DeckOps (#579)
+
 ## 0.22.5 — 2026-11-20
 
 - fix(writing): Edit toolkit drafts before approval (#578)
