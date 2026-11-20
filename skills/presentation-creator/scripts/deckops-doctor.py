@@ -156,9 +156,10 @@ STATUSES = {
     ),
     "macro_unreachable": (
         "PowerPoint is running but the DeckOps macro did not answer — ask the user "
-        "to open {container}, confirm macros are enabled, and confirm the module "
-        "was imported into THAT file "
-        "(skills/presentation-builder/references/deck-editing-setup.md Steps 1-3)."
+        "to open {container}, approve macros for that file, and confirm the module "
+        "was imported into it (skills/presentation-builder/references/"
+        "deck-editing-setup.md Step 3). If no approval prompt appears, check "
+        "the notification setting (Step 1)."
     ),
     "probe_failed": (
         "The PowerPoint probe could not run, so the setup state is UNKNOWN — read "
@@ -185,9 +186,9 @@ STATUSES = {
         "{container} is open and holds a DeckOps module with no version macro, so "
         "it is a build predating the stamp (expected {expected}) — re-import it "
         "per skills/presentation-builder/references/deck-editing-setup.md Step 3. "
-        "Disabled macros look identical from "
-        "outside, so if the re-import does not clear this, confirm macros are "
-        "enabled (Step 1)."
+        "If the probe still cannot reach the macro, ask the user to confirm macro "
+        "approval for that file (Step 3). If no approval prompt appears, check "
+        "the notification setting (Step 1)."
     ),
 }
 

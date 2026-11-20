@@ -41,7 +41,7 @@ same thing as one sentence:
 | `macro_unreachable` | Container not open, macros off, or the module was NEVER imported | Steps 1–3 |
 | `powerpoint_not_running` | Set up; PowerPoint just isn't open | Step 6 |
 | `macro_stale` | The macro answered with an old stamp — setup is done, it needs a re-import | Step 3 (Updating) |
-| `macro_stale_inferred` | The open container may hold a module with no version macro or still need file approval | Step 3 (Updating and file approval) |
+| `macro_stale_inferred` | The open container may hold a module with no version macro or still need file approval | Step 3. Check Step 1 if no file-approval prompt appears. |
 | `driver_drift` | Shipped drivers don't match their mirrors | Read `drivers.problems`; it names the fix |
 | `probe_failed` | The probe could not run, so the state is UNKNOWN | Read `live.detail` — usually denied Automation consent (Step 4) |
 | `probe_missing` | The probe driver or `osascript` is absent | Reinstall the plugin |
@@ -65,10 +65,11 @@ has them. Nothing here requires a manual restore.
 
 ## Step 1 — Check PowerPoint macro notifications
 
-Keep PowerPoint's **Disable all macros with notification** setting. The user
-can approve the DeckOps file when opening it after Step 3. If a managed Office
-policy blocks this approval, stop the PowerPoint workflow and report the
-restriction. Proceed to Step 2.
+Check **PowerPoint → Settings → Security & Privacy** for **Disable all macros
+with notification**. If PowerPoint suppresses notifications, the user can
+select this setting to have PowerPoint ask before running macros. If managed
+Office policy prevents per-file approval, stop and report the restriction.
+Proceed to Step 2.
 [Microsoft's macro settings for Mac](https://support.microsoft.com/en-gb/office/vba/enable-or-disable-macros-in-microsoft-365-for-mac)
 
 ## Step 2 — Create the macro container `DeckOps.pptm`
@@ -120,10 +121,13 @@ or ⌥F11), select **DeckOps.pptm's** project in the left pane, then
 **File → Import File…** and choose the exported `RunDeckOps.bas`. In that panel
 ⇧⌘G opens "Go to Folder" and ⇧⌘. toggles hidden files — the `.deckops` directory
 starts with a dot, so one of the two is needed. Save `DeckOps.pptm` (⌘S).
-If PowerPoint needs to reopen the file to prompt, close it and reopen it from
-the verified vault path. The user approves macros only for the DeckOps file
+### Approve the DeckOps file
+
+If PowerPoint needs to reopen the file to prompt, close it and reopen the same
+verified DeckOps file. The user approves macros only for the file
 they created and populated with the installed toolkit's module. Leave
 PowerPoint's macro notification setting in effect for other presentations.
+If the approval prompt is absent, check Step 1 and reopen the file.
 
 **Updating the macro later.** A plugin update ships a new macro; the copy already
 imported into `DeckOps.pptm` keeps running the OLD code, silently, because nothing
@@ -138,6 +142,7 @@ are not interchangeable:
   version macro, which is what a container imported before the stamp existed looks
   like. Disabled macros silence the probe identically, so this one is an inference:
   re-import the module. If the probe still fails, check approval for that file.
+  Check Step 1 if PowerPoint does not offer approval.
 
 How the two are classified is
 `skills/presentation-creator/scripts/deckops-doctor.py`'s `inspect_container` /
