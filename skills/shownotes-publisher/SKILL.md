@@ -105,8 +105,21 @@ for Step 7. Reconcile factual claims with the transcript, notes, and demos.
 Follow [references/talk-skill.md](references/talk-skill.md) for missing-analysis
 recovery and pre-talk treatment. Do not reduce this source to a provenance note.
 
+### Slide PDF Hosting
+
+- Host slide PDFs in Google Drive, in the talk's existing Drive folder.
+- Publish only the Drive preview link in the configured Jekyll shownotes site.
+- Never copy or commit a slide PDF into the shownotes repository, including
+  `assets/slides/`, or substitute a site-hosted PDF URL.
+- Resolve the existing PDF's Drive file ID from Drive metadata or the synced
+  local file. Reuse that file; do not create a second upload.
+- Verify public reader access and use
+  `https://drive.google.com/file/d/{file_id}/preview`.
+- If the Drive preview is unavailable, omit the Slides field and report the
+  missing publication step. Do not invent an alternative hosting destination.
+
 **Ask for the slides PDF embed URL only when needed** and not already
-supplied or present in the existing page (the Google Drive preview URL).
+supplied, present in the page, or discoverable from the existing Drive file.
 A skill-only or video-only update does not need a new slides URL.
 Don't ask about Video; URLs arrive post-recording, and
 omitting the line is what fires the "Video Coming Soon" badge
@@ -352,6 +365,10 @@ link and expanded content when a skill exists; title, conference + date
 (Available vs Coming Soon), slides embed, single-paragraph
 abstract, resources list. If a field doesn't render, the parser
 didn't match — re-check Step 4 rules.
+
+For slide PDFs, confirm the built page contains a Drive preview iframe with
+the verified file ID, then open the published page and confirm the slides
+render. A PDF hyperlink or HTTP 200 alone does not pass this check.
 
 Proceed immediately to Step 10.
 

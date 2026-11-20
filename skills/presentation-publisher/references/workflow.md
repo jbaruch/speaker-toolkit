@@ -11,7 +11,10 @@ Never require all services' secrets as a global pre-flight.
    approves candidates before a page consumes them. Extraction alone is local.
 2. If the shownotes destination needs an exported/uploaded deck first, invoke
    `Skill(skill: "presentation-builder")` for that prerequisite export and wait
-   for its verified output. Do not publish a nonexistent slides URL.
+   for its verified output. For Jekyll slide PDFs, follow
+   [Slide PDF Hosting](../../shownotes-publisher/SKILL.md#slide-pdf-hosting).
+   Resolve and verify the Drive preview after export; a local export path is
+   not a published slides URL.
 3. If shownotes are enabled, read [shownotes.md](shownotes.md). For Jekyll, invoke
    `Skill(skill: "shownotes-publisher")` with the approved resources and slides
    URL; resume here at live-URL verification and tracking persistence.
