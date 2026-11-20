@@ -41,7 +41,7 @@ same thing as one sentence:
 | `macro_unreachable` | Container not open, macros off, or the module was NEVER imported | Steps 1–3 |
 | `powerpoint_not_running` | Set up; PowerPoint just isn't open | Step 6 |
 | `macro_stale` | The macro answered with an old stamp — setup is done, it needs a re-import | Step 3 (Updating) |
-| `macro_stale_inferred` | The OPEN container holds a module with no version macro. Inferred, not observed: disabled macros look identical | Step 3 (Updating), then Step 1 if it persists |
+| `macro_stale_inferred` | The open container may hold a module with no version macro or still need file approval | Step 3 (Updating and file approval) |
 | `driver_drift` | Shipped drivers don't match their mirrors | Read `drivers.problems`; it names the fix |
 | `probe_failed` | The probe could not run, so the state is UNKNOWN | Read `live.detail` — usually denied Automation consent (Step 4) |
 | `probe_missing` | The probe driver or `osascript` is absent | Reinstall the plugin |
@@ -63,10 +63,13 @@ drivers aren't on disk after install. The doctor and the `.sh` wrappers restore
 them automatically from their committed `.txt` mirrors; a dev checkout already
 has them. Nothing here requires a manual restore.
 
-## Step 1 — Enable VBA macros
+## Step 1 — Check PowerPoint macro notifications
 
-Ask the user to open **PowerPoint → Settings → Security & Privacy** and enable
-macros ("Enable all macros", or enable + trust). Proceed to Step 2.
+Keep PowerPoint's **Disable all macros with notification** setting. The user
+can approve the DeckOps file when opening it after Step 3. If a managed Office
+policy blocks this approval, stop the PowerPoint workflow and report the
+restriction. Proceed to Step 2.
+[Microsoft's macro settings for Mac](https://support.microsoft.com/en-gb/office/vba/enable-or-disable-macros-in-microsoft-365-for-mac)
 
 ## Step 2 — Create the macro container `DeckOps.pptm`
 
@@ -117,6 +120,10 @@ or ⌥F11), select **DeckOps.pptm's** project in the left pane, then
 **File → Import File…** and choose the exported `RunDeckOps.bas`. In that panel
 ⇧⌘G opens "Go to Folder" and ⇧⌘. toggles hidden files — the `.deckops` directory
 starts with a dot, so one of the two is needed. Save `DeckOps.pptm` (⌘S).
+If PowerPoint needs to reopen the file to prompt, close it and reopen it from
+the verified vault path. The user approves macros only for the DeckOps file
+they created and populated with the installed toolkit's module. Leave
+PowerPoint's macro notification setting in effect for other presentations.
 
 **Updating the macro later.** A plugin update ships a new macro; the copy already
 imported into `DeckOps.pptm` keeps running the OLD code, silently, because nothing
@@ -130,7 +137,7 @@ are not interchangeable:
 - `macro_stale_inferred` — the open container READS as holding a module with no
   version macro, which is what a container imported before the stamp existed looks
   like. Disabled macros silence the probe identically, so this one is an inference:
-  do the re-import, and if it does not clear, confirm macros are enabled (Step 1).
+  re-import the module. If the probe still fails, check approval for that file.
 
 How the two are classified is
 `skills/presentation-creator/scripts/deckops-doctor.py`'s `inspect_container` /
@@ -319,53 +326,27 @@ Steps 1–4 are one-time per machine; this is what happens on EVERY real deck bu
    `ExpandBuilds` renumbers later slides, so it runs before the by-index passes
    (see `rules/deck-editing-rules.md`).
 4. On the FIRST run after setup, the user clicks the macOS Automation prompt
-   (Step 4). After that the agent runs the passes unattended, with no
-   per-illustration prompts (images are staged into PowerPoint's container — see
-   the per-illustration caveat below).
+   (Step 4). Run subsequent passes only on the files and output destination
+   authorized for the build. Follow the file access instructions below.
 5. When the build finishes, open the output in PowerPoint **and** Keynote and
    confirm it's clean (no "Repair" prompt, art present) before trusting it.
 
-## Google Drive caveat (important)
+## File access and staging
 
-If decks live in a **Google Drive** "My Drive" folder (the macOS Google Drive
-File-Provider mount), sandboxed PowerPoint can OPEN/read them but **cannot
-create a new file there via VBA** — `SaveCopyAs` fails with E_FAIL
-(`-2147467259`). `run-deck-ops.sh` works around this by saving to a local
-staging folder (`~/.deckops-staging/`) and then moving the result into the Drive
-destination with the shell (which writes to Drive normally). Keep using
-uniquely-named copies for the base/import/output so PowerPoint's
-filename-keyed open-deck cache never hands back the wrong deck.
+Use only the build's approved base deck, template, assets, import decks, and
+output destination. The shell copies those inputs to a per-run directory in
+PowerPoint's container. The macro reads the copies and saves its output
+there. The wrapper writes the result to the approved destination using the
+shell's existing access. Staging supports Google Drive's File Provider,
+where PowerPoint's `SaveCopyAs` can fail when creating a new file.
 
-This applies to `DeckOps.pptm` itself only for creation: saving it into a Drive
-vault in Step 2 is a normal GUI save, which Drive accepts. The macro never writes
-to its own container.
+`container-stage.sh` owns the per-run folder under
+`~/Library/Containers/com.microsoft.Powerpoint/Data/.deckops-stage/`.
+Its EXIT trap cleans up temporary files, including after a failed run.
+Register additional cleanup through `container_stage_on_exit <function>`.
 
-## Powerbox prompt caveat (important)
-
-Sandboxed PowerPoint shows a Powerbox "grant access" / "select file" prompt
-whenever a VBA macro touches a file OUTSIDE its container — opening a Google-Drive
-base deck or template (`Presentations.Open`), reading an illustration
-(`UserPicture`), or writing the output (`SaveCopyAs` to a Drive folder E_FAILs, and
-to a local `~/.deckops-staging` subdir prompts every run). On a 40-slide deck that
-is dozens of clicks.
-
-Every deck-ops wrapper avoids this by routing ALL macro file I/O through
-PowerPoint's own sandbox container (`~/Library/Containers/com.microsoft.Powerpoint/Data/.deckops-stage/<pid>/`),
-which a sandboxed app reads and writes with no prompt:
-- `container-stage.sh` (sourced by every wrapper) provides `stage_base` — it copies
-  the base deck / template / QR image into the container and opens them from there.
-- `stage-images-into-container.py` stages illustration backgrounds the same way.
-- The OUTPUT is saved into the container (`OUT_STAGE_DIR`), then the shell (not
-  sandboxed) moves it to the Drive destination.
-- A single EXIT trap in `container-stage.sh` removes the per-run staging dir;
-  wrappers must NOT set their own EXIT trap (it would override that one and leak
-  copies). A wrapper that needs more cleanup registers a function with
-  `container_stage_on_exit <function>`; the helper's trap runs it first and warns,
-  without changing the exit status, if it fails.
-
-So a full build runs with ZERO prompts and no Full Disk Access grant. If the
-container is absent (PowerPoint never launched), the wrappers fall back to the
-original paths and a local output dir — prompts return, but nothing breaks.
-
-Mac PowerPoint VBA has no `Application.FileDialog`, so a "grant one folder" macro is
-impossible; container-staging is the supported no-prompt path.
+When PowerPoint's container is absent, the wrappers may use the original inputs
+and a local output folder. If an authorized file needs a PowerPoint file-access
+prompt, let the user grant access to that file or provide an accessible copy.
+Stop the affected pass if access is denied. File staging uses the shell's
+existing permissions and requires no change to macOS privacy settings.
