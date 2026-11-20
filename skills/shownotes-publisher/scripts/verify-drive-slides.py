@@ -84,8 +84,20 @@ def main() -> int:
     parser.add_argument("file_id")
     args = parser.parse_args()
     try:
-        result = verify(args.pdf, args.file_id, json.load(sys.stdin))
-    except (OSError, ValueError) as exc:
+        metadata = json.load(sys.stdin)
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+        print("ERROR: Supply fresh Drive files.get JSON on stdin.", file=sys.stderr)
+        return 1
+    try:
+        result = verify(args.pdf, args.file_id, metadata)
+    except OSError as exc:
+        print(
+            f"ERROR: Cannot read the PDF at {args.pdf}: {exc.strerror}. "
+            "Pass a readable slide-export path.",
+            file=sys.stderr,
+        )
+        return 1
+    except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(result))

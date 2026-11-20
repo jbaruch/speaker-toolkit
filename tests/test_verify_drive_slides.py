@@ -22,16 +22,39 @@ PDF_METADATA = {
 }
 
 
-def run_verifier(tmp_path, metadata, content=PDF_BYTES):
-    pdf = tmp_path / "export.pdf"
-    pdf.write_bytes(content)
+def run_cli(pdf, metadata_text):
     return subprocess.run(
         [sys.executable, str(VERIFY), str(pdf), FILE_ID],
-        input=json.dumps(metadata),
+        input=metadata_text,
         capture_output=True,
         check=False,
         text=True,
     )
+
+
+def run_verifier(tmp_path, metadata, content=PDF_BYTES):
+    pdf = tmp_path / "export.pdf"
+    pdf.write_bytes(content)
+    return run_cli(pdf, json.dumps(metadata))
+
+
+@pytest.mark.parametrize("metadata_text", ["", "{"])
+def test_malformed_metadata_explains_where_to_get_it(tmp_path, metadata_text):
+    pdf = tmp_path / "export.pdf"
+    pdf.write_bytes(PDF_BYTES)
+    result = run_cli(pdf, metadata_text)
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "Supply fresh Drive files.get JSON on stdin" in result.stderr
+
+
+def test_unreadable_pdf_explains_what_path_to_supply(tmp_path):
+    result = run_cli(tmp_path / "missing.pdf", json.dumps(PDF_METADATA))
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "Pass a readable slide-export path" in result.stderr
 
 
 def test_preview_url_requires_matching_drive_content(tmp_path):

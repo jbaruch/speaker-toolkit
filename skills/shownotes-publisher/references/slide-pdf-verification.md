@@ -24,6 +24,9 @@ The preview URL identifies matching bytes at the time of the metadata read.
 Verify the preview opens as a signed-out reader before using the URL.
 Authenticated metadata alone does not establish public access.
 
+Exit 2 reports invalid CLI usage. The verifier reads the export and stdin.
+It performs no writes or network calls.
+
 Exit 1 prints the verification failure to stderr and emits no URL. If the
 checksum differs, let the existing upload finish or update the same Drive
 file, then read fresh metadata and retry. A rendering iframe can still show
