@@ -38,7 +38,7 @@ extraction grammar per `extracted_*` field;
 [references/template-conditionals.md](references/template-conditionals.md) —
 how `talk.html` renders each field;
 [references/common-mistakes.md](references/common-mistakes.md) —
-13 failure modes with the right way;
+publication failures and remedies;
 [references/talk-skill.md](references/talk-skill.md) — content synthesis,
 single-file publishing contract, and verification commands (Step 7).
 
@@ -105,9 +105,18 @@ for Step 7. Reconcile factual claims with the transcript, notes, and demos.
 Follow [references/talk-skill.md](references/talk-skill.md) for missing-analysis
 recovery and pre-talk treatment. Do not reduce this source to a provenance note.
 
-**Ask for the slides PDF embed URL only when needed** and not already
-supplied or present in the existing page (the Google Drive preview URL).
-A skill-only or video-only update does not need a new slides URL.
+### Slide PDF Hosting
+
+- Host slide PDFs in Google Drive, in the talk's existing Drive folder.
+- Publish only the Drive preview link in the configured Jekyll shownotes site.
+- Never copy or commit a slide PDF into the shownotes repository, including
+  `assets/slides/`, or substitute a site-hosted PDF URL.
+Before adding or replacing the Slides field, read
+[slide PDF verification](references/slide-pdf-verification.md). Verify the
+approved export against fresh metadata for the existing Drive file ID. Check
+public reader access to the returned preview. Ask for a missing export or
+Drive file ID only when needed to complete that check. Skill-only and video-only
+updates preserve the existing Slides field.
 Don't ask about Video; URLs arrive post-recording, and
 omitting the line is what fires the "Video Coming Soon" badge
 (Step 5). If the user volunteers a video URL in the same turn,
@@ -353,6 +362,10 @@ link and expanded content when a skill exists; title, conference + date
 abstract, resources list. If a field doesn't render, the parser
 didn't match — re-check Step 4 rules.
 
+For added or replaced slide PDFs, confirm the built page contains a Drive
+preview iframe with the verified file ID. A PDF hyperlink or HTTP 200 alone
+does not pass this check.
+
 Proceed immediately to Step 10.
 
 ## Step 10 — Publish
@@ -431,7 +444,9 @@ gh run watch --repo "{owner}/{repo}" --exit-status {deploy_run_id}
 curl -fsI "{site.url}{site.baseurl}/talks/{talk_page_stem}/" | head -1
 ```
 
-Require a successful deployment and HTTP 200.
+Require a successful deployment and HTTP 200. For added or replaced slides,
+open the live page as a signed-out reader and confirm the verified Drive PDF
+renders inside the iframe.
 
 When a skill exists, also run the live verification in
 [references/talk-skill.md](references/talk-skill.md#verification). Return
