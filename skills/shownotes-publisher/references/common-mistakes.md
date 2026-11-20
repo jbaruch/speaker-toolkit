@@ -11,9 +11,9 @@ field at that site URL. The embed include recognizes provider URLs; a static
 PDF URL falls back to a link even when the PDF download returns HTTP 200.
 
 **Do:** Follow [Slide PDF Hosting](../SKILL.md#slide-pdf-hosting). Keep the PDF
-in the talk's Drive folder, resolve its existing file ID, verify public reader
-access and publish its Drive `/preview` link. Inspect the built iframe and the
-live rendering. Do not add native-PDF hosting to the site to work around an
+in the talk's Drive folder and verify its checksum matches the local export.
+Confirm public reader access and publish the Drive preview link. Inspect
+the built iframe and the live rendering. Do not add native-PDF hosting to the site to work around an
 incorrect publication destination.
 
 ## 1. Adding a Video URL Before the Recording Is Published
