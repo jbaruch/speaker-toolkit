@@ -5,6 +5,10 @@ The helper reads a tracking database, fetches stable yt-dlp metadata once per
 active YouTube ID, compares that evidence with every record using the ID, and
 prints one deterministic JSON report. It never writes the database, never
 applies a URL, and never treats uploader/upload date as speaker/recorded date.
+
+Repeat --filename to fetch active and candidate identities for an exact batch.
+--candidates-from adds conflicts from a shownotes scan report. Collision
+checks for the requested active IDs still include the whole catalog.
 """
 
 from __future__ import annotations
@@ -529,6 +533,8 @@ def _talk_indexes_by_filename(talks: list[Any]) -> dict[str, int]:
 def candidate_bindings(
     report: Any,
     talks: list[Any],
+    *,
+    selected_filenames: frozenset[str] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Bind each shownotes conflict candidate to an existing talk and lane.
 
@@ -550,6 +556,10 @@ def candidate_bindings(
     - ``candidate_provider_unsupported`` — the entry names a lane outside
       CANDIDATE_LANES, so it carries no provider identity to audit. The report
       stays intact and every other candidate proceeds.
+
+    With a selection, entries with known filenames outside that selection
+    are skipped. The report envelope and entries without an attributable
+    filename still require validation.
 
     A fatal refusal returns no bindings. The active lane still audits, so the
     cost is coverage of the conflicts, never of the sources already stored.
@@ -635,8 +645,18 @@ def candidate_bindings(
             )
             fatal += 1
             continue
+        filename = _nonempty(entry.get("filename"))
+        if (
+            selected_filenames is not None
+            and filename is not None
+            and filename not in selected_filenames
+        ):
+            continue
         disposition = entry.get("disposition")
-        if disposition not in CANDIDATE_DISPOSITIONS:
+        if (
+            not isinstance(disposition, str)
+            or disposition not in CANDIDATE_DISPOSITIONS
+        ):
             findings.append(
                 _finding(
                     "candidate_report_invalid",
@@ -652,7 +672,6 @@ def candidate_bindings(
             continue
         if disposition != "review_required":
             continue
-        filename = _nonempty(entry.get("filename"))
         issues = entry.get("issues")
         proposal = entry.get("proposal")
         if filename is None or not isinstance(issues, list):
@@ -767,7 +786,8 @@ def audit_database(
     choosing between them uses this auditor's bounded fetching, stable evidence
     shape, and no-write guarantee instead of an ad hoc lookup. A candidate is
     never promoted or persisted here. With ``selected_filenames``, fetch metadata
-    only for the named talks' IDs and check those IDs for catalog collisions.
+    only for the named talks' active IDs and candidates, and check the active
+    IDs for catalog collisions.
     """
     captured = normalize_captured_at(captured_at)
     database_name = str(Path(database_path).expanduser().resolve(strict=False))
@@ -938,7 +958,9 @@ def audit_database(
     candidate_audits: list[dict[str, Any]] = []
     candidate_members: defaultdict[str, list[tuple[int, str]]] = defaultdict(list)
     if candidate_report is not NO_CANDIDATE_REPORT:
-        bindings, binding_findings = candidate_bindings(candidate_report, talks)
+        bindings, binding_findings = candidate_bindings(
+            candidate_report, talks, selected_filenames=selected_filenames
+        )
         findings.extend(binding_findings)
         for binding in bindings:
             index = binding["talk_index"]
@@ -1404,11 +1426,10 @@ def main(argv: list[str] | None = None) -> int:
         "--captured-at",
         help="timezone-aware ISO timestamp for reproducible capture output",
     )
-    scope = parser.add_mutually_exclusive_group()
-    scope.add_argument(
-        "--filename", action="append", help="audit this active talk; repeat for a batch"
+    parser.add_argument(
+        "--filename", action="append", help="audit this talk; repeat for a batch"
     )
-    scope.add_argument(
+    parser.add_argument(
         "--candidates-from",
         type=Path,
         help=(

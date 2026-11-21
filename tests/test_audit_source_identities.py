@@ -1,6 +1,7 @@
 """Offline tests for the networked, read-only source identity audit helper."""
 
 from copy import deepcopy
+from functools import partial
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -655,6 +656,71 @@ def _audit(audit_source_identities, database, report, fetcher=None):
         candidate_report=report,
     )
     return result, calls
+
+
+def test_cli_scopes_candidate_and_active_fetches_to_selected_talk(
+    audit_source_identities, tmp_path, monkeypatch, capsys
+):
+    database_path = tmp_path / "tracking-database.json"
+    database_path.write_text(
+        json.dumps(
+            {
+                "talks": [
+                    talk("new.md", status="pending"),
+                    talk("shared.md", title="An unrelated archived talk"),
+                    talk(
+                        "other.md",
+                        video_url=f"https://youtu.be/{OTHER_VIDEO_ID}",
+                        youtube_id=OTHER_VIDEO_ID,
+                    ),
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    report_path = tmp_path / "scan.json"
+    report_path.write_text(
+        json.dumps(
+            scan_report(
+                conflict_entry("new.md"),
+                conflict_entry("other.md", candidate_id="ZzYyXxWwV_4"),
+            )
+        ),
+        encoding="utf-8",
+    )
+    calls = []
+
+    def fetcher(video_id):
+        calls.append(video_id)
+        return metadata(video_id)
+
+    monkeypatch.setattr(
+        audit_source_identities,
+        "audit_path",
+        partial(audit_source_identities.audit_path, metadata_fetcher=fetcher),
+    )
+    rc = audit_source_identities.main(
+        [
+            str(database_path),
+            "--filename",
+            "new.md",
+            "--candidates-from",
+            str(report_path),
+            "--captured-at",
+            CAPTURED_AT,
+        ]
+    )
+    result = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert calls == [VIDEO_ID, CANDIDATE_ID]
+    assert [row["filename"] for row in result["talks"]] == ["new.md"]
+    assert [row["filename"] for row in result["candidates"]] == ["new.md"]
+    collision = next(
+        item
+        for item in result["findings"]
+        if item["code"] == "same_id_cross_talk_collision"
+    )
+    assert collision["filenames"] == ["new.md", "shared.md"]
 
 
 def test_active_and_candidate_both_get_comparable_provider_evidence(

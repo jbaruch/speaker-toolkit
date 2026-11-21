@@ -484,6 +484,8 @@ prints deterministic JSON without changing the vault. Review every proposed
 upload date is not recorded date, and the provider webpage URL must never be
 auto-applied as an active source. See
 [source-identity-audit.md](source-identity-audit.md).
+If shownotes reported a source conflict for a selected talk, add
+`--candidates-from "{scan_report_path}"` to that same command.
 
 Only after that human review, write a source-repair plan containing supported
 facts and exact old-value preconditions, then dry-run it before applying:
