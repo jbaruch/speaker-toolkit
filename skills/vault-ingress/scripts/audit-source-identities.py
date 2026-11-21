@@ -758,6 +758,7 @@ def audit_database(
     metadata_fetcher: Callable[[str], dict[str, Any]],
     captured_at: str | datetime | None = None,
     candidate_report: Any = NO_CANDIDATE_REPORT,
+    selected_filenames: frozenset[str] | None = None,
 ) -> dict[str, Any]:
     """Audit one loaded database. The input object is never mutated.
 
@@ -765,7 +766,8 @@ def audit_database(
     conflicts are bound to talks and audited alongside the active source, so
     choosing between them uses this auditor's bounded fetching, stable evidence
     shape, and no-write guarantee instead of an ad hoc lookup. A candidate is
-    never promoted or persisted here.
+    never promoted or persisted here. With ``selected_filenames``, fetch metadata
+    only for the named talks' IDs and check those IDs for catalog collisions.
     """
     captured = normalize_captured_at(captured_at)
     database_name = str(Path(database_path).expanduser().resolve(strict=False))
@@ -838,9 +840,18 @@ def audit_database(
                     talks = raw_talks
 
     event_aliases = known_event_aliases(talks)
+    if selected_filenames is not None and not findings:
+        missing = selected_filenames - _talk_indexes_by_filename(talks).keys()
+        if missing:
+            raise ValueError(
+                f"choose exact filenames from the tracking database: {sorted(missing)}"
+            )
 
     active_count = 0
     audits_by_index: dict[int, dict[str, Any]] = {}
+    collision_groups: defaultdict[str, list[tuple[int, dict[str, Any]]]] = defaultdict(
+        list
+    )
     for index, talk in enumerate(talks):
         if not isinstance(talk, dict):
             findings.append(
@@ -858,9 +869,13 @@ def audit_database(
         video_url = _nonempty(talk.get("video_url"))
         if video_url is None:
             continue
-        active_count += 1
         filename = _filename(talk, index)
         video_id = parse_youtube_id(video_url)
+        if video_id is not None:
+            collision_groups[video_id].append((index, talk))
+        if selected_filenames is not None and filename not in selected_filenames:
+            continue
+        active_count += 1
         source = parse_source_identity(video_url)
         audit = {
             "talk_index": index,
@@ -1223,7 +1238,7 @@ def audit_database(
                 )
 
     for video_id in sorted(groups):
-        members = groups[video_id]
+        members = collision_groups[video_id]
         member_talks = [talk for _, talk in members]
         if len(member_talks) < 2 or not _talks_collide(member_talks):
             continue
@@ -1330,6 +1345,7 @@ def audit_path(
     metadata_fetcher: Callable[[str], dict[str, Any]] = fetch_youtube_metadata,
     captured_at: str | datetime | None = None,
     candidate_report: Any = NO_CANDIDATE_REPORT,
+    selected_filenames: frozenset[str] | None = None,
 ) -> dict[str, Any]:
     """Read and audit a vault/database path without writing any file."""
     database_path = resolve_input(value).absolute()
@@ -1374,6 +1390,7 @@ def audit_path(
         metadata_fetcher=metadata_fetcher,
         captured_at=captured_at,
         candidate_report=candidate_report,
+        selected_filenames=selected_filenames,
     )
 
 
@@ -1387,7 +1404,11 @@ def main(argv: list[str] | None = None) -> int:
         "--captured-at",
         help="timezone-aware ISO timestamp for reproducible capture output",
     )
-    parser.add_argument(
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument(
+        "--filename", action="append", help="audit this active talk; repeat for a batch"
+    )
+    scope.add_argument(
         "--candidates-from",
         type=Path,
         help=(
@@ -1416,6 +1437,7 @@ def main(argv: list[str] | None = None) -> int:
             args.vault_or_database,
             captured_at=args.captured_at,
             candidate_report=candidate_report,
+            selected_filenames=frozenset(args.filename) if args.filename else None,
         )
     except ValueError as exc:
         parser.error(str(exc))

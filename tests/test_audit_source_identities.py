@@ -109,6 +109,30 @@ def test_captures_provider_facts_without_inventing_speakers_or_recorded_date(
     assert "repairs" not in report
 
 
+def test_selected_audit_fetches_only_the_selected_talk(audit_source_identities):
+    old = talk(
+        "archived.md",
+        video_url=f"https://youtu.be/{OTHER_VIDEO_ID}",
+        youtube_id=OTHER_VIDEO_ID,
+    )
+    calls = []
+
+    def fetcher(video_id):
+        calls.append(video_id)
+        return metadata(video_id)
+
+    report = audit_source_identities.audit_database(
+        {"talks": [old, talk("new.md", status="pending")]},
+        database_path="/vault/tracking-database.json",
+        metadata_fetcher=fetcher,
+        captured_at=CAPTURED_AT,
+        selected_filenames=frozenset({"new.md"}),
+    )
+    assert report["complete"]
+    assert [row["filename"] for row in report["talks"]] == ["new.md"]
+    assert calls == [VIDEO_ID]
+
+
 def test_likely_non_delivery_clip_uses_title_and_duration_evidence(
     audit_source_identities,
 ):

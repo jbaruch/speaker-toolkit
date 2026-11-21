@@ -210,9 +210,20 @@ atomic and rejects a tracking-database symlink. See
 [schemas-db.md](schemas-db.md#shownotes-scanimport-report)
 for the complete report and mutation contract.
 
-**Scan for .pptx files:** Do not recursively glob the source tree. Run one bounded
-directory extraction, which owns deterministic discovery, symlink/reparse-point
-rejection, and aggregate file/input/output/wall budgets:
+## Scan for PPTX files
+
+Use directory extraction for the PPTX follow-up or an explicit catalog
+maintenance run. Before claiming an intake batch, extract and register only
+the delivered decks identified for the selected talks. The same catalog writer
+accepts a single-deck extraction result.
+
+```bash
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/pptx-extraction.py" \
+  "<selected-pptx-path>"
+```
+
+For directory extraction, use the bounded discovery entrypoint. It owns
+symlink/reparse-point rejection and aggregate file/input/output/wall budgets.
 
 Read the exact `config.template_skip_patterns` and
 `config.pptx_directory_exclusions` arrays from the strict owner-read result.
@@ -314,8 +325,9 @@ predicate is `binding_refusal` in
 `skills/vault-ingress/scripts/pptx_talk_identity.py`, shared with preflight. Route a rejected deck to owner review
 rather than persisting it.
 
-Rows bound before that writer existed carry no assessment, and preflight blocks
-every one of them. Assess the whole catalog at once with:
+Rows bound before that writer existed carry no assessment. Preflight blocks
+unproven bindings for talks in its evidence scope. For explicit catalog
+maintenance, assess the whole catalog at once with:
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/sweep-pptx-talk-identity.py" \
@@ -399,8 +411,8 @@ do not auto-edit names, aliases, definitions, or graph relationships. The input,
 report, and no-write contracts are defined in
 [pattern-catalog-contract.md](pattern-catalog-contract.md).
 
-**Conditional source-video runtime gate:** Use only the strict owner-read database
-payload to determine whether the upcoming source preflight may inspect any
+**Conditional source-video runtime gate:** Use only the selected records from
+the strict owner-read database payload to determine whether preflight may inspect any
 preserved local recording declared by
 `structured_data.video_extraction.source_video_path`, `video_local_path`, or
 `video_path`. When it may, require the configured runtime before invoking
@@ -418,10 +430,9 @@ allowing preflight to inspect that recording. An unavailable or unreadable video
 disables only source-video evidence; it must not erase or invalidate independently
 verified transcript, rendered-PDF, or native-PPTX evidence.
 
-**Conditional declared-audio runtime gate:** When the same owner-read payload
-has a non-empty `local_audio` collection, preflight probes each declared audio
-file through the bounded media owner. Require its lane before invoking
-preflight:
+**Conditional declared-audio runtime gate:** When a selected talk has a
+declaration in `local_audio`, require its lane before invoking preflight.
+The bounded media owner probes those declarations.
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/check-runtime.py" \
@@ -432,12 +443,20 @@ Repair a failed required lane before preflight inspects declared audio. Never
 probe the audio directly; an unusable declaration unbinds only the transcript
 and timing receipts it would have bound.
 
-**Source/identity preflight:** After bootstrapping and scanning, and before talk
-selection or re-analysis, run the read-only offline gate:
+**Catalog preflight (Step 1):** After bootstrapping and shownotes import, run
+the read-only offline gate before selecting talks. This checks database
+structure, stored identity and duplicate sources across the catalog.
 
 ```bash
-"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/preflight-vault.py" {vault_root}
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/preflight-vault.py" \
+  "{vault_root}" --catalog-only
 ```
+
+**Selected-source preflight (Step 2):** Before claiming, run the same gate with
+one `--filename` per selected talk in place of `--catalog-only`. Pass the
+conditional runtime checks above for those talks. The gate keeps the
+catalog-wide metadata checks and verifies local artifacts for those filenames.
+Use the command without either option for a deliberate full-vault audit.
 
 Exit 1 means one or more blocking integrity errors (identity disagreement,
 unqualified duplicate recording, invalid source claim, or a claimed completed
@@ -450,13 +469,15 @@ the gate never completed — treat the vault as unverified, not clean, per
 report and evidence shape are defined in
 [source-identity-preflight.md](source-identity-preflight.md).
 
-After the offline gate, capture and compare live YouTube provider evidence:
+After selected-source preflight, capture and compare live YouTube provider
+evidence for the same filenames:
 
 ```bash
-"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/audit-source-identities.py" {vault_root}
+"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/audit-source-identities.py" \
+  "{vault_root}" --filename <filename> [--filename <filename> ...]
 ```
 
-This networked audit invokes `yt-dlp` once per distinct active YouTube ID and
+This networked audit invokes `yt-dlp` once per selected active YouTube ID and
 prints deterministic JSON without changing the vault. Review every proposed
 `source_identity` block and finding, especially `likely_non_delivery_clip` and
 `same_id_cross_talk_collision`. Provider uploader is not speaker evidence,
@@ -476,8 +497,8 @@ facts and exact old-value preconditions, then dry-run it before applying:
 
 The apply command validates the whole plan before mutation, refuses active queue
 claims, writes a byte-for-byte backup under `{vault_root}/.backups/`, and replaces
-the DB atomically. Re-run the preflight after applying; do not claim work until
-blocking findings reach zero.
+the DB atomically. Rerun preflight for the same filenames after applying.
+Claim only after blocking findings reach zero.
 
 Registering a source that did not exist at analysis time — a markdown-authored
 deck exported to PDF, a recording that finally published, a hand-recovered
