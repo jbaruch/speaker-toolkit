@@ -88,7 +88,7 @@ writes its partial result manifest before that exit.
 
 Codex is an optional runtime dependency declared and pinned by
 `skills/illustrations/scripts/codex-cli/package.json` and `package-lock.json`.
-Weekly Dependabot PRs renew the pin; dependency bumps retain their own review
+Weekly Renovate PRs renew the pin; dependency bumps retain their own review
 and capability validation. Install the isolated, locked runtime without changing
 your global CLI or login:
 

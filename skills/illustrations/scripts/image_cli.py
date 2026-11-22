@@ -2,7 +2,7 @@
 """Authenticated Codex image invocation with private output and no API retry.
 
 The optional runtime is pinned in scripts/codex-cli/package.json and its lock,
-renewed by weekly Dependabot updates. Each selection/render checks that exact
+renewed by weekly Renovate updates. Each selection/render checks that exact
 version plus capability and authentication. The actual image tool may still be
 unavailable; that is a visible failed render.
 """

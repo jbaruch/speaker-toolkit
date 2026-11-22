@@ -57,7 +57,7 @@ _LANGUAGE = re.compile(r"[a-z]{2,3}(?:-[a-z0-9]{2,8})*\Z")
 
 # Renew the model pin quarterly in a dedicated dependency/capability change.
 # Verify native word alignment and language detection before accepting a new
-# revision. The Python packages retain their own manifest/Dependabot pins.
+# revision. The Python packages retain their own manifest pins renewed by Renovate.
 DEFAULT_WORD_MODEL = {
     "id": "mlx-community/whisper-large-v3-turbo",
     "revision": "a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb",

@@ -36,7 +36,7 @@ from typing import TypedDict
 
 
 # presenterm ships prebuilt release binaries; the checksum is the one published
-# beside the asset. No Dependabot ecosystem tracks a GitHub release referenced
+# beside the asset. Renovate does not track a GitHub release referenced
 # from a script, so the renewal mechanism is stated here rather than delegated:
 # renew quarterly, or when a presenterm behavior this repo depends on changes,
 # by reading the latest release and bumping both literals together.
@@ -61,8 +61,8 @@ PRESENTERM_SHA512 = (
 # and its postinstall is what puts a browser on the runner, which Marp and
 # reveal-md then find too.
 #
-# Renewal is the same manual quarterly read as presenterm's; no scanner tracks
-# these. Bump a version in the manifest, re-run `npm install
+# Use the same manual quarterly renewal as presenterm. renovate.json excludes
+# this directory so coordinated manifest and runtime changes stay together. Bump a version in the manifest, re-run `npm install
 # --package-lock-only` beside it, and commit both.
 NPM_MANIFEST_DIR = Path(__file__).resolve().parent / "deck-renderers"
 NPM_MANIFEST = NPM_MANIFEST_DIR / "package.json"

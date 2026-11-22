@@ -7,18 +7,18 @@ rather than surfacing months later as an unreproducible build.
 
 Both halves parse rather than pattern-match. A substring search for `==` calls
 `pkg===1.0`, `pkg==1.*`, and `pkg @ https://host/a==b.whl` pinned; a text search
-for the Dependabot ecosystem passes on a commented-out entry. Either would let
+for the Renovate manager passes on an inactive entry. Either would let
 the gate report green while the thing it guards is broken.
 
 The `tessl.json` floating carve-out is a separate runtime-managed manifest
 contract and is deliberately out of scope here.
 """
 
+import json
 import sys
 from pathlib import Path
 
 import pytest
-import yaml
 from packaging.requirements import InvalidRequirement, Requirement
 
 if sys.version_info >= (3, 11):
@@ -32,10 +32,7 @@ else:  # requires-python admits 3.10, where tomllib is not in the stdlib
 
 REPO_ROOT = Path(__file__).parents[1]
 PYPROJECT = REPO_ROOT / "pyproject.toml"
-DEPENDABOT = REPO_ROOT / ".github" / "dependabot.yml"
-
-# The manifest's directory as Dependabot addresses it.
-MANIFEST_DIRECTORY = "/"
+RENOVATE = REPO_ROOT / "renovate.json"
 
 
 def _manifest() -> dict:
@@ -104,8 +101,8 @@ def test_every_requirement_pins_an_exact_version(label, requirements):
     }
     assert not violations, (
         f"{label} has requirement(s) that are not exact pins: {violations}. "
-        f"Pin each with `==<version>` and confirm .github/dependabot.yml's pip "
-        f"ecosystem covers it, per rules/dependency-management.md Pinning."
+        f"Pin each with `==<version>` and confirm renovate.json's pep621 "
+        f"manager covers it, per rules/dependency-management.md Pinning."
     )
 
 
@@ -145,27 +142,11 @@ def test_the_pin_check_accepts_real_pins(raw):
     assert pin_violation(raw) is None, pin_violation(raw)
 
 
-def test_dependabot_actively_covers_the_pip_ecosystem():
-    """A pin with no renewal mechanism rots silently.
-
-    Parsed, not grepped: a commented-out or misplaced entry leaves the text
-    present while Dependabot no longer opens a single bump PR.
-    """
-    config = yaml.safe_load(DEPENDABOT.read_text(encoding="utf-8"))
-    pip_updates = [
-        entry for entry in config["updates"] if entry.get("package-ecosystem") == "pip"
-    ]
-    assert len(pip_updates) == 1, (
-        f"expected exactly one active pip update entry, got {len(pip_updates)}"
-    )
-    entry = pip_updates[0]
-    assert entry.get("directory") == MANIFEST_DIRECTORY, (
-        f"pip entry watches {entry.get('directory')!r}, not the directory "
-        f"holding pyproject.toml ({MANIFEST_DIRECTORY!r})"
-    )
-    assert entry.get("schedule", {}).get("interval") == "weekly", (
-        "the pip entry must keep its recurring weekly schedule"
-    )
+def test_renovate_renews_pyproject_pins_weekly():
+    config = json.loads(RENOVATE.read_text(encoding="utf-8"))
+    assert "pep621" in config["enabledManagers"]
+    assert "schedule:weekly" in config["extends"]
+    assert not (REPO_ROOT / ".github" / "dependabot.yml").exists()
 
 
 def test_the_package_version_stays_the_non_published_sentinel():

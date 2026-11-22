@@ -1,6 +1,36 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended"
+    "config:recommended",
+    "schedule:weekly"
+  ],
+  "enabledManagers": [
+    "github-actions",
+    "npm",
+    "pep621"
+  ],
+  "ignorePaths": [
+    ".github/workflows/*.lock.yml",
+    "scripts/deck-renderers/**"
+  ],
+  "packageRules": [
+    {
+      "description": "Preserve manual renewal for actions coordinated with gh-aw",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": [
+        "actions/download-artifact",
+        "actions/github-script",
+        "actions/setup-node",
+        "actions/upload-artifact",
+        "github/gh-aw-actions*"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Keep the supported Python version floor under maintainer control",
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["requires-python"],
+      "enabled": false
+    }
   ]
 }
