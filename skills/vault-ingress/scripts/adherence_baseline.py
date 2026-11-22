@@ -32,6 +32,7 @@ LEGACY_GENERATION_REASON = "legacy_generation"
 CATALOG_FINGERPRINT_MISMATCH_REASON = "catalog_fingerprint_mismatch"
 SCORING_SCHEMA_VERSION_MISMATCH_REASON = "scoring_schema_version_mismatch"
 PERSISTED_EVIDENCE_STALE_REASON = "persisted_evidence_stale"
+PERSISTED_EVIDENCE_DEFERRED_REASON = "persisted_evidence_deferred"
 # The scoring generation whose aggregate is confidence-weighted, and so MAY be
 # fractional — a whole weighted score is valid (two strong patterns against one
 # strong antipattern is `1.0`). Mirrors `return_validation`; restated rather than
@@ -470,7 +471,9 @@ def partition_pattern_scoring_cohort(
     Scoring schema v4 and later also require a caller-supplied, read-only
     artifact-freshness assessor.  A non-empty result excludes the talk with the
     stable ``persisted_evidence_stale`` reason and preserves the assessor's
-    canonical details in ``evidence_freshness_details``.  Earlier scoring
+    canonical details in ``evidence_freshness_details``. An assessor can return
+    ``persisted_evidence_deferred`` alone when the caller intentionally skips
+    verification. Earlier scoring
     schemas retain their historical generation-only behavior and do not invoke
     the assessor.
 
@@ -575,7 +578,11 @@ def partition_pattern_scoring_cohort(
                 exclusion_details.append(
                     {
                         "filename": filename,
-                        "reason_codes": [PERSISTED_EVIDENCE_STALE_REASON],
+                        "reason_codes": [
+                            PERSISTED_EVIDENCE_DEFERRED_REASON
+                            if freshness_details == [PERSISTED_EVIDENCE_DEFERRED_REASON]
+                            else PERSISTED_EVIDENCE_STALE_REASON
+                        ],
                         "evidence_freshness_details": freshness_details,
                         "observed_pattern_scoring_generation_status": (observed_status),
                         "observed_pattern_catalog_fingerprint": (observed_fingerprint),

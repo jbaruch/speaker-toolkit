@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.22.8 — 2026-11-21
+
+- fix(ingress): Scope preflight to selected talks (#585)
+
 ## 0.22.7 — 2026-11-20
 
 - fix(shownotes): require Google Drive slide PDFs (#580)
