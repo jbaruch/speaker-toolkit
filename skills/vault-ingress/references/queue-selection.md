@@ -4,6 +4,17 @@ This is the complete normative Step 2 contract for `vault-ingress`. Execute
 normalization before claiming, and preserve every generation, freshness, replay,
 and recovery rule below.
 
+Use `normalize --intake` and `claim --intake --filename <filename>` for
+ordinary intake. After normalization, re-read the catalog and select exact
+filenames before checking source files. For a new-talk intake, start with
+`pending` entries. Include any selected legacy-status talk by filename so
+the claim can normalize it. If a selected talk needs owner action, report it
+and preflight the remaining filenames before claiming them.
+
+Intake claim reports `remaining_eligible: null` and does not sweep other queue
+entries for cloud files. Use the scoped preflight report for the selected talks'
+download inventory.
+
 Declared cloud-placeholder evidence blocks a fresh claim even when another
 source is usable. Follow the download inventory and owner hydration procedure in
 [Source Identity Preflight](source-identity-preflight.md#cloud-files-and-download-cost).
@@ -20,22 +31,26 @@ that exact snapshot into every member claim. The snapshot uses the current
 catalog fingerprint and pattern-scoring schema, includes only current
 `processed`/`processed_partial` talks, and excludes every active-batch filename
 before inspecting its prior score. Its `as_of` equals the claim's canonical
-`claimed_at`; do not edit or recompute it after the claim is written.
+`claimed_at`; do not edit or recompute it after the claim is written. Intake
+leaves archived recordings unverified. Historical talks with declared local
+recordings are omitted from its baseline, and deferring their verification
+does not requeue them. Full evidence verification uses the existing commands
+without `--intake`.
 
-- Run `"{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/queue-state.py"
-  {vault_root}/tracking-database.json normalize` once. This one copy-on-write
-  command migrates legacy
+- Full `normalize` and a scoped intake claim can migrate legacy
   `skipped_no_video`/`skipped_no_transcript` states from the talk's usable source
-  capabilities. The shared root-aware assessor must actually read and validate a
+  capabilities. Full normalization checks all legacy entries. Intake
+  normalization leaves them for the selected claim. The shared root-aware assessor
+  must actually read and validate a
   local transcript/deck/PDF before it counts; a non-empty or missing path is not a
   capability. Declared remote video/slide acquisition remains eligible for a
   claim-time download. A `transcript_source` provenance label alone
   is not capability. Only a record with no verified local source or remote
-  acquisition path becomes `skipped_no_sources`. The same command uses the shared
+  acquisition path becomes `skipped_no_sources`. Normalization uses the shared
   exact-generation selector to requeue valid `processed`/`processed_partial`
   results that cannot enter the active pattern cohort. For scoring v5, exact
   generation identity is necessary but insufficient: the shared freshness assessor
-  also re-hashes every persisted source-located artifact against the database's
+  also re-hashes persisted source-located artifacts in its scope against the database's
   vault and configured source roots. Missing, replaced, or otherwise drifted
   evidence is excluded and requeued. Transcript freshness also revalidates the
   hash-bound quality policy against current owner/provider duration; source-

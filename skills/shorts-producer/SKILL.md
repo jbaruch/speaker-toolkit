@@ -80,7 +80,9 @@ working folder (the folder that holds its deck build); ask the user where that
 is when the record does not make it clear. Its shape is the docstring of
 `{speaker_toolkit_root}/skills/shorts-producer/scripts/shorts_plan.py`. Fill
 the plan's top level and each clip's `id`, `title`, `hook`, `start`, `end` and
-`rationale` now. Set `qr_url` to the `qr_codes[]` `short_url`, else
+`rationale` now. Use the [editorial pass](../presentation-creator/references/editorial-review.md)
+on the titles, hooks, and rationales. Ground each hook in the clip’s actual payoff.
+Set `qr_url` to the `qr_codes[]` `short_url`, else
 `shownotes_url`, else null. Proceed immediately to Step 5.
 
 ## Step 5 — Prepare each clip

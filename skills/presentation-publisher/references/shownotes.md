@@ -4,8 +4,8 @@ Read `publishing_process.shownotes`. If `enabled`:
 
 For the Jekyll shownotes site with `_plugins/markdown_parser.rb`, invoke
 `Skill(skill: "shownotes-publisher")` with the talk directory, configured
-site path, and supplied slides URL. It owns the page and the downloadable
-skill distilled from the talk, validation, and publishing. Resume below at
+site path, approved PDF path, and any known Drive file ID or URL. It owns
+the page, downloadable talk skill, validation, and publishing. Resume below at
 live URL verification and tracking persistence after it completes. Do not
 bypass that flow with a page-only push. A pre-talk publish uses substantive
 notes and demos; it does not wait for a recording.
@@ -24,6 +24,8 @@ assume Jekyll's `_skills/` convention works on another SSG.
   layout skeleton for the new page. Otherwise follow the convention observed
   in existing entries under the talks subdir.
 - Include: title, abstract, slide embed/download link, speaker bio.
+- Use the [editorial pass](../../presentation-creator/references/editorial-review.md)
+  on new or revised prose before publishing the page.
 - If `resources.json` exists and has `approved: true` items, include a
   "Resources" section with those links. Read from `resources.json` in the
   talk working directory (produced by resource curation) — do not re-scan the outline.
