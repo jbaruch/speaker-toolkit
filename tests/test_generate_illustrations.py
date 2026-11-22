@@ -2395,3 +2395,256 @@ def test_style_explore_renders_without_references_and_says_so(
     assert references is None
     assert gi.LIKENESS_REFERENCE_DIRECTIVE not in prompt
     assert "declares reference_images" in capsys.readouterr().err
+
+
+# ── Opt-in OpenRouter lane ────────────────────────────────────────────
+
+_OPENROUTER_RESPONSE = {
+    "data": [{"b64_json": _B64_RENDERED, "media_type": "image/png"}],
+    "usage": {"cost": 0.04},
+}
+_OPENROUTER_OPTIONS = ("openrouter", False)
+
+
+def _openrouter_keys(gi, monkeypatch, **keys):
+    monkeypatch.setattr(
+        gi,
+        "load_secrets",
+        lambda *a: ({"openrouter": "or-key", **keys}, "/x.json"),
+    )
+    return gi.ImageKeys(options=gi.ImageProviderOptions(*_OPENROUTER_OPTIONS))
+
+
+@pytest.mark.parametrize(
+    "model,slug",
+    [
+        ("gemini-3-pro-image", "google/gemini-3-pro-image"),
+        ("nano-banana-pro", "google/gemini-3-pro-image"),
+        ("gpt-image-2.5-flare", "openai/gpt-image-2.5-flare-2026-09-08"),
+    ],
+)
+def test_openrouter_routes_registry_models_to_vendor_namespace(
+    generate_illustrations, monkeypatch, model, slug
+):
+    gi = generate_illustrations
+    requests = []
+
+    def fake_urlopen(req, timeout=None):
+        requests.append(req)
+        return _FakeResponse(_OPENROUTER_RESPONSE)
+
+    monkeypatch.setattr(gi.urllib.request, "urlopen", fake_urlopen)
+    render = gi.generate_image(
+        "a scene", model, _openrouter_keys(gi, monkeypatch), "FULL"
+    )
+    assert render.data == _RENDERED
+    assert render.lane.lane == "openrouter"
+    assert render.lane.served_model == slug
+    (req,) = requests
+    assert req.full_url == "https://openrouter.ai/api/v1/images"
+    assert req.get_header("Authorization") == "Bearer or-key"
+    body = json.loads(req.data)
+    assert body["model"] == slug
+    assert body["aspect_ratio"] == "16:9"
+    assert body["prompt"] == "a scene"
+
+
+def test_openrouter_uses_portrait_ratio_for_img_txt(
+    generate_illustrations, monkeypatch
+):
+    gi = generate_illustrations
+    seen = []
+    monkeypatch.setattr(
+        gi.urllib.request,
+        "urlopen",
+        lambda req, timeout=None: (
+            seen.append(json.loads(req.data)) or _FakeResponse(_OPENROUTER_RESPONSE)
+        ),
+    )
+    gi.generate_image(
+        "s", "gemini-3-pro-image", _openrouter_keys(gi, monkeypatch), "IMG+TXT"
+    )
+    assert seen[0]["aspect_ratio"] == "2:3"
+
+
+def test_openrouter_is_never_the_default(generate_illustrations, monkeypatch):
+    # A lone OpenRouter key must not redirect an unflagged run off the direct API.
+    gi = generate_illustrations
+    monkeypatch.setattr(
+        gi, "load_secrets", lambda *a: ({"openrouter": "or-key"}, "/x.json")
+    )
+    monkeypatch.setattr(
+        gi.urllib.request, "urlopen", lambda *a, **k: pytest.fail("called an API")
+    )
+    render = gi.generate_image(
+        "s",
+        "gemini-3-pro-image",
+        gi.ImageKeys(options=gi.ImageProviderOptions("api")),
+        "FULL",
+    )
+    assert render.data is None
+    assert "image_api_key_missing" in render.detail
+    assert render.lane.lane == "api"
+
+
+def test_load_secrets_openrouter_file_then_env(
+    generate_illustrations, tmp_path, monkeypatch
+):
+    gi = generate_illustrations
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    (tmp_path / "secrets.json").write_text(
+        json.dumps({"openrouter": {"api_key": "from-file"}})
+    )
+    assert gi.load_secrets(str(tmp_path))[0]["openrouter"] == "from-file"
+    (tmp_path / "secrets.json").write_text("{}")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "from-env")
+    assert gi.load_secrets(str(tmp_path))[0]["openrouter"] == "from-env"
+
+
+def test_openrouter_lane_needs_only_its_own_key(generate_illustrations, monkeypatch):
+    # Google/OpenAI keys absent, OpenRouter present: renders.
+    gi = generate_illustrations
+    keys = _openrouter_keys(gi, monkeypatch)
+    assert keys.require("gemini", "openrouter")["openrouter"] == "or-key"
+    monkeypatch.setattr(gi, "load_secrets", lambda *a: ({"gemini": "g"}, "/x.json"))
+    with pytest.raises(gi.ImageLaneError, match="OPENROUTER_API_KEY"):
+        gi.ImageKeys().require("gemini", "openrouter")
+
+
+def test_openrouter_http_error_is_a_failed_render(generate_illustrations, monkeypatch):
+    gi = generate_illustrations
+
+    def boom(req, timeout=None):
+        raise gi.urllib.error.HTTPError(
+            req.full_url, 402, "Payment Required", {}, io.BytesIO(b"no credits")
+        )
+
+    monkeypatch.setattr(gi.urllib.request, "urlopen", boom)
+    render = gi.generate_image(
+        "s", "gemini-3-pro-image", _openrouter_keys(gi, monkeypatch), "FULL"
+    )
+    assert render.data is None
+    assert render.detail == "HTTP 402: no credits"
+    assert render.lane.lane == "openrouter"
+
+
+def test_openrouter_response_without_image_is_a_failed_render(
+    generate_illustrations, monkeypatch
+):
+    gi = generate_illustrations
+    monkeypatch.setattr(
+        gi.urllib.request, "urlopen", lambda *a, **k: _FakeResponse({"data": []})
+    )
+    render = gi.generate_image(
+        "s", "gemini-3-pro-image", _openrouter_keys(gi, monkeypatch), "FULL"
+    )
+    assert render.data is None
+    assert "No image in OpenRouter response" in render.detail
+
+
+def test_openrouter_refuses_unsupported_operations_without_any_call(
+    generate_illustrations, monkeypatch, tmp_path
+):
+    gi = generate_illustrations
+    monkeypatch.setattr(
+        gi.urllib.request, "urlopen", lambda *a, **k: pytest.fail("called an API")
+    )
+    keys = _openrouter_keys(gi, monkeypatch)
+    source = tmp_path / "in.png"
+    source.write_bytes(_RENDERED)
+    for render in (
+        gi.edit_image(str(source), "erase it", "gemini-3-pro-image", keys, "FULL"),
+        gi.edit_image(
+            str(source),
+            "erase it",
+            "gpt-image-2.5-flare",
+            keys,
+            "FULL",
+            erase_region=[0, 0, 0.5, 0.5],
+        ),
+        gi.generate_image(
+            "s", "gemini-3-pro-image", keys, "FULL", reference_images=[str(source)]
+        ),
+        gi.generate_image("s", "imagen-4.0-generate-001", keys, "FULL"),
+    ):
+        assert render.data is None
+        assert "openrouter_" in render.detail or "Imagen" in render.detail
+
+
+def test_openrouter_receipt_records_gateway_and_exact_model(
+    generate_illustrations, monkeypatch
+):
+    gi = generate_illustrations
+    monkeypatch.setattr(
+        gi.urllib.request,
+        "urlopen",
+        lambda *a, **k: _FakeResponse(_OPENROUTER_RESPONSE),
+    )
+    render = gi.generate_image(
+        "s", "nano-banana-pro", _openrouter_keys(gi, monkeypatch), "FULL"
+    )
+    lane = render.provenance()["lane"]
+    assert lane["lane"] == "openrouter"
+    assert lane["requested_model"] == "gemini-3-pro-image"
+    assert lane["served_model"] == "google/gemini-3-pro-image"
+    assert lane["geometry"] == "aspect_ratio"
+
+
+def _gate_for(gi, tmp_path, provenance_lane, model="gemini-3-pro-image"):
+    """Bake `model`, record one OK explore cell carrying `provenance_lane`."""
+    outline = _write_gate_outline(tmp_path, model=model)
+    rel = f"s/full/{model}.png"
+    (tmp_path / "style-explore" / "s" / "full").mkdir(parents=True)
+    (tmp_path / "style-explore" / rel).write_bytes(b"img")
+    result = {
+        "style": "S",
+        "format": "FULL",
+        "model": model,
+        "status": "OK",
+        "rel_path": rel,
+        "provenance": {"lane": provenance_lane},
+    }
+    gi.write_rendered_manifest(str(tmp_path / "style-explore"), str(outline), [result])
+    return gi.check_style_explore(str(outline))
+
+
+def test_bake_gate_accepts_a_real_openrouter_render(
+    generate_illustrations, monkeypatch, tmp_path
+):
+    gi = generate_illustrations
+    monkeypatch.setattr(
+        gi.urllib.request,
+        "urlopen",
+        lambda *a, **k: _FakeResponse(_OPENROUTER_RESPONSE),
+    )
+    render = gi.generate_image(
+        "s", "gemini-3-pro-image", _openrouter_keys(gi, monkeypatch), "FULL"
+    )
+    verdict = _gate_for(gi, tmp_path, render.provenance()["lane"])
+    assert verdict["gate_passed"] is True
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        {"served_model": "google/gemini-3-flash-image"},
+        {"served_model": "gemini-3-pro-image"},
+        {"served_model": "openai/gemini-3-pro-image"},
+        {"geometry": "requested"},
+        {"lane": "cli"},
+    ],
+)
+def test_bake_gate_rejects_openrouter_receipts_that_do_not_prove_the_model(
+    generate_illustrations, tmp_path, tamper
+):
+    lane = {
+        "family": "gemini",
+        "lane": "openrouter",
+        "operation": "generate",
+        "requested_model": "gemini-3-pro-image",
+        "served_model": "google/gemini-3-pro-image",
+        "geometry": "aspect_ratio",
+        "reason_code": "openrouter_forced",
+    }
+    verdict = _gate_for(generate_illustrations, tmp_path, {**lane, **tamper})
+    assert verdict["gate_passed"] is False

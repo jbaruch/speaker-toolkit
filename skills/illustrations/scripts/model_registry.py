@@ -40,6 +40,8 @@ from image_lane_contract import (
 # v1beta and 404s on v1, though flash/imagen exist on both.
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 OPENAI_API_BASE = "https://api.openai.com/v1"
+# Opt-in gateway lane (--image-lane openrouter); never chosen automatically.
+OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
 
 # --- Registry ---
 #

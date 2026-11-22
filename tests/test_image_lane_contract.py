@@ -302,3 +302,51 @@ def test_unverified_auth_probe_is_not_cli_readiness(
 ):
     with pytest.raises(lanes.ImageLaneError, match="invalid_cli_probe"):
         lanes.resolve_image_lane(native_request, replace(ready, auth_mode=auth_mode))
+
+
+def test_openrouter_lane_is_opt_in_and_records_namespaced_model(lanes):
+    request = lanes.ImageRequest("gemini", "gemini-3-pro-image")
+    assert lanes.resolve_image_lane(request, None).lane == "api"
+    result = lanes.resolve_image_lane(request, None, forced_lane="openrouter")
+    assert (result.lane, result.requested_model, result.served_model) == (
+        "openrouter",
+        "gemini-3-pro-image",
+        "google/gemini-3-pro-image",
+    )
+    openai = lanes.resolve_image_lane(
+        lanes.ImageRequest("openai", "gpt-image-2.5-flare-2026-09-08"),
+        None,
+        forced_lane="openrouter",
+    )
+    assert openai.served_model == "openai/gpt-image-2.5-flare-2026-09-08"
+
+
+@pytest.mark.parametrize(
+    "request_kwargs,reason",
+    [
+        (
+            {"operation": "edit", "reference_count": 1},
+            "openrouter_operation_unsupported",
+        ),
+        (
+            {"operation": "edit", "reference_count": 1, "masked": True},
+            "openrouter_operation_unsupported",
+        ),
+        (
+            {"operation": "edit", "reference_count": 1, "likeness": True},
+            "openrouter_operation_unsupported",
+        ),
+    ],
+)
+def test_openrouter_lane_refuses_non_generation(lanes, request_kwargs, reason):
+    request = lanes.ImageRequest("gemini", "gemini-3-pro-image", **request_kwargs)
+    with pytest.raises(lanes.ImageLaneError) as error:
+        lanes.resolve_image_lane(request, None, forced_lane="openrouter")
+    assert error.value.reason_code == reason
+
+
+def test_openrouter_lane_refuses_imagen(lanes):
+    request = lanes.ImageRequest("imagen", "imagen-4.0-generate-001")
+    with pytest.raises(lanes.ImageLaneError) as error:
+        lanes.resolve_image_lane(request, None, forced_lane="openrouter")
+    assert error.value.reason_code == "openrouter_family_unsupported"

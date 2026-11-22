@@ -12,6 +12,7 @@ and stderr diagnostics. Resolution happens separately for each render.
 | `--image-lane auto --allow-cli-native` | Prefer Codex for unmasked, single-reference OpenAI edits and generation. An absent executable permits reported API fallback. |
 | `--image-lane cli --allow-cli-native` | Require the compatible subscription CLI; absence or unsupported constraints fail. No API-key requirement. |
 | `--image-lane api` | Use the existing HTTP adapter without probing a CLI. |
+| `--image-lane openrouter` | Opt-in gateway. Fresh generation and `--style-explore` only, for Gemini and GPT Image models; routes `gemini-*`/`nano-banana-*` to `google/<id>` and `gpt-image-*` to `openai/<id>`. Needs `openrouter.api_key` in `secrets.json` or `OPENROUTER_API_KEY`. Never chosen automatically. Edits, masks, builds, `--fix`, reference images, Imagen and `generate-thumbnail.py` refuse with `openrouter_operation_unsupported`; use the API lane for them. The receipt records `lane: openrouter`, the requested model and the served `<namespace>/<model>` slug, and the bake gate accepts only that exact slug. |
 
 `--allow-cli-native` is an explicit relaxation of image-model pinning and exact
 geometry, not an alias change. The baked `gpt-image-2.5-flare` alias still resolves to its
