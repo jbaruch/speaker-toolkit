@@ -42,6 +42,92 @@ return_validation = importlib.import_module("return_validation")
 NOW = "2026-07-31T18:00:00+00:00"
 
 
+def test_intake_leaves_a_five_gib_archived_recording_offline(
+    queue_state, preflight_vault, tmp_path, monkeypatch, capsys
+):
+    archived_id = "GGGGGGGGGGG"
+    archived = _scored_talk(
+        archived_id,
+        filename="archived.md",
+        fingerprint=return_validation.load_catalog().fingerprint,
+        scoring_schema=return_validation.PATTERN_SCORING_SCHEMA_VERSION,
+        score=0,
+    )
+    archived.update(
+        slide_source="none",
+        transcript_source="manual",
+        video_local_path=f"{archived_id}.mp4",
+    )
+    new = _talk(None, filename="new.md", video=False, youtube_identity=False)
+    new.update(
+        slide_source="none",
+        transcript_source="manual",
+        transcript_path="transcripts/new.txt",
+    )
+    path = _write_db(tmp_path, [archived, new])
+    (tmp_path / "transcripts" / "new.txt").write_text(
+        "New talk transcript evidence. " * 150, encoding="utf-8"
+    )
+    video_path = tmp_path / f"{archived_id}.mp4"
+    five_gib = 5 * 1024**3
+    with video_path.open("wb") as stream:
+        stream.truncate(five_gib)
+    video = importlib.import_module("video_evidence")
+    metadata_worker = video._run_bounded_metadata_worker
+    observed = []
+
+    def metadata(path, **kwargs):
+        observed.append(path)
+        receipt = metadata_worker(path, **kwargs)
+        return replace(
+            receipt, generation=replace(receipt.generation, file_attributes=0x1000)
+        )
+
+    monkeypatch.setattr(video, "_run_bounded_metadata_worker", metadata)
+    monkeypatch.setattr(
+        video,
+        "_invoke_probe_worker",
+        lambda *args, **kwargs: pytest.fail("opened the archived recording"),
+    )
+
+    assert preflight_vault.main([str(path), "--catalog-only"]) == 0
+    assert json.loads(capsys.readouterr().out)["cloud_artifacts"]["artifact_count"] == 0
+    assert preflight_vault.main([str(path), "--filename", "new.md"]) == 0
+    assert json.loads(capsys.readouterr().out)["cloud_artifacts"]["artifact_count"] == 0
+    assert queue_state.main([str(path), "normalize", "--intake"]) == 0
+    assert json.loads(capsys.readouterr().out)["normalizations"] == []
+    assert (
+        queue_state.main(
+            [
+                str(path),
+                "claim",
+                "--intake",
+                "--filename",
+                "new.md",
+                "--run-id",
+                "intake",
+                "--batch-id",
+                "one",
+                "--now",
+                NOW,
+            ]
+        )
+        == 0
+    )
+    claimed = json.loads(capsys.readouterr().out)["claimed"]
+    assert [claim["filename"] for claim in claimed] == ["new.md"]
+    assert claimed[0]["adherence_baseline"]["eligible_talk_count"] == 0
+    assert claimed[0]["adherence_baseline"]["scored_talk_count"] == 0
+    assert _read_db(path)["talks"][0]["status"] == "processed"
+    assert observed == []
+
+    assert preflight_vault.main([str(path)]) == 1
+    inventory = json.loads(capsys.readouterr().out)["cloud_artifacts"]
+    assert inventory["total_bytes"] == five_gib
+    assert inventory["artifacts"][0]["filenames"] == ["archived.md"]
+    assert set(observed) == {video_path.resolve()}
+
+
 @pytest.mark.parametrize(
     "status", ["pending", "skipped_no_transcript", "skipped_no_video"]
 )
