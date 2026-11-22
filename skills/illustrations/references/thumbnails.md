@@ -111,6 +111,8 @@ NOT the full talk title. A 3–5 word hook designed for thumbnail readability
 at small sizes.
 
 - Propose 2–3 options based on the talk's thesis and key claim.
+- Use the [editorial pass](../../presentation-creator/references/editorial-review.md)
+  on the proposed copy before asking for approval.
 - The speaker confirms or edits.
 - ALL CAPS is standard.
 - Must be readable at 160×90 pixels (YouTube search-result size).

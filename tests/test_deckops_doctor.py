@@ -852,7 +852,7 @@ def test_real_malformed_containers_never_raise(deckops_doctor, tmp_path):
             assert r["readable"] is False, name
 
 
-def test_an_inferred_stale_verdict_keeps_the_enable_macros_step(
+def test_an_inferred_stale_verdict_preserves_file_approval_recovery(
     deckops_doctor, tmp_path, monkeypatch
 ):
     """An open container does not prove macros are on — disabled looks identical.
@@ -869,7 +869,8 @@ def test_an_inferred_stale_verdict_keeps_the_enable_macros_step(
     report = deckops_doctor.diagnose(tmp_path, _scripts_dir(), False, "darwin")
     assert report["status"] == "macro_stale_inferred"
     assert "re-import" in report["next_step"]
-    assert "macros are enabled" in report["next_step"]
+    assert "approval for that file (Step 3)" in report["next_step"]
+    assert "notification setting (Step 1)" in report["next_step"]
     assert report["setup_complete"] is True
 
 

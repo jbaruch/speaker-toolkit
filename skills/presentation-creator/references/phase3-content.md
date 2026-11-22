@@ -163,6 +163,23 @@ Slides are the deck-facing units; interludes are between-slide events
 Interludes have no `n`, no `visual`, no `image_prompt` — they're production
 events. They appear in `script.md` (rehearsal), not in `slides.md` (deck build).
 
+### Slide copy
+
+Write down what the audience should remember about this slide. Try a plain
+headline and one that draws on the slide’s example, image, or callback. Pick the
+line that makes the takeaway easiest to grasp. Read it beside the preceding and
+following headlines. Cut generic labels, internal task wording, and text the
+image already conveys. For a visual-only slide, use a useful internal `title` and
+keep `text_overlay: "none"`. Put visible copy in the fields the layout renders.
+
+- **Principle.** Use “Frontmatter Matters” for a slide explaining why skill
+  frontmatter affects discovery. “Change description first” belongs in the
+  procedure or the speaker notes. The pun works here because it names the subject
+  and makes the point in two words.
+- **Procedure.** “Add a Trigger Phrase to the Description” works when the slide
+  actually shows that edit. An imperative earns its place by helping the audience
+  perform the step.
+
 ## The `style_anchor:` block (optional)
 
 Only present when Phase 2 produced an illustration strategy. Talks without
@@ -376,6 +393,8 @@ Conventions:
 
 ## Voice Calibration
 
+Choose delivered examples and review spoken lines using the
+[editorial pass](editorial-review.md#start-with-the-speaker-and-the-material).
 Read verbal signatures from the vault summary (recurring phrases section) and
 the profile's `instrument_catalog.verbal_signatures[]`. Place them where they
 fit organically in `script:` items — don't force them.

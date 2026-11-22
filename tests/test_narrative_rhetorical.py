@@ -79,6 +79,34 @@ def test_narrative_slide_synopsis_prefers_overlay_then_visual(
     assert "Receipt screenshot with one line circled in red." in out
 
 
+@pytest.mark.parametrize(
+    ("overlay", "synopsis"),
+    [
+        ("FRONTMATTER MATTERS", "Highlight the description field in SKILL.md."),
+        (
+            "FRONTMATTER MATTERS\nA trigger phrase tells the agent when to load the skill.",
+            "A trigger phrase tells the agent when to load the skill.",
+        ),
+    ],
+)
+def test_narrative_does_not_repeat_the_slide_headline(
+    extract_narrative,
+    outline_schema,
+    base_data,
+    overlay,
+    synopsis,
+):
+    data = copy.deepcopy(base_data)
+    slide = data["slides"][0]
+    slide["title"] = "Frontmatter Matters"
+    slide["text_overlay"] = overlay
+    slide["visual"] = "Highlight the description field in SKILL.md."
+    outline = outline_schema.Outline.model_validate(data)
+    out = extract_narrative.render(outline)
+    assert f"- **1. Frontmatter Matters** — {synopsis}\n" in out
+    assert "FRONTMATTER MATTERS" not in out
+
+
 def test_narrative_inlines_interlude_at_anchor(
     extract_narrative,
     outline_schema,
