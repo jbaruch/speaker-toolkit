@@ -2475,30 +2475,22 @@ def test_cleanup_always_terminates_containment_after_clean_root_exit():
 
 
 def test_protocol_duplicate_fd_is_explicitly_non_inheritable(monkeypatch):
-    read_fd, write_fd = os.pipe()
     duplicated_fd = 987
-    monkeypatch.setattr(sys.stdout, "fileno", lambda: write_fd)
-    monkeypatch.setattr(sys.stderr, "fileno", lambda: write_fd)
-    monkeypatch.setattr(artifact_supervisor.os, "dup", lambda _fd: duplicated_fd)
     inheritable_calls = []
+    # Pytest also uses os.dup and os.dup2 to manage its output capture.
     monkeypatch.setattr(
-        artifact_supervisor.os,
-        "set_inheritable",
-        lambda fd, inheritable: inheritable_calls.append((fd, inheritable)),
+        artifact_supervisor,
+        "os",
+        SimpleNamespace(
+            dup=lambda _fd: duplicated_fd,
+            set_inheritable=lambda fd, value: inheritable_calls.append((fd, value)),
+            dup2=lambda _source, _target: None,
+            fdopen=lambda _fd, _mode, buffering=0: io.BytesIO(),
+        ),
     )
-    monkeypatch.setattr(artifact_supervisor.os, "dup2", lambda _source, _target: None)
-    monkeypatch.setattr(
-        artifact_supervisor.os,
-        "fdopen",
-        lambda _fd, _mode, buffering=0: io.BytesIO(),
-    )
-    try:
-        stream = artifact_supervisor.isolate_protocol_output()
-        stream.close()
-    finally:
-        os.close(read_fd)
-        os.close(write_fd)
 
+    stream = artifact_supervisor.isolate_protocol_output()
+    stream.close()
     assert inheritable_calls == [(duplicated_fd, False)]
 
 
