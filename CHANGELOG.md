@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.22.8 — 2026-11-21
+
+- fix(ingress): Scope preflight to selected talks (#585)
+
+## 0.22.7 — 2026-11-20
+
+- fix(shownotes): require Google Drive slide PDFs (#580)
+
+## 0.22.6 — 2026-11-20
+
+- fix(powerpoint): Scope macro approval to DeckOps (#579)
+
+## 0.22.5 — 2026-11-20
+
+- fix(writing): Edit toolkit drafts before approval (#578)
+
 ## 0.22.4 — 2026-11-12
 
 ### Move Section 15 pattern history into a sidecar file

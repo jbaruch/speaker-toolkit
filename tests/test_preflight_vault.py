@@ -233,6 +233,19 @@ def test_cloud_placeholder_blocks_preflight_with_cost_and_preserves_transcript(
     assert path.read_bytes() == before
 
 
+def test_selected_evidence_still_rejects_catalog_wide_duplicate_recording(
+    preflight_vault, vault_fixture
+):
+    selected = base_talk(status="pending")
+    archived = base_talk(filename="archived.md")
+    path = write_database(vault_fixture, [selected, archived])
+    report = preflight_vault.run_preflight(
+        path, evidence_filenames=frozenset({selected["filename"]})
+    )
+    assert report["evidence_filenames"] == [selected["filename"]]
+    assert "duplicate_youtube_id" in finding_codes(report, severity="blocking")
+
+
 @pytest.mark.parametrize(
     "filename,omit",
     [

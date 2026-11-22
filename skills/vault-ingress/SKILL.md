@@ -115,19 +115,12 @@ derived artifacts. A `runtime_repair` handoff from another skill's resolver
 runs only [Runtime Repair](references/runtime-repair.md) for its `reason_code`,
 then finishes here. Processing runs continue through bootstrap below.
 
-Execute [Bootstrap and Preflight](references/bootstrap-and-preflight.md) in full.
-Do not select work until migration succeeds, the catalog is structurally valid,
-and offline preflight has no blocking finding. Before preflight may inspect any
-preserved local recording declared by
-`structured_data.video_extraction.source_video_path`, `video_local_path`, or
-`video_path`, or any audio in `local_audio`, pass the reference's conditional
-`source-video` and declared-audio `source-media` runtime gates.
-
-Never pre-open, hash, hydrate, or call `ffprobe` directly. Video failure disables
-only video evidence; retain independent transcript/PDF/PPTX evidence. Then read
-the summary/spec and report processed, remaining, cataloged, matched, and
-extracted counts. A prior run's unanswered clarification offer or undelivered
-end report resumes here, per the reference, before any new selection.
+Follow [Bootstrap and Preflight](references/bootstrap-and-preflight.md).
+Complete migration, shownotes import, and catalog-only preflight before
+selecting work. Read the summary/spec and report processed, remaining,
+cataloged, matched, and extracted counts. Resume any unanswered clarification
+offer or undelivered end report before selecting work.
+Proceed immediately to Step 2.
 
 ## Step 2 — Select Talks to Process
 
@@ -135,22 +128,28 @@ Follow [Queue Selection](references/queue-selection.md) in full. Normalize once:
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/queue-state.py" \
-  "{vault_root}/tracking-database.json" normalize
+  "{vault_root}/tracking-database.json" normalize --intake
 ```
 
-Then claim each exact batch:
+Select the filenames, pass their source-video and `local_audio` source-media
+runtime gates as needed, and run the selected-source
+preflight and provider audit in
+[Bootstrap and Preflight](references/bootstrap-and-preflight.md).
+Then claim those filenames only:
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/queue-state.py" \
   "{vault_root}/tracking-database.json" claim --run-id <stable-run> \
-  --batch-id <stable-batch> --now <timezone-aware-ISO>
+  --batch-id <stable-batch> --now <timezone-aware-ISO> --intake \
+  --filename <filename> [--filename <filename> ...]
 ```
 
 Fresh claims are schema v7 and require return v7. A v7 return carries the v6
 weighted score contract plus `provider_auto` transcript provenance. Use the stored claim on replay;
 recover a stranded lease and issue a new generation. Set the best verified slide
 source, use `skipped_no_sources` only when every source is unavailable, and honor
-an explicit filename/title argument as a one-talk selection.
+an explicit filename/title argument as a one-talk selection. Proceed immediately
+to Step 3.
 
 ## Step 3 — Process Talks via Parallel Subagents (Batches of 5)
 
@@ -168,7 +167,7 @@ they return only observed analysis, raw inspection coverage, and citations.
 If any batch return declares a preserved local recording through
 `structured_data.video_extraction.source_video_path`, `video_local_path`, or
 `video_path`, first require the same `core,source-video` runtime gate from Step
-1. One successful check gates validation, persistence, and analysis rendering
+2. One successful check gates validation, persistence, and analysis rendering
 for that exact batch.
 
 Then execute [Batch Persistence](references/batch-persistence.md) in order:
@@ -222,7 +221,9 @@ true` and still need one. See
   {directory_exclusion_arguments}
 ```
 
-Reuse both exact config-derived argument sets from Step 1. Safely extracted deck
+Use both exact config-derived argument sets from the
+[PPTX scan contract](references/bootstrap-and-preflight.md#scan-for-pptx-files).
+Safely extracted deck
 results in a partial schema-v1 directory envelope remain usable, but only
 `complete: true` authorizes a full-catalog or missing-deck conclusion. Use only
 current schema-v4, artifact-bound deck evidence and the reference's matching,

@@ -41,6 +41,10 @@ Every script prints its diagnostics on stderr and exits 2 on a usage error
 Steps 2, 8, 9, 10, 13, 14, 15, 16, and 17 hand work to the user and end the turn. When the user
 reports back, resume at the step each one names.
 
+Use the [editorial pass](../presentation-creator/references/editorial-review.md)
+when drafting shot labels, chapter titles, the description, or thumbnail copy.
+Apply the caption correction contract to recorded speech.
+
 ## Step 1 — Resolve the interpreter
 
 ```bash
