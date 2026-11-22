@@ -19,11 +19,13 @@ from pathlib import PurePosixPath, PureWindowsPath
 import re
 
 
-LANES = frozenset({"auto", "api", "cli"})
+LANES = frozenset({"auto", "api", "cli", "openrouter"})
 FAMILIES = frozenset({"gemini", "imagen", "openai"})
 OPERATIONS = frozenset({"generate", "edit"})
 PROBE_STATES = frozenset({"absent", "ready", "failed"})
 CODEX_NATIVE_MODEL = "codex-native-image-model-unpinned"
+# OpenRouter lists the registry ids under the vendor's own namespace.
+OPENROUTER_NAMESPACE = {"gemini": "google", "openai": "openai"}
 FAMILY_PREFIXES = {
     "openai": ("gpt-image",),
     "imagen": ("imagen",),
@@ -211,6 +213,31 @@ def _cli_incompatibility(request: ImageRequest) -> str | None:
     return None
 
 
+def _openrouter_lane(request: ImageRequest) -> ImageLane:
+    """Opt-in gateway transport: fresh generation only, exact model preserved."""
+    namespace = OPENROUTER_NAMESPACE.get(request.family)
+    if namespace is None:
+        raise ImageLaneError(
+            "openrouter_family_unsupported",
+            "use the API lane for this model family",
+        )
+    if request.operation != "generate" or request.reference_count or request.masked:
+        raise ImageLaneError(
+            "openrouter_operation_unsupported",
+            "OpenRouter renders fresh generations only; use the API lane for "
+            "edits, masks, builds and reference images",
+        )
+    return ImageLane(
+        request.family,
+        "openrouter",
+        request.operation,
+        request.model,
+        f"{namespace}/{request.model}",
+        "aspect_ratio",
+        "openrouter_forced",
+    )
+
+
 def resolve_image_lane(
     request: ImageRequest,
     probe: CliProbe | None,
@@ -225,6 +252,8 @@ def resolve_image_lane(
     their own request opt-in and are explicit in the returned lane description.
     """
     _validate_request(request, forced_lane)
+    if forced_lane == "openrouter":
+        return _openrouter_lane(request)
     reason = "api_forced" if forced_lane == "api" else _cli_incompatibility(request)
     if reason is not None:
         if forced_lane == "cli":

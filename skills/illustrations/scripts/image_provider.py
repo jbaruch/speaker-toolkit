@@ -52,10 +52,12 @@ class ImageRender:
 def add_image_lane_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--image-lane",
-        choices=("auto", "api", "cli"),
+        choices=("auto", "api", "cli", "openrouter"),
         default="auto",
-        help="Prefer a compatible subscription CLI, force API, or require CLI. "
-        "A CLI failure never retries a paid API.",
+        help="Prefer a compatible subscription CLI, force API, require CLI, or "
+        "opt into the OpenRouter gateway (fresh generation only; needs "
+        "openrouter.api_key or OPENROUTER_API_KEY). A CLI failure never "
+        "retries a paid API.",
     )
     parser.add_argument(
         "--allow-cli-native",

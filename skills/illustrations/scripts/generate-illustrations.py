@@ -27,7 +27,12 @@ Likeness references:
     --edit, --fix and --build edit the rendered image and never send them.
 
 Lane options:
-    --image-lane auto|api|cli (default: auto)
+    --image-lane auto|api|cli|openrouter (default: auto)
+    openrouter is opt-in and never chosen automatically: it routes fresh
+    generation and --style-explore for the Gemini and GPT Image families through
+    OpenRouter (google/<id>, openai/<id>), recording the lane and served slug in
+    the render receipt. Edits, masks, builds, --fix, reference images, Imagen and
+    generate-thumbnail.py refuse on it; use the direct API for those.
     --allow-cli-native permits unpinned OpenAI native output and observed geometry.
     A failing CLI never retries API. Pinned/exact requests remain on API.
 
@@ -38,6 +43,8 @@ Requires for API-selected renders only:
     - For OpenAI models (gpt-image-*):
         OpenAI API key in {vault}/secrets.json under "openai".api_key
         or OPENAI_API_KEY env var (fallback).
+    - For --image-lane openrouter only: OpenRouter API key in
+        {vault}/secrets.json under "openrouter".api_key or OPENROUTER_API_KEY.
     - Python 3.10+ (matches the project's requires-python in pyproject.toml;
       uses union-type syntax via the shared outline_schema). Install the project's
       declared dependencies; masked edits use Pillow and the native lane uses
@@ -63,7 +70,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from footer_stamp import FooterStampError, reserved_strip_pct
-from image_lane_contract import ImageLaneError
+from image_lane_contract import OPENROUTER_NAMESPACE, ImageLaneError
 from image_provider import (
     ImageProviderOptions,
     ImageRender,
@@ -75,6 +82,7 @@ from model_registry import (
     COMPARE_MODELS,
     GEMINI_API_BASE,
     OPENAI_API_BASE,
+    OPENROUTER_API_BASE,
     is_supported_model,
     resolve_model_id,
 )
@@ -118,8 +126,16 @@ import outline_schema  # noqa: E402  (path appended above)
 #                  3:4 is closest to the IMG+TXT 2:3 anchor (Imagen
 #                  has no native 2:3).
 FORMAT_SIZING = {
-    "FULL": {"openai_size": "2048x1152", "imagen_aspect": "16:9"},
-    "IMG+TXT": {"openai_size": "1024x1536", "imagen_aspect": "3:4"},
+    "FULL": {
+        "openai_size": "2048x1152",
+        "imagen_aspect": "16:9",
+        "openrouter_aspect": "16:9",
+    },
+    "IMG+TXT": {
+        "openai_size": "1024x1536",
+        "imagen_aspect": "3:4",
+        "openrouter_aspect": "2:3",
+    },
 }
 OPENAI_DEFAULT_SIZE = FORMAT_SIZING["FULL"]["openai_size"]
 IMAGEN_DEFAULT_ASPECT = FORMAT_SIZING["FULL"]["imagen_aspect"]
@@ -751,11 +767,14 @@ def load_secrets(vault_path=None):
         1. {vault}/secrets.json → gemini.api_key / openai.api_key
         2. GEMINI_API_KEY / OPENAI_API_KEY env vars
 
+    The opt-in OpenRouter gateway follows the same pattern:
+    openrouter.api_key, then OPENROUTER_API_KEY.
+
     Returns:
         tuple (keys_dict, secrets_path) where keys_dict maps
-        "gemini" / "openai" → key string or None.
+        "gemini" / "openai" / "openrouter" → key string or None.
     """
-    keys: dict[str, str | None] = {"gemini": None, "openai": None}
+    keys: dict[str, str | None] = {"gemini": None, "openai": None, "openrouter": None}
 
     if vault_path is None:
         vault_path = _cli_vault_path
@@ -769,6 +788,7 @@ def load_secrets(vault_path=None):
             secrets = json.loads(raw.decode("utf-8"))
             keys["gemini"] = secrets.get("gemini", {}).get("api_key") or None
             keys["openai"] = secrets.get("openai", {}).get("api_key") or None
+            keys["openrouter"] = secrets.get("openrouter", {}).get("api_key") or None
         except TimeoutError:
             print(
                 f"WARNING: reading {secrets_path} timed out after "
@@ -797,6 +817,8 @@ def load_secrets(vault_path=None):
         keys["gemini"] = os.environ.get("GEMINI_API_KEY") or None
     if not keys["openai"]:
         keys["openai"] = os.environ.get("OPENAI_API_KEY") or None
+    if not keys["openrouter"]:
+        keys["openrouter"] = os.environ.get("OPENROUTER_API_KEY") or None
 
     return keys, secrets_path
 
@@ -854,13 +876,16 @@ class ImageKeys:
         self.options = options or ImageProviderOptions()
         self._loaded = None
 
-    def require(self, family):
+    def require(self, family, lane=None):
         if self._loaded is None:
             self._loaded = load_secrets(self.vault_path)
         keys, _ = self._loaded
-        key_name = family_key_name(family)
+        key_name = "openrouter" if lane == "openrouter" else family_key_name(family)
         if not keys.get(key_name):
-            variable = "OPENAI_API_KEY" if key_name == "openai" else "GEMINI_API_KEY"
+            variable = {
+                "openai": "OPENAI_API_KEY",
+                "openrouter": "OPENROUTER_API_KEY",
+            }.get(key_name, "GEMINI_API_KEY")
             raise ImageLaneError(
                 "image_api_key_missing",
                 f"configure {key_name}.api_key in the vault secrets.json or set {variable}",
@@ -1166,6 +1191,40 @@ def _call_openai_generate(prompt, model, api_key, size=OPENAI_DEFAULT_SIZE):
     return _extract_openai_image(body)
 
 
+def _call_openrouter_generate(prompt, model, api_key, aspect_ratio):
+    """Call OpenRouter POST /images for a fresh image (opt-in gateway lane).
+
+    `model` is the namespaced slug (e.g. google/gemini-nano-banana-2.1).
+    """
+    payload = {"model": model, "prompt": prompt, "aspect_ratio": aspect_ratio, "n": 1}
+    req = urllib.request.Request(
+        f"{OPENROUTER_API_BASE}/images",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8", errors="replace")
+        return None, f"HTTP {e.code}: {error_body[:500]}"
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
+        return None, str(e)
+    data_arr = body.get("data") or []
+    first = data_arr[0] if data_arr else None
+    if not isinstance(first, dict) or not first.get("b64_json"):
+        return None, f"No image in OpenRouter response: {json.dumps(body)[:500]}"
+    try:
+        image = base64.b64decode(first["b64_json"])
+    except ValueError as e:
+        return None, f"Invalid base64 in OpenRouter response: {e}"
+    return image, first.get("media_type") or "image/png"
+
+
 def _call_openai_edit(
     input_paths, prompt, model, api_key, size=OPENAI_DEFAULT_SIZE, mask_png=None
 ):
@@ -1278,11 +1337,22 @@ def generate_image(prompt, model, keys, slide_format=None, reference_images=()):
         return render_cli(lane, prompt)
     if isinstance(keys, ImageKeys):
         try:
-            keys = keys.require(family)
+            keys = keys.require(family, lane.lane)
         except ImageLaneError as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return ImageRender(None, str(error), lane)
-    if family == "openai" and references:
+    if lane.lane == "openrouter":
+        if not keys.get("openrouter"):
+            detail = "image_api_key_missing; configure openrouter.api_key or set OPENROUTER_API_KEY"
+            print(f"ERROR: {detail}", file=sys.stderr)
+            return ImageRender(None, detail, lane)
+        data, detail = _call_openrouter_generate(
+            prompt,
+            lane.served_model,
+            keys["openrouter"],
+            sizing["openrouter_aspect"],
+        )
+    elif family == "openai" and references:
         data, detail = _call_openai_edit(
             references, prompt, model, keys["openai"], size=sizing["openai_size"]
         )
@@ -1453,6 +1523,27 @@ def write_rendered_manifest(base_dir, outline_path, results):
     return manifest_path
 
 
+def _lane_proves_model(lane, model):
+    """True iff the recorded lane shows this exact model was rendered.
+
+    Direct API renders serve the canonical id. The opt-in OpenRouter gateway
+    serves that same id under its vendor namespace, so the slug must match
+    `<namespace>/<model>` exactly; any other lane or served model proves nothing.
+    """
+    if not isinstance(lane, dict) or lane.get("requested_model") != model:
+        return False
+    if lane.get("lane") == "api":
+        return lane.get("served_model") == model and lane.get("geometry") == "requested"
+    if lane.get("lane") == "openrouter":
+        namespace = OPENROUTER_NAMESPACE.get(lane.get("family"))
+        return (
+            namespace is not None
+            and lane.get("served_model") == f"{namespace}/{model}"
+            and lane.get("geometry") == "aspect_ratio"
+        )
+    return False
+
+
 def check_style_explore(outline_path):
     """Render-before-bake gate: was the outline's baked model actually rendered?
 
@@ -1580,13 +1671,7 @@ def check_style_explore(outline_path):
             lane = provenance.get("lane") if isinstance(provenance, dict) else None
             # Native CLI output cannot prove that a dated API model was seen.
             # Missing provenance is unusable, never inferred from a filename.
-            if (
-                not isinstance(lane, dict)
-                or lane.get("lane") != "api"
-                or lane.get("requested_model") != cell_model
-                or lane.get("served_model") != cell_model
-                or lane.get("geometry") != "requested"
-            ):
+            if not _lane_proves_model(lane, cell_model):
                 continue
         if cell_model:
             verified.add(cell_model)
@@ -1821,6 +1906,8 @@ def run_compare(outline_path, slide_num, *, lane_options=None):
             safe_model = model.replace("/", "_")
             if selected and selected.lane == "cli":
                 safe_model += "-cli-native-unpinned"
+            elif selected and selected.lane == "openrouter":
+                safe_model += "-openrouter"
             filename = f"slide-{slide_num:02d}-{safe_model}{ext}"
             filepath = os.path.join(output_dir, filename)
             with open(filepath, "wb") as f:
@@ -2169,6 +2256,12 @@ def run_style_explore(outline_path, candidates_path, *, lane_options=None):
                 and render.lane.lane == "cli"
             ):
                 output_model += "-cli-native-unpinned"
+            elif (
+                isinstance(render, ImageRender)
+                and render.lane
+                and render.lane.lane == "openrouter"
+            ):
+                output_model += "-openrouter"
             dest = explore_dest(base_dir, style_name, fmt, output_model, ext)
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             with open(dest, "wb") as fh:
