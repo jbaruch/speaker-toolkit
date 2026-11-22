@@ -30,7 +30,9 @@ Stdout is the only output. The helper accepts a vault root or the database path:
 ```
 
 Use `--captured-at <timezone-aware-ISO>` only for a reproducible evidence run or
-fixture. Normal runs stamp the current UTC time. Exit `0` means every requested
+fixture. Normal runs stamp the current UTC time. Repeat `--filename` to limit
+provider requests to those talks. Their active IDs are still checked for
+collisions across the catalog. Exit `0` means every requested
 identity returned internally consistent metadata. Review findings such as title
 mismatches, likely clips, and cross-talk collisions do not change that exit code.
 Exit `1` means capture was incomplete or provider identity contradicted the
@@ -81,10 +83,14 @@ instead of an ad hoc provider lookup outside the ingress workflow:
 
 ```bash
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/audit-source-identities.py" \
-  "{vault_root}" --candidates-from "{scan_report_path}"
+  "{vault_root}" --candidates-from "{scan_report_path}" \
+  [--filename <filename> ...]
 ```
 
-**Input.** `--candidates-from` takes one `scan-shownotes.py` report path. See
+**Input.** `--candidates-from` takes one `scan-shownotes.py` report path.
+During intake, pass the same filenames used for selected-source preflight.
+The audit fetches only the active and candidate IDs for that selection.
+See
 `skills/vault-ingress/scripts/audit-source-identities.py`:
 
 | What | Anchor |
