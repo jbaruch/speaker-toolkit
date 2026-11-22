@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.22.9 — 2026-11-22
+
+- chore(deps): Land the reviewed Dependabot updates (#586)
+
 ## 0.22.8 — 2026-11-21
 
 - fix(ingress): Scope preflight to selected talks (#585)
