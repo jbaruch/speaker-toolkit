@@ -39,7 +39,7 @@ platform-bound carve-out in the [transcription authority](../../../rules/transcr
 The supported model ID and immutable Hugging Face revision live in
 `local_media_words.DEFAULT_WORD_MODEL`. Renew quarterly with native validation.
 The optional `whisper` manifest extra pins mlx-whisper and huggingface-hub;
-weekly Dependabot tracks their versions. The SDK resolves only the pinned
+Renovate tracks their versions weekly. The SDK resolves only the pinned
 model's configuration and weights into its normal reusable cache; it does not
 download remote Python code, use stored access tokens, or receive audio.
 Model acquisition shares the worker's timeout/resource bounds. SDK cache state

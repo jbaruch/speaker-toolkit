@@ -75,8 +75,6 @@ def test_absence_is_not_a_failed_probe(cli, monkeypatch):
 
 
 def test_shipped_cli_pin_lock_and_renewal_agree():
-    import yaml
-
     package = Path(SCRIPTS_ILL) / "codex-cli"
     manifest = json.loads((package / "package.json").read_text())
     lock = json.loads((package / "package-lock.json").read_text())
@@ -91,15 +89,9 @@ def test_shipped_cli_pin_lock_and_renewal_agree():
         "sha512-"
     )
     root = Path(__file__).resolve().parents[1]
-    updates = yaml.safe_load((root / ".github" / "dependabot.yml").read_text())[
-        "updates"
-    ]
-    assert any(
-        update["package-ecosystem"] == "npm"
-        and update["directory"] == "/skills/illustrations/scripts/codex-cli"
-        and update["schedule"]["interval"] == "weekly"
-        for update in updates
-    )
+    config = json.loads((root / "renovate.json").read_text(encoding="utf-8"))
+    assert "npm" in config["enabledManagers"]
+    assert "schedule:weekly" in config["extends"]
 
 
 @pytest.mark.parametrize(

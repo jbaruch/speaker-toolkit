@@ -1,6 +1,7 @@
 """CI cache identity and renewal contracts; runner execution proves the runtime."""
 
 from fnmatch import fnmatchcase
+import json
 from pathlib import Path
 
 import pytest
@@ -47,19 +48,11 @@ def test_cache_runtime_renewal_preserves_cache_identity(name, paths, key):
     assert step["with"]["key"] == key
 
 
-def test_dependabot_can_renew_the_cache_action():
-    config = yaml.safe_load(
-        (ROOT / ".github/dependabot.yml").read_text(encoding="utf-8")
-    )
-    updates = [
-        update
-        for update in config["updates"]
-        if update["package-ecosystem"] == "github-actions"
-        and update["directory"] == "/"
-    ]
-    assert len(updates) == 1
-    assert updates[0]["schedule"]["interval"] == "weekly"
+def test_renovate_can_renew_actions_in_the_test_workflow():
+    config = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))
+    assert "github-actions" in config["enabledManagers"]
+    assert "schedule:weekly" in config["extends"]
     assert not any(
-        fnmatchcase("actions/cache", ignored["dependency-name"])
-        for ignored in updates[0].get("ignore", [])
+        fnmatchcase(".github/workflows/tests.yml", pattern)
+        for pattern in config["ignorePaths"]
     )
