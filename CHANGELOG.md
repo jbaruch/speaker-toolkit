@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.22.10 — 2026-11-22
+
+- chore(ci): Replace Dependabot with Renovate (#575)
+
 ## 0.22.9 — 2026-11-22
 
 - chore(deps): Land the reviewed Dependabot updates (#586)
