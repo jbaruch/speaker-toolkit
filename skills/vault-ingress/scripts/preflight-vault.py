@@ -5,6 +5,9 @@ Accept either a vault directory or its tracking-database JSON file.  The script
 prints exactly one JSON report to stdout and exits 1 only when the report has a
 blocking integrity finding.  Warnings (including legacy metadata gaps) exit 0.
 
+Use --catalog-only for a catalog metadata check, repeat --filename to verify
+evidence for an exact set of talks, or omit both for an archive audit.
+
 This preflight deliberately does not fetch source metadata. It verifies PDF
 container/page-tree integrity inside bounded workers, but a delivered PDF page
 count is never evidence for the authored ``slide_count``.
@@ -314,11 +317,19 @@ def _source_video_failure_code(error: VideoEvidenceError) -> str:
 class VaultPreflight:
     """Accumulate deterministic findings for one already-loaded database."""
 
-    def __init__(self, database: Any, vault_root: Path, database_path: Path):
+    def __init__(
+        self,
+        database: Any,
+        vault_root: Path,
+        database_path: Path,
+        *,
+        evidence_filenames: frozenset[str] | None = None,
+    ):
         self.database = database
         self.vault_root = Path(vault_root)
         self._artifact_root: Path | None = None
         self.database_path = Path(database_path)
+        self.evidence_filenames = evidence_filenames
         self.findings: list[dict[str, Any]] = []
         self.talks: list[dict[str, Any]] = []
         self.source_indexes: list[int] = []
@@ -363,6 +374,7 @@ class VaultPreflight:
             self.database,
             vault_root=self.vault_root,
             pptx_source_dir=self.config.get("pptx_source_dir"),
+            talk_filenames=self.evidence_filenames,
         ):
             if not row["needs_extraction"]:
                 continue
@@ -423,7 +435,13 @@ class VaultPreflight:
         for index, record in enumerate(records):
             if not isinstance(record, dict):
                 continue
-            if record.get("talk_filename") is None:
+            talk_filename = record.get("talk_filename")
+            if talk_filename is None:
+                continue
+            if self.evidence_filenames is not None and (
+                not isinstance(talk_filename, str)
+                or talk_filename not in self.evidence_filenames
+            ):
                 continue
             assessment = record.get("identity_assessment")
             if not isinstance(assessment, dict):
@@ -445,7 +463,6 @@ class VaultPreflight:
                 )
                 continue
             pptx_path = record.get("pptx_path")
-            talk_filename = record.get("talk_filename")
             if not isinstance(pptx_path, str) or not isinstance(talk_filename, str):
                 refusal = "identity_assessment_incomplete"
             else:
@@ -645,9 +662,6 @@ class VaultPreflight:
                 actual=type(config).__name__,
             )
 
-        self._check_pptx_visual_evidence()
-        self._check_pptx_talk_identity()
-
         talks = self.database.get("talks")
         if not isinstance(talks, list):
             self.add(
@@ -679,10 +693,30 @@ class VaultPreflight:
         # Valid-entry checks use compact internal indexes.  Findings map those
         # back to the original source-array indexes, even around malformed rows.
         self._validate_filenames()
+        if self.evidence_filenames is not None:
+            for filename in sorted(self.evidence_filenames - self.filenames.keys()):
+                self.add(
+                    "blocking",
+                    "preflight_talk_not_found",
+                    "choose an exact filename from the tracking database",
+                    actual=filename,
+                )
+        if self.evidence_filenames is None or self.evidence_filenames:
+            self._check_pptx_visual_evidence()
+            self._check_pptx_talk_identity()
+
         for index in range(len(self.talks)):
             self._validate_sources(index)
             self._validate_source_status_reachability(index)
             self._validate_source_rejections(index)
+            self._validate_source_identity(index)
+            self._validate_persisted_observations(index)
+            if (
+                self.evidence_filenames is not None
+                and _nonempty_string(self.talks[index].get("filename"))
+                not in self.evidence_filenames
+            ):
+                continue
             self._validate_artifacts(index)
             for artifact in cloud_artifacts(self._capabilities(index)):
                 self.talk_add(
@@ -695,8 +729,6 @@ class VaultPreflight:
                     actual=artifact,
                     artifact_path=artifact["artifact_path"],
                 )
-            self._validate_source_identity(index)
-            self._validate_persisted_observations(index)
         self._validate_relations()
         self._validate_duplicate_youtube_ids()
         return self.report(len(talks))
@@ -2631,6 +2663,11 @@ class VaultPreflight:
             "database": str(self.database_path),
             "vault_root": str(self.vault_root),
             "talk_count": talk_count,
+            "evidence_filenames": (
+                None
+                if self.evidence_filenames is None
+                else sorted(self.evidence_filenames)
+            ),
             "blocking_count": blocking,
             "warning_count": warnings,
             "cloud_artifacts": summarize_cloud_artifacts(
@@ -2753,6 +2790,7 @@ def vault_root_authority_error_report(
         "database": None,
         "vault_root": None,
         "talk_count": 0,
+        "evidence_filenames": None,
         "blocking_count": 1,
         "warning_count": 0,
         "summary": {
@@ -2763,7 +2801,9 @@ def vault_root_authority_error_report(
     }
 
 
-def run_preflight(value: str | Path) -> dict[str, Any]:
+def run_preflight(
+    value: str | Path, *, evidence_filenames: frozenset[str] | None = None
+) -> dict[str, Any]:
     """Load and validate a vault, returning a report without mutating it."""
     try:
         vault_root, database_path = resolve_input(value)
@@ -2780,7 +2820,9 @@ def run_preflight(value: str | Path) -> dict[str, Any]:
             exc.reason_code, _DATABASE_READ_FALLBACK
         )
         return error_report(vault_root, database_path, code, message)
-    return VaultPreflight(database, vault_root, database_path).run()
+    return VaultPreflight(
+        database, vault_root, database_path, evidence_filenames=evidence_filenames
+    ).run()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -2788,6 +2830,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "vault_or_database",
         help="vault root directory or tracking-database JSON path",
+    )
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument(
+        "--catalog-only", action="store_true", help="check database metadata only"
+    )
+    scope.add_argument(
+        "--filename",
+        action="append",
+        help="verify this talk's evidence; repeat for a batch",
     )
     try:
         args = parser.parse_args(argv)
@@ -2797,12 +2848,17 @@ def main(argv: list[str] | None = None) -> int:
                 Path.cwd(),
                 Path.cwd() / "tracking-database.json",
                 "invalid_arguments",
-                "expected one vault directory or database path",
+                "expected a vault directory or database path and a valid evidence scope",
             )
             print(json.dumps(report, indent=2, sort_keys=True))
         raise
 
-    report = run_preflight(args.vault_or_database)
+    evidence_filenames = (
+        frozenset(args.filename or ()) if args.catalog_only or args.filename else None
+    )
+    report = run_preflight(
+        args.vault_or_database, evidence_filenames=evidence_filenames
+    )
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if report["blocking_count"] == 0 else 1
 
@@ -2831,6 +2887,7 @@ def run_cli() -> int:
                     "database": None,
                     "vault_root": None,
                     "talk_count": 0,
+                    "evidence_filenames": None,
                     "blocking_count": 1,
                     "warning_count": 0,
                     "cloud_artifacts": summarize_cloud_artifacts(()),

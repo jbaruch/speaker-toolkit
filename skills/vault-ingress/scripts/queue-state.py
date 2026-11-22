@@ -71,6 +71,7 @@ from typing import cast
 from urllib.parse import parse_qs, urlparse
 
 from ingress_contract import (
+    has_nonempty_source_field,
     has_video_source,
 )
 from tracking_database import (
@@ -97,6 +98,7 @@ from queue_claim_contract import (
 )
 from adherence_baseline import (
     AdherenceBaselineError,
+    PERSISTED_EVIDENCE_DEFERRED_REASON,
     build_adherence_baseline,
     partition_pattern_scoring_cohort,
 )
@@ -249,13 +251,29 @@ def evidence_roots(database, path):
 
 
 def evidence_freshness_assessor(
-    database, path, *, video_evidence_assessment: VideoEvidenceAssessment
+    database,
+    path,
+    *,
+    video_evidence_assessment: VideoEvidenceAssessment,
+    intake: bool = False,
 ):
     """Bind the shared read-only assessor to this database's trusted roots."""
     vault_root, source_roots = evidence_roots(database, path)
+    declared_audio = local_audio_declarations(database)
     cache = {}
 
     def assess(talk):
+        if intake:
+            structured = talk.get("structured_data")
+            if (
+                talk.get("filename") in declared_audio
+                or any(
+                    has_nonempty_source_field(talk, field)
+                    for field in ("video_local_path", "video_path")
+                )
+                or (isinstance(structured, dict) and "video_extraction" in structured)
+            ):
+                return (PERSISTED_EVIDENCE_DEFERRED_REASON,)
         identity = id(talk)
         if identity not in cache:
             cache[identity] = assess_current_persisted_pattern_evidence_freshness(
@@ -521,11 +539,13 @@ def write_result_fields(
     }
 
 
-def normalize_legacy_statuses(database, *, capability_assessor):
+def normalize_legacy_statuses(database, *, capability_assessor, filenames=None):
     changes = []
     for talk in database["talks"]:
         previous = talk["status"]
-        if previous not in LEGACY_STATUSES:
+        if previous not in LEGACY_STATUSES or (
+            filenames is not None and talk["filename"] not in filenames
+        ):
             continue
         assessment = capability_assessor(talk)
         if cloud_artifact_blocking_reason(assessment) is not None:
@@ -579,6 +599,8 @@ def normalize_pattern_scoring_generations(database, *, evidence_freshness_assess
         talk = by_filename[detail["filename"]]
         previous = talk["status"]
         reason_codes = cast(list[str], detail["reason_codes"])
+        if reason_codes == [PERSISTED_EVIDENCE_DEFERRED_REASON]:
+            continue
         reprocess_reason = pattern_scoring_reprocess_reason(reason_codes)
         talk["status"] = "needs-reprocessing"
         talk["reprocess_reason"] = reprocess_reason
@@ -719,7 +741,7 @@ def claim_talk(
 def command_normalize(
     database,
     path,
-    _args,
+    args,
     *,
     expected_snapshot,
     video_evidence_assessment: VideoEvidenceAssessment,
@@ -731,6 +753,7 @@ def command_normalize(
     normalizations = normalize_legacy_statuses(
         candidate,
         capability_assessor=capability_assessor,
+        filenames=() if args.intake else None,
     )
     normalizations.extend(
         normalize_pattern_scoring_generations(
@@ -739,6 +762,7 @@ def command_normalize(
                 candidate,
                 path,
                 video_evidence_assessment=video_evidence_assessment,
+                intake=args.intake,
             ),
         )
     )
@@ -776,6 +800,8 @@ def command_claim(
     requested = args.filename or []
     if len(requested) != len(set(requested)):
         raise QueueStateError("--filename contains duplicates")
+    if args.intake and not requested and not existing:
+        raise QueueStateError("claim --intake requires at least one --filename")
     if existing:
         latest_by_filename = {}
         for item in existing:
@@ -829,6 +855,7 @@ def command_claim(
     normalizations = normalize_legacy_statuses(
         candidate,
         capability_assessor=capability_assessor,
+        filenames=set(requested) if args.intake else None,
     )
     by_filename = {talk["filename"]: talk for talk in candidate["talks"]}
     if requested:
@@ -896,6 +923,7 @@ def command_claim(
                 database,
                 path,
                 video_evidence_assessment=video_evidence_assessment,
+                intake=args.intake,
             ),
             persisted_observation_assessor=persisted_observation_assessor(catalog),
         )
@@ -914,18 +942,22 @@ def command_claim(
         )
         for talk in selected
     ]
-    remaining = sum(
-        talk["status"] in CLAIMABLE_STATUSES
-        and has_claimable_source(
-            talk,
-            capability_assessor=capability_assessor,
+    remaining = (
+        None
+        if args.intake
+        else sum(
+            talk["status"] in CLAIMABLE_STATUSES
+            and has_claimable_source(
+                talk,
+                capability_assessor=capability_assessor,
+            )
+            for talk in candidate["talks"]
         )
-        for talk in candidate["talks"]
     )
     cloud_report = summarize_cloud_artifacts(
         (talk["filename"], capability_assessor(talk))
         for talk in candidate["talks"]
-        if talk["status"] in CLAIMABLE_STATUSES | LEGACY_STATUSES
+        if not args.intake and talk["status"] in CLAIMABLE_STATUSES | LEGACY_STATUSES
     )
     if normalizations or claimed:
         validate_database(candidate)
@@ -1056,7 +1088,7 @@ def build_parser():
     actions = parser.add_subparsers(
         dest="action", required=True, parser_class=JsonArgumentParser
     )
-    actions.add_parser(
+    normalize = actions.add_parser(
         "normalize",
         help="normalize legacy source statuses and stale scoring generations",
     )
@@ -1073,6 +1105,12 @@ def build_parser():
         action="append",
         help="claim this filename; repeat for an exact batch",
     )
+    for action in (normalize, claim):
+        action.add_argument(
+            "--intake",
+            action="store_true",
+            help="defer archived recordings and probe only explicitly selected queue work",
+        )
 
     recover = actions.add_parser("recover", help="recover expired inflight leases")
     recover.add_argument(

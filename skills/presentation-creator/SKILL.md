@@ -43,6 +43,8 @@ and returns to the caller; finish here.
 For authoring, read [runtime-and-context.md](references/runtime-and-context.md)
 and resolve the read-only outline runtime. Load the rhetoric summary and speaker
 profile; open slide design guidance when a visual decision needs it.
+Read [editorial-review.md](references/editorial-review.md) before drafting or
+revising text. Apply it in each authoring phase before presenting a draft.
 Read [phase0-intake.md](references/phase0-intake.md) to capture topic, audience,
 venue, and constraints. The vault's confirmed speaker intents govern style.
 Proceed immediately to Step 1.
@@ -56,8 +58,9 @@ root `schema_version: 3`; metadata fields live in
 
 Use the profile's presentation-directory and live slug conventions. The outline
 is the source of truth; do not create a separate presentation spec.
+Review the title, thesis, and TL;DR before generating the partial narrative.
 Use [outline-artifacts.md](references/outline-artifacts.md) to generate partial
-`narrative.md`. Present the TL;DR and metadata for approval.
+`narrative.md`. Read it before presenting the TL;DR and metadata for approval.
 After the author confirms, proceed immediately to Step 2.
 
 ## Step 2 — Architect the Talk
@@ -74,8 +77,9 @@ With no authorized history, use a flat current-taxonomy menu.
 
 For requested AI illustrations, invoke `Skill(skill: "illustrations")` for
 strategy and the approved style anchor; resume here when it returns.
-Regenerate partial `narrative.md`. Obtain approval of the argument and
-architecture before writing per-slide content. Proceed immediately to Step 3.
+Review the chapter titles and argument beats. Regenerate and read the partial
+`narrative.md`. Obtain approval of the argument and architecture before writing
+per-slide content. Proceed immediately to Step 3.
 
 ## Step 3 — Develop Content
 
@@ -83,15 +87,17 @@ Read [phase3-content.md](references/phase3-content.md). Fill `slides[]`,
 `interludes[]`, speaker notes, callbacks, builds, and typed placeholders in
 `outline.yaml`. Use the owner narration-rate contract linked there.
 
-Validate and regenerate the four derived artifacts using
-[outline-artifacts.md](references/outline-artifacts.md). Deliver the draft.
+Review the slide copy, spoken lines, and production text. Validate and regenerate
+the four derived artifacts using [outline-artifacts.md](references/outline-artifacts.md).
+Read the outputs before delivering the draft.
 Proceed immediately to Step 4.
 
 ## Step 4 — Revise the Outline
 
 Read [phase4-guardrails.md](references/phase4-guardrails.md). Apply feedback,
-regenerate artifacts, and run both structural and speaker-aware checks. Preserve
-emitted recurrence records; current-outline warnings remain contextual.
+review changed prose, regenerate artifacts, and run both structural and
+speaker-aware checks. Preserve emitted recurrence records. Keep current-outline
+warnings contextual.
 Flag intentional guardrail overrides without blocking them.
 
 After the author declares the outline done, invoke `Skill(skill: "cfp-writer")`

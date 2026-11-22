@@ -1,7 +1,7 @@
 # Vault Source & Identity Preflight
 
 `skills/vault-ingress/scripts/preflight-vault.py` is the read-only integrity
-gate before ingress selection or re-analysis. It accepts either the vault root
+gate for intake or a full archive audit. It accepts either the vault root
 or `tracking-database.json` as a native absolute locator, performs no network
 access and makes no writes:
 
@@ -16,9 +16,19 @@ blocking. Invocation errors use argparse's exit `2` and still emit a blocking
 JSON report. A missing, unreadable, malformed, or structurally invalid tracking
 database is itself a blocking integrity finding.
 
+- `--catalog-only` verifies database metadata and cross-talk identity without
+  reading media.
+- Repeat `--filename` for each talk whose artifacts must be verified. Catalog
+  metadata and duplicate checks still cover the whole database.
+- Omitting both options checks the full archive.
+
+The report records the scope in `evidence_filenames`. An empty array means
+catalog-only. A filename array means that exact selection. Null means the
+whole vault was requested or the scope is unavailable in an error report.
+
 ## Cloud files and download cost
 
-A declared PDF, PPTX, or preserved recording that is an offline cloud
+A declared PDF, PPTX, or preserved recording in the evidence scope that is an offline cloud
 placeholder produces a blocking `artifact_dataless` finding, including for
 pending and legacy talks that have an independent transcript. Missing files
 retain their existing findings; a cloud placeholder is evidence awaiting download.
@@ -31,7 +41,7 @@ sizes; any nonzero `unknown_size_count` makes that sum a lower bound.
 The inventory reuses the evidence probes' metadata receipts and never opens a
 placeholder. Its schema and projection are owned by `scripts/cloud_artifacts.py`.
 
-To hydrate, run the preflight command above and present the inventory's file
+To hydrate, use the report from the same evidence scope and present its file
 count and byte total. The owner chooses when to download that set. In Finder
 or Explorer, select the listed paths and use the cloud provider's **Download
 Now**, **Available offline**, or equivalent command. Wait for the provider to
@@ -113,7 +123,7 @@ run's exact `input_sha256`:
   "{vault_root}/tracking-database.json"
 
 "{python_path}" "{speaker_toolkit_root}/skills/vault-ingress/scripts/preflight-vault.py" \
-  "{vault_root}"
+  "{vault_root}" --catalog-only
 ```
 
 The second owner read must show the applied generation. Preflight must then

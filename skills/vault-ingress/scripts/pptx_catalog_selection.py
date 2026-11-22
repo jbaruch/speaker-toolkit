@@ -161,6 +161,7 @@ def classify_catalog(
     *,
     vault_root: Path | str,
     pptx_source_dir: object,
+    talk_filenames: frozenset[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Classify every catalog record against the live deck and artifact.
 
@@ -174,6 +175,11 @@ def classify_catalog(
     rows: list[dict[str, Any]] = []
     for index, record in enumerate(catalog):
         if not isinstance(record, Mapping):
+            continue
+        filename = record.get("talk_filename")
+        if talk_filenames is not None and (
+            not isinstance(filename, str) or filename not in talk_filenames
+        ):
             continue
         source = observed_source_fingerprint(record.get("pptx_path"), pptx_source_dir)
         artifact = observed_artifact_digest(record.get("visual_evidence"), vault_root)

@@ -44,13 +44,6 @@ def render(outline: "_os.Outline | _os.PartialOutline") -> str:
         f"· {speakers_csv}",
     )
     lines.append("")
-    lines.append(
-        "> The idea up top, then one line per slide — a quick walk of the "
-        "deck. No image prompts, no stage directions, no script; those live "
-        "in slides.md and script.md.",
-    )
-    lines.append("")
-
     if outline.talk.tldr:
         lines.append("## TL;DR")
         lines.append("")
@@ -68,16 +61,17 @@ def render(outline: "_os.Outline | _os.PartialOutline") -> str:
 def _slide_synopsis(slide: "_os.Slide") -> str:
     """One-line gist of what's on the slide.
 
-    Prefers the on-screen `text_overlay`, falls back to `visual`. Collapses to
-    the first line and ignores the literal `none` placeholder authors use when
-    a slide carries no overlay.
+    Prefers on-screen text and falls back to the visual. Skip blank lines,
+    the `none` marker, and lines that repeat the title next to the synopsis.
     """
+    skipped_lines = {"", "none", slide.title.strip().casefold()}
     for source in (slide.text_overlay, slide.visual):
         if not source:
             continue
-        first = source.strip().splitlines()[0].strip()
-        if first and first.lower() != "none":
-            return first
+        for line in source.splitlines():
+            text = line.strip()
+            if text.casefold() not in skipped_lines:
+                return text
     return ""
 
 

@@ -36,8 +36,9 @@ submission limits, thesis, and takeaways one question at a time. Adapt approved
 catalog material before creating another version of the same talk.
 
 Draft title, abstract, takeaways, and speaker bio within the venue's actual limits.
-Review the promise against the proposed talk and iterate with the author. Once
-approved, explicitly continue to Step 2 to save the approved materials.
+Review the draft through the [editorial pass](../presentation-creator/references/editorial-review.md)
+before presenting it. Check the promise against the proposed talk and iterate
+with the author. Once approved, proceed to Step 2 to save the materials.
 Do not start architecture selection, per-slide authoring, or deck building.
 
 ## Step 2 — Maintain the Sessions Catalog
