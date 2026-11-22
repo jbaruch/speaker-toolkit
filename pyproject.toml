@@ -19,7 +19,7 @@ dependencies = [
     # Pin + weekly Renovate pep621 manager in renovate.json.
     "psutil==7.2.2",
     # Pin + weekly Renovate pep621 manager in renovate.json.
-    "pypdf==7.0.0",
+    "pypdf==7.1.0",
     # Pin + weekly Renovate pep621 manager in renovate.json.
     "lxml==6.1.3",
     # Pin + weekly Renovate pep621 manager in renovate.json.
@@ -37,16 +37,16 @@ dependencies = [
     "PyYAML==6.0.3",
     # Pinned deliberately, not by habit: 1.0 removed the `get_transcript`
     # classmethod, and that uncontrolled API change is what put four Python
-    # tracebacks into the vault's transcripts. Pin + weekly Renovate pep621 updates, so the next break lands as a reviewed
-    # bump rather than as corrupt data.
-    "youtube-transcript-api==1.2.4",
+    # tracebacks into the vault's transcripts. Pin it and use weekly Renovate
+    # updates to review future changes.
+    "youtube-transcript-api==1.2.5",
     "yt-dlp==2026.10.21",
 ]
 
 [project.optional-dependencies]
 test = [
     # Pin + weekly Renovate pep621 manager in renovate.json.
-    "pytest==9.1.1",
+    "pytest==9.2.0",
     # tests/test_pyproject_pins.py parses this manifest's own requirements as
     # PEP 508 rather than pattern-matching their text.
     # Pin + weekly Renovate pep621 manager in renovate.json.
@@ -61,7 +61,7 @@ test = [
 # `rules/code-formatting.md` Separation of Concerns.
 lint = [
     # Pin + weekly Renovate pep621 manager in renovate.json.
-    "ruff==0.17.4",
+    "ruff==0.17.5",
     # The pip distribution bundles its own Node runtime, so CI needs no
     # separate Node setup step.
     # Pin + weekly Renovate pep621 manager in renovate.json.
@@ -88,8 +88,9 @@ markdown-deck = [
 # caption path works everywhere without it.
 whisper = [
     "mlx-whisper==0.4.3",
-    # Resolve a pinned model revision before native transcription; weekly Renovate updates.
-    "huggingface-hub==2.2.0",
+    # Resolve a pinned model revision before native transcription. Renovate
+    # renews this package pin weekly.
+    "huggingface-hub==2.4.0",
 ]
 
 [tool.setuptools]
